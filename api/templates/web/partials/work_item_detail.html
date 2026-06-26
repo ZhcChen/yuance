@@ -1,0 +1,62 @@
+<section class="panel work-item-detail-panel">
+  <div class="panel-head">
+    <div>
+      <h2>详情</h2>
+      <p>{{ item.kind }} {{ item.key }} · {{ item.title }} · {{ item.project_key }} / {{ item.project_name }}</p>
+    </div>
+    <div class="work-meta">
+      <span class="priority">{{ item.priority }}</span>
+      <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <h3>描述</h3>
+    <p>{{ item.description }}</p>
+  </div>
+
+  <div class="detail-section">
+    <h3>协作信息</h3>
+    <dl class="detail-dl inline">
+      <div>
+        <dt>负责人</dt>
+        <dd>{{ item.assignee }}</dd>
+      </div>
+      <div>
+        <dt>报告人</dt>
+        <dd>{{ item.reporter }}</dd>
+      </div>
+      <div>
+        <dt>创建时间</dt>
+        <dd>{{ item.created_at }}</dd>
+      </div>
+      <div>
+        <dt>更新时间</dt>
+        <dd>{{ item.updated_at }}</dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="detail-section">
+    <div class="section-title-row">
+      <h3>评论</h3>
+      <button class="btn btn-sm btn-secondary" type="button">新增评论待接入</button>
+    </div>
+    {% if has_comments %}
+    <ol class="comment-list">
+      {% for comment in comments %}
+      <li>
+        <strong>{{ comment.author }}</strong>
+        <span>{{ comment.created_at }}</span>
+        <p>{{ comment.body }}</p>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <div class="empty-state">
+      <strong>暂无评论</strong>
+      <span>后续可以在这里记录讨论过程。</span>
+    </div>
+    {% endif %}
+  </div>
+</section>

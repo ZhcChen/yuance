@@ -1,0 +1,145 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}用户管理 - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">系统管理</p>
+      <h1>用户管理</h1>
+      <p>维护登录账号、基础资料和系统角色绑定。</p>
+    </div>
+  </section>
+
+  <section class="system-split">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>用户列表</h2>
+          <p>按创建时间倒序排列。</p>
+        </div>
+      </div>
+      {% if has_users %}
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead>
+            <tr>
+              <th>用户</th>
+              <th>联系方式</th>
+              <th>角色</th>
+              <th>状态</th>
+              <th>更新</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in users %}
+            <tr>
+              <td>
+                <strong>{{ user.display_name }}</strong>
+                <div class="muted-line">@{{ user.username }}{% if user.is_super_admin %} · 超级管理员{% endif %}</div>
+              </td>
+              <td>{{ user.contact }}</td>
+              <td>{{ user.role_names }}</td>
+              <td><span class="status status-{{ user.status_tone }}">{{ user.status }}</span></td>
+              <td>{{ user.updated_at }}</td>
+              <td>
+                {% if user.is_super_admin %}
+                <span class="muted-line">受保护</span>
+                {% else %}
+                <div class="row-actions">
+                <form method="post" action="/web/system/users/{{ user.username }}/status">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  {% if user.status_code == "active" %}
+                  <input type="hidden" name="status" value="disabled">
+                  <button class="btn btn-sm btn-secondary" type="submit">禁用</button>
+                  {% else %}
+                  <input type="hidden" name="status" value="active">
+                  <button class="btn btn-sm btn-secondary" type="submit">启用</button>
+                  {% endif %}
+                </form>
+                <details class="action-menu">
+                  <summary class="btn btn-sm btn-secondary">维护</summary>
+                  <div class="action-popover">
+                    <form method="post" action="/web/system/users/{{ user.username }}/role">
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <label>
+                        <span>角色</span>
+                        <select name="role_code" required>
+                          {% for role in roles %}
+                          <option value="{{ role.code }}" {% if user.role_code == role.code %}selected{% endif %}>{{ role.name }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <button class="btn btn-sm btn-primary" type="submit">保存角色</button>
+                    </form>
+                    <form method="post" action="/web/system/users/{{ user.username }}/password">
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <label>
+                        <span>重置密码</span>
+                        <input name="password" type="password" required placeholder="至少 10 个字符">
+                      </label>
+                      <button class="btn btn-sm btn-secondary" type="submit">重置密码</button>
+                    </form>
+                  </div>
+                </details>
+                </div>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty-state">
+        <strong>暂无用户</strong>
+        <span>初始化后至少应存在一个超级管理员。</span>
+      </div>
+      {% endif %}
+    </section>
+
+    <form class="panel system-form" method="post" action="/web/system/users">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="panel-head">
+        <div>
+          <h2>创建用户</h2>
+          <p>第一版创建后自动启用，并绑定一个角色。</p>
+        </div>
+        <button class="btn btn-primary" type="submit">创建用户</button>
+      </div>
+      <div class="field-grid one-column">
+        <label>
+          <span>用户名</span>
+          <input name="username" required placeholder="zhangsan">
+        </label>
+        <label>
+          <span>显示名称</span>
+          <input name="display_name" required placeholder="张三">
+        </label>
+        <label>
+          <span>邮箱</span>
+          <input name="email" type="email" placeholder="user@example.test">
+        </label>
+        <label>
+          <span>手机</span>
+          <input name="mobile" placeholder="可选">
+        </label>
+        <label>
+          <span>初始密码</span>
+          <input name="password" type="password" required placeholder="至少 10 个字符">
+        </label>
+        <label>
+          <span>角色</span>
+          <select name="role_code" required>
+            {% for role in roles %}
+            <option value="{{ role.code }}">{{ role.name }} ({{ role.code }})</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </form>
+  </section>
+</section>
+{% endblock %}

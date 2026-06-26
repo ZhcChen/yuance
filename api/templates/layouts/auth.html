@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}元策{% endblock %}</title>
+  <meta name="yuance-csrf-token" content="{{ csrf_token }}">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="auth-body">
+  <main class="auth-shell">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,90 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}项目 - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">项目中心</p>
+      <h1>项目</h1>
+      <p>以项目组织需求、任务、Bug、成员、动态和后续附件。</p>
+    </div>
+    <div class="toolbar-actions">
+      <button class="btn btn-secondary" type="button">导入</button>
+      <button class="btn btn-primary" type="button">新建项目</button>
+    </div>
+  </section>
+
+  <section class="metric-grid compact-metrics" aria-label="项目概览">
+    <article class="metric metric-info">
+      <span class="metric-label">全部项目</span>
+      <strong>{{ summary.total_projects }}</strong>
+      <span class="metric-hint">当前可见项目</span>
+    </article>
+    <article class="metric metric-ok">
+      <span class="metric-label">进行中</span>
+      <strong>{{ summary.active_projects }}</strong>
+      <span class="metric-hint">规划中 / 进行中</span>
+    </article>
+    <article class="metric metric-warning">
+      <span class="metric-label">开放工作项</span>
+      <strong>{{ summary.open_work_items }}</strong>
+      <span class="metric-hint">未关闭需求 / 任务 / Bug</span>
+    </article>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>项目列表</h2>
+        <p>第一版先提供只读列表；筛选、分页和创建流程后续接入。</p>
+      </div>
+      <div class="segmented" aria-label="项目状态筛选">
+        <button class="active" type="button">全部</button>
+        <button type="button" disabled>进行中</button>
+        <button type="button" disabled>已暂停</button>
+      </div>
+    </div>
+
+    {% if has_projects %}
+    <div class="table-wrap">
+      <table class="compact-table">
+        <thead>
+          <tr>
+            <th>编号</th>
+            <th>项目</th>
+            <th>负责人</th>
+            <th>开放工作项</th>
+            <th>状态</th>
+            <th>更新</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+          <tr>
+            <td><code>{{ project.code }}</code></td>
+            <td><a href="/web/projects/{{ project.code }}">{{ project.name }}</a></td>
+            <td>{{ project.owner }}</td>
+            <td>
+              <div class="work-count-cell">
+                <strong>{{ project.open_work_items }}</strong>
+                <span>/ {{ project.total_work_items }}</span>
+              </div>
+            </td>
+            <td><span class="status status-{{ project.status_tone }}">{{ project.status }}</span></td>
+            <td>{{ project.updated_at }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <strong>暂无项目</strong>
+      <span>创建第一个项目后，需求、任务和 Bug 都会归属到项目下。</span>
+    </div>
+    {% endif %}
+  </section>
+</section>
+{% endblock %}

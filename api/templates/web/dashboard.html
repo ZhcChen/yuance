@@ -1,0 +1,129 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}工作台 - 元策{% endblock %}
+
+{% block content %}
+<section class="workspace-grid">
+  <div class="workspace-main">
+    <section class="metric-grid" aria-label="项目统计">
+      {% for metric in metrics %}
+      <article class="metric metric-{{ metric.tone }}">
+        <span class="metric-label">{{ metric.label }}</span>
+        <strong>{{ metric.value }}</strong>
+        <span class="metric-hint">{{ metric.hint }}</span>
+      </article>
+      {% endfor %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h1>项目推进</h1>
+          <p>按最近更新排序，展示当前项目的开放工作项压力。</p>
+        </div>
+        <div class="toolbar-actions">
+          <button class="btn btn-secondary" type="button">导入</button>
+          <button class="btn btn-primary" type="button">新建项目</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="compact-table">
+          <thead>
+            <tr>
+              <th>编号</th>
+              <th>项目</th>
+              <th>负责人</th>
+              <th>工作项</th>
+              <th>状态</th>
+              <th>更新</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for project in projects %}
+            <tr>
+              <td><code>{{ project.code }}</code></td>
+              <td><a href="/web/projects/{{ project.code }}">{{ project.name }}</a></td>
+              <td>{{ project.owner }}</td>
+              <td>
+                <div class="work-count-cell">
+                  <strong>{{ project.open_work_items }}</strong>
+                  <span>/ {{ project.total_work_items }} 开放</span>
+                </div>
+              </td>
+              <td><span class="status status-{{ project.status_tone }}">{{ project.status }}</span></td>
+              <td>{{ project.updated_at }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head compact">
+        <div>
+          <h2>我的工作项</h2>
+          <p>htmx 局部区域，筛选操作不刷新整个页面。</p>
+        </div>
+        <div class="segmented" aria-label="工作项筛选">
+          <button class="active" type="button" hx-get="/web/partials/work-items" hx-target="#work-items-panel" hx-swap="innerHTML">全部</button>
+          <button type="button" hx-get="/web/partials/work-items?kind=requirement" hx-target="#work-items-panel" hx-swap="innerHTML">需求</button>
+          <button type="button" hx-get="/web/partials/work-items?kind=task" hx-target="#work-items-panel" hx-swap="innerHTML">任务</button>
+          <button type="button" hx-get="/web/partials/work-items?kind=bug" hx-target="#work-items-panel" hx-swap="innerHTML">Bug</button>
+        </div>
+      </div>
+      <div id="work-items-panel" class="work-items" hx-get="/web/partials/work-items" hx-trigger="load" hx-swap="innerHTML">
+        <div class="loading-row">加载工作项...</div>
+      </div>
+    </section>
+  </div>
+
+  <aside class="workspace-side" aria-label="风险与动态">
+    <section class="panel inspector-panel">
+      <div class="panel-head compact">
+        <h2>风险队列</h2>
+        <button class="btn btn-sm btn-secondary" type="button" data-drawer-open="risk-drawer">查看</button>
+      </div>
+      <ol class="risk-list">
+        <li>
+          <strong>CRM 项目接口验收延期</strong>
+          <span>P1 · 需要产品确认范围</span>
+        </li>
+        <li>
+          <strong>对象存储密钥轮换策略未定</strong>
+          <span>P2 · 系统管理配置项</span>
+        </li>
+      </ol>
+    </section>
+
+    <section class="panel inspector-panel">
+      <div class="panel-head compact">
+        <h2>最近动态</h2>
+      </div>
+      <ol class="activity-list">
+        {% for activity in activities %}
+        <li>
+          <span class="activity-dot" aria-hidden="true"></span>
+          <strong>{{ activity.title }}</strong>
+          <span>{{ activity.meta }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+  </aside>
+</section>
+
+<aside id="risk-drawer" class="drawer" aria-hidden="true" aria-label="风险详情">
+  <div class="drawer-backdrop" data-drawer-close></div>
+  <section class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="risk-drawer-title">
+    <div class="drawer-head">
+      <h2 id="risk-drawer-title">风险详情</h2>
+      <button class="icon-btn" type="button" data-drawer-close aria-label="关闭">×</button>
+    </div>
+    <div class="drawer-body">
+      <p>第一版仅做交互占位。后续接入项目风险、阻塞原因、责任人和截止时间。</p>
+    </div>
+  </section>
+</aside>
+{% endblock %}

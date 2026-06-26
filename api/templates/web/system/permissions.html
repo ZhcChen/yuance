@@ -1,0 +1,43 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}权限点 - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">系统管理</p>
+      <h1>{{ role_name }}</h1>
+      <p>权限点由 core seed 管理，页面只负责给普通角色分配权限。</p>
+    </div>
+    <div class="toolbar-actions">
+      <a class="btn btn-secondary" href="/web/system/roles">返回角色</a>
+    </div>
+  </section>
+
+  <form class="panel" method="post" action="/web/system/roles/{{ role_code }}/permissions">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="panel-head">
+      <div>
+        <h2>权限点</h2>
+        <p>{% if is_system_role %}系统内置角色或全部权限点仅允许查看。{% else %}勾选后保存会替换该角色的权限集合。{% endif %}</p>
+      </div>
+      {% if !is_system_role %}
+      <button class="btn btn-primary" type="submit">保存权限</button>
+      {% endif %}
+    </div>
+
+    <div class="permission-grid">
+      {% for permission in permissions %}
+      <label class="permission-card">
+        <input type="checkbox" name="permission_keys" value="{{ permission.key }}" {% if permission.granted %}checked{% endif %} {% if is_system_role %}disabled{% endif %}>
+        <span>
+          <strong>{{ permission.name }}</strong>
+          <em>{{ permission.key }} · {{ permission.resource_type }} / {{ permission.resource }}</em>
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+  </form>
+</section>
+{% endblock %}

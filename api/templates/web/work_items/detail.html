@@ -1,0 +1,55 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}{{ item.key }} - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero detail-hero">
+    <div>
+      <p class="eyebrow">{{ item.kind }} / {{ item.key }}</p>
+      <h1>{{ item.title }}</h1>
+      <p>{{ item.description }}</p>
+      <div class="detail-meta">
+        <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+        <span class="priority">{{ item.priority }}</span>
+        <span>{{ item.project_key }} · {{ item.project_name }}</span>
+      </div>
+    </div>
+    <div class="toolbar-actions">
+      <a class="btn btn-secondary" href="/web/projects/{{ item.project_key }}">返回项目</a>
+      <button class="btn btn-primary" type="button">状态流转待接入</button>
+    </div>
+  </section>
+
+  <section class="detail-grid">
+    <div class="detail-main">
+      {% include "web/partials/work_item_detail.html" %}
+    </div>
+    <aside class="detail-side">
+      <section class="panel inspector-panel">
+        <div class="panel-head compact">
+          <h2>字段</h2>
+        </div>
+        <dl class="detail-dl">
+          <div>
+            <dt>负责人</dt>
+            <dd>{{ item.assignee }}</dd>
+          </div>
+          <div>
+            <dt>报告人</dt>
+            <dd>{{ item.reporter }}</dd>
+          </div>
+          <div>
+            <dt>创建时间</dt>
+            <dd>{{ item.created_at }}</dd>
+          </div>
+          <div>
+            <dt>更新时间</dt>
+            <dd>{{ item.updated_at }}</dd>
+          </div>
+        </dl>
+      </section>
+    </aside>
+  </section>
+</section>
+{% endblock %}

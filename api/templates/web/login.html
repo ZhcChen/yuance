@@ -1,0 +1,38 @@
+{% extends "layouts/auth.html" %}
+
+{% block title %}登录 - 元策{% endblock %}
+
+{% block content %}
+<section class="auth-panel">
+  <div class="auth-brand">
+    <span class="brand-mark" aria-hidden="true">元</span>
+    <div>
+      <strong>元策</strong>
+      <span>企业级项目管理系统</span>
+    </div>
+  </div>
+
+  <form class="auth-form" method="post" action="/web/login">
+    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <div class="form-head">
+      <h1>登录</h1>
+      <p>开发测试账号可通过 `make api-seed-local-admin` 创建。</p>
+    </div>
+    <label>
+      <span>用户名</span>
+      <input name="username" autocomplete="username" placeholder="yuance_admin">
+    </label>
+    <label>
+      <span>密码</span>
+      <input name="password" type="password" autocomplete="current-password" placeholder="请输入密码">
+    </label>
+    <button class="btn btn-primary btn-block" type="submit">登录</button>
+    <a class="text-link" href="/web/bootstrap">首次部署？初始化系统管理员</a>
+  </form>
+
+  <div class="auth-foot">
+    <span class="env-badge">{{ environment }}</span>
+    <span>默认端口 33033</span>
+  </div>
+</section>
+{% endblock %}

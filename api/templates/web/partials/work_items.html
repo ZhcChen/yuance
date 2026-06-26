@@ -1,0 +1,23 @@
+<div class="work-item-list">
+  {% if has_items %}
+  {% for item in items %}
+  <article class="work-item">
+    <div>
+      <span class="work-kind">{{ item.kind }}</span>
+      <code>{{ item.key }}</code>
+      <h3>{{ item.title }}</h3>
+      <p>{{ item.project }} · {{ item.assignee }}</p>
+    </div>
+    <div class="work-meta">
+      <span class="priority">{{ item.priority }}</span>
+      <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+    </div>
+  </article>
+  {% endfor %}
+  {% else %}
+  <div class="empty-state">
+    <strong>{{ empty_message }}</strong>
+    <span>当前筛选条件下没有需要处理的工作项。</span>
+  </div>
+  {% endif %}
+</div>

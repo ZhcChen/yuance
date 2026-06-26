@@ -1,0 +1,192 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}{{ project.name }} - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero detail-hero">
+    <div>
+      <p class="eyebrow">项目 / {{ project.code }}</p>
+      <h1>{{ project.name }}</h1>
+      <p>{{ project.description }}</p>
+      <div class="detail-meta">
+        <span class="status status-{{ project.status_tone }}">{{ project.status }}</span>
+        <span>负责人：{{ project.owner }}</span>
+        <span>创建：{{ project.created_at }}</span>
+        <span>更新：{{ project.updated_at }}</span>
+      </div>
+    </div>
+    <div class="toolbar-actions">
+      <a class="btn btn-secondary" href="/web/projects">返回项目</a>
+      <button class="btn btn-primary" type="button">新建工作项</button>
+    </div>
+  </section>
+
+  <section class="metric-grid detail-metrics" aria-label="项目详情概览">
+    <article class="metric metric-info">
+      <span class="metric-label">需求</span>
+      <strong>{{ summary.requirements }}</strong>
+      <span class="metric-hint">项目需求</span>
+    </article>
+    <article class="metric metric-warning">
+      <span class="metric-label">任务</span>
+      <strong>{{ summary.tasks }}</strong>
+      <span class="metric-hint">执行工作</span>
+    </article>
+    <article class="metric metric-danger">
+      <span class="metric-label">Bug</span>
+      <strong>{{ summary.bugs }}</strong>
+      <span class="metric-hint">缺陷跟踪</span>
+    </article>
+    <article class="metric metric-ok">
+      <span class="metric-label">成员</span>
+      <strong>{{ summary.members }}</strong>
+      <span class="metric-hint">{{ summary.open_items }} 个开放工作项</span>
+    </article>
+  </section>
+
+  <section class="detail-grid">
+    <div class="detail-main">
+      <section class="panel">
+        <div class="panel-head compact">
+          <div>
+            <h2>需求</h2>
+            <p>项目范围和目标。</p>
+          </div>
+          <a class="btn btn-sm btn-secondary" href="/web/requirements">查看全部</a>
+        </div>
+        {% if has_requirements %}
+        <div class="work-item-list">
+          {% for item in requirements %}
+          <article class="work-item">
+            <div>
+              <span class="work-kind">{{ item.kind }}</span>
+              <code>{{ item.key }}</code>
+              <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
+              <p>{{ item.project }} · {{ item.assignee }}</p>
+            </div>
+            <div class="work-meta">
+              <span class="priority">{{ item.priority }}</span>
+              <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无需求</strong>
+          <span>后续可以从项目详情直接新建需求。</span>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <div class="panel-head compact">
+          <div>
+            <h2>任务</h2>
+            <p>拆解后的执行事项。</p>
+          </div>
+          <a class="btn btn-sm btn-secondary" href="/web/tasks">查看全部</a>
+        </div>
+        {% if has_tasks %}
+        <div class="work-item-list">
+          {% for item in tasks %}
+          <article class="work-item">
+            <div>
+              <span class="work-kind">{{ item.kind }}</span>
+              <code>{{ item.key }}</code>
+              <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
+              <p>{{ item.project }} · {{ item.assignee }}</p>
+            </div>
+            <div class="work-meta">
+              <span class="priority">{{ item.priority }}</span>
+              <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无任务</strong>
+          <span>需求确认后可以拆分为任务。</span>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <div class="panel-head compact">
+          <div>
+            <h2>Bug</h2>
+            <p>项目缺陷和阻塞事项。</p>
+          </div>
+          <a class="btn btn-sm btn-secondary" href="/web/bugs">查看全部</a>
+        </div>
+        {% if has_bugs %}
+        <div class="work-item-list">
+          {% for item in bugs %}
+          <article class="work-item">
+            <div>
+              <span class="work-kind">{{ item.kind }}</span>
+              <code>{{ item.key }}</code>
+              <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
+              <p>{{ item.project }} · {{ item.assignee }}</p>
+            </div>
+            <div class="work-meta">
+              <span class="priority">{{ item.priority }}</span>
+              <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无 Bug</strong>
+          <span>当前项目没有缺陷记录。</span>
+        </div>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="detail-side">
+      <section class="panel inspector-panel">
+        <div class="panel-head compact">
+          <h2>项目成员</h2>
+        </div>
+        <div class="member-list">
+          {% for member in members %}
+          <article class="member-row">
+            <div>
+              <strong>{{ member.display_name }}</strong>
+              <span>@{{ member.username }} · {{ member.joined_at }}</span>
+            </div>
+            <span class="status status-info">{{ member.role }}</span>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="panel inspector-panel">
+        <div class="panel-head compact">
+          <h2>最近动态</h2>
+        </div>
+        {% if has_activities %}
+        <ol class="activity-list">
+          {% for activity in activities %}
+          <li>
+            <span class="activity-dot" aria-hidden="true"></span>
+            <strong>{{ activity.title }}</strong>
+            <span>{{ activity.meta }}</span>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无动态</strong>
+          <span>关键操作后会在这里沉淀项目动态。</span>
+        </div>
+        {% endif %}
+      </section>
+    </aside>
+  </section>
+</section>
+{% endblock %}
