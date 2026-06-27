@@ -383,6 +383,7 @@ async fn web_work_item_detail_page_renders_full_shell() {
     assert!(body.contains("元策工作台"));
     assert!(body.contains("YCE-TASK-2"));
     assert!(body.contains("标记完成"));
+    assert!(body.contains("编辑工作项"));
     assert!(body.contains("先统一项目与工作项查询模型"));
 }
 
@@ -823,6 +824,61 @@ async fn web_work_item_detail_can_transition_status_and_add_comment() {
 }
 
 #[tokio::test]
+async fn web_work_item_detail_can_edit_core_fields_and_assignee() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    create_regular_user(&pool, "editor", "编辑成员").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "editor", "member")
+        .await
+        .expect("member should be added");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/edit")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&title=Edited+Task&description=Edited+description&status=in_progress&priority=P3&assignee_username=editor",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/work-items/YCE-TASK-2"
+    );
+
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let activities = projects::list_project_activities(&pool, 1, 10)
+        .await
+        .expect("activities should load");
+
+    assert_eq!(item.title, "Edited Task");
+    assert_eq!(item.description, "Edited description");
+    assert_eq!(item.status, "in_progress");
+    assert_eq!(item.priority, "P3");
+    assert_eq!(item.assignee_username, "editor");
+    assert_eq!(item.assignee_display_name, "编辑成员");
+    assert!(
+        activities
+            .iter()
+            .any(|activity| activity.summary == "更新工作项 YCE-TASK-2")
+    );
+}
+
+#[tokio::test]
 async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -861,7 +917,9 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
                 .uri(format!("/api/v1/work-items/{item_key}"))
                 .header(header::COOKIE, initialized.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"status":"resolved"}"#))
+                .body(Body::from(
+                    r#"{"title":"API 更新缺陷","status":"resolved","priority":"P1","assignee_username":"admin"}"#,
+                ))
                 .expect("request should build"),
         )
         .await
@@ -881,6 +939,10 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
 
     assert_eq!(update_response.status(), StatusCode::OK);
     assert_eq!(comment_response.status(), StatusCode::CREATED);
+    let update_body = response_body(update_response).await;
+    assert!(update_body.contains("\"title\":\"API 更新缺陷\""));
+    assert!(update_body.contains("\"priority\":\"P1\""));
+    assert!(update_body.contains("\"assignee_username\":\"admin\""));
 
     let item = projects::get_work_item_detail(&pool, &item_key)
         .await
@@ -890,8 +952,45 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
         .await
         .expect("comments should load");
 
+    assert_eq!(item.title, "API 更新缺陷");
     assert_eq!(item.status, "resolved");
+    assert_eq!(item.priority, "P1");
+    assert_eq!(item.assignee_username, "admin");
     assert!(comments.iter().any(|comment| comment.body == "API 评论"));
+}
+
+#[tokio::test]
+async fn api_v1_rejects_work_item_assignee_outside_project() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    create_regular_user(&pool, "not_in_project", "非项目成员").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"title":"非法负责人","assignee_username":"not_in_project"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_ne!(item.title, "非法负责人");
+    assert_ne!(item.assignee_username, "not_in_project");
 }
 
 #[tokio::test]

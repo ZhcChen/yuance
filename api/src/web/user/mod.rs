@@ -101,9 +101,11 @@ struct WorkItemDetailView {
     description: String,
     project_key: String,
     project_name: String,
+    assignee_username: String,
     assignee: String,
     reporter: String,
     priority: String,
+    status_code: String,
     status: String,
     status_tone: &'static str,
     created_at: String,
@@ -366,6 +368,7 @@ struct WorkItemDetailTemplate {
     csrf_token: String,
     system_nav: SystemNav,
     item: WorkItemDetailView,
+    assignee_options: Vec<ProjectMemberView>,
     comments: Vec<WorkItemComment>,
     has_comments: bool,
 }
@@ -575,6 +578,17 @@ pub struct WorkItemStatusForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
     status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemEditForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    title: String,
+    description: String,
+    status: String,
+    priority: String,
+    assignee_username: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1087,6 +1101,7 @@ pub async fn work_item_detail_page(
         &item.project_key,
     )
     .await?;
+    let assignee_options = load_project_member_options(pool, &item.project_key).await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1100,6 +1115,7 @@ pub async fn work_item_detail_page(
             system_nav: context.system_nav,
             has_comments: !comments.is_empty(),
             item,
+            assignee_options,
             comments,
         })?
         .into_response(),
@@ -1139,6 +1155,58 @@ pub async fn work_item_status_update(
             "work_item",
             &updated.item_key,
             &format!(r#"{{"status":"{}"}}"#, updated.status),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/work-items/{}", updated.item_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+pub async fn work_item_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Form(form): Form<WorkItemEditForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "work_item.manage").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let updated = projects::update_work_item(
+            pool,
+            context.user_id,
+            &item_key,
+            projects::UpdateWorkItemInput {
+                title: form.title,
+                description: form.description,
+                status: form.status,
+                priority: form.priority,
+                assignee_username: form.assignee_username,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "work_item.update",
+            "work_item",
+            &updated.item_key,
+            "{}",
         )
         .await?;
 
@@ -2270,9 +2338,11 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         description: item.description,
         project_key: item.project_key,
         project_name: item.project_name,
+        assignee_username: item.assignee_username,
         assignee: fallback_text(item.assignee_display_name, "未分配"),
         reporter: fallback_text(item.reporter_display_name, "未分配"),
         priority: item.priority,
+        status_code: item.status,
         status: status.to_string(),
         status_tone,
         created_at: display_timestamp(item.created_at),
@@ -2488,6 +2558,21 @@ async fn load_work_item_detail(
         .collect::<Vec<_>>();
 
     Ok(Some((work_item_detail_from_domain(item), comments)))
+}
+
+async fn load_project_member_options(
+    pool: &SqlitePool,
+    project_key: &str,
+) -> AppResult<Vec<ProjectMemberView>> {
+    let Some(project) = projects::get_project_detail(pool, project_key).await? else {
+        return Ok(Vec::new());
+    };
+
+    Ok(projects::list_project_members(pool, project.id)
+        .await?
+        .into_iter()
+        .map(project_member_from_summary)
+        .collect())
 }
 
 fn project_list_summary(projects: &[ProjectRow]) -> ProjectListSummary {
@@ -2944,6 +3029,12 @@ fn render_sample_work_item_detail_page(
             system_nav: context.system_nav,
             has_comments: partial.has_comments,
             item: partial.item,
+            assignee_options: vec![ProjectMemberView {
+                display_name: "陈".to_string(),
+                username: "yuance_admin".to_string(),
+                role: "负责人".to_string(),
+                joined_at: "今天".to_string(),
+            }],
             comments: partial.comments,
         })?
         .into_response(),
@@ -2959,9 +3050,11 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
             description: "落地项目、成员、需求、任务、Bug、评论和动态表。".to_string(),
             project_key: "YCE".to_string(),
             project_name: "元策 MVP".to_string(),
+            assignee_username: "yuance_admin".to_string(),
             assignee: "陈".to_string(),
             reporter: "陈".to_string(),
             priority: "P0".to_string(),
+            status_code: "in_progress".to_string(),
             status: "进行中".to_string(),
             status_tone: "info",
             created_at: "今天".to_string(),

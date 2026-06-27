@@ -84,6 +84,8 @@ origin: docs/plans/2026-06-26-002-feat-yuance-v1-complete-design-plan.md
 - 修改写入项目动态。
 - 负责人只能选择项目成员。
 
+当前状态：已完成。Web 工作项详情页支持编辑核心字段；API `PATCH /api/v1/work-items/:item_key` 复用同一 domain 更新逻辑；负责人校验为已启用项目成员。
+
 ### P1：列表筛选
 
 跨项目需求、任务、Bug 列表需要支持基础筛选：
@@ -145,4 +147,3 @@ V1 暂不做：
 3. 再做 P1 列表筛选。
 4. 再做 P1 附件最小入口。
 5. 最后补 P2 动态覆盖和体验细节。
-

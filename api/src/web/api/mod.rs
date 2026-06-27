@@ -80,6 +80,7 @@ pub struct WorkItemDetailPayload {
     pub priority: String,
     pub project_key: String,
     pub project_name: String,
+    pub assignee_username: String,
     pub assignee: String,
     pub reporter: String,
     pub created_at: String,
@@ -132,7 +133,16 @@ pub struct CreateWorkItemRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateWorkItemRequest {
-    status: String,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    priority: Option<String>,
+    #[serde(default)]
+    assignee_username: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -415,15 +425,30 @@ pub async fn update_work_item(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
-    let updated =
-        projects::update_work_item_status(pool, user.id, &item_key, &payload.status).await?;
+    let updated = projects::update_work_item(
+        pool,
+        user.id,
+        &item_key,
+        projects::UpdateWorkItemInput {
+            title: payload.title.unwrap_or_else(|| item.title.clone()),
+            description: payload
+                .description
+                .unwrap_or_else(|| item.description.clone()),
+            status: payload.status.unwrap_or_else(|| item.status.clone()),
+            priority: payload.priority.unwrap_or_else(|| item.priority.clone()),
+            assignee_username: payload
+                .assignee_username
+                .unwrap_or_else(|| item.assignee_username.clone()),
+        },
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
-        "work_item.status.update",
+        "work_item.update",
         "work_item",
         &updated.item_key,
-        &format!(r#"{{"status":"{}"}}"#, updated.status),
+        "{}",
     )
     .await?;
 
@@ -557,6 +582,7 @@ fn work_item_detail_payload(item: projects::WorkItemDetail) -> WorkItemDetailPay
         priority: item.priority,
         project_key: item.project_key,
         project_name: item.project_name,
+        assignee_username: item.assignee_username,
         assignee: item.assignee_display_name,
         reporter: item.reporter_display_name,
         created_at: item.created_at,

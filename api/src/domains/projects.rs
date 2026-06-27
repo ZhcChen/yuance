@@ -75,6 +75,7 @@ pub struct WorkItemDetail {
     pub priority: String,
     pub project_key: String,
     pub project_name: String,
+    pub assignee_username: String,
     pub assignee_display_name: String,
     pub reporter_display_name: String,
     pub created_at: String,
@@ -123,6 +124,15 @@ pub struct CreateWorkItemInput {
     pub title: String,
     pub description: String,
     pub priority: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateWorkItemInput {
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    pub assignee_username: String,
 }
 
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
@@ -1044,6 +1054,7 @@ pub async fn get_work_item_detail(
             String,
             String,
             String,
+            String,
         ),
     >(
         r#"
@@ -1057,6 +1068,7 @@ pub async fn get_work_item_detail(
             wi.priority,
             p.project_key,
             p.name AS project_name,
+            COALESCE(assignee.username, '') AS assignee_username,
             COALESCE(assignee.display_name, '') AS assignee_display_name,
             COALESCE(reporter.display_name, '') AS reporter_display_name,
             wi.created_at,
@@ -1083,6 +1095,7 @@ pub async fn get_work_item_detail(
             priority,
             project_key,
             project_name,
+            assignee_username,
             assignee_display_name,
             reporter_display_name,
             created_at,
@@ -1097,6 +1110,7 @@ pub async fn get_work_item_detail(
             priority,
             project_key,
             project_name,
+            assignee_username,
             assignee_display_name,
             reporter_display_name,
             created_at,
@@ -1192,6 +1206,108 @@ pub async fn update_work_item_status(
     .bind(item_key)
     .bind(format!("更新工作项 {item_key} 状态"))
     .bind(format!(r#"{{"status":"{status}"}}"#))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_detail(pool, item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
+}
+
+pub async fn update_work_item(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    input: UpdateWorkItemInput,
+) -> AppResult<WorkItemDetail> {
+    let title = validate_name(&input.title, "工作项标题", 160)?;
+    let description = validate_optional_text(&input.description, "工作项描述", 5000)?;
+    let status = validate_work_item_status(&input.status)?;
+    let priority = validate_priority(&input.priority)?;
+    let assignee_username = input.assignee_username.trim();
+
+    let Some((work_item_id, project_id)) = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT id, project_id FROM work_items WHERE item_key = ?1",
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+
+    let assignee_user_id = if assignee_username.is_empty() {
+        None
+    } else {
+        let assignee_username = validate_username_ref(assignee_username)?;
+        Some(
+            sqlx::query_scalar::<_, i64>(
+                r#"
+            SELECT u.id
+            FROM users u
+            JOIN project_members pm ON pm.user_id = u.id
+                AND pm.project_id = ?1
+            WHERE u.username = ?2
+              AND u.status = 'active'
+            "#,
+            )
+            .bind(project_id)
+            .bind(&assignee_username)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("负责人必须是已启用的项目成员".to_string()))?,
+        )
+    };
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET title = ?2,
+            description = ?3,
+            status = ?4,
+            priority = ?5,
+            assignee_user_id = ?6,
+            completed_at = CASE
+                WHEN ?4 IN ('done', 'closed', 'resolved', 'verified') THEN datetime('now')
+                ELSE NULL
+            END,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(&title)
+    .bind(&description)
+    .bind(status)
+    .bind(priority)
+    .bind(assignee_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'work_item.updated', 'work_item', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("更新工作项 {item_key}"))
+    .bind(format!(
+        r#"{{"status":"{status}","priority":"{priority}","assignee_username":"{assignee_username}"}}"#
+    ))
     .execute(&mut *tx)
     .await?;
 

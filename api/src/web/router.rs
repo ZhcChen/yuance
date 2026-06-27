@@ -79,6 +79,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::work_item_status_update),
         )
         .route(
+            "/web/work-items/{item_key}/edit",
+            post(web::user::work_item_update),
+        )
+        .route(
             "/web/work-items/{item_key}/comments",
             post(web::user::work_item_comment_create),
         )

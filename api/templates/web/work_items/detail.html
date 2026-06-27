@@ -33,6 +33,59 @@
   <section class="detail-grid">
     <div class="detail-main">
       {% include "web/partials/work_item_detail.html" %}
+      <section class="panel system-form">
+        <div class="panel-head">
+          <div>
+            <h2>编辑工作项</h2>
+            <p>更新标题、描述、状态、优先级和负责人，变更会记录到项目动态。</p>
+          </div>
+        </div>
+        <form method="post" action="/web/work-items/{{ item.key }}/edit">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <div class="field-grid">
+            <label class="wide-field">
+              标题
+              <input name="title" value="{{ item.title }}" required>
+            </label>
+            <label>
+              状态
+              <select name="status">
+                <option value="open" {% if item.status_code == "open" %}selected{% endif %}>待处理</option>
+                <option value="in_progress" {% if item.status_code == "in_progress" %}selected{% endif %}>进行中</option>
+                <option value="done" {% if item.status_code == "done" %}selected{% endif %}>已完成</option>
+                <option value="resolved" {% if item.status_code == "resolved" %}selected{% endif %}>已解决</option>
+                <option value="verified" {% if item.status_code == "verified" %}selected{% endif %}>已验证</option>
+                <option value="closed" {% if item.status_code == "closed" %}selected{% endif %}>已关闭</option>
+                <option value="cancelled" {% if item.status_code == "cancelled" %}selected{% endif %}>已取消</option>
+              </select>
+            </label>
+            <label>
+              优先级
+              <select name="priority">
+                <option value="P0" {% if item.priority == "P0" %}selected{% endif %}>P0</option>
+                <option value="P1" {% if item.priority == "P1" %}selected{% endif %}>P1</option>
+                <option value="P2" {% if item.priority == "P2" %}selected{% endif %}>P2</option>
+                <option value="P3" {% if item.priority == "P3" %}selected{% endif %}>P3</option>
+              </select>
+            </label>
+            <label>
+              负责人
+              <select name="assignee_username">
+                {% for member in assignee_options %}
+                <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="wide-field">
+              描述
+              <textarea name="description" rows="5">{{ item.description }}</textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">保存工作项</button>
+          </div>
+        </form>
+      </section>
       <section class="panel">
         <div class="panel-head">
           <div>
