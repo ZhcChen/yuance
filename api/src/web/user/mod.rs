@@ -329,6 +329,7 @@ struct ProjectDetailTemplate {
     has_tasks: bool,
     has_bugs: bool,
     has_activities: bool,
+    project_item_type_options: Vec<WorkItemTypeOption>,
 }
 
 #[derive(Template)]
@@ -348,6 +349,12 @@ struct WorkItemListTemplate {
     summary: WorkItemListSummary,
     has_items: bool,
     has_project_options: bool,
+}
+
+#[derive(Debug, Clone)]
+struct WorkItemTypeOption {
+    value: &'static str,
+    label: &'static str,
 }
 
 #[derive(Template)]
@@ -559,6 +566,8 @@ pub struct CreateWorkItemForm {
     title: String,
     description: String,
     priority: String,
+    #[serde(default)]
+    redirect_to: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -903,6 +912,7 @@ pub async fn project_detail_page(
             bugs,
             members,
             activities,
+            project_item_type_options: work_item_type_options(),
         })?
         .into_response(),
     )
@@ -1023,6 +1033,10 @@ pub async fn work_items_create(
             "{}",
         )
         .await?;
+
+        if form.redirect_to == "project" {
+            return Ok(Redirect::to(&format!("/web/projects/{}", item.project_key)).into_response());
+        }
 
         return Ok(Redirect::to(&format!("/web/work-items/{}", item.item_key)).into_response());
     }
@@ -2518,6 +2532,23 @@ fn requested_work_item_type(kind: Option<&str>) -> AppResult<Option<&'static str
     }
 }
 
+fn work_item_type_options() -> Vec<WorkItemTypeOption> {
+    vec![
+        WorkItemTypeOption {
+            value: "requirement",
+            label: "需求",
+        },
+        WorkItemTypeOption {
+            value: "task",
+            label: "任务",
+        },
+        WorkItemTypeOption {
+            value: "bug",
+            label: "Bug",
+        },
+    ]
+}
+
 fn is_open_status(status: &str) -> bool {
     !matches!(
         status,
@@ -2890,6 +2921,7 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             bugs,
             members,
             activities,
+            project_item_type_options: work_item_type_options(),
         })?
         .into_response(),
     )

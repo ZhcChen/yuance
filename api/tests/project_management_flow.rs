@@ -700,6 +700,71 @@ async fn web_member_can_create_work_item_in_joined_project() {
 }
 
 #[tokio::test]
+async fn web_project_detail_can_create_work_item_and_return_to_project() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(page_body.contains("项目内新建工作项"));
+    assert!(page_body.contains(r#"name="redirect_to" value="project""#));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=YCE&item_type=requirement&title=%E9%A1%B9%E7%9B%AE%E5%86%85%E6%96%B0%E5%BB%BA%E9%9C%80%E6%B1%82&description=%E4%BB%8E%E9%A1%B9%E7%9B%AE%E8%AF%A6%E6%83%85%E9%A1%B5%E7%9B%B4%E6%8E%A5%E5%86%99%E5%85%A5&priority=P2&redirect_to=project",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        create_response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/YCE"
+    );
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+
+    assert!(detail_body.contains("项目内新建需求"));
+    assert!(detail_body.contains("YCE-REQ-"));
+    assert!(detail_body.contains("创建工作项"));
+}
+
+#[tokio::test]
 async fn web_work_item_detail_can_transition_status_and_add_comment() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

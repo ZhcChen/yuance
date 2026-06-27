@@ -18,7 +18,7 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web/projects">返回项目</a>
-      <button class="btn btn-primary" type="button">新建工作项</button>
+      <a class="btn btn-primary" href="#project-work-item-create">新建工作项</a>
     </div>
   </section>
 
@@ -144,6 +144,50 @@
           <span>当前项目没有缺陷记录。</span>
         </div>
         {% endif %}
+      </section>
+
+      <section id="project-work-item-create" class="panel system-form">
+        <div class="panel-head">
+          <div>
+            <h2>项目内新建工作项</h2>
+            <p>直接归属到 {{ project.code }}，创建后回到当前项目详情。</p>
+          </div>
+        </div>
+        <form method="post" action="/web/work-items">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="project_key" value="{{ project.code }}">
+          <input type="hidden" name="redirect_to" value="project">
+          <div class="field-grid">
+            <label>
+              类型
+              <select name="item_type">
+                {% for option in project_item_type_options %}
+                <option value="{{ option.value }}">{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              优先级
+              <select name="priority">
+                <option value="P0">P0</option>
+                <option value="P1">P1</option>
+                <option value="P2" selected>P2</option>
+                <option value="P3">P3</option>
+              </select>
+            </label>
+            <label class="wide-field">
+              标题
+              <input name="title" placeholder="输入需求、任务或 Bug 标题" required>
+            </label>
+            <label class="wide-field">
+              描述
+              <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">创建工作项</button>
+          </div>
+        </form>
       </section>
     </div>
 
