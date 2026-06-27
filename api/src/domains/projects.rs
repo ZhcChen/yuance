@@ -42,6 +42,15 @@ pub struct ProjectMemberSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectMemberDetail {
+    pub user_id: i64,
+    pub display_name: String,
+    pub username: String,
+    pub member_role: String,
+    pub joined_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkItemSummary {
     pub id: i64,
     pub item_key: String,
@@ -417,6 +426,155 @@ pub async fn list_project_members(
         .collect())
 }
 
+pub async fn add_project_member(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    username: &str,
+    member_role: &str,
+) -> AppResult<ProjectMemberDetail> {
+    let project_key = validate_project_key(project_key)?;
+    let username = validate_username_ref(username)?;
+    let member_role = validate_member_role(member_role)?;
+
+    let Some((project_id, project_name)) =
+        sqlx::query_as::<_, (i64, String)>("SELECT id, name FROM projects WHERE project_key = ?1")
+            .bind(&project_key)
+            .fetch_optional(pool)
+            .await?
+    else {
+        return Err(AppError::NotFound("项目不存在".to_string()));
+    };
+    let Some((user_id, display_name)) = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, display_name FROM users WHERE username = ?1 AND status = 'active'",
+    )
+    .bind(&username)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::BadRequest("用户不存在或未启用".to_string()));
+    };
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        INSERT INTO project_members (
+            project_id,
+            user_id,
+            member_role
+        )
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(project_id, user_id) DO UPDATE SET
+            member_role = excluded.member_role,
+            updated_at = datetime('now')
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(member_role)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'project.member.added', 'user', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&username)
+    .bind(format!("将 {display_name} 加入项目 {project_name}"))
+    .bind(format!(r#"{{"member_role":"{member_role}"}}"#))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_project_member(pool, project_id, &username)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目成员添加后未找到".to_string()))
+}
+
+pub async fn remove_project_member(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    username: &str,
+) -> AppResult<()> {
+    let project_key = validate_project_key(project_key)?;
+    let username = validate_username_ref(username)?;
+
+    let Some((project_id, owner_user_id, project_name)) =
+        sqlx::query_as::<_, (i64, Option<i64>, String)>(
+            "SELECT id, owner_user_id, name FROM projects WHERE project_key = ?1",
+        )
+        .bind(&project_key)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Err(AppError::NotFound("项目不存在".to_string()));
+    };
+    let Some((user_id, display_name)) = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, display_name FROM users WHERE username = ?1",
+    )
+    .bind(&username)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::BadRequest("用户不存在".to_string()));
+    };
+    if owner_user_id == Some(user_id) {
+        return Err(AppError::BadRequest(
+            "项目负责人不能从项目成员中移除".to_string(),
+        ));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        DELETE FROM project_members
+        WHERE project_id = ?1
+          AND user_id = ?2
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'project.member.removed', 'user', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&username)
+    .bind(format!("将 {display_name} 移出项目 {project_name}"))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(())
+}
+
 pub async fn is_project_member(
     pool: &SqlitePool,
     project_id: i64,
@@ -436,6 +594,41 @@ pub async fn is_project_member(
     .await?;
 
     Ok(count > 0)
+}
+
+async fn get_project_member(
+    pool: &SqlitePool,
+    project_id: i64,
+    username: &str,
+) -> AppResult<Option<ProjectMemberDetail>> {
+    let row = sqlx::query_as::<_, (i64, String, String, String, String)>(
+        r#"
+        SELECT
+            u.id,
+            u.display_name,
+            u.username,
+            pm.member_role,
+            pm.joined_at
+        FROM project_members pm
+        JOIN users u ON u.id = pm.user_id
+        WHERE pm.project_id = ?1
+          AND u.username = ?2
+        "#,
+    )
+    .bind(project_id)
+    .bind(username)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(
+        |(user_id, display_name, username, member_role, joined_at)| ProjectMemberDetail {
+            user_id,
+            display_name,
+            username,
+            member_role,
+            joined_at,
+        },
+    ))
 }
 
 pub async fn list_project_work_items(
@@ -1454,6 +1647,36 @@ fn validate_work_item_status(status: &str) -> AppResult<&'static str> {
                 .to_string(),
         )),
     }
+}
+
+fn validate_member_role(member_role: &str) -> AppResult<&'static str> {
+    match member_role.trim() {
+        "" | "member" => Ok("member"),
+        "owner" => Ok("owner"),
+        "maintainer" => Ok("maintainer"),
+        "viewer" => Ok("viewer"),
+        _ => Err(AppError::BadRequest(
+            "项目成员角色只能是 owner / maintainer / member / viewer".to_string(),
+        )),
+    }
+}
+
+fn validate_username_ref(username: &str) -> AppResult<String> {
+    let username = username.trim();
+    if username.len() < 3 || username.len() > 64 {
+        return Err(AppError::BadRequest(
+            "用户名长度必须为 3-64 个字符".to_string(),
+        ));
+    }
+    if !username
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
+        return Err(AppError::BadRequest(
+            "用户名只能包含字母、数字、下划线、中划线和点".to_string(),
+        ));
+    }
+    Ok(username.to_string())
 }
 
 fn work_item_key_segment(item_type: &str) -> &'static str {

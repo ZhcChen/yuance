@@ -970,6 +970,19 @@ code {
   font-size: 12px;
 }
 
+.member-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.member-add-form {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--line);
+}
+
 .work-item-detail-panel {
   overflow: hidden;
 }

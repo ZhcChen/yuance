@@ -829,11 +829,153 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
     assert!(comments.iter().any(|comment| comment.body == "API 评论"));
 }
 
+#[tokio::test]
+async fn web_project_member_management_grants_and_revokes_project_access() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let add_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/projects/YCE/members")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&username=outsider&member_role=maintainer",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(add_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        add_response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/YCE"
+    );
+
+    let member_can_view = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE")
+                .header(header::COOKIE, outsider.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(member_can_view.status(), StatusCode::OK);
+    let member_page = response_body(member_can_view).await;
+    assert!(member_page.contains("@outsider"));
+    assert!(member_page.contains("维护者"));
+
+    let remove_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/projects/YCE/members/outsider/remove")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(remove_response.status(), StatusCode::SEE_OTHER);
+
+    let member_forbidden = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE")
+                .header(header::COOKIE, outsider.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(member_forbidden.status(), StatusCode::FORBIDDEN);
+
+    let is_member = projects::is_project_member(&pool, 1, outsider.user_id)
+        .await
+        .expect("membership should load");
+    assert!(!is_member);
+}
+
+#[tokio::test]
+async fn api_v1_can_add_and_remove_project_member() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let add_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/members")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"outsider","member_role":"viewer"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(add_response.status(), StatusCode::CREATED);
+    let body = response_body(add_response).await;
+    assert!(body.contains("\"username\":\"outsider\""));
+    assert!(body.contains("\"member_role\":\"viewer\""));
+
+    assert!(
+        projects::is_project_member(&pool, 1, outsider.user_id)
+            .await
+            .expect("membership should load")
+    );
+
+    let remove_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/projects/YCE/members/outsider")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(remove_response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        !projects::is_project_member(&pool, 1, outsider.user_id)
+            .await
+            .expect("membership should load")
+    );
+}
+
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {
     bootstrap_admin_session(pool).await.user_id
 }
 
 struct InitializedAdmin {
+    user_id: i64,
+    cookie: String,
+}
+
+struct InitializedUser {
     user_id: i64,
     cookie: String,
 }
@@ -870,6 +1012,16 @@ async fn response_body(response: axum::response::Response) -> String {
 }
 
 async fn create_regular_user_session(pool: &sqlx::SqlitePool) -> String {
+    create_regular_user(pool, "outsider", "外部成员")
+        .await
+        .cookie
+}
+
+async fn create_regular_user(
+    pool: &sqlx::SqlitePool,
+    username: &str,
+    display_name: &str,
+) -> InitializedUser {
     let password_hash = auth::hash_password("MemberPass2026!").expect("password should hash");
     let user_id = sqlx::query_scalar::<_, i64>(
         r#"
@@ -880,11 +1032,13 @@ async fn create_regular_user_session(pool: &sqlx::SqlitePool) -> String {
             status,
             is_super_admin
         )
-        VALUES ('outsider', ?1, '外部成员', 'active', 0)
+        VALUES (?1, ?2, ?3, 'active', 0)
         RETURNING id
         "#,
     )
+    .bind(username)
     .bind(password_hash)
+    .bind(display_name)
     .fetch_one(pool)
     .await
     .expect("regular user should be created");
@@ -892,7 +1046,10 @@ async fn create_regular_user_session(pool: &sqlx::SqlitePool) -> String {
     let session = auth::issue_session(pool, user_id, 12 * 60 * 60)
         .await
         .expect("session should issue");
-    auth::session_cookie_header(&session.raw_token, false)
+    InitializedUser {
+        user_id,
+        cookie: auth::session_cookie_header(&session.raw_token, false),
+    }
 }
 
 fn extract_json_string(body: &str, key: &str) -> String {

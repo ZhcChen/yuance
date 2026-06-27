@@ -576,6 +576,20 @@ pub struct WorkItemCommentForm {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ProjectMemberForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    username: String,
+    member_role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProjectMemberRemoveForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WorkItemsQuery {
     kind: Option<String>,
 }
@@ -892,6 +906,84 @@ pub async fn project_detail_page(
         })?
         .into_response(),
     )
+}
+
+pub async fn project_member_add(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Form(form): Form<ProjectMemberForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "project.manage").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let member = projects::add_project_member(
+            pool,
+            context.user_id,
+            &project_key,
+            &form.username,
+            &form.member_role,
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project.member.add",
+            "project",
+            &project_key,
+            &format!(
+                r#"{{"username":"{}","member_role":"{}"}}"#,
+                member.username, member.member_role
+            ),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/projects/{project_key}")).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
+pub async fn project_member_remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, username)): Path<(String, String)>,
+    Form(form): Form<ProjectMemberRemoveForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "project.manage").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        projects::remove_project_member(pool, context.user_id, &project_key, &username).await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project.member.remove",
+            "project",
+            &project_key,
+            &format!(r#"{{"username":"{}"}}"#, username),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/projects/{project_key}")).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
 }
 
 pub async fn work_items_create(

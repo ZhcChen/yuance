@@ -94,6 +94,15 @@ pub struct CommentPayload {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct ProjectMemberPayload {
+    pub user_id: i64,
+    pub display_name: String,
+    pub username: String,
+    pub member_role: String,
+    pub joined_at: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct WorkItemQuery {
     #[serde(default)]
@@ -129,6 +138,13 @@ pub struct UpdateWorkItemRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateCommentRequest {
     body: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddProjectMemberRequest {
+    username: String,
+    #[serde(default = "default_member_role")]
+    member_role: String,
 }
 
 pub async fn healthz() -> axum::Json<ApiEnvelope<HealthPayload<'static>>> {
@@ -245,6 +261,69 @@ pub async fn get_project(
         created_at: project.created_at,
         updated_at: project.updated_at,
     }))
+}
+
+pub async fn add_project_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<AddProjectMemberRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, user.id, "project.manage").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    let member = projects::add_project_member(
+        pool,
+        user.id,
+        &project_key,
+        &payload.username,
+        &payload.member_role,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.member.add",
+        "project",
+        &project_key,
+        &format!(
+            r#"{{"username":"{}","member_role":"{}"}}"#,
+            member.username, member.member_role
+        ),
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, json(project_member_payload(member))))
+}
+
+pub async fn remove_project_member(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, username)): Path<(String, String)>,
+) -> AppResult<StatusCode> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, user.id, "project.manage").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    projects::remove_project_member(pool, user.id, &project_key, &username).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.member.remove",
+        "project",
+        &project_key,
+        &format!(r#"{{"username":"{}"}}"#, username),
+    )
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn list_work_items(
@@ -485,10 +564,24 @@ fn work_item_detail_payload(item: projects::WorkItemDetail) -> WorkItemDetailPay
     }
 }
 
+fn project_member_payload(member: projects::ProjectMemberDetail) -> ProjectMemberPayload {
+    ProjectMemberPayload {
+        user_id: member.user_id,
+        display_name: member.display_name,
+        username: member.username,
+        member_role: member.member_role,
+        joined_at: member.joined_at,
+    }
+}
+
 fn default_project_status() -> String {
     "active".to_string()
 }
 
 fn default_priority() -> String {
     "P2".to_string()
+}
+
+fn default_member_role() -> String {
+    "member".to_string()
 }

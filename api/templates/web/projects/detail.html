@@ -159,10 +159,32 @@
               <strong>{{ member.display_name }}</strong>
               <span>@{{ member.username }} · {{ member.joined_at }}</span>
             </div>
-            <span class="status status-info">{{ member.role }}</span>
+            <div class="member-actions">
+              <span class="status status-info">{{ member.role }}</span>
+              <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/members/{{ member.username }}/remove">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-secondary" type="submit">移除</button>
+              </form>
+            </div>
           </article>
           {% endfor %}
         </div>
+        <form class="member-add-form" method="post" action="/web/projects/{{ project.code }}/members">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <label>
+            用户名
+            <input name="username" placeholder="输入用户名" required>
+          </label>
+          <label>
+            项目角色
+            <select name="member_role">
+              <option value="member">成员</option>
+              <option value="maintainer">维护者</option>
+              <option value="viewer">观察者</option>
+            </select>
+          </label>
+          <button class="btn btn-primary btn-block" type="submit">加入项目</button>
+        </form>
       </section>
 
       <section class="panel inspector-panel">

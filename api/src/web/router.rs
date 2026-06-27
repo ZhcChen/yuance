@@ -2,7 +2,7 @@ use axum::{
     Router,
     http::{StatusCode, header},
     response::{IntoResponse, Redirect},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
 use crate::{platform::config::Settings, web};
@@ -57,6 +57,14 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/web/projects/{project_key}",
             get(web::user::project_detail_page),
+        )
+        .route(
+            "/web/projects/{project_key}/members",
+            post(web::user::project_member_add),
+        )
+        .route(
+            "/web/projects/{project_key}/members/{username}/remove",
+            post(web::user::project_member_remove),
         )
         .route("/web/requirements", get(web::user::requirements_page))
         .route("/web/tasks", get(web::user::tasks_page))
@@ -145,6 +153,14 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/projects/{project_key}",
             get(web::api::get_project).patch(web::api::unsupported_mutation),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/members",
+            post(web::api::add_project_member),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/members/{username}",
+            delete(web::api::remove_project_member),
         )
         .route(
             "/api/v1/work-items",
