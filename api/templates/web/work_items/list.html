@@ -12,7 +12,7 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web">返回工作台</a>
-      <button class="btn btn-primary" type="button">{{ create_label }}</button>
+      <a class="btn btn-primary" href="#work-item-create-form">{{ create_label }}</a>
     </div>
   </section>
 
@@ -70,6 +70,53 @@
       <span>当前没有符合条件的工作项。</span>
     </div>
     {% endif %}
+  </section>
+
+  <section id="work-item-create-form" class="panel system-form">
+    <div class="panel-head">
+      <div>
+        <h2>{{ create_label }}</h2>
+        <p>工作项创建后会自动分配给当前用户，并记录项目动态。</p>
+      </div>
+    </div>
+    <form method="post" action="/web/work-items">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="item_type" value="{{ item_type }}">
+      <div class="field-grid">
+        <label>
+          所属项目
+          <select name="project_key" required>
+            {% if has_project_options %}
+            {% for project in project_options %}
+            <option value="{{ project.key }}">{{ project.key }} · {{ project.name }}</option>
+            {% endfor %}
+            {% else %}
+            <option value="">暂无可选项目</option>
+            {% endif %}
+          </select>
+        </label>
+        <label>
+          优先级
+          <select name="priority">
+            <option value="P0">P0</option>
+            <option value="P1">P1</option>
+            <option value="P2" selected>P2</option>
+            <option value="P3">P3</option>
+          </select>
+        </label>
+        <label class="wide-field">
+          标题
+          <input name="title" placeholder="输入{{ title }}标题" required>
+        </label>
+        <label class="wide-field">
+          描述
+          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">{{ create_label }}</button>
+      </div>
+    </form>
   </section>
 </section>
 {% endblock %}

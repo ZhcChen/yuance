@@ -1,6 +1,6 @@
 use sqlx::SqlitePool;
 
-use crate::platform::error::AppResult;
+use crate::platform::error::{AppError, AppResult};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoSeedResult {
@@ -97,6 +97,23 @@ pub struct SearchHit {
     pub context: String,
     pub url: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateProjectInput {
+    pub project_key: String,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateWorkItemInput {
+    pub project_key: String,
+    pub item_type: String,
+    pub title: String,
+    pub description: String,
+    pub priority: String,
 }
 
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
@@ -231,6 +248,83 @@ pub async fn list_project_summaries_for_user(
             },
         )
         .collect())
+}
+
+pub async fn create_project(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    input: CreateProjectInput,
+) -> AppResult<ProjectDetail> {
+    let project_key = validate_project_key(&input.project_key)?;
+    let name = validate_name(&input.name, "项目名称", 120)?;
+    let description = validate_optional_text(&input.description, "项目描述", 2000)?;
+    let status = validate_project_status(&input.status)?;
+
+    let mut tx = pool.begin().await?;
+    let project_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO projects (
+            project_key,
+            name,
+            description,
+            status,
+            owner_user_id
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5)
+        RETURNING id
+        "#,
+    )
+    .bind(&project_key)
+    .bind(&name)
+    .bind(&description)
+    .bind(status)
+    .bind(actor_user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_members (
+            project_id,
+            user_id,
+            member_role
+        )
+        VALUES (?1, ?2, 'owner')
+        ON CONFLICT(project_id, user_id) DO UPDATE SET
+            member_role = 'owner',
+            updated_at = datetime('now')
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'project.created', 'project', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&project_key)
+    .bind(format!("创建项目 {name}"))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目创建后未找到".to_string()))
 }
 
 pub async fn get_project_detail(
@@ -647,6 +741,96 @@ pub async fn list_assigned_work_item_summaries(
         .collect())
 }
 
+pub async fn create_work_item(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    input: CreateWorkItemInput,
+) -> AppResult<WorkItemDetail> {
+    let project_key = validate_project_key(&input.project_key)?;
+    let item_type = validate_work_item_type(&input.item_type)?;
+    let title = validate_name(&input.title, "工作项标题", 160)?;
+    let description = validate_optional_text(&input.description, "工作项描述", 5000)?;
+    let priority = validate_priority(&input.priority)?;
+    let item_segment = work_item_key_segment(item_type);
+
+    let mut tx = pool.begin().await?;
+    let project_id = sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = ?1")
+        .bind(&project_key)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
+
+    let prefix = format!("{project_key}-{item_segment}-");
+    let next_number = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COALESCE(MAX(CAST(SUBSTR(item_key, ?2) AS INTEGER)), 0) + 1
+        FROM work_items
+        WHERE project_id = ?1
+          AND item_type = ?3
+          AND item_key LIKE ?4
+        "#,
+    )
+    .bind(project_id)
+    .bind(prefix.len() as i64 + 1)
+    .bind(item_type)
+    .bind(format!("{prefix}%"))
+    .fetch_one(&mut *tx)
+    .await?;
+    let item_key = format!("{prefix}{next_number}");
+
+    sqlx::query(
+        r#"
+        INSERT INTO work_items (
+            project_id,
+            item_key,
+            item_type,
+            title,
+            description,
+            status,
+            priority,
+            assignee_user_id,
+            reporter_user_id
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?7)
+        "#,
+    )
+    .bind(project_id)
+    .bind(&item_key)
+    .bind(item_type)
+    .bind(&title)
+    .bind(&description)
+    .bind(priority)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'work_item.created', 'work_item', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&item_key)
+    .bind(format!("创建工作项 {item_key}"))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项创建后未找到".to_string()))
+}
+
 pub async fn get_work_item_detail(
     pool: &SqlitePool,
     item_key: &str,
@@ -760,6 +944,164 @@ pub async fn list_work_item_comments(
             },
         )
         .collect())
+}
+
+pub async fn update_work_item_status(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    status: &str,
+) -> AppResult<WorkItemDetail> {
+    let status = validate_work_item_status(status)?;
+    let Some((work_item_id, project_id)) = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT id, project_id FROM work_items WHERE item_key = ?1",
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET status = ?2,
+            completed_at = CASE
+                WHEN ?2 IN ('done', 'closed', 'resolved', 'verified') THEN datetime('now')
+                ELSE NULL
+            END,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(status)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'work_item.status.updated', 'work_item', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("更新工作项 {item_key} 状态"))
+    .bind(format!(r#"{{"status":"{status}"}}"#))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_detail(pool, item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
+}
+
+pub async fn add_work_item_comment(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    body: &str,
+) -> AppResult<WorkItemCommentSummary> {
+    let body = validate_optional_text(body, "评论内容", 5000)?;
+    if body.is_empty() {
+        return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+    }
+    let Some((work_item_id, project_id)) = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT id, project_id FROM work_items WHERE item_key = ?1",
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+
+    let mut tx = pool.begin().await?;
+    let comment_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO work_item_comments (
+            work_item_id,
+            author_user_id,
+            body
+        )
+        VALUES (?1, ?2, ?3)
+        RETURNING id
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .bind(&body)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'work_item.commented', 'work_item', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("评论工作项 {item_key}"))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let row = sqlx::query_as::<_, (i64, String, String, String)>(
+        r#"
+        SELECT
+            c.id,
+            c.body,
+            COALESCE(u.display_name, '') AS author_display_name,
+            c.created_at
+        FROM work_item_comments c
+        LEFT JOIN users u ON u.id = c.author_user_id
+        WHERE c.id = ?1
+        "#,
+    )
+    .bind(comment_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(WorkItemCommentSummary {
+        id: row.0,
+        body: row.1,
+        author_display_name: row.2,
+        created_at: row.3,
+    })
 }
 
 pub async fn list_recent_activities(
@@ -1023,6 +1365,104 @@ pub async fn search_visible(
     hits.truncate(limit.max(0) as usize);
 
     Ok(hits)
+}
+
+fn validate_project_key(project_key: &str) -> AppResult<String> {
+    let project_key = project_key.trim().to_ascii_uppercase();
+    if project_key.len() < 2 || project_key.len() > 16 {
+        return Err(AppError::BadRequest(
+            "项目编号长度必须为 2-16 个字符".to_string(),
+        ));
+    }
+    if !project_key
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || matches!(c, '_' | '-'))
+    {
+        return Err(AppError::BadRequest(
+            "项目编号只能包含大写字母、数字、下划线和中划线".to_string(),
+        ));
+    }
+    Ok(project_key)
+}
+
+fn validate_name(value: &str, field_name: &str, max_chars: usize) -> AppResult<String> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().count() > max_chars {
+        return Err(AppError::BadRequest(format!(
+            "{field_name}不能为空且不能超过 {max_chars} 个字符"
+        )));
+    }
+    Ok(value.to_string())
+}
+
+fn validate_optional_text(value: &str, field_name: &str, max_chars: usize) -> AppResult<String> {
+    let value = value.trim();
+    if value.chars().count() > max_chars {
+        return Err(AppError::BadRequest(format!(
+            "{field_name}不能超过 {max_chars} 个字符"
+        )));
+    }
+    Ok(value.to_string())
+}
+
+fn validate_project_status(status: &str) -> AppResult<&'static str> {
+    match status.trim() {
+        "" | "active" => Ok("active"),
+        "planning" => Ok("planning"),
+        "paused" => Ok("paused"),
+        "archived" => Ok("archived"),
+        _ => Err(AppError::BadRequest(
+            "项目状态只能是 planning / active / paused / archived".to_string(),
+        )),
+    }
+}
+
+fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {
+    match item_type.trim() {
+        "requirement" => Ok("requirement"),
+        "task" => Ok("task"),
+        "bug" => Ok("bug"),
+        _ => Err(AppError::BadRequest(
+            "工作项类型只能是 requirement / task / bug".to_string(),
+        )),
+    }
+}
+
+fn validate_priority(priority: &str) -> AppResult<&'static str> {
+    match priority.trim() {
+        "" | "P2" => Ok("P2"),
+        "P0" => Ok("P0"),
+        "P1" => Ok("P1"),
+        "P3" => Ok("P3"),
+        _ => Err(AppError::BadRequest(
+            "优先级只能是 P0 / P1 / P2 / P3".to_string(),
+        )),
+    }
+}
+
+fn validate_work_item_status(status: &str) -> AppResult<&'static str> {
+    match status.trim() {
+        "open" => Ok("open"),
+        "in_progress" => Ok("in_progress"),
+        "done" => Ok("done"),
+        "verified" => Ok("verified"),
+        "resolved" => Ok("resolved"),
+        "closed" => Ok("closed"),
+        "cancelled" => Ok("cancelled"),
+        _ => Err(AppError::BadRequest(
+            "工作项状态只能是 open / in_progress / done / verified / resolved / closed / cancelled"
+                .to_string(),
+        )),
+    }
+}
+
+fn work_item_key_segment(item_type: &str) -> &'static str {
+    match item_type {
+        "requirement" => "REQ",
+        "task" => "TASK",
+        "bug" => "BUG",
+        _ => "ITEM",
+    }
 }
 
 async fn seed_demo_projects(pool: &SqlitePool, owner_user_id: i64) -> AppResult<()> {

@@ -11,8 +11,8 @@
       <p>以项目组织需求、任务、Bug、成员、动态和后续附件。</p>
     </div>
     <div class="toolbar-actions">
-      <button class="btn btn-secondary" type="button">导入</button>
-      <button class="btn btn-primary" type="button">新建项目</button>
+      <a class="btn btn-secondary" href="#project-create-form">导入</a>
+      <a class="btn btn-primary" href="#project-create-form">新建项目</a>
     </div>
   </section>
 
@@ -38,7 +38,7 @@
     <div class="panel-head">
       <div>
         <h2>项目列表</h2>
-        <p>第一版先提供只读列表；筛选、分页和创建流程后续接入。</p>
+        <p>按最近更新排序，创建后会自动把当前用户加入为项目负责人。</p>
       </div>
       <div class="segmented" aria-label="项目状态筛选">
         <button class="active" type="button">全部</button>
@@ -85,6 +85,44 @@
       <span>创建第一个项目后，需求、任务和 Bug 都会归属到项目下。</span>
     </div>
     {% endif %}
+  </section>
+
+  <section id="project-create-form" class="panel system-form">
+    <div class="panel-head">
+      <div>
+        <h2>新建项目</h2>
+        <p>项目编号会作为工作项编号前缀，例如 YCE-TASK-1。</p>
+      </div>
+    </div>
+    <form method="post" action="/web/projects">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid">
+        <label>
+          项目编号
+          <input name="project_key" placeholder="YCE" required>
+        </label>
+        <label>
+          项目名称
+          <input name="name" placeholder="元策 MVP" required>
+        </label>
+        <label>
+          状态
+          <select name="status">
+            <option value="active">进行中</option>
+            <option value="planning">规划中</option>
+            <option value="paused">暂停</option>
+            <option value="archived">归档</option>
+          </select>
+        </label>
+        <label class="wide-field">
+          项目描述
+          <textarea name="description" rows="3" placeholder="说明项目目标、范围和协作边界"></textarea>
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">创建项目</button>
+      </div>
+    </form>
   </section>
 </section>
 {% endblock %}

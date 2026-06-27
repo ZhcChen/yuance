@@ -47,6 +47,12 @@ struct ProjectListSummary {
 }
 
 #[derive(Debug, Clone)]
+struct ProjectOption {
+    key: String,
+    name: String,
+}
+
+#[derive(Debug, Clone)]
 struct ProjectDetailView {
     code: String,
     name: String,
@@ -336,9 +342,12 @@ struct WorkItemListTemplate {
     title: &'static str,
     description: &'static str,
     create_label: &'static str,
+    item_type: &'static str,
     items: Vec<WorkItem>,
+    project_options: Vec<ProjectOption>,
     summary: WorkItemListSummary,
     has_items: bool,
+    has_project_options: bool,
 }
 
 #[derive(Template)]
@@ -529,6 +538,41 @@ pub struct StorageConfigForm {
     access_key_secret: String,
     #[serde(default)]
     activate: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    project_key: String,
+    name: String,
+    description: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWorkItemForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    project_key: String,
+    item_type: String,
+    title: String,
+    description: String,
+    priority: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemStatusForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemCommentForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    body: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -735,6 +779,45 @@ pub async fn projects_page(
     )
 }
 
+pub async fn projects_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<CreateProjectForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "project.manage").await?;
+        let project = projects::create_project(
+            pool,
+            context.user_id,
+            projects::CreateProjectInput {
+                project_key: form.project_key,
+                name: form.name,
+                description: form.description,
+                status: form.status,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project.create",
+            "project",
+            &project.project_key,
+            "{}",
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/projects/{}", project.project_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
 pub async fn project_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -811,6 +894,50 @@ pub async fn project_detail_page(
     )
 }
 
+pub async fn work_items_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<CreateWorkItemForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "work_item.manage").await?;
+        let project = projects::get_project_detail(pool, &form.project_key)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let item = projects::create_work_item(
+            pool,
+            context.user_id,
+            projects::CreateWorkItemInput {
+                project_key: form.project_key,
+                item_type: form.item_type,
+                title: form.title,
+                description: form.description,
+                priority: form.priority,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "work_item.create",
+            "work_item",
+            &item.item_key,
+            "{}",
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/work-items/{}", item.item_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
 pub async fn requirements_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -871,6 +998,88 @@ pub async fn work_item_detail_page(
         })?
         .into_response(),
     )
+}
+
+pub async fn work_item_status_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Form(form): Form<WorkItemStatusForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "work_item.manage").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let updated =
+            projects::update_work_item_status(pool, context.user_id, &item_key, &form.status)
+                .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "work_item.status.update",
+            "work_item",
+            &updated.item_key,
+            &format!(r#"{{"status":"{}"}}"#, updated.status),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/work-items/{}", updated.item_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+pub async fn work_item_comment_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Form(form): Form<WorkItemCommentForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "work_item.manage").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        projects::add_work_item_comment(pool, context.user_id, &item_key, &form.body).await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "work_item.comment.create",
+            "work_item",
+            &item_key,
+            "{}",
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
 }
 
 pub async fn login(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
@@ -1489,6 +1698,16 @@ async fn work_item_list_page(
         None => sample_work_items(item_type),
     };
     let summary = work_item_list_summary(&items);
+    let project_options = match context.pool {
+        Some(pool) => {
+            projects::list_project_summaries_for_user(pool, context.user_id, context.is_super_admin)
+                .await?
+                .into_iter()
+                .map(project_option_from_summary)
+                .collect::<Vec<_>>()
+        }
+        None => sample_project_options(),
+    };
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1503,8 +1722,11 @@ async fn work_item_list_page(
             title: meta.title,
             description: meta.description,
             create_label: meta.create_label,
+            item_type: item_type.unwrap_or("task"),
             has_items: !items.is_empty(),
+            has_project_options: !project_options.is_empty(),
             items,
+            project_options,
             summary,
         })?
         .into_response(),
@@ -1712,6 +1934,18 @@ async fn build_system_nav(pool: &SqlitePool, user_id: i64) -> AppResult<SystemNa
     })
 }
 
+async fn ensure_manage_permission(
+    pool: &SqlitePool,
+    user_id: i64,
+    permission_key: &str,
+) -> AppResult<()> {
+    if rbac::user_has_permission(pool, user_id, permission_key).await? {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden("缺少操作权限".to_string()))
+}
+
 fn redirect_with_session(state: &AppState, raw_token: String, htmx: bool) -> AppResult<Response> {
     let cookie = auth::session_cookie_header(&raw_token, state.settings.env == "production");
     let mut response = if htmx {
@@ -1847,6 +2081,13 @@ fn project_from_summary(project: projects::ProjectSummary) -> ProjectRow {
         status: status.to_string(),
         status_tone,
         updated_at: display_timestamp(project.updated_at),
+    }
+}
+
+fn project_option_from_summary(project: projects::ProjectSummary) -> ProjectOption {
+    ProjectOption {
+        key: project.project_key,
+        name: project.name,
     }
 }
 
@@ -2418,6 +2659,16 @@ fn sample_projects() -> Vec<ProjectRow> {
             updated_at: "昨天 19:42".to_string(),
         },
     ]
+}
+
+fn sample_project_options() -> Vec<ProjectOption> {
+    sample_projects()
+        .into_iter()
+        .map(|project| ProjectOption {
+            key: project.code,
+            name: project.name,
+        })
+        .collect()
 }
 
 fn sample_search_results(query: &str) -> Vec<SearchResult> {

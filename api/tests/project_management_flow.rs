@@ -10,6 +10,8 @@ use yuance_api::{
     web::router::{AppState, build_router},
 };
 
+const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
 #[tokio::test]
 async fn demo_seed_idempotently_creates_projects_and_work_items() {
     let pool = test_pool().await;
@@ -380,7 +382,7 @@ async fn web_work_item_detail_page_renders_full_shell() {
 
     assert!(body.contains("元策工作台"));
     assert!(body.contains("YCE-TASK-2"));
-    assert!(body.contains("状态流转待接入"));
+    assert!(body.contains("标记完成"));
     assert!(body.contains("先统一项目与工作项查询模型"));
 }
 
@@ -611,6 +613,222 @@ async fn api_v1_requires_authentication() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[tokio::test]
+async fn web_admin_can_create_project_and_redirect_to_detail() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/projects")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=NEW&name=%E6%96%B0%E9%A1%B9%E7%9B%AE&description=%E7%94%A8%E4%BA%8E%E9%AA%8C%E8%AF%81%E5%86%99%E5%85%A5%E9%97%AD%E7%8E%AF&status=active",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/NEW"
+    );
+
+    let project = projects::get_project_detail(&pool, "NEW")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    assert_eq!(project.name, "新项目");
+    assert!(
+        projects::is_project_member(&pool, project.id, initialized.user_id)
+            .await
+            .expect("membership should load")
+    );
+}
+
+#[tokio::test]
+async fn web_member_can_create_work_item_in_joined_project() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=YCE&item_type=task&title=%E8%A1%A5%E5%85%85%E5%86%99%E5%85%A5%E9%97%AD%E7%8E%AF&description=%E4%BB%8E%E9%A1%B5%E9%9D%A2%E5%88%B0%E6%95%B0%E6%8D%AE%E5%BA%93%E7%9A%84%E6%9C%80%E5%B0%8F%E9%97%AD%E7%8E%AF&priority=P1",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .expect("location should exist")
+        .to_str()
+        .expect("location should be str")
+        .to_string();
+    assert!(
+        location.starts_with("/web/work-items/YCE-TASK-"),
+        "unexpected redirect: {location}"
+    );
+
+    let item_key = location.trim_start_matches("/web/work-items/").to_string();
+    let item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(item.title, "补充写入闭环");
+    assert_eq!(item.status, "open");
+    assert_eq!(item.priority, "P1");
+}
+
+#[tokio::test]
+async fn web_work_item_detail_can_transition_status_and_add_comment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let status_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/status")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=done",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let comment_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&body=%E8%BF%99%E6%9D%A1%E8%AF%84%E8%AE%BA%E7%94%A8%E4%BA%8E%E9%AA%8C%E8%AF%81%E9%97%AD%E7%8E%AF",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(comment_response.status(), StatusCode::SEE_OTHER);
+
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let comments = projects::list_work_item_comments(&pool, item.id)
+        .await
+        .expect("comments should load");
+
+    assert_eq!(item.status, "done");
+    assert!(
+        comments
+            .iter()
+            .any(|comment| comment.body == "这条评论用于验证闭环")
+    );
+}
+
+#[tokio::test]
+async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"bug","title":"API 创建缺陷","description":"通过 API 写入","priority":"P0"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let create_body = response_body(create_response).await;
+    assert!(create_body.contains("\"key\":\"YCE-BUG-"));
+    assert!(create_body.contains("\"title\":\"API 创建缺陷\""));
+
+    let item_key = extract_json_string(&create_body, "key");
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/work-items/{item_key}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"status":"resolved"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let comment_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/work-items/{item_key}/comments"))
+                .header(header::COOKIE, initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"body":"API 评论"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(update_response.status(), StatusCode::OK);
+    assert_eq!(comment_response.status(), StatusCode::CREATED);
+
+    let item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let comments = projects::list_work_item_comments(&pool, item.id)
+        .await
+        .expect("comments should load");
+
+    assert_eq!(item.status, "resolved");
+    assert!(comments.iter().any(|comment| comment.body == "API 评论"));
+}
+
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {
     bootstrap_admin_session(pool).await.user_id
 }
@@ -675,6 +893,18 @@ async fn create_regular_user_session(pool: &sqlx::SqlitePool) -> String {
         .await
         .expect("session should issue");
     auth::session_cookie_header(&session.raw_token, false)
+}
+
+fn extract_json_string(body: &str, key: &str) -> String {
+    let needle = format!("\"{key}\":\"");
+    let start = body.find(&needle).expect("key should exist") + needle.len();
+    let rest = &body[start..];
+    let end = rest.find('"').expect("value should end");
+    rest[..end].to_string()
+}
+
+fn with_csrf_cookie(session_cookie: &str) -> String {
+    format!("{session_cookie}; yuance_csrf={CSRF_TOKEN}")
 }
 
 async fn test_pool() -> sqlx::SqlitePool {

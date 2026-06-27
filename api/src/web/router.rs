@@ -2,7 +2,7 @@ use axum::{
     Router,
     http::{StatusCode, header},
     response::{IntoResponse, Redirect},
-    routing::get,
+    routing::{get, post},
 };
 
 use crate::{platform::config::Settings, web};
@@ -50,7 +50,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web", get(web::user::dashboard))
         .route("/web/me", get(web::user::me_page))
         .route("/web/search", get(web::user::search_page))
-        .route("/web/projects", get(web::user::projects_page))
+        .route(
+            "/web/projects",
+            get(web::user::projects_page).post(web::user::projects_create),
+        )
         .route(
             "/web/projects/{project_key}",
             get(web::user::project_detail_page),
@@ -58,9 +61,18 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/requirements", get(web::user::requirements_page))
         .route("/web/tasks", get(web::user::tasks_page))
         .route("/web/bugs", get(web::user::bugs_page))
+        .route("/web/work-items", post(web::user::work_items_create))
         .route(
             "/web/work-items/{item_key}",
             get(web::user::work_item_detail_page),
+        )
+        .route(
+            "/web/work-items/{item_key}/status",
+            post(web::user::work_item_status_update),
+        )
+        .route(
+            "/web/work-items/{item_key}/comments",
+            post(web::user::work_item_comment_create),
         )
         .route(
             "/web/login",
@@ -128,7 +140,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/projects",
-            get(web::api::list_projects).post(web::api::unsupported_mutation),
+            get(web::api::list_projects).post(web::api::create_project),
         )
         .route(
             "/api/v1/projects/{project_key}",
@@ -136,11 +148,15 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/work-items",
-            get(web::api::list_work_items).post(web::api::unsupported_mutation),
+            get(web::api::list_work_items).post(web::api::create_work_item),
         )
         .route(
             "/api/v1/work-items/{item_key}",
-            get(web::api::get_work_item).patch(web::api::unsupported_mutation),
+            get(web::api::get_work_item).patch(web::api::update_work_item),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/comments",
+            post(web::api::create_work_item_comment),
         )
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))

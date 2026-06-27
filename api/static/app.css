@@ -56,7 +56,9 @@ input {
 
 button:focus-visible,
 a:focus-visible,
-input:focus-visible {
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   box-shadow: 0 0 0 3px var(--brand-line), 0 0 0 1px var(--brand);
 }
 
@@ -1267,7 +1269,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 38px;
   padding: 0 11px;
@@ -1275,6 +1278,32 @@ select {
   border-radius: 8px;
   background: #fff;
   color: var(--text);
+}
+
+textarea {
+  min-height: 96px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  line-height: 20px;
+  resize: vertical;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+
+.inline-form {
+  margin: 0;
+  display: inline-flex;
+}
+
+.comment-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px 16px 0;
 }
 
 .muted-line {
