@@ -126,6 +126,26 @@ pub struct CreateWorkItemInput {
     pub priority: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkItemListFilter {
+    pub item_type: Option<String>,
+    pub keyword: String,
+    pub status: String,
+    pub priority: String,
+    pub project_key: String,
+    pub assignee_username: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedWorkItemFilter {
+    item_type: String,
+    keyword_like: String,
+    status: String,
+    priority: String,
+    project_key: String,
+    assignee_username: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpdateWorkItemInput {
     pub title: String,
@@ -671,11 +691,11 @@ pub async fn list_project_work_items(
                 wi.priority,
                 p.project_key,
                 p.name AS project_name,
-                COALESCE(u.display_name, '') AS assignee_display_name,
+                COALESCE(assignee.display_name, '') AS assignee_display_name,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
-            LEFT JOIN users u ON u.id = wi.assignee_user_id
+            LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
             WHERE wi.project_id = ?1
               AND (?2 IS NULL OR wi.item_type = ?2)
             ORDER BY wi.updated_at DESC, wi.id DESC
@@ -720,6 +740,21 @@ pub async fn list_work_item_summaries(
     pool: &SqlitePool,
     item_type: Option<&str>,
 ) -> AppResult<Vec<WorkItemSummary>> {
+    list_work_item_summaries_filtered(
+        pool,
+        WorkItemListFilter {
+            item_type: item_type.map(ToOwned::to_owned),
+            ..WorkItemListFilter::default()
+        },
+    )
+    .await
+}
+
+pub async fn list_work_item_summaries_filtered(
+    pool: &SqlitePool,
+    filter: WorkItemListFilter,
+) -> AppResult<Vec<WorkItemSummary>> {
+    let normalized = normalize_work_item_filter(filter)?;
     let rows = sqlx::query_as::<
         _,
         (
@@ -745,16 +780,33 @@ pub async fn list_work_item_summaries(
                 wi.priority,
                 p.project_key,
                 p.name AS project_name,
-                COALESCE(u.display_name, '') AS assignee_display_name,
+                COALESCE(assignee.display_name, '') AS assignee_display_name,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
-            LEFT JOIN users u ON u.id = wi.assignee_user_id
-            WHERE (?1 IS NULL OR wi.item_type = ?1)
+            LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+            WHERE (?1 = '' OR wi.item_type = ?1)
+              AND (
+                ?2 = ''
+                OR wi.item_key LIKE ?2
+                OR wi.title LIKE ?2
+                OR wi.description LIKE ?2
+                OR p.project_key LIKE ?2
+                OR p.name LIKE ?2
+              )
+              AND (?3 = '' OR wi.status = ?3)
+              AND (?4 = '' OR wi.priority = ?4)
+              AND (?5 = '' OR p.project_key = ?5)
+              AND (?6 = '' OR assignee.username = ?6)
             ORDER BY wi.updated_at DESC, wi.id DESC
             "#,
     )
-    .bind(item_type)
+    .bind(&normalized.item_type)
+    .bind(&normalized.keyword_like)
+    .bind(&normalized.status)
+    .bind(&normalized.priority)
+    .bind(&normalized.project_key)
+    .bind(&normalized.assignee_username)
     .fetch_all(pool)
     .await?;
 
@@ -794,10 +846,29 @@ pub async fn list_work_item_summaries_for_user(
     is_super_admin: bool,
     item_type: Option<&str>,
 ) -> AppResult<Vec<WorkItemSummary>> {
+    list_work_item_summaries_filtered_for_user(
+        pool,
+        user_id,
+        is_super_admin,
+        WorkItemListFilter {
+            item_type: item_type.map(ToOwned::to_owned),
+            ..WorkItemListFilter::default()
+        },
+    )
+    .await
+}
+
+pub async fn list_work_item_summaries_filtered_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    filter: WorkItemListFilter,
+) -> AppResult<Vec<WorkItemSummary>> {
     if is_super_admin {
-        return list_work_item_summaries(pool, item_type).await;
+        return list_work_item_summaries_filtered(pool, filter).await;
     }
 
+    let normalized = normalize_work_item_filter(filter)?;
     let rows = sqlx::query_as::<
         _,
         (
@@ -829,13 +900,30 @@ pub async fn list_work_item_summaries_for_user(
             JOIN projects p ON p.id = wi.project_id
             JOIN project_members pm ON pm.project_id = p.id
                 AND pm.user_id = ?1
-            LEFT JOIN users u ON u.id = wi.assignee_user_id
-            WHERE (?2 IS NULL OR wi.item_type = ?2)
+            LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+            WHERE (?2 = '' OR wi.item_type = ?2)
+              AND (
+                ?3 = ''
+                OR wi.item_key LIKE ?3
+                OR wi.title LIKE ?3
+                OR wi.description LIKE ?3
+                OR p.project_key LIKE ?3
+                OR p.name LIKE ?3
+              )
+              AND (?4 = '' OR wi.status = ?4)
+              AND (?5 = '' OR wi.priority = ?5)
+              AND (?6 = '' OR p.project_key = ?6)
+              AND (?7 = '' OR assignee.username = ?7)
             ORDER BY wi.updated_at DESC, wi.id DESC
             "#,
     )
     .bind(user_id)
-    .bind(item_type)
+    .bind(&normalized.item_type)
+    .bind(&normalized.keyword_like)
+    .bind(&normalized.status)
+    .bind(&normalized.priority)
+    .bind(&normalized.project_key)
+    .bind(&normalized.assignee_username)
     .fetch_all(pool)
     .await?;
 
@@ -1674,6 +1762,44 @@ pub async fn search_visible(
     hits.truncate(limit.max(0) as usize);
 
     Ok(hits)
+}
+
+fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<NormalizedWorkItemFilter> {
+    let item_type = match filter.item_type.as_deref().map(str::trim) {
+        None | Some("") => String::new(),
+        Some(value) => validate_work_item_type(value)?.to_string(),
+    };
+    let keyword = validate_optional_text(&filter.keyword, "关键词", 120)?;
+    let keyword_like = if keyword.is_empty() {
+        String::new()
+    } else {
+        format!("%{keyword}%")
+    };
+    let status = match filter.status.trim() {
+        "" => String::new(),
+        value => validate_work_item_status(value)?.to_string(),
+    };
+    let priority = match filter.priority.trim() {
+        "" => String::new(),
+        value => validate_priority(value)?.to_string(),
+    };
+    let project_key = match filter.project_key.trim() {
+        "" => String::new(),
+        value => validate_project_key(value)?,
+    };
+    let assignee_username = match filter.assignee_username.trim() {
+        "" => String::new(),
+        value => validate_username_ref(value)?,
+    };
+
+    Ok(NormalizedWorkItemFilter {
+        item_type,
+        keyword_like,
+        status,
+        priority,
+        project_key,
+        assignee_username,
+    })
 }
 
 fn validate_project_key(project_key: &str) -> AppResult<String> {

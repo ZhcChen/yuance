@@ -100,6 +100,8 @@ origin: docs/plans/2026-06-26-002-feat-yuance-v1-complete-design-plan.md
 - 普通成员只能看到自己项目范围内的数据。
 - API 列表参数与 Web 查询语义保持一致。
 
+当前状态：已完成。需求、任务、Bug 列表页支持 GET 参数筛选；API `GET /api/v1/work-items` 支持同名筛选参数，并继续受项目成员数据范围约束。
+
 ### P1：附件最小业务入口
 
 文件底座已存在，下一步需要接入项目和工作项：

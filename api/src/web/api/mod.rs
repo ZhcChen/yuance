@@ -108,6 +108,16 @@ pub struct ProjectMemberPayload {
 pub struct WorkItemQuery {
     #[serde(default)]
     item_type: Option<String>,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    project_key: String,
+    #[serde(default)]
+    assignee_username: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -344,12 +354,23 @@ pub async fn list_work_items(
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     let item_type = api_work_item_type(query.item_type.as_deref())?;
-    let items =
-        projects::list_work_item_summaries_for_user(pool, user.id, user.is_super_admin, item_type)
-            .await?
-            .into_iter()
-            .map(work_item_payload)
-            .collect();
+    let items = projects::list_work_item_summaries_filtered_for_user(
+        pool,
+        user.id,
+        user.is_super_admin,
+        projects::WorkItemListFilter {
+            item_type: item_type.map(ToOwned::to_owned),
+            keyword: query.q,
+            status: query.status,
+            priority: query.priority,
+            project_key: query.project_key,
+            assignee_username: query.assignee_username,
+        },
+    )
+    .await?
+    .into_iter()
+    .map(work_item_payload)
+    .collect();
 
     Ok(json(items))
 }

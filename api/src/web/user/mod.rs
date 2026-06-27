@@ -126,6 +126,15 @@ struct WorkItemListSummary {
     high_priority_items: usize,
 }
 
+#[derive(Debug, Clone, Default)]
+struct WorkItemListFilterView {
+    q: String,
+    status: String,
+    priority: String,
+    project_key: String,
+    assignee_username: String,
+}
+
 #[derive(Debug, Clone)]
 struct Activity {
     title: String,
@@ -348,6 +357,7 @@ struct WorkItemListTemplate {
     item_type: &'static str,
     items: Vec<WorkItem>,
     project_options: Vec<ProjectOption>,
+    filters: WorkItemListFilterView,
     summary: WorkItemListSummary,
     has_items: bool,
     has_project_options: bool,
@@ -615,6 +625,20 @@ pub struct ProjectMemberRemoveForm {
 #[derive(Debug, Deserialize)]
 pub struct WorkItemsQuery {
     kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemListQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    project_key: String,
+    #[serde(default)]
+    assignee_username: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1061,22 +1085,46 @@ pub async fn work_items_create(
 pub async fn requirements_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<WorkItemListQuery>,
 ) -> AppResult<Response> {
     work_item_list_page(
         state,
         &headers,
         Some("requirement"),
         WorkItemListPageMeta::requirements(),
+        query,
     )
     .await
 }
 
-pub async fn tasks_page(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
-    work_item_list_page(state, &headers, Some("task"), WorkItemListPageMeta::tasks()).await
+pub async fn tasks_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<WorkItemListQuery>,
+) -> AppResult<Response> {
+    work_item_list_page(
+        state,
+        &headers,
+        Some("task"),
+        WorkItemListPageMeta::tasks(),
+        query,
+    )
+    .await
 }
 
-pub async fn bugs_page(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
-    work_item_list_page(state, &headers, Some("bug"), WorkItemListPageMeta::bugs()).await
+pub async fn bugs_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<WorkItemListQuery>,
+) -> AppResult<Response> {
+    work_item_list_page(
+        state,
+        &headers,
+        Some("bug"),
+        WorkItemListPageMeta::bugs(),
+        query,
+    )
+    .await
 }
 
 pub async fn work_item_detail_page(
@@ -1853,17 +1901,32 @@ async fn work_item_list_page(
     headers: &HeaderMap,
     item_type: Option<&'static str>,
     meta: WorkItemListPageMeta,
+    query: WorkItemListQuery,
 ) -> AppResult<Response> {
     let context = match web_context_or_redirect(&state, headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let filters = WorkItemListFilterView {
+        q: query.q.trim().to_string(),
+        status: query.status.trim().to_string(),
+        priority: query.priority.trim().to_string(),
+        project_key: query.project_key.trim().to_ascii_uppercase(),
+        assignee_username: query.assignee_username.trim().to_string(),
+    };
     let items = match context.pool {
-        Some(pool) => projects::list_work_item_summaries_for_user(
+        Some(pool) => projects::list_work_item_summaries_filtered_for_user(
             pool,
             context.user_id,
             context.is_super_admin,
-            item_type,
+            projects::WorkItemListFilter {
+                item_type: item_type.map(ToOwned::to_owned),
+                keyword: filters.q.clone(),
+                status: filters.status.clone(),
+                priority: filters.priority.clone(),
+                project_key: filters.project_key.clone(),
+                assignee_username: filters.assignee_username.clone(),
+            },
         )
         .await?
         .into_iter()
@@ -1901,6 +1964,7 @@ async fn work_item_list_page(
             has_project_options: !project_options.is_empty(),
             items,
             project_options,
+            filters,
             summary,
         })?
         .into_response(),

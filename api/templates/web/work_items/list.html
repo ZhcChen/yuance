@@ -38,7 +38,7 @@
     <div class="panel-head">
       <div>
         <h2>{{ title }}列表</h2>
-        <p>跨项目汇总，按最近更新排序。</p>
+        <p>跨项目汇总，支持按关键词、状态、优先级、项目和负责人筛选。</p>
       </div>
       <div class="toolbar-actions">
         <a class="btn btn-secondary" href="/web/requirements">需求</a>
@@ -46,6 +46,53 @@
         <a class="btn btn-secondary" href="/web/bugs">Bug</a>
       </div>
     </div>
+
+    <form class="filter-bar" method="get">
+      <label>
+        关键词
+        <input name="q" value="{{ filters.q }}" placeholder="标题、编号或描述">
+      </label>
+      <label>
+        状态
+        <select name="status">
+          <option value="">全部状态</option>
+          <option value="open" {% if filters.status == "open" %}selected{% endif %}>待处理</option>
+          <option value="in_progress" {% if filters.status == "in_progress" %}selected{% endif %}>进行中</option>
+          <option value="done" {% if filters.status == "done" %}selected{% endif %}>已完成</option>
+          <option value="resolved" {% if filters.status == "resolved" %}selected{% endif %}>已解决</option>
+          <option value="verified" {% if filters.status == "verified" %}selected{% endif %}>已验证</option>
+          <option value="closed" {% if filters.status == "closed" %}selected{% endif %}>已关闭</option>
+          <option value="cancelled" {% if filters.status == "cancelled" %}selected{% endif %}>已取消</option>
+        </select>
+      </label>
+      <label>
+        优先级
+        <select name="priority">
+          <option value="">全部优先级</option>
+          <option value="P0" {% if filters.priority == "P0" %}selected{% endif %}>P0</option>
+          <option value="P1" {% if filters.priority == "P1" %}selected{% endif %}>P1</option>
+          <option value="P2" {% if filters.priority == "P2" %}selected{% endif %}>P2</option>
+          <option value="P3" {% if filters.priority == "P3" %}selected{% endif %}>P3</option>
+        </select>
+      </label>
+      <label>
+        项目
+        <select name="project_key">
+          <option value="">全部项目</option>
+          {% for project in project_options %}
+          <option value="{{ project.key }}" {% if filters.project_key == project.key %}selected{% endif %}>{{ project.key }} · {{ project.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        负责人
+        <input name="assignee_username" value="{{ filters.assignee_username }}" placeholder="用户名">
+      </label>
+      <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">筛选</button>
+        <a class="btn btn-secondary" href="/web/{{ active }}">重置</a>
+      </div>
+    </form>
 
     {% if has_items %}
     <div class="work-item-list list-page-items">

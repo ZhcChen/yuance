@@ -224,6 +224,36 @@ async fn web_work_item_list_pages_filter_by_type() {
 }
 
 #[tokio::test]
+async fn web_work_item_list_can_filter_by_query_status_priority_and_project() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks?q=%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B&status=in_progress&priority=P0&project_key=YCE&assignee_username=admin")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains("筛选"));
+    assert!(body.contains("YCE-TASK-2"));
+    assert!(body.contains("设计项目与工作项数据模型"));
+    assert!(!body.contains("YCE-TASK-1"));
+    assert!(!body.contains("OPS-TASK-1"));
+}
+
+#[tokio::test]
 async fn web_project_pages_redirect_unauthenticated_users_to_login() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -566,6 +596,35 @@ async fn api_v1_lists_projects_and_work_items_for_authenticated_user() {
     assert!(work_items_body.contains("\"key\":\"YCE-BUG-1\""));
     assert!(work_items_body.contains("\"item_type\":\"bug\""));
     assert!(!work_items_body.contains("\"key\":\"YCE-TASK-2\""));
+}
+
+#[tokio::test]
+async fn api_v1_filters_work_items_by_query_status_priority_project_and_assignee() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items?item_type=task&q=%E6%95%B0%E6%8D%AE%E6%A8%A1%E5%9E%8B&status=in_progress&priority=P0&project_key=YCE&assignee_username=admin")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains("\"key\":\"YCE-TASK-2\""));
+    assert!(body.contains("设计项目与工作项数据模型"));
+    assert!(!body.contains("\"key\":\"YCE-TASK-1\""));
+    assert!(!body.contains("\"key\":\"OPS-TASK-1\""));
 }
 
 #[tokio::test]

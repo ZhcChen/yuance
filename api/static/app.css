@@ -1336,6 +1336,22 @@ textarea {
   grid-template-columns: 1fr;
 }
 
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(120px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 0 16px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .wide-field {
   grid-column: 1 / -1;
 }
@@ -1658,6 +1674,7 @@ textarea {
   .workspace-side,
   .system-grid,
   .search-form,
+  .filter-bar,
   .field-grid {
     grid-template-columns: 1fr;
   }
