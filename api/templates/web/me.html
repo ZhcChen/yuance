@@ -1,0 +1,134 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}我的 - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero detail-hero">
+    <div>
+      <p class="eyebrow">个人工作区</p>
+      <h1>{{ profile.display_name }}</h1>
+      <p>@{{ profile.username }} · {{ profile.roles }} · {{ profile.contact }}</p>
+      <div class="detail-meta">
+        <span class="status status-{{ profile.status_tone }}">{{ profile.status }}</span>
+        {% if profile.is_super_admin %}
+        <span class="priority">超级管理员</span>
+        {% endif %}
+        <span>加入 {{ profile.created_at }}</span>
+      </div>
+    </div>
+    <div class="toolbar-actions">
+      <a class="btn btn-secondary" href="/web/search">全局搜索</a>
+      <a class="btn btn-primary" href="/web/tasks">查看任务</a>
+    </div>
+  </section>
+
+  <section class="metric-grid compact-metrics" aria-label="我的概览">
+    <article class="metric metric-info">
+      <span class="metric-label">参与项目</span>
+      <strong>{{ summary.project_count }}</strong>
+      <span class="metric-hint">当前可见项目</span>
+    </article>
+    <article class="metric metric-warning">
+      <span class="metric-label">指派给我</span>
+      <strong>{{ summary.assigned_count }}</strong>
+      <span class="metric-hint">{{ summary.open_count }} 个开放</span>
+    </article>
+    <article class="metric metric-danger">
+      <span class="metric-label">高优先级</span>
+      <strong>{{ summary.high_priority_count }}</strong>
+      <span class="metric-hint">P0 / P1 工作项</span>
+    </article>
+  </section>
+
+  <section class="detail-grid">
+    <div class="detail-main">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>指派给我的工作项</h2>
+            <p>按最近更新排序，优先处理开放状态和高优先级事项。</p>
+          </div>
+          <div class="toolbar-actions">
+            <a class="btn btn-sm btn-secondary" href="/web/requirements">需求</a>
+            <a class="btn btn-sm btn-secondary" href="/web/tasks">任务</a>
+            <a class="btn btn-sm btn-secondary" href="/web/bugs">Bug</a>
+          </div>
+        </div>
+
+        {% if has_assigned_items %}
+        <div class="work-item-list list-page-items">
+          {% for item in assigned_items %}
+          <article class="work-item">
+            <div>
+              <span class="work-kind">{{ item.kind }}</span>
+              <code>{{ item.key }}</code>
+              <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
+              <p>{{ item.project }} · {{ item.assignee }}</p>
+            </div>
+            <div class="work-meta">
+              <span class="priority">{{ item.priority }}</span>
+              <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无指派给我的工作项</strong>
+          <span>后续创建或分配工作项后，会在这里聚合展示。</span>
+        </div>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="detail-side">
+      <section class="panel inspector-panel">
+        <div class="panel-head compact">
+          <h2>账号信息</h2>
+        </div>
+        <dl class="detail-dl">
+          <div>
+            <dt>用户名</dt>
+            <dd>{{ profile.username }}</dd>
+          </div>
+          <div>
+            <dt>角色</dt>
+            <dd>{{ profile.roles }}</dd>
+          </div>
+          <div>
+            <dt>联系方式</dt>
+            <dd>{{ profile.contact }}</dd>
+          </div>
+          <div>
+            <dt>最近更新</dt>
+            <dd>{{ profile.updated_at }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="panel inspector-panel">
+        <div class="panel-head compact">
+          <h2>我的项目</h2>
+        </div>
+        {% if has_projects %}
+        <ol class="activity-list">
+          {% for project in projects %}
+          <li>
+            <span class="activity-dot" aria-hidden="true"></span>
+            <strong><a href="/web/projects/{{ project.code }}">{{ project.name }}</a></strong>
+            <span>{{ project.code }} · {{ project.status }} · {{ project.open_work_items }} 个开放</span>
+          </li>
+          {% endfor %}
+        </ol>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无项目</strong>
+          <span>加入项目后会出现在这里。</span>
+        </div>
+        {% endif %}
+      </section>
+    </aside>
+  </section>
+</section>
+{% endblock %}

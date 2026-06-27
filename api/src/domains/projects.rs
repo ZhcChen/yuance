@@ -89,6 +89,16 @@ pub struct ProjectActivitySummary {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchHit {
+    pub hit_type: String,
+    pub key: String,
+    pub title: String,
+    pub context: String,
+    pub url: String,
+    pub updated_at: String,
+}
+
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
     seed_demo_projects(pool, owner_user_id).await?;
     seed_demo_members(pool, owner_user_id).await?;
@@ -130,6 +140,70 @@ pub async fn list_project_summaries(pool: &SqlitePool) -> AppResult<Vec<ProjectS
         ORDER BY p.updated_at DESC, p.id DESC
         "#,
     )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                project_key,
+                name,
+                status,
+                owner_display_name,
+                work_item_count,
+                open_work_item_count,
+                updated_at,
+            )| ProjectSummary {
+                id,
+                project_key,
+                name,
+                status,
+                owner_display_name,
+                work_item_count,
+                open_work_item_count,
+                updated_at,
+            },
+        )
+        .collect())
+}
+
+pub async fn list_project_summaries_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<Vec<ProjectSummary>> {
+    if is_super_admin {
+        return list_project_summaries(pool).await;
+    }
+
+    let rows = sqlx::query_as::<_, (i64, String, String, String, String, i64, i64, String)>(
+        r#"
+        SELECT
+            p.id,
+            p.project_key,
+            p.name,
+            p.status,
+            COALESCE(u.display_name, '') AS owner_display_name,
+            COUNT(wi.id) AS work_item_count,
+            COALESCE(SUM(CASE
+                WHEN wi.id IS NOT NULL
+                 AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+                THEN 1
+                ELSE 0
+            END), 0) AS open_work_item_count,
+            p.updated_at
+        FROM projects p
+        JOIN project_members pm ON pm.project_id = p.id
+            AND pm.user_id = ?1
+        LEFT JOIN users u ON u.id = p.owner_user_id
+        LEFT JOIN work_items wi ON wi.project_id = p.id
+        GROUP BY p.id
+        ORDER BY p.updated_at DESC, p.id DESC
+        "#,
+    )
+    .bind(user_id)
     .fetch_all(pool)
     .await?;
 
@@ -417,6 +491,162 @@ pub async fn list_work_item_summaries(
         .collect())
 }
 
+pub async fn list_work_item_summaries_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    item_type: Option<&str>,
+) -> AppResult<Vec<WorkItemSummary>> {
+    if is_super_admin {
+        return list_work_item_summaries(pool, item_type).await;
+    }
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+            SELECT
+                wi.id,
+                wi.item_key,
+                wi.item_type,
+                wi.title,
+                wi.status,
+                wi.priority,
+                p.project_key,
+                p.name AS project_name,
+                COALESCE(u.display_name, '') AS assignee_display_name,
+                wi.updated_at
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            JOIN project_members pm ON pm.project_id = p.id
+                AND pm.user_id = ?1
+            LEFT JOIN users u ON u.id = wi.assignee_user_id
+            WHERE (?2 IS NULL OR wi.item_type = ?2)
+            ORDER BY wi.updated_at DESC, wi.id DESC
+            "#,
+    )
+    .bind(user_id)
+    .bind(item_type)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                item_key,
+                item_type,
+                title,
+                status,
+                priority,
+                project_key,
+                project_name,
+                assignee_display_name,
+                updated_at,
+            )| WorkItemSummary {
+                id,
+                item_key,
+                item_type,
+                title,
+                status,
+                priority,
+                project_key,
+                project_name,
+                assignee_display_name,
+                updated_at,
+            },
+        )
+        .collect())
+}
+
+pub async fn list_assigned_work_item_summaries(
+    pool: &SqlitePool,
+    user_id: i64,
+    item_type: Option<&str>,
+) -> AppResult<Vec<WorkItemSummary>> {
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+            SELECT
+                wi.id,
+                wi.item_key,
+                wi.item_type,
+                wi.title,
+                wi.status,
+                wi.priority,
+                p.project_key,
+                p.name AS project_name,
+                COALESCE(u.display_name, '') AS assignee_display_name,
+                wi.updated_at
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            LEFT JOIN users u ON u.id = wi.assignee_user_id
+            WHERE wi.assignee_user_id = ?1
+              AND (?2 IS NULL OR wi.item_type = ?2)
+            ORDER BY wi.updated_at DESC, wi.id DESC
+            "#,
+    )
+    .bind(user_id)
+    .bind(item_type)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                item_key,
+                item_type,
+                title,
+                status,
+                priority,
+                project_key,
+                project_name,
+                assignee_display_name,
+                updated_at,
+            )| WorkItemSummary {
+                id,
+                item_key,
+                item_type,
+                title,
+                status,
+                priority,
+                project_key,
+                project_name,
+                assignee_display_name,
+                updated_at,
+            },
+        )
+        .collect())
+}
+
 pub async fn get_work_item_detail(
     pool: &SqlitePool,
     item_key: &str,
@@ -569,6 +799,52 @@ pub async fn list_recent_activities(
         .collect())
 }
 
+pub async fn list_recent_activities_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    limit: i64,
+) -> AppResult<Vec<ProjectActivitySummary>> {
+    if is_super_admin {
+        return list_recent_activities(pool, limit).await;
+    }
+
+    let rows = sqlx::query_as::<_, (i64, String, String, String, String)>(
+        r#"
+        SELECT
+            pa.id,
+            p.project_key,
+            pa.summary,
+            COALESCE(u.display_name, '') AS actor_display_name,
+            pa.created_at
+        FROM project_activities pa
+        JOIN projects p ON p.id = pa.project_id
+        JOIN project_members pm ON pm.project_id = p.id
+            AND pm.user_id = ?1
+        LEFT JOIN users u ON u.id = pa.actor_user_id
+        ORDER BY pa.created_at DESC, pa.id DESC
+        LIMIT ?2
+        "#,
+    )
+    .bind(user_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, project_key, summary, actor_display_name, created_at)| ProjectActivitySummary {
+                id,
+                project_key,
+                summary,
+                actor_display_name,
+                created_at,
+            },
+        )
+        .collect())
+}
+
 pub async fn list_project_activities(
     pool: &SqlitePool,
     project_id: i64,
@@ -607,6 +883,146 @@ pub async fn list_project_activities(
             },
         )
         .collect())
+}
+
+pub async fn search_visible(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    query: &str,
+    limit: i64,
+) -> AppResult<Vec<SearchHit>> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let like = format!("%{query}%");
+    let project_limit = limit.max(1);
+    let work_item_limit = limit.max(1);
+
+    let project_hits = if is_super_admin {
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            r#"
+            SELECT
+                'project' AS hit_type,
+                p.project_key AS hit_key,
+                p.name AS title,
+                p.description AS context,
+                '/web/projects/' || p.project_key AS url,
+                p.updated_at
+            FROM projects p
+            WHERE p.project_key LIKE ?1
+               OR p.name LIKE ?1
+               OR p.description LIKE ?1
+            ORDER BY p.updated_at DESC, p.id DESC
+            LIMIT ?2
+            "#,
+        )
+        .bind(&like)
+        .bind(project_limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            r#"
+            SELECT
+                'project' AS hit_type,
+                p.project_key AS hit_key,
+                p.name AS title,
+                p.description AS context,
+                '/web/projects/' || p.project_key AS url,
+                p.updated_at
+            FROM projects p
+            JOIN project_members pm ON pm.project_id = p.id
+                AND pm.user_id = ?2
+            WHERE p.project_key LIKE ?1
+               OR p.name LIKE ?1
+               OR p.description LIKE ?1
+            ORDER BY p.updated_at DESC, p.id DESC
+            LIMIT ?3
+            "#,
+        )
+        .bind(&like)
+        .bind(user_id)
+        .bind(project_limit)
+        .fetch_all(pool)
+        .await?
+    };
+
+    let work_item_hits = if is_super_admin {
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            r#"
+            SELECT
+                wi.item_type AS hit_type,
+                wi.item_key AS hit_key,
+                wi.title,
+                p.project_key || ' · ' || p.name AS context,
+                '/web/work-items/' || wi.item_key AS url,
+                wi.updated_at
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            WHERE wi.item_key LIKE ?1
+               OR wi.title LIKE ?1
+               OR wi.description LIKE ?1
+               OR p.project_key LIKE ?1
+               OR p.name LIKE ?1
+            ORDER BY wi.updated_at DESC, wi.id DESC
+            LIMIT ?2
+            "#,
+        )
+        .bind(&like)
+        .bind(work_item_limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            r#"
+            SELECT
+                wi.item_type AS hit_type,
+                wi.item_key AS hit_key,
+                wi.title,
+                p.project_key || ' · ' || p.name AS context,
+                '/web/work-items/' || wi.item_key AS url,
+                wi.updated_at
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            JOIN project_members pm ON pm.project_id = p.id
+                AND pm.user_id = ?2
+            WHERE wi.item_key LIKE ?1
+               OR wi.title LIKE ?1
+               OR wi.description LIKE ?1
+               OR p.project_key LIKE ?1
+               OR p.name LIKE ?1
+            ORDER BY wi.updated_at DESC, wi.id DESC
+            LIMIT ?3
+            "#,
+        )
+        .bind(&like)
+        .bind(user_id)
+        .bind(work_item_limit)
+        .fetch_all(pool)
+        .await?
+    };
+
+    let mut hits = project_hits
+        .into_iter()
+        .chain(work_item_hits.into_iter())
+        .map(
+            |(hit_type, key, title, context, url, updated_at)| SearchHit {
+                hit_type,
+                key,
+                title,
+                context,
+                url,
+                updated_at,
+            },
+        )
+        .collect::<Vec<_>>();
+    hits.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+    hits.truncate(limit.max(0) as usize);
+
+    Ok(hits)
 }
 
 async fn seed_demo_projects(pool: &SqlitePool, owner_user_id: i64) -> AppResult<()> {

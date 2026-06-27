@@ -436,6 +436,181 @@ async fn work_items_partial_rejects_unknown_type() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn web_me_page_renders_profile_projects_and_assigned_items() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/me")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains("个人工作区"));
+    assert!(body.contains("@admin"));
+    assert!(body.contains("元策 MVP"));
+    assert!(body.contains("YCE-TASK-2"));
+}
+
+#[tokio::test]
+async fn web_search_finds_visible_projects_and_work_items() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/search?q=%2Fweb")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains("全局搜索"));
+    assert!(body.contains("YCE-REQ-1"));
+    assert!(body.contains("统一 /web 用户工作台与系统管理入口"));
+}
+
+#[tokio::test]
+async fn web_search_respects_project_membership_scope() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let outsider_cookie = create_regular_user_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/search?q=YCE")
+                .header(header::COOKIE, outsider_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains("没有找到结果"));
+    assert!(!body.contains("元策 MVP"));
+    assert!(!body.contains("YCE-TASK-2"));
+}
+
+#[tokio::test]
+async fn api_v1_lists_projects_and_work_items_for_authenticated_user() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let projects_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let work_items_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items?item_type=bug")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(projects_response.status(), StatusCode::OK);
+    assert_eq!(work_items_response.status(), StatusCode::OK);
+    let projects_body = response_body(projects_response).await;
+    let work_items_body = response_body(work_items_response).await;
+
+    assert!(projects_body.contains("\"key\":\"YCE\""));
+    assert!(projects_body.contains("\"name\":\"元策 MVP\""));
+    assert!(work_items_body.contains("\"key\":\"YCE-BUG-1\""));
+    assert!(work_items_body.contains("\"item_type\":\"bug\""));
+    assert!(!work_items_body.contains("\"key\":\"YCE-TASK-2\""));
+}
+
+#[tokio::test]
+async fn api_v1_project_detail_rejects_non_members() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let outsider_cookie = create_regular_user_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE")
+                .header(header::COOKIE, outsider_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_v1_requires_authentication() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {
     bootstrap_admin_session(pool).await.user_id
 }

@@ -48,6 +48,8 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
         .route("/web", get(web::user::dashboard))
+        .route("/web/me", get(web::user::me_page))
+        .route("/web/search", get(web::user::search_page))
         .route("/web/projects", get(web::user::projects_page))
         .route(
             "/web/projects/{project_key}",
@@ -119,6 +121,27 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/healthz", get(web::api::healthz))
         .route("/api/readyz", get(web::api::readyz))
+        .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
+        .route(
+            "/api/v1/bootstrap/init",
+            axum::routing::post(web::api::unsupported_mutation),
+        )
+        .route(
+            "/api/v1/projects",
+            get(web::api::list_projects).post(web::api::unsupported_mutation),
+        )
+        .route(
+            "/api/v1/projects/{project_key}",
+            get(web::api::get_project).patch(web::api::unsupported_mutation),
+        )
+        .route(
+            "/api/v1/work-items",
+            get(web::api::list_work_items).post(web::api::unsupported_mutation),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}",
+            get(web::api::get_work_item).patch(web::api::unsupported_mutation),
+        )
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))
         .route("/static/vendor/htmx.min.js", get(static_htmx))

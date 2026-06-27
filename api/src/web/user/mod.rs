@@ -192,6 +192,37 @@ struct AuditLogRow {
 }
 
 #[derive(Debug, Clone)]
+struct UserProfileView {
+    username: String,
+    display_name: String,
+    contact: String,
+    roles: String,
+    status: String,
+    status_tone: &'static str,
+    created_at: String,
+    updated_at: String,
+    is_super_admin: bool,
+}
+
+#[derive(Debug, Clone)]
+struct MySummary {
+    project_count: usize,
+    assigned_count: usize,
+    open_count: usize,
+    high_priority_count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct SearchResult {
+    kind: String,
+    key: String,
+    title: String,
+    context: String,
+    url: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone)]
 struct StorageConfigView {
     has_config: bool,
     provider: String,
@@ -228,6 +259,36 @@ struct DashboardTemplate {
     metrics: Vec<Metric>,
     projects: Vec<ProjectRow>,
     activities: Vec<Activity>,
+}
+
+#[derive(Template)]
+#[template(path = "web/me.html")]
+struct MeTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    profile: UserProfileView,
+    summary: MySummary,
+    projects: Vec<ProjectRow>,
+    assigned_items: Vec<WorkItem>,
+    has_projects: bool,
+    has_assigned_items: bool,
+}
+
+#[derive(Template)]
+#[template(path = "web/search.html")]
+struct SearchTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    query: String,
+    has_query: bool,
+    results: Vec<SearchResult>,
+    has_results: bool,
 }
 
 #[derive(Template)]
@@ -475,6 +536,11 @@ pub struct WorkItemsQuery {
     kind: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    q: Option<String>,
+}
+
 pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
     let Some(pool) = state.pool.as_ref() else {
         let csrf_token = csrf::ensure_token(&headers);
@@ -484,6 +550,8 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
             render_dashboard(
                 &state,
                 None,
+                0,
+                true,
                 "yuance_admin".to_string(),
                 csrf_token.clone(),
                 SystemNav::all(),
@@ -510,11 +578,121 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
         render_dashboard(
             &state,
             Some(pool),
+            user.id,
+            user.is_super_admin,
             user.display_name,
             csrf_token.clone(),
             system_nav,
         )
         .await?
+        .into_response(),
+    )
+}
+
+pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+
+    let (profile, projects, assigned_items) = match context.pool {
+        Some(pool) => {
+            let profile = users::get_user_summary(pool, context.user_id)
+                .await?
+                .ok_or(AppError::Unauthorized)?;
+            let projects = projects::list_project_summaries_for_user(
+                pool,
+                context.user_id,
+                context.is_super_admin,
+            )
+            .await?
+            .into_iter()
+            .map(project_from_summary)
+            .collect::<Vec<_>>();
+            let assigned_items =
+                projects::list_assigned_work_item_summaries(pool, context.user_id, None)
+                    .await?
+                    .into_iter()
+                    .map(work_item_from_summary)
+                    .collect::<Vec<_>>();
+
+            (user_profile_from_summary(profile), projects, assigned_items)
+        }
+        None => (
+            sample_user_profile(),
+            sample_projects(),
+            sample_work_items(None),
+        ),
+    };
+    let summary = my_summary(&projects, &assigned_items);
+    let csrf_token = context.csrf_token.clone();
+
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(MeTemplate {
+            active: "me",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            has_projects: !projects.is_empty(),
+            has_assigned_items: !assigned_items.is_empty(),
+            profile,
+            summary,
+            projects,
+            assigned_items,
+        })?
+        .into_response(),
+    )
+}
+
+pub async fn search_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SearchQuery>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let query = query.q.unwrap_or_default().trim().to_string();
+    if query.chars().count() > 128 {
+        return Err(AppError::BadRequest(
+            "搜索关键词不能超过 128 个字符".to_string(),
+        ));
+    }
+
+    let results = if query.is_empty() {
+        Vec::new()
+    } else {
+        match context.pool {
+            Some(pool) => {
+                projects::search_visible(pool, context.user_id, context.is_super_admin, &query, 20)
+                    .await?
+                    .into_iter()
+                    .map(search_result_from_hit)
+                    .collect()
+            }
+            None => sample_search_results(&query),
+        }
+    };
+    let csrf_token = context.csrf_token.clone();
+
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(SearchTemplate {
+            active: "search",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            has_query: !query.is_empty(),
+            has_results: !results.is_empty(),
+            query,
+            results,
+        })?
         .into_response(),
     )
 }
@@ -528,11 +706,13 @@ pub async fn projects_page(
         Err(response) => return Ok(response),
     };
     let projects = match context.pool {
-        Some(pool) => projects::list_project_summaries(pool)
-            .await?
-            .into_iter()
-            .map(project_from_summary)
-            .collect(),
+        Some(pool) => {
+            projects::list_project_summaries_for_user(pool, context.user_id, context.is_super_admin)
+                .await?
+                .into_iter()
+                .map(project_from_summary)
+                .collect()
+        }
         None => sample_projects(),
     };
     let summary = project_list_summary(&projects);
@@ -1296,11 +1476,16 @@ async fn work_item_list_page(
         Err(response) => return Ok(response),
     };
     let items = match context.pool {
-        Some(pool) => projects::list_work_item_summaries(pool, item_type)
-            .await?
-            .into_iter()
-            .map(work_item_from_summary)
-            .collect(),
+        Some(pool) => projects::list_work_item_summaries_for_user(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            item_type,
+        )
+        .await?
+        .into_iter()
+        .map(work_item_from_summary)
+        .collect(),
         None => sample_work_items(item_type),
     };
     let summary = work_item_list_summary(&items);
@@ -1342,14 +1527,15 @@ pub async fn work_items_partial(
         });
     };
 
-    let _user = auth::user_from_headers(pool, &headers)
+    let user = auth::user_from_headers(pool, &headers)
         .await?
         .ok_or(AppError::Unauthorized)?;
-    let items = projects::list_work_item_summaries(pool, item_type)
-        .await?
-        .into_iter()
-        .map(work_item_from_summary)
-        .collect::<Vec<_>>();
+    let items =
+        projects::list_work_item_summaries_for_user(pool, user.id, user.is_super_admin, item_type)
+            .await?
+            .into_iter()
+            .map(work_item_from_summary)
+            .collect::<Vec<_>>();
 
     response::html(WorkItemsPartialTemplate {
         has_items: !items.is_empty(),
@@ -1385,15 +1571,21 @@ pub async fn work_item_detail_partial(
 async fn render_dashboard(
     state: &AppState,
     pool: Option<&SqlitePool>,
+    user_id: i64,
+    is_super_admin: bool,
     current_user: String,
     csrf_token: String,
     system_nav: SystemNav,
 ) -> AppResult<Html<String>> {
     let (metrics, projects, activities) = match pool {
         Some(pool) => {
-            let project_summaries = projects::list_project_summaries(pool).await?;
-            let work_item_summaries = projects::list_work_item_summaries(pool, None).await?;
-            let activity_summaries = projects::list_recent_activities(pool, 5).await?;
+            let project_summaries =
+                projects::list_project_summaries_for_user(pool, user_id, is_super_admin).await?;
+            let work_item_summaries =
+                projects::list_work_item_summaries_for_user(pool, user_id, is_super_admin, None)
+                    .await?;
+            let activity_summaries =
+                projects::list_recent_activities_for_user(pool, user_id, is_super_admin, 5).await?;
             (
                 metrics_from_data(&project_summaries, &work_item_summaries),
                 project_summaries
@@ -1840,6 +2032,52 @@ fn audit_log_row_from_summary(log: audit::AuditLogSummary) -> AuditLogRow {
     }
 }
 
+fn user_profile_from_summary(user: users::UserSummary) -> UserProfileView {
+    let (status, status_tone) = user_status_label(&user.status);
+    UserProfileView {
+        username: user.username,
+        display_name: user.display_name,
+        contact: user_contact(user.email, user.mobile),
+        roles: fallback_text(user.role_names, "未分配"),
+        status: status.to_string(),
+        status_tone,
+        created_at: display_timestamp(user.created_at),
+        updated_at: display_timestamp(user.updated_at),
+        is_super_admin: user.is_super_admin,
+    }
+}
+
+fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary {
+    MySummary {
+        project_count: projects.len(),
+        assigned_count: assigned_items.len(),
+        open_count: assigned_items
+            .iter()
+            .filter(|item| {
+                !matches!(
+                    item.status.as_str(),
+                    "已完成" | "已解决" | "已验证" | "已关闭"
+                )
+            })
+            .count(),
+        high_priority_count: assigned_items
+            .iter()
+            .filter(|item| matches!(item.priority.as_str(), "P0" | "P1"))
+            .count(),
+    }
+}
+
+fn search_result_from_hit(hit: projects::SearchHit) -> SearchResult {
+    SearchResult {
+        kind: search_hit_type_label(&hit.hit_type).to_string(),
+        key: hit.key,
+        title: hit.title,
+        context: fallback_text(hit.context, "无描述"),
+        url: hit.url,
+        updated_at: display_timestamp(hit.updated_at),
+    }
+}
+
 fn empty_storage_config_view() -> StorageConfigView {
     StorageConfigView {
         has_config: false,
@@ -2027,6 +2265,16 @@ fn audit_action_label(action: &str) -> &str {
     }
 }
 
+fn search_hit_type_label(hit_type: &str) -> &'static str {
+    match hit_type {
+        "project" => "项目",
+        "requirement" => "需求",
+        "task" => "任务",
+        "bug" => "Bug",
+        _ => "结果",
+    }
+}
+
 fn data_scope_label(data_scope_type: &str) -> &'static str {
     match data_scope_type {
         "all" => "全部数据",
@@ -2123,6 +2371,20 @@ fn sample_metrics() -> Vec<Metric> {
     ]
 }
 
+fn sample_user_profile() -> UserProfileView {
+    UserProfileView {
+        username: "yuance_admin".to_string(),
+        display_name: "系统管理员".to_string(),
+        contact: "未填写".to_string(),
+        roles: "系统管理员".to_string(),
+        status: "启用".to_string(),
+        status_tone: "ok",
+        created_at: "今天".to_string(),
+        updated_at: "今天".to_string(),
+        is_super_admin: true,
+    }
+}
+
 fn sample_projects() -> Vec<ProjectRow> {
     vec![
         ProjectRow {
@@ -2156,6 +2418,43 @@ fn sample_projects() -> Vec<ProjectRow> {
             updated_at: "昨天 19:42".to_string(),
         },
     ]
+}
+
+fn sample_search_results(query: &str) -> Vec<SearchResult> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    sample_projects()
+        .into_iter()
+        .filter(|project| project.code.contains(query) || project.name.contains(query))
+        .map(|project| SearchResult {
+            kind: "项目".to_string(),
+            key: project.code.clone(),
+            title: project.name,
+            context: format!("负责人 {} · {}", project.owner, project.status),
+            url: format!("/web/projects/{}", project.code),
+            updated_at: project.updated_at,
+        })
+        .chain(
+            sample_work_items(None)
+                .into_iter()
+                .filter(|item| {
+                    item.key.contains(query)
+                        || item.title.contains(query)
+                        || item.project.contains(query)
+                })
+                .map(|item| SearchResult {
+                    kind: item.kind,
+                    key: item.key.clone(),
+                    title: item.title,
+                    context: item.project,
+                    url: format!("/web/work-items/{}", item.key),
+                    updated_at: "示例数据".to_string(),
+                }),
+        )
+        .collect()
 }
 
 fn sample_work_items(item_type: Option<&str>) -> Vec<WorkItem> {

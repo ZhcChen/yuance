@@ -102,6 +102,76 @@ pub async fn list_users(pool: &SqlitePool) -> AppResult<Vec<UserSummary>> {
         .collect())
 }
 
+pub async fn get_user_summary(pool: &SqlitePool, user_id: i64) -> AppResult<Option<UserSummary>> {
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            i64,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            u.id,
+            u.username,
+            u.display_name,
+            u.email,
+            u.mobile,
+            u.status,
+            u.is_super_admin,
+            COALESCE(GROUP_CONCAT(r.role_code, ' / '), '') AS role_codes,
+            COALESCE(GROUP_CONCAT(r.role_name, ' / '), '') AS role_names,
+            u.created_at,
+            u.updated_at
+        FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        WHERE u.id = ?1
+        GROUP BY u.id
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(
+        |(
+            id,
+            username,
+            display_name,
+            email,
+            mobile,
+            status,
+            is_super_admin,
+            role_code,
+            role_names,
+            created_at,
+            updated_at,
+        )| UserSummary {
+            id,
+            username,
+            display_name,
+            email,
+            mobile,
+            status,
+            is_super_admin: is_super_admin != 0,
+            role_code,
+            role_names,
+            created_at,
+            updated_at,
+        },
+    ))
+}
+
 pub async fn create_user(pool: &SqlitePool, input: CreateUserInput) -> AppResult<i64> {
     let username = auth::validate_username(&input.username)?;
     let display_name = auth::validate_display_name(&input.display_name)?;

@@ -26,6 +26,8 @@ pub enum AppError {
     Forbidden(String),
     #[error("当前环境不允许该操作：{0}")]
     InvalidEnvironment(String),
+    #[error("资源不存在：{0}")]
+    NotFound(String),
     #[error("未登录或登录已失效")]
     Unauthorized,
     #[error(transparent)]
@@ -60,6 +62,7 @@ impl IntoResponse for AppError {
             AppError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             AppError::Forbidden(_) => (StatusCode::FORBIDDEN, "forbidden"),
             AppError::InvalidEnvironment(_) => (StatusCode::FORBIDDEN, "invalid_environment"),
+            AppError::NotFound(_) => (StatusCode::NOT_FOUND, "not_found"),
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             AppError::Config(_) | AppError::AddrParse(_) | AppError::Header(_) => {
                 (StatusCode::BAD_REQUEST, "config")
