@@ -203,12 +203,32 @@ struct RoleRow {
 }
 
 #[derive(Debug, Clone)]
-struct PermissionRow {
+struct PermissionActionView {
+    key: String,
+    name: String,
+    granted: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PermissionPageView {
     key: String,
     name: String,
     resource: String,
-    resource_type: String,
     granted: bool,
+    actions: Vec<PermissionActionView>,
+    has_actions: bool,
+    total_count: usize,
+    granted_count: usize,
+}
+
+#[derive(Debug, Clone)]
+struct PermissionGroupView {
+    key: String,
+    name: String,
+    pages: Vec<PermissionPageView>,
+    total_count: usize,
+    granted_count: usize,
+    all_granted: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -466,6 +486,20 @@ struct SystemRolesTemplate {
     system_nav: SystemNav,
     roles: Vec<RoleRow>,
     has_roles: bool,
+    selected_role_code: String,
+    selected_role_name: String,
+    selected_role_status: String,
+    selected_role_status_tone: &'static str,
+    selected_role_is_system: bool,
+    selected_role_data_scope: String,
+    selected_role_permission_count: i64,
+    has_selected_role: bool,
+    can_manage_roles: bool,
+    can_edit_selected_permissions: bool,
+    permission_groups: Vec<PermissionGroupView>,
+    has_permission_groups: bool,
+    permission_total_count: usize,
+    permission_granted_count: usize,
 }
 
 #[derive(Template)]
@@ -478,8 +512,11 @@ struct SystemPermissionsTemplate {
     system_nav: SystemNav,
     role_code: String,
     role_name: String,
-    is_system_role: bool,
-    permissions: Vec<PermissionRow>,
+    can_edit_permissions: bool,
+    permission_groups: Vec<PermissionGroupView>,
+    has_permission_groups: bool,
+    permission_total_count: usize,
+    permission_granted_count: usize,
 }
 
 #[derive(Template)]
@@ -561,6 +598,12 @@ pub struct RoleStatusForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
     status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RoleWorkbenchQuery {
+    #[serde(default)]
+    role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1746,13 +1789,34 @@ pub async fn system_user_password_reset(
 pub async fn system_roles_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<RoleWorkbenchQuery>,
 ) -> AppResult<Response> {
     let context = require_system_permission(&state, &headers, "system.roles.view").await?;
-    let roles = rbac::list_roles(state.pool()?)
-        .await?
+    let role_summaries = rbac::list_roles(state.pool()?).await?;
+    let selected_role = selected_role_summary(&role_summaries, &query.role).cloned();
+    let selected_role_code = selected_role
+        .as_ref()
+        .map(|role| role.role_code.clone())
+        .unwrap_or_default();
+    let permissions = if selected_role_code.is_empty() {
+        Vec::new()
+    } else {
+        rbac::list_permissions_for_role(state.pool()?, Some(&selected_role_code)).await?
+    };
+    let permission_groups = permission_tree_from_summaries(permissions);
+    let (permission_total_count, permission_granted_count) =
+        permission_tree_counts(&permission_groups);
+    let roles = role_summaries
         .into_iter()
         .map(role_row_from_summary)
         .collect::<Vec<_>>();
+    let can_manage_roles =
+        rbac::user_has_permission(state.pool()?, context.user_id, "system.roles.manage").await?;
+    let selected_role_row = selected_role.clone().map(role_row_from_summary);
+    let selected_role_is_system = selected_role
+        .as_ref()
+        .map(|role| role.is_system)
+        .unwrap_or(false);
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1766,6 +1830,35 @@ pub async fn system_roles_page(
             system_nav: context.system_nav,
             has_roles: !roles.is_empty(),
             roles,
+            selected_role_code,
+            selected_role_name: selected_role
+                .as_ref()
+                .map(|role| role.role_name.clone())
+                .unwrap_or_else(|| "请选择角色".to_string()),
+            selected_role_status: selected_role_row
+                .as_ref()
+                .map(|role| role.status.clone())
+                .unwrap_or_default(),
+            selected_role_status_tone: selected_role_row
+                .as_ref()
+                .map(|role| role.status_tone)
+                .unwrap_or("info"),
+            selected_role_is_system,
+            selected_role_data_scope: selected_role_row
+                .as_ref()
+                .map(|role| role.data_scope.clone())
+                .unwrap_or_default(),
+            selected_role_permission_count: selected_role
+                .as_ref()
+                .map(|role| role.permission_count)
+                .unwrap_or(0),
+            has_selected_role: selected_role.is_some(),
+            can_manage_roles,
+            can_edit_selected_permissions: can_manage_roles && !selected_role_is_system,
+            has_permission_groups: !permission_groups.is_empty(),
+            permission_groups,
+            permission_total_count,
+            permission_granted_count,
         })?
         .into_response(),
     )
@@ -1795,7 +1888,7 @@ pub async fn system_roles_create(
     )
     .await?;
 
-    Ok(Redirect::to("/web/system/roles").into_response())
+    Ok(Redirect::to(&format!("/web/system/roles?role={}", form.role_code.trim())).into_response())
 }
 
 pub async fn system_role_status_update(
@@ -1817,7 +1910,7 @@ pub async fn system_role_status_update(
     )
     .await?;
 
-    Ok(Redirect::to("/web/system/roles").into_response())
+    Ok(Redirect::to(&format!("/web/system/roles?role={role_code}")).into_response())
 }
 
 pub async fn system_role_permissions_page(
@@ -1830,11 +1923,13 @@ pub async fn system_role_permissions_page(
     let Some(role) = roles.iter().find(|role| role.role_code == role_code) else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    let permissions = rbac::list_permissions_for_role(state.pool()?, Some(&role_code))
-        .await?
-        .into_iter()
-        .map(permission_row_from_summary)
-        .collect::<Vec<_>>();
+    let permission_groups = permission_tree_from_summaries(
+        rbac::list_permissions_for_role(state.pool()?, Some(&role_code)).await?,
+    );
+    let (permission_total_count, permission_granted_count) =
+        permission_tree_counts(&permission_groups);
+    let can_edit_permissions = !role.is_system
+        && rbac::user_has_permission(state.pool()?, context.user_id, "system.roles.manage").await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1848,8 +1943,11 @@ pub async fn system_role_permissions_page(
             system_nav: context.system_nav,
             role_code,
             role_name: role.role_name.clone(),
-            is_system_role: role.is_system,
-            permissions,
+            can_edit_permissions,
+            has_permission_groups: !permission_groups.is_empty(),
+            permission_groups,
+            permission_total_count,
+            permission_granted_count,
         })?
         .into_response(),
     )
@@ -1876,7 +1974,7 @@ pub async fn system_role_permissions_update(
     )
     .await?;
 
-    Ok(Redirect::to(&format!("/web/system/roles/{role_code}/permissions")).into_response())
+    Ok(Redirect::to(&format!("/web/system/roles?role={role_code}")).into_response())
 }
 
 pub async fn system_permissions_page(
@@ -1884,11 +1982,10 @@ pub async fn system_permissions_page(
     headers: HeaderMap,
 ) -> AppResult<Response> {
     let context = require_system_permission(&state, &headers, "system.roles.view").await?;
-    let permissions = rbac::list_permissions_for_role(state.pool()?, None)
-        .await?
-        .into_iter()
-        .map(permission_row_from_summary)
-        .collect::<Vec<_>>();
+    let permission_groups =
+        permission_tree_from_summaries(rbac::list_permissions_for_role(state.pool()?, None).await?);
+    let (permission_total_count, permission_granted_count) =
+        permission_tree_counts(&permission_groups);
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1902,8 +1999,11 @@ pub async fn system_permissions_page(
             system_nav: context.system_nav,
             role_code: "all".to_string(),
             role_name: "全部权限点".to_string(),
-            is_system_role: true,
-            permissions,
+            can_edit_permissions: false,
+            has_permission_groups: !permission_groups.is_empty(),
+            permission_groups,
+            permission_total_count,
+            permission_granted_count,
         })?
         .into_response(),
     )
@@ -2631,14 +2731,118 @@ fn role_row_from_summary(role: rbac::RoleSummary) -> RoleRow {
     }
 }
 
-fn permission_row_from_summary(permission: rbac::PermissionSummary) -> PermissionRow {
-    PermissionRow {
-        key: permission.permission_key,
-        name: permission.permission_name,
-        resource: permission.resource_key,
-        resource_type: permission.resource_type,
-        granted: permission.granted,
+fn selected_role_summary<'a>(
+    roles: &'a [rbac::RoleSummary],
+    requested_role_code: &str,
+) -> Option<&'a rbac::RoleSummary> {
+    let requested_role_code = requested_role_code.trim();
+    if !requested_role_code.is_empty() {
+        return roles
+            .iter()
+            .find(|role| role.role_code == requested_role_code)
+            .or_else(|| roles.first());
     }
+
+    roles.first()
+}
+
+fn permission_tree_from_summaries(
+    permissions: Vec<rbac::PermissionSummary>,
+) -> Vec<PermissionGroupView> {
+    let mut groups = Vec::new();
+    for group_def in permission_group_definitions() {
+        let pages = permission_pages_for_group(&permissions, group_def.0);
+        if pages.is_empty() {
+            continue;
+        }
+        let total_count = pages.iter().map(|page| page.total_count).sum();
+        let granted_count = pages.iter().map(|page| page.granted_count).sum();
+        groups.push(PermissionGroupView {
+            key: group_def.0.to_string(),
+            name: group_def.1.to_string(),
+            pages,
+            total_count,
+            granted_count,
+            all_granted: total_count > 0 && total_count == granted_count,
+        });
+    }
+    groups
+}
+
+fn permission_pages_for_group(
+    permissions: &[rbac::PermissionSummary],
+    group_key: &str,
+) -> Vec<PermissionPageView> {
+    permissions
+        .iter()
+        .filter(|permission| {
+            permission.resource_type == "page"
+                && permission_group_key(&permission.resource_key, &permission.permission_key)
+                    == group_key
+        })
+        .map(|page| {
+            let actions = permissions
+                .iter()
+                .filter(|permission| {
+                    permission.resource_type == "action"
+                        && permission.resource_key == page.resource_key
+                })
+                .map(|action| PermissionActionView {
+                    key: action.permission_key.clone(),
+                    name: action.permission_name.clone(),
+                    granted: action.granted,
+                })
+                .collect::<Vec<_>>();
+            let action_granted_count = actions.iter().filter(|action| action.granted).count();
+            let total_count = 1 + actions.len();
+            let granted_count = usize::from(page.granted) + action_granted_count;
+            PermissionPageView {
+                key: page.permission_key.clone(),
+                name: page.permission_name.clone(),
+                resource: page.resource_key.clone(),
+                granted: page.granted,
+                has_actions: !actions.is_empty(),
+                actions,
+                total_count,
+                granted_count,
+            }
+        })
+        .collect()
+}
+
+fn permission_tree_counts(permission_groups: &[PermissionGroupView]) -> (usize, usize) {
+    (
+        permission_groups
+            .iter()
+            .map(|group| group.total_count)
+            .sum(),
+        permission_groups
+            .iter()
+            .map(|group| group.granted_count)
+            .sum(),
+    )
+}
+
+fn permission_group_definitions() -> &'static [(&'static str, &'static str)] {
+    &[
+        ("system", "系统管理"),
+        ("project", "项目协作"),
+        ("work-item", "工作项"),
+        ("other", "其他权限"),
+    ]
+}
+
+fn permission_group_key(resource_key: &str, permission_key: &str) -> &'static str {
+    if resource_key == "system" || resource_key.starts_with("system-") {
+        return "system";
+    }
+    if resource_key == "projects" || permission_key.starts_with("project.") {
+        return "project";
+    }
+    if resource_key == "work-items" || permission_key.starts_with("work_item.") {
+        return "work-item";
+    }
+    "other"
 }
 
 fn storage_config_view_from_domain(config: storage::StorageConfig) -> StorageConfigView {

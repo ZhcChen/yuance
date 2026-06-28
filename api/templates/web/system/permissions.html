@@ -8,36 +8,73 @@
     <div>
       <p class="eyebrow">系统管理</p>
       <h1>{{ role_name }}</h1>
-      <p>权限点由 core seed 管理，页面只负责给普通角色分配权限。</p>
+      <p>权限点由 core seed 管理；角色权限维护推荐在角色权限工作台完成。</p>
     </div>
     <div class="toolbar-actions">
-      <a class="btn btn-secondary" href="/web/system/roles">返回角色</a>
+      <a class="btn btn-secondary" href="/web/system/roles">返回角色权限</a>
     </div>
   </section>
 
-  <form class="panel" method="post" action="/web/system/roles/{{ role_code }}/permissions">
+  <form class="panel" method="post" action="/web/system/roles/{{ role_code }}/permissions" data-permission-tree>
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-    <div class="panel-head">
+    <div class="panel-head role-permission-head">
       <div>
-        <h2>权限点</h2>
-        <p>{% if is_system_role %}系统内置角色或全部权限点仅允许查看。{% else %}勾选后保存会替换该角色的权限集合。{% endif %}</p>
+        <h2>权限树</h2>
+        <p>已授权 {{ permission_granted_count }}/{{ permission_total_count }} 项{% if !can_edit_permissions %} · 当前只读{% endif %}</p>
       </div>
-      {% if !is_system_role %}
+      {% if can_edit_permissions %}
       <button class="btn btn-primary" type="submit">保存权限</button>
       {% endif %}
     </div>
 
-    <div class="permission-grid">
-      {% for permission in permissions %}
-      <label class="permission-card">
-        <input type="checkbox" name="permission_keys" value="{{ permission.key }}" {% if permission.granted %}checked{% endif %} {% if is_system_role %}disabled{% endif %}>
-        <span>
-          <strong>{{ permission.name }}</strong>
-          <em>{{ permission.key }} · {{ permission.resource_type }} / {{ permission.resource }}</em>
-        </span>
-      </label>
+    {% if !has_permission_groups %}
+    <div class="empty-state">
+      <strong>暂无权限点</strong>
+      <span>权限点由 core seed 维护。</span>
+    </div>
+    {% else %}
+    <div class="permission-tree">
+      {% for group in permission_groups %}
+      <section class="permission-group" data-permission-group data-permission-group-key="{{ group.key }}">
+        <header class="permission-group-head">
+          <label class="permission-check permission-check-group">
+            <input type="checkbox" data-permission-parent {% if group.all_granted %}checked{% endif %} {% if !can_edit_permissions %}disabled{% endif %}>
+            <span>
+              <strong>{{ group.name }}</strong>
+              <em>{{ group.granted_count }}/{{ group.total_count }} 项已授权</em>
+            </span>
+          </label>
+        </header>
+        <div class="permission-pages">
+          {% for page in group.pages %}
+          <article class="permission-page" data-permission-page>
+            <label class="permission-check permission-check-page">
+              <input type="checkbox" name="permission_keys" value="{{ page.key }}" data-permission-parent data-permission-node {% if page.granted %}checked{% endif %} {% if !can_edit_permissions %}disabled{% endif %}>
+              <span>
+                <strong>{{ page.name }}</strong>
+                <em>{{ page.key }} · {{ page.resource }}</em>
+              </span>
+            </label>
+            {% if page.has_actions %}
+            <div class="permission-actions">
+              {% for action in page.actions %}
+              <label class="permission-check permission-check-action">
+                <input type="checkbox" name="permission_keys" value="{{ action.key }}" data-permission-node {% if action.granted %}checked{% endif %} {% if !can_edit_permissions %}disabled{% endif %}>
+                <span>
+                  <strong>{{ action.name }}</strong>
+                  <em>{{ action.key }}</em>
+                </span>
+              </label>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </article>
+          {% endfor %}
+        </div>
+      </section>
       {% endfor %}
     </div>
+    {% endif %}
   </form>
 </section>
 {% endblock %}

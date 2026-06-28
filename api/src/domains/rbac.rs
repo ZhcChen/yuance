@@ -287,9 +287,10 @@ pub async fn replace_role_permissions(
     if !role_exists(pool, role_code).await? {
         return Err(AppError::BadRequest("角色不存在".to_string()));
     }
+    let permission_keys = normalize_permission_keys(pool, permission_keys).await?;
 
     let mut tx = pool.begin().await?;
-    for permission_key in permission_keys {
+    for permission_key in &permission_keys {
         let exists = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM permissions WHERE permission_key = ?1",
         )
@@ -336,6 +337,66 @@ pub async fn replace_role_permissions(
 
     tx.commit().await?;
     Ok(())
+}
+
+async fn normalize_permission_keys(
+    pool: &SqlitePool,
+    permission_keys: &[String],
+) -> AppResult<Vec<String>> {
+    let mut normalized = Vec::new();
+    for permission_key in permission_keys {
+        let permission_key = permission_key.trim();
+        if permission_key.is_empty()
+            || normalized
+                .iter()
+                .any(|key: &String| key.as_str() == permission_key)
+        {
+            continue;
+        }
+        normalized.push(permission_key.to_string());
+    }
+
+    for permission_key in permission_keys {
+        let Some((resource_type, resource_key)) = sqlx::query_as::<_, (String, String)>(
+            r#"
+                SELECT resource_type, resource_key
+                FROM permissions
+                WHERE permission_key = ?1
+                "#,
+        )
+        .bind(permission_key)
+        .fetch_optional(pool)
+        .await?
+        else {
+            continue;
+        };
+
+        if resource_type != "action" {
+            continue;
+        }
+
+        let page_permission_keys = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT permission_key
+            FROM permissions
+            WHERE resource_type = 'page'
+              AND resource_key = ?1
+            ORDER BY permission_key ASC
+            "#,
+        )
+        .bind(resource_key)
+        .fetch_all(pool)
+        .await?;
+
+        for page_permission_key in page_permission_keys {
+            if !normalized.iter().any(|key| key == &page_permission_key) {
+                normalized.push(page_permission_key);
+            }
+        }
+    }
+
+    normalized.sort();
+    Ok(normalized)
 }
 
 pub async fn user_has_permission(

@@ -63,4 +63,74 @@
       event.detail.headers["x-yuance-csrf-token"] = token;
     }
   });
+
+  function syncPermissionParent(parent) {
+    var scope = parent.closest("[data-permission-page]") || parent.closest("[data-permission-group]");
+    if (!scope) {
+      return;
+    }
+
+    var children = Array.from(scope.querySelectorAll("input[data-permission-node]")).filter(
+      function (item) {
+        return item !== parent && !item.disabled;
+      }
+    );
+    if (children.length === 0) {
+      parent.indeterminate = false;
+      return;
+    }
+
+    var checkedCount = children.filter(function (item) {
+      return item.checked;
+    }).length;
+    var isGroupParent = Boolean(parent.closest(".permission-group-head"));
+    parent.indeterminate = checkedCount > 0 && checkedCount < children.length;
+    if (isGroupParent) {
+      parent.checked = checkedCount === children.length;
+    } else if (checkedCount === children.length) {
+      parent.checked = true;
+    }
+  }
+
+  function syncPermissionTree(tree) {
+    tree.querySelectorAll("[data-permission-page] input[data-permission-parent]").forEach(
+      syncPermissionParent
+    );
+    tree.querySelectorAll("[data-permission-group] > .permission-group-head input[data-permission-parent]").forEach(
+      syncPermissionParent
+    );
+  }
+
+  document.querySelectorAll("[data-permission-tree]").forEach(syncPermissionTree);
+
+  document.addEventListener("change", function (event) {
+    var checkbox = event.target.closest("[data-permission-tree] input[type='checkbox']");
+    if (!checkbox || checkbox.disabled) {
+      return;
+    }
+
+    var page = checkbox.closest("[data-permission-page]");
+    var group = checkbox.closest("[data-permission-group]");
+
+    if (checkbox.matches("[data-permission-parent]")) {
+      var scope = page || group;
+      if (scope) {
+        scope.querySelectorAll("input[data-permission-node]").forEach(function (child) {
+          if (!child.disabled) {
+            child.checked = checkbox.checked;
+          }
+        });
+      }
+    } else if (checkbox.checked && page) {
+      var pageParent = page.querySelector(":scope > .permission-check input[data-permission-parent]");
+      if (pageParent && !pageParent.disabled) {
+        pageParent.checked = true;
+      }
+    }
+
+    var tree = checkbox.closest("[data-permission-tree]");
+    if (tree) {
+      syncPermissionTree(tree);
+    }
+  });
 })();

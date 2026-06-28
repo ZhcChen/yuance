@@ -1618,52 +1618,242 @@ textarea {
   content: "";
 }
 
-.permission-grid {
+.role-workbench {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.role-workbench-sidebar {
+  overflow: hidden;
+}
+
+.role-list {
+  display: grid;
+}
+
+.role-list-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.role-list-row.active {
+  background: var(--brand-soft);
+}
+
+.role-list-row:hover {
+  background: #fbfdff;
+}
+
+.role-list-row.active:hover {
+  background: var(--brand-soft);
+}
+
+.role-list-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
+  padding: 12px 14px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.role-list-item span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.role-list-item strong {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-list-item em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.role-list-meta {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.role-status-button,
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.role-status-button {
+  height: 100%;
+  padding: 0 12px;
+  border-left: 1px solid var(--line);
+}
+
+.role-status-button:hover,
+.text-button:hover {
+  color: var(--brand-strong);
+  text-decoration: underline;
+}
+
+.role-create-form {
+  border-top: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.role-create-form .field-grid {
+  padding: 14px;
+}
+
+.role-permission-panel {
+  overflow: hidden;
+}
+
+.role-permission-head {
+  align-items: center;
+}
+
+.role-summary-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfe;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.role-summary-strip span {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.role-summary-strip strong {
+  color: var(--text);
+}
+
+.permission-tree {
+  display: grid;
+  gap: 12px;
   padding: 16px;
 }
 
-.permission-card {
+.permission-group {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.permission-group-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfcfe;
+}
+
+.permission-pages {
+  display: grid;
+}
+
+.permission-page {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.permission-page:last-child {
+  border-bottom: 0;
+}
+
+.permission-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  padding-left: 28px;
+}
+
+.permission-check {
+  display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfcfe;
+  gap: 9px;
   font-weight: 400;
 }
 
-.permission-card input {
+.permission-check input {
   width: 16px;
   min-height: 16px;
   margin-top: 3px;
 }
 
-.permission-card span {
+.permission-check span {
+  min-width: 0;
   display: grid;
-  gap: 4px;
+  gap: 3px;
 }
 
-.permission-card strong {
+.permission-check strong {
   color: var(--text);
   font-size: 14px;
+  line-height: 20px;
 }
 
-.permission-card em {
+.permission-check em {
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 12px;
   font-style: normal;
   line-height: 17px;
 }
 
+.permission-check-group strong {
+  font-size: 15px;
+}
+
+.permission-check-action {
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
 @media (max-width: 1280px) {
   .workspace-grid,
   .detail-grid,
   .system-split,
-  .storage-layout {
+  .storage-layout,
+  .role-workbench {
     grid-template-columns: 1fr;
   }
 
@@ -1709,12 +1899,12 @@ textarea {
 
   .metric-grid,
   .detail-metrics,
-  .permission-grid,
   .workspace-side,
   .system-grid,
   .search-form,
   .filter-bar,
-  .field-grid {
+  .field-grid,
+  .permission-actions {
     grid-template-columns: 1fr;
   }
 

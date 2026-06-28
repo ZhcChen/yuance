@@ -228,6 +228,26 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
     assert!(permissions_body.contains("系统观察员"));
     assert!(permissions_body.contains("system.users.view"));
 
+    let workbench_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/roles?role=system_viewer")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(workbench_response.status(), StatusCode::OK);
+    let workbench_body = response_body(workbench_response).await;
+    assert!(workbench_body.contains("role-workbench"));
+    assert!(workbench_body.contains("role-list"));
+    assert!(workbench_body.contains("data-permission-tree"));
+    assert!(workbench_body.contains("data-permission-group-key=\"system\""));
+    assert!(workbench_body.contains("查看用户管理"));
+    assert!(workbench_body.contains("管理用户"));
+
     let update_permissions_response = app
         .clone()
         .oneshot(
@@ -285,6 +305,33 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
         .await
         .expect("router should respond");
     assert_eq!(roles_response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn role_permission_update_adds_parent_page_for_action_permission() {
+    let pool = test_pool().await;
+    rbac::seed_core(&pool)
+        .await
+        .expect("rbac core seed should run");
+    rbac::create_role(&pool, "operator", "运营", "self")
+        .await
+        .expect("role should create");
+
+    rbac::replace_role_permissions(&pool, "operator", &["system.users.manage".to_string()])
+        .await
+        .expect("permissions should replace");
+
+    let permissions = rbac::list_permissions_for_role(&pool, Some("operator"))
+        .await
+        .expect("permissions should load");
+    let granted = permissions
+        .into_iter()
+        .filter(|permission| permission.granted)
+        .map(|permission| permission.permission_key)
+        .collect::<Vec<_>>();
+
+    assert!(granted.contains(&"system.users.manage".to_string()));
+    assert!(granted.contains(&"system.users.view".to_string()));
 }
 
 #[tokio::test]

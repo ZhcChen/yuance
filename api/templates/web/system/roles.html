@@ -8,66 +8,52 @@
     <div>
       <p class="eyebrow">系统管理</p>
       <h1>角色权限</h1>
-      <p>RBAC 控制功能入口，项目成员关系控制项目数据范围。</p>
+      <p>按 RBAC 模型维护角色、状态、数据范围与功能权限树；项目内数据范围仍由项目成员关系控制。</p>
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web/system/permissions">全部权限点</a>
     </div>
   </section>
 
-  <section class="system-split">
-    <section class="panel">
+  <section class="role-workbench">
+    <aside class="panel role-workbench-sidebar" aria-label="角色列表">
       <div class="panel-head">
         <div>
           <h2>角色列表</h2>
-          <p>系统内置角色不可删除，普通角色可维护权限点。</p>
+          <p>选择左侧角色后，在右侧直接维护权限树。</p>
         </div>
       </div>
+
       {% if has_roles %}
-      <div class="table-wrap">
-        <table class="compact-table">
-          <thead>
-            <tr>
-              <th>角色</th>
-              <th>数据范围</th>
-              <th>权限数</th>
-              <th>状态</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for role in roles %}
-            <tr>
-              <td>
-                <strong>{{ role.name }}</strong>
-                <div class="muted-line">{{ role.code }}{% if role.is_system %} · 系统内置{% endif %}</div>
-              </td>
-              <td>{{ role.data_scope }}</td>
-              <td>{{ role.permission_count }}</td>
-              <td><span class="status status-{{ role.status_tone }}">{{ role.status }}</span></td>
-              <td>
-                <div class="row-actions">
-                  <a class="btn btn-sm btn-secondary" href="/web/system/roles/{{ role.code }}/permissions">权限</a>
-                  {% if role.is_system %}
-                  <span class="muted-line">受保护</span>
-                  {% else %}
-                  <form method="post" action="/web/system/roles/{{ role.code }}/status">
-                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                    {% if role.status_code == "active" %}
-                    <input type="hidden" name="status" value="disabled">
-                    <button class="btn btn-sm btn-secondary" type="submit">禁用</button>
-                    {% else %}
-                    <input type="hidden" name="status" value="active">
-                    <button class="btn btn-sm btn-secondary" type="submit">启用</button>
-                    {% endif %}
-                  </form>
-                  {% endif %}
-                </div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+      <div class="role-list">
+        {% for role in roles %}
+        <div class="role-list-row {% if role.code == selected_role_code %}active{% endif %}">
+          <a class="role-list-item" href="/web/system/roles?role={{ role.code }}">
+            <span>
+              <strong>{{ role.name }}</strong>
+              <em>{{ role.code }}{% if role.is_system %} · 系统内置{% endif %}</em>
+            </span>
+            <span class="role-list-meta">
+              <span class="status status-{{ role.status_tone }}">{{ role.status }}</span>
+              <span>{{ role.permission_count }} 项</span>
+            </span>
+          </a>
+          {% if can_manage_roles %}
+          {% if !role.is_system %}
+          <form method="post" action="/web/system/roles/{{ role.code }}/status">
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            {% if role.status_code == "active" %}
+            <input type="hidden" name="status" value="disabled">
+            <button class="role-status-button" type="submit">禁用</button>
+            {% else %}
+            <input type="hidden" name="status" value="active">
+            <button class="role-status-button" type="submit">启用</button>
+            {% endif %}
+          </form>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
       </div>
       {% else %}
       <div class="empty-state">
@@ -75,35 +61,130 @@
         <span>运行 core seed 后会生成系统角色。</span>
       </div>
       {% endif %}
-    </section>
 
-    <form class="panel system-form" method="post" action="/web/system/roles">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <div class="panel-head">
-        <div>
-          <h2>创建角色</h2>
-          <p>权限点创建后进入角色权限页分配。</p>
+      {% if can_manage_roles %}
+      <form class="role-create-form" method="post" action="/web/system/roles">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <div class="panel-head compact">
+          <div>
+            <h2>创建角色</h2>
+            <p>创建后会自动选中新角色。</p>
+          </div>
         </div>
-        <button class="btn btn-primary" type="submit">创建角色</button>
-      </div>
-      <div class="field-grid one-column">
-        <label>
-          <span>角色编码</span>
-          <input name="role_code" required placeholder="project_manager">
-        </label>
-        <label>
-          <span>角色名称</span>
-          <input name="role_name" required placeholder="项目经理">
-        </label>
-        <label>
-          <span>数据范围</span>
-          <select name="data_scope_type">
-            <option value="self">本人数据</option>
-            <option value="all">全部数据</option>
-          </select>
-        </label>
-      </div>
-    </form>
+        <div class="field-grid one-column">
+          <label>
+            <span>角色编码</span>
+            <input name="role_code" required placeholder="project_manager">
+          </label>
+          <label>
+            <span>角色名称</span>
+            <input name="role_name" required placeholder="项目经理">
+          </label>
+          <label>
+            <span>数据范围</span>
+            <select name="data_scope_type">
+              <option value="self">本人数据</option>
+              <option value="all">全部数据</option>
+            </select>
+          </label>
+          <button class="btn btn-primary btn-block" type="submit">创建角色</button>
+        </div>
+      </form>
+      {% endif %}
+    </aside>
+
+    <section class="panel role-permission-panel" aria-label="权限树">
+      <form method="post" action="/web/system/roles/{{ selected_role_code }}/permissions" data-permission-tree>
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <div class="panel-head role-permission-head">
+          <div>
+            <h2>权限树</h2>
+            {% if has_selected_role %}
+            <p>当前角色：{{ selected_role_name }} · 已授权 {{ permission_granted_count }}/{{ permission_total_count }} 项</p>
+            {% else %}
+            <p>请选择一个角色后维护权限。</p>
+            {% endif %}
+          </div>
+          <div class="toolbar-actions">
+            {% if has_selected_role %}
+            <span class="status status-{{ selected_role_status_tone }}">{{ selected_role_status }}</span>
+            {% endif %}
+            {% if can_edit_selected_permissions %}
+            <button class="btn btn-primary" type="submit">保存权限</button>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if has_selected_role %}
+        <div class="role-summary-strip">
+          <span>编码 <strong>{{ selected_role_code }}</strong></span>
+          <span>数据范围 <strong>{{ selected_role_data_scope }}</strong></span>
+          <span>已绑定 <strong>{{ selected_role_permission_count }}</strong> 项权限</span>
+          {% if selected_role_is_system %}
+          <span>系统内置角色只读</span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        {% if !has_selected_role %}
+        <div class="empty-state">
+          <strong>暂无可维护角色</strong>
+          <span>请先创建角色，或确认 core seed 已执行。</span>
+        </div>
+        {% else %}
+        {% if !has_permission_groups %}
+        <div class="empty-state">
+          <strong>暂无权限点</strong>
+          <span>权限点由 core seed 维护。</span>
+        </div>
+        {% else %}
+        <div class="permission-tree">
+          {% for group in permission_groups %}
+          <section class="permission-group" data-permission-group data-permission-group-key="{{ group.key }}">
+            <header class="permission-group-head">
+              <label class="permission-check permission-check-group">
+                <input type="checkbox" data-permission-parent {% if group.all_granted %}checked{% endif %} {% if !can_edit_selected_permissions %}disabled{% endif %}>
+                <span>
+                  <strong>{{ group.name }}</strong>
+                  <em>{{ group.granted_count }}/{{ group.total_count }} 项已授权</em>
+                </span>
+              </label>
+            </header>
+
+            <div class="permission-pages">
+              {% for page in group.pages %}
+              <article class="permission-page" data-permission-page>
+                <label class="permission-check permission-check-page">
+                  <input type="checkbox" name="permission_keys" value="{{ page.key }}" data-permission-parent data-permission-node {% if page.granted %}checked{% endif %} {% if !can_edit_selected_permissions %}disabled{% endif %}>
+                  <span>
+                    <strong>{{ page.name }}</strong>
+                    <em>{{ page.key }} · {{ page.resource }}</em>
+                  </span>
+                </label>
+
+                {% if page.has_actions %}
+                <div class="permission-actions">
+                  {% for action in page.actions %}
+                  <label class="permission-check permission-check-action">
+                    <input type="checkbox" name="permission_keys" value="{{ action.key }}" data-permission-node {% if action.granted %}checked{% endif %} {% if !can_edit_selected_permissions %}disabled{% endif %}>
+                    <span>
+                      <strong>{{ action.name }}</strong>
+                      <em>{{ action.key }}</em>
+                    </span>
+                  </label>
+                  {% endfor %}
+                </div>
+                {% endif %}
+              </article>
+              {% endfor %}
+            </div>
+          </section>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+      </form>
+    </section>
   </section>
 </section>
 {% endblock %}
