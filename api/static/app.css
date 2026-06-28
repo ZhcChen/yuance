@@ -37,6 +37,49 @@ body {
   overflow: hidden;
 }
 
+body[data-page-transition] .main,
+body[data-page-transition] .auth-shell {
+  animation: page-enter 170ms ease both;
+}
+
+body.page-leaving .main,
+body.page-leaving .auth-shell {
+  animation: page-leave 150ms ease forwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0.01;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes page-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0.01;
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-page-transition] .main,
+  body[data-page-transition] .auth-shell {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 button,
 input,
 select,

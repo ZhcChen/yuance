@@ -1,5 +1,6 @@
 (function () {
   var DROPDOWN_TRANSITION_MS = 160;
+  var PAGE_TRANSITION_MS = 150;
   var AVATAR_COLORS = [
     "#1f5fbf",
     "#2d8a68",
@@ -34,6 +35,58 @@
       avatar.textContent = avatarInitial(name);
       avatar.style.backgroundColor = AVATAR_COLORS[hashText(name) % AVATAR_COLORS.length];
     });
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  function isPlainWebNavigation(event, link) {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey ||
+      (link.target && link.target !== "_self") ||
+      link.hasAttribute("download") ||
+      link.hasAttribute("hx-get") ||
+      link.hasAttribute("data-hx-get") ||
+      link.closest("[data-dropdown-trigger]")
+    ) {
+      return false;
+    }
+
+    var nextUrl;
+    try {
+      nextUrl = new URL(link.href, window.location.href);
+    } catch (_error) {
+      return false;
+    }
+    if (nextUrl.origin !== window.location.origin || !nextUrl.pathname.startsWith("/web")) {
+      return false;
+    }
+
+    var current = window.location.pathname + window.location.search;
+    var next = nextUrl.pathname + nextUrl.search;
+    return current !== next;
+  }
+
+  function navigateWithTransition(event, link) {
+    if (!document.body.matches("[data-page-transition]") || prefersReducedMotion()) {
+      return;
+    }
+    if (!isPlainWebNavigation(event, link)) {
+      return;
+    }
+
+    event.preventDefault();
+    closeDropdowns();
+    document.body.classList.add("page-leaving");
+    window.setTimeout(function () {
+      window.location.href = link.href;
+    }, PAGE_TRANSITION_MS);
   }
 
   function closeDropdown(root) {
@@ -92,6 +145,14 @@
   initUserAvatars();
 
   document.addEventListener("click", function (event) {
+    var link = event.target.closest("a[href]");
+    if (link) {
+      navigateWithTransition(event, link);
+      if (event.defaultPrevented) {
+        return;
+      }
+    }
+
     var trigger = event.target.closest("[data-dropdown-trigger]");
     if (trigger) {
       var root = trigger.closest("[data-dropdown-root]") || trigger.parentElement;

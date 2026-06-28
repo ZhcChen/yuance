@@ -41,6 +41,7 @@ async fn login_page_sets_csrf_cookie_and_hidden_field() {
 
     let body = response_body(response).await;
     assert!(body.contains(&format!("name=\"{CSRF_FIELD_NAME}\"")));
+    assert!(body.contains("data-page-transition"));
     assert!(body.contains("登录"));
 }
 
