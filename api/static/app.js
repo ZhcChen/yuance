@@ -1,12 +1,95 @@
 (function () {
-  function closeDropdowns() {
-    document.querySelectorAll("[data-dropdown-menu]").forEach(function (menu) {
-      menu.hidden = true;
+  var DROPDOWN_TRANSITION_MS = 160;
+  var AVATAR_COLORS = [
+    "#1f5fbf",
+    "#2d8a68",
+    "#a85b00",
+    "#b42318",
+    "#4656a8",
+    "#0f766e",
+    "#7c3aed",
+    "#be4b00",
+  ];
+
+  function avatarInitial(name) {
+    var value = (name || "").trim();
+    if (!value) {
+      return "U";
+    }
+    return Array.from(value)[0].toLocaleUpperCase("zh-CN");
+  }
+
+  function hashText(value) {
+    var hash = 2166136261;
+    Array.from(value || "").forEach(function (char) {
+      hash ^= char.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
     });
-    document.querySelectorAll("[data-dropdown-trigger]").forEach(function (trigger) {
-      trigger.setAttribute("aria-expanded", "false");
+    return hash >>> 0;
+  }
+
+  function initUserAvatars(root) {
+    (root || document).querySelectorAll("[data-user-avatar]").forEach(function (avatar) {
+      var name = avatar.getAttribute("data-avatar-name") || "";
+      avatar.textContent = avatarInitial(name);
+      avatar.style.backgroundColor = AVATAR_COLORS[hashText(name) % AVATAR_COLORS.length];
     });
   }
+
+  function closeDropdown(root) {
+    if (!root) {
+      return;
+    }
+    var trigger = root.querySelector("[data-dropdown-trigger]");
+    var menu = root.querySelector("[data-dropdown-menu]");
+    if (!trigger || !menu) {
+      return;
+    }
+    if (root.dropdownCloseTimer) {
+      window.clearTimeout(root.dropdownCloseTimer);
+    }
+    root.dataset.dropdownOpen = "false";
+    root.dataset.hoverOpen = "false";
+    trigger.setAttribute("aria-expanded", "false");
+    menu.classList.remove("open");
+    root.dropdownCloseTimer = window.setTimeout(function () {
+      if (root.dataset.dropdownOpen !== "true") {
+        menu.hidden = true;
+      }
+    }, DROPDOWN_TRANSITION_MS);
+  }
+
+  function closeDropdowns(exceptRoot) {
+    document.querySelectorAll("[data-dropdown-root]").forEach(function (root) {
+      if (root !== exceptRoot) {
+        closeDropdown(root);
+      }
+    });
+  }
+
+  function openDropdown(root, openedByHover) {
+    if (!root) {
+      return;
+    }
+    var trigger = root.querySelector("[data-dropdown-trigger]");
+    var menu = root.querySelector("[data-dropdown-menu]");
+    if (!trigger || !menu) {
+      return;
+    }
+    if (root.dropdownCloseTimer) {
+      window.clearTimeout(root.dropdownCloseTimer);
+    }
+    closeDropdowns(root);
+    root.dataset.dropdownOpen = "true";
+    root.dataset.hoverOpen = openedByHover ? "true" : "false";
+    trigger.setAttribute("aria-expanded", "true");
+    menu.hidden = false;
+    window.requestAnimationFrame(function () {
+      menu.classList.add("open");
+    });
+  }
+
+  initUserAvatars();
 
   document.addEventListener("click", function (event) {
     var trigger = event.target.closest("[data-dropdown-trigger]");
@@ -15,11 +98,13 @@
       var menu = root.querySelector("[data-dropdown-menu]");
       var expanded = trigger.getAttribute("aria-expanded") === "true";
       var wasOpenedByHover = root.dataset.hoverOpen === "true";
-      closeDropdowns();
-      root.dataset.hoverOpen = "false";
-      trigger.setAttribute("aria-expanded", expanded && !wasOpenedByHover ? "false" : "true");
-      if (menu) {
-        menu.hidden = expanded && !wasOpenedByHover;
+      if (!menu) {
+        return;
+      }
+      if (expanded && !wasOpenedByHover) {
+        closeDropdown(root);
+      } else {
+        openDropdown(root, false);
       }
       return;
     }
@@ -37,21 +122,11 @@
     }
 
     root.addEventListener("mouseenter", function () {
-      if (root.dropdownCloseTimer) {
-        window.clearTimeout(root.dropdownCloseTimer);
-      }
-      closeDropdowns();
-      root.dataset.hoverOpen = "true";
-      trigger.setAttribute("aria-expanded", "true");
-      menu.hidden = false;
+      openDropdown(root, true);
     });
 
     root.addEventListener("mouseleave", function () {
-      root.dropdownCloseTimer = window.setTimeout(function () {
-        root.dataset.hoverOpen = "false";
-        trigger.setAttribute("aria-expanded", "false");
-        menu.hidden = true;
-      }, 140);
+      closeDropdown(root);
     });
   });
 
@@ -91,6 +166,10 @@
     if (token) {
       event.detail.headers["x-yuance-csrf-token"] = token;
     }
+  });
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    initUserAvatars(event.target);
   });
 
   function syncPermissionParent(parent) {
