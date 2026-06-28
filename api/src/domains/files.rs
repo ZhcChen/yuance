@@ -42,10 +42,12 @@ pub struct CreateFileObjectInput {
 pub struct CreateAttachmentInput {
     pub target_type: String,
     pub target_id: i64,
+    pub project_id: Option<i64>,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
     pub created_by_user_id: i64,
+    pub activity_summary: Option<String>,
 }
 
 pub async fn create_file_object(
@@ -100,8 +102,18 @@ pub async fn create_attachment(
     if input.target_id <= 0 {
         return Err(AppError::BadRequest("附件目标无效".to_string()));
     }
+    if let Some(project_id) = input.project_id
+        && project_id <= 0
+    {
+        return Err(AppError::BadRequest("项目动态目标无效".to_string()));
+    }
     let original_filename = validate_filename(&input.original_filename)?;
     let content_type = validate_content_type(&input.content_type)?;
+    let activity_summary = input
+        .activity_summary
+        .as_deref()
+        .map(validate_activity_summary)
+        .transpose()?;
     if input.byte_size < 0 {
         return Err(AppError::BadRequest("文件大小不能小于 0".to_string()));
     }
@@ -154,6 +166,34 @@ pub async fn create_attachment(
     .bind(input.created_by_user_id)
     .fetch_one(&mut *tx)
     .await?;
+
+    if let (Some(project_id), Some(summary)) = (input.project_id, activity_summary.as_deref()) {
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                action,
+                target_type,
+                target_id,
+                summary,
+                metadata
+            )
+            VALUES (?1, ?2, 'file.attached', ?3, ?4, ?5, ?6)
+            "#,
+        )
+        .bind(project_id)
+        .bind(input.created_by_user_id)
+        .bind(target_type)
+        .bind(input.target_id.to_string())
+        .bind(summary)
+        .bind(format!(
+            r#"{{"file_object_id":{file_object_id},"filename":"{}"}}"#,
+            original_filename.replace('"', "\\\"")
+        ))
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
     get_attachment(pool, attachment_id).await
@@ -342,6 +382,16 @@ fn validate_target_type(target_type: &str) -> AppResult<&'static str> {
             "附件目标类型只能是 project / work_item / comment".to_string(),
         )),
     }
+}
+
+fn validate_activity_summary(summary: &str) -> AppResult<String> {
+    let summary = summary.trim();
+    if summary.is_empty() || summary.chars().count() > 240 {
+        return Err(AppError::BadRequest(
+            "附件动态摘要不能为空且不能超过 240 个字符".to_string(),
+        ));
+    }
+    Ok(summary.to_string())
 }
 
 fn validate_filename(filename: &str) -> AppResult<String> {

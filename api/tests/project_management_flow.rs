@@ -976,10 +976,18 @@ async fn web_project_detail_can_register_project_attachment() {
     let attachments = files::list_attachments(&pool, "project", project.id)
         .await
         .expect("attachments should load");
+    let activities = projects::list_project_activities(&pool, project.id, 10)
+        .await
+        .expect("activities should load");
     assert_eq!(attachments.len(), 1);
     assert_eq!(attachments[0].original_filename, "roadmap.pdf");
     assert_eq!(attachments[0].content_type, "application/pdf");
     assert_eq!(attachments[0].byte_size, 2048);
+    assert!(
+        activities
+            .iter()
+            .any(|activity| activity.summary == "登记项目附件 roadmap.pdf")
+    );
 
     let detail_response = app
         .oneshot(
@@ -1037,10 +1045,22 @@ async fn web_work_item_detail_can_register_work_item_attachment() {
     let attachments = files::list_attachments(&pool, "work_item", item.id)
         .await
         .expect("attachments should load");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let activities = projects::list_project_activities(&pool, project.id, 10)
+        .await
+        .expect("activities should load");
     assert_eq!(attachments.len(), 1);
     assert_eq!(attachments[0].original_filename, "screenshot.png");
     assert_eq!(attachments[0].content_type, "image/png");
     assert_eq!(attachments[0].byte_size, 4096);
+    assert!(
+        activities
+            .iter()
+            .any(|activity| activity.summary == "登记工作项附件 screenshot.png")
+    );
 
     let detail_response = app
         .oneshot(

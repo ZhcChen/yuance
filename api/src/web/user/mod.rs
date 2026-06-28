@@ -1086,16 +1086,20 @@ pub async fn project_attachment_create(
         let config = storage::active_config(pool)
             .await?
             .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+        let original_filename = form.original_filename;
+        let activity_summary = format!("登记项目附件 {original_filename}");
         let attachment = files::create_attachment(
             pool,
             &config,
             files::CreateAttachmentInput {
                 target_type: "project".to_string(),
                 target_id: project.id,
-                original_filename: form.original_filename,
+                project_id: Some(project.id),
+                original_filename,
                 content_type: form.content_type,
                 byte_size: form.byte_size,
                 created_by_user_id: context.user_id,
+                activity_summary: Some(activity_summary),
             },
         )
         .await?;
@@ -1415,19 +1419,26 @@ pub async fn work_item_attachment_create(
             &item.project_key,
         )
         .await?;
+        let project = projects::get_project_detail(pool, &item.project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         let config = storage::active_config(pool)
             .await?
             .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+        let original_filename = form.original_filename;
+        let activity_summary = format!("登记工作项附件 {original_filename}");
         let attachment = files::create_attachment(
             pool,
             &config,
             files::CreateAttachmentInput {
                 target_type: "work_item".to_string(),
                 target_id: item.id,
-                original_filename: form.original_filename,
+                project_id: Some(project.id),
+                original_filename,
                 content_type: form.content_type,
                 byte_size: form.byte_size,
                 created_by_user_id: context.user_id,
+                activity_summary: Some(activity_summary),
             },
         )
         .await?;
