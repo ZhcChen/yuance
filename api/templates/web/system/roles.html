@@ -22,6 +22,9 @@
           <h2>角色列表</h2>
           <p>选择左侧角色后，在右侧直接维护权限树。</p>
         </div>
+        {% if can_manage_roles %}
+        <button class="btn btn-sm btn-primary" type="button" data-modal-open="role-create-modal">新建角色</button>
+        {% endif %}
       </div>
 
       {% if has_roles %}
@@ -60,36 +63,6 @@
         <strong>暂无角色</strong>
         <span>运行 core seed 后会生成系统角色。</span>
       </div>
-      {% endif %}
-
-      {% if can_manage_roles %}
-      <form class="role-create-form" method="post" action="/web/system/roles">
-        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <div class="panel-head compact">
-          <div>
-            <h2>创建角色</h2>
-            <p>创建后会自动选中新角色。</p>
-          </div>
-        </div>
-        <div class="field-grid one-column">
-          <label>
-            <span>角色编码</span>
-            <input name="role_code" required placeholder="project_manager">
-          </label>
-          <label>
-            <span>角色名称</span>
-            <input name="role_name" required placeholder="项目经理">
-          </label>
-          <label>
-            <span>数据范围</span>
-            <select name="data_scope_type">
-              <option value="self">本人数据</option>
-              <option value="all">全部数据</option>
-            </select>
-          </label>
-          <button class="btn btn-primary btn-block" type="submit">创建角色</button>
-        </div>
-      </form>
       {% endif %}
     </aside>
 
@@ -187,4 +160,43 @@
     </section>
   </section>
 </section>
+
+{% if can_manage_roles %}
+<aside id="role-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="role-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="role-create-modal-title">创建角色</h2>
+        <p>创建后会自动选中新角色，再在右侧维护权限树。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/roles">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid one-column">
+        <label>
+          <span>角色编码</span>
+          <input name="role_code" required placeholder="project_manager" autofocus>
+        </label>
+        <label>
+          <span>角色名称</span>
+          <input name="role_name" required placeholder="项目经理">
+        </label>
+        <label>
+          <span>数据范围</span>
+          <select name="data_scope_type">
+            <option value="self">本人数据</option>
+            <option value="all">全部数据</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建角色</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
 {% endblock %}

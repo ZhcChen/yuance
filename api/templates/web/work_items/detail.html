@@ -17,6 +17,10 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web/projects/{{ item.project_key }}">返回项目</a>
+      {% if can_manage_work_items %}
+      <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑</button>
+      <button class="btn btn-secondary" type="button" data-modal-open="work-item-comment-modal">评论</button>
+      <button class="btn btn-secondary" type="button" data-modal-open="work-item-attachment-modal">登记附件</button>
       <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/status">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <input type="hidden" name="status" value="in_progress">
@@ -27,71 +31,22 @@
         <input type="hidden" name="status" value="done">
         <button class="btn btn-primary" type="submit">标记完成</button>
       </form>
+      {% endif %}
     </div>
   </section>
 
   <section class="detail-grid">
     <div class="detail-main">
       {% include "web/partials/work_item_detail.html" %}
-      <section class="panel system-form">
-        <div class="panel-head">
-          <div>
-            <h2>编辑工作项</h2>
-            <p>更新标题、描述、状态、优先级和负责人，变更会记录到项目动态。</p>
-          </div>
-        </div>
-        <form method="post" action="/web/work-items/{{ item.key }}/edit">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <div class="field-grid">
-            <label class="wide-field">
-              标题
-              <input name="title" value="{{ item.title }}" required>
-            </label>
-            <label>
-              状态
-              <select name="status">
-                <option value="open" {% if item.status_code == "open" %}selected{% endif %}>待处理</option>
-                <option value="in_progress" {% if item.status_code == "in_progress" %}selected{% endif %}>进行中</option>
-                <option value="done" {% if item.status_code == "done" %}selected{% endif %}>已完成</option>
-                <option value="resolved" {% if item.status_code == "resolved" %}selected{% endif %}>已解决</option>
-                <option value="verified" {% if item.status_code == "verified" %}selected{% endif %}>已验证</option>
-                <option value="closed" {% if item.status_code == "closed" %}selected{% endif %}>已关闭</option>
-                <option value="cancelled" {% if item.status_code == "cancelled" %}selected{% endif %}>已取消</option>
-              </select>
-            </label>
-            <label>
-              优先级
-              <select name="priority">
-                <option value="P0" {% if item.priority == "P0" %}selected{% endif %}>P0</option>
-                <option value="P1" {% if item.priority == "P1" %}selected{% endif %}>P1</option>
-                <option value="P2" {% if item.priority == "P2" %}selected{% endif %}>P2</option>
-                <option value="P3" {% if item.priority == "P3" %}selected{% endif %}>P3</option>
-              </select>
-            </label>
-            <label>
-              负责人
-              <select name="assignee_username">
-                {% for member in assignee_options %}
-                <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label class="wide-field">
-              描述
-              <textarea name="description" rows="5">{{ item.description }}</textarea>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button class="btn btn-primary" type="submit">保存工作项</button>
-          </div>
-        </form>
-      </section>
-      <section class="panel system-form">
+      <section class="panel">
         <div class="panel-head">
           <div>
             <h2>附件</h2>
             <p>第一版先登记已上传文件的元数据，后续接入签名上传和下载。</p>
           </div>
+          {% if can_manage_work_items %}
+          <button class="btn btn-sm btn-primary" type="button" data-modal-open="work-item-attachment-modal">登记附件</button>
+          {% endif %}
         </div>
         {% if has_attachments %}
         <div class="attachment-list wide-list">
@@ -112,44 +67,6 @@
           <span>可以登记需求文档、截图或接口说明等文件。</span>
         </div>
         {% endif %}
-        <form method="post" action="/web/work-items/{{ item.key }}/attachments">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <div class="field-grid">
-            <label>
-              文件名
-              <input name="original_filename" placeholder="screenshot.png" required>
-            </label>
-            <label>
-              Content-Type
-              <input name="content_type" value="application/octet-stream" required>
-            </label>
-            <label>
-              文件大小 Bytes
-              <input name="byte_size" type="number" min="0" value="0" required>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button class="btn btn-primary" type="submit">登记附件</button>
-          </div>
-        </form>
-      </section>
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>新增评论</h2>
-            <p>评论会记录到工作项详情和项目动态。</p>
-          </div>
-        </div>
-        <form class="comment-form" method="post" action="/web/work-items/{{ item.key }}/comments">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <label>
-            评论内容
-            <textarea name="body" rows="4" placeholder="补充进展、阻塞或处理说明" required></textarea>
-          </label>
-          <div class="form-actions">
-            <button class="btn btn-primary" type="submit">提交评论</button>
-          </div>
-        </form>
       </section>
     </div>
     <aside class="detail-side">
@@ -179,4 +96,121 @@
     </aside>
   </section>
 </section>
+
+{% if can_manage_work_items %}
+<aside id="work-item-edit-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-edit-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="work-item-edit-modal-title">编辑工作项</h2>
+        <p>更新标题、描述、状态、优先级和负责人，变更会记录到项目动态。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/edit">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid">
+        <label class="wide-field">
+          标题
+          <input name="title" value="{{ item.title }}" required autofocus>
+        </label>
+        <label>
+          状态
+          <select name="status">
+            <option value="open" {% if item.status_code == "open" %}selected{% endif %}>待处理</option>
+            <option value="in_progress" {% if item.status_code == "in_progress" %}selected{% endif %}>进行中</option>
+            <option value="done" {% if item.status_code == "done" %}selected{% endif %}>已完成</option>
+            <option value="resolved" {% if item.status_code == "resolved" %}selected{% endif %}>已解决</option>
+            <option value="verified" {% if item.status_code == "verified" %}selected{% endif %}>已验证</option>
+            <option value="closed" {% if item.status_code == "closed" %}selected{% endif %}>已关闭</option>
+            <option value="cancelled" {% if item.status_code == "cancelled" %}selected{% endif %}>已取消</option>
+          </select>
+        </label>
+        <label>
+          优先级
+          <select name="priority">
+            <option value="P0" {% if item.priority == "P0" %}selected{% endif %}>P0</option>
+            <option value="P1" {% if item.priority == "P1" %}selected{% endif %}>P1</option>
+            <option value="P2" {% if item.priority == "P2" %}selected{% endif %}>P2</option>
+            <option value="P3" {% if item.priority == "P3" %}selected{% endif %}>P3</option>
+          </select>
+        </label>
+        <label>
+          负责人
+          <select name="assignee_username">
+            {% for member in assignee_options %}
+            <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="wide-field">
+          描述
+          <textarea name="description" rows="5">{{ item.description }}</textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">保存工作项</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="work-item-attachment-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="work-item-attachment-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="work-item-attachment-modal-title">登记工作项附件</h2>
+        <p>第一版先登记已上传文件的元数据。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/attachments">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        文件名
+        <input name="original_filename" placeholder="screenshot.png" required autofocus>
+      </label>
+      <label>
+        Content-Type
+        <input name="content_type" value="application/octet-stream" required>
+      </label>
+      <label>
+        文件大小 Bytes
+        <input name="byte_size" type="number" min="0" value="0" required>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">登记附件</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="work-item-comment-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="work-item-comment-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="work-item-comment-modal-title">新增评论</h2>
+        <p>评论会记录到工作项详情和项目动态。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/comments">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        评论内容
+        <textarea name="body" rows="4" placeholder="补充进展、阻塞或处理说明" required autofocus></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">提交评论</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
 {% endblock %}

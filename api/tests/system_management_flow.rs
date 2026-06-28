@@ -37,6 +37,10 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
     assert!(body.contains("系统管理"));
     assert!(body.contains("角色权限"));
     assert!(body.contains("topnav-menu"));
+    assert!(body.contains(r#"data-modal-open="user-create-modal""#));
+    assert!(body.contains(r#"id="user-create-modal""#));
+    assert!(body.contains(r#"action="/web/system/users""#));
+    assert!(!body.contains("action-menu"));
     assert!(!body.contains("<aside class=\"sidebar\""));
 }
 
@@ -245,6 +249,11 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
     let workbench_body = response_body(workbench_response).await;
     assert!(workbench_body.contains("role-workbench"));
     assert!(workbench_body.contains("role-list"));
+    assert!(workbench_body.contains(r#"data-modal-open="role-create-modal""#));
+    assert!(workbench_body.contains(r#"id="role-create-modal""#));
+    assert!(workbench_body.contains(r#"role="dialog""#));
+    assert!(workbench_body.contains(r#"action="/web/system/roles""#));
+    assert!(!workbench_body.contains("role-create-form"));
     assert!(workbench_body.contains("data-permission-tree"));
     assert!(workbench_body.contains("data-permission-group-key=\"system\""));
     assert!(workbench_body.contains("查看用户管理"));

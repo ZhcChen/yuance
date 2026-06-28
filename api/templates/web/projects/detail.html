@@ -18,7 +18,9 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web/projects">返回项目</a>
-      <a class="btn btn-primary" href="#project-work-item-create">新建工作项</a>
+      {% if can_manage_work_items %}
+      <button class="btn btn-primary" type="button" data-modal-open="project-work-item-create-modal">新建工作项</button>
+      {% endif %}
     </div>
   </section>
 
@@ -145,56 +147,15 @@
         </div>
         {% endif %}
       </section>
-
-      <section id="project-work-item-create" class="panel system-form">
-        <div class="panel-head">
-          <div>
-            <h2>项目内新建工作项</h2>
-            <p>直接归属到 {{ project.code }}，创建后回到当前项目详情。</p>
-          </div>
-        </div>
-        <form method="post" action="/web/work-items">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <input type="hidden" name="project_key" value="{{ project.code }}">
-          <input type="hidden" name="redirect_to" value="project">
-          <div class="field-grid">
-            <label>
-              类型
-              <select name="item_type">
-                {% for option in project_item_type_options %}
-                <option value="{{ option.value }}">{{ option.label }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>
-              优先级
-              <select name="priority">
-                <option value="P0">P0</option>
-                <option value="P1">P1</option>
-                <option value="P2" selected>P2</option>
-                <option value="P3">P3</option>
-              </select>
-            </label>
-            <label class="wide-field">
-              标题
-              <input name="title" placeholder="输入需求、任务或 Bug 标题" required>
-            </label>
-            <label class="wide-field">
-              描述
-              <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
-            </label>
-          </div>
-          <div class="form-actions">
-            <button class="btn btn-primary" type="submit">创建工作项</button>
-          </div>
-        </form>
-      </section>
     </div>
 
     <aside class="detail-side">
       <section class="panel inspector-panel">
         <div class="panel-head compact">
           <h2>项目成员</h2>
+          {% if can_manage_project %}
+          <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-member-add-modal">添加成员</button>
+          {% endif %}
         </div>
         <div class="member-list">
           {% for member in members %}
@@ -205,35 +166,24 @@
             </div>
             <div class="member-actions">
               <span class="status status-info">{{ member.role }}</span>
+              {% if can_manage_project %}
               <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/members/{{ member.username }}/remove">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <button class="btn btn-sm btn-secondary" type="submit">移除</button>
               </form>
+              {% endif %}
             </div>
           </article>
           {% endfor %}
         </div>
-        <form class="member-add-form" method="post" action="/web/projects/{{ project.code }}/members">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <label>
-            用户名
-            <input name="username" placeholder="输入用户名" required>
-          </label>
-          <label>
-            项目角色
-            <select name="member_role">
-              <option value="member">成员</option>
-              <option value="maintainer">维护者</option>
-              <option value="viewer">观察者</option>
-            </select>
-          </label>
-          <button class="btn btn-primary btn-block" type="submit">加入项目</button>
-        </form>
       </section>
 
       <section class="panel inspector-panel">
         <div class="panel-head compact">
           <h2>项目附件</h2>
+          {% if can_manage_work_items %}
+          <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-attachment-create-modal">登记附件</button>
+          {% endif %}
         </div>
         {% if has_attachments %}
         <div class="attachment-list">
@@ -254,22 +204,6 @@
           <span>登记已上传文件后会在这里展示。</span>
         </div>
         {% endif %}
-        <form class="member-add-form" method="post" action="/web/projects/{{ project.code }}/attachments">
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <label>
-            文件名
-            <input name="original_filename" placeholder="roadmap.pdf" required>
-          </label>
-          <label>
-            Content-Type
-            <input name="content_type" value="application/octet-stream" required>
-          </label>
-          <label>
-            文件大小 Bytes
-            <input name="byte_size" type="number" min="0" value="0" required>
-          </label>
-          <button class="btn btn-primary btn-block" type="submit">登记附件</button>
-        </form>
       </section>
 
       <section class="panel inspector-panel">
@@ -296,4 +230,121 @@
     </aside>
   </section>
 </section>
+
+{% if can_manage_work_items %}
+<aside id="project-work-item-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-work-item-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-work-item-create-modal-title">项目内新建工作项</h2>
+        <p>直接归属到 {{ project.code }}，创建后回到当前项目详情。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/work-items">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="project_key" value="{{ project.code }}">
+      <input type="hidden" name="redirect_to" value="project">
+      <div class="field-grid">
+        <label>
+          类型
+          <select name="item_type">
+            {% for option in project_item_type_options %}
+            <option value="{{ option.value }}">{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          优先级
+          <select name="priority">
+            <option value="P0">P0</option>
+            <option value="P1">P1</option>
+            <option value="P2" selected>P2</option>
+            <option value="P3">P3</option>
+          </select>
+        </label>
+        <label class="wide-field">
+          标题
+          <input name="title" placeholder="输入需求、任务或 Bug 标题" required autofocus>
+        </label>
+        <label class="wide-field">
+          描述
+          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建工作项</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="project-attachment-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-attachment-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-attachment-create-modal-title">登记项目附件</h2>
+        <p>第一版登记已上传文件的元数据，后续接入签名上传和下载。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/attachments">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        文件名
+        <input name="original_filename" placeholder="roadmap.pdf" required autofocus>
+      </label>
+      <label>
+        Content-Type
+        <input name="content_type" value="application/octet-stream" required>
+      </label>
+      <label>
+        文件大小 Bytes
+        <input name="byte_size" type="number" min="0" value="0" required>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">登记附件</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
+
+{% if can_manage_project %}
+<aside id="project-member-add-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-member-add-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-member-add-modal-title">添加项目成员</h2>
+        <p>通过用户名把用户加入 {{ project.code }} 项目。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/members">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        用户名
+        <input name="username" placeholder="输入用户名" required autofocus>
+      </label>
+      <label>
+        项目角色
+        <select name="member_role">
+          <option value="member">成员</option>
+          <option value="maintainer">维护者</option>
+          <option value="viewer">观察者</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">加入项目</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
 {% endblock %}

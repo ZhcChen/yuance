@@ -12,7 +12,9 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web">返回工作台</a>
-      <a class="btn btn-primary" href="#work-item-create-form">{{ create_label }}</a>
+      {% if can_manage_work_items %}
+      <button class="btn btn-primary" type="button" data-modal-open="work-item-create-modal">{{ create_label }}</button>
+      {% endif %}
     </div>
   </section>
 
@@ -119,20 +121,26 @@
     {% endif %}
   </section>
 
-  <section id="work-item-create-form" class="panel system-form">
-    <div class="panel-head">
+</section>
+
+{% if can_manage_work_items %}
+<aside id="work-item-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-create-modal-title" tabindex="-1">
+    <div class="modal-head">
       <div>
-        <h2>{{ create_label }}</h2>
+        <h2 id="work-item-create-modal-title">{{ create_label }}</h2>
         <p>工作项创建后会自动分配给当前用户，并记录项目动态。</p>
       </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form method="post" action="/web/work-items">
+    <form class="modal-body modal-form" method="post" action="/web/work-items">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="item_type" value="{{ item_type }}">
       <div class="field-grid">
         <label>
           所属项目
-          <select name="project_key" required>
+          <select name="project_key" required autofocus>
             {% if has_project_options %}
             {% for project in project_options %}
             <option value="{{ project.key }}">{{ project.key }} · {{ project.name }}</option>
@@ -160,10 +168,12 @@
           <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
         </label>
       </div>
-      <div class="form-actions">
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
         <button class="btn btn-primary" type="submit">{{ create_label }}</button>
       </div>
     </form>
   </section>
-</section>
+</aside>
+{% endif %}
 {% endblock %}

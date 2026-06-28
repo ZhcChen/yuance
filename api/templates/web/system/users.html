@@ -10,45 +10,50 @@
       <h1>用户管理</h1>
       <p>维护登录账号、基础资料和系统角色绑定。</p>
     </div>
+    {% if can_manage_users %}
+    <div class="toolbar-actions">
+      <button class="btn btn-primary" type="button" data-modal-open="user-create-modal">创建用户</button>
+    </div>
+    {% endif %}
   </section>
 
-  <section class="system-split">
-    <section class="panel">
-      <div class="panel-head">
-        <div>
-          <h2>用户列表</h2>
-          <p>按创建时间倒序排列。</p>
-        </div>
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>用户列表</h2>
+        <p>按创建时间倒序排列。</p>
       </div>
-      {% if has_users %}
-      <div class="table-wrap">
-        <table class="compact-table">
-          <thead>
-            <tr>
-              <th>用户</th>
-              <th>联系方式</th>
-              <th>角色</th>
-              <th>状态</th>
-              <th>更新</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for user in users %}
-            <tr>
-              <td>
-                <strong>{{ user.display_name }}</strong>
-                <div class="muted-line">@{{ user.username }}{% if user.is_super_admin %} · 超级管理员{% endif %}</div>
-              </td>
-              <td>{{ user.contact }}</td>
-              <td>{{ user.role_names }}</td>
-              <td><span class="status status-{{ user.status_tone }}">{{ user.status }}</span></td>
-              <td>{{ user.updated_at }}</td>
-              <td>
-                {% if user.is_super_admin %}
-                <span class="muted-line">受保护</span>
-                {% else %}
-                <div class="row-actions">
+    </div>
+    {% if has_users %}
+    <div class="table-wrap">
+      <table class="compact-table">
+        <thead>
+          <tr>
+            <th>用户</th>
+            <th>联系方式</th>
+            <th>角色</th>
+            <th>状态</th>
+            <th>更新</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td>
+              <strong>{{ user.display_name }}</strong>
+              <div class="muted-line">@{{ user.username }}{% if user.is_super_admin %} · 超级管理员{% endif %}</div>
+            </td>
+            <td>{{ user.contact }}</td>
+            <td>{{ user.role_names }}</td>
+            <td><span class="status status-{{ user.status_tone }}">{{ user.status }}</span></td>
+            <td>{{ user.updated_at }}</td>
+            <td>
+              {% if user.is_super_admin %}
+              <span class="muted-line">受保护</span>
+              {% else %}
+              {% if can_manage_users %}
+              <div class="row-actions">
                 <form method="post" action="/web/system/users/{{ user.username }}/status">
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   {% if user.status_code == "active" %}
@@ -59,60 +64,45 @@
                   <button class="btn btn-sm btn-secondary" type="submit">启用</button>
                   {% endif %}
                 </form>
-                <details class="action-menu">
-                  <summary class="btn btn-sm btn-secondary">维护</summary>
-                  <div class="action-popover">
-                    <form method="post" action="/web/system/users/{{ user.username }}/role">
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <label>
-                        <span>角色</span>
-                        <select name="role_code" required>
-                          {% for role in roles %}
-                          <option value="{{ role.code }}" {% if user.role_code == role.code %}selected{% endif %}>{{ role.name }}</option>
-                          {% endfor %}
-                        </select>
-                      </label>
-                      <button class="btn btn-sm btn-primary" type="submit">保存角色</button>
-                    </form>
-                    <form method="post" action="/web/system/users/{{ user.username }}/password">
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <label>
-                        <span>重置密码</span>
-                        <input name="password" type="password" required placeholder="至少 10 个字符">
-                      </label>
-                      <button class="btn btn-sm btn-secondary" type="submit">重置密码</button>
-                    </form>
-                  </div>
-                </details>
-                </div>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% else %}
-      <div class="empty-state">
-        <strong>暂无用户</strong>
-        <span>初始化后至少应存在一个超级管理员。</span>
-      </div>
-      {% endif %}
-    </section>
+                <button class="btn btn-sm btn-secondary" type="button" data-modal-open="user-role-modal-{{ user.username }}">调整角色</button>
+                <button class="btn btn-sm btn-secondary" type="button" data-modal-open="user-password-modal-{{ user.username }}">重置密码</button>
+              </div>
+              {% else %}
+              <span class="muted-line">只读</span>
+              {% endif %}
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <strong>暂无用户</strong>
+      <span>初始化后至少应存在一个超级管理员。</span>
+    </div>
+    {% endif %}
+  </section>
+</section>
 
-    <form class="panel system-form" method="post" action="/web/system/users">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <div class="panel-head">
-        <div>
-          <h2>创建用户</h2>
-          <p>第一版创建后自动启用，并绑定一个角色。</p>
-        </div>
-        <button class="btn btn-primary" type="submit">创建用户</button>
+{% if can_manage_users %}
+<aside id="user-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="user-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="user-create-modal-title">创建用户</h2>
+        <p>第一版创建后自动启用，并绑定一个角色。</p>
       </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/users">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <div class="field-grid one-column">
         <label>
           <span>用户名</span>
-          <input name="username" required placeholder="zhangsan">
+          <input name="username" required placeholder="zhangsan" autofocus>
         </label>
         <label>
           <span>显示名称</span>
@@ -139,7 +129,68 @@
           </select>
         </label>
       </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建用户</button>
+      </div>
     </form>
   </section>
-</section>
+</aside>
+
+{% for user in users %}
+{% if !user.is_super_admin %}
+<aside id="user-role-modal-{{ user.username }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="user-role-modal-title-{{ user.username }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="user-role-modal-title-{{ user.username }}">调整角色</h2>
+        <p>{{ user.display_name }} @{{ user.username }}</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/users/{{ user.username }}/role">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        <span>角色</span>
+        <select name="role_code" required autofocus>
+          {% for role in roles %}
+          <option value="{{ role.code }}" {% if user.role_code == role.code %}selected{% endif %}>{{ role.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">保存角色</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="user-password-modal-{{ user.username }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="user-password-modal-title-{{ user.username }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="user-password-modal-title-{{ user.username }}">重置密码</h2>
+        <p>{{ user.display_name }} @{{ user.username }} 的旧会话会被撤销。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/users/{{ user.username }}/password">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        <span>新密码</span>
+        <input name="password" type="password" required placeholder="至少 10 个字符" autofocus>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">重置密码</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
+{% endfor %}
+{% endif %}
 {% endblock %}

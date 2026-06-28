@@ -33,6 +33,9 @@ async fn storage_page_renders_empty_state_for_admin() {
     let body = response_body(response).await;
     assert!(body.contains("阿里云 OSS"));
     assert!(body.contains("尚未配置对象存储"));
+    assert!(body.contains(r#"data-modal-open="storage-config-modal""#));
+    assert!(body.contains(r#"id="storage-config-modal""#));
+    assert!(body.contains(r#"role="dialog""#));
     assert!(body.contains("name=\"_csrf\""));
 }
 

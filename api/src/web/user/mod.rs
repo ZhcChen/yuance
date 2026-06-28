@@ -308,6 +308,7 @@ struct DashboardTemplate {
     metrics: Vec<Metric>,
     projects: Vec<ProjectRow>,
     activities: Vec<Activity>,
+    can_manage_projects: bool,
 }
 
 #[derive(Template)]
@@ -351,6 +352,7 @@ struct ProjectsTemplate {
     projects: Vec<ProjectRow>,
     summary: ProjectListSummary,
     has_projects: bool,
+    can_manage_projects: bool,
 }
 
 #[derive(Template)]
@@ -375,6 +377,8 @@ struct ProjectDetailTemplate {
     has_activities: bool,
     has_attachments: bool,
     project_item_type_options: Vec<WorkItemTypeOption>,
+    can_manage_project: bool,
+    can_manage_work_items: bool,
 }
 
 #[derive(Template)]
@@ -395,6 +399,7 @@ struct WorkItemListTemplate {
     summary: WorkItemListSummary,
     has_items: bool,
     has_project_options: bool,
+    can_manage_work_items: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -417,6 +422,7 @@ struct WorkItemDetailTemplate {
     comments: Vec<WorkItemComment>,
     has_comments: bool,
     has_attachments: bool,
+    can_manage_work_items: bool,
 }
 
 #[derive(Template)]
@@ -461,6 +467,7 @@ struct StorageSettingsTemplate {
     system_nav: SystemNav,
     config: StorageConfigView,
     message: String,
+    can_manage_storage: bool,
 }
 
 #[derive(Template)]
@@ -474,6 +481,7 @@ struct SystemUsersTemplate {
     users: Vec<UserRow>,
     roles: Vec<RoleRow>,
     has_users: bool,
+    can_manage_users: bool,
 }
 
 #[derive(Template)]
@@ -889,6 +897,10 @@ pub async fn projects_page(
         None => sample_projects(),
     };
     let summary = project_list_summary(&projects);
+    let can_manage_projects = match context.pool {
+        Some(pool) => rbac::user_has_permission(pool, context.user_id, "project.manage").await?,
+        None => true,
+    };
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -903,6 +915,7 @@ pub async fn projects_page(
             has_projects: !projects.is_empty(),
             projects,
             summary,
+            can_manage_projects,
         })?
         .into_response(),
     )
@@ -1001,6 +1014,10 @@ pub async fn project_detail_page(
         .collect::<Vec<_>>();
     let summary = project_detail_summary(&requirements, &tasks, &bugs, &members);
     let project = project_detail_from_domain(project);
+    let can_manage_project =
+        rbac::user_has_permission(pool, context.user_id, "project.manage").await?;
+    let can_manage_work_items =
+        rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1026,6 +1043,8 @@ pub async fn project_detail_page(
             attachments,
             activities,
             project_item_type_options: work_item_type_options(),
+            can_manage_project,
+            can_manage_work_items,
         })?
         .into_response(),
     )
@@ -1283,6 +1302,8 @@ pub async fn work_item_detail_page(
         .into_iter()
         .map(attachment_from_summary)
         .collect::<Vec<_>>();
+    let can_manage_work_items =
+        rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1300,6 +1321,7 @@ pub async fn work_item_detail_page(
             has_attachments: !attachments.is_empty(),
             attachments,
             comments,
+            can_manage_work_items,
         })?
         .into_response(),
     )
@@ -1667,6 +1689,8 @@ pub async fn system_users_page(
         .into_iter()
         .map(role_row_from_summary)
         .collect::<Vec<_>>();
+    let can_manage_users =
+        rbac::user_has_permission(pool, context.user_id, "system.users.manage").await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1681,6 +1705,7 @@ pub async fn system_users_page(
             has_users: !users.is_empty(),
             users,
             roles,
+            can_manage_users,
         })?
         .into_response(),
     )
@@ -2018,6 +2043,8 @@ pub async fn storage_settings(
         .await?
         .map(storage_config_view_from_domain)
         .unwrap_or_else(empty_storage_config_view);
+    let can_manage_storage =
+        rbac::user_has_permission(state.pool()?, context.user_id, "system.storage.manage").await?;
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
         &state,
@@ -2030,6 +2057,7 @@ pub async fn storage_settings(
             system_nav: context.system_nav,
             config,
             message: String::new(),
+            can_manage_storage,
         })?
         .into_response(),
     )
@@ -2081,6 +2109,7 @@ pub async fn storage_settings_save(
             system_nav: context.system_nav,
             config: storage_config_view_from_domain(saved),
             message: "对象存储配置已保存，密钥已加密入库。".to_string(),
+            can_manage_storage: true,
         })?
         .into_response(),
     )
@@ -2199,6 +2228,10 @@ async fn work_item_list_page(
         }
         None => sample_project_options(),
     };
+    let can_manage_work_items = match context.pool {
+        Some(pool) => rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?,
+        None => true,
+    };
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -2220,6 +2253,7 @@ async fn work_item_list_page(
             project_options,
             filters,
             summary,
+            can_manage_work_items,
         })?
         .into_response(),
     )
@@ -2314,6 +2348,10 @@ async fn render_dashboard(
         }
         None => (sample_metrics(), sample_projects(), sample_activities()),
     };
+    let can_manage_projects = match pool {
+        Some(pool) => rbac::user_has_permission(pool, user_id, "project.manage").await?,
+        None => true,
+    };
 
     response::html(DashboardTemplate {
         active: "dashboard",
@@ -2324,6 +2362,7 @@ async fn render_dashboard(
         metrics,
         projects,
         activities,
+        can_manage_projects,
     })
 }
 
@@ -3454,6 +3493,8 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             attachments: Vec::new(),
             activities,
             project_item_type_options: work_item_type_options(),
+            can_manage_project: true,
+            can_manage_work_items: true,
         })?
         .into_response(),
     )
@@ -3485,6 +3526,7 @@ fn render_sample_work_item_detail_page(
             has_attachments: false,
             attachments: Vec::new(),
             comments: partial.comments,
+            can_manage_work_items: true,
         })?
         .into_response(),
     )

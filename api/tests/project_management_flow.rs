@@ -173,6 +173,10 @@ async fn web_projects_renders_demo_projects_from_database() {
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("客户线索同步"));
     assert!(body.contains("开放工作项"));
+    assert!(body.contains(r#"data-modal-open="project-create-modal""#));
+    assert!(body.contains(r#"id="project-create-modal""#));
+    assert!(body.contains(r#"action="/web/projects""#));
+    assert!(!body.contains(r#"id="project-create-form""#));
 }
 
 #[tokio::test]
@@ -214,6 +218,10 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains("YCE-TASK-1"));
     assert!(tasks_body.contains("YCE-TASK-2"));
     assert!(tasks_body.contains("OPS-TASK-1"));
+    assert!(tasks_body.contains(r#"data-modal-open="work-item-create-modal""#));
+    assert!(tasks_body.contains(r#"id="work-item-create-modal""#));
+    assert!(tasks_body.contains(r#"name="item_type" value="task""#));
+    assert!(!tasks_body.contains(r#"id="work-item-create-form""#));
     assert!(!tasks_body.contains("YCE-REQ-1"));
     assert!(!tasks_body.contains("CRM-BUG-1"));
 
@@ -413,7 +421,12 @@ async fn web_work_item_detail_page_renders_full_shell() {
     assert!(body.contains("元策工作台"));
     assert!(body.contains("YCE-TASK-2"));
     assert!(body.contains("标记完成"));
+    assert!(body.contains(r#"data-modal-open="work-item-edit-modal""#));
+    assert!(body.contains(r#"id="work-item-edit-modal""#));
+    assert!(body.contains(r#"id="work-item-comment-modal""#));
+    assert!(body.contains(r#"id="work-item-attachment-modal""#));
     assert!(body.contains("编辑工作项"));
+    assert!(body.contains("新增评论"));
     assert!(body.contains("先统一项目与工作项查询模型"));
 }
 
@@ -781,6 +794,10 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
         .expect("router should respond");
     assert_eq!(page_response.status(), StatusCode::OK);
     let page_body = response_body(page_response).await;
+    assert!(page_body.contains(r#"data-modal-open="project-work-item-create-modal""#));
+    assert!(page_body.contains(r#"id="project-work-item-create-modal""#));
+    assert!(page_body.contains(r#"id="project-member-add-modal""#));
+    assert!(page_body.contains(r#"id="project-attachment-create-modal""#));
     assert!(page_body.contains("项目内新建工作项"));
     assert!(page_body.contains(r#"name="redirect_to" value="project""#));
 

@@ -37,6 +37,10 @@ body {
   overflow: hidden;
 }
 
+body.modal-open .main {
+  overflow: hidden;
+}
+
 body[data-page-transition] .main,
 body[data-page-transition] .auth-shell {
   animation: page-enter 170ms ease both;
@@ -1172,6 +1176,110 @@ code {
   line-height: 22px;
 }
 
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 28px 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.modal[hidden] {
+  display: none;
+}
+
+.modal.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgb(15 23 42 / 36%);
+}
+
+.modal-panel {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(720px, calc(100vh - 56px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgb(24 39 58 / 20%);
+  transform: translateY(10px) scale(0.98);
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.modal-panel.modal-wide {
+  width: min(760px, 100%);
+}
+
+.modal.open .modal-panel {
+  transform: translateY(0) scale(1);
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+}
+
+.modal-head p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.modal-body {
+  min-height: 0;
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding: 16px 18px 18px;
+}
+
+.modal-form {
+  display: grid;
+  gap: 14px;
+}
+
+.modal-body .field-grid,
+.modal-body .comment-form,
+.modal-body .member-add-form {
+  padding: 0;
+  border-top: 0;
+}
+
+.modal-body .form-actions {
+  padding: 0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
 .icon-btn {
   width: 30px;
   height: 30px;
@@ -1652,15 +1760,6 @@ textarea {
   text-decoration: underline;
 }
 
-.role-create-form {
-  border-top: 1px solid var(--line);
-  background: #fbfcfe;
-}
-
-.role-create-form .field-grid {
-  padding: 14px;
-}
-
 .role-permission-panel {
   overflow: hidden;
 }
@@ -1863,5 +1962,25 @@ textarea {
 
   .detail-dl.inline {
     grid-template-columns: 1fr;
+  }
+
+  .modal {
+    padding: 12px;
+  }
+
+  .modal-panel,
+  .modal-panel.modal-wide {
+    width: 100%;
+    max-height: calc(100dvh - 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal,
+  .modal-panel,
+  .drawer-panel {
+    transition: none;
+    animation: none;
+    transform: none;
   }
 }
