@@ -204,9 +204,9 @@ textarea:focus-visible {
 }
 
 .topnav-item.active {
-  border-color: var(--brand-line);
-  background: var(--brand-soft);
-  color: var(--brand);
+  border-color: transparent;
+  background: #dbeafe;
+  color: var(--brand-strong);
 }
 
 .topnav-trigger {
@@ -231,6 +231,15 @@ textarea:focus-visible {
   transition: opacity 150ms ease, transform 150ms ease;
 }
 
+.topnav-menu::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -12px;
+  height: 12px;
+}
+
 .topnav-menu.open {
   opacity: 1;
   pointer-events: auto;
@@ -249,8 +258,8 @@ textarea:focus-visible {
 
 .topnav-menu a:hover,
 .topnav-menu a.active {
-  background: var(--panel-soft);
-  color: var(--brand);
+  background: #eaf2ff;
+  color: var(--brand-strong);
 }
 
 .topbar-meta {
@@ -325,6 +334,15 @@ textarea:focus-visible {
   transform: translateY(-6px) scale(0.98);
   transform-origin: top right;
   transition: opacity 150ms ease, transform 150ms ease;
+}
+
+.account-menu::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -12px;
+  height: 12px;
 }
 
 .account-menu.open {

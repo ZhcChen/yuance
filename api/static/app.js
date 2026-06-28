@@ -1,5 +1,5 @@
 (function () {
-  var DROPDOWN_TRANSITION_MS = 160;
+  var DROPDOWN_TRANSITION_MS = 240;
   var PAGE_TRANSITION_MS = 150;
   var AVATAR_COLORS = [
     "#1f5fbf",
