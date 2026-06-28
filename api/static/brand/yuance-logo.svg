@@ -1,26 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
   <title id="title">元策 Logo</title>
-  <desc id="desc">以元字结构和项目节点路线组成的元策品牌标识</desc>
+  <desc id="desc">以抽象 Y 型决策分叉和上升折线组成的元策品牌标识</desc>
   <defs>
-    <linearGradient id="bg" x1="18" y1="12" x2="78" y2="84" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2f7af0"/>
-      <stop offset="1" stop-color="#164a96"/>
+    <linearGradient id="bg" x1="14" y1="8" x2="82" y2="88" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1f78ff"/>
+      <stop offset="0.58" stop-color="#1f5fbf"/>
+      <stop offset="1" stop-color="#123f82"/>
     </linearGradient>
-    <linearGradient id="route" x1="25" y1="30" x2="73" y2="68" gradientUnits="userSpaceOnUse">
+    <linearGradient id="mark" x1="27" y1="25" x2="67" y2="74" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#d8e8ff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="58" y1="45" x2="78" y2="65" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5ee6a8"/>
+      <stop offset="1" stop-color="#238d68"/>
     </linearGradient>
   </defs>
 
-  <rect width="96" height="96" rx="23" fill="url(#bg)"/>
-  <path d="M27 30h42M35 47h30" fill="none" stroke="#eef6ff" stroke-width="8" stroke-linecap="round"/>
-  <path d="M48 47c0 16-7 27-20 31" fill="none" stroke="url(#route)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M48 47c7 13 15 21 25 25" fill="none" stroke="url(#route)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M28 77c16-7 28-16 39-31" fill="none" stroke="#8fb9ff" stroke-width="3" stroke-linecap="round" stroke-dasharray="1 8"/>
-
-  <circle cx="27" cy="30" r="5.5" fill="#ffffff"/>
-  <circle cx="69" cy="30" r="5.5" fill="#ffffff"/>
-  <circle cx="48" cy="47" r="7" fill="#ffffff"/>
-  <circle cx="28" cy="77" r="6" fill="#ffffff"/>
-  <circle cx="73" cy="72" r="7" fill="#2d8a68" stroke="#ffffff" stroke-width="4"/>
+  <rect x="3" y="3" width="90" height="90" rx="24" fill="url(#bg)"/>
+  <path d="M68 10c10 7 16 18 17 32 1 17-6 31-20 42h24V10H68Z" fill="#5aa2ff" opacity=".22"/>
+  <path d="M28 29 48 49 68 29M48 49v25" fill="none" stroke="url(#mark)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M36 66 49 54l9 9 16-16" fill="none" stroke="#b7d4ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
+  <path d="M60 58 74 44" fill="none" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
+  <path d="M66 43h9v9" fill="none" stroke="url(#accent)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="48" cy="49" r="4" fill="#1f5fbf"/>
 </svg>
