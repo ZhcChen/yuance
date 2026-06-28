@@ -262,6 +262,7 @@ async fn web_renders_dashboard_after_bootstrap_with_session() {
 
     assert!(body.contains("系统管理员"));
     assert!(body.contains("我的工作项"));
+    assert!(body.contains("/static/brand/yuance-logo.svg"));
     assert!(body.contains("class=\"topnav\""));
     assert!(body.contains("aria-label=\"系统管理员，打开用户菜单\""));
     assert!(body.contains("个人中心"));

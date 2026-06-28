@@ -109,10 +109,8 @@ textarea:focus-visible {
   border-radius: 7px;
   display: grid;
   place-items: center;
-  background: var(--brand);
-  color: #fff;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  object-fit: contain;
+  box-shadow: 0 6px 14px rgb(31 95 191 / 18%);
 }
 
 .brand-name {

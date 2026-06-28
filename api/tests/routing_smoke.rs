@@ -56,6 +56,38 @@ async fn healthz_returns_json() {
 }
 
 #[tokio::test]
+async fn static_logo_is_bundled_as_svg() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/brand/yuance-logo.svg")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/svg+xml; charset=utf-8"
+    );
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect")
+        .to_bytes();
+    let body = std::str::from_utf8(&body).expect("body should be utf-8");
+
+    assert!(body.contains("<title id=\"title\">元策 Logo</title>"));
+    assert!(body.contains("项目节点路线"));
+}
+
+#[tokio::test]
 async fn admin_is_not_a_supported_entry() {
     let app = build_router(AppState::for_tests());
 
