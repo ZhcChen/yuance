@@ -117,6 +117,8 @@ origin: docs/plans/2026-06-26-002-feat-yuance-v1-complete-design-plan.md
 - 项目成员可见，非成员不可见。
 - 对象存储密钥不出现在页面、日志和响应中。
 
+当前状态：已完成最小入口。项目详情和工作项详情支持登记已上传文件元数据并挂载附件；附件复用 active 对象存储配置和 `file_objects` / `file_attachments` 底座。签名上传、下载和评论附件后续增强。
+
 ### P2：项目动态完善
 
 项目动态应覆盖：

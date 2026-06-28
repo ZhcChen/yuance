@@ -12,7 +12,7 @@ use crate::{
     domains::{
         audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        projects, rbac, storage, users,
+        files, projects, rbac, storage, users,
     },
     platform::error::{AppError, AppResult},
     platform::security::csrf,
@@ -73,6 +73,17 @@ struct ProjectMemberView {
 }
 
 #[derive(Debug, Clone)]
+struct AttachmentView {
+    filename: String,
+    content_type: String,
+    byte_size: String,
+    status: String,
+    created_by: String,
+    created_at: String,
+    object_key: String,
+}
+
+#[derive(Debug, Clone)]
 struct ProjectDetailSummary {
     requirements: usize,
     tasks: usize,
@@ -95,6 +106,7 @@ struct WorkItem {
 
 #[derive(Debug, Clone)]
 struct WorkItemDetailView {
+    id: i64,
     key: String,
     kind: String,
     title: String,
@@ -335,11 +347,13 @@ struct ProjectDetailTemplate {
     tasks: Vec<WorkItem>,
     bugs: Vec<WorkItem>,
     members: Vec<ProjectMemberView>,
+    attachments: Vec<AttachmentView>,
     activities: Vec<Activity>,
     has_requirements: bool,
     has_tasks: bool,
     has_bugs: bool,
     has_activities: bool,
+    has_attachments: bool,
     project_item_type_options: Vec<WorkItemTypeOption>,
 }
 
@@ -379,8 +393,10 @@ struct WorkItemDetailTemplate {
     system_nav: SystemNav,
     item: WorkItemDetailView,
     assignee_options: Vec<ProjectMemberView>,
+    attachments: Vec<AttachmentView>,
     comments: Vec<WorkItemComment>,
     has_comments: bool,
+    has_attachments: bool,
 }
 
 #[derive(Template)]
@@ -599,6 +615,15 @@ pub struct WorkItemEditForm {
     status: String,
     priority: String,
     assignee_username: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AttachmentForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    original_filename: String,
+    content_type: String,
+    byte_size: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -921,6 +946,11 @@ pub async fn project_detail_page(
         .into_iter()
         .map(project_member_from_summary)
         .collect::<Vec<_>>();
+    let attachments = files::list_attachments(pool, "project", project.id)
+        .await?
+        .into_iter()
+        .map(attachment_from_summary)
+        .collect::<Vec<_>>();
     let activities = projects::list_project_activities(pool, project.id, 10)
         .await?
         .into_iter()
@@ -949,6 +979,8 @@ pub async fn project_detail_page(
             tasks,
             bugs,
             members,
+            has_attachments: !attachments.is_empty(),
+            attachments,
             activities,
             project_item_type_options: work_item_type_options(),
         })?
@@ -1025,6 +1057,55 @@ pub async fn project_member_remove(
             "project",
             &project_key,
             &format!(r#"{{"username":"{}"}}"#, username),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/projects/{project_key}")).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
+pub async fn project_attachment_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Form(form): Form<AttachmentForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "work_item.manage").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let config = storage::active_config(pool)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+        let attachment = files::create_attachment(
+            pool,
+            &config,
+            files::CreateAttachmentInput {
+                target_type: "project".to_string(),
+                target_id: project.id,
+                original_filename: form.original_filename,
+                content_type: form.content_type,
+                byte_size: form.byte_size,
+                created_by_user_id: context.user_id,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "file.attach.project",
+            "project",
+            &project_key,
+            &format!(r#"{{"file_object_id":{}}}"#, attachment.file_object_id),
         )
         .await?;
 
@@ -1150,6 +1231,11 @@ pub async fn work_item_detail_page(
     )
     .await?;
     let assignee_options = load_project_member_options(pool, &item.project_key).await?;
+    let attachments = files::list_attachments(pool, "work_item", item.id)
+        .await?
+        .into_iter()
+        .map(attachment_from_summary)
+        .collect::<Vec<_>>();
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -1164,6 +1250,8 @@ pub async fn work_item_detail_page(
             has_comments: !comments.is_empty(),
             item,
             assignee_options,
+            has_attachments: !attachments.is_empty(),
+            attachments,
             comments,
         })?
         .into_response(),
@@ -1295,6 +1383,61 @@ pub async fn work_item_comment_create(
             "work_item",
             &item_key,
             "{}",
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+pub async fn work_item_attachment_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Form(form): Form<AttachmentForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_manage_permission(pool, context.user_id, "work_item.manage").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let config = storage::active_config(pool)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+        let attachment = files::create_attachment(
+            pool,
+            &config,
+            files::CreateAttachmentInput {
+                target_type: "work_item".to_string(),
+                target_id: item.id,
+                original_filename: form.original_filename,
+                content_type: form.content_type,
+                byte_size: form.byte_size,
+                created_by_user_id: context.user_id,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "file.attach.work_item",
+            "work_item",
+            &item_key,
+            &format!(r#"{{"file_object_id":{}}}"#, attachment.file_object_id),
         )
         .await?;
 
@@ -2352,6 +2495,18 @@ fn project_member_from_summary(member: projects::ProjectMemberSummary) -> Projec
     }
 }
 
+fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
+    AttachmentView {
+        filename: attachment.original_filename,
+        content_type: attachment.content_type,
+        byte_size: format_byte_size(attachment.byte_size),
+        status: attachment.status,
+        created_by: fallback_text(attachment.created_by_display_name, "系统"),
+        created_at: display_timestamp(attachment.created_at),
+        object_key: attachment.object_key,
+    }
+}
+
 fn project_detail_summary(
     requirements: &[WorkItem],
     tasks: &[WorkItem],
@@ -2396,6 +2551,7 @@ fn work_item_from_summary(item: projects::WorkItemSummary) -> WorkItem {
 fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetailView {
     let (kind, status, status_tone) = work_item_labels(&item.item_type, &item.status);
     WorkItemDetailView {
+        id: item.id,
         key: item.item_key,
         kind: kind.to_string(),
         title: item.title,
@@ -2846,6 +3002,16 @@ fn display_timestamp(value: String) -> String {
     value.replace('T', " ")
 }
 
+fn format_byte_size(byte_size: i64) -> String {
+    if byte_size < 1024 {
+        return format!("{byte_size} B");
+    }
+    if byte_size < 1024 * 1024 {
+        return format!("{:.1} KB", byte_size as f64 / 1024.0);
+    }
+    format!("{:.1} MB", byte_size as f64 / 1024.0 / 1024.0)
+}
+
 fn empty_work_items_message(item_type: Option<&str>) -> String {
     match item_type {
         Some("requirement") => "暂无需求".to_string(),
@@ -3069,6 +3235,8 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             tasks,
             bugs,
             members,
+            has_attachments: false,
+            attachments: Vec::new(),
             activities,
             project_item_type_options: work_item_type_options(),
         })?
@@ -3099,6 +3267,8 @@ fn render_sample_work_item_detail_page(
                 role: "负责人".to_string(),
                 joined_at: "今天".to_string(),
             }],
+            has_attachments: false,
+            attachments: Vec::new(),
             comments: partial.comments,
         })?
         .into_response(),
@@ -3108,6 +3278,7 @@ fn render_sample_work_item_detail_page(
 fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
     WorkItemDetailPartialTemplate {
         item: WorkItemDetailView {
+            id: 2,
             key: "YCE-TASK-2".to_string(),
             kind: "任务".to_string(),
             title: "设计项目与工作项数据模型".to_string(),

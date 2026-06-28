@@ -86,6 +86,53 @@
           </div>
         </form>
       </section>
+      <section class="panel system-form">
+        <div class="panel-head">
+          <div>
+            <h2>附件</h2>
+            <p>第一版先登记已上传文件的元数据，后续接入签名上传和下载。</p>
+          </div>
+        </div>
+        {% if has_attachments %}
+        <div class="attachment-list wide-list">
+          {% for attachment in attachments %}
+          <article class="attachment-row">
+            <div>
+              <strong>{{ attachment.filename }}</strong>
+              <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · {{ attachment.created_by }} · {{ attachment.created_at }}</span>
+              <code>{{ attachment.object_key }}</code>
+            </div>
+            <span class="status status-info">{{ attachment.status }}</span>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无附件</strong>
+          <span>可以登记需求文档、截图或接口说明等文件。</span>
+        </div>
+        {% endif %}
+        <form method="post" action="/web/work-items/{{ item.key }}/attachments">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <div class="field-grid">
+            <label>
+              文件名
+              <input name="original_filename" placeholder="screenshot.png" required>
+            </label>
+            <label>
+              Content-Type
+              <input name="content_type" value="application/octet-stream" required>
+            </label>
+            <label>
+              文件大小 Bytes
+              <input name="byte_size" type="number" min="0" value="0" required>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">登记附件</button>
+          </div>
+        </form>
+      </section>
       <section class="panel">
         <div class="panel-head">
           <div>

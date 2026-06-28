@@ -66,6 +66,10 @@ pub fn build_router(state: AppState) -> Router {
             "/web/projects/{project_key}/members/{username}/remove",
             post(web::user::project_member_remove),
         )
+        .route(
+            "/web/projects/{project_key}/attachments",
+            post(web::user::project_attachment_create),
+        )
         .route("/web/requirements", get(web::user::requirements_page))
         .route("/web/tasks", get(web::user::tasks_page))
         .route("/web/bugs", get(web::user::bugs_page))
@@ -85,6 +89,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/web/work-items/{item_key}/comments",
             post(web::user::work_item_comment_create),
+        )
+        .route(
+            "/web/work-items/{item_key}/attachments",
+            post(web::user::work_item_attachment_create),
         )
         .route(
             "/web/login",

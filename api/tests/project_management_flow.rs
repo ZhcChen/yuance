@@ -5,7 +5,7 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, projects, rbac},
+    domains::{auth, bootstrap, files, projects, rbac, storage},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -938,6 +938,128 @@ async fn web_work_item_detail_can_edit_core_fields_and_assignee() {
 }
 
 #[tokio::test]
+async fn web_project_detail_can_register_project_attachment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/projects/YCE/attachments")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&original_filename=roadmap.pdf&content_type=application%2Fpdf&byte_size=2048",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/YCE"
+    );
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let attachments = files::list_attachments(&pool, "project", project.id)
+        .await
+        .expect("attachments should load");
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].original_filename, "roadmap.pdf");
+    assert_eq!(attachments[0].content_type, "application/pdf");
+    assert_eq!(attachments[0].byte_size, 2048);
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let body = response_body(detail_response).await;
+
+    assert!(body.contains("项目附件"));
+    assert!(body.contains("roadmap.pdf"));
+    assert!(body.contains("application/pdf"));
+}
+
+#[tokio::test]
+async fn web_work_item_detail_can_register_work_item_attachment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/attachments")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&original_filename=screenshot.png&content_type=image%2Fpng&byte_size=4096",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/work-items/YCE-TASK-2"
+    );
+
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let attachments = files::list_attachments(&pool, "work_item", item.id)
+        .await
+        .expect("attachments should load");
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].original_filename, "screenshot.png");
+    assert_eq!(attachments[0].content_type, "image/png");
+    assert_eq!(attachments[0].byte_size, 4096);
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let body = response_body(detail_response).await;
+
+    assert!(body.contains("附件"));
+    assert!(body.contains("screenshot.png"));
+    assert!(body.contains("image/png"));
+}
+
+#[tokio::test]
 async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -1275,6 +1397,24 @@ async fn create_regular_user(
     }
 }
 
+async fn seed_active_storage_config(pool: &sqlx::SqlitePool, actor_user_id: i64) {
+    storage::save_config(
+        pool,
+        &test_settings(),
+        actor_user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: "https://oss-cn-hangzhou.aliyuncs.com".to_string(),
+            region: "cn-hangzhou".to_string(),
+            bucket: "yuance-files".to_string(),
+            access_key_id: "AKIAUNIT5SECRETID".to_string(),
+            access_key_secret: "Unit5SecretValue2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .expect("storage config should save");
+}
+
 fn extract_json_string(body: &str, key: &str) -> String {
     let needle = format!("\"{key}\":\"");
     let start = body.find(&needle).expect("key should exist") + needle.len();
@@ -1310,6 +1450,6 @@ fn test_settings() -> Settings {
         cache_session_ttl: "5m".to_string(),
         log_level: "off".to_string(),
         env: "test".to_string(),
-        security_master_key: "test-master-key".to_string(),
+        security_master_key: "test-master-key-2026".to_string(),
     }
 }

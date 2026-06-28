@@ -233,6 +233,47 @@
 
       <section class="panel inspector-panel">
         <div class="panel-head compact">
+          <h2>项目附件</h2>
+        </div>
+        {% if has_attachments %}
+        <div class="attachment-list">
+          {% for attachment in attachments %}
+          <article class="attachment-row">
+            <div>
+              <strong>{{ attachment.filename }}</strong>
+              <span>{{ attachment.byte_size }} · {{ attachment.content_type }}</span>
+              <code>{{ attachment.object_key }}</code>
+            </div>
+            <span class="status status-info">{{ attachment.status }}</span>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无附件</strong>
+          <span>登记已上传文件后会在这里展示。</span>
+        </div>
+        {% endif %}
+        <form class="member-add-form" method="post" action="/web/projects/{{ project.code }}/attachments">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <label>
+            文件名
+            <input name="original_filename" placeholder="roadmap.pdf" required>
+          </label>
+          <label>
+            Content-Type
+            <input name="content_type" value="application/octet-stream" required>
+          </label>
+          <label>
+            文件大小 Bytes
+            <input name="byte_size" type="number" min="0" value="0" required>
+          </label>
+          <button class="btn btn-primary btn-block" type="submit">登记附件</button>
+        </form>
+      </section>
+
+      <section class="panel inspector-panel">
+        <div class="panel-head compact">
           <h2>最近动态</h2>
         </div>
         {% if has_activities %}
