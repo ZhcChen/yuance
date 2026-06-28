@@ -1,27 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
   <title id="title">元策 Logo</title>
-  <desc id="desc">以抽象 Y 型决策分叉和上升折线组成的元策品牌标识</desc>
-  <defs>
-    <linearGradient id="bg" x1="14" y1="8" x2="82" y2="88" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1f78ff"/>
-      <stop offset="0.58" stop-color="#1f5fbf"/>
-      <stop offset="1" stop-color="#123f82"/>
-    </linearGradient>
-    <linearGradient id="mark" x1="27" y1="25" x2="67" y2="74" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#dbeafe"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="58" y1="45" x2="78" y2="65" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#5ee6a8"/>
-      <stop offset="1" stop-color="#238d68"/>
-    </linearGradient>
-  </defs>
+  <desc id="desc">以纯色 Y 型决策分叉和上升箭标组成的元策品牌标识</desc>
 
-  <rect x="3" y="3" width="90" height="90" rx="24" fill="url(#bg)"/>
-  <path d="M68 10c10 7 16 18 17 32 1 17-6 31-20 42h24V10H68Z" fill="#5aa2ff" opacity=".22"/>
-  <path d="M28 29 48 49 68 29M48 49v25" fill="none" stroke="url(#mark)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 66 49 54l9 9 16-16" fill="none" stroke="#b7d4ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" opacity=".7"/>
-  <path d="M60 58 74 44" fill="none" stroke="url(#accent)" stroke-width="8" stroke-linecap="round"/>
-  <path d="M66 43h9v9" fill="none" stroke="url(#accent)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="4" y="4" width="88" height="88" rx="22" fill="#1f5fbf"/>
+  <path d="M66 12h20v72H66c11-9 17-21 17-36s-6-27-17-36Z" fill="#2b6fd6"/>
+  <path d="M28 29 48 49 68 29M48 49v25" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M36 66 49 54l9 9 16-16" fill="none" stroke="#b7d4ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M60 58 74 44" fill="none" stroke="#2d8a68" stroke-width="8" stroke-linecap="round"/>
+  <path d="M66 43h9v9" fill="none" stroke="#2d8a68" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="48" cy="49" r="4" fill="#1f5fbf"/>
 </svg>

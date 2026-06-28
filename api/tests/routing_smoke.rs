@@ -84,7 +84,9 @@ async fn static_logo_is_bundled_as_svg() {
     let body = std::str::from_utf8(&body).expect("body should be utf-8");
 
     assert!(body.contains("<title id=\"title\">元策 Logo</title>"));
-    assert!(body.contains("Y 型决策分叉"));
+    assert!(body.contains("纯色 Y 型决策分叉"));
+    assert!(!body.contains("linearGradient"));
+    assert!(!body.contains("url(#"));
 }
 
 #[tokio::test]
