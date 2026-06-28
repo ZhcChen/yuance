@@ -190,6 +190,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/static/app.js", get(static_app_js))
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
+        .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
         .with_state(state)
@@ -217,6 +218,13 @@ async fn static_app_js() -> impl IntoResponse {
 }
 
 async fn static_yuance_logo() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
+        include_str!("../../static/brand/yuance-logo.svg"),
+    )
+}
+
+async fn static_favicon() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "image/svg+xml; charset=utf-8")],
         include_str!("../../static/brand/yuance-logo.svg"),

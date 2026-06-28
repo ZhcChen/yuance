@@ -84,9 +84,41 @@ async fn static_logo_is_bundled_as_svg() {
     let body = std::str::from_utf8(&body).expect("body should be utf-8");
 
     assert!(body.contains("<title id=\"title\">元策 Logo</title>"));
-    assert!(body.contains("纯色 Y 型决策分叉"));
+    assert!(body.contains("纯色折页"));
     assert!(!body.contains("linearGradient"));
     assert!(!body.contains("url(#"));
+}
+
+#[tokio::test]
+async fn favicon_uses_bundled_logo_svg() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/favicon.ico")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "image/svg+xml; charset=utf-8"
+    );
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect")
+        .to_bytes();
+    let body = std::str::from_utf8(&body).expect("body should be utf-8");
+
+    assert!(body.contains("<title id=\"title\">元策 Logo</title>"));
+    assert!(body.contains("纯色折页"));
 }
 
 #[tokio::test]
@@ -130,6 +162,7 @@ async fn web_renders_dashboard_shell() {
     let body = std::str::from_utf8(&body).expect("body should be utf-8");
 
     assert!(body.contains("元策"));
+    assert!(body.contains("href=\"/favicon.ico\""));
     assert!(body.contains("我的工作项"));
     assert!(body.contains("/web/system/storage"));
 }

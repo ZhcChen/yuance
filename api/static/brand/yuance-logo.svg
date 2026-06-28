@@ -1,12 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-labelledby="title desc">
   <title id="title">元策 Logo</title>
-  <desc id="desc">以纯色 Y 型决策分叉和上升箭标组成的元策品牌标识</desc>
+  <desc id="desc">以纯色折页和三段推进线组成的元策品牌标识</desc>
 
-  <rect x="4" y="4" width="88" height="88" rx="22" fill="#1f5fbf"/>
-  <path d="M66 12h20v72H66c11-9 17-21 17-36s-6-27-17-36Z" fill="#2b6fd6"/>
-  <path d="M28 29 48 49 68 29M48 49v25" fill="none" stroke="#ffffff" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M36 66 49 54l9 9 16-16" fill="none" stroke="#b7d4ff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M60 58 74 44" fill="none" stroke="#2d8a68" stroke-width="8" stroke-linecap="round"/>
-  <path d="M66 43h9v9" fill="none" stroke="#2d8a68" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="48" cy="49" r="4" fill="#1f5fbf"/>
+  <rect x="4" y="4" width="88" height="88" rx="20" fill="#1f5fbf"/>
+  <path d="M25 22h34l13 13v39H25V22Z" fill="#ffffff"/>
+  <path d="M59 22v13h13L59 22Z" fill="#dbeafe"/>
+  <path d="M34 39h18" stroke="#1f5fbf" stroke-width="6" stroke-linecap="round"/>
+  <path d="M34 52h28" stroke="#1f5fbf" stroke-width="6" stroke-linecap="round"/>
+  <path d="M34 65h20" stroke="#1f5fbf" stroke-width="6" stroke-linecap="round"/>
+  <path d="M57 67 69 55" stroke="#2d8a68" stroke-width="7" stroke-linecap="round"/>
+  <path d="M63 55h7v7" fill="none" stroke="#2d8a68" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
