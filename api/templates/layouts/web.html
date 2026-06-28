@@ -16,24 +16,53 @@
         <span class="brand-mark" aria-hidden="true">元</span>
         <span>
           <span class="brand-name">元策</span>
-          <span class="brand-subtitle">yuance</span>
         </span>
       </a>
 
-      <form class="global-search" action="/web/search" method="get" role="search">
-        <label class="sr-only" for="global-search">搜索项目、需求、任务或 Bug</label>
-        <input id="global-search" name="q" type="search" placeholder="搜索项目、需求、任务、Bug">
-      </form>
+      <nav class="topnav" aria-label="主导航">
+        <a class="topnav-item {% if active == "dashboard" %}active{% endif %}" href="/web">工作台</a>
+        <a class="topnav-item {% if active == "projects" %}active{% endif %}" href="/web/projects">项目</a>
+        <a class="topnav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">需求</a>
+        <a class="topnav-item {% if active == "tasks" %}active{% endif %}" href="/web/tasks">任务</a>
+        <a class="topnav-item {% if active == "bugs" %}active{% endif %}" href="/web/bugs">Bug</a>
+        {% if system_nav.visible %}
+        <div class="topnav-group" data-dropdown-root>
+          <button class="topnav-item topnav-trigger {% if active == "system" %}active{% endif %}{% if active == "system-users" %}active{% endif %}{% if active == "system-roles" %}active{% endif %}{% if active == "system-storage" %}active{% endif %}{% if active == "system-audit" %}active{% endif %}" type="button" data-dropdown-trigger aria-expanded="false">
+            <span>系统管理</span>
+            <span class="account-caret" aria-hidden="true"></span>
+          </button>
+          <div class="topnav-menu" data-dropdown-menu hidden>
+            {% if system_nav.dashboard %}
+            <a class="{% if active == "system" %}active{% endif %}" href="/web/system">总览</a>
+            {% endif %}
+            {% if system_nav.users %}
+            <a class="{% if active == "system-users" %}active{% endif %}" href="/web/system/users">用户管理</a>
+            {% endif %}
+            {% if system_nav.roles %}
+            <a class="{% if active == "system-roles" %}active{% endif %}" href="/web/system/roles">角色权限</a>
+            {% endif %}
+            {% if system_nav.storage %}
+            <a class="{% if active == "system-storage" %}active{% endif %}" href="/web/system/storage">对象存储</a>
+            {% endif %}
+            {% if system_nav.audit %}
+            <a class="{% if active == "system-audit" %}active{% endif %}" href="/web/system/audit">审计日志</a>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </nav>
 
-      <div class="topbar-meta" aria-label="当前上下文">
-        <span class="env-badge">{{ environment }}</span>
-        <button class="account-trigger" type="button" data-dropdown-trigger aria-expanded="false">
-          <span class="account-avatar" aria-hidden="true">YC</span>
-          <span>{{ current_user }}</span>
-          <span class="account-caret" aria-hidden="true"></span>
+      <div class="topbar-meta" data-dropdown-root aria-label="当前用户">
+        <button class="account-trigger" type="button" data-dropdown-trigger aria-expanded="false" aria-label="{{ current_user }}，打开用户菜单" title="{{ current_user }}">
+          <span class="account-avatar" aria-hidden="true">元</span>
         </button>
         <div class="account-menu" data-dropdown-menu hidden>
+          <div class="account-menu-head">
+            <strong>{{ current_user }}</strong>
+            <span>{{ environment }}</span>
+          </div>
           <a href="/web/me">个人中心</a>
+          <a href="/web/search">全局搜索</a>
           <form class="menu-form" method="post" action="/web/logout">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <button type="submit">退出登录</button>
@@ -43,74 +72,6 @@
     </header>
 
     <div class="app-body">
-      <aside class="sidebar">
-        <nav class="nav" aria-label="主导航">
-          <section class="nav-section" aria-labelledby="nav-work">
-            <h2 id="nav-work">协作</h2>
-            <a class="nav-item {% if active == "dashboard" %}active{% endif %}" href="/web">
-              <span class="nav-icon nav-icon-dashboard" aria-hidden="true"></span>
-              <span>工作台</span>
-            </a>
-            <a class="nav-item {% if active == "projects" %}active{% endif %}" href="/web/projects">
-              <span class="nav-icon nav-icon-project" aria-hidden="true"></span>
-              <span>项目</span>
-            </a>
-            <a class="nav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">
-              <span class="nav-icon nav-icon-requirement" aria-hidden="true"></span>
-              <span>需求</span>
-            </a>
-            <a class="nav-item {% if active == "tasks" %}active{% endif %}" href="/web/tasks">
-              <span class="nav-icon nav-icon-task" aria-hidden="true"></span>
-              <span>任务</span>
-            </a>
-            <a class="nav-item {% if active == "bugs" %}active{% endif %}" href="/web/bugs">
-              <span class="nav-icon nav-icon-bug" aria-hidden="true"></span>
-              <span>Bug</span>
-            </a>
-            <a class="nav-item {% if active == "me" %}active{% endif %}" href="/web/me">
-              <span class="nav-icon nav-icon-user" aria-hidden="true"></span>
-              <span>我的</span>
-            </a>
-          </section>
-
-          {% if system_nav.visible %}
-          <section class="nav-section" aria-labelledby="nav-system">
-            <h2 id="nav-system">系统管理</h2>
-            {% if system_nav.dashboard %}
-            <a class="nav-item {% if active == "system" %}active{% endif %}" href="/web/system">
-              <span class="nav-icon nav-icon-system" aria-hidden="true"></span>
-              <span>总览</span>
-            </a>
-            {% endif %}
-            {% if system_nav.users %}
-            <a class="nav-item {% if active == "system-users" %}active{% endif %}" href="/web/system/users">
-              <span class="nav-icon nav-icon-user" aria-hidden="true"></span>
-              <span>用户管理</span>
-            </a>
-            {% endif %}
-            {% if system_nav.roles %}
-            <a class="nav-item {% if active == "system-roles" %}active{% endif %}" href="/web/system/roles">
-              <span class="nav-icon nav-icon-role" aria-hidden="true"></span>
-              <span>角色权限</span>
-            </a>
-            {% endif %}
-            {% if system_nav.storage %}
-            <a class="nav-item {% if active == "system-storage" %}active{% endif %}" href="/web/system/storage">
-              <span class="nav-icon nav-icon-storage" aria-hidden="true"></span>
-              <span>对象存储</span>
-            </a>
-            {% endif %}
-            {% if system_nav.audit %}
-            <a class="nav-item {% if active == "system-audit" %}active{% endif %}" href="/web/system/audit">
-              <span class="nav-icon nav-icon-audit" aria-hidden="true"></span>
-              <span>审计日志</span>
-            </a>
-            {% endif %}
-          </section>
-          {% endif %}
-        </nav>
-      </aside>
-
       <main class="main">
         {% block content %}{% endblock %}
       </main>

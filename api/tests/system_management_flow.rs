@@ -36,6 +36,8 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
     assert!(body.contains("系统管理员"));
     assert!(body.contains("系统管理"));
     assert!(body.contains("角色权限"));
+    assert!(body.contains("topnav-menu"));
+    assert!(!body.contains("<aside class=\"sidebar\""));
 }
 
 #[tokio::test]
