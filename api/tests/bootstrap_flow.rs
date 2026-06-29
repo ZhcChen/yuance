@@ -216,7 +216,7 @@ async fn web_redirects_to_bootstrap_when_database_is_empty() {
         .await
         .expect("router should respond");
 
-    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
         "/web/bootstrap"
@@ -283,6 +283,9 @@ async fn system_pages_reject_regular_members() {
     let user_id = create_member(&pool)
         .await
         .expect("member should be created");
+    bootstrap::ensure_completed_by_local_admin(&pool, user_id)
+        .await
+        .expect("bootstrap should be completed for permission check");
     let session = auth::issue_session(&pool, user_id, 12 * 60 * 60)
         .await
         .expect("session should issue");

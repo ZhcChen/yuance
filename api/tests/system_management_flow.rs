@@ -117,7 +117,7 @@ async fn disabled_user_loses_existing_session() {
         .await
         .expect("router should respond");
 
-    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
         "/web/login"
@@ -160,7 +160,7 @@ async fn resetting_password_revokes_old_sessions_and_allows_new_password() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
 
     let old_login = auth::login(&pool, "member1", "MemberPass2026!").await;
     assert!(old_login.is_err());

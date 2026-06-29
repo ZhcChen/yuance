@@ -121,6 +121,103 @@ async fn htmx_role_permission_update_can_use_csrf_header() {
 }
 
 #[tokio::test]
+async fn system_page_redirects_expired_login_to_login_page() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login"
+    );
+}
+
+#[tokio::test]
+async fn system_post_redirects_expired_login_to_login_page() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf(
+                    "username=member1&display_name=%E6%88%90%E5%91%98%E4%B8%80&email=member1%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=member",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login"
+    );
+}
+
+#[tokio::test]
+async fn htmx_system_post_uses_hx_redirect_when_login_expired() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/roles/member/permissions")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .header("HX-Request", "true")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from("permission_keys=project.view"))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers().get("HX-Redirect").unwrap(), "/web/login");
+}
+
+#[tokio::test]
+async fn htmx_partial_uses_hx_redirect_when_login_expired() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/partials/work-items")
+                .header("HX-Request", "true")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(response.headers().get("HX-Redirect").unwrap(), "/web/login");
+}
+
+#[tokio::test]
 async fn login_submit_with_csrf_creates_session_cookie() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
@@ -279,7 +376,7 @@ async fn logout_revokes_session_and_clears_cookies() {
         .await
         .expect("router should respond");
 
-    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
         "/web/login"

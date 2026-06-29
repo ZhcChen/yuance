@@ -743,11 +743,11 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
     };
 
     if bootstrap::bootstrap_required(pool).await? {
-        return Ok(Redirect::temporary("/web/bootstrap").into_response());
+        return bootstrap_redirect(&headers);
     }
 
     let Some(user) = auth::user_from_headers(pool, &headers).await? else {
-        return Ok(Redirect::temporary("/web/login").into_response());
+        return login_redirect(&headers);
     };
 
     let system_nav = build_system_nav(pool, user.id).await?;
@@ -778,9 +778,9 @@ pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppRe
 
     let (profile, projects, assigned_items) = match context.pool {
         Some(pool) => {
-            let profile = users::get_user_summary(pool, context.user_id)
-                .await?
-                .ok_or(AppError::Unauthorized)?;
+            let Some(profile) = users::get_user_summary(pool, context.user_id).await? else {
+                return login_redirect(&headers);
+            };
             let projects = projects::list_project_summaries_for_user(
                 pool,
                 context.user_id,
@@ -1578,7 +1578,7 @@ pub async fn bootstrap(State(state): State<AppState>, headers: HeaderMap) -> App
     if let Some(pool) = state.pool.as_ref()
         && !bootstrap::bootstrap_required(pool).await?
     {
-        return Ok(Redirect::temporary("/web/login").into_response());
+        return login_redirect(&headers);
     }
 
     let csrf_token = csrf::ensure_token(&headers);
@@ -1657,7 +1657,11 @@ pub async fn system_dashboard(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.dashboard.view").await?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.dashboard.view").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
         &state,
@@ -1677,7 +1681,10 @@ pub async fn system_users_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.users.view").await?;
+    let context = match system_context_or_redirect(&state, &headers, "system.users.view").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let pool = state.pool()?;
     let users = users::list_users(pool)
         .await?
@@ -1717,7 +1724,11 @@ pub async fn system_users_create(
     Form(form): Form<CreateUserForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let _context = require_system_permission(&state, &headers, "system.users.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.users.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let pool = state.pool()?;
     let audit_username = form.username.clone();
     users::create_user(
@@ -1752,7 +1763,11 @@ pub async fn system_user_status_update(
     Form(form): Form<UserStatusForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let _context = require_system_permission(&state, &headers, "system.users.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.users.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     users::set_user_status(state.pool()?, &username, &form.status).await?;
     audit::record(
         state.pool()?,
@@ -1774,7 +1789,11 @@ pub async fn system_user_role_update(
     Form(form): Form<UserRoleForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let _context = require_system_permission(&state, &headers, "system.users.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.users.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     users::replace_user_role(state.pool()?, &username, &form.role_code).await?;
     audit::record(
         state.pool()?,
@@ -1796,7 +1815,11 @@ pub async fn system_user_password_reset(
     Form(form): Form<ResetPasswordForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let _context = require_system_permission(&state, &headers, "system.users.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.users.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     users::reset_user_password(state.pool()?, &username, &form.password).await?;
     audit::record(
         state.pool()?,
@@ -1816,7 +1839,10 @@ pub async fn system_roles_page(
     headers: HeaderMap,
     Query(query): Query<RoleWorkbenchQuery>,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.roles.view").await?;
+    let context = match system_context_or_redirect(&state, &headers, "system.roles.view").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let role_summaries = rbac::list_roles(state.pool()?).await?;
     let selected_role = selected_role_summary(&role_summaries, &query.role).cloned();
     let selected_role_code = selected_role
@@ -1895,7 +1921,11 @@ pub async fn system_roles_create(
     Form(form): Form<CreateRoleForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let _context = require_system_permission(&state, &headers, "system.roles.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.roles.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     rbac::create_role(
         state.pool()?,
         &form.role_code,
@@ -1923,7 +1953,11 @@ pub async fn system_role_status_update(
     Form(form): Form<RoleStatusForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let _context = require_system_permission(&state, &headers, "system.roles.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.roles.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     rbac::set_role_status(state.pool()?, &role_code, &form.status).await?;
     audit::record(
         state.pool()?,
@@ -1943,7 +1977,10 @@ pub async fn system_role_permissions_page(
     headers: HeaderMap,
     Path(role_code): Path<String>,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.roles.view").await?;
+    let context = match system_context_or_redirect(&state, &headers, "system.roles.view").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let roles = rbac::list_roles(state.pool()?).await?;
     let Some(role) = roles.iter().find(|role| role.role_code == role_code) else {
         return Ok(StatusCode::NOT_FOUND.into_response());
@@ -1987,7 +2024,11 @@ pub async fn system_role_permissions_update(
     let permission_keys = parse_permission_keys_form(&form)?;
     let submitted_csrf = parse_csrf_token_form(&form)?;
     csrf::verify(&headers, &submitted_csrf)?;
-    let _context = require_system_permission(&state, &headers, "system.roles.manage").await?;
+    let _context = match system_context_or_redirect(&state, &headers, "system.roles.manage").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     rbac::replace_role_permissions(state.pool()?, &role_code, &permission_keys).await?;
     audit::record(
         state.pool()?,
@@ -2006,7 +2047,10 @@ pub async fn system_permissions_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.roles.view").await?;
+    let context = match system_context_or_redirect(&state, &headers, "system.roles.view").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let permission_groups =
         permission_tree_from_summaries(rbac::list_permissions_for_role(state.pool()?, None).await?);
     let (permission_total_count, permission_granted_count) =
@@ -2038,7 +2082,10 @@ pub async fn storage_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.storage.view").await?;
+    let context = match system_context_or_redirect(&state, &headers, "system.storage.view").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let config = storage::latest_config(state.pool()?)
         .await?
         .map(storage_config_view_from_domain)
@@ -2069,7 +2116,11 @@ pub async fn storage_settings_save(
     Form(form): Form<StorageConfigForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
-    let context = require_system_permission(&state, &headers, "system.storage.manage").await?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.storage.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
     let saved = storage::save_config(
         state.pool()?,
         &state.settings,
@@ -2119,7 +2170,10 @@ pub async fn system_audit_page(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<Response> {
-    let context = require_system_permission(&state, &headers, "system.audit.view").await?;
+    let context = match system_context_or_redirect(&state, &headers, "system.audit.view").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
     let logs = audit::list_recent(state.pool()?, 50)
         .await?
         .into_iter()
@@ -2263,7 +2317,7 @@ pub async fn work_items_partial(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<WorkItemsQuery>,
-) -> AppResult<Html<String>> {
+) -> AppResult<Response> {
     let item_type = requested_work_item_type(query.kind.as_deref())?;
 
     let Some(pool) = state.pool.as_ref() else {
@@ -2272,12 +2326,17 @@ pub async fn work_items_partial(
             has_items: !items.is_empty(),
             empty_message: empty_work_items_message(item_type),
             items,
-        });
+        })
+        .map(IntoResponse::into_response);
     };
 
-    let user = auth::user_from_headers(pool, &headers)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
+    if bootstrap::bootstrap_required(pool).await? {
+        return bootstrap_redirect(&headers);
+    }
+
+    let Some(user) = auth::user_from_headers(pool, &headers).await? else {
+        return login_redirect(&headers);
+    };
     let items =
         projects::list_work_item_summaries_for_user(pool, user.id, user.is_super_admin, item_type)
             .await?
@@ -2290,6 +2349,7 @@ pub async fn work_items_partial(
         empty_message: empty_work_items_message(item_type),
         items,
     })
+    .map(IntoResponse::into_response)
 }
 
 pub async fn work_item_detail_partial(
@@ -2300,9 +2360,13 @@ pub async fn work_item_detail_partial(
     let Some(pool) = state.pool.as_ref() else {
         return response::html(sample_work_item_detail_partial()).map(IntoResponse::into_response);
     };
-    let user = auth::user_from_headers(pool, &headers)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
+    if bootstrap::bootstrap_required(pool).await? {
+        return bootstrap_redirect(&headers);
+    }
+
+    let Some(user) = auth::user_from_headers(pool, &headers).await? else {
+        return login_redirect(&headers);
+    };
     let Some((item, comments)) = load_work_item_detail(pool, &item_key).await? else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
@@ -2398,11 +2462,11 @@ async fn web_context_or_redirect<'a>(
     };
 
     if bootstrap::bootstrap_required(pool).await? {
-        return Ok(Err(Redirect::temporary("/web/bootstrap").into_response()));
+        return Ok(Err(bootstrap_redirect(headers)?));
     }
 
     let Some(user) = auth::user_from_headers(pool, headers).await? else {
-        return Ok(Err(Redirect::temporary("/web/login").into_response()));
+        return Ok(Err(login_redirect(headers)?));
     };
 
     let system_nav = build_system_nav(pool, user.id).await?;
@@ -2417,35 +2481,40 @@ async fn web_context_or_redirect<'a>(
     }))
 }
 
-async fn require_system_permission(
+async fn system_context_or_redirect(
     state: &AppState,
     headers: &HeaderMap,
     permission_key: &str,
-) -> AppResult<SystemContext> {
+) -> AppResult<Result<SystemContext, Response>> {
     let Some(pool) = state.pool.as_ref() else {
-        return Ok(SystemContext {
+        return Ok(Ok(SystemContext {
             user_id: 0,
             current_user: "yuance_admin".to_string(),
             csrf_token: csrf::ensure_token(headers),
             system_nav: SystemNav::all(),
-        });
+        }));
     };
 
-    let user = auth::user_from_headers(pool, headers)
-        .await?
-        .ok_or(crate::platform::error::AppError::Unauthorized)?;
+    if bootstrap::bootstrap_required(pool).await? {
+        return Ok(Err(bootstrap_redirect(headers)?));
+    }
+
+    let Some(user) = auth::user_from_headers(pool, headers).await? else {
+        return Ok(Err(login_redirect(headers)?));
+    };
+
     if !rbac::user_has_permission(pool, user.id, permission_key).await? {
         return Err(crate::platform::error::AppError::Forbidden(
             "需要系统管理权限".to_string(),
         ));
     }
     let system_nav = build_system_nav(pool, user.id).await?;
-    Ok(SystemContext {
+    Ok(Ok(SystemContext {
         user_id: user.id,
         current_user: user.display_name,
         csrf_token: csrf::ensure_token(headers),
         system_nav,
-    })
+    }))
 }
 
 async fn build_system_nav(pool: &SqlitePool, user_id: i64) -> AppResult<SystemNav> {
@@ -2493,6 +2562,26 @@ fn redirect_with_session(state: &AppState, raw_token: String, htmx: bool) -> App
             .insert("HX-Redirect", "/web".parse()?);
     }
     Ok(response)
+}
+
+fn login_redirect(headers: &HeaderMap) -> AppResult<Response> {
+    redirect_for_web(headers, "/web/login")
+}
+
+fn bootstrap_redirect(headers: &HeaderMap) -> AppResult<Response> {
+    redirect_for_web(headers, "/web/bootstrap")
+}
+
+fn redirect_for_web(headers: &HeaderMap, location: &'static str) -> AppResult<Response> {
+    if is_htmx(headers) {
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        response
+            .headers_mut()
+            .insert("HX-Redirect", location.parse()?);
+        return Ok(response);
+    }
+
+    Ok(Redirect::to(location).into_response())
 }
 
 fn with_csrf_cookie(

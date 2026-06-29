@@ -280,7 +280,7 @@ async fn web_project_pages_redirect_unauthenticated_users_to_login() {
         .await
         .expect("router should respond");
 
-    assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
         "/web/login"
