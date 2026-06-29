@@ -16,6 +16,7 @@
   --warning: #a85b00;
   --danger: #b42318;
   --radius: 8px;
+  --card-radius: 16px;
   --shadow: 0 16px 40px rgb(24 39 58 / 10%);
   --card-shadow: 0 10px 26px rgb(22 34 50 / 7%), 0 2px 8px rgb(22 34 50 / 4%);
   --card-shadow-hover: 0 16px 34px rgb(22 34 50 / 10%), 0 4px 12px rgb(22 34 50 / 5%);
@@ -438,7 +439,7 @@ textarea:focus-visible {
   gap: 16px;
   padding: 18px 20px;
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--card-radius);
   background: #fff;
   box-shadow: var(--card-shadow);
 }
@@ -508,7 +509,7 @@ textarea:focus-visible {
   gap: 6px;
   padding: 14px;
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--card-radius);
   background: #fff;
   box-shadow: var(--card-shadow);
 }
@@ -543,7 +544,7 @@ textarea:focus-visible {
 
 .panel {
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--card-radius);
   background: #fff;
   box-shadow: var(--card-shadow);
 }
@@ -1494,7 +1495,7 @@ textarea {
   gap: 18px;
   padding: 16px;
   border: 0;
-  border-radius: var(--radius);
+  border-radius: var(--card-radius);
   background: #fff;
   color: var(--text);
   text-decoration: none;
