@@ -12,6 +12,12 @@
   --brand-strong: #164a96;
   --brand-soft: #e8f1ff;
   --brand-line: #cfe0ff;
+  --topbar-bg: #f7f9fc;
+  --topbar-line: #d4deea;
+  --nav-hover: #edf3f9;
+  --nav-active: #e2ebf7;
+  --nav-active-text: #0f2f57;
+  --menu-shadow: 0 14px 32px rgb(24 39 58 / 12%), 0 2px 8px rgb(24 39 58 / 6%);
   --accent: #2d8a68;
   --warning: #a85b00;
   --danger: #b42318;
@@ -137,8 +143,9 @@ textarea:focus-visible {
   column-gap: 32px;
   row-gap: 8px;
   padding: 0 18px;
-  background: #fff;
-  border-bottom: 1px solid var(--line);
+  background: var(--topbar-bg);
+  border-bottom: 1px solid var(--topbar-line);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
   z-index: 30;
 }
 
@@ -203,14 +210,14 @@ textarea:focus-visible {
 }
 
 .topnav-item:hover {
-  background: #f6f9fb;
+  background: var(--nav-hover);
   color: var(--text);
 }
 
 .topnav-item.active {
   border-color: transparent;
-  background: #dbeafe;
-  color: var(--brand-strong);
+  background: var(--nav-active);
+  color: var(--nav-active-text);
 }
 
 .topnav-trigger {
@@ -223,10 +230,10 @@ textarea:focus-visible {
   top: 44px;
   min-width: 150px;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--topbar-line);
   border-radius: 10px;
   background: #fff;
-  box-shadow: var(--shadow);
+  box-shadow: var(--menu-shadow);
   z-index: 40;
   opacity: 0;
   pointer-events: none;
@@ -262,8 +269,8 @@ textarea:focus-visible {
 
 .topnav-menu a:hover,
 .topnav-menu a.active {
-  background: #eaf2ff;
-  color: var(--brand-strong);
+  background: var(--nav-hover);
+  color: var(--nav-active-text);
 }
 
 .topbar-meta {
@@ -328,10 +335,10 @@ textarea:focus-visible {
   top: 44px;
   min-width: 172px;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--topbar-line);
   border-radius: 10px;
   background: #fff;
-  box-shadow: var(--shadow);
+  box-shadow: var(--menu-shadow);
   z-index: 40;
   opacity: 0;
   pointer-events: none;
@@ -401,8 +408,8 @@ textarea:focus-visible {
 
 .account-menu a:hover,
 .menu-form button:hover {
-  background: var(--panel-soft);
-  color: var(--text);
+  background: var(--nav-hover);
+  color: var(--nav-active-text);
 }
 
 .app-body {
