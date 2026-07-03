@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::platform::error::{AppError, AppResult};
 
 pub const SESSION_COOKIE_NAME: &str = "yuance_session";
+pub const DEFAULT_SESSION_TTL_SECONDS: i64 = 12 * 60 * 60;
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
@@ -76,6 +77,15 @@ pub fn validate_password(password: &str) -> AppResult<()> {
 }
 
 pub async fn login(pool: &SqlitePool, username: &str, password: &str) -> AppResult<IssuedSession> {
+    login_with_ttl(pool, username, password, DEFAULT_SESSION_TTL_SECONDS).await
+}
+
+pub async fn login_with_ttl(
+    pool: &SqlitePool,
+    username: &str,
+    password: &str,
+    ttl_seconds: i64,
+) -> AppResult<IssuedSession> {
     let username = validate_username(username)?;
 
     let row = sqlx::query_as::<_, (i64, String, String)>(
@@ -94,7 +104,7 @@ pub async fn login(pool: &SqlitePool, username: &str, password: &str) -> AppResu
         return Err(AppError::Unauthorized);
     }
 
-    issue_session(pool, row.0, 12 * 60 * 60).await
+    issue_session(pool, row.0, ttl_seconds).await
 }
 
 pub async fn issue_session(
@@ -197,9 +207,17 @@ async fn user_from_token_hash(pool: &SqlitePool, token_hash: &str) -> AppResult<
 }
 
 pub fn session_cookie_header(raw_token: &str, secure: bool) -> String {
+    session_cookie_header_with_max_age(raw_token, DEFAULT_SESSION_TTL_SECONDS, secure)
+}
+
+pub fn session_cookie_header_with_max_age(
+    raw_token: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) -> String {
     let secure = if secure { "; Secure" } else { "" };
     format!(
-        "{SESSION_COOKIE_NAME}={raw_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200{secure}"
+        "{SESSION_COOKIE_NAME}={raw_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{secure}"
     )
 }
 
@@ -216,7 +234,7 @@ pub fn session_cookie(headers: &HeaderMap) -> Option<String> {
     })
 }
 
-fn hash_session_token(raw_token: &str) -> String {
+pub(crate) fn hash_session_token(raw_token: &str) -> String {
     let digest = Sha256::digest(raw_token.as_bytes());
     hex::encode(digest)
 }

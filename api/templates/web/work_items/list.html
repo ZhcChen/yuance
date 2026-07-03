@@ -12,7 +12,7 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web">返回工作台</a>
-      {% if can_manage_work_items %}
+      {% if can_manage_work_items && !current_project_required %}
       <button class="btn btn-primary" type="button" data-modal-open="work-item-create-modal">{{ create_label }}</button>
       {% endif %}
     </div>
@@ -40,7 +40,12 @@
     <div class="panel-head">
       <div>
         <h2>{{ title }}列表</h2>
-        <p>跨项目汇总，支持按关键词、状态、优先级、项目和负责人筛选。</p>
+        {% match current_project %}
+        {% when Some with (project) %}
+        <p>当前项目：{{ project.key }} · {{ project.name }}，支持按关键词、状态、优先级和负责人筛选。</p>
+        {% when None %}
+        <p>请先在顶部选择当前项目，避免多个项目的工作项混在一起。</p>
+        {% endmatch %}
       </div>
       <div class="toolbar-actions">
         <a class="btn btn-secondary" href="/web/requirements">需求</a>
@@ -79,11 +84,13 @@
       </label>
       <label>
         项目
-        <select name="project_key">
-          <option value="">全部项目</option>
-          {% for project in project_options %}
-          <option value="{{ project.key }}" {% if filters.project_key == project.key %}selected{% endif %}>{{ project.key }} · {{ project.name }}</option>
-          {% endfor %}
+        <select name="project_key" disabled>
+          {% match current_project %}
+          {% when Some with (project) %}
+          <option value="{{ project.key }}" selected>{{ project.key }} · {{ project.name }}</option>
+          {% when None %}
+          <option value="" selected>请先选择当前项目</option>
+          {% endmatch %}
         </select>
       </label>
       <label>
@@ -96,7 +103,12 @@
       </div>
     </form>
 
-    {% if has_items %}
+    {% if current_project_required %}
+    <div class="empty-state">
+      <strong>请选择当前项目</strong>
+      <span>选择当前项目后再查看{{ title }}，避免跨项目混合。</span>
+    </div>
+    {% else if has_items %}
     <div class="work-item-list list-page-items">
       {% for item in items %}
       <article class="work-item">
@@ -113,6 +125,24 @@
       </article>
       {% endfor %}
     </div>
+    <nav class="pager" aria-label="{{ title }}分页">
+      <div class="pager-meta">
+        <strong>第 {{ pagination.page }}/{{ pagination.total_pages }} 页</strong>
+        <span>显示 {{ pagination.range_start }}-{{ pagination.range_end }}，共 {{ pagination.total_items }} 条，每页 {{ pagination.per_page }} 条</span>
+      </div>
+      <div class="pager-actions">
+        {% if pagination.has_previous %}
+        <a class="btn btn-secondary" href="{{ pagination.previous_url }}">上一页</a>
+        {% else %}
+        <span class="btn btn-secondary disabled" aria-disabled="true">上一页</span>
+        {% endif %}
+        {% if pagination.has_next %}
+        <a class="btn btn-secondary" href="{{ pagination.next_url }}">下一页</a>
+        {% else %}
+        <span class="btn btn-secondary disabled" aria-disabled="true">下一页</span>
+        {% endif %}
+      </div>
+    </nav>
     {% else %}
     <div class="empty-state">
       <strong>暂无{{ title }}</strong>
@@ -123,7 +153,7 @@
 
 </section>
 
-{% if can_manage_work_items %}
+{% if can_manage_work_items && !current_project_required %}
 <aside id="work-item-create-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-create-modal-title" tabindex="-1">
@@ -140,15 +170,12 @@
       <div class="field-grid">
         <label>
           所属项目
-          <select name="project_key" required autofocus>
-            {% if has_project_options %}
-            {% for project in project_options %}
-            <option value="{{ project.key }}">{{ project.key }} · {{ project.name }}</option>
-            {% endfor %}
-            {% else %}
-            <option value="">暂无可选项目</option>
-            {% endif %}
-          </select>
+          {% match current_project %}
+          {% when Some with (project) %}
+          <input name="project_key" value="{{ project.key }}" readonly autofocus>
+          {% when None %}
+          <input name="project_key" value="" readonly autofocus>
+          {% endmatch %}
         </label>
         <label>
           优先级
@@ -159,6 +186,21 @@
             <option value="P3">P3</option>
           </select>
         </label>
+        <label>
+          截止日期
+          <input name="due_date" type="date">
+        </label>
+        {% if item_type == "task" %}
+        <label>
+          父级需求
+          <select name="parent_item_key">
+            <option value="">不关联</option>
+            {% for item in parent_options %}
+            <option value="{{ item.key }}">{{ item.key }} · {{ item.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
         <label class="wide-field">
           标题
           <input name="title" placeholder="输入{{ title }}标题" required>

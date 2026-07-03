@@ -7,37 +7,85 @@
   <div class="panel-head">
     <div>
       <h1>审计日志</h1>
-      <p>记录登录、首次初始化、用户角色维护、对象存储配置等关键操作。</p>
+      <p>记录登录、首次初始化、用户角色维护、对象存储配置等关键操作，支持按操作人、动作和对象过滤。</p>
     </div>
   </div>
 
+  <form class="filter-bar" method="get" aria-label="审计日志筛选">
+    <label>
+      操作人
+      <input name="actor" value="{{ filters.actor }}" placeholder="用户名或显示名称">
+    </label>
+    <label>
+      动作
+      <input name="action" value="{{ filters.action }}" placeholder="如 auth.login">
+    </label>
+    <label>
+      对象类型
+      <input name="target_type" value="{{ filters.target_type }}" placeholder="如 user / project">
+    </label>
+    <label>
+      对象 ID
+      <input name="target_id" value="{{ filters.target_id }}" placeholder="对象编号或主键">
+    </label>
+    <div class="filter-actions">
+      <button class="btn btn-primary" type="submit">筛选</button>
+      <a class="btn btn-secondary" href="/web/system/audit">重置</a>
+    </div>
+  </form>
+
   {% if has_logs %}
-  <table class="data-table audit-table">
-    <thead>
-      <tr>
-        <th>时间</th>
-        <th>操作人</th>
-        <th>动作</th>
-        <th>对象</th>
-        <th>元数据</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for log in logs %}
-      <tr>
-        <td>{{ log.created_at }}</td>
-        <td>{{ log.actor }}</td>
-        <td>{{ log.action }}</td>
-        <td>{{ log.target }}</td>
-        <td><code>{{ log.metadata }}</code></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="table-wrap">
+    <table class="compact-table audit-table">
+      <thead>
+        <tr>
+          <th>时间</th>
+          <th>操作人</th>
+          <th>动作</th>
+          <th>对象</th>
+          <th>来源</th>
+          <th>元数据</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.created_at }}</td>
+          <td>{{ log.actor }}</td>
+          <td>{{ log.action }}</td>
+          <td>{{ log.target }}</td>
+          <td>
+            <div>{{ log.ip }}</div>
+            <div class="muted-line">{{ log.user_agent }}</div>
+          </td>
+          <td><code>{{ log.metadata }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <nav class="pager" aria-label="审计日志分页">
+    <div class="pager-meta">
+      <strong>第 {{ pagination.page }}/{{ pagination.total_pages }} 页</strong>
+      <span>显示 {{ pagination.range_start }}-{{ pagination.range_end }}，共 {{ pagination.total_items }} 条，每页 {{ pagination.per_page }} 条</span>
+    </div>
+    <div class="pager-actions">
+      {% if pagination.has_previous %}
+      <a class="btn btn-secondary" href="{{ pagination.previous_url }}">上一页</a>
+      {% else %}
+      <span class="btn btn-secondary disabled" aria-disabled="true">上一页</span>
+      {% endif %}
+      {% if pagination.has_next %}
+      <a class="btn btn-secondary" href="{{ pagination.next_url }}">下一页</a>
+      {% else %}
+      <span class="btn btn-secondary disabled" aria-disabled="true">下一页</span>
+      {% endif %}
+    </div>
+  </nav>
   {% else %}
   <div class="empty-state">
-    <h2>暂无审计记录</h2>
-    <p>首次初始化、登录和系统配置变更后会出现在这里。</p>
+    <strong>暂无审计记录</strong>
+    <span>首次初始化、登录、系统配置变更或当前筛选条件命中后会出现在这里。</span>
   </div>
   {% endif %}
 </section>

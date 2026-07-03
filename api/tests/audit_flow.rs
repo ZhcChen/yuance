@@ -5,7 +5,7 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, rbac},
+    domains::{audit, auth, bootstrap, rbac},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -131,6 +131,318 @@ async fn audit_page_requires_audit_permission() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn permission_denials_write_audit_logs() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let session = auth::login(&pool, "member1", "MemberPass2026!")
+        .await
+        .expect("member should login");
+    let cookie = auth::session_cookie_header(&session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let web_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users")
+                .header(header::COOKIE, cookie.clone())
+                .header("x-forwarded-for", "203.0.113.10, 10.0.0.1")
+                .header(header::USER_AGENT, "YuanceWebAuditTest/1.0")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(web_response.status(), StatusCode::FORBIDDEN);
+
+    let api_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, with_csrf_cookie(&cookie))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header("x-real-ip", "198.51.100.9")
+                .header(header::USER_AGENT, "YuanceApiAuditTest/1.0")
+                .body(Body::from(
+                    r#"{"project_key":"DENY","name":"权限拒绝测试"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(api_response.status(), StatusCode::FORBIDDEN);
+
+    let rows = sqlx::query_as::<_, (String, String, String, String)>(
+        r#"
+        SELECT target_id, metadata, ip, user_agent
+        FROM audit_logs
+        WHERE action = 'permission.denied'
+        ORDER BY id ASC
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("permission denied audit rows should load");
+
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().any(|row| row.0 == "system.users.view"
+        && row.1.contains(r#""source":"web.system""#)
+        && row.2 == "203.0.113.10"
+        && row.3 == "YuanceWebAuditTest/1.0"));
+    assert!(rows.iter().any(|row| row.0 == "project.manage"
+        && row.1.contains(r#""source":"api""#)
+        && row.2 == "198.51.100.9"
+        && row.3 == "YuanceApiAuditTest/1.0"));
+}
+
+#[tokio::test]
+async fn failed_login_attempts_write_audit_logs_without_password() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let web_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .header("x-forwarded-for", "203.0.113.20")
+                .header(header::USER_AGENT, "YuanceFailedWebLogin/1.0")
+                .body(Body::from(with_csrf(
+                    "username=admin&password=WrongPass2026%21",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(web_response.status(), StatusCode::OK);
+    let web_body = response_body(web_response).await;
+    assert!(web_body.contains("用户名或密码错误，请重新输入。"));
+    assert!(!web_body.contains("WrongPass2026"));
+
+    let api_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-real-ip", "198.51.100.20")
+                .header(header::USER_AGENT, "YuanceFailedApiLogin/1.0")
+                .body(Body::from(
+                    r#"{"username":"admin","password":"AnotherWrongPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(api_response.status(), StatusCode::UNAUTHORIZED);
+
+    let rows = sqlx::query_as::<_, (String, String, String, String, String)>(
+        r#"
+        SELECT action, target_id, metadata, ip, user_agent
+        FROM audit_logs
+        WHERE action = 'auth.login.failed'
+        ORDER BY id ASC
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("failed login audit rows should load");
+
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|row| row.1 == "admin"));
+    assert!(rows.iter().any(|row| row.2 == "{}"));
+    assert!(rows.iter().any(|row| row.2.contains(r#""source":"api""#)));
+    assert!(
+        rows.iter()
+            .any(|row| row.3 == "203.0.113.20" && row.4 == "YuanceFailedWebLogin/1.0")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.3 == "198.51.100.20" && row.4 == "YuanceFailedApiLogin/1.0")
+    );
+    assert!(
+        rows.iter()
+            .all(|row| !row.2.contains("WrongPass") && !row.2.contains("AnotherWrongPass"))
+    );
+}
+
+#[tokio::test]
+async fn audit_page_can_filter_and_paginate_logs() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let session = auth::login(&pool, "admin", "AdminPass2026!")
+        .await
+        .expect("admin should login");
+    let cookie = auth::session_cookie_header(&session.raw_token, false);
+    let admin_id = sqlx::query_scalar::<_, i64>("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(&pool)
+        .await
+        .expect("admin id should load");
+    audit::record(
+        &pool,
+        Some(admin_id),
+        "storage.config.save",
+        "storage_config",
+        "oss-primary",
+        r#"{"bucket":"primary"}"#,
+    )
+    .await
+    .expect("audit log should record");
+    audit::record(
+        &pool,
+        Some(admin_id),
+        "storage.config.save",
+        "storage_config",
+        "oss-backup",
+        r#"{"bucket":"backup"}"#,
+    )
+    .await
+    .expect("audit log should record");
+    audit::record(
+        &pool,
+        Some(admin_id),
+        "user.create",
+        "user",
+        "member1",
+        r#"{"username":"member1"}"#,
+    )
+    .await
+    .expect("audit log should record");
+
+    let page = audit::list_filtered(
+        &pool,
+        audit::AuditLogFilter {
+            actor: "admin".to_string(),
+            action: "storage.config.save".to_string(),
+            target_type: "storage_config".to_string(),
+            target_id: "oss".to_string(),
+        },
+        1,
+        1,
+    )
+    .await
+    .expect("audit page should load");
+    assert_eq!(page.total_items, 2);
+    assert_eq!(page.total_pages(), 2);
+    assert_eq!(page.items.len(), 1);
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/audit?action=storage.config.save&target_type=storage_config&target_id=oss&page=1&per_page=1")
+                .header(header::COOKIE, cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains(r#"aria-label="审计日志筛选""#));
+    assert!(body.contains(r#"value="storage.config.save""#));
+    assert!(body.contains(r#"value="storage_config""#));
+    assert!(body.contains(r#"value="oss""#));
+    assert!(body.contains("保存对象存储配置"));
+    assert!(!body.contains("创建用户"));
+    assert!(body.contains("第 1/2 页"));
+    assert!(body.contains("共 2 条，每页 1 条"));
+    assert!(body.contains("下一页"));
+    assert!(body.contains("action=storage.config.save"));
+    assert!(body.contains("target_type=storage_config"));
+    assert!(body.contains("target_id=oss"));
+    assert!(body.contains("page=2"));
+    assert!(body.contains("per_page=1"));
+}
+
+#[tokio::test]
+async fn api_system_audit_lists_logs_with_filters_and_permission() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    audit::record(
+        &pool,
+        Some(1),
+        "project.create",
+        "project",
+        "YCE",
+        r#"{"source":"test"}"#,
+    )
+    .await
+    .expect("audit log should write");
+    audit::record(
+        &pool,
+        Some(1),
+        "storage.config.save",
+        "storage_config",
+        "oss",
+        r#"{"source":"test"}"#,
+    )
+    .await
+    .expect("audit log should write");
+    create_user_with_role(
+        &pool,
+        "audit_api_member",
+        "审计普通成员",
+        "MemberPass2026!",
+        "member",
+    )
+    .await;
+    let admin_session = auth::login(&pool, "admin", "AdminPass2026!")
+        .await
+        .expect("admin should login");
+    let member_session = auth::login(&pool, "audit_api_member", "MemberPass2026!")
+        .await
+        .expect("member should login");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/audit?action=project.create&page=1&per_page=10")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&admin_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains(r#""action":"project.create""#));
+    assert!(body.contains(r#""target_id":"YCE""#));
+    assert!(body.contains(r#""ip":""#));
+    assert!(body.contains(r#""user_agent":""#));
+    assert!(body.contains(r#""total_items":1"#));
+    assert!(!body.contains(r#""action":"storage.config.save""#));
+
+    let forbidden_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/audit")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
 }
 
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) {

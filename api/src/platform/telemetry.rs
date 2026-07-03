@@ -7,3 +7,14 @@ pub fn init(log_level: &str) {
 
     let _ = fmt().with_env_filter(filter).try_init();
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::platform::telemetry;
+
+    #[test]
+    fn init_is_idempotent_and_tolerates_invalid_filter() {
+        telemetry::init("off");
+        telemetry::init("not a valid env filter");
+    }
+}

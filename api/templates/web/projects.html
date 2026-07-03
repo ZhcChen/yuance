@@ -43,44 +43,56 @@
         <p>按最近更新排序，创建后会自动把当前用户加入为项目负责人。</p>
       </div>
       <div class="segmented" aria-label="项目状态筛选">
-        <button class="active" type="button">全部</button>
-        <button type="button" disabled>进行中</button>
-        <button type="button" disabled>已暂停</button>
+        <a class="{% if status_filter == "" %}active{% endif %}" href="/web/projects">全部</a>
+        <a class="{% if status_filter == "active" %}active{% endif %}" href="/web/projects?status=active">进行中</a>
+        <a class="{% if status_filter == "planning" %}active{% endif %}" href="/web/projects?status=planning">规划中</a>
+        <a class="{% if status_filter == "paused" %}active{% endif %}" href="/web/projects?status=paused">已暂停</a>
+        <a class="{% if status_filter == "archived" %}active{% endif %}" href="/web/projects?status=archived">已归档</a>
       </div>
     </div>
 
     {% if has_projects %}
-    <div class="table-wrap">
-      <table class="compact-table">
-        <thead>
-          <tr>
-            <th>编号</th>
-            <th>项目</th>
-            <th>负责人</th>
-            <th>开放工作项</th>
-            <th>状态</th>
-            <th>更新</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for project in projects %}
-          <tr>
-            <td><code>{{ project.code }}</code></td>
-            <td><a href="/web/projects/{{ project.code }}">{{ project.name }}</a></td>
-            <td>{{ project.owner }}</td>
-            <td>
-              <div class="work-count-cell">
-                <strong>{{ project.open_work_items }}</strong>
-                <span>/ {{ project.total_work_items }}</span>
-              </div>
-            </td>
-            <td><span class="status status-{{ project.status_tone }}">{{ project.status }}</span></td>
-            <td>{{ project.updated_at }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    <div class="project-card-grid">
+      {% for project in projects %}
+      <a class="project-card" href="/web/projects/{{ project.code }}">
+        <span class="project-card-topline">
+          <code>{{ project.code }}</code>
+          <span class="status status-{{ project.status_tone }}">{{ project.status }}</span>
+        </span>
+        <span class="project-card-title">{{ project.name }}</span>
+        <span class="project-card-meta">负责人：{{ project.owner }}</span>
+        <span class="project-card-stats">
+          <span>
+            <strong>{{ project.open_work_items }}</strong>
+            <em>开放工作项</em>
+          </span>
+          <span>
+            <strong>{{ project.total_work_items }}</strong>
+            <em>全部工作项</em>
+          </span>
+        </span>
+        <span class="project-card-foot">更新于 {{ project.updated_at }}</span>
+      </a>
+      {% endfor %}
     </div>
+    <nav class="pager" aria-label="项目分页">
+      <div class="pager-meta">
+        <strong>第 {{ pagination.page }}/{{ pagination.total_pages }} 页</strong>
+        <span>显示 {{ pagination.range_start }}-{{ pagination.range_end }}，共 {{ pagination.total_items }} 个项目，每页 {{ pagination.per_page }} 个</span>
+      </div>
+      <div class="pager-actions">
+        {% if pagination.has_previous %}
+        <a class="btn btn-secondary" href="{{ pagination.previous_url }}">上一页</a>
+        {% else %}
+        <span class="btn btn-secondary disabled" aria-disabled="true">上一页</span>
+        {% endif %}
+        {% if pagination.has_next %}
+        <a class="btn btn-secondary" href="{{ pagination.next_url }}">下一页</a>
+        {% else %}
+        <span class="btn btn-secondary disabled" aria-disabled="true">下一页</span>
+        {% endif %}
+      </div>
+    </nav>
     {% else %}
     <div class="empty-state">
       <strong>暂无项目</strong>
@@ -121,6 +133,14 @@
             <option value="paused">暂停</option>
             <option value="archived">归档</option>
           </select>
+        </label>
+        <label>
+          开始日期
+          <input name="start_date" type="date">
+        </label>
+        <label>
+          截止日期
+          <input name="due_date" type="date">
         </label>
         <label class="wide-field">
           项目描述

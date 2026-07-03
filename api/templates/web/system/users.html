@@ -59,6 +59,9 @@
                   {% if user.status_code == "active" %}
                   <input type="hidden" name="status" value="disabled">
                   <button class="btn btn-sm btn-secondary" type="submit">禁用</button>
+                  {% else if user.status_code == "locked" %}
+                  <input type="hidden" name="status" value="active">
+                  <button class="btn btn-sm btn-secondary" type="submit">解锁</button>
                   {% else %}
                   <input type="hidden" name="status" value="active">
                   <button class="btn btn-sm btn-secondary" type="submit">启用</button>

@@ -85,3 +85,70 @@ impl From<sqlx::migrate::MigrateError> for AppError {
         Self::Migration(value)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlite_file_path_extracts_file_paths_and_strips_query() {
+        assert_eq!(
+            sqlite_file_path("sqlite://data/yuance.sqlite3?mode=rwc").expect("path should parse"),
+            PathBuf::from("data/yuance.sqlite3")
+        );
+        assert_eq!(
+            sqlite_file_path("sqlite:data/yuance.sqlite3").expect("path should parse"),
+            PathBuf::from("data/yuance.sqlite3")
+        );
+        assert!(sqlite_file_path("postgres://example.test/db").is_none());
+        assert!(sqlite_file_path("sqlite://:memory:").is_none());
+    }
+
+    #[test]
+    fn memory_database_detection_accepts_supported_sqlite_memory_urls() {
+        assert!(is_memory_database("sqlite::memory:"));
+        assert!(is_memory_database("sqlite://:memory:"));
+        assert!(!is_memory_database("sqlite://data/yuance.sqlite3"));
+    }
+
+    #[test]
+    fn ensure_sqlite_parent_dir_creates_parent_for_file_database() {
+        let root = std::env::temp_dir().join(format!(
+            "yuance-db-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos()
+        ));
+        let database_path = root.join("nested").join("yuance.sqlite3");
+        let database_url = format!("sqlite://{}", database_path.display());
+
+        ensure_sqlite_parent_dir(&database_url, root.to_str().expect("root should be utf-8"))
+            .expect("parent dir should create");
+
+        assert!(database_path.parent().expect("path has parent").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn ensure_sqlite_parent_dir_uses_data_dir_for_directory_like_url() {
+        let root = std::env::temp_dir().join(format!(
+            "yuance-db-dir-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock should be after epoch")
+                .as_nanos()
+        ));
+        let data_dir = root.join("data-dir");
+        let database_url = format!("sqlite://{}", data_dir.display());
+
+        ensure_sqlite_parent_dir(
+            &database_url,
+            data_dir.to_str().expect("dir should be utf-8"),
+        )
+        .expect("directory path should create");
+
+        assert!(data_dir.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+}

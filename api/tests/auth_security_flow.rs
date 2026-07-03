@@ -97,6 +97,32 @@ async fn htmx_login_submit_can_use_csrf_header() {
 }
 
 #[tokio::test]
+async fn login_submit_with_invalid_credentials_renders_login_page_error() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf("username=admin&password=wrong")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("用户名或密码错误，请重新输入。"));
+    assert!(body.contains("<form class=\"auth-form\" method=\"post\" action=\"/web/login\">"));
+    assert!(!body.contains(r#""code":"unauthorized""#));
+}
+
+#[tokio::test]
 async fn htmx_role_permission_update_can_use_csrf_header() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -245,6 +271,193 @@ async fn login_submit_with_csrf_creates_session_cookie() {
             .iter()
             .any(|cookie| cookie.starts_with("yuance_session="))
     );
+}
+
+#[tokio::test]
+async fn web_login_uses_configured_session_ttl_for_cookie_and_database_expiry() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let mut settings = test_settings();
+    settings.session_ttl = "30m".to_string();
+    let app = build_router(AppState::new(settings, Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf(
+                    "username=admin&password=AdminPass2026%21",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert!(
+        set_cookie_values(response.headers())
+            .iter()
+            .any(|cookie| cookie.starts_with("yuance_session=") && cookie.contains("Max-Age=1800"))
+    );
+
+    let ttl_seconds = sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(strftime('%s', expires_at) - strftime('%s', created_at) AS INTEGER) FROM sessions ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("session ttl should load");
+    assert!((1795..=1805).contains(&ttl_seconds));
+}
+
+#[tokio::test]
+async fn api_auth_login_me_and_logout_flow_uses_json_contract() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let mut settings = test_settings();
+    settings.session_ttl = "15m".to_string();
+    let app = build_router(AppState::new(settings, Some(pool)));
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"admin","password":"AdminPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let session_cookie = set_cookie_values(login_response.headers())
+        .into_iter()
+        .find(|cookie| cookie.starts_with("yuance_session="))
+        .expect("session cookie should be set");
+    assert!(session_cookie.contains("Max-Age=900"));
+    let csrf_cookie = set_cookie_values(login_response.headers())
+        .into_iter()
+        .find(|cookie| cookie.starts_with(&format!("{CSRF_COOKIE_NAME}=")))
+        .expect("csrf cookie should be set");
+    let login_body = response_body(login_response).await;
+    assert!(login_body.contains(r#""username":"admin""#));
+    assert!(login_body.contains(r#""is_super_admin":true"#));
+    assert!(login_body.contains(r#""csrf_token":""#));
+
+    let me_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(header::COOKIE, session_cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(me_response.status(), StatusCode::OK);
+    let me_body = response_body(me_response).await;
+    assert!(me_body.contains(r#""display_name":"系统管理员""#));
+
+    let logout_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/logout")
+                .header(header::COOKIE, format!("{session_cookie}; {csrf_cookie}"))
+                .header("x-yuance-csrf-token", csrf_token_from_cookie(&csrf_cookie))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(logout_response.status(), StatusCode::OK);
+    assert!(
+        set_cookie_values(logout_response.headers())
+            .iter()
+            .any(|cookie| cookie.starts_with("yuance_session=;") && cookie.contains("Max-Age=0"))
+    );
+
+    let expired_me_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(header::COOKIE, session_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(expired_me_response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_auth_login_rejects_invalid_credentials() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"username":"admin","password":"wrong"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_cookie_mutations_require_csrf_token() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let missing_csrf_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::from(
+                    r#"{"project_key":"SEC","name":"安全边界","description":"缺少 CSRF 应拒绝"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(missing_csrf_response.status(), StatusCode::FORBIDDEN);
+
+    let with_csrf_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"project_key":"SEC","name":"安全边界","description":"带 CSRF 应允许"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(with_csrf_response.status(), StatusCode::CREATED);
 }
 
 #[tokio::test]
@@ -454,6 +667,15 @@ fn with_csrf_cookie(session_cookie: &str) -> String {
 
 fn csrf_field() -> String {
     format!("{CSRF_FIELD_NAME}={CSRF_TOKEN}")
+}
+
+fn csrf_token_from_cookie(cookie: &str) -> String {
+    cookie
+        .split(';')
+        .next()
+        .and_then(|part| part.split_once('='))
+        .map(|(_, value)| value.to_string())
+        .expect("csrf cookie should include a token")
 }
 
 fn with_csrf(body: &str) -> String {

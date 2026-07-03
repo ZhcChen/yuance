@@ -12,34 +12,40 @@
       </div>
       {% if can_manage_storage %}
       <div class="toolbar-actions">
+        {% if config.has_config %}
+        <form class="inline-form" method="post" action="/web/system/storage/probe">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="btn btn-secondary" type="submit">测试连接</button>
+        </form>
+        {% endif %}
         <button class="btn btn-primary" type="button" data-modal-open="storage-config-modal">编辑配置</button>
       </div>
       {% endif %}
     </div>
 
     {% if message != "" %}
-    <div class="inline-result storage-message">{{ message }}</div>
+    <div class="inline-result storage-message storage-message-{{ message_tone }}">{{ message }}</div>
     {% endif %}
 
     {% if config.has_config %}
-    <dl class="storage-meta">
-      <div>
+    <dl class="config-summary-grid storage-meta">
+      <div class="config-summary-item">
         <dt>Provider</dt>
         <dd>{{ config.provider }}</dd>
       </div>
-      <div>
+      <div class="config-summary-item">
         <dt>状态</dt>
         <dd><span class="status status-{{ config.status_tone }}">{{ config.status }}</span></dd>
       </div>
-      <div>
+      <div class="config-summary-item">
         <dt>Bucket</dt>
         <dd>{{ config.bucket }}</dd>
       </div>
-      <div>
+      <div class="config-summary-item">
         <dt>AccessKey</dt>
         <dd>{{ config.access_key_id_hint }}</dd>
       </div>
-      <div>
+      <div class="config-summary-item">
         <dt>版本</dt>
         <dd>v{{ config.version }} · {{ config.updated_at }}</dd>
       </div>
@@ -47,7 +53,7 @@
     {% else %}
     <div class="empty-state">
       <strong>尚未配置对象存储</strong>
-      <span>保存并激活后，文件上传底座会使用该 OSS 配置生成短期签名 URL。</span>
+      <span>已按 qfy-sc 兼容策略预填阿里云杭州地域默认值，Bucket 使用元策默认名 yuance-files。保存并激活后，文件上传底座会使用该 OSS 配置生成短期签名 URL。</span>
     </div>
     {% endif %}
   </section>
@@ -57,9 +63,123 @@
     <ul class="check-list">
       <li>长期密钥不进入模板、日志或静态文件。</li>
       <li>业务上传使用服务端短期签名 URL。</li>
-      <li>后续版本记录配置快照，支持回滚。</li>
+      <li>每次保存和回滚都会生成不可变配置快照。</li>
     </ul>
   </aside>
+</section>
+
+<section class="panel storage-bucket-panel">
+  <div class="panel-head">
+    <div>
+      <h2>桶状态</h2>
+      <p>检测当前激活 Bucket 的读写权限，并写入元策初始化标记。</p>
+    </div>
+    {% if can_manage_storage %}
+    {% if config.has_config %}
+    <div class="toolbar-actions">
+      <form class="inline-form" method="post" action="/web/system/storage/probe">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn btn-secondary" type="submit">检测桶状态</button>
+      </form>
+      <form class="inline-form" method="post" action="/web/system/storage/initialize">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn btn-primary" type="submit">初始化桶</button>
+      </form>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <div class="storage-bucket-body">
+    <div class="storage-bucket-summary">
+      <div>
+        <strong>{{ bucket_inspection.bucket }}</strong>
+        <span>{{ bucket_inspection.provider }} · {{ bucket_inspection.marker_key }}</span>
+      </div>
+      <span class="status status-{{ bucket_inspection.status_tone }}">{{ bucket_inspection.status }}</span>
+    </div>
+    <p class="storage-bucket-message">{{ bucket_inspection.message }}</p>
+    <div class="storage-bucket-flags">
+      <span class="status {% if bucket_inspection.initialized %}status-ok{% else %}status-warning{% endif %}">初始化 {% if bucket_inspection.initialized %}已完成{% else %}未完成{% endif %}</span>
+      <span class="status {% if bucket_inspection.can_write %}status-ok{% else %}status-info{% endif %}">写入 {% if bucket_inspection.can_write %}通过{% else %}待检测{% endif %}</span>
+      <span class="status {% if bucket_inspection.can_read %}status-ok{% else %}status-info{% endif %}">读取 {% if bucket_inspection.can_read %}通过{% else %}待检测{% endif %}</span>
+      <span class="status {% if bucket_inspection.can_delete %}status-ok{% else %}status-info{% endif %}">清理 {% if bucket_inspection.can_delete %}通过{% else %}待检测{% endif %}</span>
+    </div>
+
+    {% if bucket_inspection.has_checks %}
+    <div class="storage-check-list">
+      {% for check in bucket_inspection.checks %}
+      <article class="storage-check-row">
+        <span class="status status-{{ check.status_tone }}">{{ check.status }}</span>
+        <div>
+          <strong>{{ check.code }}</strong>
+          <p>{{ check.message }}</p>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if bucket_inspection.needs_initialization %}
+    <div class="inline-result storage-message storage-message-info">
+      当前 Bucket 已配置但缺少初始化标记。初始化会写入 <code>{{ bucket_inspection.marker_key }}</code>，不会创建阿里云 Bucket；如果 Bucket 不存在，请先到阿里云 OSS 控制台创建。
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel storage-versions-panel">
+  <div class="panel-head">
+    <div>
+      <h2>配置版本</h2>
+      <p>按时间倒序保留对象存储快照；回滚会生成新的激活版本，不直接修改历史记录。</p>
+    </div>
+  </div>
+
+  {% if has_versions %}
+  <div class="storage-version-list">
+    {% for version in versions %}
+    <article class="storage-version-row">
+      <div class="storage-version-main">
+        <div class="storage-version-title">
+          <strong>v{{ version.version }}</strong>
+          <span class="status status-{{ version.current_status_tone }}">{{ version.current_status }}</span>
+          {% if version.snapshot_status != version.current_status %}
+          <span class="status status-{{ version.snapshot_status_tone }}">快照：{{ version.snapshot_status }}</span>
+          {% endif %}
+        </div>
+        <div class="storage-version-meta">
+          <span>{{ version.bucket }}</span>
+          <span>{{ version.endpoint }}</span>
+          <span>{{ version.access_key_id_hint }}</span>
+        </div>
+        <div class="storage-version-foot">
+          <span>{{ version.provider }}</span>
+          <span>{{ version.region }}</span>
+          <span>{{ version.created_by }} · {{ version.created_at }}</span>
+        </div>
+      </div>
+      {% if can_manage_storage %}
+      <div class="storage-version-actions">
+        {% if version.is_current_active %}
+        <span class="attachment-action-hint">当前激活</span>
+        {% else %}
+        <form class="inline-form" method="post" action="/web/system/storage/versions/{{ version.version }}/rollback" data-confirm-submit-form data-confirm-title="回滚对象存储配置" data-confirm-message="确认回滚到 v{{ version.version }}？系统会生成一个新的激活版本，当前激活配置会被禁用。" data-confirm-action="回滚">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <button class="btn btn-sm btn-secondary" type="submit">回滚到此版本</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <strong>暂无配置版本</strong>
+    <span>保存对象存储配置后，系统会自动记录版本快照。</span>
+  </div>
+  {% endif %}
 </section>
 
 {% if can_manage_storage %}
@@ -82,7 +202,7 @@
         </label>
         <label>
           <span>Region</span>
-          <input name="region" value="{{ config.region }}" placeholder="cn-hangzhou">
+          <input name="region" value="{{ config.region }}" placeholder="oss-cn-hangzhou">
         </label>
         <label>
           <span>Bucket</span>

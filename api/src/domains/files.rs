@@ -6,6 +6,22 @@ use crate::{
     platform::error::{AppError, AppResult},
 };
 
+pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 100 * 1024 * 1024;
+const ALLOWED_CONTENT_TYPE_PREFIXES: &[&str] = &["image/", "text/"];
+const ALLOWED_CONTENT_TYPES: &[&str] = &[
+    "application/json",
+    "application/msword",
+    "application/octet-stream",
+    "application/pdf",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/x-7z-compressed",
+    "application/zip",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileObject {
     pub id: i64,
@@ -29,6 +45,35 @@ pub struct FileAttachmentSummary {
     pub created_by_display_name: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingFileCleanupSummary {
+    pub matched_count: i64,
+    pub deleted_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileObjectAuditSummary {
+    pub total_count: i64,
+    pub attached_count: i64,
+    pub orphan_count: i64,
+    pub pending_orphan_count: i64,
+    pub uploaded_orphan_count: i64,
+    pub deleted_orphan_count: i64,
+    pub include_deleted: bool,
+}
+
+type AttachmentRow = (
+    i64,
+    i64,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    String,
+    String,
+);
 
 #[derive(Debug, Clone)]
 pub struct CreateFileObjectInput {
@@ -57,9 +102,7 @@ pub async fn create_file_object(
 ) -> AppResult<FileObject> {
     let original_filename = validate_filename(&input.original_filename)?;
     let content_type = validate_content_type(&input.content_type)?;
-    if input.byte_size < 0 {
-        return Err(AppError::BadRequest("文件大小不能小于 0".to_string()));
-    }
+    validate_byte_size(input.byte_size)?;
 
     let object_key = generate_object_key(&original_filename);
     let id = sqlx::query_scalar::<_, i64>(
@@ -114,9 +157,7 @@ pub async fn create_attachment(
         .as_deref()
         .map(validate_activity_summary)
         .transpose()?;
-    if input.byte_size < 0 {
-        return Err(AppError::BadRequest("文件大小不能小于 0".to_string()));
-    }
+    validate_byte_size(input.byte_size)?;
     let object_key = generate_object_key(&original_filename);
 
     let mut tx = pool.begin().await?;
@@ -209,20 +250,7 @@ pub async fn list_attachments(
         return Err(AppError::BadRequest("附件目标无效".to_string()));
     }
 
-    let rows = sqlx::query_as::<
-        _,
-        (
-            i64,
-            i64,
-            String,
-            String,
-            String,
-            i64,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let rows = sqlx::query_as::<_, AttachmentRow>(
         r#"
         SELECT
             fa.id,
@@ -281,21 +309,281 @@ pub async fn get_file_object(pool: &SqlitePool, id: i64) -> AppResult<FileObject
     })
 }
 
-async fn get_attachment(pool: &SqlitePool, id: i64) -> AppResult<FileAttachmentSummary> {
-    let row = sqlx::query_as::<
-        _,
-        (
-            i64,
-            i64,
-            String,
-            String,
-            String,
-            i64,
-            String,
-            String,
-            String,
-        ),
-    >(
+pub async fn get_attachment(pool: &SqlitePool, id: i64) -> AppResult<FileAttachmentSummary> {
+    get_attachment_optional(pool, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("附件不存在".to_string()))
+}
+
+pub async fn get_attachment_optional(
+    pool: &SqlitePool,
+    id: i64,
+) -> AppResult<Option<FileAttachmentSummary>> {
+    if id <= 0 {
+        return Err(AppError::BadRequest("附件 ID 无效".to_string()));
+    }
+
+    let mut query = attachment_query();
+    query.push(" WHERE fa.id = ").push_bind(id);
+    let row = query
+        .build_query_as::<AttachmentRow>()
+        .fetch_optional(pool)
+        .await?;
+
+    Ok(row.map(attachment_from_row))
+}
+
+pub async fn get_attachment_for_target(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    target_type: &str,
+    target_id: i64,
+) -> AppResult<FileAttachmentSummary> {
+    let target_type = validate_target_type(target_type)?;
+    if attachment_id <= 0 || target_id <= 0 {
+        return Err(AppError::BadRequest("附件目标无效".to_string()));
+    }
+
+    let mut query = attachment_query();
+    query
+        .push(" WHERE fa.id = ")
+        .push_bind(attachment_id)
+        .push(" AND fa.target_type = ")
+        .push_bind(target_type)
+        .push(" AND fa.target_id = ")
+        .push_bind(target_id);
+    let row = query
+        .build_query_as::<AttachmentRow>()
+        .fetch_optional(pool)
+        .await?;
+
+    row.map(attachment_from_row)
+        .ok_or_else(|| AppError::NotFound("附件不存在".to_string()))
+}
+
+pub async fn mark_file_uploaded(pool: &SqlitePool, file_object_id: i64) -> AppResult<FileObject> {
+    if file_object_id <= 0 {
+        return Err(AppError::BadRequest("文件对象 ID 无效".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'uploaded',
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND status = 'pending'
+        "#,
+    )
+    .bind(file_object_id)
+    .execute(pool)
+    .await?;
+
+    get_file_object(pool, file_object_id).await
+}
+
+pub async fn mark_attachment_uploaded(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    target_type: &str,
+    target_id: i64,
+) -> AppResult<FileAttachmentSummary> {
+    let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
+    mark_file_uploaded(pool, attachment.file_object_id).await?;
+    get_attachment(pool, attachment.id).await
+}
+
+pub async fn delete_attachment(
+    pool: &SqlitePool,
+    attachment_id: i64,
+    target_type: &str,
+    target_id: i64,
+    actor_user_id: i64,
+    project_id: Option<i64>,
+    activity_summary: Option<&str>,
+) -> AppResult<FileAttachmentSummary> {
+    let attachment = get_attachment_for_target(pool, attachment_id, target_type, target_id).await?;
+    if let Some(project_id) = project_id
+        && project_id <= 0
+    {
+        return Err(AppError::BadRequest("项目动态目标无效".to_string()));
+    }
+    let activity_summary = activity_summary
+        .map(validate_activity_summary)
+        .transpose()?;
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'deleted',
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND status <> 'deleted'
+        "#,
+    )
+    .bind(attachment.file_object_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if let (Some(project_id), Some(summary)) = (project_id, activity_summary.as_deref()) {
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                action,
+                target_type,
+                target_id,
+                summary,
+                metadata
+            )
+            VALUES (?1, ?2, 'file.deleted', ?3, ?4, ?5, ?6)
+            "#,
+        )
+        .bind(project_id)
+        .bind(actor_user_id)
+        .bind(target_type)
+        .bind(target_id.to_string())
+        .bind(summary)
+        .bind(format!(
+            r#"{{"attachment_id":{},"file_object_id":{},"filename":"{}"}}"#,
+            attachment.id,
+            attachment.file_object_id,
+            attachment.original_filename.replace('"', "\\\"")
+        ))
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    get_attachment(pool, attachment.id).await
+}
+
+pub async fn cleanup_pending_file_objects(
+    pool: &SqlitePool,
+    older_than_hours: i64,
+    dry_run: bool,
+) -> AppResult<PendingFileCleanupSummary> {
+    validate_cleanup_age_hours(older_than_hours)?;
+
+    let matched_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM file_objects
+        WHERE status = 'pending'
+          AND created_at <= datetime('now', ?1)
+        "#,
+    )
+    .bind(format!("-{older_than_hours} hours"))
+    .fetch_one(pool)
+    .await?;
+
+    if dry_run || matched_count == 0 {
+        return Ok(PendingFileCleanupSummary {
+            matched_count,
+            deleted_count: 0,
+        });
+    }
+
+    let deleted_count = sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'deleted',
+            updated_at = datetime('now')
+        WHERE status = 'pending'
+          AND created_at <= datetime('now', ?1)
+        "#,
+    )
+    .bind(format!("-{older_than_hours} hours"))
+    .execute(pool)
+    .await?
+    .rows_affected() as i64;
+
+    Ok(PendingFileCleanupSummary {
+        matched_count,
+        deleted_count,
+    })
+}
+
+pub async fn audit_file_objects(
+    pool: &SqlitePool,
+    include_deleted: bool,
+) -> AppResult<FileObjectAuditSummary> {
+    let total_count = count_file_objects(pool, include_deleted).await?;
+    let attached_count = count_attached_file_objects(pool, include_deleted).await?;
+    let orphan_count = count_orphan_file_objects(pool, include_deleted, None).await?;
+    let pending_orphan_count =
+        count_orphan_file_objects(pool, include_deleted, Some("pending")).await?;
+    let uploaded_orphan_count =
+        count_orphan_file_objects(pool, include_deleted, Some("uploaded")).await?;
+    let deleted_orphan_count =
+        count_orphan_file_objects(pool, include_deleted, Some("deleted")).await?;
+
+    Ok(FileObjectAuditSummary {
+        total_count,
+        attached_count,
+        orphan_count,
+        pending_orphan_count,
+        uploaded_orphan_count,
+        deleted_orphan_count,
+        include_deleted,
+    })
+}
+
+async fn count_file_objects(pool: &SqlitePool, include_deleted: bool) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM file_objects
+        WHERE (?1 OR status <> 'deleted')
+        "#,
+    )
+    .bind(include_deleted)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+async fn count_attached_file_objects(pool: &SqlitePool, include_deleted: bool) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(DISTINCT fo.id)
+        FROM file_objects fo
+        JOIN file_attachments fa ON fa.file_object_id = fo.id
+        WHERE (?1 OR fo.status <> 'deleted')
+        "#,
+    )
+    .bind(include_deleted)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+async fn count_orphan_file_objects(
+    pool: &SqlitePool,
+    include_deleted: bool,
+    status: Option<&str>,
+) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM file_objects fo
+        LEFT JOIN file_attachments fa ON fa.file_object_id = fo.id
+        WHERE fa.id IS NULL
+          AND (?1 OR fo.status <> 'deleted')
+          AND (?2 IS NULL OR fo.status = ?2)
+        "#,
+    )
+    .bind(include_deleted)
+    .bind(status)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+fn attachment_query() -> sqlx::QueryBuilder<sqlx::Sqlite> {
+    sqlx::QueryBuilder::new(
         r#"
         SELECT
             fa.id,
@@ -310,29 +598,11 @@ async fn get_attachment(pool: &SqlitePool, id: i64) -> AppResult<FileAttachmentS
         FROM file_attachments fa
         JOIN file_objects fo ON fo.id = fa.file_object_id
         LEFT JOIN users u ON u.id = fa.created_by_user_id
-        WHERE fa.id = ?1
         "#,
     )
-    .bind(id)
-    .fetch_one(pool)
-    .await?;
-
-    Ok(attachment_from_row(row))
 }
 
-fn attachment_from_row(
-    row: (
-        i64,
-        i64,
-        String,
-        String,
-        String,
-        i64,
-        String,
-        String,
-        String,
-    ),
-) -> FileAttachmentSummary {
+fn attachment_from_row(row: AttachmentRow) -> FileAttachmentSummary {
     let (
         id,
         file_object_id,
@@ -407,13 +677,53 @@ fn validate_filename(filename: &str) -> AppResult<String> {
 }
 
 fn validate_content_type(content_type: &str) -> AppResult<String> {
-    let content_type = content_type.trim();
+    let content_type = content_type.trim().to_ascii_lowercase();
     if content_type.is_empty()
         || content_type.len() > 128
         || content_type.contains('\n')
         || content_type.contains('\r')
+        || content_type.contains(';')
     {
         return Err(AppError::BadRequest("Content-Type 无效".to_string()));
     }
+    if !is_allowed_content_type(&content_type) {
+        return Err(AppError::BadRequest(
+            "暂不支持该附件类型，请上传图片、文本、PDF、Office 文档、JSON 或压缩包".to_string(),
+        ));
+    }
     Ok(content_type.to_string())
+}
+
+fn validate_byte_size(byte_size: i64) -> AppResult<()> {
+    if byte_size < 0 {
+        return Err(AppError::BadRequest("文件大小不能小于 0".to_string()));
+    }
+    if byte_size > MAX_ATTACHMENT_BYTE_SIZE {
+        return Err(AppError::BadRequest(format!(
+            "文件大小不能超过 {} MB",
+            MAX_ATTACHMENT_BYTE_SIZE / 1024 / 1024
+        )));
+    }
+    Ok(())
+}
+
+fn validate_cleanup_age_hours(older_than_hours: i64) -> AppResult<()> {
+    if older_than_hours < 1 {
+        return Err(AppError::BadRequest(
+            "pending 文件清理阈值不能小于 1 小时".to_string(),
+        ));
+    }
+    if older_than_hours > 24 * 365 {
+        return Err(AppError::BadRequest(
+            "pending 文件清理阈值不能超过 365 天".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_allowed_content_type(content_type: &str) -> bool {
+    ALLOWED_CONTENT_TYPE_PREFIXES
+        .iter()
+        .any(|prefix| content_type.starts_with(prefix))
+        || ALLOWED_CONTENT_TYPES.contains(&content_type)
 }

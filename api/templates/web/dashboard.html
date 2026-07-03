@@ -22,7 +22,7 @@
           <p>按最近更新排序，展示当前项目的开放工作项压力。</p>
         </div>
         <div class="toolbar-actions">
-          <button class="btn btn-secondary" type="button">导入</button>
+          <button class="btn btn-secondary" type="button" disabled>导入</button>
           {% if can_manage_projects %}
           <a class="btn btn-primary" href="/web/projects">新建项目</a>
           {% endif %}
@@ -85,18 +85,31 @@
     <section class="panel inspector-panel">
       <div class="panel-head compact">
         <h2>风险队列</h2>
+        {% if has_risk_items %}
         <button class="btn btn-sm btn-secondary" type="button" data-drawer-open="risk-drawer">查看</button>
+        {% endif %}
       </div>
+      {% if has_risk_items %}
       <ol class="risk-list">
-        <li>
-          <strong>CRM 项目接口验收延期</strong>
-          <span>P1 · 需要产品确认范围</span>
+        {% for risk in risk_items %}
+        <li class="risk-list-item">
+          <a href="{{ risk.url }}">
+            <strong>{{ risk.title }}</strong>
+            <span>{{ risk.project }} · {{ risk.assignee }}</span>
+          </a>
+          <div class="risk-list-meta">
+            <span class="priority">{{ risk.priority }}</span>
+            <span class="status status-{{ risk.status_tone }}">{{ risk.status }}</span>
+          </div>
         </li>
-        <li>
-          <strong>对象存储密钥轮换策略未定</strong>
-          <span>P2 · 系统管理配置项</span>
-        </li>
+        {% endfor %}
       </ol>
+      {% else %}
+      <div class="empty-state">
+        <strong>暂无高优先级风险</strong>
+        <span>当前可见范围内没有 P0/P1 的开放工作项。</span>
+      </div>
+      {% endif %}
     </section>
 
     <section class="panel inspector-panel">
@@ -124,7 +137,28 @@
       <button class="icon-btn" type="button" data-drawer-close aria-label="关闭">×</button>
     </div>
     <div class="drawer-body">
-      <p>第一版仅做交互占位。后续接入项目风险、阻塞原因、责任人和截止时间。</p>
+      {% if has_risk_items %}
+      <ol class="risk-list drawer-risk-list">
+        {% for risk in risk_items %}
+        <li class="risk-list-item">
+          <a href="{{ risk.url }}">
+            <code>{{ risk.key }}</code>
+            <strong>{{ risk.title }}</strong>
+            <span>{{ risk.project }} · 负责人 {{ risk.assignee }}</span>
+          </a>
+          <div class="risk-list-meta">
+            <span class="priority">{{ risk.priority }}</span>
+            <span class="status status-{{ risk.status_tone }}">{{ risk.status }}</span>
+          </div>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}
+      <div class="empty-state">
+        <strong>暂无风险详情</strong>
+        <span>出现 P0/P1 开放工作项后会自动进入风险队列。</span>
+      </div>
+      {% endif %}
     </div>
   </section>
 </aside>

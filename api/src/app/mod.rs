@@ -1,3 +1,4 @@
+pub mod files;
 pub mod migrate;
 pub mod seed;
 pub mod serve;
@@ -27,6 +28,11 @@ enum Command {
     Seed {
         #[command(subcommand)]
         command: SeedCommand,
+    },
+    /// 管理文件对象和附件维护任务。
+    Files {
+        #[command(subcommand)]
+        command: FilesCommand,
     },
 }
 
@@ -59,6 +65,25 @@ pub enum SeedCommand {
     LocalAdmin,
 }
 
+#[derive(Debug, Subcommand)]
+pub enum FilesCommand {
+    /// 清理长时间未完成上传的 pending 文件对象。
+    CleanupPending {
+        /// 只统计不写入。
+        #[arg(long)]
+        dry_run: bool,
+        /// 清理早于该小时数的 pending 文件对象。
+        #[arg(long, default_value_t = 24)]
+        older_than_hours: i64,
+    },
+    /// 盘点文件对象和附件关系，不修改数据库或对象存储。
+    AuditObjects {
+        /// 是否把已删除文件对象计入统计。
+        #[arg(long)]
+        include_deleted: bool,
+    },
+}
+
 pub async fn run_cli() -> AppResult<()> {
     Settings::load_dotenv();
 
@@ -70,5 +95,6 @@ pub async fn run_cli() -> AppResult<()> {
         Command::Serve(args) => serve::run(args).await,
         Command::Migrate { command } => migrate::run(command).await,
         Command::Seed { command } => seed::run(command).await,
+        Command::Files { command } => files::run(command).await,
     }
 }

@@ -102,6 +102,56 @@ async fn bootstrap_init_creates_first_super_admin_once() {
 }
 
 #[tokio::test]
+async fn concurrent_bootstrap_init_allows_only_one_admin() {
+    let pool = test_pool().await;
+
+    let mut tasks = Vec::new();
+    for index in 0..8 {
+        let pool = pool.clone();
+        tasks.push(tokio::spawn(async move {
+            bootstrap::bootstrap_init(
+                &pool,
+                bootstrap::BootstrapInitInput {
+                    username: format!("admin{index}"),
+                    display_name: format!("系统管理员 {index}"),
+                    password: "AdminPass2026!".to_string(),
+                    password_confirm: "AdminPass2026!".to_string(),
+                },
+            )
+            .await
+        }));
+    }
+
+    let mut success_count = 0;
+    let mut conflict_count = 0;
+    for task in tasks {
+        match task.await.expect("bootstrap task should join") {
+            Ok(_) => success_count += 1,
+            Err(error) if error.to_string().contains("系统管理员已完成初始化") => {
+                conflict_count += 1;
+            }
+            Err(error) => panic!("unexpected bootstrap error: {error}"),
+        }
+    }
+
+    let user_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+        .fetch_one(&pool)
+        .await
+        .expect("user count should load");
+    let completed = sqlx::query_scalar::<_, i64>(
+        "SELECT completed FROM app_bootstrap WHERE bootstrap_key = 'system'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("bootstrap row should load");
+
+    assert_eq!(success_count, 1);
+    assert_eq!(conflict_count, 7);
+    assert_eq!(user_count, 1);
+    assert_eq!(completed, 1);
+}
+
+#[tokio::test]
 async fn login_verifies_argon2_password_and_creates_session() {
     let pool = test_pool().await;
     bootstrap::bootstrap_init(
@@ -124,6 +174,97 @@ async fn login_verifies_argon2_password_and_creates_session() {
 
     let bad_login = auth::login(&pool, "admin", "wrong-password").await;
     assert!(bad_login.is_err());
+}
+
+#[tokio::test]
+async fn api_bootstrap_init_creates_admin_sets_cookies_and_writes_audit() {
+    let pool = test_pool().await;
+    let mut settings = test_settings();
+    settings.session_ttl = "45m".to_string();
+    let app = build_router(AppState::new(settings, Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/bootstrap/init")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"admin","display_name":"系统管理员","password":"AdminPass2026!","password_confirm":"AdminPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let set_cookies = set_cookie_values(response.headers());
+    assert!(
+        set_cookies
+            .iter()
+            .any(|cookie| cookie.starts_with("yuance_session=") && cookie.contains("Max-Age=2700"))
+    );
+    assert!(
+        set_cookies
+            .iter()
+            .any(|cookie| cookie.starts_with("yuance_csrf="))
+    );
+    let body = response_body(response).await;
+    assert!(body.contains(r#""username":"admin""#));
+    assert!(body.contains(r#""display_name":"系统管理员""#));
+    assert!(body.contains(r#""is_super_admin":true"#));
+    assert!(body.contains(r#""csrf_token":""#));
+
+    let completed = sqlx::query_scalar::<_, i64>(
+        "SELECT completed FROM app_bootstrap WHERE bootstrap_key = 'system'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("bootstrap row should exist");
+    let audit_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'bootstrap.init' AND metadata LIKE '%\"source\":\"api\"%'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("audit count should load");
+
+    assert_eq!(completed, 1);
+    assert_eq!(audit_count, 1);
+}
+
+#[tokio::test]
+async fn api_bootstrap_init_rejects_when_already_initialized() {
+    let pool = test_pool().await;
+    bootstrap::bootstrap_init(
+        &pool,
+        bootstrap::BootstrapInitInput {
+            username: "admin".to_string(),
+            display_name: "系统管理员".to_string(),
+            password: "AdminPass2026!".to_string(),
+            password_confirm: "AdminPass2026!".to_string(),
+        },
+    )
+    .await
+    .expect("bootstrap should initialize");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/bootstrap/init")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"admin2","display_name":"系统管理员二","password":"AdminPass2026!","password_confirm":"AdminPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let body = response_body(response).await;
+    assert!(body.contains("系统管理员已完成初始化"));
 }
 
 #[tokio::test]
@@ -373,4 +514,24 @@ fn csrf_cookie() -> String {
 
 fn with_csrf(body: &str) -> String {
     format!("{body}&_csrf={CSRF_TOKEN}")
+}
+
+async fn response_body(response: axum::response::Response) -> String {
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect")
+        .to_bytes();
+    std::str::from_utf8(&body)
+        .expect("body should be utf-8")
+        .to_string()
+}
+
+fn set_cookie_values(headers: &axum::http::HeaderMap) -> Vec<String> {
+    headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .map(|value| value.to_str().expect("cookie should be ascii").to_string())
+        .collect()
 }

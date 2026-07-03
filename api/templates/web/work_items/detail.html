@@ -18,22 +18,41 @@
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web/projects/{{ item.project_key }}">返回项目</a>
       {% if can_manage_work_items %}
+      {% if item.is_deleted %}
+      <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/restore">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn btn-primary" type="submit">恢复工作项</button>
+      </form>
+      {% else %}
       <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑</button>
       <button class="btn btn-secondary" type="button" data-modal-open="work-item-comment-modal">评论</button>
-      <button class="btn btn-secondary" type="button" data-modal-open="work-item-attachment-modal">登记附件</button>
+      <button class="btn btn-secondary" type="button" data-modal-open="work-item-attachment-modal">上传附件</button>
+      {% for option in quick_status_options %}
       <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/status">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <input type="hidden" name="status" value="in_progress">
-        <button class="btn btn-secondary" type="submit">开始处理</button>
+        <input type="hidden" name="status" value="{{ option.value }}">
+        <button class="{% if option.value == "done" || option.value == "resolved" || option.value == "verified" || option.value == "closed" %}btn btn-primary{% else %}btn btn-secondary{% endif %}" type="submit">{{ option.label }}</button>
       </form>
-      <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/status">
+      {% endfor %}
+      <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/delete" data-confirm-submit-form data-confirm-title="删除工作项" data-confirm-message="确认删除 {{ item.key }}？列表、搜索和个人工作台将默认不再展示。" data-confirm-action="删除">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-        <input type="hidden" name="status" value="done">
-        <button class="btn btn-primary" type="submit">标记完成</button>
+        <button class="btn btn-danger" type="submit">删除</button>
       </form>
+      {% endif %}
       {% endif %}
     </div>
   </section>
+
+  {% if item.is_deleted %}
+  <section class="panel danger-panel">
+    <div class="panel-head compact">
+      <div>
+        <h2>工作项已删除</h2>
+        <p>删除时间：{{ item.deleted_at }}。列表、搜索和个人工作台默认不再展示该工作项。</p>
+      </div>
+    </div>
+  </section>
+  {% endif %}
 
   <section class="detail-grid">
     <div class="detail-main">
@@ -42,10 +61,10 @@
         <div class="panel-head">
           <div>
             <h2>附件</h2>
-            <p>第一版先登记已上传文件的元数据，后续接入签名上传和下载。</p>
+            <p>登记文件元数据后，可通过 API 获取上传/下载签名完成对象存储闭环。</p>
           </div>
-          {% if can_manage_work_items %}
-          <button class="btn btn-sm btn-primary" type="button" data-modal-open="work-item-attachment-modal">登记附件</button>
+          {% if can_manage_work_items && !item.is_deleted %}
+          <button class="btn btn-sm btn-primary" type="button" data-modal-open="work-item-attachment-modal">上传附件</button>
           {% endif %}
         </div>
         {% if has_attachments %}
@@ -54,10 +73,38 @@
           <article class="attachment-row">
             <div>
               <strong>{{ attachment.filename }}</strong>
-              <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · {{ attachment.created_by }} · {{ attachment.created_at }}</span>
+              <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · {{ attachment.created_by }} · {{ attachment.created_at }} · 文件对象 #{{ attachment.file_object_id }}</span>
               <code>{{ attachment.object_key }}</code>
             </div>
-            <span class="status status-info">{{ attachment.status }}</span>
+            <div class="attachment-actions">
+              <span class="status status-info">{{ attachment.status }}</span>
+              {% if attachment.status != "deleted" %}
+              {% if can_manage_work_items && !item.is_deleted %}
+              {% if attachment.status == "pending" %}
+              <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/work-items/{{ item.key }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/work-items/{{ item.key }}/attachments/{id}/uploaded" data-success-redirect="/web/work-items/{{ item.key }}">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <label class="btn btn-sm btn-secondary attachment-file-button">
+                  选择文件
+                  <input class="sr-only" name="file" type="file" required data-attachment-file>
+                </label>
+                <button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>
+                <span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>
+              </form>
+              {% endif %}
+              {% endif %}
+              {% if attachment.status == "uploaded" %}
+              <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载附件</a>
+              {% else %}
+              <span class="attachment-action-hint">上传完成后可下载</span>
+              {% endif %}
+              {% if can_manage_work_items && !item.is_deleted %}
+              <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/delete" data-confirm-submit-form data-confirm-title="删除工作项附件" data-confirm-message="确认删除附件 {{ attachment.filename }}？删除后不能继续下载。" data-confirm-action="删除">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <button class="btn btn-sm btn-danger" type="submit">删除</button>
+              </form>
+              {% endif %}
+              {% endif %}
+            </div>
           </article>
           {% endfor %}
         </div>
@@ -84,6 +131,14 @@
             <dd>{{ item.reporter }}</dd>
           </div>
           <div>
+            <dt>父级需求</dt>
+            <dd>{% if item.has_parent %}<a href="/web/work-items/{{ item.parent_item_key }}">{{ item.parent_item_key }} · {{ item.parent_title }}</a>{% else %}未关联{% endif %}</dd>
+          </div>
+          <div>
+            <dt>截止日期</dt>
+            <dd>{% if item.due_date == "" %}未设置{% else %}{{ item.due_date }}{% endif %}</dd>
+          </div>
+          <div>
             <dt>创建时间</dt>
             <dd>{{ item.created_at }}</dd>
           </div>
@@ -97,7 +152,7 @@
   </section>
 </section>
 
-{% if can_manage_work_items %}
+{% if can_manage_work_items && !item.is_deleted %}
 <aside id="work-item-edit-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-edit-modal-title" tabindex="-1">
@@ -118,13 +173,9 @@
         <label>
           状态
           <select name="status">
-            <option value="open" {% if item.status_code == "open" %}selected{% endif %}>待处理</option>
-            <option value="in_progress" {% if item.status_code == "in_progress" %}selected{% endif %}>进行中</option>
-            <option value="done" {% if item.status_code == "done" %}selected{% endif %}>已完成</option>
-            <option value="resolved" {% if item.status_code == "resolved" %}selected{% endif %}>已解决</option>
-            <option value="verified" {% if item.status_code == "verified" %}selected{% endif %}>已验证</option>
-            <option value="closed" {% if item.status_code == "closed" %}selected{% endif %}>已关闭</option>
-            <option value="cancelled" {% if item.status_code == "cancelled" %}selected{% endif %}>已取消</option>
+            {% for option in status_options %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
           </select>
         </label>
         <label>
@@ -144,6 +195,21 @@
             {% endfor %}
           </select>
         </label>
+        <label>
+          截止日期
+          <input name="due_date" type="date" value="{{ item.due_date }}">
+        </label>
+        {% if item.kind == "任务" %}
+        <label>
+          父级需求
+          <select name="parent_item_key">
+            <option value="">不关联</option>
+            {% for parent in parent_options %}
+            <option value="{{ parent.key }}" {% if parent.key == item.parent_item_key %}selected{% endif %}>{{ parent.key }} · {{ parent.title }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
         <label class="wide-field">
           描述
           <textarea name="description" rows="5">{{ item.description }}</textarea>
@@ -162,28 +228,34 @@
   <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="work-item-attachment-modal-title" tabindex="-1">
     <div class="modal-head">
       <div>
-        <h2 id="work-item-attachment-modal-title">登记工作项附件</h2>
-        <p>第一版先登记已上传文件的元数据。</p>
+        <h2 id="work-item-attachment-modal-title">上传工作项附件</h2>
+        <p>选择文件后会自动登记元数据、获取上传签名、直传对象存储并标记完成。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/attachments">
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/attachments" data-direct-upload data-attachment-create-url="/api/v1/work-items/{{ item.key }}/attachments" data-attachment-upload-url-template="/api/v1/work-items/{{ item.key }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/work-items/{{ item.key }}/attachments/{id}/uploaded" data-success-redirect="/web/work-items/{{ item.key }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label class="upload-picker">
+        <span>选择文件</span>
+        <input name="file" type="file" required autofocus data-attachment-file>
+        <em>文件不会经过应用服务器中转；浏览器会使用短期签名 URL 直接上传到对象存储。</em>
+      </label>
       <label>
         文件名
-        <input name="original_filename" placeholder="screenshot.png" required autofocus>
+        <input name="original_filename" placeholder="screenshot.png" required data-attachment-filename>
       </label>
       <label>
         Content-Type
-        <input name="content_type" value="application/octet-stream" required>
+        <input name="content_type" value="application/octet-stream" required data-attachment-content-type>
       </label>
       <label>
         文件大小 Bytes
-        <input name="byte_size" type="number" min="0" value="0" required>
+        <input name="byte_size" type="number" min="0" value="0" required data-attachment-byte-size>
       </label>
+      <div class="upload-status" role="status" aria-live="polite" data-upload-status>等待选择文件。</div>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit">登记附件</button>
+        <button class="btn btn-primary" type="submit" data-upload-submit>上传附件</button>
       </div>
     </form>
   </section>

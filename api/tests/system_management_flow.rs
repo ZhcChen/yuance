@@ -81,6 +81,87 @@ async fn admin_can_create_member_user_and_member_can_login() {
 }
 
 #[tokio::test]
+async fn user_create_rejects_invalid_contact_duplicate_username_and_inactive_role() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    rbac::create_role(&pool, "inactive_role", "停用角色", "self")
+        .await
+        .expect("role should create");
+    rbac::set_role_status(&pool, "inactive_role", "disabled")
+        .await
+        .expect("role should disable");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let invalid_email = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "username=bademail&display_name=%E9%82%AE%E7%AE%B1%E9%94%99%E8%AF%AF&email=invalid-email&mobile=13800000001&password=MemberPass2026%21&role_code=member",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_email.status(), StatusCode::BAD_REQUEST);
+
+    let invalid_mobile = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "username=badmobile&display_name=%E6%89%8B%E6%9C%BA%E9%94%99%E8%AF%AF&email=badmobile%40example.test&mobile=1380000abc&password=MemberPass2026%21&role_code=member",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_mobile.status(), StatusCode::BAD_REQUEST);
+
+    let inactive_role = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "username=inactiverole&display_name=%E5%81%9C%E7%94%A8%E8%A7%92%E8%89%B2&email=inactiverole%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=inactive_role",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(inactive_role.status(), StatusCode::BAD_REQUEST);
+
+    create_user_with_role(&pool, "duplicate1", "重复用户", "MemberPass2026!", "member").await;
+    let duplicate = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "username=duplicate1&display_name=%E9%87%8D%E5%A4%8D%E7%94%A8%E6%88%B7&email=duplicate%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=member",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(duplicate.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn disabled_user_loses_existing_session() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -122,6 +203,96 @@ async fn disabled_user_loses_existing_session() {
         response.headers().get(header::LOCATION).unwrap(),
         "/web/login"
     );
+}
+
+#[tokio::test]
+async fn locked_user_loses_session_and_cannot_login_until_unlocked() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let member_session = auth::login(&pool, "member1", "MemberPass2026!")
+        .await
+        .expect("member should login");
+    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let lock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/system/users/member1/status")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"status":"locked"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(lock_response.status(), StatusCode::OK);
+    assert!(
+        response_body(lock_response)
+            .await
+            .contains(r#""status":"locked""#)
+    );
+
+    let page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(page_body.contains("锁定"));
+    assert!(page_body.contains("解锁"));
+
+    let stale_session_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web")
+                .header(header::COOKIE, member_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(stale_session_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        stale_session_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap(),
+        "/web/login"
+    );
+
+    let locked_login = auth::login(&pool, "member1", "MemberPass2026!").await;
+    assert!(locked_login.is_err());
+
+    let unlock_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/member1/status")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .body(Body::from(with_csrf("status=active")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unlock_response.status(), StatusCode::SEE_OTHER);
+    let unlocked_login = auth::login(&pool, "member1", "MemberPass2026!")
+        .await
+        .expect("unlocked user should login");
+    assert!(!unlocked_login.raw_token.is_empty());
 }
 
 #[tokio::test]
@@ -171,6 +342,58 @@ async fn resetting_password_revokes_old_sessions_and_allows_new_password() {
 }
 
 #[tokio::test]
+async fn super_admin_cannot_be_disabled_or_downgraded() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let disable_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/admin/status")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("status=disabled")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(disable_response.status(), StatusCode::BAD_REQUEST);
+
+    let downgrade_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/admin/role")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("role_code=member")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(downgrade_response.status(), StatusCode::BAD_REQUEST);
+
+    let (status, is_super_admin, role_code) = sqlx::query_as::<_, (String, i64, String)>(
+        r#"
+        SELECT u.status, u.is_super_admin, r.role_code
+        FROM users u
+        JOIN user_roles ur ON ur.user_id = u.id
+        JOIN roles r ON r.id = ur.role_id
+        WHERE u.username = 'admin'
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("admin should load");
+    assert_eq!(status, "active");
+    assert_eq!(is_super_admin, 1);
+    assert_eq!(role_code, "system_admin");
+}
+
+#[tokio::test]
 async fn regular_member_cannot_access_system_users_page() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
@@ -193,6 +416,34 @@ async fn regular_member_cannot_access_system_users_page() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_can_replace_regular_user_role() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    rbac::create_role(&pool, "system_viewer", "系统观察员", "self")
+        .await
+        .expect("role should create");
+    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/member1/role")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("role_code=system_viewer")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+
+    let role = user_role_code(&pool, "member1").await;
+    assert_eq!(role, "system_viewer");
 }
 
 #[tokio::test]
@@ -417,6 +668,197 @@ async fn role_status_controls_assigned_permissions() {
         .await
         .expect("router should respond");
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_system_user_management_flow_uses_rbac_and_csrf() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let regular_user_id = create_user_with_role(
+        &pool,
+        "api_regular",
+        "API 普通用户",
+        "RegularPass2026!",
+        "member",
+    )
+    .await;
+    let regular_session = auth::issue_session(&pool, regular_user_id, 3600)
+        .await
+        .expect("session should issue");
+    let regular_cookie = auth::session_cookie_header(&regular_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/users")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"username":"api_member","display_name":"API 成员","email":"api@example.test","mobile":"13800138000","password":"MemberPass2026!","role_code":"member"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let create_body = response_body(create_response).await;
+    assert!(create_body.contains(r#""username":"api_member""#));
+    assert!(create_body.contains(r#""role_code":"member""#));
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/users")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = response_body(list_response).await;
+    assert!(list_body.contains("api_member"));
+    assert!(!list_body.contains("MemberPass2026!"));
+
+    let disable_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/system/users/api_member/status")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"status":"disabled"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(disable_response.status(), StatusCode::OK);
+    assert!(
+        response_body(disable_response)
+            .await
+            .contains(r#""status":"disabled""#)
+    );
+
+    let reset_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/users/api_member/password")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"password":"NewMemberPass2026!"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reset_response.status(), StatusCode::OK);
+    assert!(
+        !response_body(reset_response)
+            .await
+            .contains("NewMemberPass2026!")
+    );
+
+    let forbidden_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/users")
+                .header(header::COOKIE, regular_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_system_role_permissions_flow_matches_permission_tree_model() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/roles")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"role_code":"api_viewer","role_name":"API 观察员","data_scope_type":"self"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    assert!(
+        response_body(create_response)
+            .await
+            .contains(r#""role_code":"api_viewer""#)
+    );
+
+    let permissions_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/system/roles/api_viewer/permissions")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"permission_keys":["system.users.manage"]}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(permissions_response.status(), StatusCode::OK);
+    let permissions_body = response_body(permissions_response).await;
+    assert!(permissions_body.contains(r#""permission_key":"system.users.manage""#));
+    assert!(permissions_body.contains(r#""permission_key":"system.users.view""#));
+    assert!(permissions_body.contains(r#""granted":true"#));
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/roles")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    assert!(response_body(list_response).await.contains("api_viewer"));
+
+    let system_role_response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/system/roles/member/permissions")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"permission_keys":["system.users.view"]}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(system_role_response.status(), StatusCode::BAD_REQUEST);
 }
 
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {

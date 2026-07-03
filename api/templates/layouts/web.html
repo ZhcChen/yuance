@@ -7,6 +7,17 @@
   <meta name="yuance-csrf-token" content="{{ csrf_token }}">
   <link rel="icon" href="/favicon.ico" type="image/svg+xml">
   <link rel="alternate icon" href="/static/brand/yuance-logo.svg" type="image/svg+xml">
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem("yuance-theme") === "dark" ? "dark" : "light";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      } catch (_error) {
+        document.documentElement.dataset.theme = "light";
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/vendor/htmx.min.js" defer></script>
   <script src="/static/app.js" defer></script>
@@ -23,7 +34,7 @@
 
       <nav class="topnav" aria-label="主导航">
         <a class="topnav-item {% if active == "dashboard" %}active{% endif %}" href="/web">工作台</a>
-        <a class="topnav-item {% if active == "projects" %}active{% endif %}" href="/web/projects">项目</a>
+        <a class="topnav-item {% if active == "projects" %}active{% endif %}" href="{% match current_project %}{% when Some with (project) %}/web/projects/{{ project.key }}{% when None %}/web/projects{% endmatch %}">项目</a>
         <a class="topnav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">需求</a>
         <a class="topnav-item {% if active == "tasks" %}active{% endif %}" href="/web/tasks">任务</a>
         <a class="topnav-item {% if active == "bugs" %}active{% endif %}" href="/web/bugs">Bug</a>
@@ -54,21 +65,66 @@
         {% endif %}
       </nav>
 
-      <div class="topbar-meta" data-dropdown-root aria-label="当前用户">
-        <button class="account-trigger" type="button" data-dropdown-trigger aria-expanded="false" aria-label="{{ current_user }}，打开用户菜单" title="{{ current_user }}">
-          <span class="account-avatar" data-user-avatar data-avatar-name="{{ current_user }}" aria-hidden="true">用</span>
-        </button>
-        <div class="account-menu" data-dropdown-menu hidden>
-          <div class="account-menu-head">
-            <strong>{{ current_user }}</strong>
-            <span>{{ environment }}</span>
+      <div class="topbar-meta" aria-label="顶部操作">
+        <form class="project-switcher" action="/web/current-project" method="post" aria-label="当前项目" data-dropdown-root data-project-switcher>
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="return_to" value="">
+          <input type="hidden" name="project_key" value="{% match current_project %}{% when Some with (project) %}{{ project.key }}{% when None %}{% endmatch %}">
+          <button class="project-switcher-trigger" type="button" data-dropdown-trigger aria-expanded="false" {% if topbar_project_options.len() == 0 %}disabled{% endif %}>
+            <span class="project-switcher-kicker">当前项目</span>
+            {% match current_project %}
+            {% when None %}
+            <span class="project-switcher-current">请选择项目</span>
+            {% when Some with (project) %}
+            <span class="project-switcher-current">{{ project.key }} · {{ project.name }}</span>
+            {% endmatch %}
+            <span class="account-caret" aria-hidden="true"></span>
+          </button>
+          <div class="project-switcher-panel" data-dropdown-menu hidden>
+            <div class="project-switcher-search">
+              <span aria-hidden="true">⌕</span>
+              <label class="sr-only" for="topbar-project-search">搜索项目</label>
+              <input id="topbar-project-search" type="search" placeholder="搜索项目编号或名称" autocomplete="off" data-project-search-input>
+            </div>
+            <div class="project-switcher-options" aria-label="可选项目">
+            {% for project in topbar_project_options %}
+              <button class="project-switcher-option {% match current_project %}{% when Some with (current) %}{% if current.key == project.key %}active{% endif %}{% when None %}{% endmatch %}" type="button" data-project-option data-project-key="{{ project.key }}">
+                <span class="project-switcher-option-key">{{ project.key }}</span>
+                <span class="project-switcher-option-name">{{ project.name }}</span>
+              </button>
+            {% endfor %}
+              <div class="project-switcher-empty" data-project-empty hidden>没有匹配项目</div>
+            </div>
+            <a class="project-switcher-all" href="/web/projects">查看所有项目</a>
           </div>
-          <a href="/web/me">个人中心</a>
-          <a href="/web/search">全局搜索</a>
-          <form class="menu-form" method="post" action="/web/logout">
-            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-            <button type="submit">退出登录</button>
-          </form>
+        </form>
+        <form class="topbar-search {% if active == "search" %}active{% endif %}" action="/web/search" method="get" role="search" aria-label="全局搜索">
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M10.8 5.2a5.6 5.6 0 1 0 0 11.2 5.6 5.6 0 0 0 0-11.2ZM3.6 10.8a7.2 7.2 0 1 1 12.7 4.6l3.8 3.8-1 1-3.8-3.8A7.2 7.2 0 0 1 3.6 10.8Z"/>
+          </svg>
+          <label class="sr-only" for="topbar-search-input">全局搜索</label>
+          <input id="topbar-search-input" name="q" type="search" placeholder="搜索项目、需求、任务、Bug" autocomplete="off" data-topbar-search-input>
+          <button type="submit">搜索</button>
+        </form>
+        <div class="account-dropdown" data-dropdown-root aria-label="当前用户">
+          <button class="account-trigger" type="button" data-dropdown-trigger aria-expanded="false" aria-label="{{ current_user }}，打开用户菜单" title="{{ current_user }}">
+            <span class="account-avatar" data-user-avatar data-avatar-name="{{ current_user }}" aria-hidden="true">用</span>
+          </button>
+          <div class="account-menu" data-dropdown-menu hidden>
+            <div class="account-menu-head">
+              <strong>{{ current_user }}</strong>
+              <span>{{ environment }}</span>
+            </div>
+            <button class="account-menu-action theme-toggle" type="button" data-theme-toggle aria-pressed="false">
+              <span data-theme-label>暗色模式</span>
+              <span class="theme-toggle-switch" aria-hidden="true"><span></span></span>
+            </button>
+            <a href="/web/me">个人中心</a>
+            <form class="menu-form" method="post" action="/web/logout">
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <button type="submit">退出登录</button>
+            </form>
+          </div>
         </div>
       </div>
     </header>
@@ -79,5 +135,21 @@
       </main>
     </div>
   </div>
+  <aside id="confirm-action-modal" class="modal" data-modal data-confirm-modal hidden aria-hidden="true">
+    <div class="modal-backdrop" data-modal-close></div>
+    <section class="modal-panel modal-confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-action-title" tabindex="-1">
+      <div class="modal-head">
+        <div>
+          <h2 id="confirm-action-title" data-confirm-title>确认操作</h2>
+          <p data-confirm-message>该操作提交后会立即生效。</p>
+        </div>
+        <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-danger" type="button" data-confirm-submit>确认</button>
+      </div>
+    </section>
+  </aside>
 </body>
 </html>

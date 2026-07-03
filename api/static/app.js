@@ -2,6 +2,8 @@
   var DROPDOWN_TRANSITION_MS = 240;
   var PAGE_TRANSITION_MS = 150;
   var MODAL_TRANSITION_MS = 180;
+  var THEME_STORAGE_KEY = "yuance-theme";
+  var pendingConfirmForm = null;
   var AVATAR_COLORS = [
     "#1f5fbf",
     "#2d8a68",
@@ -12,6 +14,42 @@
     "#7c3aed",
     "#be4b00",
   ];
+
+  function readThemePreference() {
+    try {
+      return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
+    } catch (_error) {
+      return "light";
+    }
+  }
+
+  function writeThemePreference(theme) {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch (_error) {
+      // localStorage may be disabled; keep the in-page theme applied.
+    }
+  }
+
+  function applyTheme(theme) {
+    var nextTheme = theme === "dark" ? "dark" : "light";
+    document.documentElement.dataset.theme = nextTheme;
+    document.documentElement.style.colorScheme = nextTheme;
+    document.querySelectorAll("[data-theme-toggle]").forEach(function (button) {
+      var isDark = nextTheme === "dark";
+      var label = button.querySelector("[data-theme-label]");
+      button.setAttribute("aria-pressed", isDark ? "true" : "false");
+      if (label) {
+        label.textContent = isDark ? "亮色模式" : "暗色模式";
+      }
+    });
+  }
+
+  function toggleTheme() {
+    var nextTheme = (document.documentElement.dataset.theme || readThemePreference()) === "dark" ? "light" : "dark";
+    writeThemePreference(nextTheme);
+    applyTheme(nextTheme);
+  }
 
   function avatarInitial(name) {
     var value = (name || "").trim();
@@ -36,6 +74,301 @@
       avatar.textContent = avatarInitial(name);
       avatar.style.backgroundColor = AVATAR_COLORS[hashText(name) % AVATAR_COLORS.length];
     });
+  }
+
+  function initTopbarSearch(root) {
+    var input = (root || document).querySelector("[data-topbar-search-input]");
+    if (!input || window.location.pathname !== "/web/search") {
+      return;
+    }
+    input.value = new URLSearchParams(window.location.search).get("q") || "";
+  }
+
+  function initProjectSwitcher(root) {
+    (root || document).querySelectorAll("[data-project-switcher]").forEach(function (switcher) {
+      var returnTo = switcher.querySelector("input[name='return_to']");
+      if (returnTo) {
+        returnTo.value = window.location.pathname + window.location.search;
+      }
+      filterProjectOptions(switcher, "");
+    });
+  }
+
+  function focusProjectSearch(root) {
+    if (!root || !root.matches("[data-project-switcher]")) {
+      return;
+    }
+    var input = root.querySelector("[data-project-search-input]");
+    if (!input) {
+      return;
+    }
+    input.value = "";
+    filterProjectOptions(root, input.value);
+    window.setTimeout(function () {
+      input.focus({ preventScroll: true });
+      input.select();
+    }, prefersReducedMotion() ? 0 : 90);
+  }
+
+  function filterProjectOptions(switcher, keyword) {
+    var query = (keyword || "").trim().toLocaleLowerCase("zh-CN");
+    var visibleCount = 0;
+    switcher.querySelectorAll("[data-project-option]").forEach(function (option) {
+      var haystack = (option.textContent || "").toLocaleLowerCase("zh-CN");
+      var visible = !query || haystack.indexOf(query) >= 0;
+      option.hidden = !visible;
+      if (visible) {
+        visibleCount += 1;
+      }
+    });
+    var empty = switcher.querySelector("[data-project-empty]");
+    if (empty) {
+      empty.hidden = visibleCount > 0;
+    }
+  }
+
+  function submitProjectSwitch(option) {
+    var switcher = option.closest("[data-project-switcher]");
+    if (!switcher) {
+      return;
+    }
+    var input = switcher.querySelector("input[name='project_key']");
+    if (input) {
+      input.value = option.getAttribute("data-project-key") || "";
+    }
+    closeDropdown(switcher);
+    if (switcher.requestSubmit) {
+      switcher.requestSubmit();
+    } else {
+      switcher.submit();
+    }
+  }
+
+  function activateTab(trigger) {
+    var root = trigger.closest("[data-tabs]");
+    if (!root) {
+      return;
+    }
+    var targetId = trigger.getAttribute("data-tab-target");
+    if (!targetId) {
+      return;
+    }
+    root.querySelectorAll("[data-tab-trigger]").forEach(function (item) {
+      var active = item === trigger;
+      item.classList.toggle("active", active);
+      item.setAttribute("aria-selected", active ? "true" : "false");
+      item.tabIndex = active ? 0 : -1;
+    });
+    root.querySelectorAll("[data-tab-panel]").forEach(function (panel) {
+      var active = panel.id === targetId;
+      panel.classList.toggle("active", active);
+      panel.hidden = !active;
+    });
+  }
+
+  function syncTabUrl(trigger) {
+    var root = trigger.closest("[data-tabs-sync-url]");
+    var tabKey = trigger.getAttribute("data-tab-key");
+    if (!root || !tabKey || !window.history || !window.history.replaceState) {
+      return;
+    }
+    var nextUrl = new URL(window.location.href);
+    if (tabKey === "work") {
+      nextUrl.searchParams.delete("tab");
+    } else {
+      nextUrl.searchParams.set("tab", tabKey);
+    }
+    window.history.replaceState(null, "", nextUrl.pathname + nextUrl.search + nextUrl.hash);
+  }
+
+  function initTabs(root) {
+    (root || document).querySelectorAll("[data-tabs]").forEach(function (tabs) {
+      var active = tabs.querySelector("[data-tab-trigger].active") || tabs.querySelector("[data-tab-trigger]");
+      if (active) {
+        activateTab(active);
+      }
+    });
+  }
+
+  function directUploadStatus(form, message, tone) {
+    var status = form.querySelector("[data-upload-status]");
+    if (!status) {
+      return;
+    }
+    status.textContent = message;
+    status.dataset.tone = tone || "info";
+  }
+
+  function setDirectUploadBusy(form, busy) {
+    form.dataset.uploadBusy = busy ? "true" : "false";
+    form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
+      if (control.matches("[data-modal-close]")) {
+        return;
+      }
+      control.disabled = busy;
+    });
+  }
+
+  function syncAttachmentFileFields(form) {
+    var fileInput = form.querySelector("[data-attachment-file]");
+    var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    var filename = form.querySelector("[data-attachment-filename]");
+    var contentType = form.querySelector("[data-attachment-content-type]");
+    var byteSize = form.querySelector("[data-attachment-byte-size]");
+    if (!file) {
+      directUploadStatus(form, "等待选择文件。", "info");
+      return;
+    }
+    var isResume = Boolean(form.dataset.existingAttachmentId);
+    if (filename) {
+      filename.value = file.name || "attachment.bin";
+    }
+    if (contentType) {
+      contentType.value = file.type || "application/octet-stream";
+    }
+    if (byteSize) {
+      byteSize.value = String(file.size || 0);
+    }
+    directUploadStatus(
+      form,
+      "已选择 " +
+        (file.name || "附件") +
+        (isResume ? "，点击继续上传会覆盖该附件对象。" : "，点击上传后会直传对象存储。"),
+      "ready"
+    );
+  }
+
+  function directUploadHeaders(headerPairs, fallbackContentType) {
+    var headers = new Headers();
+    (headerPairs || []).forEach(function (pair) {
+      var key = pair && pair[0] ? String(pair[0]) : "";
+      var value = pair && pair[1] ? String(pair[1]) : "";
+      if (!key || ["host", "content-length"].indexOf(key.toLowerCase()) >= 0) {
+        return;
+      }
+      headers.set(key, value);
+    });
+    if (fallbackContentType && !headers.has("content-type")) {
+      headers.set("content-type", fallbackContentType);
+    }
+    return headers;
+  }
+
+  function attachmentUrlFromTemplate(template, attachmentId) {
+    return (template || "").replace("{id}", encodeURIComponent(String(attachmentId)));
+  }
+
+  function csrfToken() {
+    return document
+      .querySelector('meta[name="yuance-csrf-token"]')
+      ?.getAttribute("content") || "";
+  }
+
+  function redirectToLogin() {
+    if (window.location.pathname === "/web/login") {
+      return;
+    }
+    window.location.href = "/web/login";
+  }
+
+  async function fetchJson(url, options) {
+    var requestOptions = options || {};
+    var method = (requestOptions.method || "GET").toUpperCase();
+    var headers = new Headers(requestOptions.headers || {});
+    var token = csrfToken();
+    if (token && method !== "GET" && method !== "HEAD") {
+      headers.set("x-yuance-csrf-token", token);
+    }
+    var response = await fetch(url, Object.assign({}, requestOptions, { headers: headers }));
+    var payload = await response.json().catch(function () {
+      return {};
+    });
+    if (response.status === 401 || (payload && payload.error && payload.error.code === "unauthorized")) {
+      redirectToLogin();
+      throw new Error("登录已失效，正在跳转登录页面。");
+    }
+    if (!response.ok) {
+      var message =
+        payload && payload.error && payload.error.message
+          ? payload.error.message
+          : "请求失败：" + response.status;
+      throw new Error(message);
+    }
+    return payload.data;
+  }
+
+  async function submitDirectUpload(form) {
+    if (form.dataset.uploadBusy === "true") {
+      return;
+    }
+    if (!form.reportValidity()) {
+      return;
+    }
+    var fileInput = form.querySelector("[data-attachment-file]");
+    var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+    if (!file) {
+      directUploadStatus(form, "请先选择要上传的文件。", "error");
+      return;
+    }
+
+    var filename = form.querySelector("[data-attachment-filename]")?.value || file.name;
+    var contentType =
+      form.querySelector("[data-attachment-content-type]")?.value ||
+      file.type ||
+      "application/octet-stream";
+    var byteSize = Number(form.querySelector("[data-attachment-byte-size]")?.value || file.size || 0);
+
+    setDirectUploadBusy(form, true);
+    var existingAttachmentId = form.dataset.existingAttachmentId || "";
+    directUploadStatus(form, existingAttachmentId ? "正在获取上传签名..." : "正在登记附件元数据...", "info");
+    try {
+      var attachment = existingAttachmentId
+        ? { id: existingAttachmentId }
+        : await fetchJson(form.dataset.attachmentCreateUrl, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({
+              original_filename: filename,
+              content_type: contentType,
+              byte_size: byteSize,
+            }),
+          });
+
+      if (!existingAttachmentId) {
+        directUploadStatus(form, "正在获取上传签名...", "info");
+      }
+      var signed = await fetchJson(attachmentUrlFromTemplate(form.dataset.attachmentUploadUrlTemplate, attachment.id), {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+
+      directUploadStatus(form, "正在直传对象存储...", "info");
+      var request = signed.request || {};
+      var uploadResponse = await fetch(request.url, {
+        method: request.method || "PUT",
+        headers: directUploadHeaders(request.headers, contentType),
+        body: file,
+      });
+      if (!uploadResponse.ok) {
+        throw new Error("对象存储上传失败：" + uploadResponse.status);
+      }
+
+      directUploadStatus(form, "上传完成，正在刷新附件状态...", "info");
+      await fetchJson(attachmentUrlFromTemplate(form.dataset.attachmentCompleteUrlTemplate, attachment.id), {
+        method: "POST",
+        headers: { accept: "application/json" },
+      });
+      directUploadStatus(form, "附件上传完成，正在刷新页面。", "success");
+      window.setTimeout(function () {
+        window.location.href = form.dataset.successRedirect || window.location.href;
+      }, 450);
+    } catch (error) {
+      directUploadStatus(form, error.message || "附件上传失败，请稍后重试。", "error");
+      setDirectUploadBusy(form, false);
+    }
   }
 
   function prefersReducedMotion() {
@@ -183,10 +516,17 @@
     if (modal.modalCloseTimer) {
       window.clearTimeout(modal.modalCloseTimer);
     }
+    if (modal.modalOpenFrame) {
+      window.cancelAnimationFrame(modal.modalOpenFrame);
+    }
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
-    window.requestAnimationFrame(function () {
+    modal.modalOpenFrame = window.requestAnimationFrame(function () {
+      modal.modalOpenFrame = null;
+      if (modal.getAttribute("aria-hidden") === "true" || modal.hidden) {
+        return;
+      }
       modal.classList.add("open");
       focusModal(modal);
     });
@@ -198,6 +538,10 @@
     }
     if (modal.modalCloseTimer) {
       window.clearTimeout(modal.modalCloseTimer);
+    }
+    if (modal.modalOpenFrame) {
+      window.cancelAnimationFrame(modal.modalOpenFrame);
+      modal.modalOpenFrame = null;
     }
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
@@ -222,6 +566,39 @@
     });
   }
 
+  function openConfirmModal(form) {
+    var modal = document.querySelector("[data-confirm-modal]");
+    if (!modal) {
+      form.submit();
+      return;
+    }
+    pendingConfirmForm = form;
+    var title = modal.querySelector("[data-confirm-title]");
+    var message = modal.querySelector("[data-confirm-message]");
+    var submit = modal.querySelector("[data-confirm-submit]");
+    if (title) {
+      title.textContent = form.dataset.confirmTitle || "确认操作";
+    }
+    if (message) {
+      message.textContent = form.dataset.confirmMessage || "该操作提交后会立即生效。";
+    }
+    if (submit) {
+      submit.textContent = form.dataset.confirmAction || "确认";
+    }
+    openModal(modal, form.querySelector("button[type='submit']") || form);
+  }
+
+  function submitConfirmedForm() {
+    if (!pendingConfirmForm) {
+      return;
+    }
+    var form = pendingConfirmForm;
+    pendingConfirmForm = null;
+    closeModal(document.querySelector("[data-confirm-modal]"), false);
+    form.submit();
+  }
+
+  applyTheme(readThemePreference());
   initUserAvatars();
 
   document.addEventListener("click", function (event) {
@@ -262,7 +639,37 @@
         closeDropdown(root);
       } else {
         openDropdown(root, false);
+        focusProjectSearch(root);
       }
+      return;
+    }
+
+    var projectOption = event.target.closest("[data-project-option]");
+    if (projectOption) {
+      event.preventDefault();
+      submitProjectSwitch(projectOption);
+      return;
+    }
+
+    var tabTrigger = event.target.closest("[data-tab-trigger]");
+    if (tabTrigger) {
+      event.preventDefault();
+      activateTab(tabTrigger);
+      syncTabUrl(tabTrigger);
+      return;
+    }
+
+    var themeToggle = event.target.closest("[data-theme-toggle]");
+    if (themeToggle) {
+      event.preventDefault();
+      toggleTheme();
+      return;
+    }
+
+    var confirmSubmit = event.target.closest("[data-confirm-submit]");
+    if (confirmSubmit) {
+      event.preventDefault();
+      submitConfirmedForm();
       return;
     }
 
@@ -277,9 +684,13 @@
     if (!trigger || !menu) {
       return;
     }
+    if (root.matches("[data-project-switcher]")) {
+      return;
+    }
 
     root.addEventListener("mouseenter", function () {
       openDropdown(root, true);
+      focusProjectSearch(root);
     });
 
     root.addEventListener("mouseleave", function () {
@@ -308,6 +719,43 @@
   });
 
   document.addEventListener("keydown", function (event) {
+    var projectSearchInput = event.target.closest("[data-project-search-input]");
+    if (event.key === "Enter" && projectSearchInput) {
+      event.preventDefault();
+      var switcher = projectSearchInput.closest("[data-project-switcher]");
+      var firstVisible = switcher
+        ? Array.from(switcher.querySelectorAll("[data-project-option]")).find(function (option) {
+            return !option.hidden;
+          })
+        : null;
+      if (firstVisible) {
+        submitProjectSwitch(firstVisible);
+      }
+      return;
+    }
+
+    var currentTab = event.target.closest("[data-tab-trigger]");
+    if (currentTab && ["ArrowLeft", "ArrowRight", "Home", "End"].indexOf(event.key) >= 0) {
+      var tabs = Array.from(currentTab.closest("[data-tabs]").querySelectorAll("[data-tab-trigger]"));
+      var index = tabs.indexOf(currentTab);
+      if (index >= 0) {
+        event.preventDefault();
+        var nextIndex = index;
+        if (event.key === "ArrowRight") {
+          nextIndex = (index + 1) % tabs.length;
+        } else if (event.key === "ArrowLeft") {
+          nextIndex = (index - 1 + tabs.length) % tabs.length;
+        } else if (event.key === "Home") {
+          nextIndex = 0;
+        } else if (event.key === "End") {
+          nextIndex = tabs.length - 1;
+        }
+        activateTab(tabs[nextIndex]);
+        tabs[nextIndex].focus({ preventScroll: true });
+      }
+      return;
+    }
+
     var activeModal = document.querySelector("[data-modal].open");
     if (event.key === "Tab" && activeModal) {
       var focusable = modalFocusableElements(activeModal);
@@ -339,16 +787,18 @@
   });
 
   document.body.addEventListener("htmx:configRequest", function (event) {
-    var token = document
-      .querySelector('meta[name="yuance-csrf-token"]')
-      ?.getAttribute("content");
+    var token = csrfToken();
     if (token) {
       event.detail.headers["x-yuance-csrf-token"] = token;
     }
   });
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
+    applyTheme(readThemePreference());
     initUserAvatars(event.target);
+    initTopbarSearch(event.target);
+    initProjectSwitcher(event.target);
+    initTabs(event.target);
   });
 
   function syncPermissionParent(parent) {
@@ -391,6 +841,12 @@
   document.querySelectorAll("[data-permission-tree]").forEach(syncPermissionTree);
 
   document.addEventListener("change", function (event) {
+    var fileInput = event.target.closest("[data-direct-upload] [data-attachment-file]");
+    if (fileInput) {
+      syncAttachmentFileFields(fileInput.closest("[data-direct-upload]"));
+      return;
+    }
+
     var checkbox = event.target.closest("[data-permission-tree] input[type='checkbox']");
     if (!checkbox || checkbox.disabled) {
       return;
@@ -420,4 +876,38 @@
       syncPermissionTree(tree);
     }
   });
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target.closest("[data-direct-upload]");
+    if (form) {
+      event.preventDefault();
+      submitDirectUpload(form);
+      return;
+    }
+
+    var confirmForm = event.target.closest("[data-confirm-submit-form]");
+    if (confirmForm) {
+      event.preventDefault();
+      openConfirmModal(confirmForm);
+    }
+  });
+
+  function handleProjectSearchEvent(event) {
+    var input = event.target.closest("[data-project-search-input]");
+    if (!input) {
+      return;
+    }
+    var switcher = input.closest("[data-project-switcher]");
+    if (switcher) {
+      filterProjectOptions(switcher, input.value);
+    }
+  }
+
+  ["input", "change", "search", "keyup"].forEach(function (eventName) {
+    document.addEventListener(eventName, handleProjectSearchEvent);
+  });
+
+  initTopbarSearch(document);
+  initProjectSwitcher(document);
+  initTabs(document);
 })();

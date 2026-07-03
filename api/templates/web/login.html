@@ -18,6 +18,11 @@
       <h1>登录</h1>
       <p>开发测试账号可通过 `make api-seed-local-admin` 创建。</p>
     </div>
+    {% if error_message != "" %}
+    <div class="auth-message auth-message-error" role="alert">
+      {{ error_message }}
+    </div>
+    {% endif %}
     <label>
       <span>用户名</span>
       <input name="username" autocomplete="username" placeholder="yuance_admin">

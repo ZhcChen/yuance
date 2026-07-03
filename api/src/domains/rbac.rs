@@ -157,6 +157,38 @@ pub async fn list_roles(pool: &SqlitePool) -> AppResult<Vec<RoleSummary>> {
         .collect())
 }
 
+pub async fn get_role(pool: &SqlitePool, role_code: &str) -> AppResult<RoleSummary> {
+    let role_code = validate_role_code(role_code)?;
+    let row = sqlx::query_as::<_, (String, String, String, i64, String, i64)>(
+        r#"
+        SELECT
+            r.role_code,
+            r.role_name,
+            r.status,
+            r.is_system,
+            r.data_scope_type,
+            COUNT(rp.id) AS permission_count
+        FROM roles r
+        LEFT JOIN role_permissions rp ON rp.role_id = r.id
+        WHERE r.role_code = ?1
+        GROUP BY r.id
+        "#,
+    )
+    .bind(role_code)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("角色不存在".to_string()))?;
+
+    Ok(RoleSummary {
+        role_code: row.0,
+        role_name: row.1,
+        status: row.2,
+        is_system: row.3 != 0,
+        data_scope_type: row.4,
+        permission_count: row.5,
+    })
+}
+
 pub async fn list_permissions_for_role(
     pool: &SqlitePool,
     role_code: Option<&str>,

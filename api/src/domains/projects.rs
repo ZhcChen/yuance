@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
 use crate::platform::error::{AppError, AppResult};
 
@@ -20,6 +20,13 @@ pub struct ProjectSummary {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct CurrentProject {
+    pub id: i64,
+    pub project_key: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectDetail {
     pub id: i64,
@@ -27,7 +34,10 @@ pub struct ProjectDetail {
     pub name: String,
     pub description: String,
     pub status: String,
+    pub owner_username: String,
     pub owner_display_name: String,
+    pub start_date: String,
+    pub due_date: String,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -75,19 +85,25 @@ pub struct WorkItemDetail {
     pub priority: String,
     pub project_key: String,
     pub project_name: String,
+    pub parent_item_key: String,
+    pub parent_title: String,
     pub assignee_username: String,
     pub assignee_display_name: String,
     pub reporter_display_name: String,
+    pub due_date: String,
     pub created_at: String,
     pub updated_at: String,
+    pub deleted_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkItemCommentSummary {
     pub id: i64,
     pub body: String,
+    pub author_user_id: Option<i64>,
     pub author_display_name: String,
     pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +131,18 @@ pub struct CreateProjectInput {
     pub name: String,
     pub description: String,
     pub status: String,
+    pub start_date: String,
+    pub due_date: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateProjectInput {
+    pub name: String,
+    pub description: String,
+    pub status: String,
+    pub owner_username: String,
+    pub start_date: String,
+    pub due_date: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +152,18 @@ pub struct CreateWorkItemInput {
     pub title: String,
     pub description: String,
     pub priority: String,
+    pub due_date: String,
+    pub parent_item_key: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectListFilter {
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedProjectFilter {
+    status: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -134,6 +174,36 @@ pub struct WorkItemListFilter {
     pub priority: String,
     pub project_key: String,
     pub assignee_username: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pagination {
+    pub page: i64,
+    pub per_page: i64,
+}
+
+impl Pagination {
+    pub fn offset(self) -> i64 {
+        (self.page - 1).saturating_mul(self.per_page)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Paginated<T> {
+    pub items: Vec<T>,
+    pub page: i64,
+    pub per_page: i64,
+    pub total_items: i64,
+}
+
+impl<T> Paginated<T> {
+    pub fn total_pages(&self) -> i64 {
+        if self.total_items == 0 {
+            1
+        } else {
+            (self.total_items + self.per_page - 1) / self.per_page
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -153,6 +223,8 @@ pub struct UpdateWorkItemInput {
     pub status: String,
     pub priority: String,
     pub assignee_username: String,
+    pub due_date: String,
+    pub parent_item_key: String,
 }
 
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
@@ -173,6 +245,26 @@ pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<
 }
 
 pub async fn list_project_summaries(pool: &SqlitePool) -> AppResult<Vec<ProjectSummary>> {
+    let page = list_project_summaries_paginated(
+        pool,
+        ProjectListFilter::default(),
+        Pagination {
+            page: 1,
+            per_page: i64::MAX,
+        },
+    )
+    .await?;
+    Ok(page.items)
+}
+
+pub async fn list_project_summaries_paginated(
+    pool: &SqlitePool,
+    filter: ProjectListFilter,
+    pagination: Pagination,
+) -> AppResult<Paginated<ProjectSummary>> {
+    let normalized = normalize_project_filter(filter)?;
+    let pagination = normalize_pagination(pagination)?;
+    let total_items = count_project_summaries(pool, &normalized).await?;
     let rows = sqlx::query_as::<_, (i64, String, String, String, String, i64, i64, String)>(
         r#"
         SELECT
@@ -192,14 +284,20 @@ pub async fn list_project_summaries(pool: &SqlitePool) -> AppResult<Vec<ProjectS
         FROM projects p
         LEFT JOIN users u ON u.id = p.owner_user_id
         LEFT JOIN work_items wi ON wi.project_id = p.id
+            AND wi.deleted_at IS NULL
+        WHERE (?1 = '' OR p.status = ?1)
         GROUP BY p.id
         ORDER BY p.updated_at DESC, p.id DESC
+        LIMIT ?2 OFFSET ?3
         "#,
     )
+    .bind(&normalized.status)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    let items = rows
         .into_iter()
         .map(
             |(
@@ -222,7 +320,14 @@ pub async fn list_project_summaries(pool: &SqlitePool) -> AppResult<Vec<ProjectS
                 updated_at,
             },
         )
-        .collect())
+        .collect();
+
+    Ok(Paginated {
+        items,
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
 }
 
 pub async fn list_project_summaries_for_user(
@@ -230,10 +335,34 @@ pub async fn list_project_summaries_for_user(
     user_id: i64,
     is_super_admin: bool,
 ) -> AppResult<Vec<ProjectSummary>> {
+    let page = list_project_summaries_for_user_paginated(
+        pool,
+        user_id,
+        is_super_admin,
+        ProjectListFilter::default(),
+        Pagination {
+            page: 1,
+            per_page: i64::MAX,
+        },
+    )
+    .await?;
+    Ok(page.items)
+}
+
+pub async fn list_project_summaries_for_user_paginated(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    filter: ProjectListFilter,
+    pagination: Pagination,
+) -> AppResult<Paginated<ProjectSummary>> {
     if is_super_admin {
-        return list_project_summaries(pool).await;
+        return list_project_summaries_paginated(pool, filter, pagination).await;
     }
 
+    let normalized = normalize_project_filter(filter)?;
+    let pagination = normalize_pagination(pagination)?;
+    let total_items = count_project_summaries_for_user(pool, user_id, &normalized).await?;
     let rows = sqlx::query_as::<_, (i64, String, String, String, String, i64, i64, String)>(
         r#"
         SELECT
@@ -255,15 +384,21 @@ pub async fn list_project_summaries_for_user(
             AND pm.user_id = ?1
         LEFT JOIN users u ON u.id = p.owner_user_id
         LEFT JOIN work_items wi ON wi.project_id = p.id
+            AND wi.deleted_at IS NULL
+        WHERE (?2 = '' OR p.status = ?2)
         GROUP BY p.id
         ORDER BY p.updated_at DESC, p.id DESC
+        LIMIT ?3 OFFSET ?4
         "#,
     )
     .bind(user_id)
+    .bind(&normalized.status)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    let items = rows
         .into_iter()
         .map(
             |(
@@ -286,7 +421,124 @@ pub async fn list_project_summaries_for_user(
                 updated_at,
             },
         )
-        .collect())
+        .collect();
+
+    Ok(Paginated {
+        items,
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
+}
+
+pub async fn get_current_project_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<Option<CurrentProject>> {
+    let row = if is_super_admin {
+        sqlx::query_as::<_, (i64, String, String)>(
+            r#"
+            SELECT p.id, p.project_key, p.name
+            FROM user_project_preferences upp
+            JOIN projects p ON p.id = upp.current_project_id
+            WHERE upp.user_id = ?1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (i64, String, String)>(
+            r#"
+            SELECT p.id, p.project_key, p.name
+            FROM user_project_preferences upp
+            JOIN projects p ON p.id = upp.current_project_id
+            JOIN project_members pm ON pm.project_id = p.id
+                AND pm.user_id = upp.user_id
+            WHERE upp.user_id = ?1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+    };
+
+    if row.is_none() {
+        clear_current_project(pool, user_id).await?;
+    }
+
+    Ok(row.map(|(id, project_key, name)| CurrentProject {
+        id,
+        project_key,
+        name,
+    }))
+}
+
+pub async fn get_or_select_current_project_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<Option<CurrentProject>> {
+    if let Some(project) = get_current_project_for_user(pool, user_id, is_super_admin).await? {
+        return Ok(Some(project));
+    }
+
+    let project_options = list_project_summaries_for_user(pool, user_id, is_super_admin).await?;
+    let Some(project) = project_options
+        .iter()
+        .find(|project| project.status == "active")
+        .or_else(|| project_options.first())
+    else {
+        return Ok(None);
+    };
+
+    set_current_project_for_user(pool, user_id, is_super_admin, &project.project_key)
+        .await
+        .map(Some)
+}
+
+pub async fn set_current_project_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    project_key: &str,
+) -> AppResult<CurrentProject> {
+    let project = get_project_detail(pool, project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+
+    if !is_super_admin && !is_project_member(pool, project.id, user_id).await? {
+        return Err(AppError::Forbidden("无权选择该项目".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_project_preferences (user_id, current_project_id, updated_at)
+        VALUES (?1, ?2, datetime('now'))
+        ON CONFLICT(user_id) DO UPDATE SET
+            current_project_id = excluded.current_project_id,
+            updated_at = excluded.updated_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(project.id)
+    .execute(pool)
+    .await?;
+
+    Ok(CurrentProject {
+        id: project.id,
+        project_key: project.project_key,
+        name: project.name,
+    })
+}
+
+pub async fn clear_current_project(pool: &SqlitePool, user_id: i64) -> AppResult<()> {
+    sqlx::query("DELETE FROM user_project_preferences WHERE user_id = ?1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
 }
 
 pub async fn create_project(
@@ -298,6 +550,9 @@ pub async fn create_project(
     let name = validate_name(&input.name, "项目名称", 120)?;
     let description = validate_optional_text(&input.description, "项目描述", 2000)?;
     let status = validate_project_status(&input.status)?;
+    let start_date = validate_optional_date(&input.start_date, "项目开始日期")?;
+    let due_date = validate_optional_date(&input.due_date, "项目截止日期")?;
+    validate_date_range(&start_date, &due_date, "项目截止日期不能早于开始日期")?;
 
     let mut tx = pool.begin().await?;
     let project_id = sqlx::query_scalar::<_, i64>(
@@ -307,9 +562,11 @@ pub async fn create_project(
             name,
             description,
             status,
-            owner_user_id
+            owner_user_id,
+            start_date,
+            due_date
         )
-        VALUES (?1, ?2, ?3, ?4, ?5)
+        VALUES (?1, ?2, ?3, ?4, ?5, NULLIF(?6, ''), NULLIF(?7, ''))
         RETURNING id
         "#,
     )
@@ -318,6 +575,8 @@ pub async fn create_project(
     .bind(&description)
     .bind(status)
     .bind(actor_user_id)
+    .bind(&start_date)
+    .bind(&due_date)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -366,11 +625,157 @@ pub async fn create_project(
         .ok_or_else(|| AppError::NotFound("项目创建后未找到".to_string()))
 }
 
+pub async fn update_project(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    input: UpdateProjectInput,
+) -> AppResult<ProjectDetail> {
+    let project_key = validate_project_key(project_key)?;
+    let name = validate_name(&input.name, "项目名称", 120)?;
+    let description = validate_optional_text(&input.description, "项目描述", 2000)?;
+    let status = validate_project_status(&input.status)?;
+    let owner_username = validate_username_ref(&input.owner_username)?;
+    let start_date = validate_optional_date(&input.start_date, "项目开始日期")?;
+    let due_date = validate_optional_date(&input.due_date, "项目截止日期")?;
+    validate_date_range(&start_date, &due_date, "项目截止日期不能早于开始日期")?;
+
+    let Some((project_id, previous_owner_user_id)) = sqlx::query_as::<_, (i64, Option<i64>)>(
+        "SELECT id, owner_user_id FROM projects WHERE project_key = ?1",
+    )
+    .bind(&project_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("项目不存在".to_string()));
+    };
+
+    let Some(owner_user_id) = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT u.id
+        FROM users u
+        JOIN project_members pm ON pm.user_id = u.id
+            AND pm.project_id = ?1
+        WHERE u.username = ?2
+          AND u.status = 'active'
+        "#,
+    )
+    .bind(project_id)
+    .bind(&owner_username)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::BadRequest(
+            "项目负责人必须是已启用的项目成员".to_string(),
+        ));
+    };
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE projects
+        SET name = ?2,
+            description = ?3,
+            status = ?4,
+            owner_user_id = ?5,
+            start_date = NULLIF(?6, ''),
+            due_date = NULLIF(?7, ''),
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(project_id)
+    .bind(&name)
+    .bind(&description)
+    .bind(status)
+    .bind(owner_user_id)
+    .bind(&start_date)
+    .bind(&due_date)
+    .execute(&mut *tx)
+    .await?;
+
+    if previous_owner_user_id != Some(owner_user_id) {
+        sqlx::query(
+            r#"
+            UPDATE project_members
+            SET member_role = 'maintainer',
+                updated_at = datetime('now')
+            WHERE project_id = ?1
+              AND member_role = 'owner'
+              AND user_id <> ?2
+            "#,
+        )
+        .bind(project_id)
+        .bind(owner_user_id)
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            UPDATE project_members
+            SET member_role = 'owner',
+                updated_at = datetime('now')
+            WHERE project_id = ?1
+              AND user_id = ?2
+            "#,
+        )
+        .bind(project_id)
+        .bind(owner_user_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'project.updated', 'project', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&project_key)
+    .bind(format!("更新项目 {name}"))
+    .bind(format!(
+        r#"{{"status":"{status}","owner_username":"{owner_username}"}}"#
+    ))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目更新后未找到".to_string()))
+}
+
 pub async fn get_project_detail(
     pool: &SqlitePool,
     project_key: &str,
 ) -> AppResult<Option<ProjectDetail>> {
-    let row = sqlx::query_as::<_, (i64, String, String, String, String, String, String, String)>(
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
         r#"
         SELECT
             p.id,
@@ -378,7 +783,10 @@ pub async fn get_project_detail(
             p.name,
             p.description,
             p.status,
+            COALESCE(u.username, '') AS owner_username,
             COALESCE(u.display_name, '') AS owner_display_name,
+            COALESCE(p.start_date, '') AS start_date,
+            COALESCE(p.due_date, '') AS due_date,
             p.created_at,
             p.updated_at
         FROM projects p
@@ -397,7 +805,10 @@ pub async fn get_project_detail(
             name,
             description,
             status,
+            owner_username,
             owner_display_name,
+            start_date,
+            due_date,
             created_at,
             updated_at,
         )| ProjectDetail {
@@ -406,7 +817,10 @@ pub async fn get_project_detail(
             name,
             description,
             status,
+            owner_username,
             owner_display_name,
+            start_date,
+            due_date,
             created_at,
             updated_at,
         },
@@ -467,14 +881,17 @@ pub async fn add_project_member(
     let username = validate_username_ref(username)?;
     let member_role = validate_member_role(member_role)?;
 
-    let Some((project_id, project_name)) =
-        sqlx::query_as::<_, (i64, String)>("SELECT id, name FROM projects WHERE project_key = ?1")
-            .bind(&project_key)
-            .fetch_optional(pool)
-            .await?
+    let Some((project_id, project_name, project_status)) =
+        sqlx::query_as::<_, (i64, String, String)>(
+            "SELECT id, name, status FROM projects WHERE project_key = ?1",
+        )
+        .bind(&project_key)
+        .fetch_optional(pool)
+        .await?
     else {
         return Err(AppError::NotFound("项目不存在".to_string()));
     };
+    ensure_project_accepts_writes(&project_status)?;
     let Some((user_id, display_name)) = sqlx::query_as::<_, (i64, String)>(
         "SELECT id, display_name FROM users WHERE username = ?1 AND status = 'active'",
     )
@@ -543,9 +960,9 @@ pub async fn remove_project_member(
     let project_key = validate_project_key(project_key)?;
     let username = validate_username_ref(username)?;
 
-    let Some((project_id, owner_user_id, project_name)) =
-        sqlx::query_as::<_, (i64, Option<i64>, String)>(
-            "SELECT id, owner_user_id, name FROM projects WHERE project_key = ?1",
+    let Some((project_id, owner_user_id, project_name, project_status)) =
+        sqlx::query_as::<_, (i64, Option<i64>, String, String)>(
+            "SELECT id, owner_user_id, name, status FROM projects WHERE project_key = ?1",
         )
         .bind(&project_key)
         .fetch_optional(pool)
@@ -553,6 +970,7 @@ pub async fn remove_project_member(
     else {
         return Err(AppError::NotFound("项目不存在".to_string()));
     };
+    ensure_project_accepts_writes(&project_status)?;
     let Some((user_id, display_name)) = sqlx::query_as::<_, (i64, String)>(
         "SELECT id, display_name FROM users WHERE username = ?1",
     )
@@ -566,6 +984,13 @@ pub async fn remove_project_member(
         return Err(AppError::BadRequest(
             "项目负责人不能从项目成员中移除".to_string(),
         ));
+    }
+    let assigned_open_count =
+        count_open_work_items_assigned_to_user(pool, project_id, user_id).await?;
+    if assigned_open_count > 0 {
+        return Err(AppError::BadRequest(format!(
+            "该成员仍负责 {assigned_open_count} 个未关闭工作项，请先转交负责人"
+        )));
     }
 
     let mut tx = pool.begin().await?;
@@ -605,6 +1030,129 @@ pub async fn remove_project_member(
     Ok(())
 }
 
+async fn count_open_work_items_assigned_to_user(
+    pool: &SqlitePool,
+    project_id: i64,
+    user_id: i64,
+) -> AppResult<i64> {
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_items
+        WHERE project_id = ?1
+          AND assignee_user_id = ?2
+          AND deleted_at IS NULL
+          AND status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .map_err(Into::into)
+}
+
+pub async fn update_project_member_role(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    project_key: &str,
+    username: &str,
+    member_role: &str,
+) -> AppResult<ProjectMemberDetail> {
+    let project_key = validate_project_key(project_key)?;
+    let username = validate_username_ref(username)?;
+    let member_role = validate_member_role(member_role)?;
+    if member_role == "owner" {
+        return Err(AppError::BadRequest(
+            "项目负责人请通过编辑项目转移".to_string(),
+        ));
+    }
+
+    let Some((project_id, owner_user_id, project_name, project_status)) =
+        sqlx::query_as::<_, (i64, Option<i64>, String, String)>(
+            "SELECT id, owner_user_id, name, status FROM projects WHERE project_key = ?1",
+        )
+        .bind(&project_key)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Err(AppError::NotFound("项目不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let Some((user_id, display_name, current_role)) = sqlx::query_as::<_, (i64, String, String)>(
+        r#"
+        SELECT u.id, u.display_name, pm.member_role
+        FROM project_members pm
+        JOIN users u ON u.id = pm.user_id
+        WHERE pm.project_id = ?1
+          AND u.username = ?2
+        "#,
+    )
+    .bind(project_id)
+    .bind(&username)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("项目成员不存在".to_string()));
+    };
+    if owner_user_id == Some(user_id) {
+        return Err(AppError::BadRequest(
+            "项目负责人角色请通过编辑项目转移".to_string(),
+        ));
+    }
+    if current_role == member_role {
+        return get_project_member(pool, project_id, &username)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目成员不存在".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE project_members
+        SET member_role = ?3,
+            updated_at = datetime('now')
+        WHERE project_id = ?1
+          AND user_id = ?2
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .bind(member_role)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'project.member.role.updated', 'user', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(&username)
+    .bind(format!("调整 {display_name} 在项目 {project_name} 的角色"))
+    .bind(format!(
+        r#"{{"old_member_role":"{current_role}","member_role":"{member_role}"}}"#
+    ))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_project_member(pool, project_id, &username)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目成员不存在".to_string()))
+}
+
 pub async fn is_project_member(
     pool: &SqlitePool,
     project_id: i64,
@@ -624,6 +1172,81 @@ pub async fn is_project_member(
     .await?;
 
     Ok(count > 0)
+}
+
+pub async fn project_member_role(
+    pool: &SqlitePool,
+    project_id: i64,
+    user_id: i64,
+) -> AppResult<Option<String>> {
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT member_role
+        FROM project_members
+        WHERE project_id = ?1
+          AND user_id = ?2
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(Into::into)
+}
+
+pub async fn user_can_manage_project_members(
+    pool: &SqlitePool,
+    project_id: i64,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<bool> {
+    if is_super_admin {
+        return Ok(true);
+    }
+
+    Ok(matches!(
+        project_member_role(pool, project_id, user_id)
+            .await?
+            .as_deref(),
+        Some("owner" | "maintainer")
+    ))
+}
+
+pub async fn user_can_write_project_content(
+    pool: &SqlitePool,
+    project_id: i64,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<bool> {
+    if is_super_admin {
+        return Ok(true);
+    }
+
+    Ok(matches!(
+        project_member_role(pool, project_id, user_id)
+            .await?
+            .as_deref(),
+        Some("owner" | "maintainer" | "member")
+    ))
+}
+
+pub async fn user_can_manage_work_item_comment(
+    pool: &SqlitePool,
+    project_id: i64,
+    comment_author_user_id: Option<i64>,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<bool> {
+    if is_super_admin || comment_author_user_id == Some(user_id) {
+        return Ok(true);
+    }
+
+    Ok(matches!(
+        project_member_role(pool, project_id, user_id)
+            .await?
+            .as_deref(),
+        Some("owner" | "maintainer")
+    ))
 }
 
 async fn get_project_member(
@@ -698,6 +1321,7 @@ pub async fn list_project_work_items(
             LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
             WHERE wi.project_id = ?1
               AND (?2 IS NULL OR wi.item_type = ?2)
+              AND wi.deleted_at IS NULL
             ORDER BY wi.updated_at DESC, wi.id DESC
             "#,
     )
@@ -754,7 +1378,26 @@ pub async fn list_work_item_summaries_filtered(
     pool: &SqlitePool,
     filter: WorkItemListFilter,
 ) -> AppResult<Vec<WorkItemSummary>> {
+    let page = list_work_item_summaries_filtered_paginated(
+        pool,
+        filter,
+        Pagination {
+            page: 1,
+            per_page: i64::MAX,
+        },
+    )
+    .await?;
+    Ok(page.items)
+}
+
+pub async fn list_work_item_summaries_filtered_paginated(
+    pool: &SqlitePool,
+    filter: WorkItemListFilter,
+    pagination: Pagination,
+) -> AppResult<Paginated<WorkItemSummary>> {
     let normalized = normalize_work_item_filter(filter)?;
+    let pagination = normalize_pagination(pagination)?;
+    let total_items = count_work_item_summaries_filtered(pool, &normalized).await?;
     let rows = sqlx::query_as::<
         _,
         (
@@ -798,7 +1441,9 @@ pub async fn list_work_item_summaries_filtered(
               AND (?4 = '' OR wi.priority = ?4)
               AND (?5 = '' OR p.project_key = ?5)
               AND (?6 = '' OR assignee.username = ?6)
+              AND wi.deleted_at IS NULL
             ORDER BY wi.updated_at DESC, wi.id DESC
+            LIMIT ?7 OFFSET ?8
             "#,
     )
     .bind(&normalized.item_type)
@@ -807,10 +1452,12 @@ pub async fn list_work_item_summaries_filtered(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    let items = rows
         .into_iter()
         .map(
             |(
@@ -837,7 +1484,14 @@ pub async fn list_work_item_summaries_filtered(
                 updated_at,
             },
         )
-        .collect())
+        .collect();
+
+    Ok(Paginated {
+        items,
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
 }
 
 pub async fn list_work_item_summaries_for_user(
@@ -864,11 +1518,35 @@ pub async fn list_work_item_summaries_filtered_for_user(
     is_super_admin: bool,
     filter: WorkItemListFilter,
 ) -> AppResult<Vec<WorkItemSummary>> {
+    let page = list_work_item_summaries_filtered_for_user_paginated(
+        pool,
+        user_id,
+        is_super_admin,
+        filter,
+        Pagination {
+            page: 1,
+            per_page: i64::MAX,
+        },
+    )
+    .await?;
+    Ok(page.items)
+}
+
+pub async fn list_work_item_summaries_filtered_for_user_paginated(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    filter: WorkItemListFilter,
+    pagination: Pagination,
+) -> AppResult<Paginated<WorkItemSummary>> {
     if is_super_admin {
-        return list_work_item_summaries_filtered(pool, filter).await;
+        return list_work_item_summaries_filtered_paginated(pool, filter, pagination).await;
     }
 
     let normalized = normalize_work_item_filter(filter)?;
+    let pagination = normalize_pagination(pagination)?;
+    let total_items =
+        count_work_item_summaries_filtered_for_user(pool, user_id, &normalized).await?;
     let rows = sqlx::query_as::<
         _,
         (
@@ -894,7 +1572,7 @@ pub async fn list_work_item_summaries_filtered_for_user(
                 wi.priority,
                 p.project_key,
                 p.name AS project_name,
-                COALESCE(u.display_name, '') AS assignee_display_name,
+                COALESCE(assignee.display_name, '') AS assignee_display_name,
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
@@ -914,7 +1592,9 @@ pub async fn list_work_item_summaries_filtered_for_user(
               AND (?5 = '' OR wi.priority = ?5)
               AND (?6 = '' OR p.project_key = ?6)
               AND (?7 = '' OR assignee.username = ?7)
+              AND wi.deleted_at IS NULL
             ORDER BY wi.updated_at DESC, wi.id DESC
+            LIMIT ?8 OFFSET ?9
             "#,
     )
     .bind(user_id)
@@ -924,10 +1604,12 @@ pub async fn list_work_item_summaries_filtered_for_user(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
+    let items = rows
         .into_iter()
         .map(
             |(
@@ -954,7 +1636,14 @@ pub async fn list_work_item_summaries_filtered_for_user(
                 updated_at,
             },
         )
-        .collect())
+        .collect();
+
+    Ok(Paginated {
+        items,
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
 }
 
 pub async fn list_assigned_work_item_summaries(
@@ -994,6 +1683,7 @@ pub async fn list_assigned_work_item_summaries(
             LEFT JOIN users u ON u.id = wi.assignee_user_id
             WHERE wi.assignee_user_id = ?1
               AND (?2 IS NULL OR wi.item_type = ?2)
+              AND wi.deleted_at IS NULL
             ORDER BY wi.updated_at DESC, wi.id DESC
             "#,
     )
@@ -1042,15 +1732,22 @@ pub async fn create_work_item(
     let title = validate_name(&input.title, "工作项标题", 160)?;
     let description = validate_optional_text(&input.description, "工作项描述", 5000)?;
     let priority = validate_priority(&input.priority)?;
+    let due_date = validate_optional_date(&input.due_date, "工作项截止日期")?;
+    let parent_item_key = input.parent_item_key.trim();
     let item_segment = work_item_key_segment(item_type);
 
-    let mut tx = pool.begin().await?;
-    let project_id = sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = ?1")
-        .bind(&project_key)
-        .fetch_optional(&mut *tx)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
+    let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
+        "SELECT id, status FROM projects WHERE project_key = ?1",
+    )
+    .bind(&project_key)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
+    ensure_project_accepts_writes(&project_status)?;
+    let parent_work_item_id =
+        resolve_parent_work_item_id(pool, project_id, item_type, parent_item_key).await?;
 
+    let mut tx = pool.begin().await?;
     let prefix = format!("{project_key}-{item_segment}-");
     let next_number = sqlx::query_scalar::<_, i64>(
         r#"
@@ -1080,9 +1777,11 @@ pub async fn create_work_item(
             status,
             priority,
             assignee_user_id,
-            reporter_user_id
+            reporter_user_id,
+            parent_work_item_id,
+            due_date
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?7)
+        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?7, ?8, NULLIF(?9, ''))
         "#,
     )
     .bind(project_id)
@@ -1092,6 +1791,8 @@ pub async fn create_work_item(
     .bind(&description)
     .bind(priority)
     .bind(actor_user_id)
+    .bind(parent_work_item_id)
+    .bind(&due_date)
     .execute(&mut *tx)
     .await?;
 
@@ -1126,43 +1827,30 @@ pub async fn get_work_item_detail(
     pool: &SqlitePool,
     item_key: &str,
 ) -> AppResult<Option<WorkItemDetail>> {
-    let row = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let row = sqlx::query(
         r#"
         SELECT
-            wi.id,
-            wi.item_key,
-            wi.item_type,
-            wi.title,
-            wi.description,
-            wi.status,
-            wi.priority,
-            p.project_key,
+            wi.id AS id,
+            wi.item_key AS item_key,
+            wi.item_type AS item_type,
+            wi.title AS title,
+            wi.description AS description,
+            wi.status AS status,
+            wi.priority AS priority,
+            p.project_key AS project_key,
             p.name AS project_name,
+            COALESCE(parent.item_key, '') AS parent_item_key,
+            COALESCE(parent.title, '') AS parent_title,
             COALESCE(assignee.username, '') AS assignee_username,
             COALESCE(assignee.display_name, '') AS assignee_display_name,
             COALESCE(reporter.display_name, '') AS reporter_display_name,
+            COALESCE(wi.due_date, '') AS due_date,
             wi.created_at,
-            wi.updated_at
+            wi.updated_at,
+            COALESCE(wi.deleted_at, '') AS deleted_at
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
+        LEFT JOIN work_items parent ON parent.id = wi.parent_work_item_id
         LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
         LEFT JOIN users reporter ON reporter.id = wi.reporter_user_id
         WHERE wi.item_key = ?1
@@ -1172,55 +1860,45 @@ pub async fn get_work_item_detail(
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(
-        |(
-            id,
-            item_key,
-            item_type,
-            title,
-            description,
-            status,
-            priority,
-            project_key,
-            project_name,
-            assignee_username,
-            assignee_display_name,
-            reporter_display_name,
-            created_at,
-            updated_at,
-        )| WorkItemDetail {
-            id,
-            item_key,
-            item_type,
-            title,
-            description,
-            status,
-            priority,
-            project_key,
-            project_name,
-            assignee_username,
-            assignee_display_name,
-            reporter_display_name,
-            created_at,
-            updated_at,
-        },
-    ))
+    Ok(row.map(|row| WorkItemDetail {
+        id: row.get("id"),
+        item_key: row.get("item_key"),
+        item_type: row.get("item_type"),
+        title: row.get("title"),
+        description: row.get("description"),
+        status: row.get("status"),
+        priority: row.get("priority"),
+        project_key: row.get("project_key"),
+        project_name: row.get("project_name"),
+        parent_item_key: row.get("parent_item_key"),
+        parent_title: row.get("parent_title"),
+        assignee_username: row.get("assignee_username"),
+        assignee_display_name: row.get("assignee_display_name"),
+        reporter_display_name: row.get("reporter_display_name"),
+        due_date: row.get("due_date"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+        deleted_at: row.get("deleted_at"),
+    }))
 }
 
 pub async fn list_work_item_comments(
     pool: &SqlitePool,
     work_item_id: i64,
 ) -> AppResult<Vec<WorkItemCommentSummary>> {
-    let rows = sqlx::query_as::<_, (i64, String, String, String)>(
+    let rows = sqlx::query_as::<_, (i64, String, Option<i64>, String, String, String)>(
         r#"
         SELECT
             c.id,
             c.body,
+            c.author_user_id,
             COALESCE(u.display_name, '') AS author_display_name,
-            c.created_at
+            c.created_at,
+            c.updated_at
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
         WHERE c.work_item_id = ?1
+          AND c.deleted_at IS NULL
         ORDER BY c.created_at DESC, c.id DESC
         "#,
     )
@@ -1231,11 +1909,15 @@ pub async fn list_work_item_comments(
     Ok(rows
         .into_iter()
         .map(
-            |(id, body, author_display_name, created_at)| WorkItemCommentSummary {
-                id,
-                body,
-                author_display_name,
-                created_at,
+            |(id, body, author_user_id, author_display_name, created_at, updated_at)| {
+                WorkItemCommentSummary {
+                    id,
+                    body,
+                    author_user_id,
+                    author_display_name,
+                    created_at,
+                    updated_at,
+                }
             },
         )
         .collect())
@@ -1248,15 +1930,24 @@ pub async fn update_work_item_status(
     status: &str,
 ) -> AppResult<WorkItemDetail> {
     let status = validate_work_item_status(status)?;
-    let Some((work_item_id, project_id)) = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT id, project_id FROM work_items WHERE item_key = ?1",
-    )
-    .bind(item_key)
-    .fetch_optional(pool)
-    .await?
+    let Some((work_item_id, project_id, project_status, current_status)) =
+        sqlx::query_as::<_, (i64, i64, String, String)>(
+            r#"
+            SELECT wi.id, wi.project_id, p.status, wi.status
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            WHERE wi.item_key = ?1
+              AND wi.deleted_at IS NULL
+            "#,
+        )
+        .bind(item_key)
+        .fetch_optional(pool)
+        .await?
     else {
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
+    ensure_project_accepts_writes(&project_status)?;
+    ensure_work_item_status_transition(&current_status, status)?;
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
@@ -1315,16 +2006,29 @@ pub async fn update_work_item(
     let status = validate_work_item_status(&input.status)?;
     let priority = validate_priority(&input.priority)?;
     let assignee_username = input.assignee_username.trim();
+    let due_date = validate_optional_date(&input.due_date, "工作项截止日期")?;
+    let parent_item_key = input.parent_item_key.trim();
 
-    let Some((work_item_id, project_id)) = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT id, project_id FROM work_items WHERE item_key = ?1",
-    )
-    .bind(item_key)
-    .fetch_optional(pool)
-    .await?
+    let Some((work_item_id, project_id, project_status, item_type, current_status)) =
+        sqlx::query_as::<_, (i64, i64, String, String, String)>(
+            r#"
+        SELECT wi.id, wi.project_id, p.status, wi.item_type, wi.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+        )
+        .bind(item_key)
+        .fetch_optional(pool)
+        .await?
     else {
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
+    ensure_project_accepts_writes(&project_status)?;
+    ensure_work_item_status_transition(&current_status, status)?;
+    let parent_work_item_id =
+        resolve_parent_work_item_id(pool, project_id, &item_type, parent_item_key).await?;
 
     let assignee_user_id = if assignee_username.is_empty() {
         None
@@ -1358,6 +2062,8 @@ pub async fn update_work_item(
             status = ?4,
             priority = ?5,
             assignee_user_id = ?6,
+            due_date = NULLIF(?7, ''),
+            parent_work_item_id = ?8,
             completed_at = CASE
                 WHEN ?4 IN ('done', 'closed', 'resolved', 'verified') THEN datetime('now')
                 ELSE NULL
@@ -1372,6 +2078,8 @@ pub async fn update_work_item(
     .bind(status)
     .bind(priority)
     .bind(assignee_user_id)
+    .bind(&due_date)
+    .bind(parent_work_item_id)
     .execute(&mut *tx)
     .await?;
 
@@ -1394,8 +2102,153 @@ pub async fn update_work_item(
     .bind(item_key)
     .bind(format!("更新工作项 {item_key}"))
     .bind(format!(
-        r#"{{"status":"{status}","priority":"{priority}","assignee_username":"{assignee_username}"}}"#
+        r#"{{"status":"{status}","priority":"{priority}","assignee_username":"{assignee_username}","due_date":"{due_date}","parent_item_key":"{parent_item_key}"}}"#
     ))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_detail(pool, item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
+}
+
+pub async fn delete_work_item(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+) -> AppResult<WorkItemDetail> {
+    let Some((work_item_id, project_id, project_status, deleted_at)) =
+        sqlx::query_as::<_, (i64, i64, String, String)>(
+            r#"
+            SELECT
+                wi.id,
+                wi.project_id,
+                p.status,
+                COALESCE(wi.deleted_at, '') AS deleted_at
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            WHERE wi.item_key = ?1
+            "#,
+        )
+        .bind(item_key)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    if !deleted_at.is_empty() {
+        return get_work_item_detail(pool, item_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET deleted_at = datetime('now'),
+            deleted_by_user_id = ?2,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'work_item.deleted', 'work_item', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("删除工作项 {item_key}"))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_detail(pool, item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
+}
+
+pub async fn restore_work_item(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+) -> AppResult<WorkItemDetail> {
+    let Some((work_item_id, project_id, project_status, deleted_at)) =
+        sqlx::query_as::<_, (i64, i64, String, String)>(
+            r#"
+            SELECT
+                wi.id,
+                wi.project_id,
+                p.status,
+                COALESCE(wi.deleted_at, '') AS deleted_at
+            FROM work_items wi
+            JOIN projects p ON p.id = wi.project_id
+            WHERE wi.item_key = ?1
+            "#,
+        )
+        .bind(item_key)
+        .fetch_optional(pool)
+        .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    if deleted_at.is_empty() {
+        return get_work_item_detail(pool, item_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET deleted_at = NULL,
+            deleted_by_user_id = NULL,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'work_item.restored', 'work_item', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("恢复工作项 {item_key}"))
     .execute(&mut *tx)
     .await?;
 
@@ -1416,8 +2269,14 @@ pub async fn add_work_item_comment(
     if body.is_empty() {
         return Err(AppError::BadRequest("评论内容不能为空".to_string()));
     }
-    let Some((work_item_id, project_id)) = sqlx::query_as::<_, (i64, i64)>(
-        "SELECT id, project_id FROM work_items WHERE item_key = ?1",
+    let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+        SELECT wi.id, wi.project_id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
     )
     .bind(item_key)
     .fetch_optional(pool)
@@ -1425,6 +2284,7 @@ pub async fn add_work_item_comment(
     else {
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
+    ensure_project_accepts_writes(&project_status)?;
 
     let mut tx = pool.begin().await?;
     let comment_id = sqlx::query_scalar::<_, i64>(
@@ -1477,13 +2337,15 @@ pub async fn add_work_item_comment(
 
     tx.commit().await?;
 
-    let row = sqlx::query_as::<_, (i64, String, String, String)>(
+    let row = sqlx::query_as::<_, (i64, String, Option<i64>, String, String, String)>(
         r#"
         SELECT
             c.id,
             c.body,
+            c.author_user_id,
             COALESCE(u.display_name, '') AS author_display_name,
-            c.created_at
+            c.created_at,
+            c.updated_at
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
         WHERE c.id = ?1
@@ -1496,9 +2358,240 @@ pub async fn add_work_item_comment(
     Ok(WorkItemCommentSummary {
         id: row.0,
         body: row.1,
-        author_display_name: row.2,
-        created_at: row.3,
+        author_user_id: row.2,
+        author_display_name: row.3,
+        created_at: row.4,
+        updated_at: row.5,
     })
+}
+
+pub async fn get_work_item_comment(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+) -> AppResult<WorkItemCommentSummary> {
+    let row = sqlx::query_as::<_, (i64, String, Option<i64>, String, String, String)>(
+        r#"
+        SELECT
+            c.id,
+            c.body,
+            c.author_user_id,
+            COALESCE(u.display_name, '') AS author_display_name,
+            c.created_at,
+            c.updated_at
+        FROM work_item_comments c
+        LEFT JOIN users u ON u.id = c.author_user_id
+        WHERE c.id = ?1
+          AND c.work_item_id = ?2
+          AND c.deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("评论不存在".to_string()))?;
+
+    Ok(WorkItemCommentSummary {
+        id: row.0,
+        body: row.1,
+        author_user_id: row.2,
+        author_display_name: row.3,
+        created_at: row.4,
+        updated_at: row.5,
+    })
+}
+
+pub async fn update_work_item_comment(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    actor_is_super_admin: bool,
+    item_key: &str,
+    comment_id: i64,
+    body: &str,
+) -> AppResult<WorkItemCommentSummary> {
+    let body = validate_optional_text(body, "评论内容", 5000)?;
+    if body.is_empty() {
+        return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+    }
+    let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+        SELECT wi.id, wi.project_id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let comment = get_work_item_comment(pool, work_item_id, comment_id).await?;
+    if !user_can_manage_work_item_comment(
+        pool,
+        project_id,
+        comment.author_user_id,
+        actor_user_id,
+        actor_is_super_admin,
+    )
+    .await?
+    {
+        return Err(AppError::Forbidden("无权修改该评论".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    let updated_count = sqlx::query(
+        r#"
+        UPDATE work_item_comments
+        SET body = ?3,
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .bind(&body)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if updated_count == 0 {
+        return Err(AppError::NotFound("评论不存在".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'work_item.comment.updated', 'comment', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(comment_id.to_string())
+    .bind(format!("编辑工作项 {item_key} 评论"))
+    .bind(format!(r#"{{"work_item":"{item_key}"}}"#))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_comment(pool, work_item_id, comment_id).await
+}
+
+pub async fn delete_work_item_comment(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    actor_is_super_admin: bool,
+    item_key: &str,
+    comment_id: i64,
+) -> AppResult<WorkItemCommentSummary> {
+    let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+        SELECT wi.id, wi.project_id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let comment = get_work_item_comment(pool, work_item_id, comment_id).await?;
+    if !user_can_manage_work_item_comment(
+        pool,
+        project_id,
+        comment.author_user_id,
+        actor_user_id,
+        actor_is_super_admin,
+    )
+    .await?
+    {
+        return Err(AppError::Forbidden("无权删除该评论".to_string()));
+    }
+
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE work_item_comments
+        SET deleted_at = datetime('now'),
+            deleted_by_user_id = ?3,
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'work_item.comment.deleted', 'comment', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(comment_id.to_string())
+    .bind(format!("删除工作项 {item_key} 评论"))
+    .bind(format!(r#"{{"work_item":"{item_key}"}}"#))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(comment)
 }
 
 pub async fn list_recent_activities(
@@ -1624,6 +2717,24 @@ pub async fn list_project_activities(
         .collect())
 }
 
+pub async fn list_project_activities_by_key(
+    pool: &SqlitePool,
+    project_key: &str,
+    limit: i64,
+) -> AppResult<Vec<ProjectActivitySummary>> {
+    let project_key = validate_project_key(project_key)?;
+    let Some(project_id) =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = ?1")
+            .bind(project_key)
+            .fetch_optional(pool)
+            .await?
+    else {
+        return Ok(Vec::new());
+    };
+
+    list_project_activities(pool, project_id, limit).await
+}
+
 pub async fn search_visible(
     pool: &SqlitePool,
     user_id: i64,
@@ -1701,11 +2812,14 @@ pub async fn search_visible(
                 wi.updated_at
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
-            WHERE wi.item_key LIKE ?1
-               OR wi.title LIKE ?1
-               OR wi.description LIKE ?1
-               OR p.project_key LIKE ?1
-               OR p.name LIKE ?1
+            WHERE (
+                wi.item_key LIKE ?1
+                OR wi.title LIKE ?1
+                OR wi.description LIKE ?1
+                OR p.project_key LIKE ?1
+                OR p.name LIKE ?1
+            )
+              AND wi.deleted_at IS NULL
             ORDER BY wi.updated_at DESC, wi.id DESC
             LIMIT ?2
             "#,
@@ -1728,11 +2842,14 @@ pub async fn search_visible(
             JOIN projects p ON p.id = wi.project_id
             JOIN project_members pm ON pm.project_id = p.id
                 AND pm.user_id = ?2
-            WHERE wi.item_key LIKE ?1
-               OR wi.title LIKE ?1
-               OR wi.description LIKE ?1
-               OR p.project_key LIKE ?1
-               OR p.name LIKE ?1
+            WHERE (
+                wi.item_key LIKE ?1
+                OR wi.title LIKE ?1
+                OR wi.description LIKE ?1
+                OR p.project_key LIKE ?1
+                OR p.name LIKE ?1
+            )
+              AND wi.deleted_at IS NULL
             ORDER BY wi.updated_at DESC, wi.id DESC
             LIMIT ?3
             "#,
@@ -1762,6 +2879,15 @@ pub async fn search_visible(
     hits.truncate(limit.max(0) as usize);
 
     Ok(hits)
+}
+
+fn normalize_project_filter(filter: ProjectListFilter) -> AppResult<NormalizedProjectFilter> {
+    let status = match filter.status.trim() {
+        "" => String::new(),
+        value => validate_project_status(value)?.to_string(),
+    };
+
+    Ok(NormalizedProjectFilter { status })
 }
 
 fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<NormalizedWorkItemFilter> {
@@ -1802,6 +2928,128 @@ fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<Normalize
     })
 }
 
+fn normalize_pagination(pagination: Pagination) -> AppResult<Pagination> {
+    if pagination.page < 1 {
+        return Err(AppError::BadRequest("页码不能小于 1".to_string()));
+    }
+    if pagination.per_page < 1 {
+        return Err(AppError::BadRequest("每页数量不能小于 1".to_string()));
+    }
+    Ok(pagination)
+}
+
+async fn count_project_summaries(
+    pool: &SqlitePool,
+    normalized: &NormalizedProjectFilter,
+) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM projects p
+        WHERE (?1 = '' OR p.status = ?1)
+        "#,
+    )
+    .bind(&normalized.status)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn count_project_summaries_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    normalized: &NormalizedProjectFilter,
+) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM projects p
+        JOIN project_members pm ON pm.project_id = p.id
+            AND pm.user_id = ?1
+        WHERE (?2 = '' OR p.status = ?2)
+        "#,
+    )
+    .bind(user_id)
+    .bind(&normalized.status)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn count_work_item_summaries_filtered(
+    pool: &SqlitePool,
+    normalized: &NormalizedWorkItemFilter,
+) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+        WHERE (?1 = '' OR wi.item_type = ?1)
+          AND (
+            ?2 = ''
+            OR wi.item_key LIKE ?2
+            OR wi.title LIKE ?2
+            OR wi.description LIKE ?2
+            OR p.project_key LIKE ?2
+            OR p.name LIKE ?2
+          )
+          AND (?3 = '' OR wi.status = ?3)
+          AND (?4 = '' OR wi.priority = ?4)
+          AND (?5 = '' OR p.project_key = ?5)
+          AND (?6 = '' OR assignee.username = ?6)
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(&normalized.item_type)
+    .bind(&normalized.keyword_like)
+    .bind(&normalized.status)
+    .bind(&normalized.priority)
+    .bind(&normalized.project_key)
+    .bind(&normalized.assignee_username)
+    .fetch_one(pool)
+    .await?)
+}
+
+async fn count_work_item_summaries_filtered_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    normalized: &NormalizedWorkItemFilter,
+) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        JOIN project_members pm ON pm.project_id = p.id
+            AND pm.user_id = ?1
+        LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+        WHERE (?2 = '' OR wi.item_type = ?2)
+          AND (
+            ?3 = ''
+            OR wi.item_key LIKE ?3
+            OR wi.title LIKE ?3
+            OR wi.description LIKE ?3
+            OR p.project_key LIKE ?3
+            OR p.name LIKE ?3
+          )
+          AND (?4 = '' OR wi.status = ?4)
+          AND (?5 = '' OR wi.priority = ?5)
+          AND (?6 = '' OR p.project_key = ?6)
+          AND (?7 = '' OR assignee.username = ?7)
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(user_id)
+    .bind(&normalized.item_type)
+    .bind(&normalized.keyword_like)
+    .bind(&normalized.status)
+    .bind(&normalized.priority)
+    .bind(&normalized.project_key)
+    .bind(&normalized.assignee_username)
+    .fetch_one(pool)
+    .await?)
+}
+
 fn validate_project_key(project_key: &str) -> AppResult<String> {
     let project_key = project_key.trim().to_ascii_uppercase();
     if project_key.len() < 2 || project_key.len() > 16 {
@@ -1840,6 +3088,69 @@ fn validate_optional_text(value: &str, field_name: &str, max_chars: usize) -> Ap
     Ok(value.to_string())
 }
 
+fn validate_optional_date(value: &str, field_name: &str) -> AppResult<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(String::new());
+    }
+
+    let [year, month, day] = value
+        .split('-')
+        .collect::<Vec<_>>()
+        .try_into()
+        .map_err(|_| AppError::BadRequest(format!("{field_name}必须是 YYYY-MM-DD 格式")))?;
+    if year.len() != 4 || month.len() != 2 || day.len() != 2 {
+        return Err(AppError::BadRequest(format!(
+            "{field_name}必须是 YYYY-MM-DD 格式"
+        )));
+    }
+
+    let year = parse_date_part(year, field_name)?;
+    let month = parse_date_part(month, field_name)?;
+    let day = parse_date_part(day, field_name)?;
+    if !(1..=12).contains(&month) {
+        return Err(AppError::BadRequest(format!("{field_name}月份无效")));
+    }
+    let max_day = days_in_month(year, month);
+    if day < 1 || day > max_day {
+        return Err(AppError::BadRequest(format!("{field_name}日期无效")));
+    }
+
+    Ok(value.to_string())
+}
+
+fn validate_date_range(start_date: &str, due_date: &str, message: &str) -> AppResult<()> {
+    if !start_date.is_empty() && !due_date.is_empty() && due_date < start_date {
+        return Err(AppError::BadRequest(message.to_string()));
+    }
+    Ok(())
+}
+
+fn parse_date_part(value: &str, field_name: &str) -> AppResult<i32> {
+    if !value.chars().all(|char| char.is_ascii_digit()) {
+        return Err(AppError::BadRequest(format!(
+            "{field_name}必须是 YYYY-MM-DD 格式"
+        )));
+    }
+    value
+        .parse::<i32>()
+        .map_err(|_| AppError::BadRequest(format!("{field_name}必须是 YYYY-MM-DD 格式")))
+}
+
+fn days_in_month(year: i32, month: i32) -> i32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
 fn validate_project_status(status: &str) -> AppResult<&'static str> {
     match status.trim() {
         "" | "active" => Ok("active"),
@@ -1848,6 +3159,21 @@ fn validate_project_status(status: &str) -> AppResult<&'static str> {
         "archived" => Ok("archived"),
         _ => Err(AppError::BadRequest(
             "项目状态只能是 planning / active / paused / archived".to_string(),
+        )),
+    }
+}
+
+pub fn ensure_project_accepts_writes(status: &str) -> AppResult<()> {
+    match status {
+        "planning" | "active" => Ok(()),
+        "paused" => Err(AppError::BadRequest(
+            "项目已暂停，不能执行写入操作".to_string(),
+        )),
+        "archived" => Err(AppError::BadRequest(
+            "项目已归档，不能执行写入操作".to_string(),
+        )),
+        _ => Err(AppError::BadRequest(
+            "项目状态异常，不能执行写入操作".to_string(),
         )),
     }
 }
@@ -1861,6 +3187,53 @@ fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {
             "工作项类型只能是 requirement / task / bug".to_string(),
         )),
     }
+}
+
+async fn resolve_parent_work_item_id(
+    pool: &SqlitePool,
+    project_id: i64,
+    item_type: &str,
+    parent_item_key: &str,
+) -> AppResult<Option<i64>> {
+    let parent_item_key = parent_item_key.trim();
+    if parent_item_key.is_empty() {
+        return Ok(None);
+    }
+    if item_type != "task" {
+        return Err(AppError::BadRequest("只有任务可以关联父级需求".to_string()));
+    }
+    let parent_item_key = validate_work_item_key_ref(parent_item_key)?;
+    let parent_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM work_items
+        WHERE project_id = ?1
+          AND item_key = ?2
+          AND item_type = 'requirement'
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(project_id)
+    .bind(&parent_item_key)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("父级需求必须是同项目内未删除需求".to_string()))?;
+
+    Ok(Some(parent_id))
+}
+
+fn validate_work_item_key_ref(item_key: &str) -> AppResult<String> {
+    let item_key = item_key.trim().to_ascii_uppercase();
+    if item_key.len() < 5 || item_key.len() > 64 {
+        return Err(AppError::BadRequest("工作项编号无效".to_string()));
+    }
+    if !item_key
+        .chars()
+        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || matches!(c, '_' | '-'))
+    {
+        return Err(AppError::BadRequest("工作项编号无效".to_string()));
+    }
+    Ok(item_key)
 }
 
 fn validate_priority(priority: &str) -> AppResult<&'static str> {
@@ -1889,6 +3262,38 @@ fn validate_work_item_status(status: &str) -> AppResult<&'static str> {
                 .to_string(),
         )),
     }
+}
+
+pub fn normalize_work_item_status(status: &str) -> AppResult<&'static str> {
+    validate_work_item_status(status)
+}
+
+pub fn allowed_work_item_status_transitions(
+    current_status: &str,
+) -> AppResult<&'static [&'static str]> {
+    match validate_work_item_status(current_status)? {
+        "open" => Ok(&["in_progress", "cancelled"]),
+        "in_progress" => Ok(&["open", "done", "resolved", "cancelled"]),
+        "done" => Ok(&["in_progress", "verified", "closed"]),
+        "resolved" => Ok(&["in_progress", "verified", "closed"]),
+        "verified" => Ok(&["in_progress", "closed"]),
+        "closed" | "cancelled" => Ok(&["in_progress"]),
+        _ => unreachable!("validated work item status should be exhaustive"),
+    }
+}
+
+fn ensure_work_item_status_transition(current_status: &str, next_status: &str) -> AppResult<()> {
+    let current_status = validate_work_item_status(current_status)?;
+    let next_status = validate_work_item_status(next_status)?;
+    if current_status == next_status
+        || allowed_work_item_status_transitions(current_status)?.contains(&next_status)
+    {
+        return Ok(());
+    }
+
+    Err(AppError::BadRequest(format!(
+        "工作项状态不能从 {current_status} 流转到 {next_status}"
+    )))
 }
 
 fn validate_member_role(member_role: &str) -> AppResult<&'static str> {

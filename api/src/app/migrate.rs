@@ -7,7 +7,11 @@ use std::{
 
 use crate::{
     app::MigrateCommand,
-    platform::{config::Settings, db, error::AppResult},
+    platform::{
+        config::Settings,
+        db,
+        error::{AppError, AppResult},
+    },
 };
 
 pub async fn run(command: MigrateCommand) -> AppResult<()> {
@@ -15,9 +19,11 @@ pub async fn run(command: MigrateCommand) -> AppResult<()> {
         MigrateCommand::Status => {
             let settings = Settings::from_env()?;
             let pool = db::connect_pool(&settings).await?;
+            validate_migration_state(&pool).await?;
             let applied = applied_count(&pool).await?;
             let total = db::MIGRATOR.iter().count();
             println!("migrations: applied={applied} total={total}");
+            println!("migration state: ok");
             for migration in db::MIGRATOR.iter() {
                 println!("{} {}", migration.version, migration.description);
             }
@@ -25,12 +31,14 @@ pub async fn run(command: MigrateCommand) -> AppResult<()> {
         MigrateCommand::Up => {
             let settings = Settings::from_env()?;
             let pool = db::connect_pool(&settings).await?;
+            validate_migration_state(&pool).await?;
             db::run_migrations(&pool).await?;
             println!("migrations applied");
         }
         MigrateCommand::UpTo { version } => {
             let settings = Settings::from_env()?;
             let pool = db::connect_pool(&settings).await?;
+            validate_migration_state(&pool).await?;
             db::MIGRATOR.run_to(version, &pool).await?;
             println!("migrations applied to {version}");
         }
@@ -43,7 +51,72 @@ pub async fn run(command: MigrateCommand) -> AppResult<()> {
     Ok(())
 }
 
+async fn validate_migration_state(pool: &sqlx::SqlitePool) -> AppResult<()> {
+    if !migration_table_exists(pool).await? {
+        return Ok(());
+    }
+
+    let failed_version = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT version
+        FROM _sqlx_migrations
+        WHERE success = 0
+        ORDER BY version
+        LIMIT 1
+        "#,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    if let Some(version) = failed_version {
+        return Err(AppError::MigrationState(format!(
+            "检测到失败迁移 version={version}，请先修复数据库状态后再继续"
+        )));
+    }
+
+    let applied = sqlx::query_as::<_, (i64, Vec<u8>)>(
+        r#"
+        SELECT version, checksum
+        FROM _sqlx_migrations
+        ORDER BY version
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for (version, checksum) in applied {
+        let Some(expected) = db::MIGRATOR
+            .iter()
+            .find(|migration| migration.version == version)
+        else {
+            return Err(AppError::MigrationState(format!(
+                "数据库存在当前二进制未知的迁移 version={version}"
+            )));
+        };
+
+        if checksum.as_slice() != expected.checksum.as_ref() {
+            return Err(AppError::MigrationState(format!(
+                "已应用迁移 checksum 不一致 version={version}，迁移文件可能已被修改"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 async fn applied_count(pool: &sqlx::SqlitePool) -> AppResult<i64> {
+    if !migration_table_exists(pool).await? {
+        return Ok(0);
+    }
+
+    Ok(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations")
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+async fn migration_table_exists(pool: &sqlx::SqlitePool) -> AppResult<bool> {
     let exists = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
@@ -55,15 +128,7 @@ async fn applied_count(pool: &sqlx::SqlitePool) -> AppResult<i64> {
     .fetch_one(pool)
     .await?;
 
-    if exists == 0 {
-        return Ok(0);
-    }
-
-    Ok(
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM _sqlx_migrations")
-            .fetch_one(pool)
-            .await?,
-    )
+    Ok(exists > 0)
 }
 
 fn create_migration_file(name: &str) -> AppResult<PathBuf> {

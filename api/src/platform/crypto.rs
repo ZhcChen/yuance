@@ -76,3 +76,64 @@ fn cipher(master_key: &str) -> AppResult<Aes256Gcm> {
 
     Aes256Gcm::new_from_slice(&key).map_err(|_| AppError::Crypto("加密器初始化失败".to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MASTER_KEY: &str = "unit-test-master-key-that-is-long-enough";
+    const AAD: &[u8] = b"provider:bucket:key";
+
+    #[test]
+    fn encrypt_and_decrypt_secret_round_trips_with_aad() {
+        let ciphertext =
+            encrypt_secret(MASTER_KEY, "secret-value", AAD).expect("secret should encrypt");
+
+        assert!(ciphertext.starts_with("v1:"));
+        assert_ne!(ciphertext, "secret-value");
+        assert_eq!(
+            decrypt_secret(MASTER_KEY, &ciphertext, AAD).expect("secret should decrypt"),
+            "secret-value"
+        );
+    }
+
+    #[test]
+    fn decrypt_secret_rejects_malformed_ciphertexts() {
+        for value in [
+            "",
+            "v0:nonce:payload",
+            "v1::payload",
+            "v1:nonce:",
+            "v1:not-base64:payload",
+            "v1:c2hvcnQ=:payload",
+            "v1:AAAAAAAAAAAAAAAA:%%%not-base64%%%",
+        ] {
+            let error = decrypt_secret(MASTER_KEY, value, AAD)
+                .expect_err("malformed ciphertext should fail");
+            assert!(error.to_string().contains("敏感配置处理失败"));
+        }
+    }
+
+    #[test]
+    fn decrypt_secret_rejects_wrong_master_key_or_aad() {
+        let ciphertext =
+            encrypt_secret(MASTER_KEY, "secret-value", AAD).expect("secret should encrypt");
+
+        let wrong_key_error =
+            decrypt_secret("another-master-key-that-is-long-enough", &ciphertext, AAD)
+                .expect_err("wrong master key should fail");
+        assert!(wrong_key_error.to_string().contains("解密失败"));
+
+        let wrong_aad_error = decrypt_secret(MASTER_KEY, &ciphertext, b"provider:other:key")
+            .expect_err("wrong aad should fail");
+        assert!(wrong_aad_error.to_string().contains("解密失败"));
+    }
+
+    #[test]
+    fn encrypt_secret_rejects_short_master_key() {
+        let error = encrypt_secret("too-short", "secret-value", AAD)
+            .expect_err("short master key should fail");
+
+        assert!(error.to_string().contains("YUANCE_SECURITY_MASTER_KEY"));
+    }
+}

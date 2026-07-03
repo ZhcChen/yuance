@@ -38,6 +38,8 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("迁移执行失败：{0}")]
     Migration(sqlx::migrate::MigrateError),
+    #[error("迁移状态异常：{0}")]
+    MigrationState(String),
     #[error("密码处理失败：{0}")]
     PasswordHash(String),
     #[error(transparent)]
@@ -71,6 +73,7 @@ impl IntoResponse for AppError {
             AppError::Database(_)
             | AppError::Io(_)
             | AppError::Migration(_)
+            | AppError::MigrationState(_)
             | AppError::PasswordHash(_)
             | AppError::Template(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         };
