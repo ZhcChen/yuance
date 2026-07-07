@@ -119,7 +119,7 @@ date: 2026-07-06
 
 ### Deferred to Implementation
 
-- 实际测试域名：建议占位 `yuance-test.quanxinfu.com`，最终以用户和 DNS 配置确认为准。
+- 正式域名：已确认为 `yuance.quanxinfu.com`，首次部署时需要写入 Caddy 并确认 DNS 已解析到服务器入口。
 - 共享访问方式：如果复用宿主机 Caddy，建议 Caddy 反代到宿主机 `127.0.0.1:33033`；如果未来改成容器化共享 gateway，元策 API 容器必须加入 gateway 可访问的外部网络。
 - 是否接入共享 Alloy / Loki：取决于测试服务器现有 qfy-sc 日志采集配置是否允许追加 `yuance` 项目。
 - 镜像构建目标：当前固定 `linux/amd64`；如果未来服务器换成 arm64，再补多架构构建。
@@ -402,7 +402,7 @@ local / CI build
 
 ## Documentation / Operational Notes
 
-- 建议默认测试域名占位：`yuance-test.quanxinfu.com`。
+- 正式域名：`yuance.quanxinfu.com`。
 - 建议默认服务器目录：`/srv/yuance/easy-deploy/production/backend`。
 - 建议默认 easy-deploy 应用名：`yuance`。
 - 建议默认容器名：`yuance-api`。

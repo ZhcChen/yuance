@@ -5,7 +5,7 @@
 默认链路：
 
 ```text
-https://yuance-test.quanxinfu.com
+https://yuance.quanxinfu.com
   -> Caddy
   -> 127.0.0.1:33033
   -> yuance-api
@@ -31,8 +31,8 @@ import /etc/caddy/Caddyfile.d/*.caddy
 ## 验证
 
 ```bash
-curl -fsS https://yuance-test.quanxinfu.com/api/healthz
-curl -I https://yuance-test.quanxinfu.com/web
+curl -fsS https://yuance.quanxinfu.com/api/healthz
+curl -I https://yuance.quanxinfu.com/web
 ```
 
-如实际域名不是 `yuance-test.quanxinfu.com`，同步替换 Caddyfile、DNS 和部署文档中的域名。
+正式环境域名固定为 `yuance.quanxinfu.com`；首次部署时需要确认 DNS 已解析到 `qfy-sc-test` 对应公网入口。

@@ -11,7 +11,7 @@
 容器名：yuance-api
 镜像名：yuance-api:latest
 API 宿主机端口：127.0.0.1:33033
-默认网关域名：yuance-test.quanxinfu.com
+正式网关域名：yuance.quanxinfu.com
 ```
 
 这里的 `qfy-sc-test` 只是服务器别名；对元策来说，本目录就是正式环境模板。
@@ -134,8 +134,8 @@ sudo systemctl reload caddy
 外部验证：
 
 ```bash
-curl -fsS https://yuance-test.quanxinfu.com/api/healthz
-curl -I https://yuance-test.quanxinfu.com/web
+curl -fsS https://yuance.quanxinfu.com/api/healthz
+curl -I https://yuance.quanxinfu.com/web
 ```
 
 首次访问 `/web` 时，由用户在页面填写第一个超级管理员。正式环境不执行 `seed demo`，也不执行 `seed local-admin`。

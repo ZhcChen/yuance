@@ -24,7 +24,7 @@ Compose name：yuance
 镜像目标架构：linux/amd64
 镜像 tar：dist/yuance-api-linux-amd64.tar
 API 端口：127.0.0.1:33033
-默认域名：yuance-test.quanxinfu.com
+正式域名：yuance.quanxinfu.com
 ```
 
 `qfy-sc-test` 是服务器别名，不代表元策环境是测试环境。
@@ -126,7 +126,7 @@ curl -fsS http://127.0.0.1:33033/api/readyz
 首次访问：
 
 ```text
-https://yuance-test.quanxinfu.com/web
+https://yuance.quanxinfu.com/web
 ```
 
 页面会进入首个超级管理员初始化流程，由用户填写账号密码。
@@ -145,7 +145,7 @@ sudo systemctl reload caddy
 如果不支持，把以下站点块追加到 `/etc/caddy/Caddyfile`：
 
 ```caddy
-yuance-test.quanxinfu.com {
+yuance.quanxinfu.com {
   encode zstd gzip
 
   reverse_proxy 127.0.0.1:33033
@@ -155,8 +155,8 @@ yuance-test.quanxinfu.com {
 外部验证：
 
 ```bash
-curl -fsS https://yuance-test.quanxinfu.com/api/healthz
-curl -I https://yuance-test.quanxinfu.com/web
+curl -fsS https://yuance.quanxinfu.com/api/healthz
+curl -I https://yuance.quanxinfu.com/web
 ```
 
 ## 后续发布
