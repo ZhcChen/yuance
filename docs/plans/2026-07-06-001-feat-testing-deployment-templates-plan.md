@@ -35,10 +35,13 @@ date: 2026-07-06
 - R7. 真实密钥、会话密钥、对象存储凭证和证书不得提交；模板只提交 `.example` 文件。
 - R8. 支持健康检查 `/api/healthz` 和 `/api/readyz`，并在部署后提供最小验证步骤。
 - R9. 需要记录与 qfy-sc 同服务器部署时的网关、Docker 网络、日志采集和端口冲突处理方式。
+- R10. 镜像必须在本地或 CI 预先构建并打包为 tar，测试服务器只允许加载镜像和运行 Compose，严禁在服务器编译源码或打包二进制。
+- R11. 当前本地构建机为 arm 架构、测试服务器为 x86，构建链路必须明确产出 `linux/amd64` 镜像。
 
 ## Scope Boundaries
 
-- 不在测试服务器上构建源码；镜像由本地、CI 或部署平台构建后上传 / 拉取。
+- 不在测试服务器上构建源码；镜像必须由本地、CI 或部署平台构建后打包 tar / 上传 / 加载。
+- 不在测试服务器上执行 Rust 编译、Cargo 构建、Docker build 或源码打包。
 - 不接入 Redis；进程内缓存保持现状。
 - 不部署 PostgreSQL；SQLite 文件是当前唯一数据库。
 - 不新增 Worker 模块；迁移、seed、文件维护都由 `yuance-api` CLI 子命令执行。
@@ -97,6 +100,7 @@ date: 2026-07-06
 - 使用 easy-deploy testing 目录结构：保持与 qfy-sc 一致，方便同一套部署平台识别模板、脚本和健康检查。
 - 后端只提供一个 Compose 服务 `api`：元策没有 API Consumer / Worker，拆分会制造无意义复杂度。
 - 镜像名默认使用 `yuance-api:latest`：对齐 qfy-sc 测试环境固定 latest 的口径，但容器和镜像名称不额外携带 `test` 字样，版本由制品上传或镜像仓库管理。
+- 本地 arm 构建机使用 Docker Buildx 产出 `linux/amd64` 镜像 tar：测试服务器是 x86，服务器侧只执行镜像加载和 Compose 启动，不参与构建。
 - API 容器内部监听 `0.0.0.0:33033`：容器内健康检查和网关反代都需要可访问监听地址。
 - 宿主机端口默认绑定 `127.0.0.1:33033`：避免测试服务器直接暴露 API 端口，公网入口交给网关。
 - SQLite 使用容器挂载目录 `/data`：数据库、WAL、SHM 和后续本地对象存储临时数据必须脱离容器生命周期。
@@ -118,7 +122,7 @@ date: 2026-07-06
 - 实际测试域名：建议占位 `yuance-test.quanxinfu.com`，最终以用户和 DNS 配置确认为准。
 - 共享访问方式：如果复用宿主机 Caddy，建议 Caddy 反代到宿主机 `127.0.0.1:33033`；如果未来改成容器化共享 gateway，元策 API 容器必须加入 gateway 可访问的外部网络。
 - 是否接入共享 Alloy / Loki：取决于测试服务器现有 qfy-sc 日志采集配置是否允许追加 `yuance` 项目。
-- 镜像构建目标：先支持 linux/amd64；如果服务器为 arm64，再补多架构构建。
+- 镜像构建目标：当前固定 `linux/amd64`；如果未来服务器换成 arm64，再补多架构构建。
 
 ## High-Level Technical Design
 
@@ -127,7 +131,9 @@ date: 2026-07-06
 ```text
 local / CI build
   -> yuance-api:latest
-  -> upload / docker load / registry pull on testing server
+  -> save image tar for linux/amd64
+  -> upload tar to testing server
+  -> docker load on testing server
   -> easy-deploy backend compose
        -> api container
           -> /data/yuance.sqlite3
@@ -148,7 +154,7 @@ local / CI build
 
 **Goal:** 为 `yuance-api` 提供可部署的 Linux 容器镜像构建模板。
 
-**Requirements:** R1, R2, R3, R7
+**Requirements:** R1, R2, R3, R7, R10, R11
 
 **Dependencies:** None
 
@@ -159,6 +165,7 @@ local / CI build
 
 **Approach:**
 - 使用多阶段构建，builder 阶段编译 Rust workspace 中的 `yuance-api`。
+- 构建流程必须支持从 arm 本机构建 `linux/amd64` 镜像，并把镜像保存为 tar 制品。
 - runtime 阶段只保留二进制、CA 证书、时区数据和健康检查需要的最小工具。
 - 确认 Askama 模板、迁移、CSS、JS、logo、HTMX 都已编译或嵌入，不依赖运行时源码目录。
 - 容器默认启动 `./yuance-api serve`。
@@ -172,19 +179,21 @@ local / CI build
 
 **Test scenarios:**
 - Happy path: 构建镜像后启动容器，`/api/healthz` 返回 200。
+- Happy path: 在 arm 本机构建出的 tar 加载后，镜像架构为 `linux/amd64`，可在 x86 测试服务器运行。
 - Happy path: 容器内使用嵌入资源访问 `/static/app.css`、`/static/vendor/htmx.min.js` 和 `/favicon.ico`。
 - Error path: 未设置生产密钥时不应把 `.env.example` 的占位值当成可接受上线配置，部署文档必须明确阻断。
 - Integration: 镜像运行后执行 `migrate up` 能创建 SQLite 数据库并使 `/api/readyz` 返回 200。
 
 **Verification:**
 - 镜像能够在目标架构启动。
+- 镜像 tar 可被 x86 测试服务器加载并运行。
 - 容器无需挂载源码目录即可提供 `/web`、`/api` 和静态资源。
 
 - [ ] **Unit 2: easy-deploy backend 模板**
 
 **Goal:** 提供元策测试后端的 Compose、app.yaml、环境变量示例和发布阶段脚本。
 
-**Requirements:** R1, R2, R3, R4, R5, R6, R7, R8
+**Requirements:** R1, R2, R3, R4, R5, R6, R7, R8, R10
 
 **Dependencies:** Unit 1
 
@@ -209,6 +218,7 @@ local / CI build
 - easy-deploy 应用建议名和 Compose 顶层名称使用 `yuance`。
 - 服务名使用 `api`，容器名建议使用 `yuance-api`，便于日志、排障和手工运维识别。
 - 镜像变量使用 `YUANCE_API_IMAGE`，默认 `yuance-api:latest`。
+- Compose 模板只消费已经存在于服务器 Docker daemon 的镜像，不包含 build 配置。
 - 环境变量全部使用 `YUANCE_*`，敏感值通过 `.env` 或部署平台注入。
 - 持久化挂载 `./data:/data`，默认数据库 URL 使用容器内绝对路径。
 - `YUANCE_ENV` 默认 `testing`，发布流程只跑 `seed core`，不跑 `seed demo` 和 `seed local-admin`。
@@ -227,6 +237,7 @@ local / CI build
 - Edge case: SQLite 数据库存在 `-wal` 和 `-shm` 文件时，备份脚本同时保存三类文件。
 - Error path: `migrate status` 发现 checksum 漂移或未知迁移时发布脚本失败并阻止继续。
 - Error path: `YUANCE_ENV=testing` 执行 `seed local-admin` 应失败，不得创建固定账号。
+- Error path: Compose 模板不得包含 `build:`；如果服务器没有加载 `yuance-api:latest`，启动应失败而不是在服务器构建。
 - Integration: 发布完成后用户访问 `/web` 能进入首次管理员初始化页面。
 
 **Verification:**
@@ -293,7 +304,8 @@ local / CI build
   - 稳定随机 `YUANCE_SECURITY_MASTER_KEY`
 - 明确首次部署顺序：
   - 准备 Docker 网络和数据目录。
-  - 加载或拉取镜像。
+  - 从本地或 CI 获取已经构建好的 `linux/amd64` 镜像 tar。
+  - 在测试服务器加载镜像 tar。
   - 注入 `.env`。
   - 执行迁移与 core seed。
   - 启动容器。
@@ -302,13 +314,14 @@ local / CI build
   - 配置 OSS 并执行桶检测 / 初始化。
 - 明确更新发布顺序：
   - 备份 SQLite。
-  - 替换镜像。
+  - 上传并加载新的镜像 tar。
   - 执行迁移校验和迁移。
   - 执行 core seed。
   - 重启服务。
   - 健康检查和浏览器 smoke。
 - 明确回滚只能通过恢复 SQLite 备份和旧镜像完成，不支持 SQLite down migration。
 - 明确测试服务器不要执行 `seed local-admin`；如果用户后续明确要求“演示环境固定账号”，必须另起设计并重新评估 `YUANCE_ENV` guard。
+- 明确禁止在测试服务器运行 Cargo、Docker build 或任何源码编译打包步骤。
 
 **Patterns to follow:**
 - qfy-sc repo: `docs/runbooks/deployment-flow.md`
@@ -318,6 +331,7 @@ local / CI build
 **Test scenarios:**
 - Documentation: runbook 明确列出首次部署、日常发布、回滚和禁止事项。
 - Documentation: runbook 明确区分测试服务器和本地开发测试环境。
+- Documentation: runbook 明确 arm 本机构建 `linux/amd64` 镜像 tar、x86 服务器加载 tar 的链路。
 - Error path: 文档明确 `YUANCE_SECURITY_MASTER_KEY` 丢失或变更会导致旧 OSS 密钥密文不可解密。
 - Integration: 文档覆盖从网关域名访问 `/web` 到首次管理员初始化，再到 OSS 配置初始化的完整链路。
 
@@ -369,6 +383,10 @@ local / CI build
 
 - 风险：共享测试服务器已有 Caddy gateway 占用 80/443。
   - 缓解：只提供 Caddy site snippet，要求合并到共享 Caddyfile，不默认起第二个 80/443 gateway。
+- 风险：本地 arm 构建出错误架构镜像导致 x86 测试服务器无法运行。
+  - 缓解：构建链路固定 `linux/amd64`，发布前检查镜像架构；服务器只加载 tar，不重新构建。
+- 风险：跨架构 Buildx 构建 Rust 镜像速度较慢。
+  - 缓解：第一版接受较慢构建；后续可引入 CI x86 runner 或交叉编译缓存优化。
 - 风险：SQLite 数据目录未挂载或被误删。
   - 缓解：Compose 必须挂载 `./data:/data`，runbook 和备份脚本必须覆盖数据库、WAL、SHM。
 - 风险：`YUANCE_SECURITY_MASTER_KEY` 变更导致 OSS 密钥无法解密。
@@ -389,6 +407,7 @@ local / CI build
 - 建议默认 easy-deploy 应用名：`yuance`。
 - 建议默认容器名：`yuance-api`。
 - 建议默认镜像：`yuance-api:latest`。
+- 建议默认镜像制品：`yuance-api-linux-amd64.tar`。
 - 建议默认数据目录：`deploy/easy-deploy/testing/backend/data` 挂载到容器 `/data`。
 - 建议测试服务器不运行 `seed demo`；如果后续需要演示数据，先决定是否把演示数据 seed 与固定超管 seed 解耦。
 - 对象存储配置仍通过 `/web/system/storage` 保存，发布环境变量不保存 OSS AccessKey。
