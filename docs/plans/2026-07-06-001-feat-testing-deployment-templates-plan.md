@@ -22,7 +22,7 @@ date: 2026-07-06
 - qfy-sc 测试环境需要 PostgreSQL、Redis、NATS、Loki、Alloy、Worker、API、API Consumer、多套前端和 Gateway。
 - 元策第一阶段只需要一个 `yuance-api` 容器和一个 SQLite 数据目录。
 - 元策的 `/web` 与 `/api` 都由同一个二进制提供，根路径会跳转 `/web`。
-- 测试服务器如果已经有 qfy-sc gateway 占用 80/443，元策不能再启动第二套同端口 gateway，应提供可合并到共享 gateway 的 Nginx server block。
+- 测试服务器线上入口使用 Caddy；如果已有 qfy-sc Caddy gateway 占用 80/443，元策不能再启动第二套同端口 gateway，应提供可合并到共享 Caddyfile 的站点片段。
 
 ## Requirements Trace
 
@@ -79,7 +79,7 @@ date: 2026-07-06
   - `deploy/easy-deploy/testing/backend/compose.yaml.example`
   - `deploy/easy-deploy/testing/backend/app.yaml.example`
   - `deploy/easy-deploy/testing/backend/scripts/90-healthcheck.sh`
-  - `deploy/easy-deploy/testing/gateway/nginx.conf.example`
+  - `deploy/easy-deploy/testing/gateway/Caddyfile.qfy-sc-test.example`
   - `docs/runbooks/deployment-flow.md`
   - `docs/standards/docker-compose-naming.md`
 
@@ -101,7 +101,7 @@ date: 2026-07-06
 - 宿主机端口默认绑定 `127.0.0.1:33033`：避免测试服务器直接暴露 API 端口，公网入口交给网关。
 - SQLite 使用容器挂载目录 `/data`：数据库、WAL、SHM 和后续本地对象存储临时数据必须脱离容器生命周期。
 - 测试服务器默认 `YUANCE_ENV=testing`：表达测试环境语义，同时当前 `seed local-admin` guard 不允许 `testing`，可防止固定超管误入服务器发布流程。
-- 网关默认提供 Nginx server block snippet 而不是独立绑定 80/443 的 Compose：同一台 qfy-sc 测试服务器上通常已有 qfy-sc gateway，占用 80/443，元策应合并到共享 gateway 或由部署平台统一网关处理。
+- 网关默认提供 Caddy site snippet 而不是独立绑定 80/443 的 Compose：同一台 qfy-sc 测试服务器上通常已有 qfy-sc Caddy gateway，占用 80/443，元策应合并到共享 Caddyfile 或由部署平台统一网关处理。
 - 日志采集只打 labels，不强制部署 Alloy：同服务器若已有 qfy-sc Alloy，需要在共享采集器 allowlist 中加入 `yuance` 后才会采集元策容器日志。
 
 ## Open Questions
@@ -116,7 +116,7 @@ date: 2026-07-06
 ### Deferred to Implementation
 
 - 实际测试域名：建议占位 `yuance-test.quanxinfu.com`，最终以用户和 DNS 配置确认为准。
-- 共享 Docker 网络名称：如果复用 qfy-sc gateway，元策 API 容器必须加入 gateway 可访问的外部网络；默认可使用现有 `qfy-sc-test`，后续也可以迁移到更中性的共享网络名。
+- 共享访问方式：如果复用宿主机 Caddy，建议 Caddy 反代到宿主机 `127.0.0.1:33033`；如果未来改成容器化共享 gateway，元策 API 容器必须加入 gateway 可访问的外部网络。
 - 是否接入共享 Alloy / Loki：取决于测试服务器现有 qfy-sc 日志采集配置是否允许追加 `yuance` 项目。
 - 镜像构建目标：先支持 linux/amd64；如果服务器为 arm64，再补多架构构建。
 
@@ -135,9 +135,9 @@ local / CI build
           -> yuance-api migrate up
           -> yuance-api seed core
           -> yuance-api serve
-  -> shared testing gateway
-       -> server_name yuance-test...
-       -> proxy_pass http://yuance-test-api:33033
+  -> shared testing Caddy
+       -> site yuance-test...
+       -> reverse_proxy 127.0.0.1:33033
   -> user opens /web
        -> first admin initialization
 ```
@@ -207,7 +207,7 @@ local / CI build
 
 **Approach:**
 - Compose 顶层名称使用 `yuance-test-backend`。
-- 服务名使用 `api`，容器名建议使用 `yuance-test-api`，便于共享 gateway 通过容器名访问。
+- 服务名使用 `api`，容器名建议使用 `yuance-test-api`，便于日志、排障和手工运维识别。
 - 镜像变量使用 `YUANCE_API_IMAGE`，默认 `yuance-test-api:latest`。
 - 环境变量全部使用 `YUANCE_*`，敏感值通过 `.env` 或部署平台注入。
 - 持久化挂载 `./data:/data`，默认数据库 URL 使用容器内绝对路径。
@@ -231,12 +231,12 @@ local / CI build
 
 **Verification:**
 - 模板不包含真实密钥。
-- Compose 可在测试服务器用外部网络启动。
+- Compose 可在测试服务器单目录启动，`data/`、`backups/` 与 `compose.yaml` 同级映射到宿主机。
 - 发布脚本符合“先备份、再迁移、再 seed、再启动/健康检查”的顺序。
 
-- [ ] **Unit 3: 共享网关接入模板**
+- [ ] **Unit 3: Caddy 网关接入模板**
 
-**Goal:** 为同服务器测试环境提供元策域名的 Nginx 反代片段，避免单独 gateway 与 qfy-sc gateway 端口冲突。
+**Goal:** 为同服务器测试环境提供元策域名的 Caddy 站点片段，避免单独 gateway 与 qfy-sc Caddy gateway 端口冲突。
 
 **Requirements:** R1, R3, R8, R9
 
@@ -244,18 +244,18 @@ local / CI build
 
 **Files:**
 - Create: `deploy/easy-deploy/testing/gateway/README.md`
-- Create: `deploy/easy-deploy/testing/gateway/nginx.conf.snippet.example`
+- Create: `deploy/easy-deploy/testing/gateway/Caddyfile.yuance-test.example`
 
 **Approach:**
 - 不默认提供绑定 80/443 的独立 gateway Compose。
-- 提供可合并进 qfy-sc 测试 gateway 或共享测试 gateway 的 server block。
-- 默认 server name 使用占位域名，实施前必须替换为实际域名。
-- upstream 使用 Docker 网络内的 `yuance-test-api:33033`。
-- 代理头保持 qfy-sc 模板一致：`Host`、`X-Real-IP`、`X-Forwarded-For`、`X-Forwarded-Proto`。
+- 提供可合并进 qfy-sc 测试 Caddyfile 或共享测试 Caddy 的 site block。
+- 默认站点域名使用占位域名，实施前必须替换为实际域名。
+- 反代目标优先使用宿主机本地端口 `127.0.0.1:33033`，与 qfy-sc 测试 Caddyfile 的 `reverse_proxy 127.0.0.1:<port>` 口径一致。
+- Caddy 默认会转发必要代理头，模板只保留元策需要的压缩和反代配置。
 - 所有路径都反代到 API，因为 `/web`、`/api`、`/static` 和 `/favicon.ico` 都由同一服务处理。
 
 **Patterns to follow:**
-- qfy-sc repo: `deploy/easy-deploy/testing/gateway/nginx.conf.example`
+- qfy-sc repo: `deploy/easy-deploy/testing/gateway/Caddyfile.qfy-sc-test.example`
 
 **Test scenarios:**
 - Happy path: 访问域名根路径应跳转或返回 `/web` 页面。
@@ -265,8 +265,8 @@ local / CI build
 - Integration: 登录、CSRF、HTMX 请求在反代后保持 cookie 和 header 行为正常。
 
 **Verification:**
-- 元策网关配置不会绑定已被 qfy-sc gateway 使用的 80/443。
-- 共享 gateway 能通过 Docker 网络解析并访问 `yuance-test-api`。
+- 元策网关配置不会绑定已被 qfy-sc Caddy gateway 使用的 80/443。
+- 共享 Caddy 能通过宿主机本地端口访问 `yuance-api`。
 
 - [ ] **Unit 4: 部署运行手册与操作边界**
 
@@ -367,8 +367,8 @@ local / CI build
 
 ## Risks & Dependencies
 
-- 风险：共享测试服务器已有 gateway 占用 80/443。
-  - 缓解：只提供 server block snippet，要求合并到共享 gateway，不默认起第二个 80/443 gateway。
+- 风险：共享测试服务器已有 Caddy gateway 占用 80/443。
+  - 缓解：只提供 Caddy site snippet，要求合并到共享 Caddyfile，不默认起第二个 80/443 gateway。
 - 风险：SQLite 数据目录未挂载或被误删。
   - 缓解：Compose 必须挂载 `./data:/data`，runbook 和备份脚本必须覆盖数据库、WAL、SHM。
 - 风险：`YUANCE_SECURITY_MASTER_KEY` 变更导致 OSS 密钥无法解密。
@@ -405,6 +405,6 @@ local / CI build
 - qfy-sc reference: `deploy/easy-deploy/testing/README.md`
 - qfy-sc reference: `deploy/easy-deploy/testing/backend/compose.yaml.example`
 - qfy-sc reference: `deploy/easy-deploy/testing/backend/app.yaml.example`
-- qfy-sc reference: `deploy/easy-deploy/testing/gateway/nginx.conf.example`
+- qfy-sc reference: `deploy/easy-deploy/testing/gateway/Caddyfile.qfy-sc-test.example`
 - qfy-sc reference: `docs/runbooks/deployment-flow.md`
 - qfy-sc reference: `docs/standards/docker-compose-naming.md`
