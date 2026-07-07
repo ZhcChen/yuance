@@ -4,19 +4,51 @@
 
 {% block content %}
 <section class="auth-panel auth-panel-wide">
-  <div class="auth-brand">
-    <img class="brand-mark" src="/static/brand/yuance-logo.svg" alt="" width="32" height="32">
-    <div>
-      <strong>初始化元策</strong>
-      <span>首个系统管理员由部署者填写，生产环境不内置默认密码。</span>
+  <div class="auth-hero" aria-label="初始化说明">
+    <div class="auth-brand">
+      <img class="brand-mark" src="/static/brand/yuance-logo.svg" alt="" width="32" height="32">
+      <div>
+        <strong>初始化元策</strong>
+        <span>正式环境首次启动</span>
+      </div>
+    </div>
+    <div class="auth-visual auth-visual-setup" aria-hidden="true">
+      <div class="setup-console">
+        <div class="setup-core">
+          <i></i>
+          <strong>Owner</strong>
+          <span>首个管理员</span>
+        </div>
+        <div class="setup-node setup-node-db">
+          <b></b>
+          <span>SQLite</span>
+        </div>
+        <div class="setup-node setup-node-oss">
+          <b></b>
+          <span>OSS</span>
+        </div>
+        <div class="setup-node setup-node-rbac">
+          <b></b>
+          <span>RBAC</span>
+        </div>
+        <div class="setup-rail setup-rail-db"></div>
+        <div class="setup-rail setup-rail-oss"></div>
+        <div class="setup-rail setup-rail-rbac"></div>
+      </div>
+      <div class="setup-steps">
+        <span class="active"><i></i>迁移</span>
+        <span><i></i>账号</span>
+        <span><i></i>启用</span>
+      </div>
     </div>
   </div>
 
   <form class="auth-form" method="post" action="/web/bootstrap/init" hx-post="/web/bootstrap/init" hx-target="#bootstrap-result" hx-swap="innerHTML">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
     <div class="form-head">
+      <span class="form-eyebrow">System owner</span>
       <h1>创建系统管理员</h1>
-      <p>初始化成功后会关闭公开初始化入口，并自动进入 `/web`。</p>
+      <p>请使用一个长期可控的管理员账号完成初始化。</p>
     </div>
     <div class="field-grid">
       <label>
