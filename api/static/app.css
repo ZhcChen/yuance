@@ -2949,6 +2949,7 @@ code {
   border-color: #c7d3e1;
   border-radius: 14px;
   background: #ffffff;
+  letter-spacing: normal;
   box-shadow: 0 1px 0 rgb(16 28 45 / 4%);
   transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
 }
