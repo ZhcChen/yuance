@@ -1,21 +1,21 @@
 ---
-title: feat: 准备元策测试环境部署模板
+title: feat: 准备元策正式环境部署模板
 type: feat
-status: active
+status: completed
 date: 2026-07-06
 ---
 
-# feat: 准备元策测试环境部署模板
+# feat: 准备元策正式环境部署模板
 
 ## Overview
 
-为元策准备测试服务器部署能力，整体参考 qfy-sc 测试环境的 easy-deploy 模板，但按元策当前边界做简化：只有 `api` 一个 Rust 单体服务，页面和静态资源已经编进二进制，SQLite 作为唯一持久化存储，不部署 Redis、PostgreSQL、NATS、Worker 或独立前端。
+为元策准备正式环境部署能力，整体参考 qfy-sc 测试环境的 easy-deploy 模板，但按元策当前边界做简化：只有 `api` 一个 Rust 单体服务，页面和静态资源已经编进二进制，SQLite 作为唯一持久化存储，不部署 Redis、PostgreSQL、NATS、Worker 或独立前端。
 
-目标是在同一台 qfy-sc 测试服务器上部署元策测试环境，复用已有的服务器运维模式、Docker Compose 口径和网关管理方式，同时避免和 qfy-sc 已有 gateway 的 80/443 端口冲突。
+目标是在同一台 qfy-sc 测试服务器上部署元策正式环境。这里的 `qfy-sc-test` 是服务器别名，不代表元策环境是 testing；元策部署环境变量使用 `YUANCE_ENV=production`，复用已有的服务器运维模式、Docker Compose 口径和 Caddy 网关管理方式，同时避免和 qfy-sc 已有 gateway 的 80/443 端口冲突。
 
 ## Problem Frame
 
-当前元策仓库已经具备本地运行、SQLite 迁移、RBAC core seed、首次管理员初始化、健康检查和对象存储运行时配置能力，但还缺少服务器部署模板。参考项目 qfy-sc 已经有 `deploy/easy-deploy/testing/`，其模式包括 Compose 模板、app.yaml、发布阶段脚本、健康检查、网关配置和敏感配置外置。
+当前元策仓库已经具备本地运行、SQLite 迁移、RBAC core seed、首次管理员初始化、健康检查和对象存储运行时配置能力，但还缺少正式服务器部署模板。参考项目 qfy-sc 已经有 `deploy/easy-deploy/testing/`，其模式包括 Compose 模板、app.yaml、发布阶段脚本、健康检查、网关配置和敏感配置外置。
 
 元策需要同步这种部署规范，但不能照搬 qfy-sc 的复杂基础设施：
 
@@ -26,15 +26,15 @@ date: 2026-07-06
 
 ## Requirements Trace
 
-- R1. 提供元策测试环境 easy-deploy 模板，风格与 qfy-sc 测试环境一致。
-- R2. 测试环境只部署 `api` 服务，不引入 Redis、PostgreSQL、NATS、Worker 或独立前端。
+- R1. 提供元策正式环境 easy-deploy 模板，风格与 qfy-sc 测试环境一致。
+- R2. 正式环境只部署 `api` 服务，不引入 Redis、PostgreSQL、NATS、Worker 或独立前端。
 - R3. API 容器监听内部 `0.0.0.0:33033`，宿主机默认只绑定 `127.0.0.1:33033`，外部访问走网关域名。
 - R4. SQLite 数据目录必须持久化，并在迁移前备份数据库文件、WAL 和 SHM。
 - R5. 发布流程必须显式执行 `migrate status`、`migrate up` 和 `seed core`，服务启动不自动迁移。
 - R6. 测试服务器首次管理员初始化默认走 `/web` 页面由用户填写，不在发布流程执行 `seed local-admin`。
 - R7. 真实密钥、会话密钥、对象存储凭证和证书不得提交；模板只提交 `.example` 文件。
 - R8. 支持健康检查 `/api/healthz` 和 `/api/readyz`，并在部署后提供最小验证步骤。
-- R9. 需要记录与 qfy-sc 同服务器部署时的网关、Docker 网络、日志采集和端口冲突处理方式。
+- R9. 需要记录与 qfy-sc 同服务器部署时的 Caddy 网关、Docker 网络、日志采集和端口冲突处理方式。
 - R10. 镜像必须在本地或 CI 预先构建并打包为 tar，测试服务器只允许加载镜像和运行 Compose，严禁在服务器编译源码或打包二进制。
 - R11. 当前本地构建机为 arm 架构、测试服务器为 x86，构建链路必须明确产出 `linux/amd64` 镜像。
 
@@ -97,14 +97,14 @@ date: 2026-07-06
 
 ## Key Technical Decisions
 
-- 使用 easy-deploy testing 目录结构：保持与 qfy-sc 一致，方便同一套部署平台识别模板、脚本和健康检查。
+- 使用 easy-deploy production 目录结构：对元策来说这是正式环境；文档中明确部署机器仍是 qfy-sc 测试服务器。
 - 后端只提供一个 Compose 服务 `api`：元策没有 API Consumer / Worker，拆分会制造无意义复杂度。
 - 镜像名默认使用 `yuance-api:latest`：对齐 qfy-sc 测试环境固定 latest 的口径，但容器和镜像名称不额外携带 `test` 字样，版本由制品上传或镜像仓库管理。
 - 本地 arm 构建机使用 Docker Buildx 产出 `linux/amd64` 镜像 tar：测试服务器是 x86，服务器侧只执行镜像加载和 Compose 启动，不参与构建。
 - API 容器内部监听 `0.0.0.0:33033`：容器内健康检查和网关反代都需要可访问监听地址。
 - 宿主机端口默认绑定 `127.0.0.1:33033`：避免测试服务器直接暴露 API 端口，公网入口交给网关。
 - SQLite 使用容器挂载目录 `/data`：数据库、WAL、SHM 和后续本地对象存储临时数据必须脱离容器生命周期。
-- 测试服务器默认 `YUANCE_ENV=testing`：表达测试环境语义，同时当前 `seed local-admin` guard 不允许 `testing`，可防止固定超管误入服务器发布流程。
+- 正式环境默认 `YUANCE_ENV=production`：与元策部署语义一致，同时当前 `seed local-admin` guard 不允许 `production`，可防止固定超管误入服务器发布流程。
 - 网关默认提供 Caddy site snippet 而不是独立绑定 80/443 的 Compose：同一台 qfy-sc 测试服务器上通常已有 qfy-sc Caddy gateway，占用 80/443，元策应合并到共享 Caddyfile 或由部署平台统一网关处理。
 - 日志采集只打 labels，不强制部署 Alloy：同服务器若已有 qfy-sc Alloy，需要在共享采集器 allowlist 中加入 `yuance` 后才会采集元策容器日志。
 
@@ -150,7 +150,7 @@ local / CI build
 
 ## Implementation Units
 
-- [ ] **Unit 1: API Docker image**
+- [x] **Unit 1: API Docker image**
 
 **Goal:** 为 `yuance-api` 提供可部署的 Linux 容器镜像构建模板。
 
@@ -189,7 +189,7 @@ local / CI build
 - 镜像 tar 可被 x86 测试服务器加载并运行。
 - 容器无需挂载源码目录即可提供 `/web`、`/api` 和静态资源。
 
-- [ ] **Unit 2: easy-deploy backend 模板**
+- [x] **Unit 2: easy-deploy backend 模板**
 
 **Goal:** 提供元策测试后端的 Compose、app.yaml、环境变量示例和发布阶段脚本。
 
@@ -198,17 +198,17 @@ local / CI build
 **Dependencies:** Unit 1
 
 **Files:**
-- Create: `deploy/easy-deploy/testing/README.md`
-- Create: `deploy/easy-deploy/testing/backend/README.md`
-- Create: `deploy/easy-deploy/testing/backend/app.yaml.example`
-- Create: `deploy/easy-deploy/testing/backend/compose.yaml.example`
-- Create: `deploy/easy-deploy/testing/backend/.env.example`
-- Create: `deploy/easy-deploy/testing/backend/scripts/00-backup-sqlite.sh`
-- Create: `deploy/easy-deploy/testing/backend/scripts/10-migrate-status.sh`
-- Create: `deploy/easy-deploy/testing/backend/scripts/20-migrate-up.sh`
-- Create: `deploy/easy-deploy/testing/backend/scripts/30-seed-core.sh`
-- Create: `deploy/easy-deploy/testing/backend/scripts/80-files-audit.sh`
-- Create: `deploy/easy-deploy/testing/backend/scripts/90-healthcheck.sh`
+- Create: `deploy/easy-deploy/production/README.md`
+- Create: `deploy/easy-deploy/production/backend/README.md`
+- Create: `deploy/easy-deploy/production/backend/app.yaml.example`
+- Create: `deploy/easy-deploy/production/backend/compose.yaml.example`
+- Create: `deploy/easy-deploy/production/backend/.env.example`
+- Create: `deploy/easy-deploy/production/backend/scripts/00-backup-sqlite.sh`
+- Create: `deploy/easy-deploy/production/backend/scripts/10-migrate-status.sh`
+- Create: `deploy/easy-deploy/production/backend/scripts/20-migrate-up.sh`
+- Create: `deploy/easy-deploy/production/backend/scripts/30-seed-core.sh`
+- Create: `deploy/easy-deploy/production/backend/scripts/80-files-audit.sh`
+- Create: `deploy/easy-deploy/production/backend/scripts/90-healthcheck.sh`
 - Modify: `README.md`
 - Test: `api/tests/cli_migrate_flow.rs`
 - Test: `api/tests/cli_seed_flow.rs`
@@ -221,7 +221,7 @@ local / CI build
 - Compose 模板只消费已经存在于服务器 Docker daemon 的镜像，不包含 build 配置。
 - 环境变量全部使用 `YUANCE_*`，敏感值通过 `.env` 或部署平台注入。
 - 持久化挂载 `./data:/data`，默认数据库 URL 使用容器内绝对路径。
-- `YUANCE_ENV` 默认 `testing`，发布流程只跑 `seed core`，不跑 `seed demo` 和 `seed local-admin`。
+- `YUANCE_ENV` 默认 `production`，发布流程只跑 `seed core`，不跑 `seed demo` 和 `seed local-admin`。
 - 发布脚本顺序明确区分：备份、迁移校验、迁移执行、基础 seed、文件对象盘点、健康检查。
 - 健康检查同时覆盖 `/api/healthz` 和 `/api/readyz`。
 
@@ -236,7 +236,7 @@ local / CI build
 - Happy path: 重复执行 `seed core` 不重复创建 RBAC 数据。
 - Edge case: SQLite 数据库存在 `-wal` 和 `-shm` 文件时，备份脚本同时保存三类文件。
 - Error path: `migrate status` 发现 checksum 漂移或未知迁移时发布脚本失败并阻止继续。
-- Error path: `YUANCE_ENV=testing` 执行 `seed local-admin` 应失败，不得创建固定账号。
+- Error path: `YUANCE_ENV=production` 执行 `seed local-admin` 应失败，不得创建固定账号。
 - Error path: Compose 模板不得包含 `build:`；如果服务器没有加载 `yuance-api:latest`，启动应失败而不是在服务器构建。
 - Integration: 发布完成后用户访问 `/web` 能进入首次管理员初始化页面。
 
@@ -245,17 +245,17 @@ local / CI build
 - Compose 可在测试服务器单目录启动，`data/`、`backups/` 与 `compose.yaml` 同级映射到宿主机。
 - 发布脚本符合“先备份、再迁移、再 seed、再启动/健康检查”的顺序。
 
-- [ ] **Unit 3: Caddy 网关接入模板**
+- [x] **Unit 3: Caddy 网关接入模板**
 
-**Goal:** 为同服务器测试环境提供元策域名的 Caddy 站点片段，避免单独 gateway 与 qfy-sc Caddy gateway 端口冲突。
+**Goal:** 为同服务器正式环境提供元策域名的 Caddy 站点片段，避免单独 gateway 与 qfy-sc Caddy gateway 端口冲突。
 
 **Requirements:** R1, R3, R8, R9
 
 **Dependencies:** Unit 2
 
 **Files:**
-- Create: `deploy/easy-deploy/testing/gateway/README.md`
-- Create: `deploy/easy-deploy/testing/gateway/Caddyfile.yuance-test.example`
+- Create: `deploy/easy-deploy/production/gateway/README.md`
+- Create: `deploy/easy-deploy/production/gateway/Caddyfile.yuance.example`
 
 **Approach:**
 - 不默认提供绑定 80/443 的独立 gateway Compose。
@@ -279,7 +279,7 @@ local / CI build
 - 元策网关配置不会绑定已被 qfy-sc Caddy gateway 使用的 80/443。
 - 共享 Caddy 能通过宿主机本地端口访问 `yuance-api`。
 
-- [ ] **Unit 4: 部署运行手册与操作边界**
+- [x] **Unit 4: 部署运行手册与操作边界**
 
 **Goal:** 写清楚测试服务器首次部署、更新发布、回滚、备份、管理员初始化和对象存储初始化流程。
 
@@ -288,15 +288,15 @@ local / CI build
 **Dependencies:** Unit 1, Unit 2, Unit 3
 
 **Files:**
-- Create: `docs/runbooks/testing-deployment.md`
+- Create: `docs/runbooks/production-deployment.md`
 - Modify: `docs/runbooks/api-migrations.md`
 - Modify: `docs/runbooks/file-maintenance.md`
 - Modify: `docs/runbooks/aliyun-oss-manual-validation.md`
 - Modify: `README.md`
 
 **Approach:**
-- 明确测试服务器推荐环境变量：
-  - `YUANCE_ENV=testing`
+- 明确正式环境推荐环境变量：
+  - `YUANCE_ENV=production`
   - `YUANCE_HTTP_ADDR=0.0.0.0:33033`
   - `YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3`
   - `YUANCE_DATA_DIR=/data`
@@ -336,10 +336,10 @@ local / CI build
 - Integration: 文档覆盖从网关域名访问 `/web` 到首次管理员初始化，再到 OSS 配置初始化的完整链路。
 
 **Verification:**
-- 运维人员不需要阅读源码即可按 runbook 完成测试环境部署。
+- 运维人员不需要阅读源码即可按 runbook 完成正式环境部署。
 - 禁止事项与 `docs/runbooks/api-migrations.md` 不冲突。
 
-- [ ] **Unit 5: 部署模板校验与质量门禁**
+- [x] **Unit 5: 部署模板校验与质量门禁**
 
 **Goal:** 增加轻量校验，避免部署模板和当前 API 端口、健康检查、环境变量漂移。
 
@@ -391,8 +391,8 @@ local / CI build
   - 缓解：Compose 必须挂载 `./data:/data`，runbook 和备份脚本必须覆盖数据库、WAL、SHM。
 - 风险：`YUANCE_SECURITY_MASTER_KEY` 变更导致 OSS 密钥无法解密。
   - 缓解：部署文档把该变量列为稳定强随机值，禁止发布时轮换；如需轮换另行设计重加密流程。
-- 风险：测试服务器误执行 `seed local-admin`。
-  - 缓解：默认 `YUANCE_ENV=testing`，当前 guard 不允许该命令；发布脚本不包含 local-admin。
+- 风险：正式环境误执行 `seed local-admin`。
+  - 缓解：默认 `YUANCE_ENV=production`，当前 guard 不允许该命令；发布脚本不包含 local-admin。
 - 风险：共享 Alloy 默认不采集 `yuance` 日志。
   - 缓解：Compose 加日志 label；runbook 说明如需 Loki 日志，必须在共享 Alloy allowlist 中显式加入 `yuance`。
 - 风险：容器内 root 用户写入数据目录带来权限管理粗糙。
@@ -403,12 +403,12 @@ local / CI build
 ## Documentation / Operational Notes
 
 - 建议默认测试域名占位：`yuance-test.quanxinfu.com`。
-- 建议默认服务器目录：`/srv/yuance/easy-deploy/testing/backend`。
+- 建议默认服务器目录：`/srv/yuance/easy-deploy/production/backend`。
 - 建议默认 easy-deploy 应用名：`yuance`。
 - 建议默认容器名：`yuance-api`。
 - 建议默认镜像：`yuance-api:latest`。
 - 建议默认镜像制品：`yuance-api-linux-amd64.tar`。
-- 建议默认数据目录：`deploy/easy-deploy/testing/backend/data` 挂载到容器 `/data`。
+- 建议默认数据目录：`deploy/easy-deploy/production/backend/data` 挂载到容器 `/data`。
 - 建议测试服务器不运行 `seed demo`；如果后续需要演示数据，先决定是否把演示数据 seed 与固定超管 seed 解耦。
 - 对象存储配置仍通过 `/web/system/storage` 保存，发布环境变量不保存 OSS AccessKey。
 

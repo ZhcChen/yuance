@@ -1,0 +1,45 @@
+name: yuance
+
+x-yuance-env: &yuance_env
+  YUANCE_ENV: ${YUANCE_ENV:-production}
+  YUANCE_HTTP_ADDR: ${YUANCE_HTTP_ADDR:-0.0.0.0:33033}
+  YUANCE_DATABASE_URL: ${YUANCE_DATABASE_URL:-sqlite:///data/yuance.sqlite3}
+  YUANCE_DATA_DIR: ${YUANCE_DATA_DIR:-/data}
+  YUANCE_SESSION_SECRET: ${YUANCE_SESSION_SECRET:?set YUANCE_SESSION_SECRET}
+  YUANCE_SESSION_TTL: ${YUANCE_SESSION_TTL:-12h}
+  YUANCE_CACHE_SESSION_TTL: ${YUANCE_CACHE_SESSION_TTL:-5m}
+  YUANCE_LOG_LEVEL: ${YUANCE_LOG_LEVEL:-info}
+  YUANCE_SECURITY_MASTER_KEY: ${YUANCE_SECURITY_MASTER_KEY:?set YUANCE_SECURITY_MASTER_KEY}
+
+services:
+  api:
+    container_name: yuance-api
+    image: ${YUANCE_API_IMAGE:-yuance-api:latest}
+    restart: unless-stopped
+    environment:
+      <<: *yuance_env
+    ports:
+      - "${YUANCE_API_BIND_IP:-127.0.0.1}:${YUANCE_API_PORT:-33033}:33033"
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    labels:
+      qfy_logs_enabled: "true"
+      qfy_project: "yuance"
+      qfy_env: "production"
+      qfy_service: "api"
+    command: ["./yuance-api", "serve"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:33033/api/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-2}"
+
+networks:
+  default:
+    name: ${YUANCE_DOCKER_NETWORK:-yuance}

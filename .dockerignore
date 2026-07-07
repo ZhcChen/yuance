@@ -1,0 +1,12 @@
+.git
+.gitignore
+target
+dist
+api/data
+data
+backups
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+*.tar
+*.log

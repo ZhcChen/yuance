@@ -19,6 +19,7 @@ date: 2026-06-30
   - `work_item.manage`
 - 阿里云 OSS Bucket 已创建，AccessKey 具备该 Bucket 的对象读写权限。
 - 使用专门测试目录或空测试 Bucket，避免混入正式业务文件。
+- Docker Compose 正式环境中已保持 `YUANCE_SECURITY_MASTER_KEY` 稳定；该值来自服务器 `.env`，不要重新生成覆盖。
 
 ## 配置验证
 
@@ -118,6 +119,13 @@ date: 2026-06-30
 
 ```bash
 cargo run -p yuance-api -- files cleanup-pending --older-than-hours 24 --dry-run
+```
+
+正式环境 Compose 部署使用：
+
+```bash
+cd /srv/yuance/easy-deploy/production/backend
+docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
 当前附件删除是数据库软删除，不会主动删除 OSS 物理对象；是否删除真实对象由运维按保留策略处理。

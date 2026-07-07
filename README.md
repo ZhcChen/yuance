@@ -27,3 +27,26 @@ http://127.0.0.1:33033/web
 ```
 
 开发 / 测试环境后续可通过 `make api-seed-local-admin` 创建固定超级管理员。生产环境不得执行该 seed。
+
+## 正式环境部署
+
+当前正式环境复用参考项目 qfy-sc 的测试服务器别名 `qfy-sc-test`，但元策部署口径是 `production`。服务器只运行 Docker Compose，不允许源码编译或镜像构建。
+
+本地构建 x86 镜像 tar：
+
+```bash
+make api-image-amd64
+```
+
+部署模板和完整服务器命令见：
+
+```text
+deploy/easy-deploy/production/
+docs/runbooks/production-deployment.md
+```
+
+部署模板校验：
+
+```bash
+make deploy-validate
+```

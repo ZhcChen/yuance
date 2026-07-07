@@ -36,6 +36,14 @@ make api-files-audit-objects
 make api-files-audit-objects INCLUDE_DELETED=1
 ```
 
+正式环境 Compose 部署可执行：
+
+```bash
+cd /srv/yuance/easy-deploy/production/backend
+./scripts/80-files-audit.sh
+YUANCE_INCLUDE_DELETED_FILES=1 ./scripts/80-files-audit.sh
+```
+
 输出示例：
 
 ```text
@@ -75,6 +83,14 @@ cargo run -p yuance-api -- files cleanup-pending --older-than-hours 24
 make api-files-cleanup-pending HOURS=24
 ```
 
+正式环境 Compose 部署可执行：
+
+```bash
+cd /srv/yuance/easy-deploy/production/backend
+docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
+docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api files cleanup-pending --older-than-hours 24
+```
+
 清理行为：
 
 - 只处理 `status = 'pending'` 的 `file_objects`。
@@ -105,3 +121,4 @@ make api-files-cleanup-pending HOURS=24
 - 单体部署可以通过系统 crontab 定期执行，例如每天凌晨清理 24 小时前的 pending 文件。
 - 如果后续引入实际对象物理删除，应先补充对象存储删除审计和失败重试策略。
 - 真实阿里云 OSS 接入后的手工验证见 `docs/runbooks/aliyun-oss-manual-validation.md`。
+- 正式环境完整部署和维护命令见 `docs/runbooks/production-deployment.md`。

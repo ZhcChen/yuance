@@ -1,4 +1,4 @@
-.PHONY: help api-run api-test api-build api-fmt api-clippy api-browser-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects
+.PHONY: help api-run api-test api-build api-fmt api-clippy api-browser-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 deploy-validate
 
 help:
 	@echo "元策开发命令"
@@ -11,6 +11,8 @@ help:
 	@echo "  make api-seed-local-admin"
 	@echo "  make api-files-cleanup-pending"
 	@echo "  make api-files-audit-objects"
+	@echo "  make api-image-amd64"
+	@echo "  make deploy-validate"
 
 api-run:
 	cargo run -p yuance-api -- serve
@@ -53,3 +55,9 @@ api-files-cleanup-pending:
 
 api-files-audit-objects:
 	cargo run -p yuance-api -- files audit-objects $(if $(INCLUDE_DELETED),--include-deleted,)
+
+api-image-amd64:
+	./scripts/build-api-image-amd64.sh
+
+deploy-validate:
+	./scripts/validate-deploy-templates.sh

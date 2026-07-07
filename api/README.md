@@ -31,6 +31,22 @@ password: Yuance@2026Dev!
 
 生产环境首次管理员必须通过 `/web` 自助初始化。
 
+## 容器镜像
+
+正式环境镜像必须在本地或 CI 构建，服务器只执行 `docker load` 和 `docker compose up`。
+
+```bash
+./scripts/build-api-image-amd64.sh
+```
+
+默认产物：
+
+```text
+dist/yuance-api-linux-amd64.tar
+```
+
+镜像运行时不需要挂载源码目录；模板、静态资源和 SQL migration 都已编译进二进制。
+
 ## API 契约
 
 当前 `/api/v1` JSON 接口的认证、CSRF、分页、当前项目上下文、附件直传和系统管理约定见：
@@ -49,4 +65,10 @@ docs/runbooks/file-maintenance.md
 
 ```text
 docs/runbooks/aliyun-oss-manual-validation.md
+```
+
+正式环境部署命令见：
+
+```text
+docs/runbooks/production-deployment.md
 ```

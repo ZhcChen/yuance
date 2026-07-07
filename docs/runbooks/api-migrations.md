@@ -71,6 +71,16 @@ cargo run -p yuance-api -- seed core
 
 `migrate status` 输出 `migration state: ok` 表示当前 `_sqlx_migrations` 与二进制内置迁移一致；若失败，先处理错误中指出的迁移版本，不要继续执行 `up`。
 
+Docker Compose 正式环境使用以下等价命令：
+
+```bash
+cd /srv/yuance/easy-deploy/production/backend
+./scripts/00-backup-sqlite.sh
+./scripts/10-migrate-status.sh
+./scripts/20-migrate-up.sh
+./scripts/30-seed-core.sh
+```
+
 5. 启动服务并检查：
 
 ```bash
@@ -101,4 +111,10 @@ SQLite 迁移当前只支持向前执行。需要回滚时：
 
 ```text
 docs/runbooks/file-maintenance.md
+```
+
+完整服务器部署流程见：
+
+```text
+docs/runbooks/production-deployment.md
 ```
