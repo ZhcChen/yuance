@@ -96,7 +96,7 @@ date: 2026-07-06
 
 - 使用 easy-deploy testing 目录结构：保持与 qfy-sc 一致，方便同一套部署平台识别模板、脚本和健康检查。
 - 后端只提供一个 Compose 服务 `api`：元策没有 API Consumer / Worker，拆分会制造无意义复杂度。
-- 镜像名默认使用 `yuance-test-api:latest`：对齐 qfy-sc 测试环境固定 latest 的口径，版本由制品上传或镜像仓库管理。
+- 镜像名默认使用 `yuance-api:latest`：对齐 qfy-sc 测试环境固定 latest 的口径，但容器和镜像名称不额外携带 `test` 字样，版本由制品上传或镜像仓库管理。
 - API 容器内部监听 `0.0.0.0:33033`：容器内健康检查和网关反代都需要可访问监听地址。
 - 宿主机端口默认绑定 `127.0.0.1:33033`：避免测试服务器直接暴露 API 端口，公网入口交给网关。
 - SQLite 使用容器挂载目录 `/data`：数据库、WAL、SHM 和后续本地对象存储临时数据必须脱离容器生命周期。
@@ -126,7 +126,7 @@ date: 2026-07-06
 
 ```text
 local / CI build
-  -> yuance-test-api:latest
+  -> yuance-api:latest
   -> upload / docker load / registry pull on testing server
   -> easy-deploy backend compose
        -> api container
@@ -206,9 +206,9 @@ local / CI build
 - Test: `api/tests/routing_smoke.rs`
 
 **Approach:**
-- Compose 顶层名称使用 `yuance-test-backend`。
-- 服务名使用 `api`，容器名建议使用 `yuance-test-api`，便于日志、排障和手工运维识别。
-- 镜像变量使用 `YUANCE_API_IMAGE`，默认 `yuance-test-api:latest`。
+- easy-deploy 应用建议名和 Compose 顶层名称使用 `yuance`。
+- 服务名使用 `api`，容器名建议使用 `yuance-api`，便于日志、排障和手工运维识别。
+- 镜像变量使用 `YUANCE_API_IMAGE`，默认 `yuance-api:latest`。
 - 环境变量全部使用 `YUANCE_*`，敏感值通过 `.env` 或部署平台注入。
 - 持久化挂载 `./data:/data`，默认数据库 URL 使用容器内绝对路径。
 - `YUANCE_ENV` 默认 `testing`，发布流程只跑 `seed core`，不跑 `seed demo` 和 `seed local-admin`。
@@ -386,7 +386,9 @@ local / CI build
 
 - 建议默认测试域名占位：`yuance-test.quanxinfu.com`。
 - 建议默认服务器目录：`/srv/yuance/easy-deploy/testing/backend`。
-- 建议默认镜像：`yuance-test-api:latest`。
+- 建议默认 easy-deploy 应用名：`yuance`。
+- 建议默认容器名：`yuance-api`。
+- 建议默认镜像：`yuance-api:latest`。
 - 建议默认数据目录：`deploy/easy-deploy/testing/backend/data` 挂载到容器 `/data`。
 - 建议测试服务器不运行 `seed demo`；如果后续需要演示数据，先决定是否把演示数据 seed 与固定超管 seed 解耦。
 - 对象存储配置仍通过 `/web/system/storage` 保存，发布环境变量不保存 OSS AccessKey。
