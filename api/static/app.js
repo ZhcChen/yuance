@@ -84,6 +84,59 @@
     input.value = new URLSearchParams(window.location.search).get("q") || "";
   }
 
+  var USERNAME_INPUT_SELECTOR = [
+    "input[name='username']",
+    "input[name='owner_username']",
+    "input[name='assignee_username']",
+  ].join(", ");
+
+  function compactUsernameValue(value) {
+    return (value || "").replace(/\s+/g, "");
+  }
+
+  function normalizeUsernameInput(input) {
+    if (!input || input.type === "hidden") {
+      return;
+    }
+    var original = input.value || "";
+    var compacted = compactUsernameValue(original);
+    if (original === compacted) {
+      return;
+    }
+
+    var start = input.selectionStart;
+    var end = input.selectionEnd;
+    input.value = compacted;
+
+    if (document.activeElement === input && typeof input.setSelectionRange === "function") {
+      try {
+        input.setSelectionRange(
+          compactUsernameValue(original.slice(0, start || 0)).length,
+          compactUsernameValue(original.slice(0, end || 0)).length
+        );
+      } catch (_error) {
+        // Some input types do not expose selection APIs.
+      }
+    }
+  }
+
+  function normalizeUsernameInputs(root) {
+    if (!root || typeof root.querySelectorAll !== "function") {
+      return;
+    }
+    root.querySelectorAll(USERNAME_INPUT_SELECTOR).forEach(normalizeUsernameInput);
+  }
+
+  function handleUsernameInput(event) {
+    if (!event.target || typeof event.target.closest !== "function") {
+      return;
+    }
+    var input = event.target.closest(USERNAME_INPUT_SELECTOR);
+    if (input) {
+      normalizeUsernameInput(input);
+    }
+  }
+
   function initProjectSwitcher(root) {
     (root || document).querySelectorAll("[data-project-switcher]").forEach(function (switcher) {
       var returnTo = switcher.querySelector("input[name='return_to']");
@@ -787,6 +840,9 @@
   });
 
   document.body.addEventListener("htmx:configRequest", function (event) {
+    if (event.detail && event.detail.elt && typeof event.detail.elt.closest === "function") {
+      normalizeUsernameInputs(event.detail.elt.closest("form"));
+    }
     var token = csrfToken();
     if (token) {
       event.detail.headers["x-yuance-csrf-token"] = token;
@@ -878,6 +934,10 @@
   });
 
   document.addEventListener("submit", function (event) {
+    normalizeUsernameInputs(event.target);
+  }, true);
+
+  document.addEventListener("submit", function (event) {
     var form = event.target.closest("[data-direct-upload]");
     if (form) {
       event.preventDefault();
@@ -905,6 +965,10 @@
 
   ["input", "change", "search", "keyup"].forEach(function (eventName) {
     document.addEventListener(eventName, handleProjectSearchEvent);
+  });
+
+  ["input", "change"].forEach(function (eventName) {
+    document.addEventListener(eventName, handleUsernameInput, true);
   });
 
   initTopbarSearch(document);

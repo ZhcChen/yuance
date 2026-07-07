@@ -189,6 +189,9 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("data-theme"));
     assert!(body.contains("modal"));
     assert!(body.contains("project-switcher"));
+    assert!(body.contains(".auth-form input"));
+    assert!(body.contains("letter-spacing: 0"));
+    assert!(body.contains("word-spacing: normal"));
 }
 
 #[tokio::test]
@@ -237,6 +240,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("data-tabs-sync-url"));
     assert!(body.contains("async function submitDirectUpload"));
     assert!(body.contains("data-direct-upload"));
+    assert!(body.contains("USERNAME_INPUT_SELECTOR"));
+    assert!(body.contains("function normalizeUsernameInput"));
+    assert!(body.contains("compactUsernameValue(original)"));
 }
 
 #[tokio::test]
