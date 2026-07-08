@@ -817,7 +817,6 @@ pub struct StorageRollbackForm {
 pub struct CreateProjectForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
-    project_key: String,
     name: String,
     description: String,
     status: String,
@@ -1396,7 +1395,6 @@ pub async fn projects_create(
             pool,
             context.user_id,
             projects::CreateProjectInput {
-                project_key: form.project_key,
                 name: form.name,
                 description: form.description,
                 status: form.status,

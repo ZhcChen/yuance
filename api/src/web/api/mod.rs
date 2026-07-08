@@ -323,7 +323,6 @@ pub struct WorkItemQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProjectRequest {
-    project_key: String,
     name: String,
     #[serde(default)]
     description: String,
@@ -780,7 +779,6 @@ pub async fn create_project(
         pool,
         user.id,
         projects::CreateProjectInput {
-            project_key: payload.project_key,
             name: payload.name,
             description: payload.description,
             status: payload.status,

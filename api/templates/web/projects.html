@@ -110,20 +110,21 @@
     <div class="modal-head">
       <div>
         <h2 id="project-create-modal-title">新建项目</h2>
-        <p>项目编号会作为工作项编号前缀，例如 YCE-TASK-1。</p>
+        <p>项目编号由系统自动生成，例如 P260708483921，会作为工作项编号前缀。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
     <form class="modal-body modal-form" method="post" action="/web/projects">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="generated-code-note">
+        <span>自动编号</span>
+        <strong>P + 日期 + 6 位随机数字</strong>
+        <em>创建后不可修改，用于项目链接和需求、任务、Bug 编号。</em>
+      </div>
       <div class="field-grid">
         <label>
-          项目编号
-          <input name="project_key" placeholder="YCE" required autofocus>
-        </label>
-        <label>
           项目名称
-          <input name="name" placeholder="元策 MVP" required>
+          <input name="name" placeholder="元策 MVP" required autofocus>
         </label>
         <label>
           状态

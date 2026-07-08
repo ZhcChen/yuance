@@ -2024,6 +2024,34 @@ code {
   gap: 14px;
 }
 
+.generated-code-note {
+  display: grid;
+  gap: 5px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.generated-code-note span {
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.generated-code-note strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.generated-code-note em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  line-height: 18px;
+}
+
 .upload-picker {
   display: grid;
   gap: 8px;

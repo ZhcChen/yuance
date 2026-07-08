@@ -169,9 +169,7 @@ async fn permission_denials_write_audit_logs() {
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .header("x-real-ip", "198.51.100.9")
                 .header(header::USER_AGENT, "YuanceApiAuditTest/1.0")
-                .body(Body::from(
-                    r#"{"project_key":"DENY","name":"权限拒绝测试"}"#,
-                ))
+                .body(Body::from(r#"{"name":"权限拒绝测试"}"#))
                 .expect("request should build"),
         )
         .await

@@ -434,7 +434,7 @@ async fn api_cookie_mutations_require_csrf_token() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::from(
-                    r#"{"project_key":"SEC","name":"安全边界","description":"缺少 CSRF 应拒绝"}"#,
+                    r#"{"name":"安全边界","description":"缺少 CSRF 应拒绝"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -451,7 +451,7 @@ async fn api_cookie_mutations_require_csrf_token() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"project_key":"SEC","name":"安全边界","description":"带 CSRF 应允许"}"#,
+                    r#"{"name":"安全边界","description":"带 CSRF 应允许"}"#,
                 ))
                 .expect("request should build"),
         )

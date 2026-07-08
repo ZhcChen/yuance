@@ -413,7 +413,6 @@ async fn web_projects_paginates_and_preserves_status_filter() {
         &pool,
         initialized.user_id,
         projects::CreateProjectInput {
-            project_key: "ACT".to_string(),
             name: "第二个进行中项目".to_string(),
             description: "用于验证项目分页保留状态筛选".to_string(),
             status: "active".to_string(),
@@ -1710,9 +1709,7 @@ async fn api_v1_requires_authentication() {
                 .method("POST")
                 .uri("/api/v1/projects")
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"project_key":"NOAUTH","name":"未登录写入"}"#,
-                ))
+                .body(Body::from(r#"{"name":"未登录写入"}"#))
                 .expect("request should build"),
         )
         .await
@@ -1735,7 +1732,7 @@ async fn web_admin_can_create_project_and_redirect_to_detail() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=NEW&name=%E6%96%B0%E9%A1%B9%E7%9B%AE&description=%E7%94%A8%E4%BA%8E%E9%AA%8C%E8%AF%81%E5%86%99%E5%85%A5%E9%97%AD%E7%8E%AF&status=active&start_date=2026-07-01&due_date=2026-08-31",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E6%96%B0%E9%A1%B9%E7%9B%AE&description=%E7%94%A8%E4%BA%8E%E9%AA%8C%E8%AF%81%E5%86%99%E5%85%A5%E9%97%AD%E7%8E%AF&status=active&start_date=2026-07-01&due_date=2026-08-31",
                 ))
                 .expect("request should build"),
         )
@@ -1743,12 +1740,18 @@ async fn web_admin_can_create_project_and_redirect_to_detail() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/NEW"
-    );
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .unwrap()
+        .to_str()
+        .expect("location should be ascii");
+    let project_key = location
+        .strip_prefix("/web/projects/")
+        .expect("redirect should point to generated project detail");
+    assert_generated_project_key(project_key);
 
-    let project = projects::get_project_detail(&pool, "NEW")
+    let project = projects::get_project_detail(&pool, project_key)
         .await
         .expect("project should load")
         .expect("project should exist");
@@ -1776,7 +1779,7 @@ async fn web_project_create_rejects_due_date_before_start_date() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=BADDATE&name=%E6%97%A5%E6%9C%9F%E9%94%99%E8%AF%AF&description=&status=active&start_date=2026-09-30&due_date=2026-07-01",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E6%97%A5%E6%9C%9F%E9%94%99%E8%AF%AF&description=&status=active&start_date=2026-09-30&due_date=2026-07-01",
                 ))
                 .expect("request should build"),
         )
@@ -1784,11 +1787,11 @@ async fn web_project_create_rejects_due_date_before_start_date() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let exists = projects::get_project_detail(&pool, "BADDATE")
+    let project_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM projects")
+        .fetch_one(&pool)
         .await
-        .expect("project lookup should succeed")
-        .is_some();
-    assert!(!exists);
+        .expect("project count should load");
+    assert_eq!(project_count, 0);
 }
 
 #[tokio::test]
@@ -6140,6 +6143,15 @@ fn extract_json_string(body: &str, key: &str) -> String {
     let rest = &body[start..];
     let end = rest.find('"').expect("value should end");
     rest[..end].to_string()
+}
+
+fn assert_generated_project_key(project_key: &str) {
+    assert_eq!(project_key.len(), 13);
+    assert!(project_key.starts_with('P'));
+    assert!(
+        project_key[1..].chars().all(|value| value.is_ascii_digit()),
+        "generated project key should match PYYMMDDXXXXXX: {project_key}"
+    );
 }
 
 fn with_csrf_cookie(session_cookie: &str) -> String {

@@ -1,6 +1,10 @@
+use chrono::{FixedOffset, Utc};
+use rand_core::{OsRng, RngCore};
 use sqlx::{Row, SqlitePool};
 
 use crate::platform::error::{AppError, AppResult};
+
+const PROJECT_KEY_GENERATE_MAX_ATTEMPTS: usize = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoSeedResult {
@@ -127,7 +131,6 @@ pub struct SearchHit {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateProjectInput {
-    pub project_key: String,
     pub name: String,
     pub description: String,
     pub status: String,
@@ -546,7 +549,6 @@ pub async fn create_project(
     actor_user_id: i64,
     input: CreateProjectInput,
 ) -> AppResult<ProjectDetail> {
-    let project_key = validate_project_key(&input.project_key)?;
     let name = validate_name(&input.name, "项目名称", 120)?;
     let description = validate_optional_text(&input.description, "项目描述", 2000)?;
     let status = validate_project_status(&input.status)?;
@@ -554,75 +556,88 @@ pub async fn create_project(
     let due_date = validate_optional_date(&input.due_date, "项目截止日期")?;
     validate_date_range(&start_date, &due_date, "项目截止日期不能早于开始日期")?;
 
-    let mut tx = pool.begin().await?;
-    let project_id = sqlx::query_scalar::<_, i64>(
-        r#"
-        INSERT INTO projects (
-            project_key,
-            name,
-            description,
-            status,
-            owner_user_id,
-            start_date,
-            due_date
+    for _ in 0..PROJECT_KEY_GENERATE_MAX_ATTEMPTS {
+        let project_key = generate_project_key();
+        let mut tx = pool.begin().await?;
+        let project_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO projects (
+                project_key,
+                name,
+                description,
+                status,
+                owner_user_id,
+                start_date,
+                due_date
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, NULLIF(?6, ''), NULLIF(?7, ''))
+            ON CONFLICT(project_key) DO NOTHING
+            RETURNING id
+            "#,
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, NULLIF(?6, ''), NULLIF(?7, ''))
-        RETURNING id
-        "#,
-    )
-    .bind(&project_key)
-    .bind(&name)
-    .bind(&description)
-    .bind(status)
-    .bind(actor_user_id)
-    .bind(&start_date)
-    .bind(&due_date)
-    .fetch_one(&mut *tx)
-    .await?;
+        .bind(&project_key)
+        .bind(&name)
+        .bind(&description)
+        .bind(status)
+        .bind(actor_user_id)
+        .bind(&start_date)
+        .bind(&due_date)
+        .fetch_optional(&mut *tx)
+        .await?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO project_members (
-            project_id,
-            user_id,
-            member_role
+        let Some(project_id) = project_id else {
+            tx.rollback().await?;
+            continue;
+        };
+
+        sqlx::query(
+            r#"
+            INSERT INTO project_members (
+                project_id,
+                user_id,
+                member_role
+            )
+            VALUES (?1, ?2, 'owner')
+            ON CONFLICT(project_id, user_id) DO UPDATE SET
+                member_role = 'owner',
+                updated_at = datetime('now')
+            "#,
         )
-        VALUES (?1, ?2, 'owner')
-        ON CONFLICT(project_id, user_id) DO UPDATE SET
-            member_role = 'owner',
-            updated_at = datetime('now')
-        "#,
-    )
-    .bind(project_id)
-    .bind(actor_user_id)
-    .execute(&mut *tx)
-    .await?;
+        .bind(project_id)
+        .bind(actor_user_id)
+        .execute(&mut *tx)
+        .await?;
 
-    sqlx::query(
-        r#"
-        INSERT INTO project_activities (
-            project_id,
-            actor_user_id,
-            action,
-            target_type,
-            target_id,
-            summary
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                action,
+                target_type,
+                target_id,
+                summary
+            )
+            VALUES (?1, ?2, 'project.created', 'project', ?3, ?4)
+            "#,
         )
-        VALUES (?1, ?2, 'project.created', 'project', ?3, ?4)
-        "#,
-    )
-    .bind(project_id)
-    .bind(actor_user_id)
-    .bind(&project_key)
-    .bind(format!("创建项目 {name}"))
-    .execute(&mut *tx)
-    .await?;
+        .bind(project_id)
+        .bind(actor_user_id)
+        .bind(&project_key)
+        .bind(format!("创建项目 {name}"))
+        .execute(&mut *tx)
+        .await?;
 
-    tx.commit().await?;
+        tx.commit().await?;
 
-    get_project_detail(pool, &project_key)
-        .await?
-        .ok_or_else(|| AppError::NotFound("项目创建后未找到".to_string()))
+        return get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目创建后未找到".to_string()));
+    }
+
+    Err(AppError::Conflict(
+        "项目编号生成冲突，请重新创建项目".to_string(),
+    ))
 }
 
 pub async fn update_project(
@@ -3066,6 +3081,14 @@ fn validate_project_key(project_key: &str) -> AppResult<String> {
         ));
     }
     Ok(project_key)
+}
+
+fn generate_project_key() -> String {
+    let china_offset = FixedOffset::east_opt(8 * 60 * 60).expect("valid fixed offset");
+    let date = Utc::now().with_timezone(&china_offset).format("%y%m%d");
+    let mut rng = OsRng;
+    let random_code = rng.next_u32() % 1_000_000;
+    format!("P{date}{random_code:06}")
 }
 
 fn validate_name(value: &str, field_name: &str, max_chars: usize) -> AppResult<String> {

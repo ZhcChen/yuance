@@ -134,7 +134,6 @@ per_page=20
 
 ```json
 {
-  "project_key": "YCE",
   "name": "元策",
   "description": "项目管理系统",
   "status": "active",
@@ -142,6 +141,8 @@ per_page=20
   "due_date": "2026-12-31"
 }
 ```
+
+项目编号由服务端自动生成，格式为 `PYYMMDDXXXXXX`，例如 `P260708483921`。创建后不可修改，并作为项目链接和工作项编号前缀。
 
 权限：
 
