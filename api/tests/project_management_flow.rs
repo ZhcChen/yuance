@@ -218,6 +218,9 @@ async fn web_dashboard_project_area_prefers_current_project() {
     assert!(body.contains(r#"data-project-switcher"#));
     assert!(body.contains(r#"name="project_key" value="YCE""#));
     assert!(body.contains(r#"class="project-switcher-option active""#));
+    assert!(body.contains(r#"<span class="project-switcher-current">元策 MVP</span>"#));
+    assert!(!body.contains(r#"<span class="project-switcher-current">YCE · 元策 MVP</span>"#));
+    assert!(!body.contains(r#"project-switcher-option-key"#));
     assert!(body.contains("元策 MVP"));
     assert!(!body.contains("<td><code>CRM</code></td>"));
     assert!(!body.contains("<td><code>OPS</code></td>"));

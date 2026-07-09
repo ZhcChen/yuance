@@ -475,10 +475,7 @@ textarea:focus-visible {
 
 .project-switcher-option {
   width: 100%;
-  display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
+  display: block;
   padding: 9px 10px;
   border: 0;
   border-radius: 10px;
@@ -494,13 +491,8 @@ textarea:focus-visible {
   color: var(--brand-strong);
 }
 
-.project-switcher-option-key {
-  font-size: 12px;
-  font-weight: 800;
-}
-
 .project-switcher-option-name {
-  min-width: 0;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

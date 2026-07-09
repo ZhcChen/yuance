@@ -167,7 +167,11 @@
     var query = (keyword || "").trim().toLocaleLowerCase("zh-CN");
     var visibleCount = 0;
     switcher.querySelectorAll("[data-project-option]").forEach(function (option) {
-      var haystack = (option.textContent || "").toLocaleLowerCase("zh-CN");
+      var haystack = [
+        option.getAttribute("data-project-key") || "",
+        option.getAttribute("data-project-name") || "",
+        option.textContent || "",
+      ].join(" ").toLocaleLowerCase("zh-CN");
       var visible = !query || haystack.indexOf(query) >= 0;
       option.hidden = !visible;
       if (visible) {

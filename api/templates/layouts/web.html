@@ -76,7 +76,7 @@
             {% when None %}
             <span class="project-switcher-current">请选择项目</span>
             {% when Some with (project) %}
-            <span class="project-switcher-current">{{ project.key }} · {{ project.name }}</span>
+            <span class="project-switcher-current">{{ project.name }}</span>
             {% endmatch %}
             <span class="account-caret" aria-hidden="true"></span>
           </button>
@@ -84,12 +84,11 @@
             <div class="project-switcher-search">
               <span aria-hidden="true">⌕</span>
               <label class="sr-only" for="topbar-project-search">搜索项目</label>
-              <input id="topbar-project-search" type="search" placeholder="搜索项目编号或名称" autocomplete="off" data-project-search-input>
+              <input id="topbar-project-search" type="search" placeholder="搜索项目名称" autocomplete="off" data-project-search-input>
             </div>
             <div class="project-switcher-options" aria-label="可选项目">
             {% for project in topbar_project_options %}
-              <button class="project-switcher-option {% match current_project %}{% when Some with (current) %}{% if current.key == project.key %}active{% endif %}{% when None %}{% endmatch %}" type="button" data-project-option data-project-key="{{ project.key }}">
-                <span class="project-switcher-option-key">{{ project.key }}</span>
+              <button class="project-switcher-option {% match current_project %}{% when Some with (current) %}{% if current.key == project.key %}active{% endif %}{% when None %}{% endmatch %}" type="button" data-project-option data-project-key="{{ project.key }}" data-project-name="{{ project.name }}">
                 <span class="project-switcher-option-name">{{ project.name }}</span>
               </button>
             {% endfor %}
