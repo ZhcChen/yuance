@@ -1988,6 +1988,46 @@ async fn web_project_member_without_work_item_manage_can_create_bug_with_assigne
 }
 
 #[tokio::test]
+async fn web_work_item_only_member_can_see_bug_create_button() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    rbac::create_role(&pool, "work_item_only", "仅工作项入口", "self")
+        .await
+        .expect("role should create");
+    rbac::replace_role_permissions(&pool, "work_item_only", &["work_item.view".to_string()])
+        .await
+        .expect("role permissions should replace");
+    let user = create_user_with_role(&pool, "bug_submitter", "Bug 提交人", "work_item_only").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "bug_submitter", "member")
+        .await
+        .expect("user should join YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/bugs")
+                .header(header::COOKIE, user.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("当前项目：YCE · 元策 MVP"));
+    assert!(body.contains(r#"data-modal-open="work-item-create-modal""#));
+    assert!(body.contains(r#"id="work-item-create-modal""#));
+    assert!(body.contains("新建 Bug"));
+    assert!(body.contains(r#"name="item_type" value="bug""#));
+    assert!(body.contains(r#"data-bug-report-form"#));
+}
+
+#[tokio::test]
 async fn api_v1_rejects_invalid_work_item_due_date() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

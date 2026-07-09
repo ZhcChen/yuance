@@ -4337,7 +4337,9 @@ async fn build_project_context(
     user_id: i64,
     is_super_admin: bool,
 ) -> AppResult<(Option<CurrentProjectView>, Vec<ProjectOption>)> {
-    if !rbac::user_has_permission(pool, user_id, "project.view").await? {
+    let can_view_projects = rbac::user_has_permission(pool, user_id, "project.view").await?;
+    let can_view_work_items = rbac::user_has_permission(pool, user_id, "work_item.view").await?;
+    if !can_view_projects && !can_view_work_items {
         return Ok((None, Vec::new()));
     }
 
