@@ -30,6 +30,17 @@ gateway/
 
 测试服务器是 x86，当前开发机可能是 arm。必须在本地或 CI 使用 Buildx 构建 `linux/amd64` 镜像 tar，服务器只允许 `docker load` 和 `docker compose up`，严禁在服务器执行 `cargo build` 或 `docker build`。
 
+推荐直接使用正式发布脚本：
+
+```bash
+cd <yuance-repo>
+./scripts/deploy-production.sh
+```
+
+该脚本会本地构建镜像、上传制品、远程执行 `docker load`、备份 SQLite、迁移、基础 seed、重建容器和健康检查。远程步骤带有 `timeout`，并会清理 `yuance-api-run-*` 临时容器，降低 SSH 中断后的残留风险。
+
+如只想构建镜像 tar，可单独执行：
+
 ```bash
 cd <yuance-repo>
 ./scripts/build-api-image-amd64.sh
@@ -142,15 +153,19 @@ curl -I https://yuance.quanxinfu.com/web
 
 ## 后续发布顺序
 
-1. 本地构建新的 `linux/amd64` 镜像 tar。
-2. 上传 tar 到 `/srv/yuance/releases/`。
-3. `docker load -i` 覆盖同名 `yuance-api:latest`。
-4. 执行 `backend/scripts/00-backup-sqlite.sh`。
-5. 执行 `backend/scripts/10-migrate-status.sh`。
-6. 执行 `backend/scripts/20-migrate-up.sh`。
-7. 执行 `backend/scripts/30-seed-core.sh`。
-8. `docker compose --env-file .env -f compose.yaml up -d`。
-9. 执行 `backend/scripts/90-healthcheck.sh`。
-10. 按需执行 `backend/scripts/80-files-audit.sh` 做文件对象盘点。
+默认使用 `./scripts/deploy-production.sh`。脚本内部顺序：
+
+1. 确认本地 `main` 工作区干净且与 `origin/main` 一致。
+2. 本地构建新的 `linux/amd64` 镜像 tar。
+3. 上传 tar 和部署模板到服务器。
+4. `docker load -i` 覆盖同名 `yuance-api:latest`。
+5. 执行 `backend/scripts/00-backup-sqlite.sh`。
+6. 执行 `migrate status`、`migrate up`、`seed core`。
+7. `docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api`。
+8. 执行 `backend/scripts/90-healthcheck.sh`。
+9. 校验运行容器镜像等于新加载镜像。
+10. 按保留策略清理旧 release tar；按需执行 Docker dangling image prune。
+
+可选文件对象盘点仍需单独执行 `backend/scripts/80-files-audit.sh`。
 
 完整命令见 `docs/runbooks/production-deployment.md`。

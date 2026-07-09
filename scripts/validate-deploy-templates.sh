@@ -16,6 +16,7 @@ require_file() {
 
 require_file "api/Dockerfile"
 require_file "scripts/build-api-image-amd64.sh"
+require_file "scripts/deploy-production.sh"
 require_file "deploy/easy-deploy/production/README.md"
 require_file "deploy/easy-deploy/production/backend/README.md"
 require_file "deploy/easy-deploy/production/backend/app.yaml.example"
@@ -33,6 +34,7 @@ require_file "docs/runbooks/production-deployment.md"
 
 for script in \
   "scripts/build-api-image-amd64.sh" \
+  "scripts/deploy-production.sh" \
   "scripts/validate-deploy-templates.sh" \
   "deploy/easy-deploy/production/backend/scripts/00-backup-sqlite.sh" \
   "deploy/easy-deploy/production/backend/scripts/10-migrate-status.sh" \

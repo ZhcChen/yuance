@@ -59,6 +59,34 @@ YUANCE_API_PLATFORM=linux/amd64 \
 
 arm 开发机可以通过 Docker Buildx 构建 `linux/amd64`。这会使用跨架构构建，Rust 编译会比原生慢。
 
+## 一键发布脚本
+
+后续说“部署正式环境”时，默认执行本地脚本：
+
+```bash
+cd <yuance-repo>
+./scripts/deploy-production.sh
+```
+
+脚本保证：
+
+- 本地工作区必须在 `main`、干净且与 `origin/main` 一致。
+- 镜像只在本地构建为 `linux/amd64`，服务器不执行 `cargo build` 或 `docker build`。
+- 上传前备份服务器当前镜像 tar。
+- 远程步骤使用 `timeout`，并在开始和退出时清理 `yuance-api-run-*` 临时容器，降低 SSH 中断后残留进程 / 容器的概率。
+- 发布后校验 `yuance-api` 运行镜像等于新加载的 `yuance-api:latest`，并检查 `/api/healthz` 与 `/api/readyz`。
+- 默认保留最近 1 个旧 release tar 作为回滚制品。
+
+可选参数：
+
+```bash
+YUANCE_SKIP_LOCAL_BUILD=1 ./scripts/deploy-production.sh
+YUANCE_KEEP_RELEASE_BACKUPS=2 ./scripts/deploy-production.sh
+YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
+```
+
+其中 `YUANCE_PRUNE_DANGLING_IMAGES=1` 会在发布成功后执行 `docker image prune -f`，只清理未被容器使用、没有标签的镜像；该操作可能造成短时间磁盘 IO 升高，默认不启用。
+
 ## 上传模板和制品
 
 ```bash
