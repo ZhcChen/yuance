@@ -16,7 +16,7 @@ date: 2026-07-07
 参考项目：qfy-sc
 部署服务器别名：qfy-sc-test
 元策环境：production
-easy-deploy 应用名：yuance
+Compose 应用名：yuance
 Compose name：yuance
 服务名：api
 容器名：yuance-api
@@ -28,6 +28,8 @@ API 端口：127.0.0.1:33033
 ```
 
 `qfy-sc-test` 是服务器别名，不代表元策环境是测试环境。
+
+当前服务器目录仍沿用 `/srv/yuance/easy-deploy/production/*` 命名，原因是首次部署已经在该目录保存 SQLite 数据和 Compose 文件；这只是目录名，不代表依赖 easy-deploy 平台。正式发布流程只依赖本地构建、SSH/SCP、`docker load` 和服务器上的 Docker Compose。
 
 ## 架构边界
 
@@ -73,7 +75,8 @@ cd <yuance-repo>
 - 本地工作区必须在 `main`、干净且与 `origin/main` 一致。
 - 镜像只在本地构建为 `linux/amd64`，服务器不执行 `cargo build` 或 `docker build`。
 - 上传前备份服务器当前镜像 tar。
-- 远程步骤使用 `timeout`，并在开始和退出时清理 `yuance-api-run-*` 临时容器，降低 SSH 中断后残留进程 / 容器的概率。
+- 远程步骤使用 `timeout`，并通过单次 `yuance-api-maintenance-*` 维护容器完成 `migrate status`、`migrate up`、`seed core`，避免连续多次 `docker compose run` 造成额外磁盘 IO。
+- 开始和退出时清理 `yuance-api-maintenance-*` 以及历史 `yuance-api-run-*` 临时容器，降低 SSH 中断后的残留风险。
 - 发布后校验 `yuance-api` 运行镜像等于新加载的 `yuance-api:latest`，并检查 `/api/healthz` 与 `/api/readyz`。
 - 默认保留最近 1 个旧 release tar 作为回滚制品。
 
@@ -88,6 +91,8 @@ YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
 其中 `YUANCE_PRUNE_DANGLING_IMAGES=1` 会在发布成功后执行 `docker image prune -f`，只清理未被容器使用、没有标签的镜像；该操作可能造成短时间磁盘 IO 升高，默认不启用。
 
 ## 上传模板和制品
+
+以下命令是手工 Compose 部署目录同步；目录名中出现 `easy-deploy` 只是历史路径，不需要也不会调用 easy-deploy 平台。
 
 ```bash
 ssh qfy-sc-test 'mkdir -p /srv/yuance/releases /srv/yuance/easy-deploy/production/backend /srv/yuance/easy-deploy/production/gateway'
@@ -141,9 +146,13 @@ YUANCE_API_PORT=33033
 ```bash
 cd /srv/yuance/easy-deploy/production/backend
 
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api migrate status
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api migrate up
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api seed core
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
+docker compose --env-file .env -f compose.yaml run --rm --no-deps --name yuance-api-maintenance api sh -eu -c '
+  ./yuance-api migrate status
+  ./yuance-api migrate up
+  ./yuance-api seed core
+'
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
 docker compose --env-file .env -f compose.yaml up -d
 docker compose --env-file .env -f compose.yaml ps
 
@@ -198,9 +207,13 @@ cd /srv/yuance/easy-deploy/production/backend
 docker load -i /srv/yuance/releases/yuance-api-linux-amd64.tar
 
 ./scripts/00-backup-sqlite.sh
-./scripts/10-migrate-status.sh
-./scripts/20-migrate-up.sh
-./scripts/30-seed-core.sh
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
+docker compose --env-file .env -f compose.yaml run --rm --no-deps --name yuance-api-maintenance api sh -eu -c '
+  ./yuance-api migrate status
+  ./yuance-api migrate up
+  ./yuance-api seed core
+'
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
 
 docker compose --env-file .env -f compose.yaml up -d
 ./scripts/90-healthcheck.sh
@@ -224,13 +237,13 @@ YUANCE_INCLUDE_DELETED_FILES=1 ./scripts/80-files-audit.sh
 
 ```bash
 cd /srv/yuance/easy-deploy/production/backend
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
+docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
 确认后执行：
 
 ```bash
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api files cleanup-pending --older-than-hours 24
+docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24
 ```
 
 如需每天凌晨执行，可在服务器 crontab 中调用上述命令。当前清理只做数据库软删除，不删除 OSS 物理对象。

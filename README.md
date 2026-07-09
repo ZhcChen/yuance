@@ -31,6 +31,7 @@ http://127.0.0.1:33033/web
 ## 正式环境部署
 
 当前正式环境复用参考项目 qfy-sc 的测试服务器别名 `qfy-sc-test`，但元策部署口径是 `production`。服务器只运行 Docker Compose，不允许源码编译或镜像构建。
+部署方式对齐 qfy-sc 测试环境：本地构建 `linux/amd64` 镜像 tar，上传到服务器后 `docker load`，再由服务器 Compose 重建容器；不依赖 easy-deploy 平台。
 
 本地构建 x86 镜像 tar：
 

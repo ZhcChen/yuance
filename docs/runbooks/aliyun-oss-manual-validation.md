@@ -124,7 +124,7 @@ cargo run -p yuance-api -- files cleanup-pending --older-than-hours 24 --dry-run
 
 ```bash
 cd /srv/yuance/easy-deploy/production/backend
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
+docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
 当前附件删除是数据库软删除，不会主动删除 OSS 物理对象；是否删除真实对象由运维按保留策略处理。

@@ -5,6 +5,7 @@ ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
 REMOTE_HOST="${YUANCE_DEPLOY_HOST:-qfy-sc-test}"
 REMOTE_ROOT="${YUANCE_DEPLOY_ROOT:-/srv/yuance}"
+# 服务器目录名沿用首次部署路径；发布流程只使用 SSH/SCP + Docker Compose，不调用 easy-deploy 平台。
 REMOTE_BACKEND_DIR="$REMOTE_ROOT/easy-deploy/production/backend"
 REMOTE_GATEWAY_DIR="$REMOTE_ROOT/easy-deploy/production/gateway"
 REMOTE_RELEASE_DIR="$REMOTE_ROOT/releases"
@@ -124,11 +125,13 @@ fi
 chmod 600 .env
 chmod +x scripts/*.sh
 
-cleanup_run_containers() {
-  ids="$(docker ps -aq --filter "name=yuance-api-run-" 2>/dev/null || true)"
-  if [ -n "$ids" ]; then
-    docker rm -f $ids >/dev/null 2>&1 || true
-  fi
+cleanup_transient_containers() {
+  for prefix in yuance-api-run- yuance-api-maintenance-; do
+    ids="$(docker ps -aq --filter "name=$prefix" 2>/dev/null || true)"
+    if [ -n "$ids" ]; then
+      docker rm -f $ids >/dev/null 2>&1 || true
+    fi
+  done
 }
 
 cleanup_named_container() {
@@ -144,33 +147,32 @@ run_timeout() {
   timeout -k 30s "${seconds}s" "$@"
 }
 
-run_compose_cli() {
-  label="$1"
-  seconds="$2"
-  container_name="$3"
-  shift 3
+run_compose_maintenance() {
+  container_name="$1"
   cleanup_named_container "$container_name"
-  run_timeout "$label" "$seconds" \
-    docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$container_name" api "$@"
+  run_timeout "执行迁移和基础 seed" 900 \
+    docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$container_name" api sh -eu -c '
+      ./yuance-api migrate status
+      ./yuance-api migrate up
+      ./yuance-api seed core
+    '
   cleanup_named_container "$container_name"
 }
 
 cleanup() {
-  cleanup_run_containers
+  cleanup_transient_containers
 }
 
 trap cleanup EXIT HUP INT TERM
 
-cleanup_run_containers
+cleanup_transient_containers
 
 run_timeout "加载镜像 tar" 300 docker load -i "$IMAGE_TAR"
 
 run_timeout "SQLite 发布前备份" 300 ./scripts/00-backup-sqlite.sh
 
 stamp="$(date +%Y%m%d%H%M%S)"
-run_compose_cli "迁移状态检查" 300 "yuance-api-run-migrate-status-$stamp" ./yuance-api migrate status
-run_compose_cli "执行迁移" 600 "yuance-api-run-migrate-up-$stamp" ./yuance-api migrate up
-run_compose_cli "执行基础 seed" 300 "yuance-api-run-seed-core-$stamp" ./yuance-api seed core
+run_compose_maintenance "yuance-api-maintenance-$stamp"
 
 run_timeout "重建并启动 api 容器" 300 docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api
 run_timeout "Compose 状态" 60 docker compose --env-file .env -f compose.yaml ps

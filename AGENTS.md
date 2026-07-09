@@ -59,7 +59,7 @@
 - 对于跨文件、跨模块、带有不确定性的任务，不要跳过 `ce:brainstorm` 或 `ce:plan` 直接编码，除非用户明确要求。
 - 所有文档中的路径引用都使用**仓库相对路径**，不要使用绝对路径。
 - 当任务已经有现成计划文件或 brainstorm 文档时，优先复用和续写，不要重复生成平行文档。
-- 用户后续说“部署正式环境”时，默认含义是按 `docs/runbooks/production-deployment.md` 将元策正式环境实际部署到服务器 `qfy-sc-test`，包括本地构建 `linux/amd64` 镜像 tar、上传制品、服务器 `docker load`、迁移、`seed core`、`docker compose up -d`、Caddy 接入或 reload 以及健康检查；除非用户明确说“只准备部署文档 / 只构建镜像 / 只生成脚本”，不要把该指令理解为仅做本地准备。
+- 用户后续说“部署正式环境”时，默认含义是按 `docs/runbooks/production-deployment.md` 将元策正式环境实际部署到服务器 `qfy-sc-test`；部署口径对齐参考项目 qfy-sc 的测试环境：本地构建 `linux/amd64` 镜像 tar、上传制品、服务器 `docker load`、单次维护容器执行迁移和 `seed core`、`docker compose up -d`、Caddy 接入或 reload 以及健康检查，不依赖 easy-deploy 平台，也不在服务器编译或构建镜像。除非用户明确说“只准备部署文档 / 只构建镜像 / 只生成脚本”，不要把该指令理解为仅做本地准备。
 - 若项目中同时存在人工规范、项目 `AGENTS.md`、其他 AI 说明文件，则遵循：
   1. 用户明确指令
   2. 当前项目根目录下的规范文件

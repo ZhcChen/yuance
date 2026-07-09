@@ -1,6 +1,6 @@
-# 元策正式后端模板
+# 元策正式后端 Compose 模板
 
-本目录用于部署 easy-deploy 应用 `yuance`，只包含一个服务：
+本目录用于手工 Compose 部署 `yuance`，只包含一个服务：
 
 ```text
 api：Rust 单体服务，启动命令 ./yuance-api serve
@@ -26,7 +26,7 @@ api：Rust 单体服务，启动命令 ./yuance-api serve
 
 ```text
 app.yaml.example
-  easy-deploy 应用元信息。
+  应用元信息，保留用于描述部署边界，不代表依赖 easy-deploy 平台。
 
 compose.yaml.example
   Docker Compose 模板；复制到服务器后改名 compose.yaml。
@@ -35,7 +35,7 @@ compose.yaml.example
   运行环境变量模板；复制到服务器后改名 .env，并填写真实密钥。
 
 scripts/
-  发布阶段脚本。既可在服务器 backend 目录执行，也可被部署平台按运行态脚本执行。
+  发布阶段脚本。存在本地二进制时可直接执行；手工 Compose 发布优先使用仓库根目录的 scripts/deploy-production.sh。
 ```
 
 ## 发布脚本顺序
@@ -48,6 +48,8 @@ scripts/
 90-healthcheck.sh
 80-files-audit.sh        # 可选，健康检查后做对象关系盘点
 ```
+
+正式发布主链路不会逐个调用 `10-migrate-status.sh`、`20-migrate-up.sh`、`30-seed-core.sh` 来创建多个临时容器，而是通过单次维护容器连续执行迁移和基础 seed，降低服务器 Docker overlay 与容器创建带来的磁盘 IO 峰值。
 
 不要在正式环境执行：
 
@@ -67,9 +69,13 @@ cp .env.example .env
 chmod 600 .env
 mkdir -p data backups
 
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api migrate status
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api migrate up
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api seed core
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
+docker compose --env-file .env -f compose.yaml run --rm --no-deps --name yuance-api-maintenance api sh -eu -c '
+  ./yuance-api migrate status
+  ./yuance-api migrate up
+  ./yuance-api seed core
+'
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
 docker compose --env-file .env -f compose.yaml up -d
 
 curl -fsS http://127.0.0.1:33033/api/healthz

@@ -1,6 +1,8 @@
 # 元策正式环境部署模板
 
-本目录用于在 easy-deploy 或手工 Compose 流程中部署元策正式环境。部署方式参考 qfy-sc 的测试环境模板，但元策当前只有一个 `api` 模块，不部署 Redis、PostgreSQL、NATS、Worker 或独立前端。
+本目录用于手工 Compose 流程部署元策正式环境。部署方式参考 qfy-sc 的测试环境模板，但元策当前只有一个 `api` 模块，不部署 Redis、PostgreSQL、NATS、Worker 或独立前端。
+
+目录路径里保留 `easy-deploy` 只是历史模板命名；当前正式环境发布不依赖 easy-deploy 平台，只依赖本地构建、SSH/SCP、服务器 `docker load` 和 Docker Compose。
 
 当前部署机器沿用参考项目测试服务器：
 
@@ -37,7 +39,7 @@ cd <yuance-repo>
 ./scripts/deploy-production.sh
 ```
 
-该脚本会本地构建镜像、上传制品、远程执行 `docker load`、备份 SQLite、迁移、基础 seed、重建容器和健康检查。远程步骤带有 `timeout`，并会清理 `yuance-api-run-*` 临时容器，降低 SSH 中断后的残留风险。
+该脚本会本地构建镜像、上传制品、远程执行 `docker load`、备份 SQLite、迁移、基础 seed、重建容器和健康检查。远程步骤带有 `timeout`，并通过单次 `yuance-api-maintenance-*` 维护容器完成迁移和 seed，避免连续多次 `docker compose run` 造成额外磁盘 IO；同时兼容清理历史 `yuance-api-run-*` 临时容器。
 
 如只想构建镜像 tar，可单独执行：
 
@@ -73,8 +75,6 @@ scp -r deploy/easy-deploy/production/backend/scripts qfy-sc-test:/srv/yuance/eas
 scp deploy/easy-deploy/production/gateway/Caddyfile.yuance.example qfy-sc-test:/srv/yuance/easy-deploy/production/gateway/Caddyfile.yuance
 ```
 
-如果使用 easy-deploy 平台创建应用，则把 `backend/app.yaml.example`、`backend/compose.yaml.example`、`backend/.env.example` 和 `backend/scripts/` 同步到平台配置中。
-
 ## 服务器首次部署命令
 
 ```bash
@@ -104,9 +104,13 @@ openssl rand -base64 48
 迁移和基础 seed：
 
 ```bash
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api migrate status
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api migrate up
-docker compose --env-file .env -f compose.yaml run --rm --no-deps api ./yuance-api seed core
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
+docker compose --env-file .env -f compose.yaml run --rm --no-deps --name yuance-api-maintenance api sh -eu -c '
+  ./yuance-api migrate status
+  ./yuance-api migrate up
+  ./yuance-api seed core
+'
+docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
 ```
 
 启动服务：
@@ -160,7 +164,7 @@ curl -I https://yuance.quanxinfu.com/web
 3. 上传 tar 和部署模板到服务器。
 4. `docker load -i` 覆盖同名 `yuance-api:latest`。
 5. 执行 `backend/scripts/00-backup-sqlite.sh`。
-6. 执行 `migrate status`、`migrate up`、`seed core`。
+6. 通过单次维护容器执行 `migrate status`、`migrate up`、`seed core`。
 7. `docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api`。
 8. 执行 `backend/scripts/90-healthcheck.sh`。
 9. 校验运行容器镜像等于新加载镜像。

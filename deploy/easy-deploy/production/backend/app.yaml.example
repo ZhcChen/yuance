@@ -11,6 +11,6 @@ health_expected_status: 200
 notes:
   - "部署服务器当前复用 qfy-sc-test；这是元策正式环境，不是测试环境应用。"
   - "服务器只 docker load 和 docker compose up；禁止 cargo build、docker build 或源码打包。"
-  - "发布前先备份 SQLite，再执行 migrate status、migrate up、seed core。"
+  - "发布前先备份 SQLite，再通过单次维护容器执行 migrate status、migrate up、seed core。"
   - "首次超级管理员由用户访问 /web 手动初始化，不执行 seed demo 或 seed local-admin。"
   - "OSS 在 /web/system/storage 动态配置，部署 .env 不写 OSS AccessKey。"

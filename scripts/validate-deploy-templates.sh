@@ -59,6 +59,14 @@ if grep -RInE '(AKIA[0-9A-Z]{16}|LTAI[0-9A-Za-z]{12,}|BEGIN (RSA |EC |OPENSSH )?
   exit 1
 fi
 
+if grep -RIn 'docker compose .* run' \
+  "$BACKEND_DIR/scripts/10-migrate-status.sh" \
+  "$BACKEND_DIR/scripts/20-migrate-up.sh" \
+  "$BACKEND_DIR/scripts/30-seed-core.sh"; then
+  echo "迁移和基础 seed 脚本禁止回退为多个 docker compose run，请使用单次维护容器。" >&2
+  exit 1
+fi
+
 if ! grep -q 'container_name: yuance-api' "$COMPOSE_FILE"; then
   echo "Compose 模板必须固定容器名 yuance-api。" >&2
   exit 1
