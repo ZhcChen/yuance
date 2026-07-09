@@ -434,7 +434,7 @@ struct DashboardTemplate {
 struct DashboardRenderContext<'a> {
     pool: Option<&'a SqlitePool>,
     user_id: i64,
-    is_super_admin: bool,
+    can_access_all_projects: bool,
     current_user: String,
     csrf_token: String,
     system_nav: SystemNav,
@@ -1056,7 +1056,7 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
                 DashboardRenderContext {
                     pool: None,
                     user_id: 0,
-                    is_super_admin: true,
+                    can_access_all_projects: true,
                     current_user: "yuance_admin".to_string(),
                     csrf_token: csrf_token.clone(),
                     system_nav: SystemNav::all(),
@@ -1077,9 +1077,11 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
         return login_redirect(&headers);
     };
 
-    let system_nav = build_system_nav(pool, user.id, user.is_super_admin).await?;
+    let can_access_all_projects =
+        user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
+    let system_nav = build_system_nav(pool, user.id, can_access_all_projects).await?;
     let (current_project, topbar_project_options) =
-        build_project_context(pool, user.id, user.is_super_admin).await?;
+        build_project_context(pool, user.id, can_access_all_projects).await?;
 
     let csrf_token = csrf::ensure_token(&headers);
     with_csrf_cookie(
@@ -1090,7 +1092,7 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
             DashboardRenderContext {
                 pool: Some(pool),
                 user_id: user.id,
-                is_super_admin: user.is_super_admin,
+                can_access_all_projects,
                 current_user: user.display_name,
                 csrf_token: csrf_token.clone(),
                 system_nav,
@@ -1119,7 +1121,7 @@ pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppRe
                     projects::list_project_summaries_for_user(
                         pool,
                         context.user_id,
-                        context.is_super_admin,
+                        context.can_access_all_projects,
                     )
                     .await?
                     .into_iter()
@@ -1269,18 +1271,24 @@ pub async fn search_page(
                     rbac::user_has_permission(pool, context.user_id, "project.view").await?;
                 let can_view_work_items =
                     rbac::user_has_permission(pool, context.user_id, "work_item.view").await?;
-                projects::search_visible(pool, context.user_id, context.is_super_admin, &query, 20)
-                    .await?
-                    .into_iter()
-                    .filter(|hit| {
-                        if hit.hit_type == "project" {
-                            can_view_projects
-                        } else {
-                            can_view_work_items
-                        }
-                    })
-                    .map(search_result_from_hit)
-                    .collect()
+                projects::search_visible(
+                    pool,
+                    context.user_id,
+                    context.can_access_all_projects,
+                    &query,
+                    20,
+                )
+                .await?
+                .into_iter()
+                .filter(|hit| {
+                    if hit.hit_type == "project" {
+                        can_view_projects
+                    } else {
+                        can_view_work_items
+                    }
+                })
+                .map(search_result_from_hit)
+                .collect()
             }
             None => sample_search_results(&query),
         }
@@ -1326,7 +1334,7 @@ pub async fn projects_page(
             let page = projects::list_project_summaries_for_user_paginated(
                 pool,
                 context.user_id,
-                context.is_super_admin,
+                context.can_access_all_projects,
                 projects::ProjectListFilter {
                     status: status_filter.clone(),
                 },
@@ -1351,14 +1359,16 @@ pub async fn projects_page(
         }
     };
     let summary_projects: Vec<ProjectRow> = match context.pool {
-        Some(pool) => {
-            projects::list_project_summaries_for_user(pool, context.user_id, context.is_super_admin)
-                .await?
-                .into_iter()
-                .map(project_from_summary)
-                .filter(|project| project_matches_status_filter(project, &status_filter))
-                .collect()
-        }
+        Some(pool) => projects::list_project_summaries_for_user(
+            pool,
+            context.user_id,
+            context.can_access_all_projects,
+        )
+        .await?
+        .into_iter()
+        .map(project_from_summary)
+        .filter(|project| project_matches_status_filter(project, &status_filter))
+        .collect(),
         None => sample_projects()
             .into_iter()
             .filter(|project| project_matches_status_filter(project, &status_filter))
@@ -1508,7 +1518,7 @@ pub async fn current_project_update(
         projects::set_current_project_for_user(
             pool,
             context.user_id,
-            context.is_super_admin,
+            context.can_access_all_projects,
             &form.project_key,
         )
         .await?;
@@ -1539,7 +1549,7 @@ pub async fn project_detail_page(
     let selected_project = projects::set_current_project_for_user(
         pool,
         context.user_id,
-        context.is_super_admin,
+        context.can_access_all_projects,
         &project_key,
     )
     .await?;
@@ -1584,22 +1594,11 @@ pub async fn project_detail_page(
         rbac::user_has_permission(pool, context.user_id, "project.manage").await?;
     let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
     let can_edit_project = has_project_manage_permission
-        && projects::user_can_manage_project_members(
-            pool,
-            project.id,
-            context.user_id,
-            context.is_super_admin,
-        )
-        .await?;
+        && user_can_manage_project_members_for_context(pool, &context, project.id).await?;
     let can_manage_project = can_edit_project && project_accepts_writes;
-    let can_manage_work_items = projects::user_can_write_project_content(
-        pool,
-        project.id,
-        context.user_id,
-        context.is_super_admin,
-    )
-    .await?
-        && project_accepts_writes;
+    let can_manage_work_items =
+        user_can_write_project_content_for_context(pool, &context, project.id).await?
+            && project_accepts_writes;
     let project = project_detail_from_domain(project);
 
     let csrf_token = context.csrf_token.clone();
@@ -2011,16 +2010,20 @@ pub async fn work_item_detail_page(
         return render_sample_work_item_detail_page(&state, context);
     };
     ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-    let Some((item, comments)) =
-        load_work_item_detail_for_user(pool, &item_key, context.user_id, context.is_super_admin)
-            .await?
+    let Some((item, comments)) = load_work_item_detail_for_user(
+        pool,
+        &item_key,
+        context.user_id,
+        context.can_access_all_projects,
+    )
+    .await?
     else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
     ensure_project_key_access(
         pool,
         context.user_id,
-        context.is_super_admin,
+        context.can_access_all_projects,
         &item.project_key,
     )
     .await?;
@@ -2029,7 +2032,7 @@ pub async fn work_item_detail_page(
         projects::list_work_item_summaries_filtered_for_user(
             pool,
             context.user_id,
-            context.is_super_admin,
+            context.can_access_all_projects,
             projects::WorkItemListFilter {
                 item_type: Some("requirement".to_string()),
                 project_key: item.project_key.clone(),
@@ -2052,14 +2055,9 @@ pub async fn work_item_detail_page(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
-    let can_manage_work_items = projects::user_can_write_project_content(
-        pool,
-        project.id,
-        context.user_id,
-        context.is_super_admin,
-    )
-    .await?
-        && project_accepts_writes;
+    let can_manage_work_items =
+        user_can_write_project_content_for_context(pool, &context, project.id).await?
+            && project_accepts_writes;
     let can_delete_work_items =
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
@@ -3911,7 +3909,7 @@ async fn work_item_list_page(
                 let page = projects::list_work_item_summaries_filtered_for_user_paginated(
                     pool,
                     context.user_id,
-                    context.is_super_admin,
+                    context.can_access_all_projects,
                     projects::WorkItemListFilter {
                         item_type: item_type.map(ToOwned::to_owned),
                         keyword: filters.q.clone(),
@@ -3955,13 +3953,8 @@ async fn work_item_list_page(
                 .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
             let project_accepts_writes =
                 projects::ensure_project_accepts_writes(&project.status).is_ok();
-            let can_write = projects::user_can_write_project_content(
-                pool,
-                project.id,
-                context.user_id,
-                context.is_super_admin,
-            )
-            .await?
+            let can_write = user_can_write_project_content_for_context(pool, &context, project.id)
+                .await?
                 && project_accepts_writes;
             let members = load_project_member_options(pool, &project_context.key).await?;
             (can_write, members)
@@ -3983,7 +3976,7 @@ async fn work_item_list_page(
             Some(pool) => projects::list_work_item_summaries_filtered_for_user(
                 pool,
                 context.user_id,
-                context.is_super_admin,
+                context.can_access_all_projects,
                 projects::WorkItemListFilter {
                     item_type: Some("requirement".to_string()),
                     project_key: filters.project_key.clone(),
@@ -4055,12 +4048,18 @@ pub async fn work_items_partial(
         return login_redirect(&headers);
     };
     ensure_view_permission(pool, &headers, user.id, "work_item.view").await?;
-    let items =
-        projects::list_work_item_summaries_for_user(pool, user.id, user.is_super_admin, item_type)
-            .await?
-            .into_iter()
-            .map(work_item_from_summary)
-            .collect::<Vec<_>>();
+    let can_access_all_projects =
+        user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
+    let items = projects::list_work_item_summaries_for_user(
+        pool,
+        user.id,
+        can_access_all_projects,
+        item_type,
+    )
+    .await?
+    .into_iter()
+    .map(work_item_from_summary)
+    .collect::<Vec<_>>();
 
     response::html(WorkItemsPartialTemplate {
         has_items: !items.is_empty(),
@@ -4086,19 +4085,26 @@ pub async fn work_item_detail_partial(
         return login_redirect(&headers);
     };
     ensure_view_permission(pool, &headers, user.id, "work_item.view").await?;
+    let can_access_all_projects =
+        user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
     let Some((item, comments)) =
-        load_work_item_detail_for_user(pool, &item_key, user.id, user.is_super_admin).await?
+        load_work_item_detail_for_user(pool, &item_key, user.id, can_access_all_projects).await?
     else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
-    ensure_project_key_access(pool, user.id, user.is_super_admin, &item.project_key).await?;
+    ensure_project_key_access(pool, user.id, can_access_all_projects, &item.project_key).await?;
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-    let can_manage_work_items =
-        projects::user_can_write_project_content(pool, project.id, user.id, user.is_super_admin)
-            .await?
-            && projects::ensure_project_accepts_writes(&project.status).is_ok();
+    let can_manage_work_items = user_can_write_project_content_for_user(
+        pool,
+        user.id,
+        user.is_super_admin,
+        can_access_all_projects,
+        project.id,
+    )
+    .await?
+        && projects::ensure_project_accepts_writes(&project.status).is_ok();
 
     response::html(WorkItemDetailPartialTemplate {
         csrf_token: csrf::ensure_token(&headers),
@@ -4128,7 +4134,7 @@ async fn render_dashboard(
                 projects::list_project_summaries_for_user(
                     pool,
                     context.user_id,
-                    context.is_super_admin,
+                    context.can_access_all_projects,
                 )
                 .await?
             } else {
@@ -4147,7 +4153,7 @@ async fn render_dashboard(
                         projects::list_work_item_summaries_filtered_for_user(
                             pool,
                             context.user_id,
-                            context.is_super_admin,
+                            context.can_access_all_projects,
                             projects::WorkItemListFilter {
                                 project_key: project_key.clone(),
                                 ..projects::WorkItemListFilter::default()
@@ -4159,7 +4165,7 @@ async fn render_dashboard(
                         projects::list_work_item_summaries_for_user(
                             pool,
                             context.user_id,
-                            context.is_super_admin,
+                            context.can_access_all_projects,
                             None,
                         )
                         .await?
@@ -4177,7 +4183,7 @@ async fn render_dashboard(
                         projects::list_recent_activities_for_user(
                             pool,
                             context.user_id,
-                            context.is_super_admin,
+                            context.can_access_all_projects,
                             5,
                         )
                         .await?
@@ -4233,6 +4239,7 @@ struct WebContext<'a> {
     current_user: String,
     csrf_token: String,
     is_super_admin: bool,
+    can_access_all_projects: bool,
     system_nav: SystemNav,
     current_project: Option<CurrentProjectView>,
     topbar_project_options: Vec<ProjectOption>,
@@ -4258,6 +4265,7 @@ async fn web_context_or_redirect<'a>(
             current_user: "yuance_admin".to_string(),
             csrf_token: csrf::ensure_token(headers),
             is_super_admin: true,
+            can_access_all_projects: true,
             system_nav: SystemNav::all(),
             current_project: None,
             topbar_project_options: sample_project_options(),
@@ -4273,15 +4281,18 @@ async fn web_context_or_redirect<'a>(
         return Ok(Err(login_redirect(headers)?));
     };
 
-    let system_nav = build_system_nav(pool, user.id, user.is_super_admin).await?;
+    let can_access_all_projects =
+        user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
+    let system_nav = build_system_nav(pool, user.id, can_access_all_projects).await?;
     let (current_project, topbar_project_options) =
-        build_project_context(pool, user.id, user.is_super_admin).await?;
+        build_project_context(pool, user.id, can_access_all_projects).await?;
 
     Ok(Ok(WebContext {
         user_id: user.id,
         current_user: user.display_name,
         csrf_token: csrf::ensure_token(headers),
         is_super_admin: user.is_super_admin,
+        can_access_all_projects,
         system_nav,
         current_project,
         topbar_project_options,
@@ -4319,9 +4330,11 @@ async fn system_context_or_redirect(
             "需要系统管理权限".to_string(),
         ));
     }
-    let system_nav = build_system_nav(pool, user.id, user.is_super_admin).await?;
+    let can_access_all_projects =
+        user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
+    let system_nav = build_system_nav(pool, user.id, can_access_all_projects).await?;
     let (current_project, topbar_project_options) =
-        build_project_context(pool, user.id, user.is_super_admin).await?;
+        build_project_context(pool, user.id, can_access_all_projects).await?;
     Ok(Ok(SystemContext {
         user_id: user.id,
         current_user: user.display_name,
@@ -4332,10 +4345,22 @@ async fn system_context_or_redirect(
     }))
 }
 
-async fn build_project_context(
+async fn user_can_access_all_projects(
     pool: &SqlitePool,
     user_id: i64,
     is_super_admin: bool,
+) -> AppResult<bool> {
+    if is_super_admin {
+        return Ok(true);
+    }
+
+    rbac::user_has_all_data_scope(pool, user_id).await
+}
+
+async fn build_project_context(
+    pool: &SqlitePool,
+    user_id: i64,
+    can_access_all_projects: bool,
 ) -> AppResult<(Option<CurrentProjectView>, Vec<ProjectOption>)> {
     let can_view_projects = rbac::user_has_permission(pool, user_id, "project.view").await?;
     let can_view_work_items = rbac::user_has_permission(pool, user_id, "work_item.view").await?;
@@ -4343,13 +4368,14 @@ async fn build_project_context(
         return Ok((None, Vec::new()));
     }
 
-    let project_options = projects::list_project_summaries_for_user(pool, user_id, is_super_admin)
-        .await?
-        .into_iter()
-        .map(project_option_from_summary)
-        .collect::<Vec<_>>();
+    let project_options =
+        projects::list_project_summaries_for_user(pool, user_id, can_access_all_projects)
+            .await?
+            .into_iter()
+            .map(project_option_from_summary)
+            .collect::<Vec<_>>();
     let current_project =
-        projects::get_or_select_current_project_for_user(pool, user_id, is_super_admin)
+        projects::get_or_select_current_project_for_user(pool, user_id, can_access_all_projects)
             .await?
             .map(current_project_from_domain);
 
@@ -4359,7 +4385,7 @@ async fn build_project_context(
 async fn build_system_nav(
     pool: &SqlitePool,
     user_id: i64,
-    is_super_admin: bool,
+    can_access_all_projects: bool,
 ) -> AppResult<SystemNav> {
     let dashboard = rbac::user_has_permission(pool, user_id, "system.dashboard.view").await?;
     let users = rbac::user_has_permission(pool, user_id, "system.users.view").await?;
@@ -4367,7 +4393,7 @@ async fn build_system_nav(
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
     let assignment_counts =
-        projects::count_pending_assigned_work_items(pool, user_id, is_super_admin).await?;
+        projects::count_pending_assigned_work_items(pool, user_id, can_access_all_projects).await?;
 
     Ok(SystemNav {
         visible: dashboard || users || roles || storage || audit,
@@ -5219,7 +5245,7 @@ async fn ensure_project_access(
     context: &WebContext<'_>,
     project_id: i64,
 ) -> AppResult<()> {
-    if context.is_super_admin
+    if context.can_access_all_projects
         || projects::is_project_member(pool, project_id, context.user_id).await?
     {
         return Ok(());
@@ -5233,14 +5259,7 @@ async fn ensure_project_member_manage_access(
     context: &WebContext<'_>,
     project_id: i64,
 ) -> AppResult<()> {
-    if projects::user_can_manage_project_members(
-        pool,
-        project_id,
-        context.user_id,
-        context.is_super_admin,
-    )
-    .await?
-    {
+    if user_can_manage_project_members_for_context(pool, context, project_id).await? {
         return Ok(());
     }
 
@@ -5254,14 +5273,7 @@ async fn ensure_project_content_write_access(
     context: &WebContext<'_>,
     project_id: i64,
 ) -> AppResult<()> {
-    if projects::user_can_write_project_content(
-        pool,
-        project_id,
-        context.user_id,
-        context.is_super_admin,
-    )
-    .await?
-    {
+    if user_can_write_project_content_for_context(pool, context, project_id).await? {
         return Ok(());
     }
 
@@ -5276,7 +5288,7 @@ async fn ensure_project_key_access(
     is_super_admin: bool,
     project_key: &str,
 ) -> AppResult<()> {
-    if is_super_admin {
+    if is_super_admin || rbac::user_has_all_data_scope(pool, user_id).await? {
         return Ok(());
     }
 
@@ -5288,6 +5300,67 @@ async fn ensure_project_key_access(
     }
 
     Err(AppError::Forbidden("无权访问该项目".to_string()))
+}
+
+async fn user_can_manage_project_members_for_context(
+    pool: &SqlitePool,
+    context: &WebContext<'_>,
+    project_id: i64,
+) -> AppResult<bool> {
+    user_can_manage_project_members_for_user(
+        pool,
+        context.user_id,
+        context.is_super_admin,
+        context.can_access_all_projects,
+        project_id,
+    )
+    .await
+}
+
+async fn user_can_manage_project_members_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    can_access_all_projects: bool,
+    project_id: i64,
+) -> AppResult<bool> {
+    if can_access_all_projects && rbac::user_has_permission(pool, user_id, "project.manage").await?
+    {
+        return Ok(true);
+    }
+
+    projects::user_can_manage_project_members(pool, project_id, user_id, is_super_admin).await
+}
+
+async fn user_can_write_project_content_for_context(
+    pool: &SqlitePool,
+    context: &WebContext<'_>,
+    project_id: i64,
+) -> AppResult<bool> {
+    user_can_write_project_content_for_user(
+        pool,
+        context.user_id,
+        context.is_super_admin,
+        context.can_access_all_projects,
+        project_id,
+    )
+    .await
+}
+
+async fn user_can_write_project_content_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    can_access_all_projects: bool,
+    project_id: i64,
+) -> AppResult<bool> {
+    if can_access_all_projects
+        && rbac::user_has_permission(pool, user_id, "work_item.manage").await?
+    {
+        return Ok(true);
+    }
+
+    projects::user_can_write_project_content(pool, project_id, user_id, is_super_admin).await
 }
 
 fn ensure_work_item_accepts_writes(item: &WorkItemDetailView) -> AppResult<()> {
@@ -5331,7 +5404,7 @@ async fn load_work_item_detail_for_user(
     pool: &SqlitePool,
     item_key: &str,
     user_id: i64,
-    is_super_admin: bool,
+    can_access_all_projects: bool,
 ) -> AppResult<Option<(WorkItemDetailView, Vec<WorkItemComment>)>> {
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
@@ -5341,14 +5414,20 @@ async fn load_work_item_detail_for_user(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     let mut comments = Vec::new();
     for comment in projects::list_work_item_comments(pool, item.id).await? {
-        let can_manage = projects::user_can_manage_work_item_comment(
-            pool,
-            project.id,
-            comment.author_user_id,
-            user_id,
-            is_super_admin,
-        )
-        .await?;
+        let can_manage = if can_access_all_projects
+            && rbac::user_has_permission(pool, user_id, "work_item.manage").await?
+        {
+            true
+        } else {
+            projects::user_can_manage_work_item_comment(
+                pool,
+                project.id,
+                comment.author_user_id,
+                user_id,
+                false,
+            )
+            .await?
+        };
         let attachments = files::list_attachments(pool, "comment", comment.id).await?;
         comments.push(comment_with_attachments(
             comment_from_summary_with_permission(comment, can_manage),

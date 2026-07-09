@@ -2028,6 +2028,69 @@ async fn web_work_item_only_member_can_see_bug_create_button() {
 }
 
 #[tokio::test]
+async fn web_all_scope_system_admin_can_see_bug_create_button_without_project_membership() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let user = create_user_with_role(&pool, "system_operator", "系统运营", "system_admin").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/bugs")
+                .header(header::COOKIE, user.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("当前项目：YCE · 元策 MVP"));
+    assert!(body.contains(r#"data-modal-open="work-item-create-modal""#));
+    assert!(body.contains("新建 Bug"));
+    assert!(body.contains(r#"name="item_type" value="bug""#));
+}
+
+#[tokio::test]
+async fn api_all_scope_system_admin_can_create_bug_without_project_membership() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let user =
+        create_user_with_role(&pool, "api_system_operator", "API 系统运营", "system_admin").await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items")
+                .header(header::COOKIE, user.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"bug","title":"全局角色提交 Bug","description":"非项目成员但具备全局数据范围","priority":"P2"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = response_body(response).await;
+    assert!(body.contains(r#""key":"YCE-BUG-"#));
+    assert!(body.contains(r#""title":"全局角色提交 Bug""#));
+    assert!(body.contains(r#""assignee_username":"api_system_operator""#));
+}
+
+#[tokio::test]
 async fn api_v1_rejects_invalid_work_item_due_date() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

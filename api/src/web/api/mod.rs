@@ -718,11 +718,12 @@ pub async fn list_projects(
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     let page = projects::list_project_summaries_for_user_paginated(
         pool,
         user.id,
-        user.is_super_admin,
+        can_access_all_projects,
         projects::ProjectListFilter {
             status: normalize_api_project_status(&query.status)?,
         },
@@ -750,8 +751,9 @@ pub async fn get_current_project(
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
     let current =
-        projects::get_or_select_current_project_for_user(pool, user.id, user.is_super_admin)
+        projects::get_or_select_current_project_for_user(pool, user.id, can_access_all_projects)
             .await?
             .map(current_project_payload);
 
@@ -767,10 +769,11 @@ pub async fn update_current_project(
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
     let current = projects::set_current_project_for_user(
         pool,
         user.id,
-        user.is_super_admin,
+        can_access_all_projects,
         &payload.project_key,
     )
     .await?;
@@ -1050,8 +1053,10 @@ pub async fn list_work_items(
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
     let item_type = api_work_item_type(query.item_type.as_deref())?;
-    let project_key = default_api_project_key(pool, &user, query.project_key).await?;
+    let project_key =
+        default_api_project_key(pool, &user, can_access_all_projects, query.project_key).await?;
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     if project_key.is_empty() {
         return Ok(json(PaginatedPayload {
@@ -1067,7 +1072,7 @@ pub async fn list_work_items(
     let page = projects::list_work_item_summaries_filtered_for_user_paginated(
         pool,
         user.id,
-        user.is_super_admin,
+        can_access_all_projects,
         projects::WorkItemListFilter {
             item_type: item_type.map(ToOwned::to_owned),
             keyword: query.q,
@@ -2524,6 +2529,17 @@ async fn require_api_user(state: &AppState, headers: &HeaderMap) -> AppResult<au
         .ok_or(AppError::Unauthorized)
 }
 
+async fn api_user_can_access_all_projects(
+    pool: &sqlx::SqlitePool,
+    user: &auth::AuthUser,
+) -> AppResult<bool> {
+    if user.is_super_admin {
+        return Ok(true);
+    }
+
+    rbac::user_has_all_data_scope(pool, user.id).await
+}
+
 async fn require_api_work_item_context(
     state: &AppState,
     headers: &HeaderMap,
@@ -2571,7 +2587,10 @@ async fn ensure_api_project_access(
     is_super_admin: bool,
     project_id: i64,
 ) -> AppResult<()> {
-    if is_super_admin || projects::is_project_member(pool, project_id, user_id).await? {
+    if is_super_admin
+        || rbac::user_has_all_data_scope(pool, user_id).await?
+        || projects::is_project_member(pool, project_id, user_id).await?
+    {
         return Ok(());
     }
 
@@ -2583,6 +2602,12 @@ async fn ensure_api_project_member_manage_access(
     user: &auth::AuthUser,
     project_id: i64,
 ) -> AppResult<()> {
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    if can_access_all_projects && rbac::user_has_permission(pool, user.id, "project.manage").await?
+    {
+        return Ok(());
+    }
+
     if projects::user_can_manage_project_members(pool, project_id, user.id, user.is_super_admin)
         .await?
     {
@@ -2599,6 +2624,13 @@ async fn ensure_api_project_content_write_access(
     user: &auth::AuthUser,
     project_id: i64,
 ) -> AppResult<()> {
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    if can_access_all_projects
+        && rbac::user_has_permission(pool, user.id, "work_item.manage").await?
+    {
+        return Ok(());
+    }
+
     if projects::user_can_write_project_content(pool, project_id, user.id, user.is_super_admin)
         .await?
     {
@@ -2657,6 +2689,7 @@ async fn ensure_api_permission(
 async fn default_api_project_key(
     pool: &sqlx::SqlitePool,
     user: &auth::AuthUser,
+    can_access_all_projects: bool,
     explicit_project_key: String,
 ) -> AppResult<String> {
     let explicit_project_key = explicit_project_key.trim();
@@ -2665,7 +2698,7 @@ async fn default_api_project_key(
     }
 
     Ok(
-        projects::get_or_select_current_project_for_user(pool, user.id, user.is_super_admin)
+        projects::get_or_select_current_project_for_user(pool, user.id, can_access_all_projects)
             .await?
             .map(|project| project.project_key)
             .unwrap_or_default(),

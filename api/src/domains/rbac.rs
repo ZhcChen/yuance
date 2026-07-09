@@ -468,6 +468,38 @@ pub async fn user_has_permission(
     Ok(count > 0)
 }
 
+pub async fn user_has_all_data_scope(pool: &SqlitePool, user_id: i64) -> AppResult<bool> {
+    let is_super_admin = sqlx::query_scalar::<_, Option<i64>>(
+        "SELECT is_super_admin FROM users WHERE id = ?1 AND status = 'active'",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .flatten()
+    .unwrap_or(0);
+    if is_super_admin != 0 {
+        return Ok(true);
+    }
+
+    let count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM user_roles ur
+        JOIN roles r ON r.id = ur.role_id
+            AND r.status = 'active'
+        JOIN users u ON u.id = ur.user_id
+            AND u.status = 'active'
+        WHERE ur.user_id = ?1
+          AND r.data_scope_type = 'all'
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(count > 0)
+}
+
 pub async fn assign_role_to_user(
     tx: &mut Transaction<'_, Sqlite>,
     user_id: i64,
