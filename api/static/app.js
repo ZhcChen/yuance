@@ -201,6 +201,126 @@
     }
   }
 
+  function userComboboxLabel(option) {
+    var displayName = option.getAttribute("data-display-name") || "";
+    var username = option.getAttribute("data-username") || "";
+    if (!displayName) {
+      return username;
+    }
+    return displayName + " @" + username;
+  }
+
+  function openUserCombobox(combobox) {
+    var input = combobox && combobox.querySelector("[data-user-combobox-input]");
+    var panel = combobox && combobox.querySelector("[data-user-combobox-panel]");
+    if (!input || !panel || input.disabled) {
+      return;
+    }
+    combobox.classList.add("open");
+    panel.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+  }
+
+  function closeUserCombobox(combobox) {
+    var input = combobox && combobox.querySelector("[data-user-combobox-input]");
+    var panel = combobox && combobox.querySelector("[data-user-combobox-panel]");
+    if (!input || !panel) {
+      return;
+    }
+    combobox.classList.remove("open");
+    panel.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+  }
+
+  function closeUserComboboxes(exceptCombobox) {
+    document.querySelectorAll("[data-user-combobox]").forEach(function (combobox) {
+      if (combobox !== exceptCombobox) {
+        closeUserCombobox(combobox);
+      }
+    });
+  }
+
+  function filterUserOptions(combobox, keyword) {
+    var query = (keyword || "").trim().toLocaleLowerCase("zh-CN");
+    var visibleCount = 0;
+    combobox.querySelectorAll("[data-user-option]").forEach(function (option) {
+      var haystack = [
+        option.getAttribute("data-username") || "",
+        option.getAttribute("data-display-name") || "",
+        option.getAttribute("data-roles") || "",
+        option.textContent || "",
+      ].join(" ").toLocaleLowerCase("zh-CN");
+      var visible = !query || haystack.indexOf(query) >= 0;
+      option.hidden = !visible;
+      option.classList.remove("active");
+      if (visible) {
+        visibleCount += 1;
+      }
+    });
+    var firstVisible = Array.from(combobox.querySelectorAll("[data-user-option]")).find(function (option) {
+      return !option.hidden;
+    });
+    if (firstVisible) {
+      firstVisible.classList.add("active");
+    }
+    var empty = combobox.querySelector("[data-user-combobox-empty]");
+    if (empty) {
+      empty.hidden = visibleCount > 0;
+      empty.textContent = query ? "没有匹配用户" : "没有可加入用户";
+    }
+  }
+
+  function clearUserComboboxSelection(combobox) {
+    var value = combobox.querySelector("[data-user-combobox-value]");
+    var input = combobox.querySelector("[data-user-combobox-input]");
+    if (value) {
+      value.value = "";
+    }
+    if (input) {
+      input.removeAttribute("data-selected-username");
+      input.setCustomValidity("");
+    }
+  }
+
+  function selectUserOption(option) {
+    var combobox = option.closest("[data-user-combobox]");
+    if (!combobox) {
+      return;
+    }
+    var input = combobox.querySelector("[data-user-combobox-input]");
+    var value = combobox.querySelector("[data-user-combobox-value]");
+    var username = option.getAttribute("data-username") || "";
+    if (input) {
+      input.value = userComboboxLabel(option);
+      input.setAttribute("data-selected-username", username);
+      input.setCustomValidity("");
+    }
+    if (value) {
+      value.value = username;
+    }
+    closeUserCombobox(combobox);
+  }
+
+  function validateUserCombobox(combobox) {
+    var input = combobox.querySelector("[data-user-combobox-input]");
+    var value = combobox.querySelector("[data-user-combobox-value]");
+    if (!input || input.disabled) {
+      return true;
+    }
+    if (value && value.value) {
+      input.setCustomValidity("");
+      return true;
+    }
+    input.setCustomValidity("请从下拉列表中选择用户");
+    return false;
+  }
+
+  function initUserComboboxes(root) {
+    (root || document).querySelectorAll("[data-user-combobox]").forEach(function (combobox) {
+      filterUserOptions(combobox, "");
+    });
+  }
+
   function activateTab(trigger) {
     var root = trigger.closest("[data-tabs]");
     if (!root) {
@@ -941,6 +1061,13 @@
       return;
     }
 
+    var userOption = event.target.closest("[data-user-option]");
+    if (userOption) {
+      event.preventDefault();
+      selectUserOption(userOption);
+      return;
+    }
+
     var tabTrigger = event.target.closest("[data-tab-trigger]");
     if (tabTrigger) {
       event.preventDefault();
@@ -965,6 +1092,9 @@
 
     if (!event.target.closest("[data-dropdown-menu]")) {
       closeDropdowns();
+    }
+    if (!event.target.closest("[data-user-combobox]")) {
+      closeUserComboboxes();
     }
   });
 
@@ -1009,6 +1139,27 @@
   });
 
   document.addEventListener("keydown", function (event) {
+    var userComboboxInput = event.target.closest("[data-user-combobox-input]");
+    if (userComboboxInput) {
+      var userCombobox = userComboboxInput.closest("[data-user-combobox]");
+      if (event.key === "Enter") {
+        event.preventDefault();
+        var firstUser = userCombobox
+          ? Array.from(userCombobox.querySelectorAll("[data-user-option]")).find(function (option) {
+              return !option.hidden;
+            })
+          : null;
+        if (firstUser) {
+          selectUserOption(firstUser);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        closeUserCombobox(userCombobox);
+        return;
+      }
+    }
+
     var projectSearchInput = event.target.closest("[data-project-search-input]");
     if (event.key === "Enter" && projectSearchInput) {
       event.preventDefault();
@@ -1091,6 +1242,7 @@
     initUserAvatars(event.target);
     initTopbarSearch(event.target);
     initProjectSwitcher(event.target);
+    initUserComboboxes(event.target);
     initTabs(event.target);
   });
 
@@ -1178,6 +1330,17 @@
 
   document.addEventListener("submit", function (event) {
     normalizeUsernameInputs(event.target);
+    event.target.querySelectorAll("[data-user-combobox]").forEach(function (combobox) {
+      if (!validateUserCombobox(combobox)) {
+        event.preventDefault();
+        var input = combobox.querySelector("[data-user-combobox-input]");
+        if (input) {
+          input.reportValidity();
+          input.focus({ preventScroll: true });
+          openUserCombobox(combobox);
+        }
+      }
+    });
   }, true);
 
   document.addEventListener("submit", function (event) {
@@ -1217,12 +1380,33 @@
     document.addEventListener(eventName, handleProjectSearchEvent);
   });
 
+  function handleUserComboboxInput(event) {
+    var input = event.target.closest("[data-user-combobox-input]");
+    if (!input) {
+      return;
+    }
+    var combobox = input.closest("[data-user-combobox]");
+    if (!combobox) {
+      return;
+    }
+    if (event.type !== "focusin") {
+      clearUserComboboxSelection(combobox);
+    }
+    filterUserOptions(combobox, input.value);
+    openUserCombobox(combobox);
+  }
+
+  ["focusin", "input", "search"].forEach(function (eventName) {
+    document.addEventListener(eventName, handleUserComboboxInput);
+  });
+
   ["input", "change"].forEach(function (eventName) {
     document.addEventListener(eventName, handleUsernameInput, true);
   });
 
   initTopbarSearch(document);
   initProjectSwitcher(document);
+  initUserComboboxes(document);
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initTabs(document);
 })();

@@ -3159,6 +3159,116 @@ textarea {
   resize: vertical;
 }
 
+.field-hint {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.search-combobox {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.search-combobox input[role="combobox"] {
+  padding-right: 36px;
+}
+
+.search-combobox::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  right: 14px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  pointer-events: none;
+  transform: rotate(45deg);
+  transition: transform 150ms ease;
+}
+
+.search-combobox.open::after {
+  transform: translateY(3px) rotate(225deg);
+}
+
+.search-combobox-panel {
+  display: grid;
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 36%);
+}
+
+.search-combobox-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.search-combobox-option:hover,
+.search-combobox-option:focus-visible,
+.search-combobox-option.active {
+  background: var(--menu-active);
+  color: var(--brand-strong);
+  box-shadow: none;
+}
+
+.search-combobox-option span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.search-combobox-option strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-combobox-option em,
+.search-combobox-option small {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.search-combobox-option small {
+  flex: 0 0 auto;
+  max-width: 42%;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-combobox-empty {
+  padding: 14px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;

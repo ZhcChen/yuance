@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use askama::Template;
 use axum::{
     Form,
@@ -82,6 +84,13 @@ struct ProjectMemberView {
     role_code: String,
     role: String,
     joined_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectUserOption {
+    display_name: String,
+    username: String,
+    roles: String,
 }
 
 #[derive(Debug, Clone)]
@@ -510,6 +519,7 @@ struct ProjectDetailTemplate {
     tasks: Vec<WorkItem>,
     bugs: Vec<WorkItem>,
     members: Vec<ProjectMemberView>,
+    member_candidates: Vec<ProjectUserOption>,
     attachments: Vec<AttachmentView>,
     activities: Vec<Activity>,
     has_requirements: bool,
@@ -517,6 +527,7 @@ struct ProjectDetailTemplate {
     has_bugs: bool,
     has_activities: bool,
     has_attachments: bool,
+    has_member_candidates: bool,
     project_item_type_options: Vec<WorkItemTypeOption>,
     can_edit_project: bool,
     can_manage_project: bool,
@@ -1579,16 +1590,6 @@ pub async fn project_detail_page(
         .into_iter()
         .map(project_member_from_summary)
         .collect::<Vec<_>>();
-    let attachments = files::list_attachments(pool, "project", project.id)
-        .await?
-        .into_iter()
-        .map(attachment_from_summary)
-        .collect::<Vec<_>>();
-    let activities = projects::list_project_activities(pool, project.id, 10)
-        .await?
-        .into_iter()
-        .map(activity_from_summary)
-        .collect::<Vec<_>>();
     let summary = project_detail_summary(&requirements, &tasks, &bugs, &members);
     let has_project_manage_permission =
         rbac::user_has_permission(pool, context.user_id, "project.manage").await?;
@@ -1599,6 +1600,32 @@ pub async fn project_detail_page(
     let can_manage_work_items =
         user_can_write_project_content_for_context(pool, &context, project.id).await?
             && project_accepts_writes;
+    let member_usernames = members
+        .iter()
+        .map(|member| member.username.as_str())
+        .collect::<HashSet<_>>();
+    let member_candidates = if can_manage_project {
+        users::list_users(pool)
+            .await?
+            .into_iter()
+            .filter(|user| {
+                user.status == "active" && !member_usernames.contains(user.username.as_str())
+            })
+            .map(project_user_option_from_summary)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let attachments = files::list_attachments(pool, "project", project.id)
+        .await?
+        .into_iter()
+        .map(attachment_from_summary)
+        .collect::<Vec<_>>();
+    let activities = projects::list_project_activities(pool, project.id, 10)
+        .await?
+        .into_iter()
+        .map(activity_from_summary)
+        .collect::<Vec<_>>();
     let project = project_detail_from_domain(project);
 
     let csrf_token = context.csrf_token.clone();
@@ -1623,6 +1650,8 @@ pub async fn project_detail_page(
             tasks,
             bugs,
             members,
+            has_member_candidates: !member_candidates.is_empty(),
+            member_candidates,
             has_attachments: !attachments.is_empty(),
             attachments,
             activities,
@@ -4684,6 +4713,14 @@ fn project_member_from_summary(member: projects::ProjectMemberSummary) -> Projec
     }
 }
 
+fn project_user_option_from_summary(user: users::UserSummary) -> ProjectUserOption {
+    ProjectUserOption {
+        display_name: user.display_name,
+        username: user.username,
+        roles: fallback_text(user.role_names, "未分配角色"),
+    }
+}
+
 fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
     AttachmentView {
         id: attachment.id,
@@ -6254,6 +6291,11 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
         role: "负责人".to_string(),
         joined_at: "今天".to_string(),
     }];
+    let member_candidates = vec![ProjectUserOption {
+        display_name: "测试成员".to_string(),
+        username: "tester".to_string(),
+        roles: "普通成员".to_string(),
+    }];
     let activities = sample_activities();
     let summary = project_detail_summary(&requirements, &tasks, &bugs, &members);
 
@@ -6292,6 +6334,8 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             tasks,
             bugs,
             members,
+            has_member_candidates: !member_candidates.is_empty(),
+            member_candidates,
             has_attachments: false,
             attachments: Vec::new(),
             activities,

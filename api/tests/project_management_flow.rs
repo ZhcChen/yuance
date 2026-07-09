@@ -6095,6 +6095,25 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
     let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
+    let member_tab_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE?tab=members")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(member_tab_response.status(), StatusCode::OK);
+    let member_tab_body = response_body(member_tab_response).await;
+    assert!(member_tab_body.contains(r#"data-user-combobox"#));
+    assert!(member_tab_body.contains(r#"data-user-option"#));
+    assert!(member_tab_body.contains(r#"data-username="outsider""#));
+    assert!(member_tab_body.contains("外部成员"));
+    assert!(member_tab_body.contains("只能从候选用户中选择"));
+
     let add_response = app
         .clone()
         .oneshot(

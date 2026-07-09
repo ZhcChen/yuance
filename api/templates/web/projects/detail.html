@@ -545,15 +545,50 @@
     <div class="modal-head">
       <div>
         <h2 id="project-member-add-modal-title">添加项目成员</h2>
-        <p>通过用户名把用户加入 {{ project.code }} 项目。</p>
+        <p>搜索已启用用户并加入 {{ project.code }} 项目；已在项目中的成员不会重复出现。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
     <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/members">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label>
-        用户名
-        <input name="username" placeholder="输入用户名" required autofocus>
+        选择用户
+        <div class="search-combobox" data-user-combobox>
+          <input type="hidden" name="username" data-user-combobox-value>
+          <input
+            id="project-member-user-search"
+            type="search"
+            placeholder="{% if has_member_candidates %}搜索姓名或用户名{% else %}暂无可加入用户{% endif %}"
+            autocomplete="off"
+            role="combobox"
+            aria-expanded="false"
+            aria-autocomplete="list"
+            aria-controls="project-member-user-options"
+            data-user-combobox-input
+            {% if has_member_candidates %}required autofocus{% else %}disabled{% endif %}
+          >
+          <div id="project-member-user-options" class="search-combobox-panel" role="listbox" data-user-combobox-panel hidden>
+            {% for user in member_candidates %}
+            <button
+              class="search-combobox-option"
+              type="button"
+              role="option"
+              data-user-option
+              data-username="{{ user.username }}"
+              data-display-name="{{ user.display_name }}"
+              data-roles="{{ user.roles }}"
+            >
+              <span>
+                <strong>{{ user.display_name }}</strong>
+                <em>@{{ user.username }}</em>
+              </span>
+              <small>{{ user.roles }}</small>
+            </button>
+            {% endfor %}
+            <div class="search-combobox-empty" data-user-combobox-empty {% if has_member_candidates %}hidden{% endif %}>没有可加入用户</div>
+          </div>
+        </div>
+        <em class="field-hint">只能从候选用户中选择，避免手填用户名出错。</em>
       </label>
       <label>
         项目角色
@@ -565,7 +600,7 @@
       </label>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit">加入项目</button>
+        <button class="btn btn-primary" type="submit" {% if !has_member_candidates %}disabled{% endif %}>加入项目</button>
       </div>
     </form>
   </section>
