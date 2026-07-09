@@ -388,10 +388,13 @@
         <label>
           项目状态
           <select name="status">
-            <option value="planning" {% if project.status_code == "planning" %}selected{% endif %}>规划中</option>
-            <option value="active" {% if project.status_code == "active" %}selected{% endif %}>进行中</option>
-            <option value="paused" {% if project.status_code == "paused" %}selected{% endif %}>暂停</option>
-            <option value="archived" {% if project.status_code == "archived" %}selected{% endif %}>归档</option>
+            <option value="not_started" {% if project.status_code == "not_started" %}selected{% endif %}>待启动</option>
+            <option value="in_progress" {% if project.status_code == "in_progress" %}selected{% endif %}>进行中</option>
+            <option value="acceptance" {% if project.status_code == "acceptance" %}selected{% endif %}>验收中</option>
+            <option value="completed" {% if project.status_code == "completed" %}selected{% endif %}>已完成</option>
+            <option value="on_hold" {% if project.status_code == "on_hold" %}selected{% endif %}>已暂停</option>
+            <option value="cancelled" {% if project.status_code == "cancelled" %}selected{% endif %}>已取消</option>
+            <option value="archived" {% if project.status_code == "archived" %}selected{% endif %}>已归档</option>
           </select>
         </label>
         <label>

@@ -27,7 +27,7 @@
     <article class="metric metric-ok">
       <span class="metric-label">进行中</span>
       <strong>{{ summary.active_projects }}</strong>
-      <span class="metric-hint">规划中 / 进行中</span>
+      <span class="metric-hint">待启动 / 进行中 / 验收中</span>
     </article>
     <article class="metric metric-warning">
       <span class="metric-label">开放工作项</span>
@@ -44,9 +44,12 @@
       </div>
       <div class="segmented" aria-label="项目状态筛选">
         <a class="{% if status_filter == "" %}active{% endif %}" href="/web/projects">全部</a>
-        <a class="{% if status_filter == "active" %}active{% endif %}" href="/web/projects?status=active">进行中</a>
-        <a class="{% if status_filter == "planning" %}active{% endif %}" href="/web/projects?status=planning">规划中</a>
-        <a class="{% if status_filter == "paused" %}active{% endif %}" href="/web/projects?status=paused">已暂停</a>
+        <a class="{% if status_filter == "not_started" %}active{% endif %}" href="/web/projects?status=not_started">待启动</a>
+        <a class="{% if status_filter == "in_progress" %}active{% endif %}" href="/web/projects?status=in_progress">进行中</a>
+        <a class="{% if status_filter == "acceptance" %}active{% endif %}" href="/web/projects?status=acceptance">验收中</a>
+        <a class="{% if status_filter == "completed" %}active{% endif %}" href="/web/projects?status=completed">已完成</a>
+        <a class="{% if status_filter == "on_hold" %}active{% endif %}" href="/web/projects?status=on_hold">已暂停</a>
+        <a class="{% if status_filter == "cancelled" %}active{% endif %}" href="/web/projects?status=cancelled">已取消</a>
         <a class="{% if status_filter == "archived" %}active{% endif %}" href="/web/projects?status=archived">已归档</a>
       </div>
     </div>
@@ -129,10 +132,13 @@
         <label>
           状态
           <select name="status">
-            <option value="active">进行中</option>
-            <option value="planning">规划中</option>
-            <option value="paused">暂停</option>
-            <option value="archived">归档</option>
+            <option value="not_started">待启动</option>
+            <option value="in_progress">进行中</option>
+            <option value="acceptance">验收中</option>
+            <option value="completed">已完成</option>
+            <option value="on_hold">已暂停</option>
+            <option value="cancelled">已取消</option>
+            <option value="archived">已归档</option>
           </select>
         </label>
         <label>

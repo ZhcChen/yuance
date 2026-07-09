@@ -5,6 +5,13 @@ use sqlx::{Row, SqlitePool};
 use crate::platform::error::{AppError, AppResult};
 
 const PROJECT_KEY_GENERATE_MAX_ATTEMPTS: usize = 5;
+const PROJECT_STATUS_NOT_STARTED: &str = "not_started";
+const PROJECT_STATUS_IN_PROGRESS: &str = "in_progress";
+const PROJECT_STATUS_ACCEPTANCE: &str = "acceptance";
+const PROJECT_STATUS_COMPLETED: &str = "completed";
+const PROJECT_STATUS_ON_HOLD: &str = "on_hold";
+const PROJECT_STATUS_CANCELLED: &str = "cancelled";
+const PROJECT_STATUS_ARCHIVED: &str = "archived";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoSeedResult {
@@ -490,7 +497,12 @@ pub async fn get_or_select_current_project_for_user(
     let project_options = list_project_summaries_for_user(pool, user_id, is_super_admin).await?;
     let Some(project) = project_options
         .iter()
-        .find(|project| project.status == "active")
+        .find(|project| project.status == PROJECT_STATUS_IN_PROGRESS)
+        .or_else(|| {
+            project_options
+                .iter()
+                .find(|project| project.status == PROJECT_STATUS_NOT_STARTED)
+        })
         .or_else(|| project_options.first())
     else {
         return Ok(None);
@@ -655,15 +667,17 @@ pub async fn update_project(
     let due_date = validate_optional_date(&input.due_date, "项目截止日期")?;
     validate_date_range(&start_date, &due_date, "项目截止日期不能早于开始日期")?;
 
-    let Some((project_id, previous_owner_user_id)) = sqlx::query_as::<_, (i64, Option<i64>)>(
-        "SELECT id, owner_user_id FROM projects WHERE project_key = ?1",
-    )
-    .bind(&project_key)
-    .fetch_optional(pool)
-    .await?
+    let Some((project_id, previous_owner_user_id, current_status)) =
+        sqlx::query_as::<_, (i64, Option<i64>, String)>(
+            "SELECT id, owner_user_id, status FROM projects WHERE project_key = ?1",
+        )
+        .bind(&project_key)
+        .fetch_optional(pool)
+        .await?
     else {
         return Err(AppError::NotFound("项目不存在".to_string()));
     };
+    validate_project_status_transition(&current_status, status)?;
 
     let Some(owner_user_id) = sqlx::query_scalar::<_, i64>(
         r#"
@@ -3176,28 +3190,105 @@ fn is_leap_year(year: i32) -> bool {
 
 fn validate_project_status(status: &str) -> AppResult<&'static str> {
     match status.trim() {
-        "" | "active" => Ok("active"),
-        "planning" => Ok("planning"),
-        "paused" => Ok("paused"),
-        "archived" => Ok("archived"),
+        "" | PROJECT_STATUS_NOT_STARTED => Ok(PROJECT_STATUS_NOT_STARTED),
+        PROJECT_STATUS_IN_PROGRESS => Ok(PROJECT_STATUS_IN_PROGRESS),
+        PROJECT_STATUS_ACCEPTANCE => Ok(PROJECT_STATUS_ACCEPTANCE),
+        PROJECT_STATUS_COMPLETED => Ok(PROJECT_STATUS_COMPLETED),
+        PROJECT_STATUS_ON_HOLD => Ok(PROJECT_STATUS_ON_HOLD),
+        PROJECT_STATUS_CANCELLED => Ok(PROJECT_STATUS_CANCELLED),
+        PROJECT_STATUS_ARCHIVED => Ok(PROJECT_STATUS_ARCHIVED),
         _ => Err(AppError::BadRequest(
-            "项目状态只能是 planning / active / paused / archived".to_string(),
+            "项目状态只能是 not_started / in_progress / acceptance / completed / on_hold / cancelled / archived".to_string(),
         )),
+    }
+}
+
+fn validate_project_status_transition(from: &str, to: &str) -> AppResult<()> {
+    if from == to {
+        return Ok(());
+    }
+
+    let allowed = match from {
+        PROJECT_STATUS_NOT_STARTED => {
+            matches!(to, PROJECT_STATUS_IN_PROGRESS | PROJECT_STATUS_CANCELLED)
+        }
+        PROJECT_STATUS_IN_PROGRESS => {
+            matches!(
+                to,
+                PROJECT_STATUS_ACCEPTANCE | PROJECT_STATUS_ON_HOLD | PROJECT_STATUS_CANCELLED
+            )
+        }
+        PROJECT_STATUS_ACCEPTANCE => {
+            matches!(
+                to,
+                PROJECT_STATUS_IN_PROGRESS
+                    | PROJECT_STATUS_COMPLETED
+                    | PROJECT_STATUS_ON_HOLD
+                    | PROJECT_STATUS_CANCELLED
+            )
+        }
+        PROJECT_STATUS_ON_HOLD => {
+            matches!(to, PROJECT_STATUS_IN_PROGRESS | PROJECT_STATUS_CANCELLED)
+        }
+        PROJECT_STATUS_COMPLETED => {
+            matches!(to, PROJECT_STATUS_IN_PROGRESS | PROJECT_STATUS_ARCHIVED)
+        }
+        PROJECT_STATUS_CANCELLED => {
+            matches!(to, PROJECT_STATUS_NOT_STARTED | PROJECT_STATUS_ARCHIVED)
+        }
+        PROJECT_STATUS_ARCHIVED => {
+            matches!(
+                to,
+                PROJECT_STATUS_COMPLETED | PROJECT_STATUS_CANCELLED | PROJECT_STATUS_IN_PROGRESS
+            )
+        }
+        _ => false,
+    };
+
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!(
+            "项目状态不能从 {} 切换到 {}",
+            project_status_label(from),
+            project_status_label(to)
+        )))
     }
 }
 
 pub fn ensure_project_accepts_writes(status: &str) -> AppResult<()> {
     match status {
-        "planning" | "active" => Ok(()),
-        "paused" => Err(AppError::BadRequest(
+        PROJECT_STATUS_NOT_STARTED | PROJECT_STATUS_IN_PROGRESS | PROJECT_STATUS_ACCEPTANCE => {
+            Ok(())
+        }
+        PROJECT_STATUS_ON_HOLD => Err(AppError::BadRequest(
             "项目已暂停，不能执行写入操作".to_string(),
         )),
-        "archived" => Err(AppError::BadRequest(
+        PROJECT_STATUS_COMPLETED => Err(AppError::BadRequest(
+            "项目已完成，不能执行写入操作".to_string(),
+        )),
+        PROJECT_STATUS_CANCELLED => Err(AppError::BadRequest(
+            "项目已取消，不能执行写入操作".to_string(),
+        )),
+        PROJECT_STATUS_ARCHIVED => Err(AppError::BadRequest(
             "项目已归档，不能执行写入操作".to_string(),
         )),
         _ => Err(AppError::BadRequest(
             "项目状态异常，不能执行写入操作".to_string(),
         )),
+    }
+}
+
+fn project_status_label(status: &str) -> &'static str {
+    match status {
+        PROJECT_STATUS_NOT_STARTED => "待启动",
+        PROJECT_STATUS_IN_PROGRESS => "进行中",
+        PROJECT_STATUS_ACCEPTANCE => "验收中",
+        PROJECT_STATUS_COMPLETED => "已完成",
+        PROJECT_STATUS_ON_HOLD => "已暂停",
+        PROJECT_STATUS_CANCELLED => "已取消",
+        PROJECT_STATUS_ARCHIVED => "已归档",
+        _ => "未知",
     }
 }
 
@@ -3364,19 +3455,19 @@ async fn seed_demo_projects(pool: &SqlitePool, owner_user_id: i64) -> AppResult<
             "YCE",
             "元策 MVP",
             "统一项目、需求、任务、Bug 的轻量项目管理系统。",
-            "active",
+            PROJECT_STATUS_IN_PROGRESS,
         ),
         (
             "OPS",
             "交付运维台",
             "沉淀迁移、审计、配置和运行态验证能力。",
-            "planning",
+            PROJECT_STATUS_NOT_STARTED,
         ),
         (
             "CRM",
             "客户线索同步",
             "从 CRM 视角验证项目协作和外部集成边界。",
-            "paused",
+            PROJECT_STATUS_ON_HOLD,
         ),
     ];
 

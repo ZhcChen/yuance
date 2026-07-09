@@ -4412,11 +4412,16 @@ fn metrics_from_data(
 ) -> Vec<Metric> {
     let active_projects = projects
         .iter()
-        .filter(|project| matches!(project.status.as_str(), "active" | "planning"))
+        .filter(|project| {
+            matches!(
+                project.status.as_str(),
+                "not_started" | "in_progress" | "acceptance"
+            )
+        })
         .count();
-    let paused_projects = projects
+    let on_hold_projects = projects
         .iter()
-        .filter(|project| project.status == "paused")
+        .filter(|project| project.status == "on_hold")
         .count();
     let pending_tasks = work_items
         .iter()
@@ -4443,7 +4448,7 @@ fn metrics_from_data(
         Metric {
             label: "进行中项目",
             value: active_projects.to_string(),
-            hint: format!("{paused_projects} 个暂停/有风险"),
+            hint: format!("{on_hold_projects} 个已暂停"),
             tone: "info",
         },
         Metric {
@@ -5256,7 +5261,7 @@ fn project_list_summary(projects: &[ProjectRow]) -> ProjectListSummary {
         total_projects: projects.len(),
         active_projects: projects
             .iter()
-            .filter(|project| matches!(project.status.as_str(), "规划中" | "进行中"))
+            .filter(|project| matches!(project.status.as_str(), "待启动" | "进行中" | "验收中"))
             .count(),
         open_work_items: projects.iter().map(|project| project.open_work_items).sum(),
     }
@@ -5265,12 +5270,15 @@ fn project_list_summary(projects: &[ProjectRow]) -> ProjectListSummary {
 fn normalize_project_status_filter(status: &str) -> AppResult<String> {
     match status.trim() {
         "" | "all" => Ok(String::new()),
-        "active" => Ok("active".to_string()),
-        "planning" => Ok("planning".to_string()),
-        "paused" => Ok("paused".to_string()),
+        "not_started" => Ok("not_started".to_string()),
+        "in_progress" => Ok("in_progress".to_string()),
+        "acceptance" => Ok("acceptance".to_string()),
+        "completed" => Ok("completed".to_string()),
+        "on_hold" => Ok("on_hold".to_string()),
+        "cancelled" => Ok("cancelled".to_string()),
         "archived" => Ok("archived".to_string()),
         _ => Err(AppError::BadRequest(
-            "项目状态筛选只能是 active / planning / paused / archived".to_string(),
+            "项目状态筛选只能是 not_started / in_progress / acceptance / completed / on_hold / cancelled / archived".to_string(),
         )),
     }
 }
@@ -5609,10 +5617,13 @@ fn is_completed_status(status: &str) -> bool {
 
 fn project_status_label(status: &str) -> (&'static str, &'static str) {
     match status {
-        "planning" => ("规划中", "info"),
-        "active" => ("进行中", "ok"),
-        "paused" => ("暂停", "warning"),
-        "archived" => ("归档", "info"),
+        "not_started" => ("待启动", "info"),
+        "in_progress" => ("进行中", "ok"),
+        "acceptance" => ("验收中", "warning"),
+        "completed" => ("已完成", "ok"),
+        "on_hold" => ("已暂停", "warning"),
+        "cancelled" => ("已取消", "danger"),
+        "archived" => ("已归档", "info"),
         _ => ("未知", "info"),
     }
 }
@@ -5837,7 +5848,7 @@ fn sample_metrics() -> Vec<Metric> {
         Metric {
             label: "进行中项目",
             value: "3".to_string(),
-            hint: "1 个暂停/有风险".to_string(),
+            hint: "待启动 / 进行中 / 验收中".to_string(),
             tone: "info",
         },
         Metric {
@@ -5885,7 +5896,7 @@ fn sample_projects() -> Vec<ProjectRow> {
             owner: "陈".to_string(),
             open_work_items: 2,
             total_work_items: 4,
-            status_code: "active".to_string(),
+            status_code: "in_progress".to_string(),
             status: "进行中".to_string(),
             status_tone: "ok",
             updated_at: "今天 16:20".to_string(),
@@ -5896,8 +5907,8 @@ fn sample_projects() -> Vec<ProjectRow> {
             owner: "林".to_string(),
             open_work_items: 1,
             total_work_items: 1,
-            status_code: "planning".to_string(),
-            status: "规划中".to_string(),
+            status_code: "not_started".to_string(),
+            status: "待启动".to_string(),
             status_tone: "info",
             updated_at: "今天 13:05".to_string(),
         },
@@ -5907,8 +5918,8 @@ fn sample_projects() -> Vec<ProjectRow> {
             owner: "周".to_string(),
             open_work_items: 1,
             total_work_items: 1,
-            status_code: "paused".to_string(),
-            status: "暂停".to_string(),
+            status_code: "on_hold".to_string(),
+            status: "已暂停".to_string(),
             status_tone: "warning",
             updated_at: "昨天 19:42".to_string(),
         },
@@ -6047,7 +6058,7 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
                 description: "统一项目、需求、任务、Bug 的轻量项目管理系统。".to_string(),
                 owner_username: "chen".to_string(),
                 owner: "陈".to_string(),
-                status_code: "active".to_string(),
+                status_code: "in_progress".to_string(),
                 status: "进行中".to_string(),
                 status_tone: "ok",
                 start_date: "2026-06-01".to_string(),

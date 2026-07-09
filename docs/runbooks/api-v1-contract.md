@@ -125,7 +125,7 @@ PATCH /api/v1/projects/{project_key}
 项目列表参数：
 
 ```text
-status=active|planning|paused|archived
+status=not_started|in_progress|acceptance|completed|on_hold|cancelled|archived
 page=1
 per_page=20
 ```
@@ -136,13 +136,27 @@ per_page=20
 {
   "name": "元策",
   "description": "项目管理系统",
-  "status": "active",
+  "status": "not_started",
   "start_date": "2026-06-01",
   "due_date": "2026-12-31"
 }
 ```
 
 项目编号由服务端自动生成，格式为 `PYYMMDDXXXXXX`，例如 `P260708483921`。创建后不可修改，并作为项目链接和工作项编号前缀。
+
+项目状态流转：
+
+```text
+not_started -> in_progress / cancelled
+in_progress -> acceptance / on_hold / cancelled
+acceptance  -> in_progress / completed / on_hold / cancelled
+on_hold     -> in_progress / cancelled
+completed   -> in_progress / archived
+cancelled   -> not_started / archived
+archived    -> completed / cancelled / in_progress
+```
+
+项目内容写入仅允许 `not_started`、`in_progress`、`acceptance`；`completed`、`on_hold`、`cancelled`、`archived` 仅允许修改项目自身状态。
 
 权限：
 
@@ -180,7 +194,7 @@ viewer
 
 - 成员列表：需要 `project.view`，并处于项目成员范围内。
 - 添加、调整、移除成员：需要 `project.manage`，且当前用户具备项目成员管理权限。
-- 暂停或归档项目会阻止成员新增、调整和移除。
+- `completed`、`on_hold`、`cancelled`、`archived` 项目会阻止成员新增、调整和移除。
 - 如果成员仍负责未关闭工作项，移除会返回 `400 bad_request`，需要先转交或关闭相关工作项。
 
 ## 工作项
@@ -242,7 +256,7 @@ per_page=20
 - 查看：需要 `work_item.view`，并处于项目成员范围内。
 - 创建、更新、删除、恢复：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
 - `viewer` 项目成员不能写入工作项。
-- 已归档或暂停项目会阻止工作项、评论、附件和成员管理等项目内容写入；项目本身仍可通过编辑项目恢复状态。
+- `completed`、`on_hold`、`cancelled`、`archived` 项目会阻止工作项、评论、附件和成员管理等项目内容写入；项目本身仍可通过编辑项目按状态机恢复状态。
 - 已软删除工作项会阻止继续写评论、附件等内容。
 
 状态流转：

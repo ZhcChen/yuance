@@ -2707,12 +2707,15 @@ fn normalize_api_pagination(
 fn normalize_api_project_status(status: &str) -> AppResult<String> {
     match status.trim() {
         "" | "all" => Ok(String::new()),
-        "active" => Ok("active".to_string()),
-        "planning" => Ok("planning".to_string()),
-        "paused" => Ok("paused".to_string()),
+        "not_started" => Ok("not_started".to_string()),
+        "in_progress" => Ok("in_progress".to_string()),
+        "acceptance" => Ok("acceptance".to_string()),
+        "completed" => Ok("completed".to_string()),
+        "on_hold" => Ok("on_hold".to_string()),
+        "cancelled" => Ok("cancelled".to_string()),
         "archived" => Ok("archived".to_string()),
         _ => Err(AppError::BadRequest(
-            "项目状态筛选只能是 active / planning / paused / archived".to_string(),
+            "项目状态筛选只能是 not_started / in_progress / acceptance / completed / on_hold / cancelled / archived".to_string(),
         )),
     }
 }
@@ -2911,7 +2914,7 @@ fn storage_config_version_payload(
 }
 
 fn default_project_status() -> String {
-    "active".to_string()
+    "not_started".to_string()
 }
 
 fn default_priority() -> String {

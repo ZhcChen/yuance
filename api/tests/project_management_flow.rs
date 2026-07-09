@@ -92,10 +92,10 @@ async fn project_summaries_can_paginate_and_filter_by_status() {
     assert_eq!(second_page.total_pages(), 3);
     assert_eq!(second_page.items.len(), 1);
 
-    let paused_page = projects::list_project_summaries_paginated(
+    let on_hold_page = projects::list_project_summaries_paginated(
         &pool,
         projects::ProjectListFilter {
-            status: "paused".to_string(),
+            status: "on_hold".to_string(),
         },
         projects::Pagination {
             page: 1,
@@ -104,8 +104,8 @@ async fn project_summaries_can_paginate_and_filter_by_status() {
     )
     .await
     .expect("filtered project page should load");
-    assert_eq!(paused_page.total_items, 1);
-    assert_eq!(paused_page.items[0].project_key, "CRM");
+    assert_eq!(on_hold_page.total_items, 1);
+    assert_eq!(on_hold_page.items[0].project_key, "CRM");
 }
 
 #[tokio::test]
@@ -263,7 +263,7 @@ async fn web_top_project_nav_points_to_current_project_detail() {
             .expect("project summaries should load");
     let default_project = default_projects
         .iter()
-        .find(|project| project.status == "active")
+        .find(|project| project.status == "in_progress")
         .or_else(|| default_projects.first())
         .expect("demo project should exist");
     let no_current_project_response = app
@@ -383,23 +383,23 @@ async fn web_projects_can_filter_by_status() {
         .expect("demo seed should apply");
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
-    let paused_response = app
+    let on_hold_response = app
         .oneshot(
             Request::builder()
-                .uri("/web/projects?status=paused")
+                .uri("/web/projects?status=on_hold")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    let body = response_body(paused_response).await;
+    let body = response_body(on_hold_response).await;
 
-    assert!(body.contains(r#"href="/web/projects?status=paused">已暂停"#));
+    assert!(body.contains(r#"href="/web/projects?status=on_hold">已暂停"#));
     assert!(body.contains(r#"class="project-card" href="/web/projects/CRM""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/YCE""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/OPS""#));
-    assert!(body.contains(r#"class="active" href="/web/projects?status=paused""#));
+    assert!(body.contains(r#"class="active" href="/web/projects?status=on_hold""#));
 }
 
 #[tokio::test]
@@ -415,19 +415,19 @@ async fn web_projects_paginates_and_preserves_status_filter() {
         projects::CreateProjectInput {
             name: "第二个进行中项目".to_string(),
             description: "用于验证项目分页保留状态筛选".to_string(),
-            status: "active".to_string(),
+            status: "in_progress".to_string(),
             start_date: String::new(),
             due_date: String::new(),
         },
     )
     .await
-    .expect("extra active project should create");
+    .expect("extra in-progress project should create");
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/web/projects?status=active&page=1&per_page=1")
+                .uri("/web/projects?status=in_progress&page=1&per_page=1")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -443,9 +443,9 @@ async fn web_projects_paginates_and_preserves_status_filter() {
     assert!(body.contains("共 2 个项目，每页 1 个"));
     assert!(!body.contains(r#"href="/web/projects/CRM""#));
     assert!(!body.contains(r#"href="/web/projects/OPS""#));
-    assert!(body.contains(r#"href="/web/projects?status=active">进行中"#));
+    assert!(body.contains(r#"href="/web/projects?status=in_progress">进行中"#));
     assert!(body.contains("下一页"));
-    assert!(body.contains("status=active"));
+    assert!(body.contains("status=in_progress"));
     assert!(body.contains("page=2"));
     assert!(body.contains("per_page=1"));
 }
@@ -867,7 +867,7 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E5%85%83%E7%AD%96+%E4%BA%8C%E6%9C%9F&description=%E8%B0%83%E6%95%B4%E5%90%8E%E7%9A%84%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E&status=paused&owner_username=owner2&start_date=2026-07-01&due_date=2026-09-30",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E5%85%83%E7%AD%96+%E4%BA%8C%E6%9C%9F&description=%E8%B0%83%E6%95%B4%E5%90%8E%E7%9A%84%E9%A1%B9%E7%9B%AE%E8%AF%B4%E6%98%8E&status=on_hold&owner_username=owner2&start_date=2026-07-01&due_date=2026-09-30",
                 ))
                 .expect("request should build"),
         )
@@ -893,7 +893,7 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
 
     assert_eq!(project.name, "元策 二期");
     assert_eq!(project.description, "调整后的项目说明");
-    assert_eq!(project.status, "paused");
+    assert_eq!(project.status, "on_hold");
     assert_eq!(project.owner_username, "owner2");
     assert_eq!(project.start_date, "2026-07-01");
     assert_eq!(project.due_date, "2026-09-30");
@@ -1263,7 +1263,7 @@ async fn api_v1_projects_returns_pagination_metadata_and_status_filter() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/api/v1/projects?status=paused&page=1&per_page=1")
+                .uri("/api/v1/projects?status=on_hold&page=1&per_page=1")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -1590,13 +1590,51 @@ async fn api_v1_project_detail_rejects_non_members() {
 }
 
 #[tokio::test]
-async fn api_v1_can_archive_and_restore_project() {
+async fn api_v1_can_follow_project_status_lifecycle_to_archive_and_restore() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let acceptance_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/projects/YCE")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"status":"acceptance","start_date":"2026-07-01","due_date":"2026-09-30"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(acceptance_response.status(), StatusCode::OK);
+    let acceptance_body = response_body(acceptance_response).await;
+    assert!(acceptance_body.contains("\"status\":\"acceptance\""));
+
+    let completed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/projects/YCE")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"status":"completed"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(completed_response.status(), StatusCode::OK);
+    let completed_body = response_body(completed_response).await;
+    assert!(completed_body.contains("\"status\":\"completed\""));
 
     let archive_response = app
         .clone()
@@ -1607,9 +1645,7 @@ async fn api_v1_can_archive_and_restore_project() {
                 .header(header::COOKIE, initialized.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from(
-                    r#"{"status":"archived","start_date":"2026-07-01","due_date":"2026-09-30"}"#,
-                ))
+                .body(Body::from(r#"{"status":"archived"}"#))
                 .expect("request should build"),
         )
         .await
@@ -1628,22 +1664,55 @@ async fn api_v1_can_archive_and_restore_project() {
                 .header(header::COOKIE, initialized.cookie)
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from(r#"{"status":"active"}"#))
+                .body(Body::from(r#"{"status":"in_progress"}"#))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
     assert_eq!(restore_response.status(), StatusCode::OK);
     let restore_body = response_body(restore_response).await;
-    assert!(restore_body.contains("\"status\":\"active\""));
+    assert!(restore_body.contains("\"status\":\"in_progress\""));
 
     let project = projects::get_project_detail(&pool, "YCE")
         .await
         .expect("project should load")
         .expect("project should exist");
-    assert_eq!(project.status, "active");
+    assert_eq!(project.status, "in_progress");
     assert_eq!(project.start_date, "2026-07-01");
     assert_eq!(project.due_date, "2026-09-30");
+}
+
+#[tokio::test]
+async fn api_v1_rejects_invalid_project_status_transition() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/projects/YCE")
+                .header(header::COOKIE, initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"status":"archived"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = response_body(response).await;
+    assert!(body.contains("项目状态不能从 进行中 切换到 已归档"));
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    assert_eq!(project.status, "in_progress");
 }
 
 #[tokio::test]
@@ -1732,7 +1801,7 @@ async fn web_admin_can_create_project_and_redirect_to_detail() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E6%96%B0%E9%A1%B9%E7%9B%AE&description=%E7%94%A8%E4%BA%8E%E9%AA%8C%E8%AF%81%E5%86%99%E5%85%A5%E9%97%AD%E7%8E%AF&status=active&start_date=2026-07-01&due_date=2026-08-31",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E6%96%B0%E9%A1%B9%E7%9B%AE&description=%E7%94%A8%E4%BA%8E%E9%AA%8C%E8%AF%81%E5%86%99%E5%85%A5%E9%97%AD%E7%8E%AF&status=not_started&start_date=2026-07-01&due_date=2026-08-31",
                 ))
                 .expect("request should build"),
         )
@@ -1779,7 +1848,7 @@ async fn web_project_create_rejects_due_date_before_start_date() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E6%97%A5%E6%9C%9F%E9%94%99%E8%AF%AF&description=&status=active&start_date=2026-09-30&due_date=2026-07-01",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=%E6%97%A5%E6%9C%9F%E9%94%99%E8%AF%AF&description=&status=not_started&start_date=2026-09-30&due_date=2026-07-01",
                 ))
                 .expect("request should build"),
         )
@@ -4843,7 +4912,7 @@ async fn api_v1_work_item_delete_restore_respects_write_scope() {
 }
 
 #[tokio::test]
-async fn project_status_blocks_writes_on_paused_or_archived_projects() {
+async fn project_status_blocks_writes_on_blocked_project_statuses() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -4872,18 +4941,18 @@ async fn project_status_blocks_writes_on_paused_or_archived_projects() {
         .await
         .expect("storage config should load")
         .expect("storage config should exist");
-    let paused_project_attachment = files::create_attachment(
+    let on_hold_project_attachment = files::create_attachment(
         &pool,
         &config,
         files::CreateAttachmentInput {
             target_type: "project".to_string(),
             target_id: crm_project.id,
             project_id: Some(crm_project.id),
-            original_filename: "paused-project.pdf".to_string(),
+            original_filename: "on-hold-project.pdf".to_string(),
             content_type: "application/pdf".to_string(),
             byte_size: 1024,
             created_by_user_id: initialized.user_id,
-            activity_summary: Some("登记项目附件 paused-project.pdf".to_string()),
+            activity_summary: Some("登记项目附件 on-hold-project.pdf".to_string()),
         },
     )
     .await
@@ -4938,7 +5007,7 @@ async fn project_status_blocks_writes_on_paused_or_archived_projects() {
     .expect("comment attachment should create");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
-    let paused_response = app
+    let on_hold_response = app
         .clone()
         .oneshot(
             Request::builder()
@@ -4953,9 +5022,9 @@ async fn project_status_blocks_writes_on_paused_or_archived_projects() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(paused_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(on_hold_response.status(), StatusCode::BAD_REQUEST);
 
-    let paused_project_attachment_create_response = app
+    let on_hold_project_attachment_create_response = app
         .clone()
         .oneshot(
             Request::builder()
@@ -4964,25 +5033,25 @@ async fn project_status_blocks_writes_on_paused_or_archived_projects() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&original_filename=paused-new.pdf&content_type=application%2Fpdf&byte_size=1024",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&original_filename=on-hold-new.pdf&content_type=application%2Fpdf&byte_size=1024",
                 ))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
     assert_eq!(
-        paused_project_attachment_create_response.status(),
+        on_hold_project_attachment_create_response.status(),
         StatusCode::BAD_REQUEST
     );
 
-    let paused_project_attachment_delete_response = app
+    let on_hold_project_attachment_delete_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri(format!(
                     "/web/projects/CRM/attachments/{}/delete",
-                    paused_project_attachment.id
+                    on_hold_project_attachment.id
                 ))
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -4994,16 +5063,58 @@ async fn project_status_blocks_writes_on_paused_or_archived_projects() {
         .await
         .expect("router should respond");
     assert_eq!(
-        paused_project_attachment_delete_response.status(),
+        on_hold_project_attachment_delete_response.status(),
         StatusCode::BAD_REQUEST
     );
     assert_eq!(
-        files::get_attachment(&pool, paused_project_attachment.id)
+        files::get_attachment(&pool, on_hold_project_attachment.id)
             .await
             .expect("attachment should load")
             .status,
         "pending"
     );
+
+    sqlx::query("UPDATE projects SET status = 'completed' WHERE project_key = 'OPS'")
+        .execute(&pool)
+        .await
+        .expect("project should complete");
+    let completed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&item_type=task&title=%E5%B7%B2%E5%AE%8C%E6%88%90%E9%A1%B9%E7%9B%AE%E5%86%99%E5%85%A5&description=%E5%BA%94%E8%AF%A5%E8%A2%AB%E6%8B%A6%E6%88%AA&priority=P2",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(completed_response.status(), StatusCode::BAD_REQUEST);
+
+    sqlx::query("UPDATE projects SET status = 'cancelled' WHERE project_key = 'OPS'")
+        .execute(&pool)
+        .await
+        .expect("project should cancel");
+    let cancelled_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&item_type=task&title=%E5%B7%B2%E5%8F%96%E6%B6%88%E9%A1%B9%E7%9B%AE%E5%86%99%E5%85%A5&description=%E5%BA%94%E8%AF%A5%E8%A2%AB%E6%8B%A6%E6%88%AA&priority=P2",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cancelled_response.status(), StatusCode::BAD_REQUEST);
 
     sqlx::query("UPDATE projects SET status = 'archived' WHERE project_key = 'YCE'")
         .execute(&pool)
