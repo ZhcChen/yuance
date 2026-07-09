@@ -256,8 +256,27 @@
     status.dataset.tone = tone || "info";
   }
 
+  function bugReportStatus(form, message, tone) {
+    var status = form.querySelector("[data-bug-report-status]");
+    if (!status) {
+      return;
+    }
+    status.textContent = message;
+    status.dataset.tone = tone || "info";
+  }
+
   function setDirectUploadBusy(form, busy) {
     form.dataset.uploadBusy = busy ? "true" : "false";
+    form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
+      if (control.matches("[data-modal-close]")) {
+        return;
+      }
+      control.disabled = busy;
+    });
+  }
+
+  function setBugReportBusy(form, busy) {
+    form.dataset.bugReportBusy = busy ? "true" : "false";
     form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
       if (control.matches("[data-modal-close]")) {
         return;
@@ -315,6 +334,19 @@
     return (template || "").replace("{id}", encodeURIComponent(String(attachmentId)));
   }
 
+  function attachmentUrlForComment(itemKey, commentId, attachmentId, action) {
+    return (
+      "/api/v1/work-items/" +
+      encodeURIComponent(itemKey) +
+      "/comments/" +
+      encodeURIComponent(String(commentId)) +
+      "/attachments/" +
+      encodeURIComponent(String(attachmentId)) +
+      "/" +
+      action
+    );
+  }
+
   function csrfToken() {
     return document
       .querySelector('meta[name="yuance-csrf-token"]')
@@ -354,6 +386,47 @@
     return payload.data;
   }
 
+  async function uploadAttachmentFile(options) {
+    var file = options.file;
+    var filename = options.filename || file.name || "attachment.bin";
+    var contentType = options.contentType || file.type || "application/octet-stream";
+    var byteSize = Number(options.byteSize || file.size || 0);
+    var attachment = options.existingAttachmentId
+      ? { id: options.existingAttachmentId }
+      : await fetchJson(options.createUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            original_filename: filename,
+            content_type: contentType,
+            byte_size: byteSize,
+          }),
+        });
+
+    var signed = await fetchJson(options.uploadUrl(attachment.id), {
+      method: "GET",
+      headers: { accept: "application/json" },
+    });
+
+    var request = signed.request || {};
+    var uploadResponse = await fetch(request.url, {
+      method: request.method || "PUT",
+      headers: directUploadHeaders(request.headers, contentType),
+      body: file,
+    });
+    if (!uploadResponse.ok) {
+      throw new Error("对象存储上传失败：" + uploadResponse.status);
+    }
+
+    return fetchJson(options.completeUrl(attachment.id), {
+      method: "POST",
+      headers: { accept: "application/json" },
+    });
+  }
+
   async function submitDirectUpload(form) {
     if (form.dataset.uploadBusy === "true") {
       return;
@@ -368,63 +441,208 @@
       return;
     }
 
-    var filename = form.querySelector("[data-attachment-filename]")?.value || file.name;
-    var contentType =
-      form.querySelector("[data-attachment-content-type]")?.value ||
-      file.type ||
-      "application/octet-stream";
-    var byteSize = Number(form.querySelector("[data-attachment-byte-size]")?.value || file.size || 0);
-
     setDirectUploadBusy(form, true);
     var existingAttachmentId = form.dataset.existingAttachmentId || "";
     directUploadStatus(form, existingAttachmentId ? "正在获取上传签名..." : "正在登记附件元数据...", "info");
     try {
-      var attachment = existingAttachmentId
-        ? { id: existingAttachmentId }
-        : await fetchJson(form.dataset.attachmentCreateUrl, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              accept: "application/json",
-            },
-            body: JSON.stringify({
-              original_filename: filename,
-              content_type: contentType,
-              byte_size: byteSize,
-            }),
-          });
-
+      await uploadAttachmentFile({
+        file: file,
+        filename: form.querySelector("[data-attachment-filename]")?.value || file.name,
+        contentType:
+          form.querySelector("[data-attachment-content-type]")?.value ||
+          file.type ||
+          "application/octet-stream",
+        byteSize: Number(form.querySelector("[data-attachment-byte-size]")?.value || file.size || 0),
+        existingAttachmentId: existingAttachmentId,
+        createUrl: form.dataset.attachmentCreateUrl,
+        uploadUrl: function (attachmentId) {
+          return attachmentUrlFromTemplate(form.dataset.attachmentUploadUrlTemplate, attachmentId);
+        },
+        completeUrl: function (attachmentId) {
+          return attachmentUrlFromTemplate(form.dataset.attachmentCompleteUrlTemplate, attachmentId);
+        },
+      });
       if (!existingAttachmentId) {
-        directUploadStatus(form, "正在获取上传签名...", "info");
+        directUploadStatus(form, "附件上传完成，正在刷新页面。", "success");
+      } else {
+        directUploadStatus(form, "附件继续上传完成，正在刷新页面。", "success");
       }
-      var signed = await fetchJson(attachmentUrlFromTemplate(form.dataset.attachmentUploadUrlTemplate, attachment.id), {
-        method: "GET",
-        headers: { accept: "application/json" },
-      });
-
-      directUploadStatus(form, "正在直传对象存储...", "info");
-      var request = signed.request || {};
-      var uploadResponse = await fetch(request.url, {
-        method: request.method || "PUT",
-        headers: directUploadHeaders(request.headers, contentType),
-        body: file,
-      });
-      if (!uploadResponse.ok) {
-        throw new Error("对象存储上传失败：" + uploadResponse.status);
-      }
-
-      directUploadStatus(form, "上传完成，正在刷新附件状态...", "info");
-      await fetchJson(attachmentUrlFromTemplate(form.dataset.attachmentCompleteUrlTemplate, attachment.id), {
-        method: "POST",
-        headers: { accept: "application/json" },
-      });
-      directUploadStatus(form, "附件上传完成，正在刷新页面。", "success");
       window.setTimeout(function () {
         window.location.href = form.dataset.successRedirect || window.location.href;
       }, 450);
     } catch (error) {
       directUploadStatus(form, error.message || "附件上传失败，请稍后重试。", "error");
       setDirectUploadBusy(form, false);
+    }
+  }
+
+  function updateBugReportGroupTitles(form) {
+    var groups = Array.from(form.querySelectorAll("[data-bug-report-group]"));
+    groups.forEach(function (group, index) {
+      var title = group.querySelector("[data-bug-report-group-title]");
+      if (title) {
+        title.textContent = "第 " + (index + 1) + " 组";
+      }
+      var remove = group.querySelector("[data-bug-report-remove]");
+      if (remove) {
+        remove.hidden = groups.length <= 1;
+      }
+    });
+  }
+
+  function resetBugReportGroup(group) {
+    group.querySelectorAll("textarea").forEach(function (textarea) {
+      textarea.value = "";
+    });
+    group.querySelectorAll("input[type='file']").forEach(function (input) {
+      input.value = "";
+    });
+    var fileName = group.querySelector("[data-bug-report-image-name]");
+    if (fileName) {
+      fileName.textContent = "选择截图、报错页面或复现过程图片。";
+    }
+  }
+
+  function addBugReportGroup(form) {
+    if (!form) {
+      return;
+    }
+    var container = form.querySelector("[data-bug-report-groups]");
+    var first = container && container.querySelector("[data-bug-report-group]");
+    if (!container || !first) {
+      return;
+    }
+    var clone = first.cloneNode(true);
+    resetBugReportGroup(clone);
+    container.appendChild(clone);
+    updateBugReportGroupTitles(form);
+    var textarea = clone.querySelector("[data-bug-report-body]");
+    if (textarea) {
+      textarea.focus({ preventScroll: true });
+    }
+  }
+
+  function removeBugReportGroup(button) {
+    var group = button.closest("[data-bug-report-group]");
+    var form = button.closest("[data-bug-report-form]");
+    if (!group || !form || form.querySelectorAll("[data-bug-report-group]").length <= 1) {
+      return;
+    }
+    group.remove();
+    updateBugReportGroupTitles(form);
+  }
+
+  function syncBugReportImageName(input) {
+    var group = input.closest("[data-bug-report-group]");
+    var file = input.files && input.files[0];
+    var label = group && group.querySelector("[data-bug-report-image-name]");
+    if (!label) {
+      return;
+    }
+    label.textContent = file
+      ? "已选择 " + (file.name || "图片") + "，提交后会直传对象存储。"
+      : "选择截图、报错页面或复现过程图片。";
+  }
+
+  function collectBugReportGroups(form) {
+    return Array.from(form.querySelectorAll("[data-bug-report-group]"))
+      .map(function (group, index) {
+        var fileInput = group.querySelector("[data-bug-report-image]");
+        var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+        var body = (group.querySelector("[data-bug-report-body]")?.value || "").trim();
+        return { index: index, file: file, body: body };
+      })
+      .filter(function (group) {
+        return Boolean(group.file || group.body);
+      });
+  }
+
+  async function submitBugReport(form) {
+    if (form.dataset.bugReportBusy === "true") {
+      return;
+    }
+    if (!form.reportValidity()) {
+      return;
+    }
+    var groups = collectBugReportGroups(form);
+    var invalidGroup = groups.find(function (group) {
+      return group.file && !group.body;
+    });
+    if (invalidGroup) {
+      bugReportStatus(form, "第 " + (invalidGroup.index + 1) + " 组已选择图片，请填写对应说明内容。", "error");
+      return;
+    }
+    var invalidImageGroup = groups.find(function (group) {
+      return group.file && group.file.type && group.file.type.indexOf("image/") !== 0;
+    });
+    if (invalidImageGroup) {
+      bugReportStatus(form, "第 " + (invalidImageGroup.index + 1) + " 组请选择图片文件。", "error");
+      return;
+    }
+
+    var formData = new FormData(form);
+    setBugReportBusy(form, true);
+    bugReportStatus(form, "正在创建 Bug...", "info");
+    try {
+      var item = await fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          project_key: formData.get("project_key") || "",
+          item_type: formData.get("item_type") || "bug",
+          title: formData.get("title") || "",
+          description: formData.get("description") || "",
+          priority: formData.get("priority") || "P2",
+          due_date: formData.get("due_date") || "",
+          parent_item_key: formData.get("parent_item_key") || "",
+        }),
+      });
+
+      for (var i = 0; i < groups.length; i += 1) {
+        var group = groups[i];
+        bugReportStatus(form, "正在创建第 " + (i + 1) + "/" + groups.length + " 组说明...", "info");
+        var comment = await fetchJson("/api/v1/work-items/" + encodeURIComponent(item.key) + "/comments", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({ body: group.body }),
+        });
+
+        if (group.file) {
+          bugReportStatus(form, "正在上传第 " + (i + 1) + "/" + groups.length + " 组图片...", "info");
+          await uploadAttachmentFile({
+            file: group.file,
+            filename: group.file.name || "bug-screenshot.png",
+            contentType: group.file.type || "application/octet-stream",
+            byteSize: group.file.size || 0,
+            createUrl:
+              "/api/v1/work-items/" +
+              encodeURIComponent(item.key) +
+              "/comments/" +
+              encodeURIComponent(String(comment.id)) +
+              "/attachments",
+            uploadUrl: function (attachmentId) {
+              return attachmentUrlForComment(item.key, comment.id, attachmentId, "upload-url");
+            },
+            completeUrl: function (attachmentId) {
+              return attachmentUrlForComment(item.key, comment.id, attachmentId, "uploaded");
+            },
+          });
+        }
+      }
+
+      bugReportStatus(form, "Bug 创建完成，正在打开详情页。", "success");
+      window.setTimeout(function () {
+        window.location.href = "/web/work-items/" + encodeURIComponent(item.key);
+      }, 450);
+    } catch (error) {
+      bugReportStatus(form, error.message || "Bug 创建失败，请稍后重试。", "error");
+      setBugReportBusy(form, false);
     }
   }
 
@@ -683,6 +901,20 @@
       return;
     }
 
+    var bugReportAdd = event.target.closest("[data-bug-report-add]");
+    if (bugReportAdd) {
+      event.preventDefault();
+      addBugReportGroup(bugReportAdd.closest("[data-bug-report-form]"));
+      return;
+    }
+
+    var bugReportRemove = event.target.closest("[data-bug-report-remove]");
+    if (bugReportRemove) {
+      event.preventDefault();
+      removeBugReportGroup(bugReportRemove);
+      return;
+    }
+
     var trigger = event.target.closest("[data-dropdown-trigger]");
     if (trigger) {
       var root = trigger.closest("[data-dropdown-root]") || trigger.parentElement;
@@ -901,6 +1133,12 @@
   document.querySelectorAll("[data-permission-tree]").forEach(syncPermissionTree);
 
   document.addEventListener("change", function (event) {
+    var bugReportImage = event.target.closest("[data-bug-report-image]");
+    if (bugReportImage) {
+      syncBugReportImageName(bugReportImage);
+      return;
+    }
+
     var fileInput = event.target.closest("[data-direct-upload] [data-attachment-file]");
     if (fileInput) {
       syncAttachmentFileFields(fileInput.closest("[data-direct-upload]"));
@@ -942,6 +1180,13 @@
   }, true);
 
   document.addEventListener("submit", function (event) {
+    var bugReportForm = event.target.closest("[data-bug-report-form]");
+    if (bugReportForm) {
+      event.preventDefault();
+      submitBugReport(bugReportForm);
+      return;
+    }
+
     var form = event.target.closest("[data-direct-upload]");
     if (form) {
       event.preventDefault();
@@ -977,5 +1222,6 @@
 
   initTopbarSearch(document);
   initProjectSwitcher(document);
+  document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initTabs(document);
 })();

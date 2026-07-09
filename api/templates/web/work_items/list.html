@@ -164,7 +164,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items">
+    <form class="modal-body modal-form" method="post" action="/web/work-items" {% if item_type == "bug" %}data-bug-report-form data-bug-report-create-url="/api/v1/work-items"{% endif %}>
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="item_type" value="{{ item_type }}">
       <div class="field-grid">
@@ -209,6 +209,35 @@
           描述
           <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
         </label>
+        {% if item_type == "bug" %}
+        <div class="bug-report-builder wide-field" data-bug-report-builder>
+          <div class="bug-report-builder-head">
+            <div>
+              <strong>图片与复现说明</strong>
+              <span>每一组会创建为一条 Bug 评论，图片使用对象存储前端直传。</span>
+            </div>
+            <button class="btn btn-sm btn-secondary" type="button" data-bug-report-add>新增一组</button>
+          </div>
+          <div class="bug-report-groups" data-bug-report-groups>
+            <article class="bug-report-group" data-bug-report-group>
+              <div class="bug-report-group-head">
+                <strong data-bug-report-group-title>第 1 组</strong>
+                <button class="btn btn-sm btn-secondary" type="button" data-bug-report-remove>移除</button>
+              </div>
+              <label class="upload-picker bug-report-image-picker">
+                <span>上传图片</span>
+                <input type="file" accept="image/*" data-bug-report-image>
+                <em data-bug-report-image-name>选择截图、报错页面或复现过程图片。</em>
+              </label>
+              <label>
+                说明内容
+                <textarea rows="3" placeholder="描述这张图对应的现象、操作步骤或期望结果" data-bug-report-body></textarea>
+              </label>
+            </article>
+          </div>
+          <div class="upload-status" role="status" aria-live="polite" data-bug-report-status>可添加多组图片与说明；没有填写的组会自动跳过。</div>
+        </div>
+        {% endif %}
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>

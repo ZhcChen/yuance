@@ -510,6 +510,11 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("CRM-BUG-1"));
     assert!(!bugs_body.contains("YCE-REQ-1"));
     assert!(!bugs_body.contains("OPS-TASK-1"));
+    assert!(bugs_body.contains(r#"data-bug-report-form"#));
+    assert!(bugs_body.contains(r#"data-bug-report-groups"#));
+    assert!(bugs_body.contains(r#"accept="image/*""#));
+    assert!(bugs_body.contains("每一组会创建为一条 Bug 评论"));
+    assert!(bugs_body.contains("图片使用对象存储前端直传"));
 
     projects::set_current_project_for_user(&pool, initialized.user_id, true, "OPS")
         .await
