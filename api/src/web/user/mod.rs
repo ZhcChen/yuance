@@ -163,6 +163,7 @@ struct WorkItemComment {
     author: String,
     created_at: String,
     updated_at: String,
+    is_flow: bool,
     attachments: Vec<AttachmentView>,
     has_attachments: bool,
     can_manage: bool,
@@ -212,6 +213,9 @@ struct SystemNav {
     roles: bool,
     storage: bool,
     audit: bool,
+    requirements_badge: String,
+    tasks_badge: String,
+    bugs_badge: String,
 }
 
 impl SystemNav {
@@ -223,6 +227,9 @@ impl SystemNav {
             roles: true,
             storage: true,
             audit: true,
+            requirements_badge: String::new(),
+            tasks_badge: String::new(),
+            bugs_badge: String::new(),
         }
     }
 }
@@ -534,6 +541,7 @@ struct WorkItemListTemplate {
     item_type: &'static str,
     items: Vec<WorkItem>,
     parent_options: Vec<WorkItem>,
+    assignee_options: Vec<ProjectMemberView>,
     filters: WorkItemListFilterView,
     summary: WorkItemListSummary,
     pagination: PaginationView,
@@ -574,6 +582,7 @@ struct WorkItemDetailTemplate {
     has_comments: bool,
     has_attachments: bool,
     can_manage_work_items: bool,
+    can_delete_work_items: bool,
 }
 
 #[derive(Template)]
@@ -869,6 +878,8 @@ pub struct CreateWorkItemForm {
     description: String,
     priority: String,
     #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
     due_date: String,
     #[serde(default)]
     parent_item_key: String,
@@ -881,6 +892,17 @@ pub struct WorkItemStatusForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
     status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemHandoffForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    status: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    body: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1055,7 +1077,7 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
         return login_redirect(&headers);
     };
 
-    let system_nav = build_system_nav(pool, user.id).await?;
+    let system_nav = build_system_nav(pool, user.id, user.is_super_admin).await?;
     let (current_project, topbar_project_options) =
         build_project_context(pool, user.id, user.is_super_admin).await?;
 
@@ -1570,16 +1592,14 @@ pub async fn project_detail_page(
         )
         .await?;
     let can_manage_project = can_edit_project && project_accepts_writes;
-    let can_manage_work_items =
-        rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
-            && projects::user_can_write_project_content(
-                pool,
-                project.id,
-                context.user_id,
-                context.is_super_admin,
-            )
-            .await?
-            && project_accepts_writes;
+    let can_manage_work_items = projects::user_can_write_project_content(
+        pool,
+        project.id,
+        context.user_id,
+        context.is_super_admin,
+    )
+    .await?
+        && project_accepts_writes;
     let project = project_detail_from_domain(project);
 
     let csrf_token = context.csrf_token.clone();
@@ -1892,7 +1912,7 @@ pub async fn work_items_create(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let project = projects::get_project_detail(pool, &form.project_key)
             .await?
             .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
@@ -1907,6 +1927,7 @@ pub async fn work_items_create(
                 title: form.title,
                 description: form.description,
                 priority: form.priority,
+                assignee_username: form.assignee_username,
                 due_date: form.due_date,
                 parent_item_key: form.parent_item_key,
             },
@@ -2031,16 +2052,17 @@ pub async fn work_item_detail_page(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
-    let can_manage_work_items =
+    let can_manage_work_items = projects::user_can_write_project_content(
+        pool,
+        project.id,
+        context.user_id,
+        context.is_super_admin,
+    )
+    .await?
+        && project_accepts_writes;
+    let can_delete_work_items =
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
-            && projects::user_can_write_project_content(
-                pool,
-                project.id,
-                context.user_id,
-                context.is_super_admin,
-            )
-            .await?
-            && project_accepts_writes;
+            && can_manage_work_items;
     let status_options = work_item_status_options(&item.status_code)?;
     let quick_status_options = work_item_quick_status_options(&item.status_code)?;
 
@@ -2066,6 +2088,7 @@ pub async fn work_item_detail_page(
             attachments,
             comments,
             can_manage_work_items,
+            can_delete_work_items,
         })?
         .into_response(),
     )
@@ -2083,7 +2106,7 @@ pub async fn work_item_status_update(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2117,6 +2140,64 @@ pub async fn work_item_status_update(
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
 }
 
+pub async fn work_item_handoff(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Form(form): Form<WorkItemHandoffForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_work_item_accepts_writes(&item)?;
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let project = projects::get_project_detail(pool, &item.project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        let updated = projects::handoff_work_item(
+            pool,
+            context.user_id,
+            &item_key,
+            projects::HandoffWorkItemInput {
+                status: form.status,
+                assignee_username: form.assignee_username,
+                body: form.body,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "work_item.handoff",
+            "work_item",
+            &updated.item_key,
+            &format!(
+                r#"{{"status":"{}","assignee_username":"{}"}}"#,
+                updated.status, updated.assignee_username
+            ),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&format!("/web/work-items/{}", updated.item_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
 pub async fn work_item_update(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2129,7 +2210,7 @@ pub async fn work_item_update(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2275,7 +2356,7 @@ pub async fn work_item_comment_create(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2320,7 +2401,7 @@ pub async fn work_item_comment_update(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2373,7 +2454,7 @@ pub async fn work_item_comment_delete(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2425,7 +2506,7 @@ pub async fn work_item_attachment_create(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2490,7 +2571,7 @@ pub async fn work_item_attachment_delete(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
@@ -2590,9 +2671,10 @@ pub async fn work_item_comment_attachment_create(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let (item, project, comment) =
             load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        ensure_comment_accepts_attachments(&comment)?;
         ensure_work_item_accepts_writes(&item)?;
         ensure_project_key_access(
             pool,
@@ -2654,9 +2736,10 @@ pub async fn work_item_comment_attachment_delete(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
         let (item, project, comment) =
             load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        ensure_comment_accepts_attachments(&comment)?;
         ensure_work_item_accepts_writes(&item)?;
         ensure_project_key_access(
             pool,
@@ -3865,9 +3948,35 @@ async fn work_item_list_page(
         total_items,
         total_pages,
     );
-    let can_manage_work_items = match context.pool {
-        Some(pool) => rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?,
-        None => true,
+    let (can_manage_work_items, assignee_options) = match (context.pool, current_project.as_ref()) {
+        (Some(pool), Some(project_context)) => {
+            let project = projects::get_project_detail(pool, &project_context.key)
+                .await?
+                .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+            let project_accepts_writes =
+                projects::ensure_project_accepts_writes(&project.status).is_ok();
+            let can_write = projects::user_can_write_project_content(
+                pool,
+                project.id,
+                context.user_id,
+                context.is_super_admin,
+            )
+            .await?
+                && project_accepts_writes;
+            let members = load_project_member_options(pool, &project_context.key).await?;
+            (can_write, members)
+        }
+        (None, _) => (
+            true,
+            vec![ProjectMemberView {
+                display_name: "陈".to_string(),
+                username: "yuance_admin".to_string(),
+                role_code: "owner".to_string(),
+                role: "负责人".to_string(),
+                joined_at: "今天".to_string(),
+            }],
+        ),
+        _ => (false, Vec::new()),
     };
     let parent_options = if item_type == Some("task") && !filters.project_key.is_empty() {
         match context.pool {
@@ -3911,6 +4020,7 @@ async fn work_item_list_page(
             has_items: !items.is_empty(),
             items,
             parent_options,
+            assignee_options,
             filters,
             summary,
             pagination,
@@ -3985,10 +4095,10 @@ pub async fn work_item_detail_partial(
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-    let can_manage_work_items = rbac::user_has_permission(pool, user.id, "work_item.manage")
-        .await?
-        && projects::user_can_write_project_content(pool, project.id, user.id, user.is_super_admin)
-            .await?;
+    let can_manage_work_items =
+        projects::user_can_write_project_content(pool, project.id, user.id, user.is_super_admin)
+            .await?
+            && projects::ensure_project_accepts_writes(&project.status).is_ok();
 
     response::html(WorkItemDetailPartialTemplate {
         csrf_token: csrf::ensure_token(&headers),
@@ -4163,7 +4273,7 @@ async fn web_context_or_redirect<'a>(
         return Ok(Err(login_redirect(headers)?));
     };
 
-    let system_nav = build_system_nav(pool, user.id).await?;
+    let system_nav = build_system_nav(pool, user.id, user.is_super_admin).await?;
     let (current_project, topbar_project_options) =
         build_project_context(pool, user.id, user.is_super_admin).await?;
 
@@ -4209,7 +4319,7 @@ async fn system_context_or_redirect(
             "需要系统管理权限".to_string(),
         ));
     }
-    let system_nav = build_system_nav(pool, user.id).await?;
+    let system_nav = build_system_nav(pool, user.id, user.is_super_admin).await?;
     let (current_project, topbar_project_options) =
         build_project_context(pool, user.id, user.is_super_admin).await?;
     Ok(Ok(SystemContext {
@@ -4244,12 +4354,18 @@ async fn build_project_context(
     Ok((current_project, project_options))
 }
 
-async fn build_system_nav(pool: &SqlitePool, user_id: i64) -> AppResult<SystemNav> {
+async fn build_system_nav(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<SystemNav> {
     let dashboard = rbac::user_has_permission(pool, user_id, "system.dashboard.view").await?;
     let users = rbac::user_has_permission(pool, user_id, "system.users.view").await?;
     let roles = rbac::user_has_permission(pool, user_id, "system.roles.view").await?;
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
+    let assignment_counts =
+        projects::count_pending_assigned_work_items(pool, user_id, is_super_admin).await?;
 
     Ok(SystemNav {
         visible: dashboard || users || roles || storage || audit,
@@ -4258,7 +4374,18 @@ async fn build_system_nav(pool: &SqlitePool, user_id: i64) -> AppResult<SystemNa
         roles,
         storage,
         audit,
+        requirements_badge: topnav_badge(assignment_counts.requirements),
+        tasks_badge: topnav_badge(assignment_counts.tasks),
+        bugs_badge: topnav_badge(assignment_counts.bugs),
     })
+}
+
+fn topnav_badge(count: i64) -> String {
+    match count {
+        count if count <= 0 => String::new(),
+        count if count > 99 => "99+".to_string(),
+        count => count.to_string(),
+    }
 }
 
 async fn ensure_manage_permission(
@@ -4661,9 +4788,10 @@ fn comment_from_summary_with_permission(
         author: fallback_text(comment.author_display_name, "系统"),
         created_at: display_timestamp(comment.created_at),
         updated_at: display_timestamp(comment.updated_at),
+        is_flow: comment.is_flow,
         attachments: Vec::new(),
         has_attachments: false,
-        can_manage,
+        can_manage: can_manage && !comment.is_flow,
     }
 }
 
@@ -5165,6 +5293,14 @@ fn ensure_work_item_accepts_writes(item: &WorkItemDetailView) -> AppResult<()> {
         return Err(AppError::BadRequest(
             "工作项已删除，不能执行写入操作".to_string(),
         ));
+    }
+
+    Ok(())
+}
+
+fn ensure_comment_accepts_attachments(comment: &projects::WorkItemCommentSummary) -> AppResult<()> {
+    if comment.is_flow {
+        return Err(AppError::Forbidden("流程记录不能添加附件".to_string()));
     }
 
     Ok(())
@@ -6123,6 +6259,7 @@ fn render_sample_work_item_detail_page(
             attachments: Vec::new(),
             comments: partial.comments,
             can_manage_work_items: true,
+            can_delete_work_items: true,
         })?
         .into_response(),
     )
@@ -6161,6 +6298,7 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
             author: "陈".to_string(),
             created_at: "今天".to_string(),
             updated_at: "今天".to_string(),
+            is_flow: false,
             attachments: Vec::new(),
             has_attachments: false,
             can_manage: true,

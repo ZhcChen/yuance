@@ -95,7 +95,12 @@
       </label>
       <label>
         负责人
-        <input name="assignee_username" value="{{ filters.assignee_username }}" placeholder="用户名">
+        <select name="assignee_username">
+          <option value="">全部负责人</option>
+          {% for member in assignee_options %}
+          <option value="{{ member.username }}" {% if filters.assignee_username == member.username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
+          {% endfor %}
+        </select>
       </label>
       <div class="filter-actions">
         <button class="btn btn-primary" type="submit">筛选</button>
@@ -160,7 +165,7 @@
     <div class="modal-head">
       <div>
         <h2 id="work-item-create-modal-title">{{ create_label }}</h2>
-        <p>工作项创建后会自动分配给当前用户，并记录项目动态。</p>
+        <p>可选择下一位负责人；未选择时默认分配给当前用户，并记录项目动态。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -189,6 +194,15 @@
         <label>
           截止日期
           <input name="due_date" type="date">
+        </label>
+        <label>
+          负责人
+          <select name="assignee_username">
+            <option value="">默认我自己</option>
+            {% for member in assignee_options %}
+            <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
+            {% endfor %}
+          </select>
         </label>
         {% if item_type == "task" %}
         <label>

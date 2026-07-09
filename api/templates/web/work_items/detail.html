@@ -17,14 +17,17 @@
     </div>
     <div class="toolbar-actions">
       <a class="btn btn-secondary" href="/web/projects/{{ item.project_key }}">返回项目</a>
-      {% if can_manage_work_items %}
       {% if item.is_deleted %}
+      {% if can_delete_work_items %}
       <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/restore">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn btn-primary" type="submit">恢复工作项</button>
       </form>
+      {% endif %}
       {% else %}
+      {% if can_manage_work_items %}
       <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑</button>
+      <button class="btn btn-primary" type="button" data-modal-open="work-item-handoff-modal">推进并指派</button>
       <button class="btn btn-secondary" type="button" data-modal-open="work-item-comment-modal">评论</button>
       <button class="btn btn-secondary" type="button" data-modal-open="work-item-attachment-modal">上传附件</button>
       {% for option in quick_status_options %}
@@ -34,6 +37,8 @@
         <button class="{% if option.value == "done" || option.value == "resolved" || option.value == "verified" || option.value == "closed" %}btn btn-primary{% else %}btn btn-secondary{% endif %}" type="submit">{{ option.label }}</button>
       </form>
       {% endfor %}
+      {% endif %}
+      {% if can_delete_work_items %}
       <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/delete" data-confirm-submit-form data-confirm-title="删除工作项" data-confirm-message="确认删除 {{ item.key }}？列表、搜索和个人工作台将默认不再展示。" data-confirm-action="删除">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn btn-danger" type="submit">删除</button>
@@ -218,6 +223,49 @@
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
         <button class="btn btn-primary" type="submit">保存工作项</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="work-item-handoff-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="work-item-handoff-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="work-item-handoff-modal-title">推进并指派</h2>
+        <p>选择下一状态和负责人，并把处理说明记录为流程记录。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/handoff">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid one-column">
+        <label>
+          下一状态
+          <select name="status">
+            {% for option in status_options %}
+            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          下一负责人
+          <select name="assignee_username">
+            <option value="">保持当前负责人</option>
+            {% for member in assignee_options %}
+            <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          处理说明
+          <textarea name="body" rows="4" placeholder="说明本次处理、阻塞或下一步"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">提交流转</button>
       </div>
     </form>
   </section>

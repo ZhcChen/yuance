@@ -1920,6 +1920,74 @@ async fn web_member_can_create_work_item_in_joined_project() {
 }
 
 #[tokio::test]
+async fn web_project_member_without_work_item_manage_can_create_bug_with_assignee() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    rbac::create_role(&pool, "work_view_only", "工作项只读入口", "self")
+        .await
+        .expect("role should create");
+    rbac::replace_role_permissions(
+        &pool,
+        "work_view_only",
+        &["project.view".to_string(), "work_item.view".to_string()],
+    )
+    .await
+    .expect("role permissions should replace");
+    let reporter =
+        create_user_with_role(&pool, "bug_reporter", "缺陷报告人", "work_view_only").await;
+    let assignee = create_user_with_role(&pool, "bug_owner", "缺陷负责人", "work_view_only").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "bug_reporter", "member")
+        .await
+        .expect("reporter should join YCE");
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "bug_owner", "member")
+        .await
+        .expect("assignee should join YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items")
+                .header(header::COOKIE, with_csrf_cookie(&reporter.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=YCE&item_type=bug&title=%E6%99%AE%E9%80%9A%E6%88%90%E5%91%98%E6%8F%90%E4%BA%A4+Bug&description=%E5%A4%8D%E7%8E%B0%E6%AD%A5%E9%AA%A4&priority=P1&assignee_username=bug_owner",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .expect("location should exist")
+        .to_str()
+        .expect("location should be str")
+        .to_string();
+    assert!(
+        location.starts_with("/web/work-items/YCE-BUG-"),
+        "unexpected redirect: {location}"
+    );
+
+    let item_key = location.trim_start_matches("/web/work-items/").to_string();
+    let item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(item.item_type, "bug");
+    assert_eq!(item.title, "普通成员提交 Bug");
+    assert_eq!(item.assignee_username, "bug_owner");
+    assert_eq!(item.assignee_display_name, "缺陷负责人");
+    assert_ne!(reporter.user_id, assignee.user_id);
+}
+
+#[tokio::test]
 async fn api_v1_rejects_invalid_work_item_due_date() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -4465,6 +4533,166 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
 }
 
 #[tokio::test]
+async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    rbac::create_role(&pool, "work_entry_only", "工作项入口", "self")
+        .await
+        .expect("role should create");
+    rbac::replace_role_permissions(
+        &pool,
+        "work_entry_only",
+        &["project.view".to_string(), "work_item.view".to_string()],
+    )
+    .await
+    .expect("role permissions should replace");
+    let reporter =
+        create_user_with_role(&pool, "api_bug_reporter", "API 报告人", "work_entry_only").await;
+    let first_owner =
+        create_user_with_role(&pool, "api_bug_owner_a", "负责人 A", "work_entry_only").await;
+    let next_owner =
+        create_user_with_role(&pool, "api_bug_owner_b", "负责人 B", "work_entry_only").await;
+    for username in ["api_bug_reporter", "api_bug_owner_a", "api_bug_owner_b"] {
+        projects::add_project_member(&pool, initialized.user_id, "YCE", username, "member")
+            .await
+            .expect("member should join YCE");
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items")
+                .header(header::COOKIE, reporter.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"bug","title":"API 指派缺陷","description":"待第一负责人处理","priority":"P1","assignee_username":"api_bug_owner_a"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let create_body = response_body(create_response).await;
+    let item_key = extract_json_string(&create_body, "key");
+
+    let first_counts =
+        projects::count_pending_assigned_work_items(&pool, first_owner.user_id, false)
+            .await
+            .expect("first owner counts should load");
+    assert_eq!(first_counts.bugs, 1);
+
+    let handoff_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/work-items/{item_key}/handoff"))
+                .header(header::COOKIE, first_owner.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"status":"in_progress","assignee_username":"api_bug_owner_b","body":"已复现，转开发修复"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(handoff_response.status(), StatusCode::OK);
+
+    let item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let comments = projects::list_work_item_comments(&pool, item.id)
+        .await
+        .expect("comments should load");
+    assert_eq!(item.status, "in_progress");
+    assert_eq!(item.assignee_username, "api_bug_owner_b");
+    assert!(comments.iter().any(|comment| {
+        comment.is_flow
+            && comment.body.contains("状态：待处理 → 进行中")
+            && comment.body.contains("负责人：负责人 A → 负责人 B")
+            && comment.body.contains("说明：已复现，转开发修复")
+    }));
+    let flow_comment_id = comments
+        .iter()
+        .find(|comment| comment.is_flow)
+        .expect("flow comment should exist")
+        .id;
+
+    let old_counts = projects::count_pending_assigned_work_items(&pool, first_owner.user_id, false)
+        .await
+        .expect("old owner counts should load");
+    let next_counts = projects::count_pending_assigned_work_items(&pool, next_owner.user_id, false)
+        .await
+        .expect("next owner counts should load");
+    assert_eq!(old_counts.bugs, 0);
+    assert_eq!(next_counts.bugs, 1);
+
+    let next_owner_bugs_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/bugs")
+                .header(header::COOKIE, next_owner.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(next_owner_bugs_page.status(), StatusCode::OK);
+    let next_owner_bugs_body = response_body(next_owner_bugs_page).await;
+    assert!(next_owner_bugs_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
+
+    let edit_flow_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/work-items/{item_key}/comments/{flow_comment_id}"
+                ))
+                .header(header::COOKIE, next_owner.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"不能修改流程记录"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(edit_flow_response.status(), StatusCode::FORBIDDEN);
+
+    let resolve_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/work-items/{item_key}/handoff"))
+                .header(header::COOKIE, next_owner.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"status":"resolved","assignee_username":"api_bug_owner_b","body":"已修复"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(resolve_response.status(), StatusCode::OK);
+    let resolved_counts =
+        projects::count_pending_assigned_work_items(&pool, next_owner.user_id, false)
+            .await
+            .expect("resolved counts should load");
+    assert_eq!(resolved_counts.bugs, 0);
+}
+
+#[tokio::test]
 async fn api_v1_rejects_parent_requirement_outside_same_project() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -4576,6 +4804,46 @@ async fn api_v1_work_item_comment_edit_delete_respects_write_scope() {
             .expect("comment should create")
             .id;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_flow_prefix_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"[yuance-flow] 伪造流程"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        create_flow_prefix_response.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let update_flow_prefix_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{comment_id}"
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"[yuance-flow] 伪造流程"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        update_flow_prefix_response.status(),
+        StatusCode::BAD_REQUEST
+    );
 
     let viewer_response = app
         .clone()
@@ -4758,7 +5026,70 @@ async fn web_work_item_detail_can_delete_and_restore_work_item() {
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
+    rbac::create_role(&pool, "work_delete_view_only", "工作项查看无删除", "self")
+        .await
+        .expect("role should create");
+    rbac::replace_role_permissions(
+        &pool,
+        "work_delete_view_only",
+        &["project.view".to_string(), "work_item.view".to_string()],
+    )
+    .await
+    .expect("role permissions should replace");
+    let view_only = create_user_with_role(
+        &pool,
+        "web_delete_view_only",
+        "删除只读成员",
+        "work_delete_view_only",
+    )
+    .await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "web_delete_view_only",
+        "member",
+    )
+    .await
+    .expect("view-only member should join project");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let view_only_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, view_only.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let view_only_detail_body = response_body(view_only_detail_response).await;
+    assert!(view_only_detail_body.contains("推进并指派"));
+    assert!(!view_only_detail_body.contains(r#"action="/web/work-items/YCE-TASK-2/delete""#));
+
+    let forbidden_delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/delete")
+                .header(header::COOKIE, view_only.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_delete_response.status(), StatusCode::FORBIDDEN);
+    let still_active_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert!(still_active_item.deleted_at.is_empty());
 
     let delete_response = app
         .clone()
@@ -4812,6 +5143,43 @@ async fn web_work_item_detail_can_delete_and_restore_work_item() {
     assert!(detail_body.contains("工作项已删除"));
     assert!(detail_body.contains("恢复工作项"));
     assert!(!detail_body.contains("data-modal-open=\"work-item-edit-modal\""));
+
+    let view_only_deleted_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, view_only.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let view_only_deleted_detail_body = response_body(view_only_deleted_detail_response).await;
+    assert!(view_only_deleted_detail_body.contains("工作项已删除"));
+    assert!(!view_only_deleted_detail_body.contains("恢复工作项"));
+
+    let forbidden_restore_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/restore")
+                .header(header::COOKIE, view_only.cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_restore_response.status(), StatusCode::FORBIDDEN);
+    let still_deleted_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert!(!still_deleted_item.deleted_at.is_empty());
 
     let restore_response = app
         .oneshot(
@@ -5777,6 +6145,7 @@ async fn project_member_remove_requires_open_work_items_to_be_transferred() {
             title: "负责成员开放任务".to_string(),
             description: String::new(),
             priority: "P2".to_string(),
+            assignee_username: "assigned_member".to_string(),
             due_date: String::new(),
             parent_item_key: String::new(),
         },

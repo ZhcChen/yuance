@@ -35,9 +35,18 @@
       <nav class="topnav" aria-label="主导航">
         <a class="topnav-item {% if active == "dashboard" %}active{% endif %}" href="/web">工作台</a>
         <a class="topnav-item {% if active == "projects" %}active{% endif %}" href="{% match current_project %}{% when Some with (project) %}/web/projects/{{ project.key }}{% when None %}/web/projects{% endmatch %}">项目</a>
-        <a class="topnav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">需求</a>
-        <a class="topnav-item {% if active == "tasks" %}active{% endif %}" href="/web/tasks">任务</a>
-        <a class="topnav-item {% if active == "bugs" %}active{% endif %}" href="/web/bugs">Bug</a>
+        <a class="topnav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">
+          <span>需求</span>
+          {% if system_nav.requirements_badge != "" %}<span class="topnav-badge" aria-label="待处理需求 {{ system_nav.requirements_badge }}">{{ system_nav.requirements_badge }}</span>{% endif %}
+        </a>
+        <a class="topnav-item {% if active == "tasks" %}active{% endif %}" href="/web/tasks">
+          <span>任务</span>
+          {% if system_nav.tasks_badge != "" %}<span class="topnav-badge" aria-label="待处理任务 {{ system_nav.tasks_badge }}">{{ system_nav.tasks_badge }}</span>{% endif %}
+        </a>
+        <a class="topnav-item {% if active == "bugs" %}active{% endif %}" href="/web/bugs">
+          <span>Bug</span>
+          {% if system_nav.bugs_badge != "" %}<span class="topnav-badge" aria-label="待处理 Bug {{ system_nav.bugs_badge }}">{{ system_nav.bugs_badge }}</span>{% endif %}
+        </a>
         {% if system_nav.visible %}
         <div class="topnav-group" data-dropdown-root>
           <button class="topnav-item topnav-trigger {% if active == "system" %}active{% endif %}{% if active == "system-users" %}active{% endif %}{% if active == "system-roles" %}active{% endif %}{% if active == "system-storage" %}active{% endif %}{% if active == "system-audit" %}active{% endif %}" type="button" data-dropdown-trigger aria-expanded="false">

@@ -188,6 +188,7 @@ pub struct CommentPayload {
     pub author: String,
     pub created_at: String,
     pub updated_at: String,
+    pub is_flow: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -368,6 +369,8 @@ pub struct CreateWorkItemRequest {
     due_date: String,
     #[serde(default)]
     parent_item_key: String,
+    #[serde(default)]
+    assignee_username: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -386,6 +389,15 @@ pub struct UpdateWorkItemRequest {
     due_date: Option<String>,
     #[serde(default)]
     parent_item_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HandoffWorkItemRequest {
+    status: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    body: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1089,7 +1101,7 @@ pub async fn create_work_item(
     let user = require_api_user(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let project = projects::get_project_detail(pool, &payload.project_key)
         .await?
         .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
@@ -1104,6 +1116,7 @@ pub async fn create_work_item(
             title: payload.title,
             description: payload.description,
             priority: payload.priority,
+            assignee_username: payload.assignee_username,
             due_date: payload.due_date,
             parent_item_key: payload.parent_item_key,
         },
@@ -1150,7 +1163,7 @@ pub async fn update_work_item(
     let user = require_api_user(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, &item_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
@@ -1187,6 +1200,52 @@ pub async fn update_work_item(
         "work_item",
         &updated.item_key,
         "{}",
+    )
+    .await?;
+
+    Ok(json(work_item_detail_payload(updated)))
+}
+
+pub async fn handoff_work_item(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Json(payload): Json<HandoffWorkItemRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    let updated = projects::handoff_work_item(
+        pool,
+        user.id,
+        &item_key,
+        projects::HandoffWorkItemInput {
+            status: payload.status,
+            assignee_username: payload.assignee_username,
+            body: payload.body,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.handoff",
+        "work_item",
+        &updated.item_key,
+        &format!(
+            r#"{{"status":"{}","assignee_username":"{}"}}"#,
+            updated.status, updated.assignee_username
+        ),
     )
     .await?;
 
@@ -1264,13 +1323,14 @@ pub async fn create_work_item_comment(
     let user = require_api_user(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, &item_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     let comment = projects::add_work_item_comment(pool, user.id, &item_key, &payload.body).await?;
@@ -1284,16 +1344,7 @@ pub async fn create_work_item_comment(
     )
     .await?;
 
-    Ok((
-        StatusCode::CREATED,
-        json(CommentPayload {
-            id: comment.id,
-            body: comment.body,
-            author: comment.author_display_name,
-            created_at: comment.created_at,
-            updated_at: comment.updated_at,
-        }),
-    ))
+    Ok((StatusCode::CREATED, json(comment_payload(comment))))
 }
 
 pub async fn list_work_item_comments(
@@ -1322,7 +1373,7 @@ pub async fn update_work_item_comment(
     let user = require_api_user(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, &item_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
@@ -1362,7 +1413,7 @@ pub async fn delete_work_item_comment(
     let user = require_api_user(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, &item_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
@@ -1403,8 +1454,8 @@ pub async fn create_work_item_comment_attachment(
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
     ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_comment_accepts_attachments(&comment)?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let config = storage::active_config(pool)
@@ -1469,6 +1520,7 @@ pub async fn work_item_comment_attachment_upload_url(
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     let pool = state.pool()?;
     ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_comment_accepts_attachments(&comment)?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
@@ -1490,6 +1542,7 @@ pub async fn work_item_comment_attachment_mark_uploaded(
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_comment_accepts_attachments(&comment)?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment =
@@ -1557,6 +1610,7 @@ pub async fn work_item_comment_attachment_delete(
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_comment_accepts_attachments(&comment)?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     let attachment = files::delete_attachment(
@@ -1796,7 +1850,6 @@ pub async fn create_work_item_attachment(
     let (user, item, project) = require_api_work_item_context(&state, &headers, &item_key).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
@@ -2567,6 +2620,16 @@ fn ensure_api_work_item_accepts_writes(item: &projects::WorkItemDetail) -> AppRe
     ))
 }
 
+fn ensure_api_comment_accepts_attachments(
+    comment: &projects::WorkItemCommentSummary,
+) -> AppResult<()> {
+    if !comment.is_flow {
+        return Ok(());
+    }
+
+    Err(AppError::Forbidden("流程记录不能添加附件".to_string()))
+}
+
 async fn ensure_api_permission(
     pool: &sqlx::SqlitePool,
     headers: &HeaderMap,
@@ -2811,6 +2874,7 @@ fn comment_payload(comment: projects::WorkItemCommentSummary) -> CommentPayload 
         author: comment.author_display_name,
         created_at: comment.created_at,
         updated_at: comment.updated_at,
+        is_flow: comment.is_flow,
     }
 }
 

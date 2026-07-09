@@ -105,6 +105,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::work_item_status_update),
         )
         .route(
+            "/web/work-items/{item_key}/handoff",
+            post(web::user::work_item_handoff),
+        )
+        .route(
             "/web/work-items/{item_key}/edit",
             post(web::user::work_item_update),
         )
@@ -349,6 +353,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/work-items/{item_key}/restore",
             post(web::api::restore_work_item),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/handoff",
+            post(web::api::handoff_work_item),
         )
         .route(
             "/api/v1/work-items/{item_key}/comments",

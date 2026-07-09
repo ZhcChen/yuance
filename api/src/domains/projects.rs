@@ -12,6 +12,7 @@ const PROJECT_STATUS_COMPLETED: &str = "completed";
 const PROJECT_STATUS_ON_HOLD: &str = "on_hold";
 const PROJECT_STATUS_CANCELLED: &str = "cancelled";
 const PROJECT_STATUS_ARCHIVED: &str = "archived";
+const WORK_ITEM_FLOW_COMMENT_PREFIX: &str = "[yuance-flow] ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoSeedResult {
@@ -115,6 +116,7 @@ pub struct WorkItemCommentSummary {
     pub author_display_name: String,
     pub created_at: String,
     pub updated_at: String,
+    pub is_flow: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,6 +136,13 @@ pub struct SearchHit {
     pub context: String,
     pub url: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WorkItemAssignmentCounts {
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,6 +171,7 @@ pub struct CreateWorkItemInput {
     pub title: String,
     pub description: String,
     pub priority: String,
+    pub assignee_username: String,
     pub due_date: String,
     pub parent_item_key: String,
 }
@@ -235,6 +245,13 @@ pub struct UpdateWorkItemInput {
     pub assignee_username: String,
     pub due_date: String,
     pub parent_item_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandoffWorkItemInput {
+    pub status: String,
+    pub assignee_username: String,
+    pub body: String,
 }
 
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
@@ -1751,6 +1768,55 @@ pub async fn list_assigned_work_item_summaries(
         .collect())
 }
 
+pub async fn count_pending_assigned_work_items(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+) -> AppResult<WorkItemAssignmentCounts> {
+    let rows = if is_super_admin {
+        sqlx::query_as::<_, (String, i64)>(
+            r#"
+            SELECT wi.item_type, COUNT(*)
+            FROM work_items wi
+            WHERE wi.assignee_user_id = ?1
+              AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+              AND wi.deleted_at IS NULL
+            GROUP BY wi.item_type
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, i64)>(
+            r#"
+            SELECT wi.item_type, COUNT(*)
+            FROM work_items wi
+            JOIN project_members pm ON pm.project_id = wi.project_id
+                AND pm.user_id = ?1
+            WHERE wi.assignee_user_id = ?1
+              AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+              AND wi.deleted_at IS NULL
+            GROUP BY wi.item_type
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+    };
+
+    let mut counts = WorkItemAssignmentCounts::default();
+    for (item_type, count) in rows {
+        match item_type.as_str() {
+            "requirement" => counts.requirements = count,
+            "task" => counts.tasks = count,
+            "bug" => counts.bugs = count,
+            _ => {}
+        }
+    }
+    Ok(counts)
+}
+
 pub async fn create_work_item(
     pool: &SqlitePool,
     actor_user_id: i64,
@@ -1763,6 +1829,7 @@ pub async fn create_work_item(
     let priority = validate_priority(&input.priority)?;
     let due_date = validate_optional_date(&input.due_date, "工作项截止日期")?;
     let parent_item_key = input.parent_item_key.trim();
+    let assignee_username = input.assignee_username.trim();
     let item_segment = work_item_key_segment(item_type);
 
     let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
@@ -1775,6 +1842,11 @@ pub async fn create_work_item(
     ensure_project_accepts_writes(&project_status)?;
     let parent_work_item_id =
         resolve_parent_work_item_id(pool, project_id, item_type, parent_item_key).await?;
+    let assignee_user_id = if assignee_username.is_empty() {
+        actor_user_id
+    } else {
+        resolve_project_member_user_id(pool, project_id, assignee_username).await?
+    };
 
     let mut tx = pool.begin().await?;
     let prefix = format!("{project_key}-{item_segment}-");
@@ -1810,7 +1882,7 @@ pub async fn create_work_item(
             parent_work_item_id,
             due_date
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?7, ?8, NULLIF(?9, ''))
+        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, NULLIF(?10, ''))
         "#,
     )
     .bind(project_id)
@@ -1819,6 +1891,7 @@ pub async fn create_work_item(
     .bind(&title)
     .bind(&description)
     .bind(priority)
+    .bind(assignee_user_id)
     .bind(actor_user_id)
     .bind(parent_work_item_id)
     .bind(&due_date)
@@ -1939,6 +2012,7 @@ pub async fn list_work_item_comments(
         .into_iter()
         .map(
             |(id, body, author_user_id, author_display_name, created_at, updated_at)| {
+                let (body, is_flow) = normalize_work_item_comment_body(body);
                 WorkItemCommentSummary {
                     id,
                     body,
@@ -1946,6 +2020,7 @@ pub async fn list_work_item_comments(
                     author_display_name,
                     created_at,
                     updated_at,
+                    is_flow,
                 }
             },
         )
@@ -1959,12 +2034,18 @@ pub async fn update_work_item_status(
     status: &str,
 ) -> AppResult<WorkItemDetail> {
     let status = validate_work_item_status(status)?;
-    let Some((work_item_id, project_id, project_status, current_status)) =
-        sqlx::query_as::<_, (i64, i64, String, String)>(
+    let Some((work_item_id, project_id, project_status, current_status, assignee_display_name)) =
+        sqlx::query_as::<_, (i64, i64, String, String, String)>(
             r#"
-            SELECT wi.id, wi.project_id, p.status, wi.status
+            SELECT
+                wi.id,
+                wi.project_id,
+                p.status,
+                wi.status,
+                COALESCE(assignee.display_name, '') AS assignee_display_name
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
+            LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
             WHERE wi.item_key = ?1
               AND wi.deleted_at IS NULL
             "#,
@@ -1995,6 +2076,29 @@ pub async fn update_work_item_status(
     .execute(&mut *tx)
     .await?;
 
+    let flow_summary = format_work_item_flow_summary(
+        &current_status,
+        status,
+        &assignee_display_name,
+        &assignee_display_name,
+        "",
+    );
+    sqlx::query(
+        r#"
+        INSERT INTO work_item_comments (
+            work_item_id,
+            author_user_id,
+            body
+        )
+        VALUES (?1, ?2, ?3)
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .bind(encode_flow_comment_body(&flow_summary))
+    .execute(&mut *tx)
+    .await?;
+
     sqlx::query(
         r#"
         INSERT INTO project_activities (
@@ -2014,6 +2118,159 @@ pub async fn update_work_item_status(
     .bind(item_key)
     .bind(format!("更新工作项 {item_key} 状态"))
     .bind(format!(r#"{{"status":"{status}"}}"#))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_detail(pool, item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
+}
+
+pub async fn handoff_work_item(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    input: HandoffWorkItemInput,
+) -> AppResult<WorkItemDetail> {
+    let status = validate_work_item_status(&input.status)?;
+    let assignee_username = input.assignee_username.trim();
+    let body = validate_optional_text(&input.body, "处理说明", 5000)?;
+    let Some((
+        work_item_id,
+        project_id,
+        project_status,
+        current_status,
+        current_assignee_user_id,
+        current_assignee_username,
+        current_assignee_display_name,
+    )) = sqlx::query_as::<_, (i64, i64, String, String, Option<i64>, String, String)>(
+        r#"
+        SELECT
+            wi.id,
+            wi.project_id,
+            p.status,
+            wi.status,
+            wi.assignee_user_id,
+            COALESCE(assignee.username, '') AS assignee_username,
+            COALESCE(assignee.display_name, '') AS assignee_display_name
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    ensure_work_item_status_transition(&current_status, status)?;
+
+    let (next_assignee_user_id, next_assignee_username, next_assignee_display_name) =
+        if assignee_username.is_empty() {
+            (
+                current_assignee_user_id,
+                current_assignee_username,
+                current_assignee_display_name.clone(),
+            )
+        } else {
+            let assignee_username = validate_username_ref(assignee_username)?;
+            let assignee = sqlx::query_as::<_, (i64, String, String)>(
+                r#"
+                SELECT u.id, u.username, u.display_name
+                FROM users u
+                JOIN project_members pm ON pm.user_id = u.id
+                    AND pm.project_id = ?1
+                WHERE u.username = ?2
+                  AND u.status = 'active'
+                "#,
+            )
+            .bind(project_id)
+            .bind(&assignee_username)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("负责人必须是已启用的项目成员".to_string()))?;
+            (Some(assignee.0), assignee.1, assignee.2)
+        };
+
+    if current_status == status
+        && current_assignee_user_id == next_assignee_user_id
+        && body.is_empty()
+    {
+        return Err(AppError::BadRequest(
+            "请至少修改状态、负责人或填写处理说明".to_string(),
+        ));
+    }
+
+    let flow_summary = format_work_item_flow_summary(
+        &current_status,
+        status,
+        &current_assignee_display_name,
+        &next_assignee_display_name,
+        &body,
+    );
+    let mut tx = pool.begin().await?;
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET status = ?2,
+            assignee_user_id = ?3,
+            completed_at = CASE
+                WHEN ?2 IN ('done', 'closed', 'resolved', 'verified') THEN datetime('now')
+                ELSE NULL
+            END,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(status)
+    .bind(next_assignee_user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO work_item_comments (
+            work_item_id,
+            author_user_id,
+            body
+        )
+        VALUES (?1, ?2, ?3)
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .bind(encode_flow_comment_body(&flow_summary))
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary,
+            metadata
+        )
+        VALUES (?1, ?2, 'work_item.handoff', 'work_item', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("推进工作项 {item_key}"))
+    .bind(format!(
+        r#"{{"status":"{status}","assignee_username":"{next_assignee_username}"}}"#
+    ))
     .execute(&mut *tx)
     .await?;
 
@@ -2062,24 +2319,7 @@ pub async fn update_work_item(
     let assignee_user_id = if assignee_username.is_empty() {
         None
     } else {
-        let assignee_username = validate_username_ref(assignee_username)?;
-        Some(
-            sqlx::query_scalar::<_, i64>(
-                r#"
-            SELECT u.id
-            FROM users u
-            JOIN project_members pm ON pm.user_id = u.id
-                AND pm.project_id = ?1
-            WHERE u.username = ?2
-              AND u.status = 'active'
-            "#,
-            )
-            .bind(project_id)
-            .bind(&assignee_username)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::BadRequest("负责人必须是已启用的项目成员".to_string()))?,
-        )
+        Some(resolve_project_member_user_id(pool, project_id, assignee_username).await?)
     };
 
     let mut tx = pool.begin().await?;
@@ -2298,6 +2538,7 @@ pub async fn add_work_item_comment(
     if body.is_empty() {
         return Err(AppError::BadRequest("评论内容不能为空".to_string()));
     }
+    ensure_plain_work_item_comment_body(&body)?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -2384,13 +2625,15 @@ pub async fn add_work_item_comment(
     .fetch_one(pool)
     .await?;
 
+    let (body, is_flow) = normalize_work_item_comment_body(row.1);
     Ok(WorkItemCommentSummary {
         id: row.0,
-        body: row.1,
+        body,
         author_user_id: row.2,
         author_display_name: row.3,
         created_at: row.4,
         updated_at: row.5,
+        is_flow,
     })
 }
 
@@ -2421,13 +2664,15 @@ pub async fn get_work_item_comment(
     .await?
     .ok_or_else(|| AppError::NotFound("评论不存在".to_string()))?;
 
+    let (body, is_flow) = normalize_work_item_comment_body(row.1);
     Ok(WorkItemCommentSummary {
         id: row.0,
-        body: row.1,
+        body,
         author_user_id: row.2,
         author_display_name: row.3,
         created_at: row.4,
         updated_at: row.5,
+        is_flow,
     })
 }
 
@@ -2443,6 +2688,7 @@ pub async fn update_work_item_comment(
     if body.is_empty() {
         return Err(AppError::BadRequest("评论内容不能为空".to_string()));
     }
+    ensure_plain_work_item_comment_body(&body)?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -2460,6 +2706,9 @@ pub async fn update_work_item_comment(
     };
     ensure_project_accepts_writes(&project_status)?;
     let comment = get_work_item_comment(pool, work_item_id, comment_id).await?;
+    if comment.is_flow {
+        return Err(AppError::Forbidden("流程记录不能修改".to_string()));
+    }
     if !user_can_manage_work_item_comment(
         pool,
         project_id,
@@ -2555,6 +2804,9 @@ pub async fn delete_work_item_comment(
     };
     ensure_project_accepts_writes(&project_status)?;
     let comment = get_work_item_comment(pool, work_item_id, comment_id).await?;
+    if comment.is_flow {
+        return Err(AppError::Forbidden("流程记录不能删除".to_string()));
+    }
     if !user_can_manage_work_item_comment(
         pool,
         project_id,
@@ -3292,6 +3544,60 @@ fn project_status_label(status: &str) -> &'static str {
     }
 }
 
+fn work_item_status_label(status: &str) -> &'static str {
+    match status {
+        "open" => "待处理",
+        "in_progress" => "进行中",
+        "done" => "已完成",
+        "resolved" => "已解决",
+        "verified" => "已验证",
+        "closed" => "已关闭",
+        "cancelled" => "已取消",
+        _ => "未知",
+    }
+}
+
+fn assignee_label(display_name: &str) -> &str {
+    let display_name = display_name.trim();
+    if display_name.is_empty() {
+        "未分配"
+    } else {
+        display_name
+    }
+}
+
+fn format_work_item_flow_summary(
+    previous_status: &str,
+    next_status: &str,
+    previous_assignee: &str,
+    next_assignee: &str,
+    body: &str,
+) -> String {
+    let mut parts = Vec::new();
+    if previous_status != next_status {
+        parts.push(format!(
+            "状态：{} → {}",
+            work_item_status_label(previous_status),
+            work_item_status_label(next_status)
+        ));
+    }
+    if previous_assignee.trim() != next_assignee.trim() {
+        parts.push(format!(
+            "负责人：{} → {}",
+            assignee_label(previous_assignee),
+            assignee_label(next_assignee)
+        ));
+    }
+    let body = body.trim();
+    if !body.is_empty() {
+        parts.push(format!("说明：{body}"));
+    }
+    if parts.is_empty() {
+        parts.push("记录了一次处理进展".to_string());
+    }
+    parts.join("；")
+}
+
 fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {
     match item_type.trim() {
         "requirement" => Ok("requirement"),
@@ -3301,6 +3607,50 @@ fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {
             "工作项类型只能是 requirement / task / bug".to_string(),
         )),
     }
+}
+
+fn normalize_work_item_comment_body(body: String) -> (String, bool) {
+    match body.strip_prefix(WORK_ITEM_FLOW_COMMENT_PREFIX) {
+        Some(flow_body) => (flow_body.to_string(), true),
+        None => (body, false),
+    }
+}
+
+fn encode_flow_comment_body(body: &str) -> String {
+    format!("{WORK_ITEM_FLOW_COMMENT_PREFIX}{body}")
+}
+
+fn ensure_plain_work_item_comment_body(body: &str) -> AppResult<()> {
+    if body.starts_with(WORK_ITEM_FLOW_COMMENT_PREFIX) {
+        return Err(AppError::BadRequest(
+            "评论内容不能使用系统流程前缀".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+async fn resolve_project_member_user_id(
+    pool: &SqlitePool,
+    project_id: i64,
+    username: &str,
+) -> AppResult<i64> {
+    let username = validate_username_ref(username)?;
+    sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT u.id
+        FROM users u
+        JOIN project_members pm ON pm.user_id = u.id
+            AND pm.project_id = ?1
+        WHERE u.username = ?2
+          AND u.status = 'active'
+        "#,
+    )
+    .bind(project_id)
+    .bind(&username)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::BadRequest("负责人必须是已启用的项目成员".to_string()))
 }
 
 async fn resolve_parent_work_item_id(

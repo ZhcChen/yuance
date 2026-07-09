@@ -346,27 +346,28 @@ cat >"$EVAL_FILE" <<JS
   await open("/web/projects");
   click("[data-modal-open='project-create-modal']");
   assert(hasText("新建项目"), "项目创建 modal 未打开");
-  fill("#project-create-modal input[name='project_key']", "SMK");
   fill("#project-create-modal input[name='name']", "浏览器冒烟项目");
   fill("#project-create-modal textarea[name='description']", "用于验证元策关键浏览器交互。");
   await submitAndWait("#project-create-modal button[type='submit'].btn-primary");
-  assert(frame.contentWindow.location.pathname === "/web/projects/SMK", "项目创建后未跳转详情");
+  const projectKey = frame.contentWindow.location.pathname.split("/").pop();
+  assert(/^P\d{12}$/.test(projectKey), "项目创建后未生成预期项目编号：" + projectKey);
+  assert(frame.contentWindow.location.pathname === "/web/projects/" + projectKey, "项目创建后未跳转详情");
   assert(hasText("浏览器冒烟项目"), "项目详情未显示新项目");
 
-  await open("/web/projects/SMK?tab=members");
+  await open("/web/projects/" + projectKey + "?tab=members");
   click("[data-modal-open='project-member-add-modal']");
   await waitFor(() => visible("#project-member-add-modal"), "项目成员添加 modal 未打开");
   fill("#project-member-add-modal input[name='username']", "smoke_user");
   fill("#project-member-add-modal select[name='member_role']", "member");
   await submitAndWait("#project-member-add-modal button[type='submit'].btn-primary");
-  await open("/web/projects/SMK?tab=members");
+  await open("/web/projects/" + projectKey + "?tab=members");
   assert(hasText("冒烟成员"), "项目成员添加后未显示新成员");
 
   click("[data-modal-open='project-member-role-modal-smoke_user']");
   await waitFor(() => visible("#project-member-role-modal-smoke_user"), "项目成员角色 modal 未打开");
   fill("#project-member-role-modal-smoke_user select[name='member_role']", "viewer");
   await submitAndWait("#project-member-role-modal-smoke_user button[type='submit'].btn-primary");
-  await open("/web/projects/SMK?tab=members");
+  await open("/web/projects/" + projectKey + "?tab=members");
   assert(hasText("冒烟成员"), "项目成员角色调整后未保留成员");
   assert(hasText("观察者"), "项目成员角色调整后未显示观察者角色");
 
@@ -375,9 +376,9 @@ cat >"$EVAL_FILE" <<JS
   await waitFor(() => visible(".project-switcher-panel"), "当前项目下拉未打开");
   fill("#topbar-project-search", "没有这个项目");
   await waitFor(() => hasText("没有匹配项目"), "当前项目下拉空状态未显示");
-  fill("#topbar-project-search", "SMK");
-  await submitAndWait("[data-project-option][data-project-key='SMK']");
-  assert(hasText("SMK"), "当前项目切换未生效");
+  fill("#topbar-project-search", "浏览器冒烟项目");
+  await submitAndWait("[data-project-option][data-project-key='" + projectKey + "']");
+  assert(hasText("浏览器冒烟项目"), "当前项目切换未生效");
 
   await open("/web/tasks");
   click("[data-modal-open='work-item-create-modal']");
@@ -385,7 +386,8 @@ cat >"$EVAL_FILE" <<JS
   fill("#work-item-create-modal input[name='title']", "浏览器冒烟任务");
   fill("#work-item-create-modal textarea[name='description']", "覆盖 modal、直接上传和确认弹窗。");
   await submitAndWait("#work-item-create-modal button[type='submit'].btn-primary");
-  assert(frame.contentWindow.location.pathname === "/web/work-items/SMK-TASK-1", "任务创建后未跳转详情");
+  const taskKey = projectKey + "-TASK-1";
+  assert(frame.contentWindow.location.pathname === "/web/work-items/" + taskKey, "任务创建后未跳转详情");
   assert(hasText("浏览器冒烟任务"), "任务详情未显示新任务");
 
   return "browser smoke setup passed";
@@ -399,7 +401,14 @@ else
 fi
 
 log "执行真实页面附件直传"
-ab open "${BASE_URL}/web/work-items/SMK-TASK-1" >/dev/null
+smoke_task_key="$(
+  sqlite3 "${ROOT}/yuance.sqlite3" \
+    "SELECT item_key FROM work_items WHERE title = '浏览器冒烟任务' ORDER BY id DESC LIMIT 1;"
+)"
+if [ -z "$smoke_task_key" ]; then
+  fail "未找到浏览器冒烟任务"
+fi
+ab open "${BASE_URL}/web/work-items/${smoke_task_key}" >/dev/null
 UPLOAD_EVAL_FILE="${ROOT}/browser-smoke-upload.eval.js"
 cat >"$UPLOAD_EVAL_FILE" <<'JS'
 (async () => {
@@ -420,6 +429,8 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
     assert(element, "未找到元素：" + selector);
     return element;
   }
+
+  const workItemKey = window.location.pathname.split("/").pop();
 
   async function waitFor(predicate, message, timeout = 15000) {
     const startedAt = Date.now();
@@ -454,7 +465,7 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   form.requestSubmit(query("#work-item-attachment-modal [data-upload-submit]"));
   await waitFor(() => text().includes("附件上传完成"), "附件直传未完成", 20000);
 
-  const detailResponse = await fetch("/web/work-items/SMK-TASK-1", {
+  const detailResponse = await fetch(`/web/work-items/${workItemKey}`, {
     credentials: "same-origin",
   });
   assert(detailResponse.ok, "上传后刷新任务详情失败");
@@ -463,7 +474,7 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   assert(detailHtml.includes("uploaded"), "任务详情未显示附件 uploaded 状态");
 
   query("form[data-confirm-title='删除工作项'] button[type='submit']").click();
-  await waitFor(() => text().includes("确认删除 SMK-TASK-1"), "删除确认弹窗未打开");
+  await waitFor(() => text().includes(`确认删除 ${workItemKey}`), "删除确认弹窗未打开");
   const deleteForm = query("form[data-confirm-title='删除工作项']");
   const csrf = deleteForm.querySelector("input[name='_csrf']")?.value || "";
   const deleteResponse = await fetch(deleteForm.action, {

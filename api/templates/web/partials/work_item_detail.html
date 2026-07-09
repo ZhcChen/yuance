@@ -44,10 +44,11 @@
     {% if has_comments %}
     <ol class="comment-list">
       {% for comment in comments %}
-      <li>
+      <li class="{% if comment.is_flow %}comment-flow{% endif %}">
         <div class="comment-head">
           <span>
             <strong>{{ comment.author }}</strong>
+            {% if comment.is_flow %}<em class="flow-chip">流程</em>{% endif %}
             <span>{{ comment.created_at }}</span>
           </span>
           {% if can_manage_work_items && !item.is_deleted %}
@@ -59,7 +60,9 @@
               <button class="btn btn-sm btn-danger" type="submit">删除</button>
             </form>
             {% endif %}
+            {% if !comment.is_flow %}
             <button class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-attachment-modal-{{ comment.id }}">上传附件</button>
+            {% endif %}
           </span>
           {% endif %}
         </div>
@@ -118,6 +121,7 @@
 
 {% if can_manage_work_items && !item.is_deleted %}
 {% for comment in comments %}
+{% if !comment.is_flow %}
 <aside id="work-item-comment-attachment-modal-{{ comment.id }}" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="work-item-comment-attachment-modal-title-{{ comment.id }}" tabindex="-1">
@@ -155,6 +159,7 @@
     </form>
   </section>
 </aside>
+{% endif %}
 
 {% if comment.can_manage %}
 <aside id="work-item-comment-edit-modal-{{ comment.id }}" class="modal" data-modal hidden aria-hidden="true">

@@ -596,6 +596,7 @@
           title: formData.get("title") || "",
           description: formData.get("description") || "",
           priority: formData.get("priority") || "P2",
+          assignee_username: formData.get("assignee_username") || "",
           due_date: formData.get("due_date") || "",
           parent_item_key: formData.get("parent_item_key") || "",
         }),

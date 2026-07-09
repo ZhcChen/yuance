@@ -465,6 +465,15 @@
           <input name="due_date" type="date">
         </label>
         <label>
+          负责人
+          <select name="assignee_username">
+            <option value="">默认我自己</option>
+            {% for member in members %}
+            <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
           父级需求
           <select name="parent_item_key">
             <option value="">不关联</option>

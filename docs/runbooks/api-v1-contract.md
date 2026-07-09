@@ -208,6 +208,7 @@ GET    /api/v1/work-items/{item_key}
 PATCH  /api/v1/work-items/{item_key}
 DELETE /api/v1/work-items/{item_key}
 POST   /api/v1/work-items/{item_key}/restore
+POST   /api/v1/work-items/{item_key}/handoff
 ```
 
 列表参数：
@@ -232,6 +233,7 @@ per_page=20
   "title": "完成 API 契约文档",
   "description": "补齐调用说明",
   "priority": "P2",
+  "assignee_username": "zhangsan",
   "due_date": "2026-07-15",
   "parent_item_key": ""
 }
@@ -251,10 +253,27 @@ per_page=20
 }
 ```
 
+推进并指派请求：
+
+```json
+{
+  "status": "in_progress",
+  "assignee_username": "lisi",
+  "body": "已复现，转开发修复"
+}
+```
+
+语义：
+
+- `assignee_username` 为空时保持当前负责人；非空时必须是当前项目启用成员。
+- 每次推进会在评论区生成一条流程记录，流程记录不能编辑、删除或添加附件。
+- 顶部需求、任务、Bug 角标按当前负责人和未完成状态实时计算；完成、关闭、取消或改派后原负责人角标消失。
+
 权限：
 
 - 查看：需要 `work_item.view`，并处于项目成员范围内。
-- 创建、更新、删除、恢复：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
+- 创建、更新、推进、评论和工作项 / 评论附件写入：需要 `work_item.view`，并且当前用户具备项目内容写入权限。
+- 删除、恢复：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
 - `viewer` 项目成员不能写入工作项。
 - `completed`、`on_hold`、`cancelled`、`archived` 项目会阻止工作项、评论、附件和成员管理等项目内容写入；项目本身仍可通过编辑项目按状态机恢复状态。
 - 已软删除工作项会阻止继续写评论、附件等内容。
@@ -290,7 +309,7 @@ DELETE /api/v1/work-items/{item_key}/comments/{comment_id}
 }
 ```
 
-写操作需要 `work_item.manage` 和项目内容写入权限。评论修改/删除还会校验评论管理范围。
+写操作需要 `work_item.view` 和项目内容写入权限。评论修改/删除还会校验评论管理范围；流程记录不能修改或删除。
 
 ## 附件与直传
 
@@ -330,7 +349,7 @@ DELETE /api/v1/work-items/{item_key}/attachments/{attachment_id}
 权限：
 
 - 列表和下载签名：需要 `work_item.view`，并处于项目成员范围内。
-- 登记、上传签名、上传完成和删除：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
+- 登记、上传签名、上传完成和删除：需要 `work_item.view`，并且当前用户具备项目内容写入权限。
 
 评论附件：
 
@@ -346,7 +365,7 @@ DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachme
 权限：
 
 - 列表和下载签名：需要 `work_item.view`，并处于项目成员范围内。
-- 登记、上传签名、上传完成和删除：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
+- 登记、上传签名、上传完成和删除：需要 `work_item.view`，并且当前用户具备项目内容写入权限；流程记录评论不能登记附件。
 
 附件登记请求：
 
