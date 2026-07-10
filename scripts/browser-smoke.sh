@@ -684,16 +684,25 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
 
   const viewerImage = query("[data-image-viewer-image]");
   await waitFor(() => viewerImage.dataset.state === "ready", "查看器图片未加载");
-  const viewerBody = query("[data-image-viewer] .image-viewer-body");
+  const viewerShell = query("[data-image-viewer] .image-viewer-shell");
   const viewerStage = query("[data-image-viewer] .image-viewer-stage");
+  const viewerToolbar = query("[data-image-viewer] .image-viewer-toolbar");
   assert(
-    viewerStage.getBoundingClientRect().width / viewerBody.getBoundingClientRect().width > 0.9,
-    "查看器图片舞台宽度被切换按钮挤压",
+    viewerStage.getBoundingClientRect().width / viewerShell.getBoundingClientRect().width > 0.98,
+    "查看器图片舞台未占满蒙版空间",
   );
   assert(
-    getComputedStyle(query("[data-image-viewer] .image-viewer-panel")).transitionDuration.includes("0.24s"),
+    getComputedStyle(viewerShell).transitionDuration.includes("0.24s"),
     "图片查看器未应用弹出过渡动画",
   );
+  assert(getComputedStyle(viewerShell).backgroundColor === "rgba(0, 0, 0, 0)", "图片查看器仍存在实体容器背景");
+  const toolbarRect = viewerToolbar.getBoundingClientRect();
+  assert(
+    Math.abs(toolbarRect.left + toolbarRect.width / 2 - window.innerWidth / 2) < 2,
+    "图片操作工具栏未在底部居中",
+  );
+  assert(window.innerHeight - toolbarRect.bottom >= 15, "图片操作工具栏距离视口底部过近");
+  assert(viewerToolbar.querySelectorAll("button").length === 7, "图片操作按钮未统一放入底部工具栏");
   const initialTitle = query("[data-image-viewer-title]").textContent;
   query("[data-image-viewer-action='next']").click();
   await waitFor(
@@ -707,7 +716,7 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
   assert(viewerImage.style.transform.includes("rotate(90deg)"), "图片旋转控制未生效");
   query("[data-image-viewer-action='reset']").click();
   assert(viewerImage.style.transform.includes("scale(1) rotate(0deg)"), "图片重置控制未生效");
-  const viewerPanel = query("[data-image-viewer] .modal-panel");
+  const viewerPanel = query("[data-image-viewer] .image-viewer-shell");
   viewerPanel.focus();
   viewerPanel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   assert(!viewer.classList.contains("open") && !viewer.hidden, "图片查看器关闭动画未保留过渡阶段");

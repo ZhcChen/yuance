@@ -160,32 +160,21 @@
     </section>
   </aside>
   <aside id="image-preview-modal" class="modal image-viewer-modal" data-modal data-image-viewer hidden aria-hidden="true">
-    <div class="modal-backdrop" data-modal-close></div>
-    <section class="modal-panel image-viewer-panel" role="dialog" aria-modal="true" aria-labelledby="image-preview-title" tabindex="-1">
-      <div class="modal-head image-viewer-head">
-        <div>
-          <h2 id="image-preview-title" data-image-viewer-title>图片预览</h2>
-          <p data-image-viewer-status>适屏查看</p>
-        </div>
-        <div class="image-viewer-head-actions">
-          <div class="image-viewer-toolbar" aria-label="图片查看控制">
-            <button class="icon-btn" type="button" data-image-viewer-action="zoom-out" aria-label="缩小图片" title="缩小">−</button>
-            <button class="icon-btn" type="button" data-image-viewer-action="zoom-in" aria-label="放大图片" title="放大">+</button>
-            <button class="icon-btn" type="button" data-image-viewer-action="rotate" aria-label="顺时针旋转图片" title="顺时针旋转">↻</button>
-            <button class="icon-btn" type="button" data-image-viewer-action="reset" aria-label="重置图片显示" title="重置">⌂</button>
-          </div>
-          <button class="icon-btn" type="button" data-modal-close aria-label="关闭图片预览" title="关闭">×</button>
-        </div>
+    <div class="modal-backdrop image-viewer-backdrop" data-modal-close></div>
+    <section class="image-viewer-shell" role="dialog" aria-modal="true" aria-labelledby="image-preview-title" tabindex="-1">
+      <h2 id="image-preview-title" class="sr-only" data-image-viewer-title>图片预览</h2>
+      <p class="sr-only" data-image-viewer-status aria-live="polite">适屏查看</p>
+      <div class="image-viewer-stage">
+        <img data-image-viewer-image alt="">
       </div>
-      <div class="image-viewer-body">
-        <button class="image-viewer-nav image-viewer-nav-prev" type="button" data-image-viewer-action="previous" aria-label="查看上一张图片" title="上一张" hidden>‹</button>
-        <figure class="image-viewer-figure">
-          <div class="image-viewer-stage">
-            <img data-image-viewer-image alt="">
-          </div>
-          <figcaption data-image-viewer-caption></figcaption>
-        </figure>
-        <button class="image-viewer-nav image-viewer-nav-next" type="button" data-image-viewer-action="next" aria-label="查看下一张图片" title="下一张" hidden>›</button>
+      <div class="image-viewer-toolbar" role="toolbar" aria-label="图片查看控制">
+        <button class="image-viewer-control" type="button" data-image-viewer-action="previous" aria-label="查看上一张图片" title="上一张" hidden>‹</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="zoom-out" aria-label="缩小图片" title="缩小">−</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="zoom-in" aria-label="放大图片" title="放大">+</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="rotate" aria-label="顺时针旋转图片" title="顺时针旋转">↻</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="reset" aria-label="重置图片显示" title="重置">⌂</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="next" aria-label="查看下一张图片" title="下一张" hidden>›</button>
+        <button class="image-viewer-control image-viewer-close" type="button" data-modal-close aria-label="关闭图片预览" title="关闭">×</button>
       </div>
     </section>
   </aside>
