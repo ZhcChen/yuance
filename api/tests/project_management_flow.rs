@@ -963,8 +963,8 @@ async fn work_item_detail_partial_renders_comments() {
 
     assert!(body.contains("设计项目与工作项数据模型"));
     assert!(body.contains("先统一项目与工作项查询模型"));
-    assert!(body.contains("负责人"));
-    assert!(body.contains("P0"));
+    assert!(body.contains("处理人"));
+    assert!(body.contains("紧急"));
 }
 
 #[tokio::test]
@@ -4121,7 +4121,7 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
         .expect("router should respond");
     let body = response_body(detail_response).await;
     assert!(body.contains("delete-me.pdf"));
-    assert!(body.contains("deleted"));
+    assert!(body.contains("已删除"));
     assert!(!body.contains(&format!("/attachments/{}/delete", attachment.id)));
 }
 
@@ -4721,7 +4721,7 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
     assert!(comments.iter().any(|comment| {
         comment.is_flow
             && comment.body.contains("状态：待处理 → 进行中")
-            && comment.body.contains("负责人：负责人 A → 负责人 B")
+            && comment.body.contains("处理人：负责人 A → 负责人 B")
             && comment.body.contains("说明：已复现，转开发修复")
     }));
     let flow_comment_id = comments
@@ -6149,7 +6149,7 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
     assert_eq!(member_can_view.status(), StatusCode::OK);
     let member_page = response_body(member_can_view).await;
     assert!(member_page.contains("@outsider"));
-    assert!(member_page.contains("维护者"));
+    assert!(member_page.contains("项目管理员"));
 
     let admin_project_page = app
         .clone()

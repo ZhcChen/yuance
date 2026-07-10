@@ -35,7 +35,7 @@
             <tr>
               <th>编号</th>
               <th>项目</th>
-              <th>负责人</th>
+              <th>项目负责人</th>
               <th>工作项</th>
               <th>状态</th>
               <th>更新</th>
@@ -107,7 +107,7 @@
       {% else %}
       <div class="empty-state">
         <strong>暂无高优先级风险</strong>
-        <span>当前可见范围内没有 P0/P1 的开放工作项。</span>
+        <span>当前可见范围内没有紧急/高优先级的开放工作项。</span>
       </div>
       {% endif %}
     </section>
@@ -144,7 +144,7 @@
           <a href="{{ risk.url }}">
             <code>{{ risk.key }}</code>
             <strong>{{ risk.title }}</strong>
-            <span>{{ risk.project }} · 负责人 {{ risk.assignee }}</span>
+            <span>{{ risk.project }} · 处理人 {{ risk.assignee }}</span>
           </a>
           <div class="risk-list-meta">
             <span class="priority">{{ risk.priority }}</span>
@@ -156,7 +156,7 @@
       {% else %}
       <div class="empty-state">
         <strong>暂无风险详情</strong>
-        <span>出现 P0/P1 开放工作项后会自动进入风险队列。</span>
+        <span>出现紧急/高优先级开放工作项后会自动进入风险队列。</span>
       </div>
       {% endif %}
     </div>

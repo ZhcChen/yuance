@@ -100,7 +100,9 @@ struct AttachmentView {
     filename: String,
     content_type: String,
     byte_size: String,
+    status_code: String,
     status: String,
+    status_tone: &'static str,
     created_by: String,
     created_at: String,
     object_key: String,
@@ -122,6 +124,7 @@ struct WorkItem {
     title: String,
     project: String,
     assignee: String,
+    priority_code: String,
     priority: String,
     status: String,
     status_tone: &'static str,
@@ -154,6 +157,7 @@ struct WorkItemDetailView {
     assignee_username: String,
     assignee: String,
     reporter: String,
+    priority_code: String,
     priority: String,
     status_code: String,
     status: String,
@@ -3887,7 +3891,7 @@ impl WorkItemListPageMeta {
         Self {
             active: "tasks",
             title: "任务",
-            description: "围绕当前项目处理开放状态和 P0/P1 工作。",
+            description: "围绕当前项目处理开放状态和紧急/高优先级工作。",
             create_label: "新建任务",
         }
     }
@@ -3994,7 +3998,7 @@ async fn work_item_list_page(
                 display_name: "陈".to_string(),
                 username: "yuance_admin".to_string(),
                 role_code: "owner".to_string(),
-                role: "负责人".to_string(),
+                role: "项目负责人".to_string(),
                 joined_at: "今天".to_string(),
             }],
         ),
@@ -4620,7 +4624,7 @@ fn metrics_from_data(
         .filter(|item| {
             item.item_type == "bug"
                 && is_open_status(&item.status)
-                && matches!(item.priority.as_str(), "P0" | "P1")
+                && is_high_priority_code(&item.priority)
         })
         .count();
     let completed_items = work_items
@@ -4644,7 +4648,7 @@ fn metrics_from_data(
         Metric {
             label: "未解决 Bug",
             value: unresolved_bugs.to_string(),
-            hint: format!("{high_priority_bugs} 个 P0/P1"),
+            hint: format!("{high_priority_bugs} 个紧急/高"),
             tone: "danger",
         },
         Metric {
@@ -4722,13 +4726,16 @@ fn project_user_option_from_summary(user: users::UserSummary) -> ProjectUserOpti
 }
 
 fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
+    let (status, status_tone) = attachment_status_label(&attachment.status);
     AttachmentView {
         id: attachment.id,
         file_object_id: attachment.file_object_id,
         filename: attachment.original_filename,
         content_type: attachment.content_type,
         byte_size: format_byte_size(attachment.byte_size),
-        status: attachment.status,
+        status_code: attachment.status,
+        status: status.to_string(),
+        status_tone,
         created_by: fallback_text(attachment.created_by_display_name, "系统"),
         created_at: display_timestamp(attachment.created_at),
         object_key: attachment.object_key,
@@ -4764,13 +4771,15 @@ fn project_detail_summary(
 
 fn work_item_from_summary(item: projects::WorkItemSummary) -> WorkItem {
     let (kind, status, status_tone) = work_item_labels(&item.item_type, &item.status);
+    let priority = priority_label(&item.priority).to_string();
     WorkItem {
         key: item.item_key,
         kind: kind.to_string(),
         title: item.title,
         project: format!("{} · {}", item.project_key, item.project_name),
         assignee: fallback_text(item.assignee_display_name, "未分配"),
-        priority: item.priority,
+        priority_code: item.priority,
+        priority,
         status: status.to_string(),
         status_tone,
     }
@@ -4779,9 +4788,7 @@ fn work_item_from_summary(item: projects::WorkItemSummary) -> WorkItem {
 fn risk_items_from_work_items(items: &[projects::WorkItemSummary]) -> Vec<RiskItem> {
     let mut risk_items = items
         .iter()
-        .filter(|item| {
-            is_open_status(&item.status) && matches!(item.priority.as_str(), "P0" | "P1")
-        })
+        .filter(|item| is_open_status(&item.status) && is_high_priority_code(&item.priority))
         .cloned()
         .collect::<Vec<_>>();
     risk_items.sort_by(|left, right| {
@@ -4804,7 +4811,7 @@ fn risk_item_from_summary(item: projects::WorkItemSummary) -> RiskItem {
         title: item.title,
         project: format!("{} · {}", item.project_key, item.project_name),
         assignee: fallback_text(item.assignee_display_name, "未分配"),
-        priority: item.priority,
+        priority: priority_label(&item.priority).to_string(),
         status: status.to_string(),
         status_tone,
         url: format!("/web/work-items/{}", item.item_key),
@@ -4813,6 +4820,7 @@ fn risk_item_from_summary(item: projects::WorkItemSummary) -> RiskItem {
 
 fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetailView {
     let (kind, status, status_tone) = work_item_labels(&item.item_type, &item.status);
+    let priority = priority_label(&item.priority).to_string();
     WorkItemDetailView {
         id: item.id,
         key: item.item_key,
@@ -4827,7 +4835,8 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         assignee_username: item.assignee_username,
         assignee: fallback_text(item.assignee_display_name, "未分配"),
         reporter: fallback_text(item.reporter_display_name, "未分配"),
-        priority: item.priority,
+        priority_code: item.priority,
+        priority,
         status_code: item.status,
         status: status.to_string(),
         status_tone,
@@ -4847,9 +4856,10 @@ fn comment_from_summary_with_permission(
     comment: projects::WorkItemCommentSummary,
     can_manage: bool,
 ) -> WorkItemComment {
+    let body = work_item_comment_body_for_display(&comment.body, comment.is_flow);
     WorkItemComment {
         id: comment.id,
-        body: comment.body,
+        body,
         author: fallback_text(comment.author_display_name, "系统"),
         created_at: display_timestamp(comment.created_at),
         updated_at: display_timestamp(comment.updated_at),
@@ -4870,6 +4880,21 @@ fn comment_with_attachments(
         .collect::<Vec<_>>();
     comment.has_attachments = !comment.attachments.is_empty();
     comment
+}
+
+fn work_item_comment_body_for_display(body: &str, is_flow: bool) -> String {
+    if !is_flow {
+        return body.to_string();
+    }
+
+    body.split('；')
+        .map(|part| {
+            part.strip_prefix("负责人：")
+                .map(|value| format!("处理人：{value}"))
+                .unwrap_or_else(|| part.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("；")
 }
 
 fn activity_from_summary(activity: projects::ProjectActivitySummary) -> Activity {
@@ -5246,7 +5271,7 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
             .count(),
         high_priority_count: assigned_items
             .iter()
-            .filter(|item| matches!(item.priority.as_str(), "P0" | "P1"))
+            .filter(|item| is_high_priority_code(&item.priority_code))
             .count(),
     }
 }
@@ -5301,7 +5326,7 @@ async fn ensure_project_member_manage_access(
     }
 
     Err(AppError::Forbidden(
-        "只有项目负责人或维护者可以管理项目成员".to_string(),
+        "只有项目负责人或项目管理员可以管理项目成员".to_string(),
     ))
 }
 
@@ -5567,7 +5592,7 @@ fn work_item_list_summary(items: &[WorkItem], total_items: i64) -> WorkItemListS
             .count(),
         high_priority_items: items
             .iter()
-            .filter(|item| matches!(item.priority.as_str(), "P0" | "P1"))
+            .filter(|item| is_high_priority_code(&item.priority_code))
             .count(),
     }
 }
@@ -5884,11 +5909,11 @@ fn project_status_label(status: &str) -> (&'static str, &'static str) {
 
 fn project_member_role_label(role: &str) -> &'static str {
     match role {
-        "owner" => "负责人",
-        "maintainer" => "维护者",
-        "member" => "成员",
-        "viewer" => "观察者",
-        _ => "成员",
+        "owner" => "项目负责人",
+        "maintainer" => "项目管理员",
+        "member" => "项目成员",
+        "viewer" => "只读成员",
+        _ => "项目成员",
     }
 }
 
@@ -6028,6 +6053,29 @@ fn work_item_labels(item_type: &str, status: &str) -> (&'static str, &'static st
     (kind, status, tone)
 }
 
+fn priority_label(priority: &str) -> &'static str {
+    match priority {
+        "P0" => "紧急",
+        "P1" => "高",
+        "P2" => "中",
+        "P3" => "低",
+        _ => "未设置",
+    }
+}
+
+fn is_high_priority_code(priority: &str) -> bool {
+    matches!(priority, "P0" | "P1")
+}
+
+fn attachment_status_label(status: &str) -> (&'static str, &'static str) {
+    match status {
+        "pending" => ("待上传", "warning"),
+        "uploaded" => ("已上传", "ok"),
+        "deleted" => ("已删除", "danger"),
+        _ => ("未知", "info"),
+    }
+}
+
 fn priority_rank(priority: &str) -> i32 {
     match priority {
         "P0" => 0,
@@ -6114,7 +6162,7 @@ fn sample_metrics() -> Vec<Metric> {
         Metric {
             label: "未解决 Bug",
             value: "1".to_string(),
-            hint: "1 个 P0/P1".to_string(),
+            hint: "1 个紧急/高".to_string(),
             tone: "danger",
         },
         Metric {
@@ -6203,7 +6251,7 @@ fn sample_search_results(query: &str) -> Vec<SearchResult> {
             kind: "项目".to_string(),
             key: project.code.clone(),
             title: project.name,
-            context: format!("负责人 {} · {}", project.owner, project.status),
+            context: format!("项目负责人 {} · {}", project.owner, project.status),
             url: format!("/web/projects/{}", project.code),
             updated_at: project.updated_at,
         })
@@ -6288,7 +6336,7 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
         display_name: "陈".to_string(),
         username: "yuance_admin".to_string(),
         role_code: "owner".to_string(),
-        role: "负责人".to_string(),
+        role: "项目负责人".to_string(),
         joined_at: "今天".to_string(),
     }];
     let member_candidates = vec![ProjectUserOption {
@@ -6374,7 +6422,7 @@ fn render_sample_work_item_detail_page(
                 display_name: "陈".to_string(),
                 username: "yuance_admin".to_string(),
                 role_code: "owner".to_string(),
-                role: "负责人".to_string(),
+                role: "项目负责人".to_string(),
                 joined_at: "今天".to_string(),
             }],
             parent_options: sample_work_items(Some("requirement")),
@@ -6407,7 +6455,8 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
             assignee_username: "yuance_admin".to_string(),
             assignee: "陈".to_string(),
             reporter: "陈".to_string(),
-            priority: "P0".to_string(),
+            priority_code: "P0".to_string(),
+            priority: "紧急".to_string(),
             status_code: "in_progress".to_string(),
             status: "进行中".to_string(),
             status_tone: "info",
@@ -6448,4 +6497,28 @@ fn sample_activities() -> Vec<Activity> {
             meta: "YCE · 系统管理 / 对象存储 · 今天".to_string(),
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flow_comment_display_renames_legacy_assignee_label() {
+        assert_eq!(
+            work_item_comment_body_for_display("负责人：张三 → 李四", true),
+            "处理人：张三 → 李四"
+        );
+        assert_eq!(
+            work_item_comment_body_for_display(
+                "状态：待处理 → 进行中；负责人：张三 → 李四；说明：负责人：不要改",
+                true
+            ),
+            "状态：待处理 → 进行中；处理人：张三 → 李四；说明：负责人：不要改"
+        );
+        assert_eq!(
+            work_item_comment_body_for_display("负责人：张三", false),
+            "负责人：张三"
+        );
+    }
 }

@@ -82,10 +82,10 @@
               <code>{{ attachment.object_key }}</code>
             </div>
             <div class="attachment-actions">
-              <span class="status status-info">{{ attachment.status }}</span>
-              {% if attachment.status != "deleted" %}
+              <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
+              {% if attachment.status_code != "deleted" %}
               {% if can_manage_work_items && !item.is_deleted %}
-              {% if attachment.status == "pending" %}
+              {% if attachment.status_code == "pending" %}
               <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/work-items/{{ item.key }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/work-items/{{ item.key }}/attachments/{id}/uploaded" data-success-redirect="/web/work-items/{{ item.key }}">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <label class="btn btn-sm btn-secondary attachment-file-button">
@@ -97,7 +97,7 @@
               </form>
               {% endif %}
               {% endif %}
-              {% if attachment.status == "uploaded" %}
+              {% if attachment.status_code == "uploaded" %}
               <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载附件</a>
               {% else %}
               <span class="attachment-action-hint">上传完成后可下载</span>
@@ -128,7 +128,7 @@
         </div>
         <dl class="detail-dl">
           <div>
-            <dt>负责人</dt>
+            <dt>处理人</dt>
             <dd>{{ item.assignee }}</dd>
           </div>
           <div>
@@ -164,7 +164,7 @@
     <div class="modal-head">
       <div>
         <h2 id="work-item-edit-modal-title">编辑工作项</h2>
-        <p>更新标题、描述、状态、优先级和负责人，变更会记录到项目动态。</p>
+        <p>更新标题、描述、状态、优先级和处理人，变更会记录到项目动态。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -186,14 +186,14 @@
         <label>
           优先级
           <select name="priority">
-            <option value="P0" {% if item.priority == "P0" %}selected{% endif %}>P0</option>
-            <option value="P1" {% if item.priority == "P1" %}selected{% endif %}>P1</option>
-            <option value="P2" {% if item.priority == "P2" %}selected{% endif %}>P2</option>
-            <option value="P3" {% if item.priority == "P3" %}selected{% endif %}>P3</option>
+            <option value="P0" {% if item.priority_code == "P0" %}selected{% endif %}>紧急</option>
+            <option value="P1" {% if item.priority_code == "P1" %}selected{% endif %}>高</option>
+            <option value="P2" {% if item.priority_code == "P2" %}selected{% endif %}>中</option>
+            <option value="P3" {% if item.priority_code == "P3" %}selected{% endif %}>低</option>
           </select>
         </label>
         <label>
-          负责人
+          处理人
           <select name="assignee_username">
             {% for member in assignee_options %}
             <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
@@ -234,7 +234,7 @@
     <div class="modal-head">
       <div>
         <h2 id="work-item-handoff-modal-title">推进并指派</h2>
-        <p>选择下一状态和负责人，并把处理说明记录为流程记录。</p>
+        <p>选择下一状态和处理人，并把处理说明记录为流程记录。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -250,9 +250,9 @@
           </select>
         </label>
         <label>
-          下一负责人
+          下一处理人
           <select name="assignee_username">
-            <option value="">保持当前负责人</option>
+            <option value="">保持当前处理人</option>
             {% for member in assignee_options %}
             <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
             {% endfor %}

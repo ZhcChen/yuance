@@ -32,7 +32,7 @@
     <article class="metric metric-danger">
       <span class="metric-label">高优先级</span>
       <strong>{{ summary.high_priority_items }}</strong>
-      <span class="metric-hint">P0 / P1</span>
+      <span class="metric-hint">紧急 / 高</span>
     </article>
   </section>
 
@@ -42,7 +42,7 @@
         <h2>{{ title }}列表</h2>
         {% match current_project %}
         {% when Some with (project) %}
-        <p>当前项目：{{ project.key }} · {{ project.name }}，支持按关键词、状态、优先级和负责人筛选。</p>
+        <p>当前项目：{{ project.key }} · {{ project.name }}，支持按关键词、状态、优先级和处理人筛选。</p>
         {% when None %}
         <p>请先在顶部选择当前项目，避免多个项目的工作项混在一起。</p>
         {% endmatch %}
@@ -76,10 +76,10 @@
         优先级
         <select name="priority">
           <option value="">全部优先级</option>
-          <option value="P0" {% if filters.priority == "P0" %}selected{% endif %}>P0</option>
-          <option value="P1" {% if filters.priority == "P1" %}selected{% endif %}>P1</option>
-          <option value="P2" {% if filters.priority == "P2" %}selected{% endif %}>P2</option>
-          <option value="P3" {% if filters.priority == "P3" %}selected{% endif %}>P3</option>
+          <option value="P0" {% if filters.priority == "P0" %}selected{% endif %}>紧急</option>
+          <option value="P1" {% if filters.priority == "P1" %}selected{% endif %}>高</option>
+          <option value="P2" {% if filters.priority == "P2" %}selected{% endif %}>中</option>
+          <option value="P3" {% if filters.priority == "P3" %}selected{% endif %}>低</option>
         </select>
       </label>
       <label>
@@ -94,9 +94,9 @@
         </select>
       </label>
       <label>
-        负责人
+        处理人
         <select name="assignee_username">
-          <option value="">全部负责人</option>
+          <option value="">全部处理人</option>
           {% for member in assignee_options %}
           <option value="{{ member.username }}" {% if filters.assignee_username == member.username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
           {% endfor %}
@@ -165,7 +165,7 @@
     <div class="modal-head">
       <div>
         <h2 id="work-item-create-modal-title">{{ create_label }}</h2>
-        <p>可选择下一位负责人；未选择时默认分配给当前用户，并记录项目动态。</p>
+        <p>可选择处理人；未选择时默认指派给当前用户，并记录项目动态。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -185,10 +185,10 @@
         <label>
           优先级
           <select name="priority">
-            <option value="P0">P0</option>
-            <option value="P1">P1</option>
-            <option value="P2" selected>P2</option>
-            <option value="P3">P3</option>
+            <option value="P0">紧急</option>
+            <option value="P1">高</option>
+            <option value="P2" selected>中</option>
+            <option value="P3">低</option>
           </select>
         </label>
         <label>
@@ -196,9 +196,9 @@
           <input name="due_date" type="date">
         </label>
         <label>
-          负责人
+          处理人
           <select name="assignee_username">
-            <option value="">默认我自己</option>
+            <option value="">默认指派给我</option>
             {% for member in assignee_options %}
             <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
             {% endfor %}

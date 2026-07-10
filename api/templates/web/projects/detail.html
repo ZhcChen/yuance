@@ -11,7 +11,7 @@
       <p>{{ project.description }}</p>
       <div class="detail-meta">
         <span class="status status-{{ project.status_tone }}">{{ project.status }}</span>
-        <span>负责人：{{ project.owner }}</span>
+        <span>项目负责人：{{ project.owner }}</span>
         <span>创建：{{ project.created_at }}</span>
         <span>更新：{{ project.updated_at }}</span>
       </div>
@@ -190,7 +190,7 @@
             <div class="project-tab-section-head">
               <div>
                 <h3>基础信息</h3>
-                <p>项目身份、负责人和生命周期状态。</p>
+                <p>项目身份、项目负责人和生命周期状态。</p>
               </div>
             </div>
             <dl class="detail-dl inline project-detail-dl">
@@ -203,7 +203,7 @@
                 <dd><span class="status status-{{ project.status_tone }}">{{ project.status }}</span></dd>
               </div>
               <div>
-                <dt>负责人</dt>
+                <dt>项目负责人</dt>
                 <dd>{{ project.owner }}</dd>
               </div>
               <div>
@@ -297,10 +297,10 @@
                 <code>{{ attachment.object_key }}</code>
               </div>
               <div class="attachment-actions">
-                <span class="status status-info">{{ attachment.status }}</span>
-                {% if attachment.status != "deleted" %}
+                <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
+                {% if attachment.status_code != "deleted" %}
                 {% if can_manage_work_items %}
-                {% if attachment.status == "pending" %}
+                {% if attachment.status_code == "pending" %}
                 <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}">
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   <label class="btn btn-sm btn-secondary attachment-file-button">
@@ -312,7 +312,7 @@
                 </form>
                 {% endif %}
                 {% endif %}
-                {% if attachment.status == "uploaded" %}
+                {% if attachment.status_code == "uploaded" %}
                 <a class="btn btn-sm btn-secondary" href="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载附件</a>
                 {% else %}
                 <span class="attachment-action-hint">上传完成后可下载</span>
@@ -374,7 +374,7 @@
     <div class="modal-head">
       <div>
         <h2 id="project-edit-modal-title">编辑项目</h2>
-        <p>维护项目基础信息、负责人和生命周期状态；归档项目可在这里恢复。</p>
+        <p>维护项目基础信息、项目负责人和生命周期状态；归档项目可在这里恢复。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -398,7 +398,7 @@
           </select>
         </label>
         <label>
-          负责人
+          项目负责人
           <select name="owner_username">
             {% for member in members %}
             <option value="{{ member.username }}" {% if member.username == project.owner_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
@@ -454,10 +454,10 @@
         <label>
           优先级
           <select name="priority">
-            <option value="P0">P0</option>
-            <option value="P1">P1</option>
-            <option value="P2" selected>P2</option>
-            <option value="P3">P3</option>
+            <option value="P0">紧急</option>
+            <option value="P1">高</option>
+            <option value="P2" selected>中</option>
+            <option value="P3">低</option>
           </select>
         </label>
         <label>
@@ -465,9 +465,9 @@
           <input name="due_date" type="date">
         </label>
         <label>
-          负责人
+          处理人
           <select name="assignee_username">
-            <option value="">默认我自己</option>
+            <option value="">默认指派给我</option>
             {% for member in members %}
             <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
             {% endfor %}
@@ -593,9 +593,9 @@
       <label>
         项目角色
         <select name="member_role">
-          <option value="member">成员</option>
-          <option value="maintainer">维护者</option>
-          <option value="viewer">观察者</option>
+          <option value="member">项目成员</option>
+          <option value="maintainer">项目管理员</option>
+          <option value="viewer">只读成员</option>
         </select>
       </label>
       <div class="modal-actions">
@@ -625,9 +625,9 @@
       <label>
         项目角色
         <select name="member_role" autofocus>
-          <option value="viewer" {% if member.role_code == "viewer" %}selected{% endif %}>观察者</option>
-          <option value="member" {% if member.role_code == "member" %}selected{% endif %}>成员</option>
-          <option value="maintainer" {% if member.role_code == "maintainer" %}selected{% endif %}>维护者</option>
+          <option value="viewer" {% if member.role_code == "viewer" %}selected{% endif %}>只读成员</option>
+          <option value="member" {% if member.role_code == "member" %}selected{% endif %}>项目成员</option>
+          <option value="maintainer" {% if member.role_code == "maintainer" %}selected{% endif %}>项目管理员</option>
         </select>
       </label>
       <div class="modal-actions">

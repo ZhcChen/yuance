@@ -1035,7 +1035,7 @@ pub async fn remove_project_member(
         count_open_work_items_assigned_to_user(pool, project_id, user_id).await?;
     if assigned_open_count > 0 {
         return Err(AppError::BadRequest(format!(
-            "该成员仍负责 {assigned_open_count} 个未关闭工作项，请先转交负责人"
+            "该成员仍负责 {assigned_open_count} 个未关闭工作项，请先转交处理人"
         )));
     }
 
@@ -2194,7 +2194,7 @@ pub async fn handoff_work_item(
             .bind(&assignee_username)
             .fetch_optional(pool)
             .await?
-            .ok_or_else(|| AppError::BadRequest("负责人必须是已启用的项目成员".to_string()))?;
+            .ok_or_else(|| AppError::BadRequest("处理人必须是已启用的项目成员".to_string()))?;
             (Some(assignee.0), assignee.1, assignee.2)
         };
 
@@ -2203,7 +2203,7 @@ pub async fn handoff_work_item(
         && body.is_empty()
     {
         return Err(AppError::BadRequest(
-            "请至少修改状态、负责人或填写处理说明".to_string(),
+            "请至少修改状态、处理人或填写处理说明".to_string(),
         ));
     }
 
@@ -3583,7 +3583,7 @@ fn format_work_item_flow_summary(
     }
     if previous_assignee.trim() != next_assignee.trim() {
         parts.push(format!(
-            "负责人：{} → {}",
+            "处理人：{} → {}",
             assignee_label(previous_assignee),
             assignee_label(next_assignee)
         ));
@@ -3650,7 +3650,7 @@ async fn resolve_project_member_user_id(
     .bind(&username)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::BadRequest("负责人必须是已启用的项目成员".to_string()))
+    .ok_or_else(|| AppError::BadRequest("处理人必须是已启用的项目成员".to_string()))
 }
 
 async fn resolve_parent_work_item_id(

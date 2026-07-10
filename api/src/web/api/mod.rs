@@ -2615,7 +2615,7 @@ async fn ensure_api_project_member_manage_access(
     }
 
     Err(AppError::Forbidden(
-        "只有项目负责人或维护者可以管理项目成员".to_string(),
+        "只有项目负责人或项目管理员可以管理项目成员".to_string(),
     ))
 }
 

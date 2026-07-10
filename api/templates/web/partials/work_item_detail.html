@@ -19,7 +19,7 @@
     <h3>协作信息</h3>
     <dl class="detail-dl inline">
       <div>
-        <dt>负责人</dt>
+        <dt>处理人</dt>
         <dd>{{ item.assignee }}</dd>
       </div>
       <div>
@@ -79,9 +79,9 @@
               <span>{{ attachment.byte_size }} · {{ attachment.created_by }} · {{ attachment.created_at }}</span>
             </div>
             <div class="attachment-actions">
-              <span class="status status-info">{{ attachment.status }}</span>
-              {% if attachment.status != "deleted" %}
-              {% if can_manage_work_items && !item.is_deleted && attachment.status == "pending" %}
+              <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
+              {% if attachment.status_code != "deleted" %}
+              {% if can_manage_work_items && !item.is_deleted && attachment.status_code == "pending" %}
               <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{id}/uploaded" data-success-redirect="/web/work-items/{{ item.key }}">
                 <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                 <label class="btn btn-sm btn-secondary attachment-file-button">
@@ -92,7 +92,7 @@
                 <span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>
               </form>
               {% endif %}
-              {% if attachment.status == "uploaded" %}
+              {% if attachment.status_code == "uploaded" %}
               <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载</a>
               {% endif %}
               {% if can_manage_work_items && !item.is_deleted %}
