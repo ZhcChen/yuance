@@ -72,7 +72,7 @@
   <div class="panel-head">
     <div>
       <h2>桶状态</h2>
-      <p>检测当前激活 Bucket 的读写权限，并写入元策初始化标记。</p>
+      <p>检测当前激活 Bucket 的读写权限；初始化会按需创建 Bucket、补齐浏览器直传 CORS，并写入元策初始化标记。</p>
     </div>
     {% if can_manage_storage %}
     {% if config.has_config %}
@@ -122,7 +122,7 @@
 
     {% if bucket_inspection.needs_initialization %}
     <div class="inline-result storage-message storage-message-info">
-      当前 Bucket 已配置但缺少初始化标记。初始化会写入 <code>{{ bucket_inspection.marker_key }}</code>，不会创建阿里云 Bucket；如果 Bucket 不存在，请先到阿里云 OSS 控制台创建。
+      当前 Bucket 已配置但缺少初始化标记。初始化会按需创建 Bucket、补齐浏览器直传 CORS，并写入 <code>{{ bucket_inspection.marker_key }}</code>。
     </div>
     {% endif %}
   </div>

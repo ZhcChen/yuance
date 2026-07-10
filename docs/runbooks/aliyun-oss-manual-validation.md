@@ -49,8 +49,7 @@ date: 2026-06-30
 注意：
 
 - Endpoint、Region 和签名 TTL 默认值兼容参考项目 qfy-sc；Bucket 使用元策自己的 `yuance-files`，不沿用 `qfy-sc-private`。
-- 元策不会自动创建阿里云 Bucket；Bucket 不存在时，请先在阿里云 OSS 控制台创建私有 Bucket。
-- 第一版不在页面管理 Bucket CORS；当前上传走服务端短期签名，后续如改为更严格的浏览器直传策略再补 CORS 管理。
+- 点击“初始化桶”会按需创建私有 Bucket、补齐浏览器直传 CORS，并写入 `yuance-system/.initialized`。
 
 ## 项目附件直传验证
 

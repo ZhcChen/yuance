@@ -34,7 +34,7 @@ date: 2026-06-26
   - 下载签名 TTL：`600` 秒
 - Bucket 不沿用 qfy-sc 的 `qfy-sc-private`，元策默认使用 `yuance-files`。
 - 对象存储配置页在未配置时预填上述默认值；服务端保存时也会对空 Endpoint、Region、Bucket 执行同样兜底。
-- 默认值只用于降低首次配置成本，不代表阿里云 Bucket 已存在；Bucket 仍需用户在 OSS 控制台或运维脚本中创建。
+- 默认值只用于降低首次配置成本；首次“初始化桶”会按需创建阿里云 Bucket，并配置浏览器直传 CORS。
 
 ## OpenDAL 使用边界
 
@@ -42,8 +42,8 @@ date: 2026-06-26
 - 浏览器不得接触长期密钥。
 - 上传和下载使用短期 presigned request。
 - 桶检测必须走当前 active 配置，执行服务端临时对象写入、读取元数据和删除，确认 Bucket 存在且 AccessKey 具备对象读写权限。
-- 桶初始化以写入 `yuance-system/.initialized` 标记对象为准；页面据此判断是否需要初始化。
-- 元策当前不通过 OpenDAL 创建阿里云 Bucket，也不在页面自动创建 Bucket；如果 Bucket 不存在，应先到阿里云 OSS 控制台或运维脚本创建，再回到系统执行检测和初始化。
+- 桶初始化语义对齐 qfy-sc：先确保 Bucket 存在，不存在则创建私有 Bucket；再确保浏览器直传 CORS 存在；最后写入 `yuance-system/.initialized` 标记对象。
+- OpenDAL 仍只负责运行时对象读写和签名；Bucket 创建 / CORS 配置走阿里云 OSS 管理 API。
 - 真实探测和初始化不得把外部错误原样泄露到页面，也不得输出 AccessKey 明文。
 
 ## 生产注意事项

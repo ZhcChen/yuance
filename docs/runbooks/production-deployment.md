@@ -259,7 +259,7 @@ docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cl
 5. 点击“检测桶状态”。
 6. 如提示需要初始化，点击“初始化桶”。
 
-元策不会自动创建阿里云 Bucket。Bucket 不存在时，需要先在阿里云控制台创建私有 Bucket。
+点击“初始化桶”会按需创建私有 Bucket、补齐浏览器直传 CORS，并写入初始化标记。
 
 ## 禁止事项
 

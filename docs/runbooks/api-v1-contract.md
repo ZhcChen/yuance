@@ -500,8 +500,7 @@ POST /api/v1/storage/config/versions/{version}/rollback
 
 - `POST /api/v1/storage/config/probe` 使用 active 配置执行临时对象写入、读取元数据和删除，适合检测 Bucket 与 AccessKey 对象读写权限。
 - `GET /api/v1/storage/config/inspect` 只检查初始化标记 `yuance-system/.initialized`，不执行写操作。
-- `POST /api/v1/storage/config/initialize` 写入初始化标记 `yuance-system/.initialized`。
-- 元策不会自动创建阿里云 Bucket；Bucket 不存在时应先由运维在阿里云 OSS 创建。
+- `POST /api/v1/storage/config/initialize` 会按需创建私有 Bucket、补齐浏览器直传 CORS，并写入初始化标记 `yuance-system/.initialized`。
 
 ## 权限点摘要
 

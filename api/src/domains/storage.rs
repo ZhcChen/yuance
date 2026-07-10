@@ -5,6 +5,8 @@ use std::{
 };
 
 use opendal::{Error as OpendalError, ErrorKind, Operator, options, services};
+use reqsign_aliyun_oss::{Credential as OssCredential, RequestSigner};
+use reqsign_core::{Context as ReqsignContext, SignRequest};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -23,6 +25,8 @@ pub const DEFAULT_DOWNLOAD_URL_TTL_SECONDS: i32 = 600;
 pub const TEST_MEMORY_ENDPOINT: &str = "memory://yuance-tests";
 pub const STORAGE_INIT_MARKER_KEY: &str = "yuance-system/.initialized";
 const STORAGE_PROBE_PREFIX: &str = "yuance-system/probes";
+const OSS_BUCKET_INIT_TIMEOUT_SECONDS: u64 = 15;
+const OSS_DIRECT_UPLOAD_CORS_RULE: &str = r#"<CORSRule><AllowedOrigin>*</AllowedOrigin><AllowedMethod>PUT</AllowedMethod><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader><ExposeHeader>x-oss-request-id</ExposeHeader><MaxAgeSeconds>3600</MaxAgeSeconds></CORSRule>"#;
 
 static TEST_MEMORY_OPERATORS: LazyLock<Mutex<HashMap<String, Operator>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -110,6 +114,20 @@ pub struct StorageBucketInitializeResult {
     pub bucket: String,
     pub marker_key: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AliyunOssBucketInitialization {
+    bucket_message: String,
+    cors_message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AliyunOssServiceError {
+    status: u16,
+    code: String,
+    message: String,
+    request_id: String,
 }
 
 pub async fn active_config(pool: &SqlitePool) -> AppResult<Option<StorageConfig>> {
@@ -604,12 +622,25 @@ pub async fn initialize_active_config(
     pool: &SqlitePool,
     settings: &Settings,
 ) -> AppResult<StorageBucketInitializeResult> {
-    let config = active_config(pool)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
-    let operator = build_operator_from_active_config(pool, settings)
-        .await?
-        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let Some((config, access_key_id, access_key_secret)) =
+        load_active_config_with_secret(pool, settings).await?
+    else {
+        return Err(AppError::BadRequest("对象存储未激活".to_string()));
+    };
+
+    let bucket_initialization = if is_test_memory_config(settings, &config) {
+        None
+    } else {
+        Some(
+            ensure_aliyun_oss_bucket_initialized(&config, &access_key_id, &access_key_secret)
+                .await?,
+        )
+    };
+    let operator = if is_test_memory_config(settings, &config) {
+        build_test_memory_operator(&config)?
+    } else {
+        build_oss_operator(&config, &access_key_id, &access_key_secret)?
+    };
     let inspection = inspect_bucket_with_operator(config.clone(), operator.clone()).await;
     if !(inspection.can_write && inspection.can_read && inspection.can_delete) {
         let detail = inspection
@@ -651,7 +682,14 @@ pub async fn initialize_active_config(
         provider: config.provider,
         bucket: config.bucket,
         marker_key: STORAGE_INIT_MARKER_KEY.to_string(),
-        message: "对象存储桶初始化完成".to_string(),
+        message: bucket_initialization
+            .map(|init| {
+                format!(
+                    "对象存储桶初始化完成：{}{}",
+                    init.bucket_message, init.cors_message
+                )
+            })
+            .unwrap_or_else(|| "对象存储桶初始化完成".to_string()),
     })
 }
 
@@ -906,6 +944,354 @@ fn build_test_memory_operator(config: &StorageConfig) -> AppResult<Operator> {
         .map_err(|error| AppError::BadRequest(format!("测试对象存储配置无效：{error}")))?;
     operators.insert(cache_key, operator.clone());
     Ok(operator)
+}
+
+async fn ensure_aliyun_oss_bucket_initialized(
+    config: &StorageConfig,
+    access_key_id: &str,
+    access_key_secret: &str,
+) -> AppResult<AliyunOssBucketInitialization> {
+    if config.provider != STORAGE_PROVIDER_ALIYUN_OSS {
+        return Err(oss_bucket_init_error(
+            "当前仅支持阿里云 OSS Bucket 初始化。",
+        ));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(OSS_BUCKET_INIT_TIMEOUT_SECONDS))
+        .build()
+        .map_err(|error| {
+            oss_bucket_init_error(format!("创建阿里云 OSS 管理客户端失败：{error}"))
+        })?;
+
+    let bucket_exists =
+        aliyun_oss_bucket_exists(&client, config, access_key_id, access_key_secret).await?;
+    let bucket_message = if bucket_exists {
+        "Bucket 已存在，已复用当前桶。".to_string()
+    } else {
+        create_aliyun_oss_bucket(&client, config, access_key_id, access_key_secret).await?
+    };
+    let cors_message =
+        ensure_aliyun_oss_direct_upload_cors(&client, config, access_key_id, access_key_secret)
+            .await?;
+
+    Ok(AliyunOssBucketInitialization {
+        bucket_message,
+        cors_message,
+    })
+}
+
+async fn aliyun_oss_bucket_exists(
+    client: &reqwest::Client,
+    config: &StorageConfig,
+    access_key_id: &str,
+    access_key_secret: &str,
+) -> AppResult<bool> {
+    let response = signed_aliyun_oss_bucket_request(
+        client,
+        config,
+        access_key_id,
+        access_key_secret,
+        "HEAD",
+        None,
+        vec![],
+        None,
+    )
+    .await?;
+    if response.status().is_success() {
+        return Ok(true);
+    }
+
+    let error = aliyun_oss_service_error_from_response(response).await;
+    if error.status == 404 || error.code == "NoSuchBucket" {
+        return Ok(false);
+    }
+    Err(oss_bucket_init_error(format!(
+        "检查 Bucket 是否存在失败：{}",
+        format_aliyun_oss_service_error(&error)
+    )))
+}
+
+async fn create_aliyun_oss_bucket(
+    client: &reqwest::Client,
+    config: &StorageConfig,
+    access_key_id: &str,
+    access_key_secret: &str,
+) -> AppResult<String> {
+    let body = r#"<?xml version="1.0" encoding="UTF-8"?><CreateBucketConfiguration><StorageClass>Standard</StorageClass></CreateBucketConfiguration>"#;
+    let response = signed_aliyun_oss_bucket_request(
+        client,
+        config,
+        access_key_id,
+        access_key_secret,
+        "PUT",
+        None,
+        vec![
+            ("content-type", "application/xml".to_string()),
+            ("x-oss-acl", "private".to_string()),
+            ("x-oss-storage-class", "Standard".to_string()),
+        ],
+        Some(body.to_string()),
+    )
+    .await?;
+    if response.status().is_success() {
+        return Ok("Bucket 已创建，默认使用私有权限。".to_string());
+    }
+
+    let error = aliyun_oss_service_error_from_response(response).await;
+    if error.code == "BucketAlreadyOwnedByYou" {
+        return Ok("Bucket 已存在，已复用当前桶。".to_string());
+    }
+    if error.code == "BucketAlreadyExists" {
+        return Err(oss_bucket_init_error(
+            "Bucket 名称已被其他账号占用，不能作为当前项目桶复用，请更换项目专用 Bucket 名称。",
+        ));
+    }
+    Err(oss_bucket_init_error(format!(
+        "创建 Bucket 失败：{}",
+        format_aliyun_oss_service_error(&error)
+    )))
+}
+
+async fn ensure_aliyun_oss_direct_upload_cors(
+    client: &reqwest::Client,
+    config: &StorageConfig,
+    access_key_id: &str,
+    access_key_secret: &str,
+) -> AppResult<String> {
+    let response = signed_aliyun_oss_bucket_request(
+        client,
+        config,
+        access_key_id,
+        access_key_secret,
+        "GET",
+        Some("cors"),
+        vec![],
+        None,
+    )
+    .await?;
+
+    let cors_xml = if response.status().is_success() {
+        response
+            .text()
+            .await
+            .map_err(|error| oss_bucket_init_error(format!("读取 Bucket CORS 响应失败：{error}")))?
+    } else {
+        let error = aliyun_oss_service_error_from_response(response).await;
+        if !(error.status == 404
+            || error.code == "NoSuchCORS"
+            || error.code == "NoSuchCORSConfiguration")
+        {
+            return Err(oss_bucket_init_error(format!(
+                "读取 Bucket CORS 配置失败：{}",
+                format_aliyun_oss_service_error(&error)
+            )));
+        }
+        String::new()
+    };
+
+    if cors_allows_direct_upload(&cors_xml) {
+        return Ok("浏览器直传 CORS 已存在。".to_string());
+    }
+
+    let next_cors_xml = append_direct_upload_cors_rule(&cors_xml);
+    let response = signed_aliyun_oss_bucket_request(
+        client,
+        config,
+        access_key_id,
+        access_key_secret,
+        "PUT",
+        Some("cors"),
+        vec![("content-type", "application/xml".to_string())],
+        Some(next_cors_xml),
+    )
+    .await?;
+    if response.status().is_success() {
+        return Ok("浏览器直传 CORS 已配置。".to_string());
+    }
+
+    let error = aliyun_oss_service_error_from_response(response).await;
+    Err(oss_bucket_init_error(format!(
+        "写入 Bucket CORS 配置失败：{}",
+        format_aliyun_oss_service_error(&error)
+    )))
+}
+
+async fn signed_aliyun_oss_bucket_request(
+    client: &reqwest::Client,
+    config: &StorageConfig,
+    access_key_id: &str,
+    access_key_secret: &str,
+    method: &str,
+    query: Option<&str>,
+    headers: Vec<(&str, String)>,
+    body: Option<String>,
+) -> AppResult<reqwest::Response> {
+    let url = aliyun_oss_bucket_url(config, query)?;
+    let mut builder = http::Request::builder().method(method).uri(&url);
+    for (name, value) in &headers {
+        builder = builder.header(*name, value);
+    }
+    let (mut parts, _) = builder
+        .body(())
+        .map_err(|error| oss_bucket_init_error(format!("构造阿里云 OSS 管理请求失败：{error}")))?
+        .into_parts();
+
+    let credential = OssCredential {
+        access_key_id: access_key_id.to_string(),
+        access_key_secret: access_key_secret.to_string(),
+        security_token: None,
+        expires_in: None,
+    };
+    RequestSigner::new(&config.bucket)
+        .sign_request(&ReqsignContext::new(), &mut parts, Some(&credential), None)
+        .await
+        .map_err(|error| oss_bucket_init_error(format!("签名阿里云 OSS 管理请求失败：{error}")))?;
+
+    let reqwest_method = reqwest::Method::from_bytes(method.as_bytes())
+        .map_err(|error| oss_bucket_init_error(format!("OSS 管理请求方法无效：{error}")))?;
+    let mut request = client.request(reqwest_method, url);
+    for (name, value) in &parts.headers {
+        let value = value
+            .to_str()
+            .map_err(|error| oss_bucket_init_error(format!("OSS 管理请求 Header 无效：{error}")))?;
+        request = request.header(name.as_str(), value);
+    }
+    if let Some(body) = body {
+        request = request.body(body);
+    }
+    request
+        .send()
+        .await
+        .map_err(|error| oss_bucket_init_error(format!("请求阿里云 OSS 失败：{error}")))
+}
+
+fn aliyun_oss_bucket_url(config: &StorageConfig, query: Option<&str>) -> AppResult<String> {
+    let endpoint = config.endpoint.trim().trim_end_matches('/');
+    let url = reqwest::Url::parse(endpoint)
+        .map_err(|error| oss_bucket_init_error(format!("Endpoint 不是有效 URL：{error}")))?;
+    if url.path() != "/" && !url.path().is_empty() {
+        return Err(oss_bucket_init_error(
+            "Endpoint 不应包含路径，请填写类似 https://oss-cn-hangzhou.aliyuncs.com 的地域 Endpoint。",
+        ));
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| oss_bucket_init_error("Endpoint 缺少 Host。"))?;
+    let bucket_host_prefix = format!("{}.", config.bucket);
+    let host = if host.starts_with(&bucket_host_prefix) {
+        host.to_string()
+    } else {
+        format!("{}.{}", config.bucket, host)
+    };
+    let port = url
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+    let query = query.map(|value| format!("?{value}")).unwrap_or_default();
+    Ok(format!("{}://{}{}/{}", url.scheme(), host, port, query))
+}
+
+async fn aliyun_oss_service_error_from_response(
+    response: reqwest::Response,
+) -> AliyunOssServiceError {
+    let status = response.status().as_u16();
+    let request_id = response
+        .headers()
+        .get("x-oss-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let body = response.text().await.unwrap_or_default();
+    AliyunOssServiceError {
+        status,
+        code: xml_tag_first_value(&body, "Code").unwrap_or_default(),
+        message: xml_tag_first_value(&body, "Message").unwrap_or_default(),
+        request_id,
+    }
+}
+
+fn format_aliyun_oss_service_error(error: &AliyunOssServiceError) -> String {
+    let mut parts = Vec::new();
+    if !error.code.is_empty() {
+        parts.push(format!("错误码 {}", error.code));
+    }
+    if !error.message.is_empty() {
+        parts.push(error.message.clone());
+    }
+    if !error.request_id.is_empty() {
+        parts.push(format!("RequestId {}", error.request_id));
+    }
+    if parts.is_empty() {
+        format!("HTTP {}", error.status)
+    } else {
+        parts.join("，")
+    }
+}
+
+fn append_direct_upload_cors_rule(cors_xml: &str) -> String {
+    if cors_allows_direct_upload(cors_xml) {
+        return cors_xml.trim().to_string();
+    }
+    let cors_xml = cors_xml.trim();
+    if cors_xml.is_empty() {
+        return format!("<CORSConfiguration>{OSS_DIRECT_UPLOAD_CORS_RULE}</CORSConfiguration>");
+    }
+    if let Some(position) = cors_xml.rfind("</CORSConfiguration>") {
+        let mut next = String::with_capacity(cors_xml.len() + OSS_DIRECT_UPLOAD_CORS_RULE.len());
+        next.push_str(&cors_xml[..position]);
+        next.push_str(OSS_DIRECT_UPLOAD_CORS_RULE);
+        next.push_str(&cors_xml[position..]);
+        next
+    } else {
+        format!("<CORSConfiguration>{OSS_DIRECT_UPLOAD_CORS_RULE}</CORSConfiguration>")
+    }
+}
+
+fn cors_allows_direct_upload(cors_xml: &str) -> bool {
+    cors_xml
+        .split("<CORSRule>")
+        .filter_map(|part| part.split("</CORSRule>").next())
+        .any(|rule| {
+            let methods = xml_tag_values(rule, "AllowedMethod");
+            let origins = xml_tag_values(rule, "AllowedOrigin");
+            let headers = xml_tag_values(rule, "AllowedHeader");
+            contains_xml_value(&methods, "PUT")
+                && contains_xml_value(&methods, "GET")
+                && contains_xml_value(&origins, "*")
+                && contains_xml_value(&headers, "*")
+        })
+}
+
+fn contains_xml_value(values: &[String], expected: &str) -> bool {
+    values
+        .iter()
+        .any(|value| value.trim().eq_ignore_ascii_case(expected))
+}
+
+fn xml_tag_values(xml: &str, tag: &str) -> Vec<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut rest = xml;
+    let mut values = Vec::new();
+    while let Some(open_position) = rest.find(&open) {
+        let value_start = open_position + open.len();
+        let after_open = &rest[value_start..];
+        let Some(close_position) = after_open.find(&close) else {
+            break;
+        };
+        values.push(after_open[..close_position].trim().to_string());
+        rest = &after_open[(close_position + close.len())..];
+    }
+    values
+}
+
+fn xml_tag_first_value(xml: &str, tag: &str) -> Option<String> {
+    xml_tag_values(xml, tag).into_iter().next()
+}
+
+fn oss_bucket_init_error(message: impl Into<String>) -> AppError {
+    AppError::BadRequest(format!("对象存储桶初始化失败：{}", message.into()))
 }
 
 async fn inspect_initialization_marker_with_operator(
@@ -1350,5 +1736,52 @@ mod tests {
         assert!(!message.contains("request_id"));
         assert!(!message.contains("host_id"));
         assert!(!message.contains("6A438791A711D13738671BC4"));
+    }
+
+    #[test]
+    fn aliyun_oss_bucket_url_builds_virtual_host_bucket_url() {
+        let url = aliyun_oss_bucket_url(&test_config(), Some("cors")).expect("url should build");
+
+        assert_eq!(
+            url,
+            "https://yuance-files.oss-cn-hangzhou.aliyuncs.com/?cors"
+        );
+    }
+
+    #[test]
+    fn aliyun_oss_bucket_url_does_not_duplicate_bucket_host() {
+        let mut config = test_config();
+        config.endpoint = "https://yuance-files.oss-cn-hangzhou.aliyuncs.com".to_string();
+
+        let url = aliyun_oss_bucket_url(&config, None).expect("url should build");
+
+        assert_eq!(url, "https://yuance-files.oss-cn-hangzhou.aliyuncs.com/");
+    }
+
+    #[test]
+    fn append_direct_upload_cors_rule_creates_config_when_empty() {
+        let cors = append_direct_upload_cors_rule("");
+
+        assert!(cors.contains("<CORSConfiguration>"));
+        assert!(cors_allows_direct_upload(&cors));
+    }
+
+    #[test]
+    fn append_direct_upload_cors_rule_preserves_existing_rules() {
+        let existing = r#"<CORSConfiguration><CORSRule><AllowedOrigin>https://example.test</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedHeader>Authorization</AllowedHeader></CORSRule></CORSConfiguration>"#;
+
+        let cors = append_direct_upload_cors_rule(existing);
+
+        assert!(cors.contains("https://example.test"));
+        assert!(cors_allows_direct_upload(&cors));
+        assert_eq!(cors.matches("<CORSRule>").count(), 2);
+    }
+
+    #[test]
+    fn append_direct_upload_cors_rule_is_idempotent() {
+        let cors = append_direct_upload_cors_rule("");
+        let next = append_direct_upload_cors_rule(&cors);
+
+        assert_eq!(next.matches("<CORSRule>").count(), 1);
     }
 }
