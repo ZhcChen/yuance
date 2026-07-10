@@ -250,11 +250,16 @@
     <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/handoff">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <div class="field-grid one-column">
+        <div class="handoff-current-status">
+          <span>当前状态</span>
+          <strong>{{ item.status }}</strong>
+        </div>
         <label>
           下一状态
-          <select name="status">
-            {% for option in status_options %}
-            <option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>
+          <select name="status" required>
+            <option value="" selected disabled>请选择流转动作</option>
+            {% for option in quick_status_options %}
+            <option value="{{ option.value }}">{{ option.label }}</option>
             {% endfor %}
           </select>
         </label>

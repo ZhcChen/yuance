@@ -6541,6 +6541,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn handoff_status_options_only_include_allowed_next_states() {
+        let options = work_item_quick_status_options("in_progress")
+            .expect("in-progress status should have transitions");
+
+        assert!(!options.iter().any(|option| option.value == "in_progress"));
+        assert!(options.iter().any(|option| option.label == "标记完成"));
+        assert!(options.iter().all(|option| !option.selected));
+    }
+
+    #[test]
     fn flow_comment_display_renames_legacy_assignee_label() {
         assert_eq!(
             work_item_comment_body_for_display("负责人：张三 → 李四", true),

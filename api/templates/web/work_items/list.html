@@ -36,7 +36,7 @@
     </article>
   </section>
 
-  <section class="panel">
+  <section class="panel work-list-panel">
     <div class="panel-head">
       <div>
         <h2>{{ title }}列表</h2>
@@ -47,15 +47,20 @@
         <p>请先在顶部选择当前项目，避免多个项目的工作项混在一起。</p>
         {% endmatch %}
       </div>
-      <div class="toolbar-actions">
-        <a class="btn btn-secondary" href="/web/requirements">需求</a>
-        <a class="btn btn-secondary" href="/web/tasks">任务</a>
-        <a class="btn btn-secondary" href="/web/bugs">Bug</a>
-      </div>
+      <nav class="work-type-tabs" aria-label="工作项类型">
+        <a class="{% if active == "requirements" %}active{% endif %}" href="/web/requirements">需求</a>
+        <a class="{% if active == "tasks" %}active{% endif %}" href="/web/tasks">任务</a>
+        <a class="{% if active == "bugs" %}active{% endif %}" href="/web/bugs">Bug</a>
+      </nav>
     </div>
 
-    <form class="filter-bar" method="get">
-      <label>
+    <div class="filter-shell">
+      <div class="filter-shell-head">
+        <strong>筛选条件</strong>
+        <span>组合条件可快速缩小当前项目中的{{ title }}范围</span>
+      </div>
+      <form class="filter-bar" method="get">
+      <label class="filter-keyword">
         关键词
         <input name="q" value="{{ filters.q }}" placeholder="标题、编号或描述">
       </label>
@@ -83,17 +88,6 @@
         </select>
       </label>
       <label>
-        项目
-        <select name="project_key" disabled>
-          {% match current_project %}
-          {% when Some with (project) %}
-          <option value="{{ project.key }}" selected>{{ project.key }} · {{ project.name }}</option>
-          {% when None %}
-          <option value="" selected>请先选择当前项目</option>
-          {% endmatch %}
-        </select>
-      </label>
-      <label>
         处理人
         <select name="assignee_username">
           <option value="">全部处理人</option>
@@ -106,7 +100,8 @@
         <button class="btn btn-primary" type="submit">筛选</button>
         <a class="btn btn-secondary" href="/web/{{ active }}">重置</a>
       </div>
-    </form>
+      </form>
+    </div>
 
     {% if current_project_required %}
     <div class="empty-state">

@@ -1452,6 +1452,15 @@ code {
 
 .list-page-items .work-item {
   padding: 17px 20px;
+  background: color-mix(in srgb, var(--panel) 88%, var(--table-head));
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.list-page-items .work-item:hover {
+  position: relative;
+  z-index: 1;
+  background: var(--panel-hover);
+  box-shadow: inset 3px 0 0 var(--brand);
 }
 
 .pager {
@@ -3511,6 +3520,7 @@ textarea {
   border-radius: 8px;
   background: var(--control-bg);
   color: var(--text);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
 }
 
 textarea {
@@ -3519,6 +3529,96 @@ textarea {
   padding-bottom: 9px;
   line-height: 20px;
   resize: vertical;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--muted);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgb(31 95 191 / 13%);
+}
+
+select {
+  appearance: none;
+  padding-right: 38px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 50%,
+    calc(100% - 11px) 50%;
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  cursor: pointer;
+}
+
+select:disabled {
+  border-color: var(--line);
+  background-color: var(--table-head);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+@supports (appearance: base-select) {
+  select,
+  ::picker(select) {
+    appearance: base-select;
+  }
+
+  select {
+    background-image: none;
+  }
+
+  select::picker-icon {
+    color: var(--muted);
+    transition: transform 150ms ease;
+  }
+
+  select:open::picker-icon {
+    transform: rotate(180deg);
+  }
+
+  ::picker(select) {
+    max-height: min(320px, 50vh);
+    margin-top: 6px;
+    overflow: auto;
+    padding: 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--panel);
+    box-shadow: 0 14px 34px rgb(20 35 55 / 16%);
+  }
+
+  select option {
+    min-height: 36px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  select option:hover,
+  select option:focus,
+  select option:checked {
+    background: var(--menu-active);
+    color: var(--brand-strong);
+  }
+
+  select option::checkmark {
+    color: var(--brand);
+  }
 }
 
 .field-hint {
@@ -3668,11 +3768,61 @@ textarea {
 
 .filter-bar {
   display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) repeat(4, minmax(120px, 1fr)) auto;
+  grid-template-columns: minmax(240px, 1.7fr) repeat(3, minmax(140px, 1fr)) auto;
   gap: 12px;
   align-items: end;
-  padding: 0 16px 16px;
+  padding: 14px 16px 16px;
+}
+
+.filter-shell {
   border-bottom: 1px solid var(--line);
+  background: var(--table-head);
+}
+
+.filter-shell-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 13px 16px 0;
+}
+
+.filter-shell-head strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.filter-shell-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.work-type-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--table-head);
+}
+
+.work-type-tabs a {
+  min-height: 29px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 11px;
+  border-radius: 6px;
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.work-type-tabs a:hover,
+.work-type-tabs a.active {
+  background: var(--panel);
+  color: var(--brand-strong);
+  box-shadow: 0 1px 4px rgb(20 35 55 / 8%);
 }
 
 .filter-actions {
@@ -3680,6 +3830,122 @@ textarea {
   gap: 8px;
   align-items: center;
   justify-content: flex-end;
+}
+
+.handoff-current-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--table-head);
+}
+
+.handoff-current-status span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.handoff-current-status strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.toast-region {
+  position: fixed;
+  z-index: 1200;
+  top: calc(var(--topbar-height) + 16px);
+  right: 20px;
+  width: min(390px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--brand);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 44px rgb(20 35 55 / 20%);
+  pointer-events: auto;
+  animation: toast-enter 180ms ease-out both;
+}
+
+.toast-error {
+  border-left-color: var(--danger);
+}
+
+.toast-success {
+  border-left-color: var(--accent);
+}
+
+.toast.leaving {
+  animation: toast-leave 180ms ease-in both;
+}
+
+.toast-icon {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--badge-bg);
+  color: var(--brand-strong);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.toast-error .toast-icon {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.toast-message {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.toast-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.toast-close:hover {
+  background: var(--table-head);
+  color: var(--text);
+}
+
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-leave {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-6px); }
 }
 
 .wide-field {
@@ -4347,6 +4613,14 @@ textarea {
   .project-detail-overview {
     grid-template-columns: 1fr;
   }
+
+  .filter-bar {
+    grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(140px, 1fr));
+  }
+
+  .filter-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -4642,6 +4916,39 @@ textarea {
   .main {
     overflow: visible;
     padding: 12px;
+  }
+
+  .toast-region {
+    top: 12px;
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+
+  .work-list-panel > .panel-head,
+  .filter-shell-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .work-type-tabs {
+    width: 100%;
+  }
+
+  .work-type-tabs a {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+
+  .filter-shell-head span {
+    line-height: 18px;
+  }
+
+  .filter-actions {
+    justify-content: stretch;
+  }
+
+  .filter-actions .btn {
+    flex: 1 1 0;
   }
 
   .metric-grid,

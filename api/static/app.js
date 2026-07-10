@@ -2,6 +2,8 @@
   var DROPDOWN_TRANSITION_MS = 240;
   var PAGE_TRANSITION_MS = 150;
   var MODAL_TRANSITION_MS = 240;
+  var TOAST_DURATION_MS = 4200;
+  var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
   var pendingConfirmForm = null;
   var imagePreviewObserver = null;
@@ -57,6 +59,152 @@
     var nextTheme = (document.documentElement.dataset.theme || readThemePreference()) === "dark" ? "light" : "dark";
     writeThemePreference(nextTheme);
     applyTheme(nextTheme);
+  }
+
+  function showToast(message, tone) {
+    var region = document.querySelector("[data-toast-region]");
+    if (!region || !message) {
+      return;
+    }
+    var toast = document.createElement("div");
+    toast.className = "toast toast-" + (tone || "info");
+    toast.setAttribute("role", tone === "error" ? "alert" : "status");
+
+    var icon = document.createElement("span");
+    icon.className = "toast-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = tone === "error" ? "!" : tone === "success" ? "✓" : "i";
+
+    var text = document.createElement("span");
+    text.className = "toast-message";
+    text.textContent = message;
+
+    var close = document.createElement("button");
+    close.className = "toast-close";
+    close.type = "button";
+    close.setAttribute("aria-label", "关闭消息");
+    close.textContent = "×";
+    toast.append(icon, text, close);
+    region.appendChild(toast);
+
+    var removeTimer;
+    function removeToast() {
+      window.clearTimeout(removeTimer);
+      toast.classList.add("leaving");
+      window.setTimeout(function () {
+        toast.remove();
+      }, prefersReducedMotion() ? 0 : 180);
+    }
+    close.addEventListener("click", removeToast);
+    removeTimer = window.setTimeout(removeToast, TOAST_DURATION_MS);
+  }
+
+  function queueToast(message, tone) {
+    try {
+      window.sessionStorage.setItem(
+        TOAST_STORAGE_KEY,
+        JSON.stringify({ message: message, tone: tone || "success" })
+      );
+    } catch (_error) {
+      // The next page can still load when sessionStorage is unavailable.
+    }
+  }
+
+  function showQueuedToast() {
+    try {
+      var queued = window.sessionStorage.getItem(TOAST_STORAGE_KEY);
+      if (!queued) {
+        return;
+      }
+      window.sessionStorage.removeItem(TOAST_STORAGE_KEY);
+      var payload = JSON.parse(queued);
+      showToast(payload.message, payload.tone);
+    } catch (_error) {
+      try {
+        window.sessionStorage.removeItem(TOAST_STORAGE_KEY);
+      } catch (_storageError) {
+        // Ignore storage restrictions after the page has already loaded.
+      }
+    }
+  }
+
+  function setWebFormBusy(form, busy, submitter) {
+    form.dataset.webFormBusy = busy ? "true" : "false";
+    form.setAttribute("aria-busy", busy ? "true" : "false");
+    form.querySelectorAll("button[type='submit'], input[type='submit']").forEach(function (control) {
+      control.disabled = busy;
+    });
+    if (submitter && submitter.tagName === "BUTTON") {
+      if (busy) {
+        submitter.dataset.idleLabel = submitter.textContent;
+        submitter.textContent = "处理中...";
+      } else if (submitter.dataset.idleLabel) {
+        submitter.textContent = submitter.dataset.idleLabel;
+        delete submitter.dataset.idleLabel;
+      }
+    }
+  }
+
+  function webFormBody(form, submitter) {
+    var formData = new FormData(form);
+    if (submitter && submitter.name) {
+      formData.append(submitter.name, submitter.value);
+    }
+    var body = new URLSearchParams();
+    formData.forEach(function (value, key) {
+      if (typeof value === "string") {
+        body.append(key, value);
+      }
+    });
+    return body;
+  }
+
+  async function submitWebForm(form, submitter) {
+    if (!form || form.dataset.webFormBusy === "true") {
+      return;
+    }
+    if (!form.reportValidity()) {
+      return;
+    }
+    setWebFormBusy(form, true, submitter);
+    try {
+      var response = await fetch(form.action || window.location.href, {
+        method: (form.method || "POST").toUpperCase(),
+        headers: {
+          accept: "text/html, application/json",
+          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "x-yuance-web-form": "fetch",
+        },
+        body: webFormBody(form, submitter),
+        credentials: "same-origin",
+      });
+      var contentType = response.headers.get("content-type") || "";
+      var isJson = contentType.includes("application/json");
+      var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
+      var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
+      if (response.status === 401 || payload?.error?.code === "unauthorized") {
+        redirectToLogin();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(payload?.error?.message || "操作失败，请稍后重试。");
+      }
+      if (response.redirected && response.url) {
+        window.location.assign(response.url);
+        return;
+      }
+      if (html) {
+        var result = new DOMParser().parseFromString(html, "text/html").querySelector(".inline-result");
+        queueToast(
+          result?.textContent?.trim() || "操作已完成。",
+          result?.classList.contains("storage-message-error") ? "error" : "success"
+        );
+      }
+      window.location.reload();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "操作失败，请稍后重试。", "error");
+      setWebFormBusy(form, false, submitter);
+    }
   }
 
   function avatarInitial(name) {
@@ -1791,11 +1939,12 @@
     var form = pendingConfirmForm;
     pendingConfirmForm = null;
     closeModal(document.querySelector("[data-confirm-modal]"), false);
-    form.submit();
+    submitWebForm(form, form.querySelector("button[type='submit']"));
   }
 
   applyTheme(readThemePreference());
   initUserAvatars();
+  showQueuedToast();
 
   document.addEventListener("click", function (event) {
     var link = event.target.closest("a[href]");
@@ -2211,6 +2360,19 @@
     if (confirmForm) {
       event.preventDefault();
       openConfirmModal(confirmForm);
+      return;
+    }
+
+    var webForm = event.target.closest("form[method='post']");
+    if (
+      webForm &&
+      !webForm.matches("[hx-post], [data-hx-post]") &&
+      !webForm.querySelector("input[type='file']") &&
+      !webForm.action.endsWith("/web/login") &&
+      !webForm.action.endsWith("/web/bootstrap/init")
+    ) {
+      event.preventDefault();
+      submitWebForm(webForm, event.submitter || webForm.querySelector("button[type='submit']"));
     }
   });
 
