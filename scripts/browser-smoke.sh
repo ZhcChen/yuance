@@ -666,6 +666,11 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
   assert(previews.length === 2, "任务详情未渲染两张图片缩略图");
   const preview = previews[0];
   assert(preview.dataset.imageSource.includes("/download"), "图片预览未使用受鉴权下载入口");
+  assert(getComputedStyle(preview).cursor === "pointer", "图片缩略图未使用手型光标");
+  assert(
+    getComputedStyle(preview.querySelector("[data-image-preview-image]")).cursor === "pointer",
+    "图片缩略图内容未继承手型光标",
+  );
   for (const item of previews) {
     item.scrollIntoView({ block: "center" });
     await waitFor(
@@ -679,6 +684,16 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
 
   const viewerImage = query("[data-image-viewer-image]");
   await waitFor(() => viewerImage.dataset.state === "ready", "查看器图片未加载");
+  const viewerBody = query("[data-image-viewer] .image-viewer-body");
+  const viewerStage = query("[data-image-viewer] .image-viewer-stage");
+  assert(
+    viewerStage.getBoundingClientRect().width / viewerBody.getBoundingClientRect().width > 0.9,
+    "查看器图片舞台宽度被切换按钮挤压",
+  );
+  assert(
+    getComputedStyle(query("[data-image-viewer] .image-viewer-panel")).transitionDuration.includes("0.24s"),
+    "图片查看器未应用弹出过渡动画",
+  );
   const initialTitle = query("[data-image-viewer-title]").textContent;
   query("[data-image-viewer-action='next']").click();
   await waitFor(
@@ -695,6 +710,7 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
   const viewerPanel = query("[data-image-viewer] .modal-panel");
   viewerPanel.focus();
   viewerPanel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(!viewer.classList.contains("open") && !viewer.hidden, "图片查看器关闭动画未保留过渡阶段");
   await waitFor(() => viewer.hidden, "Escape 未关闭图片查看器");
 
   query("form[data-confirm-title='删除工作项'] button[type='submit']").click();

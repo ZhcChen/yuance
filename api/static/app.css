@@ -1670,7 +1670,12 @@ code {
   background: var(--panel-soft);
   color: inherit;
   text-align: left;
-  cursor: zoom-in;
+  cursor: pointer;
+}
+
+.attachment-image-preview *,
+.upload-file-preview-media:not(:disabled) * {
+  cursor: pointer;
 }
 
 .attachment-image-preview:hover {
@@ -2034,7 +2039,7 @@ code {
   padding: 28px 18px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 180ms ease;
+  transition: opacity 240ms ease;
 }
 
 .modal[hidden] {
@@ -2063,8 +2068,8 @@ code {
   border-radius: 12px;
   background: var(--panel);
   box-shadow: 0 22px 60px rgb(24 39 58 / 20%);
-  transform: translateY(10px) scale(0.98);
-  transition: transform 180ms ease, opacity 180ms ease;
+  transform: translateY(12px) scale(0.975);
+  transition: transform 240ms ease, opacity 240ms ease;
 }
 
 .modal-panel.modal-wide {
@@ -2080,10 +2085,26 @@ code {
   z-index: 80;
 }
 
+.image-viewer-modal .modal-backdrop {
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+
+.image-viewer-modal.open .modal-backdrop {
+  opacity: 1;
+}
+
 .image-viewer-panel {
-  width: min(1080px, 100%);
+  width: min(1180px, 100%);
   max-height: min(820px, calc(100vh - 56px));
   grid-template-rows: auto minmax(0, 1fr);
+  opacity: 0;
+  transform: translateY(18px) scale(0.96);
+}
+
+.image-viewer-modal.open .image-viewer-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .image-viewer-head {
@@ -2103,16 +2124,17 @@ code {
 }
 
 .image-viewer-body {
+  position: relative;
   min-height: 0;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
   padding: 16px;
   background: var(--table-head);
 }
 
 .image-viewer-figure {
+  width: 100%;
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -2132,6 +2154,8 @@ code {
 }
 
 .image-viewer-stage img {
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -2152,6 +2176,9 @@ code {
 }
 
 .image-viewer-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
   width: 38px;
   height: 38px;
   display: grid;
@@ -2164,6 +2191,16 @@ code {
   cursor: pointer;
   font-size: 28px;
   line-height: 1;
+  transform: translateY(-50%);
+  box-shadow: 0 6px 18px rgb(24 39 58 / 14%);
+}
+
+.image-viewer-nav-prev {
+  left: 26px;
+}
+
+.image-viewer-nav-next {
+  right: 26px;
 }
 
 .image-viewer-nav:hover {
@@ -2284,7 +2321,7 @@ code {
 }
 
 .upload-file-preview-media:not(:disabled) {
-  cursor: zoom-in;
+  cursor: pointer;
 }
 
 .upload-file-preview-media:disabled {
@@ -4676,8 +4713,6 @@ textarea {
   }
 
   .image-viewer-body {
-    grid-template-columns: 32px minmax(0, 1fr) 32px;
-    gap: 7px;
     padding: 10px;
   }
 
@@ -4690,6 +4725,14 @@ textarea {
     width: 32px;
     height: 32px;
     font-size: 24px;
+  }
+
+  .image-viewer-nav-prev {
+    left: 18px;
+  }
+
+  .image-viewer-nav-next {
+    right: 18px;
   }
 }
 

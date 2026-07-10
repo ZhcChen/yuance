@@ -1,7 +1,7 @@
 (function () {
   var DROPDOWN_TRANSITION_MS = 240;
   var PAGE_TRANSITION_MS = 150;
-  var MODAL_TRANSITION_MS = 180;
+  var MODAL_TRANSITION_MS = 240;
   var THEME_STORAGE_KEY = "yuance-theme";
   var pendingConfirmForm = null;
   var imagePreviewObserver = null;
