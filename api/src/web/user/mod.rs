@@ -99,6 +99,7 @@ struct AttachmentView {
     file_object_id: i64,
     filename: String,
     content_type: String,
+    is_previewable_image: bool,
     byte_size: String,
     status_code: String,
     status: String,
@@ -4727,11 +4728,13 @@ fn project_user_option_from_summary(user: users::UserSummary) -> ProjectUserOpti
 
 fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
     let (status, status_tone) = attachment_status_label(&attachment.status);
+    let is_previewable_image = is_previewable_image_content_type(&attachment.content_type);
     AttachmentView {
         id: attachment.id,
         file_object_id: attachment.file_object_id,
         filename: attachment.original_filename,
         content_type: attachment.content_type,
+        is_previewable_image,
         byte_size: format_byte_size(attachment.byte_size),
         status_code: attachment.status,
         status: status.to_string(),
@@ -5194,13 +5197,21 @@ async fn attachment_download_redirect(
         ));
     }
 
-    let signed = storage::presign_download_url(
-        pool,
-        &state.settings,
-        &attachment.object_key,
-        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
-    )
-    .await?;
+    let test_memory_object =
+        storage::read_test_memory_object(pool, &state.settings, &attachment.object_key).await?;
+    let signed = if test_memory_object.is_none() {
+        Some(
+            storage::presign_download_url(
+                pool,
+                &state.settings,
+                &attachment.object_key,
+                storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     audit::record(
         pool,
         Some(actor_user_id),
@@ -5211,7 +5222,26 @@ async fn attachment_download_redirect(
     )
     .await?;
 
-    Ok(Redirect::temporary(&signed.url).into_response())
+    if let Some((content_type, content)) = test_memory_object {
+        let is_inline_image = is_previewable_image_content_type(&content_type);
+        let mut response = content.into_response();
+        let headers = response.headers_mut();
+        headers.insert(
+            header::CONTENT_TYPE,
+            if is_inline_image {
+                content_type.parse()?
+            } else {
+                "application/octet-stream".parse()?
+            },
+        );
+        headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+        if !is_inline_image {
+            headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
+        }
+        return Ok(response);
+    }
+
+    Ok(Redirect::temporary(&signed.expect("signed request should exist").url).into_response())
 }
 
 fn audit_log_row_from_summary(log: audit::AuditLogSummary) -> AuditLogRow {
@@ -6074,6 +6104,13 @@ fn attachment_status_label(status: &str) -> (&'static str, &'static str) {
         "deleted" => ("已删除", "danger"),
         _ => ("未知", "info"),
     }
+}
+
+fn is_previewable_image_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type.trim().to_ascii_lowercase().as_str(),
+        "image/avif" | "image/bmp" | "image/gif" | "image/jpeg" | "image/png" | "image/webp"
+    )
 }
 
 fn priority_rank(priority: &str) -> i32 {

@@ -757,6 +757,36 @@ pub async fn write_test_memory_object(
     Ok(())
 }
 
+pub async fn read_test_memory_object(
+    pool: &SqlitePool,
+    settings: &Settings,
+    object_key: &str,
+) -> AppResult<Option<(String, Vec<u8>)>> {
+    let Some(config) = active_config(pool).await? else {
+        return Ok(None);
+    };
+    if !is_test_memory_config(settings, &config) {
+        return Ok(None);
+    }
+
+    let object_key = normalize_object_key(object_key)?;
+    let operator = build_test_memory_operator(&config)?;
+    let metadata = operator
+        .stat(&object_key)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取测试对象存储元数据失败：{error}")))?;
+    let content = operator
+        .read(&object_key)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取测试对象存储文件失败：{error}")))?;
+    let content_type = metadata
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    Ok(Some((content_type, content.to_vec())))
+}
+
 pub async fn presign_upload_url(
     pool: &SqlitePool,
     settings: &Settings,

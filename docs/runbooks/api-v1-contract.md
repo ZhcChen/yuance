@@ -420,6 +420,7 @@ PUT /api/v1/test-storage/upload?object_key=...
 该入口只用于浏览器冒烟和集成测试：
 
 - 只在 `YUANCE_ENV=test` 且 active storage endpoint 为 `memory://yuance-tests` 时可用。
+- 需要已登录 session、`x-yuance-csrf-token` 和服务端签发的短期绑定授权；授权仅匹配签发用户与目标对象键。
 - 生产或普通 OSS 配置下返回错误。
 - 业务代码不应直接依赖该入口。
 

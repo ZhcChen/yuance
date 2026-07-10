@@ -4,6 +4,14 @@
   var MODAL_TRANSITION_MS = 180;
   var THEME_STORAGE_KEY = "yuance-theme";
   var pendingConfirmForm = null;
+  var imagePreviewObserver = null;
+  var imageViewerState = {
+    entries: [],
+    index: 0,
+    scale: 1,
+    rotation: 0,
+    source: "",
+  };
   var AVATAR_COLORS = [
     "#1f5fbf",
     "#2d8a68",
@@ -367,6 +375,267 @@
     });
   }
 
+  function isPreviewableImageType(contentType) {
+    return [
+      "image/avif",
+      "image/bmp",
+      "image/gif",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ].indexOf((contentType || "").trim().toLowerCase()) >= 0;
+  }
+
+  function formatFileSize(byteSize) {
+    var value = Number(byteSize || 0);
+    if (!Number.isFinite(value) || value <= 0) {
+      return "0 B";
+    }
+    if (value < 1024) {
+      return Math.round(value) + " B";
+    }
+    var units = ["KB", "MB", "GB"];
+    var unitIndex = -1;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return (Math.round(value * 10) / 10).toString() + " " + units[unitIndex];
+  }
+
+  function clearAttachmentResumeForChangedFile(host, file, idKey, fileKey, uploadedKey) {
+    if (!host || !file || !host.dataset[idKey]) {
+      return false;
+    }
+    var pendingFile = host[fileKey];
+    if (!pendingFile || pendingFile === file) {
+      return false;
+    }
+    delete host.dataset[idKey];
+    delete host[fileKey];
+    if (uploadedKey) {
+      delete host.dataset[uploadedKey];
+    }
+    return true;
+  }
+
+  function clearAttachmentResumeForRemovedFile(host, idKey, fileKey, uploadedKey) {
+    if (!host || !host[fileKey]) {
+      return;
+    }
+    delete host.dataset[idKey];
+    delete host[fileKey];
+    if (uploadedKey) {
+      delete host.dataset[uploadedKey];
+    }
+  }
+
+  function removeFilePreview(host) {
+    if (!host) {
+      return;
+    }
+    var preview = host.querySelector("[data-file-preview]");
+    if (!preview) {
+      return;
+    }
+    if (preview.localObjectUrl) {
+      URL.revokeObjectURL(preview.localObjectUrl);
+    }
+    preview.remove();
+  }
+
+  function ensureFilePreview(host, anchor) {
+    var preview = host.querySelector("[data-file-preview]");
+    if (preview) {
+      return preview;
+    }
+
+    preview = document.createElement("div");
+    preview.className = "upload-file-preview";
+    preview.dataset.filePreview = "";
+    preview.hidden = true;
+
+    var media = document.createElement("button");
+    media.className = "upload-file-preview-media";
+    media.type = "button";
+    media.disabled = true;
+    media.dataset.localImagePreview = "";
+
+    var image = document.createElement("img");
+    image.alt = "";
+    image.hidden = true;
+    image.dataset.filePreviewImage = "";
+
+    var icon = document.createElement("span");
+    icon.className = "upload-file-preview-icon";
+    icon.dataset.filePreviewIcon = "";
+    icon.textContent = "FILE";
+    media.append(image, icon);
+
+    var details = document.createElement("div");
+    details.className = "upload-file-preview-details";
+    var name = document.createElement("strong");
+    name.dataset.filePreviewName = "";
+    var meta = document.createElement("span");
+    meta.dataset.filePreviewMeta = "";
+    details.append(name, meta);
+    preview.append(media, details);
+
+    if (anchor && anchor.parentElement) {
+      anchor.insertAdjacentElement("afterend", preview);
+    } else {
+      host.appendChild(preview);
+    }
+    return preview;
+  }
+
+  function updateFilePreview(host, anchor, file) {
+    if (!file) {
+      removeFilePreview(host);
+      return;
+    }
+    var preview = ensureFilePreview(host, anchor);
+    if (preview.localObjectUrl) {
+      URL.revokeObjectURL(preview.localObjectUrl);
+      preview.localObjectUrl = "";
+    }
+
+    var media = preview.querySelector("[data-local-image-preview]");
+    var image = preview.querySelector("[data-file-preview-image]");
+    var icon = preview.querySelector("[data-file-preview-icon]");
+    var name = preview.querySelector("[data-file-preview-name]");
+    var meta = preview.querySelector("[data-file-preview-meta]");
+    var isImage = isPreviewableImageType(file.type);
+
+    preview.hidden = false;
+    if (name) {
+      name.textContent = file.name || "未命名文件";
+    }
+    if (meta) {
+      meta.textContent = (file.type || "未知类型") + " · " + formatFileSize(file.size);
+    }
+    if (!media || !image || !icon) {
+      return;
+    }
+
+    if (isImage) {
+      var objectUrl = URL.createObjectURL(file);
+      preview.localObjectUrl = objectUrl;
+      image.src = objectUrl;
+      image.alt = file.name || "本地图片预览";
+      image.hidden = false;
+      icon.hidden = true;
+      media.disabled = false;
+      media.dataset.imageSource = objectUrl;
+      media.dataset.imageTitle = file.name || "本地图片预览";
+      media.setAttribute("aria-label", "预览本地图片 " + (file.name || ""));
+    } else {
+      image.removeAttribute("src");
+      image.hidden = true;
+      icon.hidden = false;
+      media.disabled = true;
+      delete media.dataset.imageSource;
+      delete media.dataset.imageTitle;
+      media.removeAttribute("aria-label");
+    }
+  }
+
+  function ensureUploadTransfer(host) {
+    var transfer = host.querySelector("[data-upload-transfer]");
+    if (transfer) {
+      return transfer;
+    }
+
+    transfer = document.createElement("div");
+    transfer.className = "upload-transfer";
+    transfer.dataset.uploadTransfer = "";
+    transfer.hidden = true;
+
+    var ring = document.createElement("span");
+    ring.className = "upload-progress-ring";
+    ring.dataset.uploadProgressRing = "";
+    ring.setAttribute("role", "progressbar");
+    ring.setAttribute("aria-valuemin", "0");
+    ring.setAttribute("aria-valuemax", "100");
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 44 44");
+    svg.setAttribute("aria-hidden", "true");
+    var track = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    track.setAttribute("class", "upload-progress-track");
+    track.setAttribute("cx", "22");
+    track.setAttribute("cy", "22");
+    track.setAttribute("r", "18");
+    var progress = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    progress.setAttribute("class", "upload-progress-value");
+    progress.setAttribute("cx", "22");
+    progress.setAttribute("cy", "22");
+    progress.setAttribute("r", "18");
+    progress.dataset.uploadProgressCircle = "";
+    svg.append(track, progress);
+    var value = document.createElement("span");
+    value.dataset.uploadProgressValue = "";
+    ring.append(svg, value);
+
+    var details = document.createElement("div");
+    details.className = "upload-transfer-details";
+    var label = document.createElement("strong");
+    label.dataset.uploadProgressLabel = "";
+    var description = document.createElement("span");
+    description.dataset.uploadProgressDescription = "";
+    details.append(label, description);
+    transfer.append(ring, details);
+
+    var status = host.querySelector("[data-upload-status]");
+    if (status && status.parentElement) {
+      status.insertAdjacentElement("beforebegin", transfer);
+    } else {
+      host.appendChild(transfer);
+    }
+    return transfer;
+  }
+
+  function setUploadTransfer(host, percent, label, description, tone) {
+    var transfer = ensureUploadTransfer(host);
+    var ring = transfer.querySelector("[data-upload-progress-ring]");
+    var progressCircle = transfer.querySelector("[data-upload-progress-circle]");
+    var value = transfer.querySelector("[data-upload-progress-value]");
+    var labelNode = transfer.querySelector("[data-upload-progress-label]");
+    var descriptionNode = transfer.querySelector("[data-upload-progress-description]");
+    var hasPercent = typeof percent === "number" && Number.isFinite(percent);
+    var normalizedPercent = hasPercent ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
+
+    transfer.hidden = false;
+    transfer.dataset.tone = tone || "info";
+    if (ring) {
+      if (progressCircle) {
+        progressCircle.style.strokeDashoffset = String(113.1 - (113.1 * normalizedPercent) / 100);
+      }
+      if (hasPercent) {
+        ring.setAttribute("aria-valuenow", String(normalizedPercent));
+        ring.setAttribute("aria-valuetext", (label || "上传中") + " " + normalizedPercent + "%");
+      } else {
+        ring.removeAttribute("aria-valuenow");
+        ring.setAttribute("aria-valuetext", label || "传输中");
+      }
+    }
+    if (value) {
+      value.textContent = hasPercent ? normalizedPercent + "%" : "…";
+    }
+    if (labelNode) {
+      labelNode.textContent = label || "准备上传";
+    }
+    if (descriptionNode) {
+      descriptionNode.textContent = description || "";
+    }
+  }
+
+  function hideUploadTransfer(host) {
+    var transfer = host && host.querySelector("[data-upload-transfer]");
+    if (transfer) {
+      transfer.hidden = true;
+    }
+  }
+
   function directUploadStatus(form, message, tone) {
     var status = form.querySelector("[data-upload-status]");
     if (!status) {
@@ -401,7 +670,7 @@
       if (control.matches("[data-modal-close]")) {
         return;
       }
-      control.disabled = busy;
+      control.disabled = busy || isBugReportControlLocked(form, control);
     });
   }
 
@@ -411,10 +680,24 @@
     var filename = form.querySelector("[data-attachment-filename]");
     var contentType = form.querySelector("[data-attachment-content-type]");
     var byteSize = form.querySelector("[data-attachment-byte-size]");
+    var previewAnchor = fileInput && fileInput.closest(".upload-picker");
     if (!file) {
+      clearAttachmentResumeForRemovedFile(
+        form,
+        "existingAttachmentId",
+        "pendingAttachmentFile"
+      );
+      removeFilePreview(form);
+      hideUploadTransfer(form);
       directUploadStatus(form, "等待选择文件。", "info");
       return;
     }
+    var isNewFile = clearAttachmentResumeForChangedFile(
+      form,
+      file,
+      "existingAttachmentId",
+      "pendingAttachmentFile"
+    );
     var isResume = Boolean(form.dataset.existingAttachmentId);
     if (filename) {
       filename.value = file.name || "attachment.bin";
@@ -425,29 +708,93 @@
     if (byteSize) {
       byteSize.value = String(file.size || 0);
     }
+    updateFilePreview(form, previewAnchor || fileInput, file);
     directUploadStatus(
       form,
       "已选择 " +
         (file.name || "附件") +
-        (isResume ? "，点击继续上传会覆盖该附件对象。" : "，点击上传后会直传对象存储。"),
+        (isResume
+          ? "，点击继续上传会覆盖该附件对象。"
+          : isNewFile
+            ? "，已更换文件，将重新登记附件后直传对象存储。"
+            : "，点击上传后会直传对象存储。"),
       "ready"
     );
+    setUploadTransfer(form, 0, "准备上传", "已选择 " + formatFileSize(file.size) + "，等待提交。", "ready");
   }
 
-  function directUploadHeaders(headerPairs, fallbackContentType) {
-    var headers = new Headers();
+  function directUploadHeaderPairs(headerPairs, fallbackContentType) {
+    var headers = [];
+    var seen = {};
     (headerPairs || []).forEach(function (pair) {
       var key = pair && pair[0] ? String(pair[0]) : "";
       var value = pair && pair[1] ? String(pair[1]) : "";
-      if (!key || ["host", "content-length"].indexOf(key.toLowerCase()) >= 0) {
+      var normalizedKey = key.toLowerCase();
+      if (!key || ["host", "content-length"].indexOf(normalizedKey) >= 0) {
         return;
       }
-      headers.set(key, value);
+      headers.push([key, value]);
+      seen[normalizedKey] = true;
     });
-    if (fallbackContentType && !headers.has("content-type")) {
-      headers.set("content-type", fallbackContentType);
+    if (fallbackContentType && !seen["content-type"]) {
+      headers.push(["content-type", fallbackContentType]);
     }
     return headers;
+  }
+
+  function uploadSignedFile(request, file, contentType, onProgress) {
+    return new Promise(function (resolve, reject) {
+      if (!request || !request.url) {
+        reject(new Error("上传签名缺少目标地址。"));
+        return;
+      }
+
+      var xhr = new XMLHttpRequest();
+      xhr.open(request.method || "PUT", request.url, true);
+      try {
+        directUploadHeaderPairs(request.headers, contentType).forEach(function (pair) {
+          xhr.setRequestHeader(pair[0], pair[1]);
+        });
+        var signedUrl = new URL(request.url, window.location.href);
+        if (
+          signedUrl.origin === window.location.origin &&
+          signedUrl.pathname === "/api/v1/test-storage/upload"
+        ) {
+          var token = csrfToken();
+          if (token) {
+            xhr.setRequestHeader("x-yuance-csrf-token", token);
+          }
+        }
+      } catch (_error) {
+        reject(new Error("上传签名请求头无效。"));
+        return;
+      }
+
+      xhr.upload.addEventListener("progress", function (event) {
+        if (typeof onProgress !== "function") {
+          return;
+        }
+        if (event.lengthComputable && event.total > 0) {
+          onProgress((event.loaded / event.total) * 100, event.loaded, event.total);
+        } else {
+          onProgress(null, event.loaded || 0, 0);
+        }
+      });
+      xhr.addEventListener("load", function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+          return;
+        }
+        reject(new Error("对象存储上传失败：" + xhr.status));
+      });
+      xhr.addEventListener("error", function () {
+        reject(new Error("对象存储上传连接失败，请检查网络后重试。"));
+      });
+      xhr.addEventListener("abort", function () {
+        reject(new Error("对象存储上传已取消。"));
+      });
+      xhr.send(file);
+    });
   }
 
   function attachmentUrlFromTemplate(template, attachmentId) {
@@ -511,40 +858,52 @@
     var filename = options.filename || file.name || "attachment.bin";
     var contentType = options.contentType || file.type || "application/octet-stream";
     var byteSize = Number(options.byteSize || file.size || 0);
-    var attachment = options.existingAttachmentId
-      ? { id: options.existingAttachmentId }
-      : await fetchJson(options.createUrl, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            accept: "application/json",
-          },
-          body: JSON.stringify({
-            original_filename: filename,
-            content_type: contentType,
-            byte_size: byteSize,
-          }),
-        });
+    var attachment;
+    if (options.existingAttachmentId) {
+      attachment = { id: options.existingAttachmentId };
+    } else {
+      attachment = await fetchJson(options.createUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify({
+          original_filename: filename,
+          content_type: contentType,
+          byte_size: byteSize,
+        }),
+      });
+    }
+    if (typeof options.onAttachmentReady === "function") {
+      options.onAttachmentReady(attachment);
+    }
 
+    if (typeof options.onStage === "function") {
+      options.onStage("signing");
+    }
     var signed = await fetchJson(options.uploadUrl(attachment.id), {
       method: "GET",
       headers: { accept: "application/json" },
     });
 
     var request = signed.request || {};
-    var uploadResponse = await fetch(request.url, {
-      method: request.method || "PUT",
-      headers: directUploadHeaders(request.headers, contentType),
-      body: file,
-    });
-    if (!uploadResponse.ok) {
-      throw new Error("对象存储上传失败：" + uploadResponse.status);
+    if (typeof options.onStage === "function") {
+      options.onStage("uploading");
     }
+    await uploadSignedFile(request, file, contentType, options.onProgress);
 
-    return fetchJson(options.completeUrl(attachment.id), {
+    if (typeof options.onStage === "function") {
+      options.onStage("finalizing");
+    }
+    var completed = await fetchJson(options.completeUrl(attachment.id), {
       method: "POST",
       headers: { accept: "application/json" },
     });
+    if (typeof options.onStage === "function") {
+      options.onStage("completed");
+    }
+    return completed;
   }
 
   async function submitDirectUpload(form) {
@@ -563,7 +922,15 @@
 
     setDirectUploadBusy(form, true);
     var existingAttachmentId = form.dataset.existingAttachmentId || "";
+    var selectedFileDescription = formatFileSize(file.size);
     directUploadStatus(form, existingAttachmentId ? "正在获取上传签名..." : "正在登记附件元数据...", "info");
+    setUploadTransfer(
+      form,
+      0,
+      existingAttachmentId ? "准备继续上传" : "正在登记附件",
+      existingAttachmentId ? "正在复用已登记附件。" : "正在保存文件元数据。",
+      "info"
+    );
     try {
       await uploadAttachmentFile({
         file: file,
@@ -581,7 +948,31 @@
         completeUrl: function (attachmentId) {
           return attachmentUrlFromTemplate(form.dataset.attachmentCompleteUrlTemplate, attachmentId);
         },
+        onAttachmentReady: function (attachment) {
+          form.dataset.existingAttachmentId = String(attachment.id);
+          form.pendingAttachmentFile = file;
+        },
+        onStage: function (stage) {
+          if (stage === "signing") {
+            directUploadStatus(form, "正在获取上传签名...", "info");
+            setUploadTransfer(form, 0, "正在获取上传签名", "已登记 " + selectedFileDescription + "。", "info");
+          } else if (stage === "uploading") {
+            directUploadStatus(form, "正在直传文件到对象存储...", "info");
+            setUploadTransfer(form, 0, "正在上传", "正在传输 " + selectedFileDescription + "。", "info");
+          } else if (stage === "finalizing") {
+            directUploadStatus(form, "文件已传输，正在确认上传结果...", "info");
+            setUploadTransfer(form, 100, "正在确认上传结果", "正在更新附件状态。", "info");
+          }
+        },
+        onProgress: function (percent) {
+          if (typeof percent === "number") {
+            setUploadTransfer(form, percent, "正在上传", "已传输 " + Math.round(percent) + "% 。", "info");
+          } else {
+            setUploadTransfer(form, null, "正在上传", "浏览器未提供可计算的传输长度。", "info");
+          }
+        },
       });
+      setUploadTransfer(form, 100, "上传完成", "附件已安全写入对象存储。", "success");
       if (!existingAttachmentId) {
         directUploadStatus(form, "附件上传完成，正在刷新页面。", "success");
       } else {
@@ -592,6 +983,7 @@
       }, 450);
     } catch (error) {
       directUploadStatus(form, error.message || "附件上传失败，请稍后重试。", "error");
+      setUploadTransfer(form, null, "上传失败", "已保留当前文件和待上传附件，可直接重试。", "error");
       setDirectUploadBusy(form, false);
     }
   }
@@ -611,11 +1003,22 @@
   }
 
   function resetBugReportGroup(group) {
+    removeFilePreview(group);
+    hideUploadTransfer(group);
+    delete group.dataset.bugReportCommentId;
+    delete group.dataset.bugReportAttachmentId;
+    delete group.pendingAttachmentFile;
+    delete group.dataset.bugReportAttachmentUploaded;
+    delete group.dataset.bugReportLocked;
     group.querySelectorAll("textarea").forEach(function (textarea) {
       textarea.value = "";
     });
     group.querySelectorAll("input[type='file']").forEach(function (input) {
       input.value = "";
+      input.disabled = false;
+    });
+    group.querySelectorAll("textarea, [data-bug-report-remove]").forEach(function (control) {
+      control.disabled = false;
     });
     var fileName = group.querySelector("[data-bug-report-image-name]");
     if (fileName) {
@@ -645,9 +1048,15 @@
   function removeBugReportGroup(button) {
     var group = button.closest("[data-bug-report-group]");
     var form = button.closest("[data-bug-report-form]");
-    if (!group || !form || form.querySelectorAll("[data-bug-report-group]").length <= 1) {
+    if (
+      !group ||
+      !form ||
+      group.dataset.bugReportLocked === "true" ||
+      form.querySelectorAll("[data-bug-report-group]").length <= 1
+    ) {
       return;
     }
+    removeFilePreview(group);
     group.remove();
     updateBugReportGroupTitles(form);
   }
@@ -656,12 +1065,36 @@
     var group = input.closest("[data-bug-report-group]");
     var file = input.files && input.files[0];
     var label = group && group.querySelector("[data-bug-report-image-name]");
-    if (!label) {
+    if (!group || !label) {
       return;
     }
+    var isNewFile = clearAttachmentResumeForChangedFile(
+      group,
+      file,
+      "bugReportAttachmentId",
+      "pendingAttachmentFile",
+      "bugReportAttachmentUploaded"
+    );
+    if (!file) {
+      clearAttachmentResumeForRemovedFile(
+        group,
+        "bugReportAttachmentId",
+        "pendingAttachmentFile",
+        "bugReportAttachmentUploaded"
+      );
+    }
+    var previewAnchor = input.closest(".upload-picker");
+    updateFilePreview(group, previewAnchor || input, file);
     label.textContent = file
-      ? "已选择 " + (file.name || "图片") + "，提交后会直传对象存储。"
+      ? "已选择 " +
+        (file.name || "图片") +
+        (isNewFile ? "，已更换图片，将重新登记附件。" : "，提交后会直传对象存储。")
       : "选择截图、报错页面或复现过程图片。";
+    if (file) {
+      setUploadTransfer(group, 0, "准备上传图片", "已选择 " + formatFileSize(file.size) + "。", "ready");
+    } else {
+      hideUploadTransfer(group);
+    }
   }
 
   function collectBugReportGroups(form) {
@@ -670,11 +1103,32 @@
         var fileInput = group.querySelector("[data-bug-report-image]");
         var file = fileInput && fileInput.files ? fileInput.files[0] : null;
         var body = (group.querySelector("[data-bug-report-body]")?.value || "").trim();
-        return { index: index, file: file, body: body };
+        return { index: index, element: group, file: file, body: body };
       })
       .filter(function (group) {
         return Boolean(group.file || group.body);
       });
+  }
+
+  function isBugReportControlLocked(form, control) {
+    if (form.dataset.bugReportItemKey && control.matches("[data-bug-report-item-field]")) {
+      return true;
+    }
+    var group = control.closest("[data-bug-report-group][data-bug-report-locked='true']");
+    return Boolean(
+      group && control.matches("[data-bug-report-image], [data-bug-report-body], [data-bug-report-remove]")
+    );
+  }
+
+  function applyBugReportPersistedLocks(form) {
+    form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
+      if (control.matches("[data-modal-close]")) {
+        return;
+      }
+      if (isBugReportControlLocked(form, control)) {
+        control.disabled = true;
+      }
+    });
   }
 
   async function submitBugReport(form) {
@@ -702,45 +1156,59 @@
 
     var formData = new FormData(form);
     setBugReportBusy(form, true);
-    bugReportStatus(form, "正在创建 Bug...", "info");
     try {
-      var item = await fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-        },
-        body: JSON.stringify({
-          project_key: formData.get("project_key") || "",
-          item_type: formData.get("item_type") || "bug",
-          title: formData.get("title") || "",
-          description: formData.get("description") || "",
-          priority: formData.get("priority") || "P2",
-          assignee_username: formData.get("assignee_username") || "",
-          due_date: formData.get("due_date") || "",
-          parent_item_key: formData.get("parent_item_key") || "",
-        }),
-      });
-
-      for (var i = 0; i < groups.length; i += 1) {
-        var group = groups[i];
-        bugReportStatus(form, "正在创建第 " + (i + 1) + "/" + groups.length + " 组说明...", "info");
-        var comment = await fetchJson("/api/v1/work-items/" + encodeURIComponent(item.key) + "/comments", {
+      var item = { key: form.dataset.bugReportItemKey || "" };
+      if (!item.key) {
+        bugReportStatus(form, "正在创建 Bug...", "info");
+        item = await fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
           method: "POST",
           headers: {
             "content-type": "application/json",
             accept: "application/json",
           },
-          body: JSON.stringify({ body: group.body }),
+          body: JSON.stringify({
+            project_key: formData.get("project_key") || "",
+            item_type: formData.get("item_type") || "bug",
+            title: formData.get("title") || "",
+            description: formData.get("description") || "",
+            priority: formData.get("priority") || "P2",
+            assignee_username: formData.get("assignee_username") || "",
+            due_date: formData.get("due_date") || "",
+            parent_item_key: formData.get("parent_item_key") || "",
+          }),
         });
+        form.dataset.bugReportItemKey = item.key;
+        applyBugReportPersistedLocks(form);
+      } else {
+        bugReportStatus(form, "继续完成已创建 Bug 的图片上传...", "info");
+      }
 
-        if (group.file) {
+      for (var i = 0; i < groups.length; i += 1) {
+        var group = groups[i];
+        var comment = { id: group.element.dataset.bugReportCommentId || "" };
+        if (!comment.id) {
+          bugReportStatus(form, "正在创建第 " + (i + 1) + "/" + groups.length + " 组说明...", "info");
+          comment = await fetchJson("/api/v1/work-items/" + encodeURIComponent(item.key) + "/comments", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+            },
+            body: JSON.stringify({ body: group.body }),
+          });
+          group.element.dataset.bugReportCommentId = String(comment.id);
+          group.element.dataset.bugReportLocked = "true";
+          applyBugReportPersistedLocks(form);
+        }
+
+        if (group.file && group.element.dataset.bugReportAttachmentUploaded !== "true") {
           bugReportStatus(form, "正在上传第 " + (i + 1) + "/" + groups.length + " 组图片...", "info");
           await uploadAttachmentFile({
             file: group.file,
             filename: group.file.name || "bug-screenshot.png",
             contentType: group.file.type || "application/octet-stream",
             byteSize: group.file.size || 0,
+            existingAttachmentId: group.element.dataset.bugReportAttachmentId || "",
             createUrl:
               "/api/v1/work-items/" +
               encodeURIComponent(item.key) +
@@ -753,7 +1221,29 @@
             completeUrl: function (attachmentId) {
               return attachmentUrlForComment(item.key, comment.id, attachmentId, "uploaded");
             },
+            onAttachmentReady: function (attachment) {
+              group.element.dataset.bugReportAttachmentId = String(attachment.id);
+              group.element.pendingAttachmentFile = group.file;
+            },
+            onStage: function (stage) {
+              if (stage === "signing") {
+                setUploadTransfer(group.element, 0, "正在获取上传签名", "第 " + (i + 1) + " 组图片已登记。", "info");
+              } else if (stage === "uploading") {
+                setUploadTransfer(group.element, 0, "正在上传图片", "第 " + (i + 1) + " 组正在直传。", "info");
+              } else if (stage === "finalizing") {
+                setUploadTransfer(group.element, 100, "正在确认图片", "正在更新附件状态。", "info");
+              }
+            },
+            onProgress: function (percent) {
+              if (typeof percent === "number") {
+                setUploadTransfer(group.element, percent, "正在上传图片", "第 " + (i + 1) + " 组已传输 " + Math.round(percent) + "% 。", "info");
+              } else {
+                setUploadTransfer(group.element, null, "正在上传图片", "浏览器未提供可计算的传输长度。", "info");
+              }
+            },
           });
+          group.element.dataset.bugReportAttachmentUploaded = "true";
+          setUploadTransfer(group.element, 100, "图片上传完成", "第 " + (i + 1) + " 组已完成。", "success");
         }
       }
 
@@ -764,6 +1254,308 @@
     } catch (error) {
       bugReportStatus(form, error.message || "Bug 创建失败，请稍后重试。", "error");
       setBugReportBusy(form, false);
+    }
+  }
+
+  function setAttachmentImageState(preview, state, message) {
+    var image = preview.querySelector("[data-image-preview-image]");
+    var status = preview.querySelector("[data-image-preview-status]");
+    preview.dataset.imagePreviewState = state;
+    if (image) {
+      image.hidden = state !== "ready";
+    }
+    if (status) {
+      status.textContent = message;
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+    }
+  }
+
+  function refreshedImageSource(source) {
+    if (!source || source.indexOf("blob:") === 0) {
+      return source;
+    }
+    return source + (source.indexOf("?") >= 0 ? "&" : "?") + "preview=" + Date.now();
+  }
+
+  function loadAttachmentImage(preview, retry) {
+    if (!preview) {
+      return Promise.reject(new Error("图片预览不可用。"));
+    }
+    if (!retry && preview.dataset.imagePreviewState === "ready") {
+      return Promise.resolve(preview.querySelector("[data-image-preview-image]"));
+    }
+    if (!retry && preview.imageLoadPromise) {
+      return preview.imageLoadPromise;
+    }
+
+    var image = preview.querySelector("[data-image-preview-image]");
+    var source = preview.dataset.imageSource || "";
+    if (!image || !source) {
+      setAttachmentImageState(preview, "error", "图片预览不可用，点击重试。");
+      return Promise.reject(new Error("图片预览缺少来源。"));
+    }
+
+    setAttachmentImageState(preview, "loading", "正在加载图片预览。");
+    var requestSource = retry ? refreshedImageSource(source) : source;
+    var promise = new Promise(function (resolve, reject) {
+      image.onload = function () {
+        image.onload = null;
+        image.onerror = null;
+        preview.imageLoadPromise = null;
+        setAttachmentImageState(preview, "ready", "点击查看大图。");
+        resolve(image);
+      };
+      image.onerror = function () {
+        image.onload = null;
+        image.onerror = null;
+        preview.imageLoadPromise = null;
+        setAttachmentImageState(preview, "error", "图片加载失败，点击重试。");
+        reject(new Error("图片加载失败。"));
+      };
+      image.src = requestSource;
+    });
+    preview.imageLoadPromise = promise;
+    return promise;
+  }
+
+  function observeAttachmentImage(preview) {
+    if (!("IntersectionObserver" in window)) {
+      loadAttachmentImage(preview, false).catch(function () {});
+      return;
+    }
+    if (!imagePreviewObserver) {
+      imagePreviewObserver = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) {
+              return;
+            }
+            imagePreviewObserver.unobserve(entry.target);
+            loadAttachmentImage(entry.target, false).catch(function () {});
+          });
+        },
+        { rootMargin: "180px 0px" }
+      );
+    }
+    imagePreviewObserver.observe(preview);
+  }
+
+  function initAttachmentImagePreviews(root) {
+    var scope = root || document;
+    var previews = [];
+    if (scope.matches && scope.matches("[data-image-preview]")) {
+      previews.push(scope);
+    }
+    if (scope.querySelectorAll) {
+      previews = previews.concat(Array.from(scope.querySelectorAll("[data-image-preview]")));
+    }
+    previews.forEach(function (preview) {
+      if (preview.dataset.imagePreviewInitialized === "true") {
+        return;
+      }
+      preview.dataset.imagePreviewInitialized = "true";
+      setAttachmentImageState(preview, "idle", "等待加载图片预览。");
+      observeAttachmentImage(preview);
+    });
+  }
+
+  function imageViewerModal() {
+    return document.querySelector("[data-image-viewer]");
+  }
+
+  function suspendModalForImageViewer(modal) {
+    if (!modal || modal.imageViewerSuspended) {
+      return;
+    }
+    modal.imageViewerSuspended = true;
+    modal.imageViewerPreviousAriaHidden = modal.getAttribute("aria-hidden");
+    modal.imageViewerWasInert = modal.inert;
+    modal.imageViewerWasVisible = !modal.hidden;
+    if (modal.modalOpenFrame) {
+      window.cancelAnimationFrame(modal.modalOpenFrame);
+      modal.modalOpenFrame = null;
+    }
+    modal.setAttribute("aria-hidden", "true");
+    modal.setAttribute("inert", "");
+    modal.inert = true;
+  }
+
+  function restoreModalFromImageViewer(modal) {
+    if (!modal || !modal.imageViewerSuspended) {
+      return;
+    }
+    if (modal.imageViewerPreviousAriaHidden === null) {
+      modal.removeAttribute("aria-hidden");
+    } else {
+      modal.setAttribute("aria-hidden", modal.imageViewerPreviousAriaHidden);
+    }
+    if (modal.imageViewerWasInert) {
+      modal.setAttribute("inert", "");
+      modal.inert = true;
+    } else {
+      modal.removeAttribute("inert");
+      modal.inert = false;
+    }
+    if (modal.imageViewerWasVisible) {
+      modal.hidden = false;
+      modal.classList.add("open");
+    }
+    delete modal.imageViewerSuspended;
+    delete modal.imageViewerPreviousAriaHidden;
+    delete modal.imageViewerWasInert;
+    delete modal.imageViewerWasVisible;
+  }
+
+  function imageViewerEntrySource(entry) {
+    return entry && entry.dataset ? entry.dataset.imageSource || "" : "";
+  }
+
+  function imageViewerEntryTitle(entry) {
+    return entry && entry.dataset ? entry.dataset.imageTitle || "图片预览" : "图片预览";
+  }
+
+  function imageViewerEntriesFor(preview) {
+    var gallery = preview.dataset.imageGallery || "";
+    if (!gallery) {
+      return [preview];
+    }
+    var entries = Array.from(document.querySelectorAll("[data-image-preview]")).filter(function (item) {
+      return item.dataset.imageGallery === gallery && !item.closest("[hidden]");
+    });
+    return entries.length > 0 ? entries : [preview];
+  }
+
+  function applyImageViewerTransform() {
+    var modal = imageViewerModal();
+    var image = modal && modal.querySelector("[data-image-viewer-image]");
+    if (!image) {
+      return;
+    }
+    image.style.transform = "scale(" + imageViewerState.scale + ") rotate(" + imageViewerState.rotation + "deg)";
+  }
+
+  function renderImageViewer() {
+    var modal = imageViewerModal();
+    var entry = imageViewerState.entries[imageViewerState.index];
+    if (!modal || !entry) {
+      return;
+    }
+    var image = modal.querySelector("[data-image-viewer-image]");
+    var title = modal.querySelector("[data-image-viewer-title]");
+    var status = modal.querySelector("[data-image-viewer-status]");
+    var caption = modal.querySelector("[data-image-viewer-caption]");
+    var previous = modal.querySelector("[data-image-viewer-action='previous']");
+    var next = modal.querySelector("[data-image-viewer-action='next']");
+    var source = imageViewerEntrySource(entry);
+    var entryTitle = imageViewerEntryTitle(entry);
+    var hasMultiple = imageViewerState.entries.length > 1;
+
+    imageViewerState.source = source;
+    if (title) {
+      title.textContent = entryTitle;
+    }
+    if (status) {
+      status.textContent = hasMultiple
+        ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 张"
+        : "适屏查看";
+    }
+    if (caption) {
+      caption.textContent = entryTitle;
+    }
+    if (previous) {
+      previous.hidden = !hasMultiple;
+    }
+    if (next) {
+      next.hidden = !hasMultiple;
+    }
+    if (!image) {
+      return;
+    }
+
+    image.alt = entryTitle;
+    image.dataset.state = "loading";
+    image.onload = function () {
+      if (imageViewerState.source === source) {
+        image.dataset.state = "ready";
+      }
+    };
+    image.onerror = function () {
+      if (imageViewerState.source === source) {
+        image.dataset.state = "error";
+        if (status) {
+          status.textContent = "图片加载失败，可关闭后重新打开。";
+        }
+      }
+    };
+    image.src = refreshedImageSource(source);
+    applyImageViewerTransform();
+  }
+
+  function openImageViewer(entries, index, trigger) {
+    var modal = imageViewerModal();
+    if (!modal || !entries.length) {
+      return;
+    }
+    var sourceModal = trigger && trigger.closest("[data-modal]");
+    imageViewerState.entries = entries;
+    imageViewerState.index = Math.max(0, Math.min(index, entries.length - 1));
+    imageViewerState.scale = 1;
+    imageViewerState.rotation = 0;
+    renderImageViewer();
+    if (sourceModal) {
+      suspendModalForImageViewer(sourceModal);
+      modal.imageViewerSourceModal = sourceModal;
+    }
+    openModal(modal, trigger, sourceModal);
+  }
+
+  function openAttachmentImagePreview(preview) {
+    var retry = preview.dataset.imagePreviewState === "error";
+    loadAttachmentImage(preview, retry)
+      .then(function () {
+        var entries = imageViewerEntriesFor(preview);
+        openImageViewer(entries, Math.max(0, entries.indexOf(preview)), preview);
+      })
+      .catch(function () {});
+  }
+
+  function changeImageViewerIndex(offset) {
+    if (imageViewerState.entries.length <= 1) {
+      return;
+    }
+    imageViewerState.index =
+      (imageViewerState.index + offset + imageViewerState.entries.length) % imageViewerState.entries.length;
+    imageViewerState.scale = 1;
+    imageViewerState.rotation = 0;
+    renderImageViewer();
+  }
+
+  function changeImageViewerZoom(amount) {
+    imageViewerState.scale = Math.max(0.5, Math.min(4, Math.round((imageViewerState.scale + amount) * 100) / 100));
+    applyImageViewerTransform();
+  }
+
+  function resetImageViewerTransform() {
+    imageViewerState.scale = 1;
+    imageViewerState.rotation = 0;
+    applyImageViewerTransform();
+  }
+
+  function handleImageViewerAction(action) {
+    if (action === "previous") {
+      changeImageViewerIndex(-1);
+    } else if (action === "next") {
+      changeImageViewerIndex(1);
+    } else if (action === "zoom-in") {
+      changeImageViewerZoom(0.25);
+    } else if (action === "zoom-out") {
+      changeImageViewerZoom(-0.25);
+    } else if (action === "rotate") {
+      imageViewerState.rotation = (imageViewerState.rotation + 90) % 360;
+      applyImageViewerTransform();
+    } else if (action === "reset") {
+      resetImageViewerTransform();
     }
   }
 
@@ -901,13 +1693,13 @@
     }, prefersReducedMotion() ? 0 : MODAL_TRANSITION_MS);
   }
 
-  function openModal(modal, trigger) {
+  function openModal(modal, trigger, preservedModal) {
     if (!modal) {
       return;
     }
     closeDropdowns();
     closeDrawers();
-    closeModals(modal);
+    closeModals(modal, preservedModal);
     modal.lastModalTrigger = trigger || document.activeElement;
     if (modal.modalCloseTimer) {
       window.clearTimeout(modal.modalCloseTimer);
@@ -945,6 +1737,10 @@
       if (!modal.classList.contains("open")) {
         modal.hidden = true;
       }
+      if (modal.matches("[data-image-viewer]") && modal.imageViewerSourceModal) {
+        restoreModalFromImageViewer(modal.imageViewerSourceModal);
+        delete modal.imageViewerSourceModal;
+      }
       if (!document.querySelector("[data-modal].open")) {
         document.body.classList.remove("modal-open");
       }
@@ -954,12 +1750,16 @@
     }, prefersReducedMotion() ? 0 : MODAL_TRANSITION_MS);
   }
 
-  function closeModals(exceptModal) {
+  function closeModals(exceptModal, preservedModal) {
     document.querySelectorAll("[data-modal].open").forEach(function (modal) {
-      if (modal !== exceptModal) {
+      if (modal !== exceptModal && modal !== preservedModal) {
         closeModal(modal, false);
       }
     });
+  }
+
+  function activeModal() {
+    return document.querySelector("[data-image-viewer].open") || document.querySelector("[data-modal].open");
   }
 
   function openConfirmModal(form) {
@@ -1006,6 +1806,20 @@
       }
     }
 
+    var localImagePreview = event.target.closest("[data-local-image-preview]");
+    if (localImagePreview && !localImagePreview.disabled && localImagePreview.dataset.imageSource) {
+      event.preventDefault();
+      openImageViewer([localImagePreview], 0, localImagePreview);
+      return;
+    }
+
+    var attachmentImagePreview = event.target.closest("[data-image-preview]");
+    if (attachmentImagePreview) {
+      event.preventDefault();
+      openAttachmentImagePreview(attachmentImagePreview);
+      return;
+    }
+
     var modalOpen = event.target.closest("[data-modal-open]");
     if (modalOpen) {
       event.preventDefault();
@@ -1017,8 +1831,15 @@
     var modalClose = event.target.closest("[data-modal-close]");
     if (modalClose) {
       event.preventDefault();
-      var activeModal = modalClose.closest("[data-modal]") || document.querySelector("[data-modal].open");
-      closeModal(activeModal, true);
+      var modalToClose = modalClose.closest("[data-modal]") || activeModal();
+      closeModal(modalToClose, true);
+      return;
+    }
+
+    var imageViewerAction = event.target.closest("[data-image-viewer-action]");
+    if (imageViewerAction) {
+      event.preventDefault();
+      handleImageViewerAction(imageViewerAction.dataset.imageViewerAction || "");
       return;
     }
 
@@ -1197,12 +2018,39 @@
       return;
     }
 
-    var activeModal = document.querySelector("[data-modal].open");
-    if (event.key === "Tab" && activeModal) {
-      var focusable = modalFocusableElements(activeModal);
+    var currentModal = activeModal();
+    if (currentModal && currentModal.matches("[data-image-viewer]")) {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        changeImageViewerIndex(-1);
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        changeImageViewerIndex(1);
+        return;
+      }
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        changeImageViewerZoom(0.25);
+        return;
+      }
+      if (event.key === "-") {
+        event.preventDefault();
+        changeImageViewerZoom(-0.25);
+        return;
+      }
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        resetImageViewerTransform();
+        return;
+      }
+    }
+    if (event.key === "Tab" && currentModal) {
+      var focusable = modalFocusableElements(currentModal);
       if (focusable.length === 0) {
         event.preventDefault();
-        focusModal(activeModal);
+        focusModal(currentModal);
         return;
       }
       var first = focusable[0];
@@ -1218,8 +2066,8 @@
     }
 
     if (event.key === "Escape") {
-      if (activeModal) {
-        closeModal(activeModal, true);
+      if (currentModal) {
+        closeModal(currentModal, true);
         return;
       }
       closeDropdowns();
@@ -1244,6 +2092,7 @@
     initProjectSwitcher(event.target);
     initUserComboboxes(event.target);
     initTabs(event.target);
+    initAttachmentImagePreviews(event.target);
   });
 
   function syncPermissionParent(parent) {
@@ -1408,5 +2257,13 @@
   initProjectSwitcher(document);
   initUserComboboxes(document);
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
+  initAttachmentImagePreviews(document);
+  window.addEventListener("pagehide", function () {
+    document.querySelectorAll("[data-file-preview]").forEach(function (preview) {
+      if (preview.localObjectUrl) {
+        URL.revokeObjectURL(preview.localObjectUrl);
+      }
+    });
+  });
   initTabs(document);
 })();

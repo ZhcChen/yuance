@@ -19,7 +19,8 @@ date: 2026-06-30
 - 项目成员添加和成员角色调整 modal。
 - 顶部当前项目可搜索下拉、空状态和项目切换。
 - 工作项创建 modal。
-- 工作项附件上传 modal、真实浏览器文件选择、签名直传、上传完成回写和页面刷新。
+- 工作项附件上传 modal、真实浏览器文件选择、本地图片预览、环形上传进度、签名直传、上传完成回写和页面刷新。
+- 已上传图片的受鉴权下载加载、缩略图、查看器放大、旋转、重置与 Escape 关闭。
 - 删除工作项确认弹窗。
 - 浏览器控制台错误检查。
 
@@ -63,5 +64,6 @@ YUANCE_BROWSER_SMOKE_ROOT=/tmp/yuance-browser-smoke-2 make api-browser-smoke
   - `/tmp/yuance-browser-smoke/server.log`
   - 脚本输出中的浏览器错误
   - `/tmp/yuance-browser-smoke/*.png` 截图
+- 如果 iframe 页面导航超时，脚本会在错误中标明触发操作；优先检查对应页面的服务端日志和浏览器控制台。
 
 该脚本是补充验证，不替代 `cargo test --workspace` 和 `cargo clippy`。

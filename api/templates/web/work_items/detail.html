@@ -77,6 +77,15 @@
           {% for attachment in attachments %}
           <article class="attachment-row">
             <div>
+              {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
+              <button class="attachment-image-preview" type="button" data-image-preview data-image-source="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-images-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
+                <span class="attachment-image-frame" data-image-preview-frame>
+                  <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
+                  <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
+                </span>
+                <span class="attachment-image-caption">预览图片</span>
+              </button>
+              {% endif %}
               <strong>{{ attachment.filename }}</strong>
               <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · {{ attachment.created_by }} · {{ attachment.created_at }} · 文件对象 #{{ attachment.file_object_id }}</span>
               <code>{{ attachment.object_key }}</code>

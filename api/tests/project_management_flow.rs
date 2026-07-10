@@ -2831,6 +2831,239 @@ async fn web_work_item_detail_can_register_comment_attachment() {
 }
 
 #[tokio::test]
+async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let comment = projects::list_work_item_comments(&pool, item.id)
+        .await
+        .expect("comments should load")
+        .into_iter()
+        .next()
+        .expect("demo comment should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+
+    let project_image = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "project".to_string(),
+            target_id: project.id,
+            project_id: Some(project.id),
+            original_filename: "roadmap.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记项目附件 roadmap.png".to_string()),
+        },
+    )
+    .await
+    .expect("project image should create");
+    files::mark_attachment_uploaded(&pool, project_image.id, "project", project.id)
+        .await
+        .expect("project image should upload");
+
+    let work_item_image = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "failure.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 failure.png".to_string()),
+        },
+    )
+    .await
+    .expect("work item image should create");
+    files::mark_attachment_uploaded(&pool, work_item_image.id, "work_item", item.id)
+        .await
+        .expect("work item image should upload");
+
+    let comment_image = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "comment".to_string(),
+            target_id: comment.id,
+            project_id: Some(project.id),
+            original_filename: "stacktrace.jpeg".to_string(),
+            content_type: "image/jpeg".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记评论附件 stacktrace.jpeg".to_string()),
+        },
+    )
+    .await
+    .expect("comment image should create");
+    files::mark_attachment_uploaded(&pool, comment_image.id, "comment", comment.id)
+        .await
+        .expect("comment image should upload");
+
+    let vector_attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "diagram.svg".to_string(),
+            content_type: "image/svg+xml".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 diagram.svg".to_string()),
+        },
+    )
+    .await
+    .expect("vector attachment should create");
+    files::mark_attachment_uploaded(&pool, vector_attachment.id, "work_item", item.id)
+        .await
+        .expect("vector attachment should upload");
+
+    let pdf_attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "report.pdf".to_string(),
+            content_type: "application/pdf".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 report.pdf".to_string()),
+        },
+    )
+    .await
+    .expect("pdf attachment should create");
+    files::mark_attachment_uploaded(&pool, pdf_attachment.id, "work_item", item.id)
+        .await
+        .expect("pdf attachment should upload");
+
+    let deleted_image = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "deleted-preview.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 deleted-preview.png".to_string()),
+        },
+    )
+    .await
+    .expect("deleted image should create");
+    files::mark_attachment_uploaded(&pool, deleted_image.id, "work_item", item.id)
+        .await
+        .expect("deleted image should upload");
+    files::delete_attachment(
+        &pool,
+        deleted_image.id,
+        "work_item",
+        item.id,
+        initialized.user_id,
+        Some(project.id),
+        Some("删除工作项附件 deleted-preview.png"),
+    )
+    .await
+    .expect("deleted image should delete");
+
+    let pending_image = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "pending.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 512,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 pending.png".to_string()),
+        },
+    )
+    .await
+    .expect("pending image should create");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let work_item_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let work_item_body = response_body(work_item_response).await;
+    assert!(work_item_body.contains(&format!(
+        r#"data-image-source="/web/work-items/YCE-TASK-2/attachments/{}/download""#,
+        work_item_image.id
+    )));
+    assert!(work_item_body.contains(&format!(
+        r#"data-image-source="/web/work-items/YCE-TASK-2/comments/{}/attachments/{}/download""#,
+        comment.id, comment_image.id
+    )));
+    assert!(work_item_body.contains(r#"data-image-gallery="work-item-images-YCE-TASK-2""#));
+    assert!(!work_item_body.contains(&format!(
+        r#"data-image-source="/web/work-items/YCE-TASK-2/attachments/{}/download""#,
+        vector_attachment.id
+    )));
+    assert!(!work_item_body.contains(&format!(
+        r#"data-image-source="/web/work-items/YCE-TASK-2/attachments/{}/download""#,
+        pdf_attachment.id
+    )));
+    assert!(!work_item_body.contains(&format!(
+        r#"data-image-source="/web/work-items/YCE-TASK-2/attachments/{}/download""#,
+        deleted_image.id
+    )));
+    assert!(!work_item_body.contains(&format!(
+        r#"data-image-source="/web/work-items/YCE-TASK-2/attachments/{}/download""#,
+        pending_image.id
+    )));
+
+    let project_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let project_body = response_body(project_response).await;
+    assert!(project_body.contains(&format!(
+        r#"data-image-source="/web/projects/YCE/attachments/{}/download""#,
+        project_image.id
+    )));
+    assert!(project_body.contains(r#"data-image-gallery="project-images-YCE""#));
+}
+
+#[tokio::test]
 async fn api_v1_can_register_project_attachment() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -3462,6 +3695,7 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
         .as_str()
         .expect("upload url should be present");
     assert!(upload_url.starts_with("/api/v1/test-storage/upload?object_key="));
+    assert!(upload_url.contains("&grant="));
 
     let direct_upload_response = app
         .clone()
@@ -3470,6 +3704,8 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
                 .method("PUT")
                 .uri(upload_url)
                 .header(header::CONTENT_TYPE, "application/pdf")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(vec![b'a'; 2048]))
                 .expect("request should build"),
         )
@@ -3537,14 +3773,14 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
 }
 
 #[tokio::test]
-async fn api_test_storage_upload_endpoint_is_limited_to_test_memory_config() {
+async fn api_test_storage_upload_endpoint_requires_authenticated_bound_grant() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
-    let object_key = "browser-smoke/guard.txt";
     let encoded_object_key = "browser-smoke%2Fguard.txt";
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
 
-    let app_without_config = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let no_config_response = app_without_config
+    let unauthorized_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("PUT")
@@ -3557,13 +3793,10 @@ async fn api_test_storage_upload_endpoint_is_limited_to_test_memory_config() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(no_config_response.status(), StatusCode::BAD_REQUEST);
-    let no_config_body = response_body(no_config_response).await;
-    assert!(no_config_body.contains("对象存储未激活"));
+    assert_eq!(unauthorized_response.status(), StatusCode::UNAUTHORIZED);
 
-    seed_active_storage_config(&pool, initialized.user_id).await;
-    let app_with_oss_config = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let oss_config_response = app_with_oss_config
+    let missing_csrf_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("PUT")
@@ -3571,55 +3804,107 @@ async fn api_test_storage_upload_endpoint_is_limited_to_test_memory_config() {
                     "/api/v1/test-storage/upload?object_key={encoded_object_key}"
                 ))
                 .header(header::CONTENT_TYPE, "text/plain")
+                .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::from("guard"))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(oss_config_response.status(), StatusCode::NOT_FOUND);
-    let oss_config_body = response_body(oss_config_response).await;
-    assert!(oss_config_body.contains("测试对象存储入口不存在"));
+    assert_eq!(missing_csrf_response.status(), StatusCode::FORBIDDEN);
 
+    let invalid_grant_response = app
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(format!(
+                    "/api/v1/test-storage/upload?object_key={encoded_object_key}"
+                ))
+                .header(header::CONTENT_TYPE, "text/plain")
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from("guard"))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_grant_response.status(), StatusCode::FORBIDDEN);
+    let body = response_body(invalid_grant_response).await;
+    assert!(body.contains("测试对象存储上传授权无效或已过期"));
+}
+
+#[tokio::test]
+async fn api_test_storage_upload_grant_is_bound_to_issuing_user() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
     seed_memory_storage_config(&pool, initialized.user_id).await;
-    let mut non_test_settings = test_settings();
-    non_test_settings.env = "production".to_string();
-    let app_with_non_test_env = build_router(AppState::new(non_test_settings, Some(pool.clone())));
-    let non_test_response = app_with_non_test_env
+    let other_user = create_regular_user(&pool, "upload_observer", "上传观察者").await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "project".to_string(),
+            target_id: project.id,
+            project_id: Some(project.id),
+            original_filename: "bound-grant.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 1,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记项目附件 bound-grant.png".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let signing_response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .method("PUT")
                 .uri(format!(
-                    "/api/v1/test-storage/upload?object_key={encoded_object_key}"
+                    "/api/v1/projects/YCE/attachments/{}/upload-url",
+                    attachment.id
                 ))
-                .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from("guard"))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(non_test_response.status(), StatusCode::NOT_FOUND);
-    let non_test_body = response_body(non_test_response).await;
-    assert!(non_test_body.contains("测试对象存储入口不存在"));
+    assert_eq!(signing_response.status(), StatusCode::OK);
+    let signing_body = response_body(signing_response).await;
+    let signing_payload: serde_json::Value =
+        serde_json::from_str(&signing_body).expect("upload url response should be json");
+    let upload_url = signing_payload["data"]["request"]["url"]
+        .as_str()
+        .expect("upload url should be present");
 
-    let app_with_test_memory = build_router(AppState::new(test_settings(), Some(pool.clone())));
-    let test_memory_response = app_with_test_memory
+    let upload_response = app
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri(format!(
-                    "/api/v1/test-storage/upload?object_key={encoded_object_key}"
-                ))
-                .header(header::CONTENT_TYPE, "text/plain")
-                .body(Body::from("guard"))
+                .uri(upload_url)
+                .header(header::CONTENT_TYPE, "image/png")
+                .header(header::COOKIE, other_user.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(vec![0_u8]))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(test_memory_response.status(), StatusCode::NO_CONTENT);
-
-    storage::verify_uploaded_object(&pool, &test_settings(), object_key, 5, "text/plain")
-        .await
-        .expect("test memory object should be uploaded");
+    assert_eq!(upload_response.status(), StatusCode::FORBIDDEN);
+    let body = response_body(upload_response).await;
+    assert!(body.contains("测试对象存储上传授权无效或已过期"));
 }
 
 #[tokio::test]
@@ -4380,6 +4665,151 @@ async fn web_work_item_attachment_download_redirects_to_signed_object_url() {
     .await
     .expect("download audit count should load");
     assert_eq!(audit_count, 1);
+}
+
+#[tokio::test]
+async fn web_work_item_attachment_download_serves_test_memory_object() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "memory-preview.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 13,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 memory-preview.png".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &attachment.object_key,
+        "image/png",
+        b"preview-bytes".to_vec(),
+    )
+    .await
+    .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should upload");
+
+    let unsafe_attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "unsafe.html".to_string(),
+            content_type: "text/html".to_string(),
+            byte_size: 32,
+            created_by_user_id: initialized.user_id,
+            activity_summary: Some("登记工作项附件 unsafe.html".to_string()),
+        },
+    )
+    .await
+    .expect("unsafe attachment should create");
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &unsafe_attachment.object_key,
+        "text/html",
+        b"<script>alert('unsafe')</script>".to_vec(),
+    )
+    .await
+    .expect("unsafe test object should write");
+    files::mark_attachment_uploaded(&pool, unsafe_attachment.id, "work_item", item.id)
+        .await
+        .expect("unsafe attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let unsafe_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/download",
+                    unsafe_attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unsafe_response.status(), StatusCode::OK);
+    assert_eq!(
+        unsafe_response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/octet-stream"
+    );
+    assert_eq!(
+        unsafe_response
+            .headers()
+            .get(header::CONTENT_DISPOSITION)
+            .unwrap(),
+        "attachment"
+    );
+    assert_eq!(
+        unsafe_response
+            .headers()
+            .get(header::X_CONTENT_TYPE_OPTIONS)
+            .unwrap(),
+        "nosniff"
+    );
+
+    let download_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/download",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(download_response.status(), StatusCode::OK);
+    assert_eq!(
+        download_response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap(),
+        "image/png"
+    );
+    assert_eq!(
+        download_response
+            .headers()
+            .get(header::X_CONTENT_TYPE_OPTIONS)
+            .unwrap(),
+        "nosniff"
+    );
+    assert_eq!(response_body(download_response).await, "preview-bytes");
 }
 
 #[tokio::test]

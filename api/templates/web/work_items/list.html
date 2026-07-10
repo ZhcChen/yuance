@@ -177,14 +177,14 @@
           所属项目
           {% match current_project %}
           {% when Some with (project) %}
-          <input name="project_key" value="{{ project.key }}" readonly autofocus>
+          <input name="project_key" value="{{ project.key }}" readonly autofocus data-bug-report-item-field>
           {% when None %}
-          <input name="project_key" value="" readonly autofocus>
+          <input name="project_key" value="" readonly autofocus data-bug-report-item-field>
           {% endmatch %}
         </label>
         <label>
           优先级
-          <select name="priority">
+          <select name="priority" data-bug-report-item-field>
             <option value="P0">紧急</option>
             <option value="P1">高</option>
             <option value="P2" selected>中</option>
@@ -193,11 +193,11 @@
         </label>
         <label>
           截止日期
-          <input name="due_date" type="date">
+          <input name="due_date" type="date" data-bug-report-item-field>
         </label>
         <label>
           处理人
-          <select name="assignee_username">
+          <select name="assignee_username" data-bug-report-item-field>
             <option value="">默认指派给我</option>
             {% for member in assignee_options %}
             <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
@@ -217,11 +217,11 @@
         {% endif %}
         <label class="wide-field">
           标题
-          <input name="title" placeholder="输入{{ title }}标题" required>
+          <input name="title" placeholder="输入{{ title }}标题" required data-bug-report-item-field>
         </label>
         <label class="wide-field">
           描述
-          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
+          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明" data-bug-report-item-field></textarea>
         </label>
         {% if item_type == "bug" %}
         <div class="bug-report-builder wide-field" data-bug-report-builder>

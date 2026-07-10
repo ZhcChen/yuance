@@ -5,11 +5,13 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{AppendHeaders, IntoResponse},
 };
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     domains::{audit, auth, bootstrap, files, projects, rbac, storage, users},
     platform::{
+        crypto,
         error::{AppError, AppResult},
         security::csrf,
     },
@@ -300,7 +302,18 @@ pub struct StorageConfigVersionPayload {
 #[derive(Debug, Deserialize)]
 pub struct TestStorageUploadQuery {
     object_key: String,
+    #[serde(default)]
+    grant: String,
 }
+
+#[derive(Debug, Deserialize, Serialize)]
+struct TestStorageUploadGrant {
+    object_key: String,
+    user_id: i64,
+    expires_at: i64,
+}
+
+const TEST_STORAGE_UPLOAD_GRANT_AAD: &[u8] = b"yuance:test-storage-upload:v1";
 
 #[derive(Debug, Deserialize)]
 pub struct WorkItemQuery {
@@ -1532,8 +1545,15 @@ pub async fn work_item_comment_attachment_upload_url(
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
 
     Ok(json(
-        signed_attachment_url_payload(&state, pool, attachment, SignedUrlKind::Upload, query)
-            .await?,
+        signed_attachment_url_payload(
+            &state,
+            pool,
+            attachment,
+            user.id,
+            SignedUrlKind::Upload,
+            query,
+        )
+        .await?,
     ))
 }
 
@@ -1586,9 +1606,15 @@ pub async fn work_item_comment_attachment_download_url(
     let pool = state.pool()?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-    let payload =
-        signed_attachment_url_payload(&state, pool, attachment, SignedUrlKind::Download, query)
-            .await?;
+    let payload = signed_attachment_url_payload(
+        &state,
+        pool,
+        attachment,
+        user.id,
+        SignedUrlKind::Download,
+        query,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -1729,8 +1755,15 @@ pub async fn project_attachment_upload_url(
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
 
     Ok(json(
-        signed_attachment_url_payload(&state, pool, attachment, SignedUrlKind::Upload, query)
-            .await?,
+        signed_attachment_url_payload(
+            &state,
+            pool,
+            attachment,
+            user.id,
+            SignedUrlKind::Upload,
+            query,
+        )
+        .await?,
     ))
 }
 
@@ -1789,9 +1822,15 @@ pub async fn project_attachment_download_url(
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
-    let payload =
-        signed_attachment_url_payload(&state, pool, attachment, SignedUrlKind::Download, query)
-            .await?;
+    let payload = signed_attachment_url_payload(
+        &state,
+        pool,
+        attachment,
+        user.id,
+        SignedUrlKind::Download,
+        query,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -1922,8 +1961,15 @@ pub async fn work_item_attachment_upload_url(
         files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
 
     Ok(json(
-        signed_attachment_url_payload(&state, pool, attachment, SignedUrlKind::Upload, query)
-            .await?,
+        signed_attachment_url_payload(
+            &state,
+            pool,
+            attachment,
+            user.id,
+            SignedUrlKind::Upload,
+            query,
+        )
+        .await?,
     ))
 }
 
@@ -1973,9 +2019,15 @@ pub async fn work_item_attachment_download_url(
     let pool = state.pool()?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
-    let payload =
-        signed_attachment_url_payload(&state, pool, attachment, SignedUrlKind::Download, query)
-            .await?;
+    let payload = signed_attachment_url_payload(
+        &state,
+        pool,
+        attachment,
+        user.id,
+        SignedUrlKind::Download,
+        query,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -2502,6 +2554,9 @@ pub async fn test_storage_upload(
     Query(query): Query<TestStorageUploadQuery>,
     body: Bytes,
 ) -> AppResult<StatusCode> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    verify_test_storage_upload_grant(&state, &query, user.id)?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -2715,6 +2770,7 @@ async fn signed_attachment_url_payload(
     state: &AppState,
     pool: &sqlx::SqlitePool,
     attachment: files::FileAttachmentSummary,
+    actor_user_id: i64,
     kind: SignedUrlKind,
     query: SignedUrlQuery,
 ) -> AppResult<AttachmentSignedUrlPayload> {
@@ -2728,7 +2784,7 @@ async fn signed_attachment_url_payload(
     }
 
     let expires_in_seconds = normalize_signed_url_expiration(kind, query.expires_in_seconds)?;
-    let request = match kind {
+    let mut request = match kind {
         SignedUrlKind::Upload => {
             storage::presign_upload_url(
                 pool,
@@ -2749,12 +2805,79 @@ async fn signed_attachment_url_payload(
             .await?
         }
     };
+    if matches!(kind, SignedUrlKind::Upload) {
+        bind_test_storage_upload_grant(
+            state,
+            &attachment.object_key,
+            actor_user_id,
+            expires_in_seconds,
+            &mut request,
+        )?;
+    }
 
     Ok(AttachmentSignedUrlPayload {
         attachment: attachment_payload(attachment),
         request,
         expires_in_seconds,
     })
+}
+
+fn bind_test_storage_upload_grant(
+    state: &AppState,
+    object_key: &str,
+    user_id: i64,
+    expires_in_seconds: u64,
+    request: &mut storage::SignedObjectRequest,
+) -> AppResult<()> {
+    if !request.url.starts_with("/api/v1/test-storage/upload?") {
+        return Ok(());
+    }
+
+    let expires_in_seconds = i64::try_from(expires_in_seconds)
+        .map_err(|_| AppError::BadRequest("测试上传授权有效期无效".to_string()))?;
+    let grant = TestStorageUploadGrant {
+        object_key: object_key.to_string(),
+        user_id,
+        expires_at: Utc::now().timestamp() + expires_in_seconds,
+    };
+    let plaintext = serde_json::to_string(&grant)
+        .map_err(|error| AppError::BadRequest(format!("生成测试上传授权失败：{error}")))?;
+    let encrypted_grant = crypto::encrypt_secret(
+        &state.settings.security_master_key,
+        &plaintext,
+        TEST_STORAGE_UPLOAD_GRANT_AAD,
+    )?;
+    let query = serde_urlencoded::to_string([
+        ("object_key", object_key),
+        ("grant", encrypted_grant.as_str()),
+    ])
+    .map_err(|error| AppError::BadRequest(format!("生成测试上传地址失败：{error}")))?;
+    request.url = format!("/api/v1/test-storage/upload?{query}");
+    Ok(())
+}
+
+fn verify_test_storage_upload_grant(
+    state: &AppState,
+    query: &TestStorageUploadQuery,
+    user_id: i64,
+) -> AppResult<()> {
+    let plaintext = crypto::decrypt_secret(
+        &state.settings.security_master_key,
+        &query.grant,
+        TEST_STORAGE_UPLOAD_GRANT_AAD,
+    )
+    .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
+    let grant: TestStorageUploadGrant = serde_json::from_str(&plaintext)
+        .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
+    if grant.object_key != query.object_key
+        || grant.user_id != user_id
+        || grant.expires_at <= Utc::now().timestamp()
+    {
+        return Err(AppError::Forbidden(
+            "测试对象存储上传授权无效或已过期".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn normalize_signed_url_expiration(kind: SignedUrlKind, value: Option<u64>) -> AppResult<u64> {

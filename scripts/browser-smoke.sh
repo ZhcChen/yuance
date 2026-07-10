@@ -87,7 +87,6 @@ fi
 
 rm -rf "$ROOT"
 mkdir -p "$ROOT"
-printf 'browser smoke attachment\n' >"${ROOT}/smoke-attachment.txt"
 
 log "准备临时数据库 ${DB_URL}"
 YUANCE_DATABASE_URL="$DB_URL" \
@@ -196,30 +195,24 @@ cat >"$EVAL_FILE" <<JS
     return !element.hidden && element.offsetParent !== null;
   }
 
-  function waitLoad(timeout = 10000) {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("等待页面加载超时")), timeout);
-      frame.addEventListener(
-        "load",
-        () => {
-          clearTimeout(timer);
-          setTimeout(resolve, 120);
-        },
-        { once: true },
-      );
-    });
+  async function waitForFrameNavigation(previousDocument, action, timeout = 10000) {
+    await waitFor(() => {
+      const currentDocument = frame.contentDocument;
+      return currentDocument && currentDocument !== previousDocument && currentDocument.readyState === "complete";
+    }, "等待页面加载超时：" + action, timeout);
+    await sleep(120);
   }
 
   async function open(path) {
-    const loading = waitLoad();
+    const previousDocument = frame.contentDocument;
     frame.src = baseUrl + path;
-    await loading;
+    await waitForFrameNavigation(previousDocument, "打开 " + path);
   }
 
   async function submitAndWait(selector) {
-    const loading = waitLoad();
+    const previousDocument = frame.contentDocument;
     click(selector);
-    await loading;
+    await waitForFrameNavigation(previousDocument, "提交 " + selector);
   }
 
   await open("/web");
@@ -357,7 +350,16 @@ cat >"$EVAL_FILE" <<JS
   await open("/web/projects/" + projectKey + "?tab=members");
   click("[data-modal-open='project-member-add-modal']");
   await waitFor(() => visible("#project-member-add-modal"), "项目成员添加 modal 未打开");
-  fill("#project-member-add-modal input[name='username']", "smoke_user");
+  fill("#project-member-user-search", "smoke_user");
+  await waitFor(
+    () => !query("#project-member-user-options [data-user-option][data-username='smoke_user']").hidden,
+    "项目成员候选用户未出现",
+  );
+  click("#project-member-user-options [data-user-option][data-username='smoke_user']");
+  await waitFor(
+    () => query("#project-member-add-modal input[name='username']").value === "smoke_user",
+    "项目成员候选用户未选中",
+  );
   fill("#project-member-add-modal select[name='member_role']", "member");
   await submitAndWait("#project-member-add-modal button[type='submit'].btn-primary");
   await open("/web/projects/" + projectKey + "?tab=members");
@@ -369,7 +371,7 @@ cat >"$EVAL_FILE" <<JS
   await submitAndWait("#project-member-role-modal-smoke_user button[type='submit'].btn-primary");
   await open("/web/projects/" + projectKey + "?tab=members");
   assert(hasText("冒烟成员"), "项目成员角色调整后未保留成员");
-  assert(hasText("观察者"), "项目成员角色调整后未显示观察者角色");
+  assert(hasText("只读成员"), "项目成员角色调整后未显示只读成员角色");
 
   await open("/web");
   click(".project-switcher-trigger");
@@ -450,17 +452,93 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
 
   const form = query("#work-item-attachment-modal form[data-direct-upload]");
   const input = query("#work-item-attachment-modal input[type='file']");
-  const file = new File(["browser smoke attachment\n"], "smoke-attachment.txt", {
-    type: "text/plain",
-  });
+  const pngBytes = Uint8Array.from(
+    atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ/QAAAABJRU5ErkJggg=="),
+    (character) => character.charCodeAt(0),
+  );
+  const file = new File([pngBytes], "smoke-screenshot-original.png", { type: "image/png" });
   const dataTransfer = new DataTransfer();
   dataTransfer.items.add(file);
   input.files = dataTransfer.files;
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
 
-  await waitFor(() => text().includes("已选择 smoke-attachment.txt"), "附件选择状态未更新");
+  await waitFor(() => text().includes("已选择 smoke-screenshot-original.png"), "附件选择状态未更新");
+  await waitFor(() => {
+    const preview = form.querySelector("[data-file-preview-image]");
+    return preview && !preview.hidden && preview.src.startsWith("blob:");
+  }, "图片本地预览未生成");
+  query("[data-local-image-preview]").click();
+  const localViewer = query("[data-image-viewer]");
+  await waitFor(() => localViewer.classList.contains("open"), "本地图片查看器未打开");
+  const uploadModal = query("#work-item-attachment-modal");
+  assert(
+    uploadModal.getAttribute("aria-hidden") === "true" && uploadModal.inert,
+    "本地图片查看器未隔离来源上传弹窗：aria-hidden=" +
+      uploadModal.getAttribute("aria-hidden") +
+      "，inert=" +
+      uploadModal.inert +
+      "，has-inert=" +
+      uploadModal.hasAttribute("inert"),
+  );
+  query("[data-image-viewer] [data-modal-close]").click();
+  await waitFor(() => localViewer.hidden, "本地图片查看器未关闭");
+  assert(
+    !uploadModal.hidden &&
+      uploadModal.classList.contains("open") &&
+      uploadModal.getAttribute("aria-hidden") === "false" &&
+      !uploadModal.inert,
+    "关闭本地图片查看器后上传弹窗未保持打开",
+  );
+
+  const transfer = form.querySelector("[data-upload-transfer]");
+  assert(transfer && !transfer.hidden && transfer.textContent.includes("0%"), "上传进度环未显示准备状态");
   assert(form.checkValidity(), "附件上传表单校验未通过");
+
+  let observedProgress = false;
+  const progressObserver = new MutationObserver(() => {
+    const ring = form.querySelector("[data-upload-progress-ring]");
+    if (ring && ring.getAttribute("aria-valuenow") === "50") {
+      observedProgress = true;
+    }
+  });
+  progressObserver.observe(form, { childList: true, subtree: true, attributes: true });
+  const NativeXMLHttpRequest = window.XMLHttpRequest;
+  window.XMLHttpRequest = function () {
+    const listeners = {};
+    this.upload = {
+      addEventListener(type, callback) {
+        listeners["upload:" + type] = callback;
+      },
+    };
+    this.open = () => {};
+    this.setRequestHeader = () => {};
+    this.addEventListener = (type, callback) => {
+      listeners[type] = callback;
+    };
+    this.send = () => {
+      window.setTimeout(() => {
+        listeners["upload:progress"]?.({ lengthComputable: true, loaded: 1, total: 2 });
+        window.setTimeout(() => listeners.error?.(new Event("error")), 120);
+      }, 0);
+    };
+  };
+  form.requestSubmit(query("#work-item-attachment-modal [data-upload-submit]"));
+  await waitFor(() => observedProgress, "上传进度环未响应真实字节进度");
+  await waitFor(() => text().includes("对象存储上传连接失败"), "附件上传失败状态未显示");
+  progressObserver.disconnect();
+  const failedAttachmentId = form.dataset.existingAttachmentId;
+  assert(failedAttachmentId, "上传失败后未保留待上传附件");
+  window.XMLHttpRequest = NativeXMLHttpRequest;
+
+  const replacement = new File([pngBytes], "smoke-screenshot.png", { type: "image/png" });
+  const replacementTransfer = new DataTransfer();
+  replacementTransfer.items.add(replacement);
+  input.files = replacementTransfer.files;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await waitFor(() => text().includes("已选择 smoke-screenshot.png"), "替换附件选择状态未更新");
+  assert(!form.dataset.existingAttachmentId, "更换文件后仍复用了旧的待上传附件");
 
   form.requestSubmit(query("#work-item-attachment-modal [data-upload-submit]"));
   await waitFor(() => text().includes("附件上传完成"), "附件直传未完成", 20000);
@@ -470,22 +548,8 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   });
   assert(detailResponse.ok, "上传后刷新任务详情失败");
   const detailHtml = await detailResponse.text();
-  assert(detailHtml.includes("smoke-attachment.txt"), "任务详情未渲染已上传附件");
+  assert(detailHtml.includes("smoke-screenshot.png"), "任务详情未渲染已上传附件");
   assert(detailHtml.includes("uploaded"), "任务详情未显示附件 uploaded 状态");
-
-  query("form[data-confirm-title='删除工作项'] button[type='submit']").click();
-  await waitFor(() => text().includes(`确认删除 ${workItemKey}`), "删除确认弹窗未打开");
-  const deleteForm = query("form[data-confirm-title='删除工作项']");
-  const csrf = deleteForm.querySelector("input[name='_csrf']")?.value || "";
-  const deleteResponse = await fetch(deleteForm.action, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ _csrf: csrf }),
-  });
-  assert(deleteResponse.ok, "删除工作项提交失败");
-  const deleteHtml = await deleteResponse.text();
-  assert(deleteHtml.includes("工作项已删除"), "删除工作项后未显示删除状态");
 
   return "browser smoke upload passed";
 })()
@@ -498,10 +562,162 @@ fi
 
 uploaded_count="$(
   sqlite3 "${ROOT}/yuance.sqlite3" \
-    "SELECT COUNT(*) FROM file_objects WHERE original_filename = 'smoke-attachment.txt' AND status = 'uploaded';"
+    "SELECT COUNT(*) FROM file_objects WHERE original_filename = 'smoke-screenshot.png' AND status = 'uploaded';"
 )"
 if [ "$uploaded_count" != "1" ]; then
   fail "附件直传后数据库未记录 uploaded 状态"
+fi
+
+log "验证已上传图片预览与查看器"
+ab open "${BASE_URL}/web/work-items/${smoke_task_key}" >/dev/null
+GALLERY_SEED_EVAL_FILE="${ROOT}/browser-smoke-gallery-seed.eval.js"
+cat >"$GALLERY_SEED_EVAL_FILE" <<'JS'
+(async () => {
+  function assert(condition, message) {
+    if (!condition) {
+      throw new Error(message);
+    }
+  }
+
+  const workItemKey = window.location.pathname.split("/").pop();
+  const csrf = document.querySelector("meta[name='yuance-csrf-token']")?.getAttribute("content") || "";
+  const pngBytes = Uint8Array.from(
+    atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ/QAAAABJRU5ErkJggg=="),
+    (character) => character.charCodeAt(0),
+  );
+  const createResponse = await fetch(`/api/v1/work-items/${workItemKey}/attachments`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json",
+      "x-yuance-csrf-token": csrf,
+    },
+    body: JSON.stringify({
+      original_filename: "smoke-screenshot-gallery.png",
+      content_type: "image/png",
+      byte_size: pngBytes.byteLength,
+    }),
+  });
+  assert(createResponse.ok, "图库测试附件登记失败");
+  const attachment = (await createResponse.json()).data;
+  const signingResponse = await fetch(
+    `/api/v1/work-items/${workItemKey}/attachments/${attachment.id}/upload-url`,
+    { credentials: "same-origin", headers: { accept: "application/json" } },
+  );
+  assert(signingResponse.ok, "图库测试附件签名失败");
+  const request = (await signingResponse.json()).data.request;
+  const headers = Object.fromEntries(request.headers || []);
+  headers["x-yuance-csrf-token"] = csrf;
+  const uploadResponse = await fetch(request.url, {
+    method: request.method || "PUT",
+    credentials: "same-origin",
+    headers,
+    body: pngBytes,
+  });
+  assert(uploadResponse.ok, "图库测试附件直传失败");
+  const completeResponse = await fetch(
+    `/api/v1/work-items/${workItemKey}/attachments/${attachment.id}/uploaded`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { accept: "application/json", "x-yuance-csrf-token": csrf },
+    },
+  );
+  assert(completeResponse.ok, "图库测试附件确认失败");
+  return "browser smoke gallery seed passed";
+})()
+JS
+if [ "${YUANCE_BROWSER_SMOKE_HEADED:-0}" = "1" ]; then
+  AGENT_BROWSER_HEADED=1 agent-browser --session "$SESSION" eval "$(cat "$GALLERY_SEED_EVAL_FILE")"
+else
+  agent-browser --session "$SESSION" eval "$(cat "$GALLERY_SEED_EVAL_FILE")"
+fi
+ab open "${BASE_URL}/web/work-items/${smoke_task_key}" >/dev/null
+IMAGE_PREVIEW_EVAL_FILE="${ROOT}/browser-smoke-image-preview.eval.js"
+cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
+(async () => {
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  function assert(condition, message) {
+    if (!condition) {
+      throw new Error(message);
+    }
+  }
+
+  function query(selector) {
+    const element = document.querySelector(selector);
+    assert(element, "未找到元素：" + selector);
+    return element;
+  }
+
+  async function waitFor(predicate, message, timeout = 15000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeout) {
+      if (predicate()) {
+        return;
+      }
+      await sleep(100);
+    }
+    throw new Error(message);
+  }
+
+  const previews = Array.from(document.querySelectorAll("[data-image-preview]"));
+  assert(previews.length === 2, "任务详情未渲染两张图片缩略图");
+  const preview = previews[0];
+  assert(preview.dataset.imageSource.includes("/download"), "图片预览未使用受鉴权下载入口");
+  for (const item of previews) {
+    item.scrollIntoView({ block: "center" });
+    await waitFor(
+      () => item.dataset.imagePreviewState === "ready",
+      "图片缩略图未在滚入视口后加载",
+    );
+  }
+  preview.click();
+  const viewer = query("[data-image-viewer]");
+  await waitFor(() => viewer.classList.contains("open"), "图片查看器未打开");
+
+  const viewerImage = query("[data-image-viewer-image]");
+  await waitFor(() => viewerImage.dataset.state === "ready", "查看器图片未加载");
+  const initialTitle = query("[data-image-viewer-title]").textContent;
+  query("[data-image-viewer-action='next']").click();
+  await waitFor(
+    () => query("[data-image-viewer-title]").textContent !== initialTitle,
+    "图片查看器未切换到下一张",
+  );
+  assert(query("[data-image-viewer-status]").textContent.includes("2 / 2"), "图片查看器未显示图库位置");
+  query("[data-image-viewer-action='zoom-in']").click();
+  assert(viewerImage.style.transform.includes("scale(1.25)"), "图片放大控制未生效");
+  query("[data-image-viewer-action='rotate']").click();
+  assert(viewerImage.style.transform.includes("rotate(90deg)"), "图片旋转控制未生效");
+  query("[data-image-viewer-action='reset']").click();
+  assert(viewerImage.style.transform.includes("scale(1) rotate(0deg)"), "图片重置控制未生效");
+  const viewerPanel = query("[data-image-viewer] .modal-panel");
+  viewerPanel.focus();
+  viewerPanel.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await waitFor(() => viewer.hidden, "Escape 未关闭图片查看器");
+
+  query("form[data-confirm-title='删除工作项'] button[type='submit']").click();
+  await waitFor(() => document.body.innerText.includes(`确认删除 ${window.location.pathname.split("/").pop()}`), "删除确认弹窗未打开");
+  const deleteForm = query("form[data-confirm-title='删除工作项']");
+  const csrf = deleteForm.querySelector("input[name='_csrf']")?.value || "";
+  const deleteResponse = await fetch(deleteForm.action, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ _csrf: csrf }),
+  });
+  assert(deleteResponse.ok, "删除工作项提交失败");
+  const deleteHtml = await deleteResponse.text();
+  assert(deleteHtml.includes("工作项已删除"), "删除工作项后未显示删除状态");
+
+  return "browser smoke image preview passed";
+})()
+JS
+if [ "${YUANCE_BROWSER_SMOKE_HEADED:-0}" = "1" ]; then
+  AGENT_BROWSER_HEADED=1 agent-browser --session "$SESSION" eval "$(cat "$IMAGE_PREVIEW_EVAL_FILE")"
+else
+  agent-browser --session "$SESSION" eval "$(cat "$IMAGE_PREVIEW_EVAL_FILE")"
 fi
 
 log "检查浏览器控制台错误"
