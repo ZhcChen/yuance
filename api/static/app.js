@@ -1710,15 +1710,22 @@
       remove.dataset.fileSignature = entry.signature;
       remove.setAttribute("aria-label", "移除附件 " + (entry.file.name || ""));
       remove.textContent = "×";
-      remove.disabled = entry.uploaded || group.dataset.bugReportLocked === "true";
+      remove.disabled =
+        entry.uploaded ||
+        group.dataset.bugReportLocked === "true" ||
+        group.dataset.discussionLocked === "true";
       row.append(media, details, remove);
       list.appendChild(row);
     });
   }
 
   function removeComposerFile(button) {
-    var group = button.closest("[data-bug-report-group]");
-    if (!group || group.dataset.bugReportLocked === "true") {
+    var group = button.closest("[data-bug-report-group], [data-discussion-form]");
+    if (
+      !group ||
+      group.dataset.bugReportLocked === "true" ||
+      group.dataset.discussionLocked === "true"
+    ) {
       return;
     }
     var signature = button.dataset.fileSignature || "";
@@ -1732,11 +1739,13 @@
       return false;
     });
     renderComposerFiles(group);
-    var label = group.querySelector("[data-bug-report-image-name]");
+    var label = group.querySelector("[data-bug-report-image-name], [data-discussion-file-hint]");
     if (label) {
       label.textContent = group.bugReportFiles.length
         ? "已选择 " + group.bugReportFiles.length + " 个附件，可继续添加。"
-        : "可一次选择多个文件，单个文件不超过 100 MB。";
+        : group.matches("[data-discussion-form]")
+          ? "支持多个文件，图片和视频可预览"
+          : "可一次选择多个文件，单个文件不超过 100 MB。";
     }
   }
 
@@ -1766,6 +1775,152 @@
       setUploadTransfer(group, 0, "准备上传附件", "共 " + files.length + " 个文件等待提交。", "ready");
     } else {
       hideUploadTransfer(group);
+    }
+  }
+
+  function discussionStatus(form, message, tone) {
+    var status = form.querySelector("[data-discussion-status]");
+    if (!status) {
+      return;
+    }
+    status.hidden = !message;
+    status.textContent = message || "";
+    status.dataset.tone = tone || "info";
+  }
+
+  function syncDiscussionFiles(input) {
+    var form = input.closest("[data-discussion-form]");
+    if (!form || form.dataset.discussionLocked === "true") {
+      return;
+    }
+    var files = form.bugReportFiles || [];
+    var signatures = new Set(files.map(function (entry) { return entry.signature; }));
+    Array.from(input.files || []).forEach(function (file) {
+      var signature = composerFileSignature(file);
+      if (!signatures.has(signature)) {
+        files.push({ file: file, signature: signature, attachmentId: "", uploaded: false, objectUrl: "" });
+        signatures.add(signature);
+      }
+    });
+    form.bugReportFiles = files;
+    input.value = "";
+    renderComposerFiles(form);
+    var hint = form.querySelector("[data-discussion-file-hint]");
+    if (hint) {
+      hint.textContent = files.length
+        ? "已选择 " + files.length + " 个附件，可继续添加"
+        : "支持多个文件，图片和视频可预览";
+    }
+    if (files.length) {
+      setUploadTransfer(form, 0, "附件等待上传", "发表内容后开始上传 " + files.length + " 个文件。", "ready");
+    } else {
+      hideUploadTransfer(form);
+    }
+  }
+
+  function setDiscussionBusy(form, busy) {
+    form.dataset.discussionBusy = busy ? "true" : "false";
+    form.querySelectorAll("button, textarea, input").forEach(function (control) {
+      control.disabled = busy;
+    });
+    var submit = form.querySelector("[data-discussion-submit]");
+    if (submit) {
+      submit.textContent = busy ? "正在提交..." : submit.dataset.originalLabel || "发表";
+    }
+  }
+
+  async function submitDiscussion(form) {
+    if (form.dataset.discussionBusy === "true" || !form.reportValidity()) {
+      return;
+    }
+    var itemKey = form.dataset.itemKey || "";
+    var bodyInput = form.querySelector("[data-discussion-body]");
+    var parentInput = form.querySelector("input[name='parent_comment_id']");
+    var files = form.bugReportFiles || [];
+    var submit = form.querySelector("[data-discussion-submit]");
+    if (submit && !submit.dataset.originalLabel) {
+      submit.dataset.originalLabel = submit.textContent.trim();
+    }
+    setDiscussionBusy(form, true);
+    try {
+      var commentId = form.dataset.discussionCommentId || "";
+      if (!commentId) {
+        discussionStatus(form, "正在发表内容...", "info");
+        var comment = await fetchJson(
+          "/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body: JSON.stringify({
+              body: bodyInput ? bodyInput.value.trim() : "",
+              parent_comment_id: parentInput && parentInput.value
+                ? Number(parentInput.value)
+                : null,
+            }),
+          }
+        );
+        commentId = String(comment.id);
+        form.dataset.discussionCommentId = commentId;
+        form.dataset.discussionLocked = "true";
+      }
+
+      for (var index = 0; index < files.length; index += 1) {
+        var entry = files[index];
+        if (entry.uploaded) {
+          continue;
+        }
+        var fileNumber = index + 1;
+        var fileCount = files.length;
+        discussionStatus(form, "正在上传附件 " + fileNumber + "/" + fileCount + "...", "info");
+        await uploadAttachmentFile({
+          file: entry.file,
+          filename: entry.file.name || "attachment.bin",
+          contentType: entry.file.type || "application/octet-stream",
+          byteSize: entry.file.size || 0,
+          existingAttachmentId: entry.attachmentId,
+          createUrl:
+            "/api/v1/work-items/" + encodeURIComponent(itemKey) +
+            "/comments/" + encodeURIComponent(commentId) + "/attachments",
+          uploadUrl: function (attachmentId) {
+            return attachmentUrlForComment(itemKey, commentId, attachmentId, "upload-url");
+          },
+          completeUrl: function (attachmentId) {
+            return attachmentUrlForComment(itemKey, commentId, attachmentId, "uploaded");
+          },
+          onAttachmentReady: function (attachment) {
+            entry.attachmentId = String(attachment.id);
+          },
+          onStage: function (stage) {
+            var base = (index / fileCount) * 100;
+            if (stage === "signing") {
+              setUploadTransfer(form, base, "准备附件 " + fileNumber + "/" + fileCount, "正在获取上传签名。", "info");
+            } else if (stage === "uploading") {
+              setUploadTransfer(form, base, "上传附件 " + fileNumber + "/" + fileCount, entry.file.name, "info");
+            } else if (stage === "finalizing") {
+              setUploadTransfer(form, (fileNumber / fileCount) * 100, "确认附件", "正在保存上传结果。", "info");
+            }
+          },
+          onProgress: function (percent) {
+            var overall = typeof percent === "number"
+              ? ((index + percent / 100) / fileCount) * 100
+              : null;
+            setUploadTransfer(form, overall, "上传附件 " + fileNumber + "/" + fileCount, entry.file.name, "info");
+          },
+        });
+        entry.uploaded = true;
+        renderComposerFiles(form);
+      }
+
+      if (files.length) {
+        setUploadTransfer(form, 100, "附件上传完成", files.length + " 个文件已全部保存。", "success");
+      }
+      discussionStatus(form, "发表成功，正在刷新讨论...", "success");
+      window.setTimeout(function () {
+        window.location.reload();
+      }, 350);
+    } catch (error) {
+      discussionStatus(form, (error && error.message) || "提交失败，请重试。", "error");
+      setDiscussionBusy(form, false);
     }
   }
 
@@ -2646,6 +2801,36 @@
       return;
     }
 
+    var replyToggle = event.target.closest("[data-discussion-reply-toggle]");
+    if (replyToggle) {
+      event.preventDefault();
+      var replyForm = document.getElementById(replyToggle.dataset.discussionReplyToggle || "");
+      if (replyForm) {
+        var shouldOpen = replyForm.hidden;
+        document.querySelectorAll("[data-discussion-form].discussion-reply-form").forEach(function (form) {
+          if (form !== replyForm && form.dataset.discussionBusy !== "true") {
+            form.hidden = true;
+          }
+        });
+        replyForm.hidden = !shouldOpen;
+        if (shouldOpen) {
+          replyForm.querySelector("[data-discussion-body]")?.focus({ preventScroll: true });
+          replyForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+      return;
+    }
+
+    var replyCancel = event.target.closest("[data-discussion-reply-cancel]");
+    if (replyCancel) {
+      event.preventDefault();
+      var cancelForm = replyCancel.closest("[data-discussion-form]");
+      if (cancelForm && cancelForm.dataset.discussionBusy !== "true") {
+        cancelForm.hidden = true;
+      }
+      return;
+    }
+
     var trigger = event.target.closest("[data-dropdown-trigger]");
     if (trigger) {
       var root = trigger.closest("[data-dropdown-root]") || trigger.parentElement;
@@ -2925,6 +3110,12 @@
   document.querySelectorAll("[data-permission-tree]").forEach(syncPermissionTree);
 
   document.addEventListener("change", function (event) {
+    var discussionFiles = event.target.closest("[data-discussion-files]");
+    if (discussionFiles) {
+      syncDiscussionFiles(discussionFiles);
+      return;
+    }
+
     var bugReportImage = event.target.closest("[data-bug-report-image]");
     if (bugReportImage) {
       syncBugReportImageName(bugReportImage);
@@ -2983,6 +3174,13 @@
   }, true);
 
   document.addEventListener("submit", function (event) {
+    var discussionForm = event.target.closest("[data-discussion-form]");
+    if (discussionForm) {
+      event.preventDefault();
+      submitDiscussion(discussionForm);
+      return;
+    }
+
     var bugReportForm = event.target.closest("[data-bug-report-form]");
     if (bugReportForm) {
       event.preventDefault();

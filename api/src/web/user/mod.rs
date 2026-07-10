@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use askama::Template;
 use axum::{
@@ -174,10 +174,14 @@ struct WorkItemDetailView {
 #[derive(Debug, Clone)]
 struct WorkItemComment {
     id: i64,
+    parent_comment_id: Option<i64>,
+    parent_author: String,
+    reply_depth: usize,
     body: String,
     author: String,
     created_at: String,
     updated_at: String,
+    is_edited: bool,
     is_flow: bool,
     attachments: Vec<AttachmentView>,
     has_attachments: bool,
@@ -593,7 +597,6 @@ struct WorkItemDetailTemplate {
     assignee_options: Vec<ProjectMemberView>,
     parent_options: Vec<WorkItem>,
     status_options: Vec<WorkItemStatusOption>,
-    quick_status_options: Vec<WorkItemStatusOption>,
     attachments: Vec<AttachmentView>,
     comments: Vec<WorkItemComment>,
     has_comments: bool,
@@ -963,6 +966,8 @@ pub struct WorkItemCommentForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
     body: String,
+    #[serde(default)]
+    parent_comment_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2097,7 +2102,6 @@ pub async fn work_item_detail_page(
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
     let status_options = work_item_status_options(&item.status_code)?;
-    let quick_status_options = work_item_quick_status_options(&item.status_code)?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -2116,7 +2120,6 @@ pub async fn work_item_detail_page(
             assignee_options,
             parent_options,
             status_options,
-            quick_status_options,
             has_attachments: !attachments.is_empty(),
             attachments,
             comments,
@@ -2405,7 +2408,14 @@ pub async fn work_item_comment_create(
             .await?
             .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
-        projects::add_work_item_comment(pool, context.user_id, &item_key, &form.body).await?;
+        projects::add_work_item_comment_reply(
+            pool,
+            context.user_id,
+            &item_key,
+            &form.body,
+            form.parent_comment_id,
+        )
+        .await?;
         audit::record(
             pool,
             Some(context.user_id),
@@ -4862,18 +4872,76 @@ fn comment_from_summary_with_permission(
     comment: projects::WorkItemCommentSummary,
     can_manage: bool,
 ) -> WorkItemComment {
+    let is_edited = comment.updated_at != comment.created_at;
     let body = work_item_comment_body_for_display(&comment.body, comment.is_flow);
     WorkItemComment {
         id: comment.id,
+        parent_comment_id: comment.parent_comment_id,
+        parent_author: fallback_text(comment.parent_author_display_name, "原评论作者"),
+        reply_depth: 0,
         body,
         author: fallback_text(comment.author_display_name, "系统"),
         created_at: display_timestamp(comment.created_at),
         updated_at: display_timestamp(comment.updated_at),
+        is_edited,
         is_flow: comment.is_flow,
         attachments: Vec::new(),
         has_attachments: false,
         can_manage: can_manage && !comment.is_flow,
     }
+}
+
+fn flatten_comment_threads(comments: Vec<WorkItemComment>) -> Vec<WorkItemComment> {
+    let all_ids = comments
+        .iter()
+        .map(|comment| comment.id)
+        .collect::<HashSet<_>>();
+    let mut child_ids = HashMap::<i64, Vec<i64>>::new();
+    let mut root_ids = Vec::new();
+    let order = comments
+        .iter()
+        .map(|comment| comment.id)
+        .collect::<Vec<_>>();
+    for comment in &comments {
+        match comment.parent_comment_id {
+            Some(parent_id) if all_ids.contains(&parent_id) && !comment.is_flow => {
+                child_ids.entry(parent_id).or_default().push(comment.id);
+            }
+            _ => root_ids.push(comment.id),
+        }
+    }
+    let mut nodes = comments
+        .into_iter()
+        .map(|comment| (comment.id, comment))
+        .collect::<HashMap<_, _>>();
+    let mut flattened = Vec::new();
+
+    fn append_thread(
+        id: i64,
+        depth: usize,
+        nodes: &mut HashMap<i64, WorkItemComment>,
+        child_ids: &HashMap<i64, Vec<i64>>,
+        flattened: &mut Vec<WorkItemComment>,
+    ) {
+        let Some(mut comment) = nodes.remove(&id) else {
+            return;
+        };
+        comment.reply_depth = depth.min(4);
+        flattened.push(comment);
+        if let Some(children) = child_ids.get(&id) {
+            for child_id in children {
+                append_thread(*child_id, depth + 1, nodes, child_ids, flattened);
+            }
+        }
+    }
+
+    for root_id in root_ids {
+        append_thread(root_id, 0, &mut nodes, &child_ids, &mut flattened);
+    }
+    for id in order {
+        append_thread(id, 0, &mut nodes, &child_ids, &mut flattened);
+    }
+    flattened
 }
 
 fn comment_with_attachments(
@@ -5493,7 +5561,10 @@ async fn load_work_item_detail(
         ));
     }
 
-    Ok(Some((work_item_detail_from_domain(item), comments)))
+    Ok(Some((
+        work_item_detail_from_domain(item),
+        flatten_comment_threads(comments),
+    )))
 }
 
 async fn load_work_item_detail_for_user(
@@ -5531,7 +5602,10 @@ async fn load_work_item_detail_for_user(
         ));
     }
 
-    Ok(Some((work_item_detail_from_domain(item), comments)))
+    Ok(Some((
+        work_item_detail_from_domain(item),
+        flatten_comment_threads(comments),
+    )))
 }
 
 async fn load_project_member_options(
@@ -5888,33 +5962,6 @@ fn work_item_status_options(current_status: &str) -> AppResult<Vec<WorkItemStatu
             })
         })
         .collect()
-}
-
-fn work_item_quick_status_options(current_status: &str) -> AppResult<Vec<WorkItemStatusOption>> {
-    projects::allowed_work_item_status_transitions(current_status)?
-        .iter()
-        .map(|status| {
-            let (label, _, _) = work_item_labels("", status);
-            Ok(WorkItemStatusOption {
-                value: status,
-                label: work_item_quick_status_label(status, label),
-                selected: false,
-            })
-        })
-        .collect()
-}
-
-fn work_item_quick_status_label(status: &str, label: &'static str) -> &'static str {
-    match status {
-        "open" => "退回待处理",
-        "in_progress" => "开始处理",
-        "done" => "标记完成",
-        "resolved" => "标记解决",
-        "verified" => "标记验证",
-        "closed" => "关闭工作项",
-        "cancelled" => "取消工作项",
-        _ => label,
-    }
 }
 
 fn is_open_status(status: &str) -> bool {
@@ -6451,7 +6498,6 @@ fn render_sample_work_item_detail_page(
 ) -> AppResult<Response> {
     let partial = sample_work_item_detail_partial();
     let status_options = work_item_status_options(&partial.item.status_code)?;
-    let quick_status_options = work_item_quick_status_options(&partial.item.status_code)?;
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
         state,
@@ -6475,7 +6521,6 @@ fn render_sample_work_item_detail_page(
             }],
             parent_options: sample_work_items(Some("requirement")),
             status_options,
-            quick_status_options,
             has_attachments: false,
             attachments: Vec::new(),
             comments: partial.comments,
@@ -6516,10 +6561,14 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
         },
         comments: vec![WorkItemComment {
             id: 1,
+            parent_comment_id: None,
+            parent_author: String::new(),
+            reply_depth: 0,
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
             author: "陈".to_string(),
             created_at: "今天".to_string(),
             updated_at: "今天".to_string(),
+            is_edited: false,
             is_flow: false,
             attachments: Vec::new(),
             has_attachments: false,
@@ -6550,16 +6599,6 @@ fn sample_activities() -> Vec<Activity> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn handoff_status_options_only_include_allowed_next_states() {
-        let options = work_item_quick_status_options("in_progress")
-            .expect("in-progress status should have transitions");
-
-        assert!(!options.iter().any(|option| option.value == "in_progress"));
-        assert!(options.iter().any(|option| option.label == "标记完成"));
-        assert!(options.iter().all(|option| !option.selected));
-    }
 
     #[test]
     fn flow_comment_display_renames_legacy_assignee_label() {

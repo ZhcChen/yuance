@@ -111,6 +111,8 @@ pub struct WorkItemDetail {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkItemCommentSummary {
     pub id: i64,
+    pub parent_comment_id: Option<i64>,
+    pub parent_author_display_name: String,
     pub body: String,
     pub author_user_id: Option<i64>,
     pub author_display_name: String,
@@ -1988,7 +1990,19 @@ pub async fn list_work_item_comments(
     pool: &SqlitePool,
     work_item_id: i64,
 ) -> AppResult<Vec<WorkItemCommentSummary>> {
-    let rows = sqlx::query_as::<_, (i64, String, Option<i64>, String, String, String)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            Option<i64>,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+        ),
+    >(
         r#"
         SELECT
             c.id,
@@ -1996,12 +2010,16 @@ pub async fn list_work_item_comments(
             c.author_user_id,
             COALESCE(u.display_name, '') AS author_display_name,
             c.created_at,
-            c.updated_at
+            c.updated_at,
+            c.parent_comment_id,
+            COALESCE(parent_author.display_name, '') AS parent_author_display_name
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
+        LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
+        LEFT JOIN users parent_author ON parent_author.id = parent.author_user_id
         WHERE c.work_item_id = ?1
           AND c.deleted_at IS NULL
-        ORDER BY c.created_at DESC, c.id DESC
+        ORDER BY c.created_at ASC, c.id ASC
         "#,
     )
     .bind(work_item_id)
@@ -2011,10 +2029,21 @@ pub async fn list_work_item_comments(
     Ok(rows
         .into_iter()
         .map(
-            |(id, body, author_user_id, author_display_name, created_at, updated_at)| {
+            |(
+                id,
+                body,
+                author_user_id,
+                author_display_name,
+                created_at,
+                updated_at,
+                parent_comment_id,
+                parent_author_display_name,
+            )| {
                 let (body, is_flow) = normalize_work_item_comment_body(body);
                 WorkItemCommentSummary {
                     id,
+                    parent_comment_id,
+                    parent_author_display_name,
                     body,
                     author_user_id,
                     author_display_name,
@@ -2534,6 +2563,16 @@ pub async fn add_work_item_comment(
     item_key: &str,
     body: &str,
 ) -> AppResult<WorkItemCommentSummary> {
+    add_work_item_comment_reply(pool, actor_user_id, item_key, body, None).await
+}
+
+pub async fn add_work_item_comment_reply(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    body: &str,
+    parent_comment_id: Option<i64>,
+) -> AppResult<WorkItemCommentSummary> {
     let body = validate_optional_text(body, "评论内容", 5000)?;
     if body.is_empty() {
         return Err(AppError::BadRequest("评论内容不能为空".to_string()));
@@ -2555,6 +2594,12 @@ pub async fn add_work_item_comment(
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
     ensure_project_accepts_writes(&project_status)?;
+    if let Some(parent_comment_id) = parent_comment_id {
+        let parent = get_work_item_comment(pool, work_item_id, parent_comment_id).await?;
+        if parent.is_flow {
+            return Err(AppError::BadRequest("不能回复系统流程记录".to_string()));
+        }
+    }
 
     let mut tx = pool.begin().await?;
     let comment_id = sqlx::query_scalar::<_, i64>(
@@ -2562,15 +2607,17 @@ pub async fn add_work_item_comment(
         INSERT INTO work_item_comments (
             work_item_id,
             author_user_id,
-            body
+            body,
+            parent_comment_id
         )
-        VALUES (?1, ?2, ?3)
+        VALUES (?1, ?2, ?3, ?4)
         RETURNING id
         "#,
     )
     .bind(work_item_id)
     .bind(actor_user_id)
     .bind(&body)
+    .bind(parent_comment_id)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -2607,7 +2654,19 @@ pub async fn add_work_item_comment(
 
     tx.commit().await?;
 
-    let row = sqlx::query_as::<_, (i64, String, Option<i64>, String, String, String)>(
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            Option<i64>,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+        ),
+    >(
         r#"
         SELECT
             c.id,
@@ -2615,9 +2674,13 @@ pub async fn add_work_item_comment(
             c.author_user_id,
             COALESCE(u.display_name, '') AS author_display_name,
             c.created_at,
-            c.updated_at
+            c.updated_at,
+            c.parent_comment_id,
+            COALESCE(parent_author.display_name, '') AS parent_author_display_name
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
+        LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
+        LEFT JOIN users parent_author ON parent_author.id = parent.author_user_id
         WHERE c.id = ?1
         "#,
     )
@@ -2628,6 +2691,8 @@ pub async fn add_work_item_comment(
     let (body, is_flow) = normalize_work_item_comment_body(row.1);
     Ok(WorkItemCommentSummary {
         id: row.0,
+        parent_comment_id: row.6,
+        parent_author_display_name: row.7,
         body,
         author_user_id: row.2,
         author_display_name: row.3,
@@ -2642,7 +2707,19 @@ pub async fn get_work_item_comment(
     work_item_id: i64,
     comment_id: i64,
 ) -> AppResult<WorkItemCommentSummary> {
-    let row = sqlx::query_as::<_, (i64, String, Option<i64>, String, String, String)>(
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            Option<i64>,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+        ),
+    >(
         r#"
         SELECT
             c.id,
@@ -2650,9 +2727,13 @@ pub async fn get_work_item_comment(
             c.author_user_id,
             COALESCE(u.display_name, '') AS author_display_name,
             c.created_at,
-            c.updated_at
+            c.updated_at,
+            c.parent_comment_id,
+            COALESCE(parent_author.display_name, '') AS parent_author_display_name
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
+        LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
+        LEFT JOIN users parent_author ON parent_author.id = parent.author_user_id
         WHERE c.id = ?1
           AND c.work_item_id = ?2
           AND c.deleted_at IS NULL
@@ -2667,6 +2748,8 @@ pub async fn get_work_item_comment(
     let (body, is_flow) = normalize_work_item_comment_body(row.1);
     Ok(WorkItemCommentSummary {
         id: row.0,
+        parent_comment_id: row.6,
+        parent_author_display_name: row.7,
         body,
         author_user_id: row.2,
         author_display_name: row.3,
@@ -3736,8 +3819,8 @@ pub fn allowed_work_item_status_transitions(
     current_status: &str,
 ) -> AppResult<&'static [&'static str]> {
     match validate_work_item_status(current_status)? {
-        "open" => Ok(&["in_progress", "cancelled"]),
-        "in_progress" => Ok(&["open", "done", "resolved", "cancelled"]),
+        "open" => Ok(&["in_progress", "closed"]),
+        "in_progress" => Ok(&["open", "done", "resolved", "closed"]),
         "done" => Ok(&["in_progress", "verified", "closed"]),
         "resolved" => Ok(&["in_progress", "verified", "closed"]),
         "verified" => Ok(&["in_progress", "closed"]),

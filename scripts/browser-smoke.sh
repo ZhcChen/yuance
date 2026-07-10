@@ -441,7 +441,7 @@ else
   agent-browser --session "$SESSION" eval "$(cat "$EVAL_FILE")"
 fi
 
-log "执行真实页面附件直传"
+log "执行讨论附件直传与内联进度验证"
 smoke_task_key="$(
   sqlite3 "${ROOT}/yuance.sqlite3" \
     "SELECT item_key FROM work_items WHERE title = '浏览器冒烟任务' ORDER BY id DESC LIMIT 1;"
@@ -486,11 +486,9 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
 
   assert(text().includes("浏览器冒烟任务"), "任务详情未打开");
 
-  query("[data-modal-open='work-item-attachment-modal']").click();
-  await waitFor(() => text().includes("上传工作项附件"), "附件上传 modal 未打开");
-
-  const form = query("#work-item-attachment-modal form[data-direct-upload]");
-  const input = query("#work-item-attachment-modal input[type='file']");
+  const form = query("[data-discussion-form]:not(.discussion-reply-form)");
+  const input = query("[data-discussion-form]:not(.discussion-reply-form) [data-discussion-files]");
+  query("[data-discussion-form]:not(.discussion-reply-form) [data-discussion-body]").value = "附上浏览器冒烟截图";
   const pngBytes = Uint8Array.from(
     atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ/QAAAABJRU5ErkJggg=="),
     (character) => character.charCodeAt(0),
@@ -499,40 +497,23 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   const dataTransfer = new DataTransfer();
   dataTransfer.items.add(file);
   input.files = dataTransfer.files;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
 
-  await waitFor(() => text().includes("已选择 smoke-screenshot-original.png"), "附件选择状态未更新");
+  await waitFor(() => text().includes("已选择 1 个附件"), "附件选择状态未更新");
   await waitFor(() => {
-    const preview = form.querySelector("[data-file-preview-image]");
-    return preview && !preview.hidden && preview.src.startsWith("blob:");
+    const preview = form.querySelector("[data-local-image-preview] img");
+    return preview && preview.src.startsWith("blob:");
   }, "图片本地预览未生成");
-  query("[data-local-image-preview]").click();
+  form.querySelector("[data-local-image-preview]").click();
   const localViewer = query("[data-image-viewer]");
   await waitFor(() => localViewer.classList.contains("open"), "本地图片查看器未打开");
-  const uploadModal = query("#work-item-attachment-modal");
-  assert(
-    uploadModal.getAttribute("aria-hidden") === "true" && uploadModal.inert,
-    "本地图片查看器未隔离来源上传弹窗：aria-hidden=" +
-      uploadModal.getAttribute("aria-hidden") +
-      "，inert=" +
-      uploadModal.inert +
-      "，has-inert=" +
-      uploadModal.hasAttribute("inert"),
-  );
   query("[data-image-viewer] [data-modal-close]").click();
   await waitFor(() => localViewer.hidden, "本地图片查看器未关闭");
-  assert(
-    !uploadModal.hidden &&
-      uploadModal.classList.contains("open") &&
-      uploadModal.getAttribute("aria-hidden") === "false" &&
-      !uploadModal.inert,
-    "关闭本地图片查看器后上传弹窗未保持打开",
-  );
 
   const transfer = form.querySelector("[data-upload-transfer]");
   assert(transfer && !transfer.hidden && transfer.textContent.includes("0%"), "上传进度环未显示准备状态");
-  assert(form.checkValidity(), "附件上传表单校验未通过");
+  assert(transfer.closest("[data-discussion-form]") === form, "上传进度未显示在当前讨论编辑器内");
+  assert(form.checkValidity(), "讨论表单校验未通过");
 
   let observedProgress = false;
   const progressObserver = new MutationObserver(() => {
@@ -562,24 +543,16 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
       }, 0);
     };
   };
-  form.requestSubmit(query("#work-item-attachment-modal [data-upload-submit]"));
+  form.requestSubmit(form.querySelector("[data-discussion-submit]"));
   await waitFor(() => observedProgress, "上传进度环未响应真实字节进度");
   await waitFor(() => text().includes("对象存储上传连接失败"), "附件上传失败状态未显示");
   progressObserver.disconnect();
-  const failedAttachmentId = form.dataset.existingAttachmentId;
+  const failedAttachmentId = form.bugReportFiles?.[0]?.attachmentId;
   assert(failedAttachmentId, "上传失败后未保留待上传附件");
+  assert(form.dataset.discussionCommentId, "上传失败后未保留已发表内容");
   window.XMLHttpRequest = NativeXMLHttpRequest;
 
-  const replacement = new File([pngBytes], "smoke-screenshot.png", { type: "image/png" });
-  const replacementTransfer = new DataTransfer();
-  replacementTransfer.items.add(replacement);
-  input.files = replacementTransfer.files;
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-  await waitFor(() => text().includes("已选择 smoke-screenshot.png"), "替换附件选择状态未更新");
-  assert(!form.dataset.existingAttachmentId, "更换文件后仍复用了旧的待上传附件");
-
-  form.requestSubmit(query("#work-item-attachment-modal [data-upload-submit]"));
+  form.requestSubmit(form.querySelector("[data-discussion-submit]"));
   await waitFor(() => text().includes("附件上传完成"), "附件直传未完成", 20000);
 
   const detailResponse = await fetch(`/web/work-items/${workItemKey}`, {
@@ -587,8 +560,9 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   });
   assert(detailResponse.ok, "上传后刷新任务详情失败");
   const detailHtml = await detailResponse.text();
-  assert(detailHtml.includes("smoke-screenshot.png"), "任务详情未渲染已上传附件");
-  assert(detailHtml.includes("uploaded"), "任务详情未显示附件 uploaded 状态");
+  assert(detailHtml.includes("smoke-screenshot-original.png"), "任务详情未渲染已上传附件");
+  assert(detailHtml.includes("附上浏览器冒烟截图"), "任务详情未保留附件所属发表内容");
+  assert(detailHtml.includes("下载"), "任务详情未提供已上传附件下载入口");
 
   return "browser smoke upload passed";
 })()
@@ -601,7 +575,7 @@ fi
 
 uploaded_count="$(
   sqlite3 "${ROOT}/yuance.sqlite3" \
-    "SELECT COUNT(*) FROM file_objects WHERE original_filename = 'smoke-screenshot.png' AND status = 'uploaded';"
+    "SELECT COUNT(*) FROM file_objects WHERE original_filename = 'smoke-screenshot-original.png' AND status = 'uploaded';"
 )"
 if [ "$uploaded_count" != "1" ]; then
   fail "附件直传后数据库未记录 uploaded 状态"
@@ -761,19 +735,15 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
   assert(!viewer.classList.contains("open") && !viewer.hidden, "图片查看器关闭动画未保留过渡阶段");
   await waitFor(() => viewer.hidden, "Escape 未关闭图片查看器");
 
-  query("form[data-confirm-title='删除工作项'] button[type='submit']").click();
-  await waitFor(() => document.body.innerText.includes(`确认删除 ${window.location.pathname.split("/").pop()}`), "删除确认弹窗未打开");
-  const deleteForm = query("form[data-confirm-title='删除工作项']");
-  const csrf = deleteForm.querySelector("input[name='_csrf']")?.value || "";
-  const deleteResponse = await fetch(deleteForm.action, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ _csrf: csrf }),
-  });
-  assert(deleteResponse.ok, "删除工作项提交失败");
-  const deleteHtml = await deleteResponse.text();
-  assert(deleteHtml.includes("工作项已删除"), "删除工作项后未显示删除状态");
+  assert(!document.querySelector("form[data-confirm-title='删除工作项']"), "工作项详情仍暴露删除入口");
+  assert(document.querySelector(".work-item-action-rail"), "工作项固定操作栏未渲染");
+  assert(getComputedStyle(document.querySelector(".work-item-action-rail")).position === "sticky", "桌面操作栏未固定");
+
+  const replyToggle = query("[data-discussion-reply-toggle]");
+  replyToggle.click();
+  const replyForm = query("#" + replyToggle.dataset.discussionReplyToggle);
+  assert(!replyForm.hidden, "回复编辑器未展开");
+  assert(replyForm.querySelector("input[name='parent_comment_id']")?.value, "回复未关联父级内容");
 
   return "browser smoke image preview passed";
 })()

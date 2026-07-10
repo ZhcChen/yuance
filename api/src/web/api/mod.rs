@@ -186,6 +186,8 @@ pub struct WorkItemDetailPayload {
 #[derive(Debug, Serialize)]
 pub struct CommentPayload {
     pub id: i64,
+    pub parent_comment_id: Option<i64>,
+    pub parent_author: String,
     pub body: String,
     pub author: String,
     pub created_at: String,
@@ -416,6 +418,8 @@ pub struct HandoffWorkItemRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateCommentRequest {
     body: String,
+    #[serde(default)]
+    parent_comment_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1351,7 +1355,14 @@ pub async fn create_work_item_comment(
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let comment = projects::add_work_item_comment(pool, user.id, &item_key, &payload.body).await?;
+    let comment = projects::add_work_item_comment_reply(
+        pool,
+        user.id,
+        &item_key,
+        &payload.body,
+        payload.parent_comment_id,
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -3026,6 +3037,8 @@ fn project_member_summary_payload(member: projects::ProjectMemberSummary) -> Pro
 fn comment_payload(comment: projects::WorkItemCommentSummary) -> CommentPayload {
     CommentPayload {
         id: comment.id,
+        parent_comment_id: comment.parent_comment_id,
+        parent_author: comment.parent_author_display_name,
         body: comment.body,
         author: comment.author_display_name,
         created_at: comment.created_at,

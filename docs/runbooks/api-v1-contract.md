@@ -206,7 +206,6 @@ GET    /api/v1/work-items
 POST   /api/v1/work-items
 GET    /api/v1/work-items/{item_key}
 PATCH  /api/v1/work-items/{item_key}
-DELETE /api/v1/work-items/{item_key}
 POST   /api/v1/work-items/{item_key}/restore
 POST   /api/v1/work-items/{item_key}/handoff
 ```
@@ -281,8 +280,8 @@ per_page=20
 状态流转：
 
 ```text
-open        -> in_progress / cancelled
-in_progress -> open / done / resolved / cancelled
+open        -> in_progress / closed
+in_progress -> open / done / resolved / closed
 done        -> in_progress / verified / closed
 resolved    -> in_progress / verified / closed
 verified    -> in_progress / closed
@@ -290,7 +289,7 @@ closed      -> in_progress
 cancelled   -> in_progress
 ```
 
-不允许跳过状态机直接流转，例如 `open -> closed` 会返回 `400 bad_request`。
+`open` 和 `in_progress` 可以直接关闭。`cancelled` 仅用于兼容历史数据，不再作为新流转选项。
 
 ## 评论
 
@@ -298,18 +297,20 @@ cancelled   -> in_progress
 GET    /api/v1/work-items/{item_key}/comments
 POST   /api/v1/work-items/{item_key}/comments
 PATCH  /api/v1/work-items/{item_key}/comments/{comment_id}
-DELETE /api/v1/work-items/{item_key}/comments/{comment_id}
 ```
 
 创建/更新请求：
 
 ```json
 {
-  "body": "评论内容"
+  "body": "评论内容",
+  "parent_comment_id": 123
 }
 ```
 
-写操作需要 `work_item.view` 和项目内容写入权限。评论修改/删除还会校验评论管理范围；流程记录不能修改或删除。
+`parent_comment_id` 可为空；传入时必须指向同一工作项内的普通评论，不能回复流程记录。响应会返回 `parent_comment_id` 与 `parent_author`。
+
+写操作需要 `work_item.view` 和项目内容写入权限。评论修改还会校验评论管理范围；流程记录不能修改。评论及其回复永久保留，不提供删除接口。
 
 ## 附件与直传
 
@@ -333,7 +334,7 @@ DELETE /api/v1/projects/{project_key}/attachments/{attachment_id}
 权限：
 
 - 列表和下载签名：需要 `project.view`，并处于项目成员范围内。
-- 登记、上传签名、上传完成和删除：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
+- 登记、上传签名和上传完成：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
 
 工作项附件：
 
@@ -343,13 +344,12 @@ POST   /api/v1/work-items/{item_key}/attachments
 GET    /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url
 POST   /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded
 GET    /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url
-DELETE /api/v1/work-items/{item_key}/attachments/{attachment_id}
 ```
 
 权限：
 
 - 列表和下载签名：需要 `work_item.view`，并处于项目成员范围内。
-- 登记、上传签名、上传完成和删除：需要 `work_item.view`，并且当前用户具备项目内容写入权限。
+- 登记、上传签名和上传完成：需要 `work_item.view`，并且当前用户具备项目内容写入权限。
 
 评论附件：
 
@@ -359,13 +359,13 @@ POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url
 POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url
-DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}
 ```
 
 权限：
 
 - 列表和下载签名：需要 `work_item.view`，并处于项目成员范围内。
-- 登记、上传签名、上传完成和删除：需要 `work_item.view`，并且当前用户具备项目内容写入权限；流程记录评论不能登记附件。
+- 登记、上传签名和上传完成：需要 `work_item.view`，并且当前用户具备项目内容写入权限；流程记录评论不能登记附件。
+- 工作项附件和评论附件随协作记录永久保留，不提供删除接口。
 
 附件登记请求：
 

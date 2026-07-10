@@ -113,10 +113,6 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::work_item_update),
         )
         .route(
-            "/web/work-items/{item_key}/delete",
-            post(web::user::work_item_delete),
-        )
-        .route(
             "/web/work-items/{item_key}/restore",
             post(web::user::work_item_restore),
         )
@@ -129,16 +125,8 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::work_item_comment_update),
         )
         .route(
-            "/web/work-items/{item_key}/comments/{comment_id}/delete",
-            post(web::user::work_item_comment_delete),
-        )
-        .route(
             "/web/work-items/{item_key}/comments/{comment_id}/attachments",
             post(web::user::work_item_comment_attachment_create),
-        )
-        .route(
-            "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/delete",
-            post(web::user::work_item_comment_attachment_delete),
         )
         .route(
             "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download",
@@ -147,10 +135,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/web/work-items/{item_key}/attachments",
             post(web::user::work_item_attachment_create),
-        )
-        .route(
-            "/web/work-items/{item_key}/attachments/{attachment_id}/delete",
-            post(web::user::work_item_attachment_delete),
         )
         .route(
             "/web/work-items/{item_key}/attachments/{attachment_id}/download",
@@ -346,9 +330,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/work-items/{item_key}",
-            get(web::api::get_work_item)
-                .patch(web::api::update_work_item)
-                .delete(web::api::delete_work_item),
+            get(web::api::get_work_item).patch(web::api::update_work_item),
         )
         .route(
             "/api/v1/work-items/{item_key}/restore",
@@ -364,8 +346,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}",
-            axum::routing::patch(web::api::update_work_item_comment)
-                .delete(web::api::delete_work_item_comment),
+            axum::routing::patch(web::api::update_work_item_comment),
         )
         .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
@@ -385,10 +366,6 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::work_item_comment_attachment_download_url),
         )
         .route(
-            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
-            delete(web::api::work_item_comment_attachment_delete),
-        )
-        .route(
             "/api/v1/work-items/{item_key}/attachments",
             get(web::api::list_work_item_attachments)
                 .post(web::api::create_work_item_attachment),
@@ -404,10 +381,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
             get(web::api::work_item_attachment_download_url),
-        )
-        .route(
-            "/api/v1/work-items/{item_key}/attachments/{attachment_id}",
-            delete(web::api::work_item_attachment_delete),
         )
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))

@@ -967,10 +967,10 @@ async fn work_item_detail_partial_renders_comments() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
 
-    assert!(body.contains("设计项目与工作项数据模型"));
+    assert!(body.contains("详情说明"));
     assert!(body.contains("先统一项目与工作项查询模型"));
-    assert!(body.contains("处理人"));
-    assert!(body.contains("紧急"));
+    assert!(body.contains("讨论与流转"));
+    assert!(body.contains(r#"data-discussion-form"#));
 }
 
 #[tokio::test]
@@ -998,13 +998,14 @@ async fn web_work_item_detail_page_renders_full_shell() {
 
     assert!(body.contains("元策工作台"));
     assert!(body.contains("YCE-TASK-2"));
-    assert!(body.contains("标记完成"));
+    assert!(body.contains("指派 / 流转"));
     assert!(body.contains(r#"data-modal-open="work-item-edit-modal""#));
     assert!(body.contains(r#"id="work-item-edit-modal""#));
-    assert!(body.contains(r#"id="work-item-comment-modal""#));
-    assert!(body.contains(r#"id="work-item-attachment-modal""#));
-    assert!(body.contains("编辑工作项"));
-    assert!(body.contains("新增评论"));
+    assert!(body.contains(r#"class="work-item-action-rail""#));
+    assert!(body.contains(r#"data-discussion-form"#));
+    assert!(!body.contains(r#"id="work-item-comment-modal""#));
+    assert!(!body.contains(r#"id="work-item-attachment-modal""#));
+    assert!(body.contains("编辑任务"));
     assert!(body.contains("先统一项目与工作项查询模型"));
 }
 
@@ -2286,7 +2287,7 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
         )
         .await
         .expect("router should respond");
-    assert_eq!(invalid_close_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(invalid_close_response.status(), StatusCode::OK);
 
     let open_page = app
         .clone()
@@ -2301,10 +2302,9 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
         .expect("router should respond");
     assert_eq!(open_page.status(), StatusCode::OK);
     let open_body = response_body(open_page).await;
-    assert!(open_body.contains("开始处理"));
-    assert!(open_body.contains("取消工作项"));
-    assert!(!open_body.contains(r#"name="status" value="done""#));
-    assert!(!open_body.contains(r#"name="status" value="closed""#));
+    assert!(open_body.contains("重新打开"));
+    assert!(!open_body.contains("取消工作项"));
+    assert!(open_body.contains(r#"name="status" value="in_progress""#));
 
     let start_response = app
         .clone()
@@ -2335,13 +2335,13 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
         .expect("router should respond");
     assert_eq!(progress_page.status(), StatusCode::OK);
     let progress_body = response_body(progress_page).await;
-    assert!(progress_body.contains("标记完成"));
-    assert!(progress_body.contains("标记解决"));
-    assert!(progress_body.contains("退回待处理"));
+    assert!(progress_body.contains("指派 / 流转"));
+    assert!(progress_body.contains("关闭任务"));
+    assert!(!progress_body.contains("取消工作项"));
 }
 
 #[tokio::test]
-async fn web_work_item_detail_can_edit_and_delete_comment() {
+async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -2412,7 +2412,7 @@ async fn web_work_item_detail_can_edit_and_delete_comment() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(member_delete_response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(member_delete_response.status(), StatusCode::NOT_FOUND);
 
     let member_detail_response = app
         .clone()
@@ -2489,8 +2489,8 @@ async fn web_work_item_detail_can_edit_and_delete_comment() {
         .expect("router should respond");
     let detail_body = response_body(detail_response).await;
     assert!(detail_body.contains("已编辑评论"));
-    assert!(detail_body.contains("编辑评论"));
-    assert!(detail_body.contains("删除"));
+    assert!(detail_body.contains("编辑发表内容"));
+    assert!(!detail_body.contains("删除评论"));
 
     let delete_response = app
         .oneshot(
@@ -2511,17 +2511,8 @@ async fn web_work_item_detail_can_edit_and_delete_comment() {
     let comments = projects::list_work_item_comments(&pool, item.id)
         .await
         .expect("comments should load");
-    let activities = projects::list_project_activities_by_key(&pool, "YCE", 10)
-        .await
-        .expect("activities should load");
-
-    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
-    assert!(comments.iter().all(|comment| comment.id != comment_id));
-    assert!(
-        activities
-            .iter()
-            .any(|activity| activity.summary == "删除工作项 YCE-TASK-2 评论")
-    );
+    assert_eq!(delete_response.status(), StatusCode::NOT_FOUND);
+    assert!(comments.iter().any(|comment| comment.id == comment_id));
 }
 
 #[tokio::test]
@@ -2741,24 +2732,10 @@ async fn web_work_item_detail_can_register_work_item_attachment() {
     assert!(body.contains("附件"));
     assert!(body.contains("screenshot.png"));
     assert!(body.contains("image/png"));
-    assert!(body.contains(r#"data-direct-upload"#));
-    assert!(
-        body.contains(r#"data-attachment-create-url="/api/v1/work-items/YCE-TASK-2/attachments""#)
-    );
-    assert!(body.contains(r#"data-attachment-upload-url-template="/api/v1/work-items/YCE-TASK-2/attachments/{id}/upload-url""#));
-    assert!(body.contains(r#"data-attachment-complete-url-template="/api/v1/work-items/YCE-TASK-2/attachments/{id}/uploaded""#));
-    assert!(body.contains(r#"data-attachment-file"#));
-    assert!(body.contains("文件不会经过应用服务器中转"));
-    assert!(body.contains("/api/v1/work-items/YCE-TASK-2/attachments/"));
-    assert!(body.contains("/upload-url"));
-    assert!(body.contains(r#"data-existing-attachment-id=""#));
-    assert!(body.contains(r#"class="inline-form attachment-resume-form""#));
-    assert!(body.contains("继续上传"));
-    assert!(body.contains("选择文件后继续上传"));
-    assert!(body.contains("上传完成后可下载"));
-    assert!(body.contains("/delete"));
-    assert!(body.contains(r#"data-confirm-title="删除工作项附件""#));
-    assert!(!body.contains(r#">上传签名</a>"#));
+    assert!(body.contains("已有附件"));
+    assert!(body.contains("待上传"));
+    assert!(body.contains(r#"data-discussion-form"#));
+    assert!(!body.contains(r#"data-confirm-title="删除工作项附件""#));
 }
 
 #[tokio::test]
@@ -2826,14 +2803,10 @@ async fn web_work_item_detail_can_register_comment_attachment() {
         .expect("router should respond");
     let body = response_body(detail_response).await;
 
-    assert!(body.contains("上传评论附件"));
+    assert!(body.contains("添加附件"));
     assert!(body.contains("comment-log.txt"));
-    assert!(
-        body.contains(r#"data-attachment-create-url="/api/v1/work-items/YCE-TASK-2/comments/"#)
-    );
-    assert!(body.contains("/comments/"));
-    assert!(body.contains("/attachments/{id}/upload-url"));
-    assert!(body.contains("/attachments/{id}/uploaded"));
+    assert!(body.contains(r#"data-discussion-files"#));
+    assert!(!body.contains("删除评论附件"));
 }
 
 #[tokio::test]
@@ -3211,9 +3184,11 @@ async fn api_v1_can_register_comment_attachment() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(delete_response.status(), StatusCode::OK);
-    let delete_body = response_body(delete_response).await;
-    assert!(delete_body.contains(r#""status":"deleted""#));
+    assert_eq!(delete_response.status(), StatusCode::NOT_FOUND);
+    let preserved = files::get_attachment(&pool, attachment_id)
+        .await
+        .expect("attachment should remain");
+    assert_eq!(preserved.status, "uploaded");
 }
 
 #[tokio::test]
@@ -4910,7 +4885,7 @@ async fn web_work_item_attachment_download_rejects_deleted_attachment() {
 }
 
 #[tokio::test]
-async fn api_v1_work_item_attachment_delete_respects_write_scope() {
+async fn api_v1_work_item_attachment_delete_route_is_unavailable() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -4967,7 +4942,7 @@ async fn api_v1_work_item_attachment_delete_respects_write_scope() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(viewer_delete_response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(viewer_delete_response.status(), StatusCode::NOT_FOUND);
 
     let admin_delete_response = app
         .oneshot(
@@ -4984,9 +4959,7 @@ async fn api_v1_work_item_attachment_delete_respects_write_scope() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(admin_delete_response.status(), StatusCode::OK);
-    let body = response_body(admin_delete_response).await;
-    assert!(body.contains("\"status\":\"deleted\""));
+    assert_eq!(admin_delete_response.status(), StatusCode::NOT_FOUND);
 
     let deleted = files::get_attachment(&pool, attachment.id)
         .await
@@ -4994,11 +4967,11 @@ async fn api_v1_work_item_attachment_delete_respects_write_scope() {
     let activities = projects::list_project_activities(&pool, project.id, 10)
         .await
         .expect("activities should load");
-    assert_eq!(deleted.status, "deleted");
+    assert_eq!(deleted.status, "pending");
     assert!(
         activities
             .iter()
-            .any(|activity| activity.summary == "删除工作项附件")
+            .all(|activity| activity.summary != "删除工作项附件")
     );
 }
 
@@ -5114,7 +5087,14 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
         create_user_with_role(&pool, "api_bug_owner_a", "负责人 A", "work_entry_only").await;
     let next_owner =
         create_user_with_role(&pool, "api_bug_owner_b", "负责人 B", "work_entry_only").await;
-    for username in ["api_bug_reporter", "api_bug_owner_a", "api_bug_owner_b"] {
+    let final_owner =
+        create_user_with_role(&pool, "api_bug_owner_c", "负责人 C", "work_entry_only").await;
+    for username in [
+        "api_bug_reporter",
+        "api_bug_owner_a",
+        "api_bug_owner_b",
+        "api_bug_owner_c",
+    ] {
         projects::add_project_member(&pool, initialized.user_id, "YCE", username, "member")
             .await
             .expect("member should join YCE");
@@ -5228,16 +5208,50 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
         .expect("router should respond");
     assert_eq!(edit_flow_response.status(), StatusCode::FORBIDDEN);
 
+    let repeated_handoff_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/work-items/{item_key}/handoff"))
+                .header(header::COOKIE, next_owner.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"status":"in_progress","assignee_username":"api_bug_owner_c","body":"保持处理中，继续转派"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(repeated_handoff_response.status(), StatusCode::OK);
+
+    let repeated_item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let repeated_comments = projects::list_work_item_comments(&pool, repeated_item.id)
+        .await
+        .expect("comments should load");
+    assert_eq!(repeated_item.status, "in_progress");
+    assert_eq!(repeated_item.assignee_username, "api_bug_owner_c");
+    assert!(repeated_comments.iter().any(|comment| {
+        comment.is_flow
+            && !comment.body.contains("状态：")
+            && comment.body.contains("处理人：负责人 B → 负责人 C")
+            && comment.body.contains("说明：保持处理中，继续转派")
+    }));
+
     let resolve_response = app
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/work-items/{item_key}/handoff"))
-                .header(header::COOKIE, next_owner.cookie)
+                .header(header::COOKIE, final_owner.cookie)
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"status":"resolved","assignee_username":"api_bug_owner_b","body":"已修复"}"#,
+                    r#"{"status":"resolved","assignee_username":"api_bug_owner_c","body":"已修复"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -5245,10 +5259,88 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
         .expect("router should respond");
     assert_eq!(resolve_response.status(), StatusCode::OK);
     let resolved_counts =
-        projects::count_pending_assigned_work_items(&pool, next_owner.user_id, false)
+        projects::count_pending_assigned_work_items(&pool, final_owner.user_id, false)
             .await
             .expect("resolved counts should load");
     assert_eq!(resolved_counts.bugs, 0);
+}
+
+#[tokio::test]
+async fn api_v1_work_item_comments_support_threaded_replies() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let replier = create_regular_user(&pool, "thread_replier", "回复成员").await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "thread_replier",
+        "member",
+    )
+    .await
+    .expect("replier should join project");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let parent_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"这是主题内容"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(parent_response.status(), StatusCode::CREATED);
+    let parent_payload: serde_json::Value =
+        serde_json::from_str(&response_body(parent_response).await).expect("json should parse");
+    let parent_id = parent_payload["data"]["id"]
+        .as_i64()
+        .expect("parent id should exist");
+
+    let reply_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, replier.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"body":"这是对主题的回复","parent_comment_id":{parent_id}}}"#
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reply_response.status(), StatusCode::CREATED);
+    let reply_body = response_body(reply_response).await;
+    assert!(reply_body.contains(&format!(r#""parent_comment_id":{parent_id}"#)));
+    assert!(reply_body.contains(r#""parent_author":"系统管理员""#));
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains("这是主题内容"));
+    assert!(detail_body.contains("这是对主题的回复"));
+    assert!(detail_body.contains("回复 系统管理员"));
+    assert!(detail_body.contains(r#"data-reply-depth="1""#));
 }
 
 #[tokio::test]
@@ -5317,7 +5409,7 @@ async fn api_v1_rejects_work_item_assignee_outside_project() {
 }
 
 #[tokio::test]
-async fn api_v1_work_item_comment_edit_delete_respects_write_scope() {
+async fn api_v1_work_item_comment_allows_edit_but_not_delete() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5455,7 +5547,10 @@ async fn api_v1_work_item_comment_edit_delete_respects_write_scope() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(member_delete_response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        member_delete_response.status(),
+        StatusCode::METHOD_NOT_ALLOWED
+    );
 
     let maintainer_response = app
         .clone()
@@ -5512,13 +5607,13 @@ async fn api_v1_work_item_comment_edit_delete_respects_write_scope() {
         )
         .await
         .expect("router should respond");
-    let delete_body = response_body(delete_response).await;
+    let delete_status = delete_response.status();
     let comments = projects::list_work_item_comments(&pool, item.id)
         .await
         .expect("comments should load");
 
-    assert!(delete_body.contains("\"body\":\"API 已编辑评论\""));
-    assert!(comments.iter().all(|comment| comment.id != comment_id));
+    assert_eq!(delete_status, StatusCode::METHOD_NOT_ALLOWED);
+    assert!(comments.iter().any(|comment| comment.id == comment_id));
 }
 
 #[tokio::test]
@@ -5579,7 +5674,7 @@ async fn work_item_soft_delete_hides_from_lists_and_can_restore() {
 }
 
 #[tokio::test]
-async fn web_work_item_detail_can_delete_and_restore_work_item() {
+async fn web_work_item_delete_route_is_unavailable_and_preserves_item() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5625,7 +5720,7 @@ async fn web_work_item_detail_can_delete_and_restore_work_item() {
         .await
         .expect("router should respond");
     let view_only_detail_body = response_body(view_only_detail_response).await;
-    assert!(view_only_detail_body.contains("推进并指派"));
+    assert!(view_only_detail_body.contains("指派 / 流转"));
     assert!(!view_only_detail_body.contains(r#"action="/web/work-items/YCE-TASK-2/delete""#));
 
     let forbidden_delete_response = app
@@ -5643,7 +5738,7 @@ async fn web_work_item_detail_can_delete_and_restore_work_item() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(forbidden_delete_response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(forbidden_delete_response.status(), StatusCode::NOT_FOUND);
     let still_active_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
         .await
         .expect("work item should load")
@@ -5666,105 +5761,16 @@ async fn web_work_item_detail_can_delete_and_restore_work_item() {
         .await
         .expect("router should respond");
 
-    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(delete_response.status(), StatusCode::NOT_FOUND);
     let deleted_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
         .await
         .expect("work item should load")
         .expect("work item should exist");
-    assert!(!deleted_item.deleted_at.is_empty());
-
-    let list_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/tasks")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let list_body = response_body(list_response).await;
-    assert!(!list_body.contains("YCE-TASK-2"));
-
-    let detail_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/work-items/YCE-TASK-2")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let detail_body = response_body(detail_response).await;
-    assert!(detail_body.contains("工作项已删除"));
-    assert!(detail_body.contains("恢复工作项"));
-    assert!(!detail_body.contains("data-modal-open=\"work-item-edit-modal\""));
-
-    let view_only_deleted_detail_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/work-items/YCE-TASK-2")
-                .header(header::COOKIE, view_only.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let view_only_deleted_detail_body = response_body(view_only_deleted_detail_response).await;
-    assert!(view_only_deleted_detail_body.contains("工作项已删除"));
-    assert!(!view_only_deleted_detail_body.contains("恢复工作项"));
-
-    let forbidden_restore_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/work-items/YCE-TASK-2/restore")
-                .header(header::COOKIE, view_only.cookie)
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                ))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(forbidden_restore_response.status(), StatusCode::FORBIDDEN);
-    let still_deleted_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
-        .await
-        .expect("work item should load")
-        .expect("work item should exist");
-    assert!(!still_deleted_item.deleted_at.is_empty());
-
-    let restore_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/work-items/YCE-TASK-2/restore")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                ))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let restored_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
-        .await
-        .expect("work item should load")
-        .expect("work item should exist");
-
-    assert_eq!(restore_response.status(), StatusCode::SEE_OTHER);
-    assert!(restored_item.deleted_at.is_empty());
+    assert!(deleted_item.deleted_at.is_empty());
 }
 
 #[tokio::test]
-async fn api_v1_work_item_delete_restore_respects_write_scope() {
+async fn api_v1_work_item_delete_route_is_unavailable_and_preserves_item() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5789,61 +5795,12 @@ async fn api_v1_work_item_delete_restore_respects_write_scope() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(viewer_response.status(), StatusCode::FORBIDDEN);
-
-    let delete_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("DELETE")
-                .uri("/api/v1/work-items/YCE-TASK-2")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let delete_body = response_body(delete_response).await;
-    assert!(delete_body.contains("\"key\":\"YCE-TASK-2\""));
-    assert!(delete_body.contains("\"deleted_at\":\""));
-
-    let update_deleted_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("PATCH")
-                .uri("/api/v1/work-items/YCE-TASK-2")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .header(header::CONTENT_TYPE, "application/json")
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from(r#"{"title":"删除后不允许编辑"}"#))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(update_deleted_response.status(), StatusCode::NOT_FOUND);
-
-    let restore_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/work-items/YCE-TASK-2/restore")
-                .header(header::COOKIE, initialized.cookie)
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    let restore_body = response_body(restore_response).await;
-    let restored_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+    assert_eq!(viewer_response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    let preserved_item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
         .await
         .expect("work item should load")
         .expect("work item should exist");
-
-    assert!(restore_body.contains("\"deleted_at\":\"\""));
-    assert!(restored_item.deleted_at.is_empty());
+    assert!(preserved_item.deleted_at.is_empty());
 }
 
 #[tokio::test]
@@ -6233,7 +6190,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         .expect("router should respond");
     assert_eq!(
         archived_work_item_attachment_delete_response.status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::NOT_FOUND
     );
 
     let archived_comment_attachment_create_response = app
@@ -6317,7 +6274,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         .expect("router should respond");
     assert_eq!(
         archived_comment_attachment_delete_response.status(),
-        StatusCode::BAD_REQUEST
+        StatusCode::NOT_FOUND
     );
 
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
