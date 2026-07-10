@@ -7,7 +7,7 @@ use crate::{
 };
 
 pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 100 * 1024 * 1024;
-const ALLOWED_CONTENT_TYPE_PREFIXES: &[&str] = &["image/", "text/"];
+const ALLOWED_CONTENT_TYPE_PREFIXES: &[&str] = &["image/", "text/", "video/"];
 const ALLOWED_CONTENT_TYPES: &[&str] = &[
     "application/json",
     "application/msword",

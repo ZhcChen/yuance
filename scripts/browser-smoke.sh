@@ -347,6 +347,22 @@ cat >"$EVAL_FILE" <<JS
   assert(frame.contentWindow.location.pathname === "/web/projects/" + projectKey, "项目创建后未跳转详情");
   assert(hasText("浏览器冒烟项目"), "项目详情未显示新项目");
 
+  const projectTabs = query("[data-tabs]");
+  const projectTabList = query(".project-tab-list");
+  const initialIndicatorX = projectTabList.style.getPropertyValue("--tab-indicator-x");
+  assert(query("[data-tab-indicator]"), "项目 Tabs 未渲染活动滑块");
+  click("[data-tab-key='info']");
+  await waitFor(() => query("[data-tab-key='info']").classList.contains("active"), "项目详情 Tab 未激活");
+  assert(
+    projectTabList.style.getPropertyValue("--tab-indicator-x") !== initialIndicatorX,
+    "项目 Tabs 活动滑块未移动",
+  );
+  assert(
+    getComputedStyle(query("[data-tab-indicator]")).transitionDuration.includes("0.22s"),
+    "项目 Tabs 活动滑块未应用过渡动画",
+  );
+  assert(projectTabs.querySelector("[data-tab-panel].active")?.id === "project-tab-info", "项目 Tab 面板未同步");
+
   await open("/web/projects/" + projectKey + "?tab=members");
   click("[data-modal-open='project-member-add-modal']");
   await waitFor(() => visible("#project-member-add-modal"), "项目成员添加 modal 未打开");
@@ -382,11 +398,34 @@ cat >"$EVAL_FILE" <<JS
   await submitAndWait("[data-project-option][data-project-key='" + projectKey + "']");
   assert(hasText("浏览器冒烟项目"), "当前项目切换未生效");
 
+  frame.contentWindow.localStorage.setItem(
+    "yuance-search-history",
+    JSON.stringify(["登录失败", "附件上传", "项目进度", "任务指派", "移动端", "应被截断"]),
+  );
+  const globalSearch = query("[data-topbar-search-input]");
+  globalSearch.dispatchEvent(new FocusEvent("focus"));
+  await waitFor(() => visible("[data-search-history]"), "最近搜索面板未打开");
+  assert(query("[data-search-history-list]").querySelectorAll("button").length === 5, "最近搜索未限制为 5 条");
+  globalSearch.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
   await open("/web/tasks");
   click("[data-modal-open='work-item-create-modal']");
   assert(hasText("新建任务"), "任务创建 modal 未打开");
+  const assigneeControl = query("#work-item-create-modal select[name='assignee_username']").nextElementSibling;
+  assert(assigneeControl?.matches(".select-control"), "任务处理人未增强为共享选择器");
+  assigneeControl.querySelector(".select-control-trigger").click();
+  assert(assigneeControl.selectPanel && !assigneeControl.selectPanel.hidden, "可搜索处理人下拉未打开");
+  assert(assigneeControl.selectPanel.querySelector(".select-control-search"), "处理人下拉缺少搜索输入");
+  frame.contentWindow.document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   fill("#work-item-create-modal input[name='title']", "浏览器冒烟任务");
   fill("#work-item-create-modal textarea[name='description']", "覆盖 modal、直接上传和确认弹窗。");
+  const composerInput = query("#work-item-create-modal [data-bug-report-image]");
+  const composerFiles = new DataTransfer();
+  composerFiles.items.add(new File(["alpha"], "smoke-note-a.txt", { type: "text/plain" }));
+  composerFiles.items.add(new File(["beta"], "smoke-note-b.txt", { type: "text/plain" }));
+  composerInput.files = composerFiles.files;
+  composerInput.dispatchEvent(new Event("change", { bubbles: true }));
+  assert(query("#work-item-create-modal [data-composer-file-list]").children.length === 2, "任务创建器未渲染两个附件");
   await submitAndWait("#work-item-create-modal button[type='submit'].btn-primary");
   const taskKey = projectKey + "-TASK-1";
   assert(frame.contentWindow.location.pathname === "/web/work-items/" + taskKey, "任务创建后未跳转详情");

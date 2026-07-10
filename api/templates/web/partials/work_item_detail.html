@@ -5,7 +5,7 @@
       <p>{{ item.kind }} {{ item.key }} · {{ item.title }} · {{ item.project_key }} / {{ item.project_name }}</p>
     </div>
     <div class="work-meta">
-      <span class="priority">{{ item.priority }}</span>
+      <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
       <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
     </div>
   </div>
@@ -76,12 +76,20 @@
           <article class="comment-attachment">
             <div>
               {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
-              <button class="attachment-image-preview" type="button" data-image-preview data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-images-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
+              <button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
                 <span class="attachment-image-frame" data-image-preview-frame>
                   <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
                   <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
                 </span>
                 <span class="attachment-image-caption">预览图片</span>
+              </button>
+              {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
+              <button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览视频 {{ attachment.filename }}">
+                <span class="attachment-image-frame">
+                  <video src="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
+                  <span class="attachment-video-play" aria-hidden="true">▶</span>
+                </span>
+                <span class="attachment-image-caption">预览视频</span>
               </button>
               {% endif %}
               <strong>{{ attachment.filename }}</strong>

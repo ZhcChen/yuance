@@ -113,6 +113,14 @@
           <label class="sr-only" for="topbar-search-input">全局搜索</label>
           <input id="topbar-search-input" name="q" type="search" placeholder="搜索项目、需求、任务、Bug" autocomplete="off" data-topbar-search-input>
           <button type="submit">搜索</button>
+          <div class="topbar-search-history" data-search-history hidden>
+            <div class="topbar-search-history-head">
+              <strong>最近搜索</strong>
+              <button type="button" data-search-history-clear>清空</button>
+            </div>
+            <div class="topbar-search-history-list" data-search-history-list></div>
+            <div class="topbar-search-history-empty" data-search-history-empty>暂无最近搜索</div>
+          </div>
         </form>
         <div class="account-dropdown" data-dropdown-root aria-label="当前用户">
           <button class="account-trigger" type="button" data-dropdown-trigger aria-expanded="false" aria-label="{{ current_user }}，打开用户菜单" title="{{ current_user }}">
@@ -163,19 +171,20 @@
   <aside id="image-preview-modal" class="modal image-viewer-modal" data-modal data-image-viewer hidden aria-hidden="true">
     <div class="modal-backdrop image-viewer-backdrop" data-modal-close></div>
     <section class="image-viewer-shell" role="dialog" aria-modal="true" aria-labelledby="image-preview-title" tabindex="-1">
-      <h2 id="image-preview-title" class="sr-only" data-image-viewer-title>图片预览</h2>
+      <h2 id="image-preview-title" class="sr-only" data-image-viewer-title>媒体预览</h2>
       <p class="sr-only" data-image-viewer-status aria-live="polite">适屏查看</p>
       <div class="image-viewer-stage">
         <img data-image-viewer-image alt="">
+        <video data-image-viewer-video controls playsinline hidden></video>
       </div>
-      <div class="image-viewer-toolbar" role="toolbar" aria-label="图片查看控制">
-        <button class="image-viewer-control" type="button" data-image-viewer-action="previous" aria-label="查看上一张图片" title="上一张" hidden>‹</button>
-        <button class="image-viewer-control" type="button" data-image-viewer-action="zoom-out" aria-label="缩小图片" title="缩小">−</button>
-        <button class="image-viewer-control" type="button" data-image-viewer-action="zoom-in" aria-label="放大图片" title="放大">+</button>
-        <button class="image-viewer-control" type="button" data-image-viewer-action="rotate" aria-label="顺时针旋转图片" title="顺时针旋转">↻</button>
-        <button class="image-viewer-control" type="button" data-image-viewer-action="reset" aria-label="重置图片显示" title="重置">⌂</button>
-        <button class="image-viewer-control" type="button" data-image-viewer-action="next" aria-label="查看下一张图片" title="下一张" hidden>›</button>
-        <button class="image-viewer-control image-viewer-close" type="button" data-modal-close aria-label="关闭图片预览" title="关闭">×</button>
+      <div class="image-viewer-toolbar" role="toolbar" aria-label="媒体查看控制">
+        <button class="image-viewer-control" type="button" data-image-viewer-action="previous" aria-label="查看上一个媒体" title="上一个" hidden>‹</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="zoom-out" data-image-viewer-image-action aria-label="缩小图片" title="缩小">−</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="zoom-in" data-image-viewer-image-action aria-label="放大图片" title="放大">+</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="rotate" data-image-viewer-image-action aria-label="顺时针旋转图片" title="顺时针旋转">↻</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="reset" data-image-viewer-image-action aria-label="重置图片显示" title="重置">⌂</button>
+        <button class="image-viewer-control" type="button" data-image-viewer-action="next" aria-label="查看下一个媒体" title="下一个" hidden>›</button>
+        <button class="image-viewer-control image-viewer-close" type="button" data-modal-close aria-label="关闭媒体预览" title="关闭">×</button>
       </div>
     </section>
   </aside>

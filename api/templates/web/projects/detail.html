@@ -57,6 +57,7 @@
         <h2>项目工作区</h2>
       </div>
       <div class="project-tab-list" role="tablist" aria-label="项目详情导航">
+        <span class="project-tab-indicator" aria-hidden="true" data-tab-indicator></span>
         <button class="project-tab {% if active_tab == "work" %}active{% endif %}" id="project-tab-work-trigger" type="button" role="tab" aria-selected="{% if active_tab == "work" %}true{% else %}false{% endif %}" aria-controls="project-tab-work" data-tab-trigger data-tab-target="project-tab-work" data-tab-key="work">
           工作项
           <span>{{ summary.open_items }}</span>
@@ -96,13 +97,13 @@
               {% for item in requirements %}
               <article class="work-item">
                 <div>
-                  <span class="work-kind">{{ item.kind }}</span>
+                  <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
                   <code>{{ item.key }}</code>
                   <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
                   <p>{{ item.project }} · {{ item.assignee }}</p>
                 </div>
                 <div class="work-meta">
-                  <span class="priority">{{ item.priority }}</span>
+                  <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
                   <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
                 </div>
               </article>
@@ -129,13 +130,13 @@
               {% for item in tasks %}
               <article class="work-item">
                 <div>
-                  <span class="work-kind">{{ item.kind }}</span>
+                  <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
                   <code>{{ item.key }}</code>
                   <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
                   <p>{{ item.project }} · {{ item.assignee }}</p>
                 </div>
                 <div class="work-meta">
-                  <span class="priority">{{ item.priority }}</span>
+                  <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
                   <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
                 </div>
               </article>
@@ -162,13 +163,13 @@
               {% for item in bugs %}
               <article class="work-item">
                 <div>
-                  <span class="work-kind">{{ item.kind }}</span>
+                  <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
                   <code>{{ item.key }}</code>
                   <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
                   <p>{{ item.project }} · {{ item.assignee }}</p>
                 </div>
                 <div class="work-meta">
-                  <span class="priority">{{ item.priority }}</span>
+                  <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
                   <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
                 </div>
               </article>
@@ -293,12 +294,20 @@
             <article class="attachment-row">
               <div>
                 {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
-                <button class="attachment-image-preview" type="button" data-image-preview data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-images-{{ project.code }}" aria-label="预览图片 {{ attachment.filename }}">
+                <button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览图片 {{ attachment.filename }}">
                   <span class="attachment-image-frame" data-image-preview-frame>
                     <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
                     <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
                   </span>
                   <span class="attachment-image-caption">预览图片</span>
+                </button>
+                {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
+                <button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览视频 {{ attachment.filename }}">
+                  <span class="attachment-image-frame">
+                    <video src="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
+                    <span class="attachment-video-play" aria-hidden="true">▶</span>
+                  </span>
+                  <span class="attachment-image-caption">预览视频</span>
                 </button>
                 {% endif %}
                 <strong>{{ attachment.filename }}</strong>
@@ -408,7 +417,7 @@
         </label>
         <label>
           项目负责人
-          <select name="owner_username">
+          <select name="owner_username" data-select-searchable data-select-search-placeholder="搜索项目负责人">
             {% for member in members %}
             <option value="{{ member.username }}" {% if member.username == project.owner_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
             {% endfor %}
@@ -447,14 +456,14 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items">
+    <form class="modal-body modal-form" method="post" action="/web/work-items" data-bug-report-form data-bug-report-create-url="/api/v1/work-items" data-work-item-label="工作项">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="project_key" value="{{ project.code }}">
+      <input type="hidden" name="project_key" value="{{ project.code }}" data-bug-report-item-field>
       <input type="hidden" name="redirect_to" value="project">
       <div class="field-grid">
         <label>
           类型
-          <select name="item_type">
+          <select name="item_type" data-bug-report-item-field>
             {% for option in project_item_type_options %}
             <option value="{{ option.value }}">{{ option.label }}</option>
             {% endfor %}
@@ -462,7 +471,7 @@
         </label>
         <label>
           优先级
-          <select name="priority">
+          <select name="priority" data-bug-report-item-field>
             <option value="P0">紧急</option>
             <option value="P1">高</option>
             <option value="P2" selected>中</option>
@@ -471,11 +480,11 @@
         </label>
         <label>
           截止日期
-          <input name="due_date" type="date">
+          <input name="due_date" type="date" data-bug-report-item-field>
         </label>
         <label>
           处理人
-          <select name="assignee_username">
+          <select name="assignee_username" data-bug-report-item-field data-select-searchable data-select-search-placeholder="搜索处理人">
             <option value="">默认指派给我</option>
             {% for member in members %}
             <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
@@ -484,7 +493,7 @@
         </label>
         <label>
           父级需求
-          <select name="parent_item_key">
+          <select name="parent_item_key" data-bug-report-item-field data-select-searchable data-select-search-placeholder="搜索父需求">
             <option value="">不关联</option>
             {% for item in requirements %}
             <option value="{{ item.key }}">{{ item.key }} · {{ item.title }}</option>
@@ -493,12 +502,40 @@
         </label>
         <label class="wide-field">
           标题
-          <input name="title" placeholder="输入需求、任务或 Bug 标题" required autofocus>
+          <input name="title" placeholder="输入需求、任务或 Bug 标题" required autofocus data-bug-report-item-field>
         </label>
         <label class="wide-field">
           描述
-          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明"></textarea>
+          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明" data-bug-report-item-field></textarea>
         </label>
+        <div class="bug-report-builder wide-field" data-bug-report-builder>
+          <div class="bug-report-builder-head">
+            <div>
+              <strong>图文说明与附件</strong>
+              <span>每组说明会保存为一条评论，可附加多个图片、视频或文档。</span>
+            </div>
+            <button class="btn btn-sm btn-secondary" type="button" data-bug-report-add>新增一组</button>
+          </div>
+          <div class="bug-report-groups" data-bug-report-groups>
+            <article class="bug-report-group" data-bug-report-group>
+              <div class="bug-report-group-head">
+                <strong data-bug-report-group-title>第 1 组</strong>
+                <button class="btn btn-sm btn-secondary" type="button" data-bug-report-remove>移除</button>
+              </div>
+              <label class="upload-picker bug-report-image-picker">
+                <span>添加附件</span>
+                <input type="file" multiple data-bug-report-image>
+                <em data-bug-report-image-name>可一次选择多个文件，单个文件不超过 100 MB。</em>
+              </label>
+              <div class="composer-file-list" data-composer-file-list hidden></div>
+              <label>
+                说明内容
+                <textarea rows="3" placeholder="补充现象、步骤、验收说明或附件用途" data-bug-report-body></textarea>
+              </label>
+            </article>
+          </div>
+          <div class="upload-status" role="status" aria-live="polite" data-bug-report-status>可添加多组图文说明；空白分组会自动跳过。</div>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>

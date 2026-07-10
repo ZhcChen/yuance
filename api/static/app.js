@@ -5,8 +5,11 @@
   var TOAST_DURATION_MS = 4200;
   var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
+  var SEARCH_HISTORY_KEY = "yuance-search-history";
   var pendingConfirmForm = null;
+  var activeSelectControl = null;
   var imagePreviewObserver = null;
+  var imagePreviewFallbackTimer = null;
   var imageViewerState = {
     entries: [],
     index: 0,
@@ -232,12 +235,114 @@
     });
   }
 
-  function initTopbarSearch(root) {
-    var input = (root || document).querySelector("[data-topbar-search-input]");
-    if (!input || window.location.pathname !== "/web/search") {
+  function readSearchHistory() {
+    try {
+      var value = JSON.parse(window.localStorage.getItem(SEARCH_HISTORY_KEY) || "[]");
+      return Array.isArray(value) ? value.filter(function (item) { return typeof item === "string" && item.trim(); }).slice(0, 5) : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function writeSearchHistory(items) {
+    try {
+      window.localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(items.slice(0, 5)));
+    } catch (_error) {
+      // Search continues to work when localStorage is unavailable.
+    }
+  }
+
+  function closeSearchHistory(form) {
+    var panel = form && form.querySelector("[data-search-history]");
+    if (!panel || panel.hidden) {
       return;
     }
-    input.value = new URLSearchParams(window.location.search).get("q") || "";
+    panel.classList.remove("open");
+    window.setTimeout(function () {
+      if (!panel.classList.contains("open")) {
+        panel.hidden = true;
+      }
+    }, prefersReducedMotion() ? 0 : 150);
+  }
+
+  function openSearchHistory(form) {
+    var panel = form && form.querySelector("[data-search-history]");
+    if (!panel) {
+      return;
+    }
+    panel.hidden = false;
+    window.requestAnimationFrame(function () {
+      panel.classList.add("open");
+    });
+  }
+
+  function renderSearchHistory(form) {
+    var list = form.querySelector("[data-search-history-list]");
+    var empty = form.querySelector("[data-search-history-empty]");
+    var clear = form.querySelector("[data-search-history-clear]");
+    var input = form.querySelector("[data-topbar-search-input]");
+    var items = readSearchHistory();
+    if (!list || !empty || !input) {
+      return;
+    }
+    list.replaceChildren();
+    items.forEach(function (query) {
+      var button = document.createElement("button");
+      button.className = "topbar-search-history-item";
+      button.type = "button";
+      button.textContent = query;
+      button.addEventListener("click", function () {
+        input.value = query;
+        form.requestSubmit();
+      });
+      list.appendChild(button);
+    });
+    list.hidden = items.length === 0;
+    empty.hidden = items.length > 0;
+    if (clear) {
+      clear.hidden = items.length === 0;
+    }
+  }
+
+  function initTopbarSearch(root) {
+    var input = (root || document).querySelector("[data-topbar-search-input]");
+    if (!input) {
+      return;
+    }
+    if (window.location.pathname === "/web/search") {
+      input.value = new URLSearchParams(window.location.search).get("q") || "";
+    }
+    var form = input.closest("form");
+    if (!form || form.dataset.searchHistoryInitialized === "true") {
+      return;
+    }
+    form.dataset.searchHistoryInitialized = "true";
+    renderSearchHistory(form);
+    input.addEventListener("focus", function () {
+      renderSearchHistory(form);
+      openSearchHistory(form);
+    });
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") {
+        closeSearchHistory(form);
+        input.blur();
+      }
+    });
+    form.addEventListener("submit", function () {
+      var query = input.value.trim();
+      if (!query) {
+        return;
+      }
+      writeSearchHistory([query].concat(readSearchHistory().filter(function (item) { return item !== query; })));
+    });
+    var clear = form.querySelector("[data-search-history-clear]");
+    if (clear) {
+      clear.addEventListener("click", function () {
+        writeSearchHistory([]);
+        renderSearchHistory(form);
+        input.focus({ preventScroll: true });
+      });
+    }
   }
 
   var USERNAME_INPUT_SELECTOR = [
@@ -477,6 +582,293 @@
     });
   }
 
+  function selectControlLabel(select) {
+    var label = select.labels && select.labels[0];
+    if (!label) {
+      return select.getAttribute("aria-label") || select.name || "选择选项";
+    }
+    var textNode = Array.from(label.childNodes).find(function (node) {
+      return node.nodeType === Node.TEXT_NODE && node.textContent.trim();
+    });
+    return textNode ? textNode.textContent.trim() : select.getAttribute("aria-label") || "选择选项";
+  }
+
+  function selectedOption(select) {
+    return select.options[select.selectedIndex] || select.options[0] || null;
+  }
+
+  function syncSelectControl(control) {
+    var select = control && control.selectElement;
+    var trigger = control && control.querySelector("[data-select-control-trigger]");
+    var value = trigger && trigger.querySelector("[data-select-control-value]");
+    var option = select && selectedOption(select);
+    if (!select || !trigger || !value) {
+      return;
+    }
+    value.textContent = option ? option.textContent.trim() : "请选择";
+    trigger.disabled = select.disabled;
+    trigger.setAttribute("aria-disabled", select.disabled ? "true" : "false");
+    control.selectPanel.querySelectorAll("[data-select-option]").forEach(function (button) {
+      var selected = button.dataset.value === select.value;
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+  }
+
+  function positionSelectPanel(control) {
+    var panel = control && control.selectPanel;
+    var trigger = control && control.querySelector("[data-select-control-trigger]");
+    if (!panel || !trigger || panel.hidden) {
+      return;
+    }
+    var rect = trigger.getBoundingClientRect();
+    var gutter = 8;
+    var searchable = control.selectElement.dataset.selectSearchable !== undefined;
+    var width = Math.min(searchable ? Math.max(rect.width, 320) : rect.width, window.innerWidth - 24);
+    var left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    panel.style.width = width + "px";
+    panel.style.left = left + "px";
+    panel.style.maxHeight = Math.min(320, Math.floor(window.innerHeight * 0.48)) + "px";
+    var panelHeight = Math.min(panel.scrollHeight || 240, Math.min(320, window.innerHeight * 0.48));
+    var spaceBelow = window.innerHeight - rect.bottom - gutter - 12;
+    var openAbove = spaceBelow < panelHeight && rect.top > spaceBelow;
+    panel.style.top = (openAbove ? Math.max(12, rect.top - panelHeight - gutter) : rect.bottom + gutter) + "px";
+    panel.style.transformOrigin = openAbove ? "bottom center" : "top center";
+  }
+
+  function filterSelectOptions(control, keyword) {
+    var query = (keyword || "").trim().toLocaleLowerCase("zh-CN");
+    var visible = 0;
+    control.selectPanel.querySelectorAll("[data-select-option]").forEach(function (option) {
+      var matches = !query || (option.textContent || "").toLocaleLowerCase("zh-CN").includes(query);
+      option.hidden = !matches;
+      if (matches) {
+        visible += 1;
+      }
+    });
+    var empty = control.selectPanel && control.selectPanel.querySelector("[data-select-empty]");
+    if (empty) {
+      empty.hidden = visible > 0;
+    }
+  }
+
+  function closeSelectControl(control, restoreFocus) {
+    if (!control || control !== activeSelectControl) {
+      return;
+    }
+    var panel = control.selectPanel;
+    var trigger = control.querySelector("[data-select-control-trigger]");
+    control.classList.remove("open");
+    trigger.setAttribute("aria-expanded", "false");
+    if (panel) {
+      panel.classList.remove("open");
+      window.setTimeout(function () {
+        if (!panel.classList.contains("open")) {
+          panel.hidden = true;
+        }
+      }, prefersReducedMotion() ? 0 : 150);
+    }
+    activeSelectControl = null;
+    if (restoreFocus) {
+      trigger.focus({ preventScroll: true });
+    }
+  }
+
+  function focusSelectOption(control, direction) {
+    var options = Array.from(control.selectPanel.querySelectorAll("[data-select-option]:not([hidden])"));
+    if (options.length === 0) {
+      return;
+    }
+    var focused = control.selectPanel.querySelector("[data-select-option].focused");
+    var index = options.indexOf(focused);
+    if (direction === "first") {
+      index = 0;
+    } else if (direction === "last") {
+      index = options.length - 1;
+    } else {
+      index = (index + direction + options.length) % options.length;
+    }
+    options.forEach(function (option) { option.classList.remove("focused"); });
+    options[index].classList.add("focused");
+    options[index].focus({ preventScroll: true });
+    options[index].scrollIntoView({ block: "nearest" });
+  }
+
+  function openSelectControl(control) {
+    if (!control || control.selectElement.disabled) {
+      return;
+    }
+    if (activeSelectControl && activeSelectControl !== control) {
+      closeSelectControl(activeSelectControl, false);
+    }
+    var panel = control.selectPanel;
+    var trigger = control.querySelector("[data-select-control-trigger]");
+    panel.hidden = false;
+    activeSelectControl = control;
+    control.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+    filterSelectOptions(control, "");
+    positionSelectPanel(control);
+    window.requestAnimationFrame(function () {
+      panel.classList.add("open");
+      var search = panel.querySelector("[data-select-search]");
+      var current = panel.querySelector("[data-select-option].selected");
+      if (search) {
+        search.value = "";
+        search.focus({ preventScroll: true });
+      } else if (current) {
+        current.classList.add("focused");
+        current.focus({ preventScroll: true });
+      }
+    });
+  }
+
+  function chooseSelectOption(control, button) {
+    var select = control.selectElement;
+    if (!select || !button) {
+      return;
+    }
+    select.value = button.dataset.value || "";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    syncSelectControl(control);
+    closeSelectControl(control, true);
+  }
+
+  function buildSelectControl(select) {
+    if (select.dataset.selectEnhanced === "true" || select.multiple || select.size > 1) {
+      return;
+    }
+    select.dataset.selectEnhanced = "true";
+    select.classList.add("select-native");
+    select.setAttribute("aria-hidden", "true");
+    select.tabIndex = -1;
+    var control = document.createElement("div");
+    control.className = "select-control";
+    control.selectElement = select;
+
+    var trigger = document.createElement("button");
+    trigger.className = "select-control-trigger";
+    trigger.type = "button";
+    trigger.dataset.selectControlTrigger = "";
+    trigger.setAttribute("role", "combobox");
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.setAttribute("aria-label", selectControlLabel(select));
+    var value = document.createElement("span");
+    value.className = "select-control-value";
+    value.dataset.selectControlValue = "";
+    var caret = document.createElement("span");
+    caret.className = "select-control-caret";
+    caret.setAttribute("aria-hidden", "true");
+    trigger.append(value, caret);
+    control.appendChild(trigger);
+    select.insertAdjacentElement("afterend", control);
+
+    var panel = document.createElement("div");
+    panel.className = "select-control-panel";
+    panel.hidden = true;
+    panel.setAttribute("role", "listbox");
+    if (select.dataset.selectSearchable !== undefined) {
+      var search = document.createElement("input");
+      search.className = "select-control-search";
+      search.type = "search";
+      search.placeholder = select.dataset.selectSearchPlaceholder || "搜索选项";
+      search.autocomplete = "off";
+      search.dataset.selectSearch = "";
+      panel.appendChild(search);
+      search.addEventListener("input", function () { filterSelectOptions(control, search.value); });
+      search.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          focusSelectOption(control, "first");
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeSelectControl(control, true);
+        }
+      });
+    }
+    var options = document.createElement("div");
+    options.className = "select-control-options";
+    select.querySelectorAll("option").forEach(function (option) {
+      var button = document.createElement("button");
+      button.className = "select-control-option";
+      button.type = "button";
+      button.dataset.selectOption = "";
+      button.dataset.value = option.value;
+      button.textContent = option.textContent.trim();
+      button.disabled = option.disabled;
+      button.setAttribute("role", "option");
+      button.addEventListener("click", function () { chooseSelectOption(control, button); });
+      button.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          focusSelectOption(control, event.key === "ArrowDown" ? 1 : -1);
+        } else if (event.key === "Home" || event.key === "End") {
+          event.preventDefault();
+          focusSelectOption(control, event.key === "Home" ? "first" : "last");
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          chooseSelectOption(control, button);
+        } else if (event.key === "Escape") {
+          event.preventDefault();
+          closeSelectControl(control, true);
+        }
+      });
+      options.appendChild(button);
+    });
+    var empty = document.createElement("div");
+    empty.className = "select-control-empty";
+    empty.dataset.selectEmpty = "";
+    empty.textContent = "没有匹配选项";
+    empty.hidden = true;
+    panel.append(options, empty);
+    document.body.appendChild(panel);
+    control.selectPanel = panel;
+
+    trigger.addEventListener("click", function () {
+      if (activeSelectControl === control) {
+        closeSelectControl(control, false);
+      } else {
+        openSelectControl(control);
+      }
+    });
+    trigger.addEventListener("keydown", function (event) {
+      if (["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) {
+        event.preventDefault();
+        openSelectControl(control);
+      }
+    });
+    select.addEventListener("change", function () { syncSelectControl(control); });
+    select.addEventListener("invalid", function (event) {
+      event.preventDefault();
+      trigger.focus({ preventScroll: true });
+      openSelectControl(control);
+    });
+    select.form?.addEventListener("reset", function () {
+      window.setTimeout(function () { syncSelectControl(control); }, 0);
+    });
+    new MutationObserver(function () { syncSelectControl(control); }).observe(select, { attributes: true, attributeFilter: ["disabled"] });
+    syncSelectControl(control);
+  }
+
+  function initSelectControls(root) {
+    var scope = root || document;
+    if (scope.matches && scope.matches("select")) {
+      buildSelectControl(scope);
+    }
+    scope.querySelectorAll?.("select").forEach(buildSelectControl);
+  }
+
+  function syncTabIndicator(root) {
+    var list = root && root.querySelector(".project-tab-list");
+    var active = list && list.querySelector("[data-tab-trigger].active");
+    if (!list || !active) {
+      return;
+    }
+    list.style.setProperty("--tab-indicator-width", active.offsetWidth + "px");
+    list.style.setProperty("--tab-indicator-x", Math.max(0, active.offsetLeft - 5) + "px");
+  }
+
   function activateTab(trigger) {
     var root = trigger.closest("[data-tabs]");
     if (!root) {
@@ -497,6 +889,7 @@
       panel.classList.toggle("active", active);
       panel.hidden = !active;
     });
+    syncTabIndicator(root);
   }
 
   function syncTabUrl(trigger) {
@@ -532,6 +925,12 @@
       "image/png",
       "image/webp",
     ].indexOf((contentType || "").trim().toLowerCase()) >= 0;
+  }
+
+  function isPreviewableVideoType(contentType) {
+    return ["video/mp4", "video/ogg", "video/quicktime", "video/webm"].indexOf(
+      (contentType || "").trim().toLowerCase()
+    ) >= 0;
   }
 
   function formatFileSize(byteSize) {
@@ -614,11 +1013,18 @@
     image.hidden = true;
     image.dataset.filePreviewImage = "";
 
+    var video = document.createElement("video");
+    video.hidden = true;
+    video.muted = true;
+    video.preload = "metadata";
+    video.playsInline = true;
+    video.dataset.filePreviewVideo = "";
+
     var icon = document.createElement("span");
     icon.className = "upload-file-preview-icon";
     icon.dataset.filePreviewIcon = "";
     icon.textContent = "FILE";
-    media.append(image, icon);
+    media.append(image, video, icon);
 
     var details = document.createElement("div");
     details.className = "upload-file-preview-details";
@@ -650,10 +1056,12 @@
 
     var media = preview.querySelector("[data-local-image-preview]");
     var image = preview.querySelector("[data-file-preview-image]");
+    var video = preview.querySelector("[data-file-preview-video]");
     var icon = preview.querySelector("[data-file-preview-icon]");
     var name = preview.querySelector("[data-file-preview-name]");
     var meta = preview.querySelector("[data-file-preview-meta]");
     var isImage = isPreviewableImageType(file.type);
+    var isVideo = isPreviewableVideoType(file.type);
 
     preview.hidden = false;
     if (name) {
@@ -662,28 +1070,42 @@
     if (meta) {
       meta.textContent = (file.type || "未知类型") + " · " + formatFileSize(file.size);
     }
-    if (!media || !image || !icon) {
+    if (!media || !image || !video || !icon) {
       return;
     }
 
-    if (isImage) {
+    if (isImage || isVideo) {
       var objectUrl = URL.createObjectURL(file);
       preview.localObjectUrl = objectUrl;
-      image.src = objectUrl;
-      image.alt = file.name || "本地图片预览";
-      image.hidden = false;
+      if (isImage) {
+        image.src = objectUrl;
+        image.alt = file.name || "本地图片预览";
+        image.hidden = false;
+        video.removeAttribute("src");
+        video.hidden = true;
+        delete media.dataset.mediaKind;
+      } else {
+        image.removeAttribute("src");
+        image.hidden = true;
+        video.src = objectUrl;
+        video.hidden = false;
+        media.dataset.mediaKind = "video";
+      }
       icon.hidden = true;
       media.disabled = false;
       media.dataset.imageSource = objectUrl;
-      media.dataset.imageTitle = file.name || "本地图片预览";
-      media.setAttribute("aria-label", "预览本地图片 " + (file.name || ""));
+      media.dataset.imageTitle = file.name || (isImage ? "本地图片预览" : "本地视频预览");
+      media.setAttribute("aria-label", "预览本地" + (isImage ? "图片 " : "视频 ") + (file.name || ""));
     } else {
       image.removeAttribute("src");
       image.hidden = true;
+      video.removeAttribute("src");
+      video.hidden = true;
       icon.hidden = false;
       media.disabled = true;
       delete media.dataset.imageSource;
       delete media.dataset.imageTitle;
+      delete media.dataset.mediaKind;
       media.removeAttribute("aria-label");
     }
   }
@@ -1151,12 +1573,14 @@
   }
 
   function resetBugReportGroup(group) {
-    removeFilePreview(group);
+    (group.bugReportFiles || []).forEach(function (entry) {
+      if (entry.objectUrl) {
+        URL.revokeObjectURL(entry.objectUrl);
+      }
+    });
+    group.bugReportFiles = [];
     hideUploadTransfer(group);
     delete group.dataset.bugReportCommentId;
-    delete group.dataset.bugReportAttachmentId;
-    delete group.pendingAttachmentFile;
-    delete group.dataset.bugReportAttachmentUploaded;
     delete group.dataset.bugReportLocked;
     group.querySelectorAll("textarea").forEach(function (textarea) {
       textarea.value = "";
@@ -1170,7 +1594,12 @@
     });
     var fileName = group.querySelector("[data-bug-report-image-name]");
     if (fileName) {
-      fileName.textContent = "选择截图、报错页面或复现过程图片。";
+      fileName.textContent = "可一次选择多个文件，单个文件不超过 100 MB。";
+    }
+    var list = group.querySelector("[data-composer-file-list]");
+    if (list) {
+      list.replaceChildren();
+      list.hidden = true;
     }
   }
 
@@ -1204,42 +1633,137 @@
     ) {
       return;
     }
-    removeFilePreview(group);
+    (group.bugReportFiles || []).forEach(function (entry) {
+      if (entry.objectUrl) {
+        URL.revokeObjectURL(entry.objectUrl);
+      }
+    });
     group.remove();
     updateBugReportGroupTitles(form);
   }
 
+  function composerFileSignature(file) {
+    return [file.name || "", file.size || 0, file.lastModified || 0].join(":");
+  }
+
+  function renderComposerFiles(group) {
+    var list = group.querySelector("[data-composer-file-list]");
+    var files = group.bugReportFiles || [];
+    if (!list) {
+      return;
+    }
+    list.replaceChildren();
+    list.hidden = files.length === 0;
+    files.forEach(function (entry) {
+      var row = document.createElement("article");
+      row.className = "composer-file";
+      row.dataset.fileState = entry.uploaded ? "uploaded" : "ready";
+
+      var media = document.createElement("button");
+      media.className = "composer-file-media";
+      media.type = "button";
+      var isImage = isPreviewableImageType(entry.file.type);
+      var isVideo = isPreviewableVideoType(entry.file.type);
+      if ((isImage || isVideo) && !entry.objectUrl) {
+        entry.objectUrl = URL.createObjectURL(entry.file);
+      }
+      if (isImage) {
+        var image = document.createElement("img");
+        image.src = entry.objectUrl;
+        image.alt = entry.file.name || "本地图片";
+        media.dataset.localImagePreview = "";
+        media.dataset.imageSource = entry.objectUrl;
+        media.dataset.imageTitle = entry.file.name || "本地图片";
+        media.appendChild(image);
+      } else if (isVideo) {
+        var video = document.createElement("video");
+        video.src = entry.objectUrl;
+        video.muted = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        media.dataset.localMediaPreview = "";
+        media.dataset.mediaKind = "video";
+        media.dataset.imageSource = entry.objectUrl;
+        media.dataset.imageTitle = entry.file.name || "本地视频";
+        media.setAttribute("aria-label", "预览视频 " + (entry.file.name || ""));
+        media.appendChild(video);
+      } else {
+        media.disabled = true;
+        var icon = document.createElement("span");
+        icon.className = "composer-file-icon";
+        icon.textContent = (entry.file.name.split(".").pop() || "FILE").slice(0, 5).toUpperCase();
+        media.appendChild(icon);
+      }
+
+      var details = document.createElement("div");
+      details.className = "composer-file-details";
+      var name = document.createElement("strong");
+      name.textContent = entry.file.name || "未命名文件";
+      var meta = document.createElement("span");
+      meta.textContent = (entry.file.type || "未知类型") + " · " + formatFileSize(entry.file.size);
+      details.append(name, meta);
+
+      var remove = document.createElement("button");
+      remove.className = "composer-file-remove";
+      remove.type = "button";
+      remove.dataset.composerFileRemove = "";
+      remove.dataset.fileSignature = entry.signature;
+      remove.setAttribute("aria-label", "移除附件 " + (entry.file.name || ""));
+      remove.textContent = "×";
+      remove.disabled = entry.uploaded || group.dataset.bugReportLocked === "true";
+      row.append(media, details, remove);
+      list.appendChild(row);
+    });
+  }
+
+  function removeComposerFile(button) {
+    var group = button.closest("[data-bug-report-group]");
+    if (!group || group.dataset.bugReportLocked === "true") {
+      return;
+    }
+    var signature = button.dataset.fileSignature || "";
+    group.bugReportFiles = (group.bugReportFiles || []).filter(function (entry) {
+      if (entry.signature !== signature) {
+        return true;
+      }
+      if (entry.objectUrl) {
+        URL.revokeObjectURL(entry.objectUrl);
+      }
+      return false;
+    });
+    renderComposerFiles(group);
+    var label = group.querySelector("[data-bug-report-image-name]");
+    if (label) {
+      label.textContent = group.bugReportFiles.length
+        ? "已选择 " + group.bugReportFiles.length + " 个附件，可继续添加。"
+        : "可一次选择多个文件，单个文件不超过 100 MB。";
+    }
+  }
+
   function syncBugReportImageName(input) {
     var group = input.closest("[data-bug-report-group]");
-    var file = input.files && input.files[0];
+    var selected = input.files ? Array.from(input.files) : [];
     var label = group && group.querySelector("[data-bug-report-image-name]");
     if (!group || !label) {
       return;
     }
-    var isNewFile = clearAttachmentResumeForChangedFile(
-      group,
-      file,
-      "bugReportAttachmentId",
-      "pendingAttachmentFile",
-      "bugReportAttachmentUploaded"
-    );
-    if (!file) {
-      clearAttachmentResumeForRemovedFile(
-        group,
-        "bugReportAttachmentId",
-        "pendingAttachmentFile",
-        "bugReportAttachmentUploaded"
-      );
-    }
-    var previewAnchor = input.closest(".upload-picker");
-    updateFilePreview(group, previewAnchor || input, file);
-    label.textContent = file
-      ? "已选择 " +
-        (file.name || "图片") +
-        (isNewFile ? "，已更换图片，将重新登记附件。" : "，提交后会直传对象存储。")
-      : "选择截图、报错页面或复现过程图片。";
-    if (file) {
-      setUploadTransfer(group, 0, "准备上传图片", "已选择 " + formatFileSize(file.size) + "。", "ready");
+    var files = group.bugReportFiles || [];
+    var signatures = new Set(files.map(function (entry) { return entry.signature; }));
+    selected.forEach(function (file) {
+      var signature = composerFileSignature(file);
+      if (!signatures.has(signature)) {
+        files.push({ file: file, signature: signature, attachmentId: "", uploaded: false, objectUrl: "" });
+        signatures.add(signature);
+      }
+    });
+    group.bugReportFiles = files;
+    input.value = "";
+    renderComposerFiles(group);
+    label.textContent = files.length
+      ? "已选择 " + files.length + " 个附件，可继续添加。"
+      : "可一次选择多个文件，单个文件不超过 100 MB。";
+    if (files.length) {
+      setUploadTransfer(group, 0, "准备上传附件", "共 " + files.length + " 个文件等待提交。", "ready");
     } else {
       hideUploadTransfer(group);
     }
@@ -1248,13 +1772,11 @@
   function collectBugReportGroups(form) {
     return Array.from(form.querySelectorAll("[data-bug-report-group]"))
       .map(function (group, index) {
-        var fileInput = group.querySelector("[data-bug-report-image]");
-        var file = fileInput && fileInput.files ? fileInput.files[0] : null;
         var body = (group.querySelector("[data-bug-report-body]")?.value || "").trim();
-        return { index: index, element: group, file: file, body: body };
+        return { index: index, element: group, files: group.bugReportFiles || [], body: body };
       })
       .filter(function (group) {
-        return Boolean(group.file || group.body);
+        return Boolean(group.files.length || group.body);
       });
   }
 
@@ -1264,7 +1786,7 @@
     }
     var group = control.closest("[data-bug-report-group][data-bug-report-locked='true']");
     return Boolean(
-      group && control.matches("[data-bug-report-image], [data-bug-report-body], [data-bug-report-remove]")
+      group && control.matches("[data-bug-report-image], [data-bug-report-body], [data-bug-report-remove], [data-composer-file-remove]")
     );
   }
 
@@ -1287,27 +1809,13 @@
       return;
     }
     var groups = collectBugReportGroups(form);
-    var invalidGroup = groups.find(function (group) {
-      return group.file && !group.body;
-    });
-    if (invalidGroup) {
-      bugReportStatus(form, "第 " + (invalidGroup.index + 1) + " 组已选择图片，请填写对应说明内容。", "error");
-      return;
-    }
-    var invalidImageGroup = groups.find(function (group) {
-      return group.file && group.file.type && group.file.type.indexOf("image/") !== 0;
-    });
-    if (invalidImageGroup) {
-      bugReportStatus(form, "第 " + (invalidImageGroup.index + 1) + " 组请选择图片文件。", "error");
-      return;
-    }
-
+    var itemLabel = form.dataset.workItemLabel || "工作项";
     var formData = new FormData(form);
     setBugReportBusy(form, true);
     try {
       var item = { key: form.dataset.bugReportItemKey || "" };
       if (!item.key) {
-        bugReportStatus(form, "正在创建 Bug...", "info");
+        bugReportStatus(form, "正在创建" + itemLabel + "...", "info");
         item = await fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
           method: "POST",
           headers: {
@@ -1328,7 +1836,7 @@
         form.dataset.bugReportItemKey = item.key;
         applyBugReportPersistedLocks(form);
       } else {
-        bugReportStatus(form, "继续完成已创建 Bug 的图片上传...", "info");
+        bugReportStatus(form, "继续完成已创建" + itemLabel + "的附件上传...", "info");
       }
 
       for (var i = 0; i < groups.length; i += 1) {
@@ -1336,27 +1844,39 @@
         var comment = { id: group.element.dataset.bugReportCommentId || "" };
         if (!comment.id) {
           bugReportStatus(form, "正在创建第 " + (i + 1) + "/" + groups.length + " 组说明...", "info");
+          var commentBody = group.body ||
+            "附件：" + group.files.map(function (entry) { return entry.file.name || "未命名文件"; }).join("、");
           comment = await fetchJson("/api/v1/work-items/" + encodeURIComponent(item.key) + "/comments", {
             method: "POST",
             headers: {
               "content-type": "application/json",
               accept: "application/json",
             },
-            body: JSON.stringify({ body: group.body }),
+            body: JSON.stringify({ body: commentBody }),
           });
           group.element.dataset.bugReportCommentId = String(comment.id);
           group.element.dataset.bugReportLocked = "true";
           applyBugReportPersistedLocks(form);
         }
 
-        if (group.file && group.element.dataset.bugReportAttachmentUploaded !== "true") {
-          bugReportStatus(form, "正在上传第 " + (i + 1) + "/" + groups.length + " 组图片...", "info");
+        for (var fileIndex = 0; fileIndex < group.files.length; fileIndex += 1) {
+          var fileEntry = group.files[fileIndex];
+          if (fileEntry.uploaded) {
+            continue;
+          }
+          var fileNumber = fileIndex + 1;
+          var fileCount = group.files.length;
+          bugReportStatus(
+            form,
+            "正在上传第 " + (i + 1) + "/" + groups.length + " 组附件（" + fileNumber + "/" + fileCount + "）...",
+            "info"
+          );
           await uploadAttachmentFile({
-            file: group.file,
-            filename: group.file.name || "bug-screenshot.png",
-            contentType: group.file.type || "application/octet-stream",
-            byteSize: group.file.size || 0,
-            existingAttachmentId: group.element.dataset.bugReportAttachmentId || "",
+            file: fileEntry.file,
+            filename: fileEntry.file.name || "attachment.bin",
+            contentType: fileEntry.file.type || "application/octet-stream",
+            byteSize: fileEntry.file.size || 0,
+            existingAttachmentId: fileEntry.attachmentId,
             createUrl:
               "/api/v1/work-items/" +
               encodeURIComponent(item.key) +
@@ -1370,37 +1890,41 @@
               return attachmentUrlForComment(item.key, comment.id, attachmentId, "uploaded");
             },
             onAttachmentReady: function (attachment) {
-              group.element.dataset.bugReportAttachmentId = String(attachment.id);
-              group.element.pendingAttachmentFile = group.file;
+              fileEntry.attachmentId = String(attachment.id);
             },
             onStage: function (stage) {
+              var completedPercent = (fileIndex / fileCount) * 100;
               if (stage === "signing") {
-                setUploadTransfer(group.element, 0, "正在获取上传签名", "第 " + (i + 1) + " 组图片已登记。", "info");
+                setUploadTransfer(group.element, completedPercent, "正在获取上传签名", "附件 " + fileNumber + "/" + fileCount + " 已登记。", "info");
               } else if (stage === "uploading") {
-                setUploadTransfer(group.element, 0, "正在上传图片", "第 " + (i + 1) + " 组正在直传。", "info");
+                setUploadTransfer(group.element, completedPercent, "正在上传附件", "附件 " + fileNumber + "/" + fileCount + " 正在直传。", "info");
               } else if (stage === "finalizing") {
-                setUploadTransfer(group.element, 100, "正在确认图片", "正在更新附件状态。", "info");
+                setUploadTransfer(group.element, (fileNumber / fileCount) * 100, "正在确认附件", "正在更新附件状态。", "info");
               }
             },
             onProgress: function (percent) {
               if (typeof percent === "number") {
-                setUploadTransfer(group.element, percent, "正在上传图片", "第 " + (i + 1) + " 组已传输 " + Math.round(percent) + "% 。", "info");
+                var overall = ((fileIndex + percent / 100) / fileCount) * 100;
+                setUploadTransfer(group.element, overall, "正在上传附件", "附件 " + fileNumber + "/" + fileCount + " 已传输 " + Math.round(percent) + "% 。", "info");
               } else {
-                setUploadTransfer(group.element, null, "正在上传图片", "浏览器未提供可计算的传输长度。", "info");
+                setUploadTransfer(group.element, null, "正在上传附件", "浏览器未提供可计算的传输长度。", "info");
               }
             },
           });
-          group.element.dataset.bugReportAttachmentUploaded = "true";
-          setUploadTransfer(group.element, 100, "图片上传完成", "第 " + (i + 1) + " 组已完成。", "success");
+          fileEntry.uploaded = true;
+          renderComposerFiles(group.element);
+        }
+        if (group.files.length) {
+          setUploadTransfer(group.element, 100, "附件上传完成", "第 " + (i + 1) + " 组共 " + group.files.length + " 个附件已完成。", "success");
         }
       }
 
-      bugReportStatus(form, "Bug 创建完成，正在打开详情页。", "success");
+      bugReportStatus(form, itemLabel + "创建完成，正在打开详情页。", "success");
       window.setTimeout(function () {
         window.location.href = "/web/work-items/" + encodeURIComponent(item.key);
       }, 450);
     } catch (error) {
-      bugReportStatus(form, error.message || "Bug 创建失败，请稍后重试。", "error");
+      bugReportStatus(form, error.message || itemLabel + "创建失败，请稍后重试。", "error");
       setBugReportBusy(form, false);
     }
   }
@@ -1489,6 +2013,38 @@
     imagePreviewObserver.observe(preview);
   }
 
+  function loadVisibleAttachmentImages() {
+    document.querySelectorAll("[data-image-preview][data-image-preview-state='idle']").forEach(function (preview) {
+      var rect = preview.getBoundingClientRect();
+      if (rect.bottom < -180 || rect.top > window.innerHeight + 180) {
+        return;
+      }
+      if (imagePreviewObserver) {
+        imagePreviewObserver.unobserve(preview);
+      }
+      loadAttachmentImage(preview, false).catch(function () {});
+    });
+  }
+
+  function scheduleVisibleAttachmentImageChecks() {
+    if (imagePreviewFallbackTimer) {
+      return;
+    }
+    var attempts = 0;
+    var check = function () {
+      imagePreviewFallbackTimer = null;
+      loadVisibleAttachmentImages();
+      attempts += 1;
+      if (
+        attempts < 30 &&
+        document.querySelector("[data-image-preview][data-image-preview-state='idle']")
+      ) {
+        imagePreviewFallbackTimer = window.setTimeout(check, 500);
+      }
+    };
+    imagePreviewFallbackTimer = window.setTimeout(check, 120);
+  }
+
   function initAttachmentImagePreviews(root) {
     var scope = root || document;
     var previews = [];
@@ -1506,6 +2062,7 @@
       setAttachmentImageState(preview, "idle", "等待加载图片预览。");
       observeAttachmentImage(preview);
     });
+    scheduleVisibleAttachmentImageChecks();
   }
 
   function imageViewerModal() {
@@ -1523,6 +2080,10 @@
     if (modal.modalOpenFrame) {
       window.cancelAnimationFrame(modal.modalOpenFrame);
       modal.modalOpenFrame = null;
+    }
+    if (modal.modalOpenTimer) {
+      window.clearTimeout(modal.modalOpenTimer);
+      modal.modalOpenTimer = null;
     }
     modal.setAttribute("aria-hidden", "true");
     modal.setAttribute("inert", "");
@@ -1560,7 +2121,11 @@
   }
 
   function imageViewerEntryTitle(entry) {
-    return entry && entry.dataset ? entry.dataset.imageTitle || "图片预览" : "图片预览";
+    return entry && entry.dataset ? entry.dataset.imageTitle || "媒体预览" : "媒体预览";
+  }
+
+  function imageViewerEntryKind(entry) {
+    return entry && entry.dataset && entry.dataset.mediaKind === "video" ? "video" : "image";
   }
 
   function imageViewerEntriesFor(preview) {
@@ -1568,7 +2133,7 @@
     if (!gallery) {
       return [preview];
     }
-    var entries = Array.from(document.querySelectorAll("[data-image-preview]")).filter(function (item) {
+    var entries = Array.from(document.querySelectorAll("[data-image-preview], [data-media-preview]")).filter(function (item) {
       return item.dataset.imageGallery === gallery && !item.closest("[hidden]");
     });
     return entries.length > 0 ? entries : [preview];
@@ -1590,6 +2155,7 @@
       return;
     }
     var image = modal.querySelector("[data-image-viewer-image]");
+    var video = modal.querySelector("[data-image-viewer-video]");
     var title = modal.querySelector("[data-image-viewer-title]");
     var status = modal.querySelector("[data-image-viewer-status]");
     var caption = modal.querySelector("[data-image-viewer-caption]");
@@ -1597,6 +2163,7 @@
     var next = modal.querySelector("[data-image-viewer-action='next']");
     var source = imageViewerEntrySource(entry);
     var entryTitle = imageViewerEntryTitle(entry);
+    var entryKind = imageViewerEntryKind(entry);
     var hasMultiple = imageViewerState.entries.length > 1;
 
     imageViewerState.source = source;
@@ -1605,7 +2172,7 @@
     }
     if (status) {
       status.textContent = hasMultiple
-        ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 张"
+        ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 项"
         : "适屏查看";
     }
     if (caption) {
@@ -1617,7 +2184,26 @@
     if (next) {
       next.hidden = !hasMultiple;
     }
-    if (!image) {
+    modal.querySelectorAll("[data-image-viewer-image-action]").forEach(function (control) {
+      control.hidden = entryKind !== "image";
+    });
+    if (!image || !video) {
+      return;
+    }
+
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    video.hidden = entryKind !== "video";
+    image.hidden = entryKind !== "image";
+    if (entryKind === "video") {
+      video.src = source;
+      video.load();
+      if (status) {
+        status.textContent = hasMultiple
+          ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 项 · 视频"
+          : "视频预览";
+      }
       return;
     }
 
@@ -1666,6 +2252,16 @@
         openImageViewer(entries, Math.max(0, entries.indexOf(preview)), preview);
       })
       .catch(function () {});
+  }
+
+  function stopImageViewerMedia(modal) {
+    var video = modal && modal.querySelector("[data-image-viewer-video]");
+    if (!video) {
+      return;
+    }
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
   }
 
   function changeImageViewerIndex(offset) {
@@ -1855,17 +2451,32 @@
     if (modal.modalOpenFrame) {
       window.cancelAnimationFrame(modal.modalOpenFrame);
     }
+    if (modal.modalOpenTimer) {
+      window.clearTimeout(modal.modalOpenTimer);
+    }
     modal.hidden = false;
     modal.setAttribute("aria-hidden", "false");
     document.body.classList.add("modal-open");
-    modal.modalOpenFrame = window.requestAnimationFrame(function () {
+    var revealModal = function () {
+      if (modal.classList.contains("open")) {
+        return;
+      }
+      if (modal.modalOpenFrame) {
+        window.cancelAnimationFrame(modal.modalOpenFrame);
+      }
+      if (modal.modalOpenTimer) {
+        window.clearTimeout(modal.modalOpenTimer);
+      }
       modal.modalOpenFrame = null;
+      modal.modalOpenTimer = null;
       if (modal.getAttribute("aria-hidden") === "true" || modal.hidden) {
         return;
       }
       modal.classList.add("open");
       focusModal(modal);
-    });
+    };
+    modal.modalOpenFrame = window.requestAnimationFrame(revealModal);
+    modal.modalOpenTimer = window.setTimeout(revealModal, 32);
   }
 
   function closeModal(modal, restoreFocus) {
@@ -1879,8 +2490,15 @@
       window.cancelAnimationFrame(modal.modalOpenFrame);
       modal.modalOpenFrame = null;
     }
+    if (modal.modalOpenTimer) {
+      window.clearTimeout(modal.modalOpenTimer);
+      modal.modalOpenTimer = null;
+    }
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
+    if (modal.matches("[data-image-viewer]")) {
+      stopImageViewerMedia(modal);
+    }
     modal.modalCloseTimer = window.setTimeout(function () {
       if (!modal.classList.contains("open")) {
         modal.hidden = true;
@@ -1962,6 +2580,21 @@
       return;
     }
 
+    var localMediaPreview = event.target.closest("[data-local-media-preview]");
+    if (localMediaPreview && !localMediaPreview.disabled && localMediaPreview.dataset.imageSource) {
+      event.preventDefault();
+      openImageViewer([localMediaPreview], 0, localMediaPreview);
+      return;
+    }
+
+    var attachmentMediaPreview = event.target.closest("[data-media-preview]");
+    if (attachmentMediaPreview) {
+      event.preventDefault();
+      var mediaEntries = imageViewerEntriesFor(attachmentMediaPreview);
+      openImageViewer(mediaEntries, Math.max(0, mediaEntries.indexOf(attachmentMediaPreview)), attachmentMediaPreview);
+      return;
+    }
+
     var attachmentImagePreview = event.target.closest("[data-image-preview]");
     if (attachmentImagePreview) {
       event.preventDefault();
@@ -2003,6 +2636,13 @@
     if (bugReportRemove) {
       event.preventDefault();
       removeBugReportGroup(bugReportRemove);
+      return;
+    }
+
+    var composerFileRemove = event.target.closest("[data-composer-file-remove]");
+    if (composerFileRemove) {
+      event.preventDefault();
+      removeComposerFile(composerFileRemove);
       return;
     }
 
@@ -2240,6 +2880,7 @@
     initTopbarSearch(event.target);
     initProjectSwitcher(event.target);
     initUserComboboxes(event.target);
+    initSelectControls(event.target);
     initTabs(event.target);
     initAttachmentImagePreviews(event.target);
   });
@@ -2418,6 +3059,7 @@
   initTopbarSearch(document);
   initProjectSwitcher(document);
   initUserComboboxes(document);
+  initSelectControls(document);
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initAttachmentImagePreviews(document);
   window.addEventListener("pagehide", function () {
@@ -2428,4 +3070,34 @@
     });
   });
   initTabs(document);
+
+  document.addEventListener("click", function (event) {
+    if (
+      activeSelectControl &&
+      !event.target.closest(".select-control") &&
+      !event.target.closest(".select-control-panel")
+    ) {
+      closeSelectControl(activeSelectControl, false);
+    }
+    document.querySelectorAll(".topbar-search").forEach(function (form) {
+      if (!form.contains(event.target)) {
+        closeSearchHistory(form);
+      }
+    });
+  });
+
+  window.addEventListener("resize", function () {
+    if (activeSelectControl) {
+      positionSelectPanel(activeSelectControl);
+    }
+    document.querySelectorAll("[data-tabs]").forEach(syncTabIndicator);
+  });
+
+  window.addEventListener("scroll", function () {
+    if (activeSelectControl) {
+      closeSelectControl(activeSelectControl, false);
+    }
+    loadVisibleAttachmentImages();
+    scheduleVisibleAttachmentImageChecks();
+  }, true);
 })();

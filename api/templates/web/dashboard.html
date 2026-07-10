@@ -98,7 +98,7 @@
             <span>{{ risk.project }} · {{ risk.assignee }}</span>
           </a>
           <div class="risk-list-meta">
-            <span class="priority">{{ risk.priority }}</span>
+            <span class="priority" data-priority="{{ risk.priority }}">{{ risk.priority }}</span>
             <span class="status status-{{ risk.status_tone }}">{{ risk.status }}</span>
           </div>
         </li>
@@ -147,7 +147,7 @@
             <span>{{ risk.project }} · 处理人 {{ risk.assignee }}</span>
           </a>
           <div class="risk-list-meta">
-            <span class="priority">{{ risk.priority }}</span>
+            <span class="priority" data-priority="{{ risk.priority }}">{{ risk.priority }}</span>
             <span class="status status-{{ risk.status_tone }}">{{ risk.status }}</span>
           </div>
         </li>

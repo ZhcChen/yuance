@@ -11,7 +11,7 @@
       <p>{{ item.description }}</p>
       <div class="detail-meta">
         <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-        <span class="priority">{{ item.priority }}</span>
+        <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
         <span>{{ item.project_key }} · {{ item.project_name }}</span>
       </div>
     </div>
@@ -78,12 +78,20 @@
           <article class="attachment-row">
             <div>
               {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
-              <button class="attachment-image-preview" type="button" data-image-preview data-image-source="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-images-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
+              <button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
                 <span class="attachment-image-frame" data-image-preview-frame>
                   <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
                   <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
                 </span>
                 <span class="attachment-image-caption">预览图片</span>
+              </button>
+              {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
+              <button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览视频 {{ attachment.filename }}">
+                <span class="attachment-image-frame">
+                  <video src="/web/work-items/{{ item.key }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
+                  <span class="attachment-video-play" aria-hidden="true">▶</span>
+                </span>
+                <span class="attachment-image-caption">预览视频</span>
               </button>
               {% endif %}
               <strong>{{ attachment.filename }}</strong>
@@ -203,7 +211,7 @@
         </label>
         <label>
           处理人
-          <select name="assignee_username">
+          <select name="assignee_username" data-select-searchable data-select-search-placeholder="搜索处理人">
             {% for member in assignee_options %}
             <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
             {% endfor %}
@@ -216,7 +224,7 @@
         {% if item.kind == "任务" %}
         <label>
           父级需求
-          <select name="parent_item_key">
+          <select name="parent_item_key" data-select-searchable data-select-search-placeholder="搜索父需求">
             <option value="">不关联</option>
             {% for parent in parent_options %}
             <option value="{{ parent.key }}" {% if parent.key == item.parent_item_key %}selected{% endif %}>{{ parent.key }} · {{ parent.title }}</option>
@@ -265,7 +273,7 @@
         </label>
         <label>
           下一处理人
-          <select name="assignee_username">
+          <select name="assignee_username" data-select-searchable data-select-search-placeholder="搜索下一处理人">
             <option value="">保持当前处理人</option>
             {% for member in assignee_options %}
             <option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>

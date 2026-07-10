@@ -501,7 +501,12 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains(r#"data-modal-open="work-item-create-modal""#));
     assert!(tasks_body.contains(r#"id="work-item-create-modal""#));
     assert!(tasks_body.contains(r#"name="item_type" value="task""#));
-    assert!(tasks_body.contains(r#"name="project_key" value="YCE" readonly"#));
+    assert!(tasks_body.contains(r#"name="project_key" value="YCE" data-bug-report-item-field"#));
+    assert!(tasks_body.contains(r#"data-bug-report-form"#));
+    assert!(tasks_body.contains(r#"data-bug-report-groups"#));
+    assert!(tasks_body.contains(r#"type="file" multiple data-bug-report-image"#));
+    assert!(tasks_body.contains(r#"data-select-search-placeholder="搜索处理人""#));
+    assert!(!tasks_body.contains(r#"class="work-type-tabs""#));
     assert!(!tasks_body.contains(r#"id="work-item-create-form""#));
     assert!(tasks_body.contains("父级需求"));
     assert!(!tasks_body.contains("CRM-BUG-1"));
@@ -512,9 +517,10 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("OPS-TASK-1"));
     assert!(bugs_body.contains(r#"data-bug-report-form"#));
     assert!(bugs_body.contains(r#"data-bug-report-groups"#));
-    assert!(bugs_body.contains(r#"accept="image/*""#));
-    assert!(bugs_body.contains("每一组会创建为一条 Bug 评论"));
-    assert!(bugs_body.contains("图片使用对象存储前端直传"));
+    assert!(bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
+    assert!(bugs_body.contains("每组说明会保存为一条评论"));
+    assert!(bugs_body.contains("多个图片、视频或文档"));
+    assert!(!bugs_body.contains(r#"class="work-type-tabs""#));
 
     projects::set_current_project_for_user(&pool, initialized.user_id, true, "OPS")
         .await
@@ -3027,7 +3033,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         r#"data-image-source="/web/work-items/YCE-TASK-2/comments/{}/attachments/{}/download""#,
         comment.id, comment_image.id
     )));
-    assert!(work_item_body.contains(r#"data-image-gallery="work-item-images-YCE-TASK-2""#));
+    assert!(work_item_body.contains(r#"data-image-gallery="work-item-media-YCE-TASK-2""#));
     assert!(!work_item_body.contains(&format!(
         r#"data-image-source="/web/work-items/YCE-TASK-2/attachments/{}/download""#,
         vector_attachment.id
@@ -3060,7 +3066,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         r#"data-image-source="/web/projects/YCE/attachments/{}/download""#,
         project_image.id
     )));
-    assert!(project_body.contains(r#"data-image-gallery="project-images-YCE""#));
+    assert!(project_body.contains(r#"data-image-gallery="project-media-YCE""#));
 }
 
 #[tokio::test]
@@ -4188,6 +4194,26 @@ async fn api_v1_attachment_create_rejects_unsupported_type_and_oversized_file() 
     assert_eq!(unsupported_type_response.status(), StatusCode::BAD_REQUEST);
     let unsupported_type_body = response_body(unsupported_type_response).await;
     assert!(unsupported_type_body.contains("暂不支持该附件类型"));
+
+    let video_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/attachments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"original_filename":"demo.mp4","content_type":"video/mp4","byte_size":2048}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(video_response.status(), StatusCode::CREATED);
+    let video_body = response_body(video_response).await;
+    assert!(video_body.contains(r#""content_type":"video/mp4""#));
 
     let oversized_response = app
         .oneshot(
