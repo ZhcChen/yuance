@@ -2,7 +2,10 @@ use chrono::{FixedOffset, Utc};
 use rand_core::{OsRng, RngCore};
 use sqlx::{Row, SqlitePool};
 
-use crate::platform::error::{AppError, AppResult};
+use crate::{
+    domains::notifications::{self, CreateNotification},
+    platform::error::{AppError, AppResult},
+};
 
 const PROJECT_KEY_GENERATE_MAX_ATTEMPTS: usize = 5;
 const PROJECT_STATUS_NOT_STARTED: &str = "not_started";
@@ -293,6 +296,7 @@ pub struct HandoffWorkItemInput {
     pub status: String,
     pub assignee_username: String,
     pub body: String,
+    pub source_comment_id: Option<i64>,
 }
 
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
@@ -2144,7 +2148,7 @@ pub async fn create_work_item(
     .await?;
     let item_key = format!("{prefix}{next_number}");
 
-    sqlx::query(
+    let work_item_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO work_items (
             project_id,
@@ -2160,6 +2164,7 @@ pub async fn create_work_item(
             due_date
         )
         VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, NULLIF(?10, ''))
+        RETURNING id
         "#,
     )
     .bind(project_id)
@@ -2172,7 +2177,21 @@ pub async fn create_work_item(
     .bind(actor_user_id)
     .bind(parent_work_item_id)
     .bind(&due_date)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    notifications::create_in_transaction(
+        &mut tx,
+        CreateNotification {
+            recipient_user_id: assignee_user_id,
+            actor_user_id,
+            kind: "work_item_assigned",
+            work_item_id,
+            comment_id: None,
+            title: &format!("你被指派处理 {item_key}"),
+            body: &title,
+        },
+    )
     .await?;
 
     sqlx::query(
@@ -2457,7 +2476,20 @@ pub async fn handoff_work_item(
         current_assignee_user_id,
         current_assignee_username,
         current_assignee_display_name,
-    )) = sqlx::query_as::<_, (i64, i64, String, String, Option<i64>, String, String)>(
+        work_item_title,
+    )) = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            String,
+            String,
+            Option<i64>,
+            String,
+            String,
+            String,
+        ),
+    >(
         r#"
         SELECT
             wi.id,
@@ -2466,7 +2498,8 @@ pub async fn handoff_work_item(
             wi.status,
             wi.assignee_user_id,
             COALESCE(assignee.username, '') AS assignee_username,
-            COALESCE(assignee.display_name, '') AS assignee_display_name
+            COALESCE(assignee.display_name, '') AS assignee_display_name,
+            wi.title
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
         LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
@@ -2482,6 +2515,9 @@ pub async fn handoff_work_item(
     };
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
+    if let Some(comment_id) = input.source_comment_id {
+        get_work_item_comment(pool, work_item_id, comment_id).await?;
+    }
 
     let (next_assignee_user_id, next_assignee_username, next_assignee_display_name) =
         if assignee_username.is_empty() {
@@ -2545,6 +2581,24 @@ pub async fn handoff_work_item(
     .bind(next_assignee_user_id)
     .execute(&mut *tx)
     .await?;
+
+    let should_notify_assignment =
+        current_assignee_user_id != next_assignee_user_id || input.source_comment_id.is_some();
+    if should_notify_assignment && let Some(recipient_user_id) = next_assignee_user_id {
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id,
+                actor_user_id,
+                kind: "work_item_assigned",
+                work_item_id,
+                comment_id: input.source_comment_id,
+                title: &format!("你被指派处理 {item_key}"),
+                body: &work_item_title,
+            },
+        )
+        .await?;
+    }
 
     sqlx::query(
         r#"
@@ -2877,11 +2931,13 @@ pub async fn add_work_item_comment_reply(
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
     ensure_project_accepts_writes(&project_status)?;
+    let mut reply_recipient = None;
     if let Some(parent_comment_id) = parent_comment_id {
         let parent = get_work_item_comment(pool, work_item_id, parent_comment_id).await?;
         if parent.is_flow {
             return Err(AppError::BadRequest("不能回复系统流程记录".to_string()));
         }
+        reply_recipient = parent.author_user_id;
     }
 
     let mut tx = pool.begin().await?;
@@ -2914,6 +2970,22 @@ pub async fn add_work_item_comment_reply(
     .bind(work_item_id)
     .execute(&mut *tx)
     .await?;
+
+    if let Some(recipient_user_id) = reply_recipient {
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id,
+                actor_user_id,
+                kind: "comment_replied",
+                work_item_id,
+                comment_id: Some(comment_id),
+                title: &format!("你在 {item_key} 的内容收到回复"),
+                body: &body,
+            },
+        )
+        .await?;
+    }
 
     sqlx::query(
         r#"

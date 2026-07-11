@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domains::{audit, auth, bootstrap, files, projects, rbac, storage, users},
+    domains::{audit, auth, bootstrap, files, notifications, projects, rbac, storage, users},
     platform::{
         crypto,
         error::{AppError, AppResult},
@@ -193,6 +193,53 @@ pub struct CommentPayload {
     pub created_at: String,
     pub updated_at: String,
     pub is_flow: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NotificationPayload {
+    pub id: i64,
+    pub kind: String,
+    pub title: String,
+    pub body: String,
+    pub actor: String,
+    pub created_at: String,
+    pub read: bool,
+    pub open_url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NotificationFeedPayload {
+    pub items: Vec<NotificationPayload>,
+    pub unread_count: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NotificationQuery {
+    #[serde(default = "default_notification_limit")]
+    limit: i64,
+}
+
+fn default_notification_limit() -> i64 {
+    5
+}
+
+pub async fn list_notifications(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<NotificationQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<NotificationFeedPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    let items = notifications::list_for_user(pool, user.id, false, query.limit)
+        .await?
+        .into_iter()
+        .map(notification_payload)
+        .collect();
+    let unread_count = notifications::unread_count(pool, user.id).await?;
+    Ok(json(NotificationFeedPayload {
+        items,
+        unread_count,
+    }))
 }
 
 #[derive(Debug, Serialize)]
@@ -413,6 +460,8 @@ pub struct HandoffWorkItemRequest {
     assignee_username: String,
     #[serde(default)]
     body: String,
+    #[serde(default)]
+    source_comment_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1255,6 +1304,7 @@ pub async fn handoff_work_item(
             status: payload.status,
             assignee_username: payload.assignee_username,
             body: payload.body,
+            source_comment_id: payload.source_comment_id,
         },
     )
     .await?;
@@ -3044,6 +3094,19 @@ fn comment_payload(comment: projects::WorkItemCommentSummary) -> CommentPayload 
         created_at: comment.created_at,
         updated_at: comment.updated_at,
         is_flow: comment.is_flow,
+    }
+}
+
+fn notification_payload(notification: notifications::NotificationSummary) -> NotificationPayload {
+    NotificationPayload {
+        id: notification.id,
+        kind: notification.kind,
+        title: notification.title,
+        body: notification.body,
+        actor: notification.actor_display_name,
+        created_at: notification.created_at,
+        read: !notification.read_at.is_empty(),
+        open_url: format!("/web/messages/{}/open", notification.id),
     }
 }
 

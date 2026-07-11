@@ -14,7 +14,7 @@ use crate::{
     domains::{
         audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        files, projects, rbac, storage, users,
+        files, notifications, projects, rbac, storage, users,
     },
     platform::error::{AppError, AppResult},
     platform::security::csrf,
@@ -267,6 +267,17 @@ struct PaginationPageView {
     page: i64,
     url: String,
     current: bool,
+}
+
+#[derive(Debug, Clone)]
+struct NotificationView {
+    id: i64,
+    kind_label: &'static str,
+    title: String,
+    body: String,
+    actor: String,
+    created_at: String,
+    is_unread: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -621,6 +632,22 @@ struct WorkItemListTemplate {
     pagination_pages: Vec<PaginationPageView>,
     has_items: bool,
     can_manage_work_items: bool,
+}
+
+#[derive(Template)]
+#[template(path = "web/messages.html")]
+struct MessagesTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    notifications: Vec<NotificationView>,
+    unread_count: i64,
+    unread_only: bool,
+    has_notifications: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1106,6 +1133,18 @@ pub struct SearchQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MessagesQuery {
+    #[serde(default)]
+    unread: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MessageActionForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AuditLogQuery {
     #[serde(default)]
     actor: String,
@@ -1391,6 +1430,81 @@ pub async fn search_page(
         })?
         .into_response(),
     )
+}
+
+pub async fn messages_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<MessagesQuery>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let (items, unread_count) = match context.pool {
+        Some(pool) => (
+            notifications::list_for_user(pool, context.user_id, query.unread, 100)
+                .await?
+                .into_iter()
+                .map(notification_view)
+                .collect::<Vec<_>>(),
+            notifications::unread_count(pool, context.user_id).await?,
+        ),
+        None => (Vec::new(), 0),
+    };
+    response::html(MessagesTemplate {
+        active: "messages",
+        environment: state.settings.env.clone(),
+        current_user: context.current_user,
+        csrf_token: context.csrf_token,
+        system_nav: context.system_nav,
+        current_project: context.current_project,
+        topbar_project_options: context.topbar_project_options,
+        has_notifications: !items.is_empty(),
+        notifications: items,
+        unread_count,
+        unread_only: query.unread,
+    })
+    .map(IntoResponse::into_response)
+}
+
+pub async fn messages_mark_all_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<MessageActionForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        notifications::mark_all_read(pool, context.user_id).await?;
+    }
+    Ok(Redirect::to("/web/messages").into_response())
+}
+
+pub async fn message_open(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(notification_id): Path<i64>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        return Ok(Redirect::to("/web").into_response());
+    };
+    let notification = notifications::mark_read(pool, context.user_id, notification_id).await?;
+    let target = match notification.comment_id {
+        Some(comment_id) => format!(
+            "/web/work-items/{}#comment-{}",
+            notification.work_item_key, comment_id
+        ),
+        None => format!("/web/work-items/{}", notification.work_item_key),
+    };
+    Ok(Redirect::to(&target).into_response())
 }
 
 pub async fn projects_page(
@@ -2405,6 +2519,7 @@ pub async fn work_item_handoff(
                 status: form.status,
                 assignee_username: form.assignee_username,
                 body: form.body,
+                source_comment_id: None,
             },
         )
         .await?;
@@ -5100,6 +5215,21 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
 
 fn comment_from_summary(comment: projects::WorkItemCommentSummary) -> WorkItemComment {
     comment_from_summary_with_permission(comment, false)
+}
+
+fn notification_view(notification: notifications::NotificationSummary) -> NotificationView {
+    NotificationView {
+        id: notification.id,
+        kind_label: match notification.kind.as_str() {
+            "comment_replied" => "回复",
+            _ => "指派",
+        },
+        title: notification.title,
+        body: notification.body,
+        actor: fallback_text(notification.actor_display_name, "系统"),
+        created_at: display_timestamp(notification.created_at),
+        is_unread: notification.read_at.is_empty(),
+    }
 }
 
 fn comment_from_summary_with_permission(

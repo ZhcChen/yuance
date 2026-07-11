@@ -5,12 +5,164 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, files, projects, rbac, storage, users},
+    domains::{auth, bootstrap, files, notifications, projects, rbac, storage, users},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
 
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[tokio::test]
+async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let receiver = create_regular_user(&pool, "notify_receiver", "通知接收人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "notify_receiver", "member")
+        .await
+        .expect("receiver should join project");
+
+    projects::handoff_work_item(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        projects::HandoffWorkItemInput {
+            status: "in_progress".to_string(),
+            assignee_username: "notify_receiver".to_string(),
+            body: "请继续处理".to_string(),
+            source_comment_id: None,
+        },
+    )
+    .await
+    .expect("handoff should succeed");
+    assert_eq!(
+        notifications::unread_count(&pool, receiver.user_id)
+            .await
+            .expect("unread count should load"),
+        1
+    );
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let feed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/notifications?limit=5")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(feed_response.status(), StatusCode::OK);
+    let feed_body = response_body(feed_response).await;
+    assert!(feed_body.contains("work_item_assigned"));
+    assert!(feed_body.contains("\"unread_count\":1"));
+
+    let assignment = notifications::list_for_user(&pool, receiver.user_id, true, 10)
+        .await
+        .expect("notifications should load")
+        .remove(0);
+    let forbidden_open_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", assignment.id))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_open_response.status(), StatusCode::NOT_FOUND);
+    let open_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", assignment.id))
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(open_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        open_response.headers().get(header::LOCATION).unwrap(),
+        "/web/work-items/YCE-TASK-2"
+    );
+    assert_eq!(
+        notifications::unread_count(&pool, receiver.user_id)
+            .await
+            .unwrap(),
+        0
+    );
+
+    projects::handoff_work_item(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        projects::HandoffWorkItemInput {
+            status: "open".to_string(),
+            assignee_username: "notify_receiver".to_string(),
+            body: "仅调整状态".to_string(),
+            source_comment_id: None,
+        },
+    )
+    .await
+    .expect("status-only handoff should succeed");
+    assert_eq!(
+        notifications::unread_count(&pool, receiver.user_id)
+            .await
+            .expect("unread count should load"),
+        0
+    );
+
+    let parent_comment_id = projects::add_work_item_comment_reply(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        "请在这里回复处理结果",
+        None,
+    )
+    .await
+    .expect("parent comment should be created")
+    .id;
+    let reply = projects::add_work_item_comment_reply(
+        &pool,
+        receiver.user_id,
+        "YCE-TASK-2",
+        "收到，我来继续处理",
+        Some(parent_comment_id),
+    )
+    .await
+    .expect("reply should succeed");
+    let reply_notice = notifications::list_for_user(&pool, admin.user_id, true, 10)
+        .await
+        .expect("admin notifications should load")
+        .into_iter()
+        .find(|item| item.kind == "comment_replied")
+        .expect("reply notification should exist");
+    assert_eq!(reply_notice.comment_id, Some(reply.id));
+
+    let reply_open_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", reply_notice.id))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reply_open_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        reply_open_response.headers().get(header::LOCATION).unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{}", reply.id).as_str()
+    );
+}
 
 #[tokio::test]
 async fn demo_seed_idempotently_creates_projects_and_work_items() {
@@ -246,6 +398,7 @@ async fn personal_project_analysis_counts_only_real_terminal_transitions() {
             status: "done".to_string(),
             assignee_username: "admin".to_string(),
             body: "补充完成说明，不应重复计算产出".to_string(),
+            source_comment_id: None,
         },
     )
     .await

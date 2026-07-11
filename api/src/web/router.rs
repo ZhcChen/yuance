@@ -52,6 +52,15 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/me/profile", post(web::user::me_profile_update))
         .route("/web/me/password", post(web::user::me_password_update))
         .route("/web/search", get(web::user::search_page))
+        .route("/web/messages", get(web::user::messages_page))
+        .route(
+            "/web/messages/read-all",
+            post(web::user::messages_mark_all_read),
+        )
+        .route(
+            "/web/messages/{notification_id}/open",
+            get(web::user::message_open),
+        )
         .route(
             "/web/projects",
             get(web::user::projects_page).post(web::user::projects_create),
@@ -332,6 +341,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/work-items",
             get(web::api::list_work_items).post(web::api::create_work_item),
         )
+        .route("/api/v1/notifications", get(web::api::list_notifications))
         .route(
             "/api/v1/work-items/{item_key}",
             get(web::api::get_work_item).patch(web::api::update_work_item),

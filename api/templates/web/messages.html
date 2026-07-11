@@ -1,0 +1,48 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}消息中心 - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack messages-page">
+  <header class="page-heading messages-heading">
+    <div>
+      <span class="section-kicker">协作通知</span>
+      <h1>消息中心</h1>
+      <p>查看工作项指派和讨论回复，未读消息 {{ unread_count }} 条。</p>
+    </div>
+    {% if unread_count > 0 %}
+    <form method="post" action="/web/messages/read-all">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <button class="btn btn-secondary" type="submit">全部标为已读</button>
+    </form>
+    {% endif %}
+  </header>
+
+  <nav class="message-tabs" aria-label="消息筛选">
+    <a class="{% if !unread_only %}active{% endif %}" href="/web/messages">全部消息</a>
+    <a class="{% if unread_only %}active{% endif %}" href="/web/messages?unread=true">未读消息{% if unread_count > 0 %}<span>{{ unread_count }}</span>{% endif %}</a>
+  </nav>
+
+  {% if has_notifications %}
+  <div class="message-list">
+    {% for notification in notifications %}
+    <a class="message-row {% if notification.is_unread %}unread{% endif %}" href="/web/messages/{{ notification.id }}/open">
+      <span class="message-unread-dot" aria-hidden="true"></span>
+      <span class="message-kind">{{ notification.kind_label }}</span>
+      <span class="message-content">
+        <strong>{{ notification.title }}</strong>
+        <span>{{ notification.body }}</span>
+        <small>{{ notification.actor }} · {{ notification.created_at }}</small>
+      </span>
+      <span class="message-open">查看</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state message-empty">
+    <strong>{% if unread_only %}没有未读消息{% else %}暂无消息{% endif %}</strong>
+    <span>新的指派和回复会显示在这里。</span>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

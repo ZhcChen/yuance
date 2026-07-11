@@ -1076,6 +1076,153 @@ textarea:focus-visible {
   gap: 14px;
 }
 
+.notification-dropdown {
+  position: relative;
+}
+
+.notification-trigger {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-strong);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.notification-trigger:hover,
+.notification-dropdown[data-dropdown-open="true"] .notification-trigger {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.notification-trigger svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -7px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 2px solid var(--topbar-bg);
+  border-radius: 9px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+}
+
+.notification-panel {
+  position: absolute;
+  top: 44px;
+  right: -44px;
+  z-index: 60;
+  width: min(380px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-6px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.notification-panel.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.notification-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.notification-panel-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.notification-panel-head strong { font-size: 14px; }
+.notification-panel-head span { color: var(--muted); font-size: 11px; }
+.notification-panel-head a,
+.notification-panel-footer { color: var(--brand); font-size: 12px; font-weight: 700; text-decoration: none; }
+
+.notification-list {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  gap: 9px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.notification-item:hover { background: var(--panel-hover); }
+.notification-item.unread { background: color-mix(in srgb, var(--brand-soft) 55%, var(--panel)); }
+.notification-dot { width: 7px; height: 7px; margin-top: 6px; border-radius: 50%; background: transparent; }
+.notification-item.unread .notification-dot { background: var(--brand); }
+.notification-item-content { min-width: 0; display: grid; gap: 3px; }
+.notification-item-content strong,
+.notification-item-content span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notification-item-content strong { font-size: 13px; }
+.notification-item-content span { color: var(--muted-strong); font-size: 12px; }
+.notification-item-content small { color: var(--muted); font-size: 11px; }
+.notification-state { padding: 30px 16px; color: var(--muted); font-size: 12px; text-align: center; }
+.notification-panel-footer { display: block; padding: 11px 16px; text-align: center; }
+
+.messages-page { max-width: 1040px; margin: 0 auto; }
+.messages-heading { align-items: flex-end; }
+.message-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.message-tabs a { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; color: var(--muted-strong); font-size: 13px; font-weight: 700; text-decoration: none; }
+.message-tabs a.active { color: var(--brand); }
+.message-tabs a.active::after { position: absolute; right: 10px; bottom: -1px; left: 10px; height: 2px; background: var(--brand); content: ""; }
+.message-tabs span { min-width: 18px; padding: 1px 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 10px; text-align: center; }
+.message-list { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.message-row { display: grid; grid-template-columns: 8px 46px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 82px; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
+.message-row:last-child { border-bottom: 0; }
+.message-row:hover { background: var(--panel-hover); }
+.message-row.unread { background: color-mix(in srgb, var(--brand-soft) 48%, var(--panel)); }
+.message-unread-dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
+.message-row.unread .message-unread-dot { background: var(--brand); }
+.message-kind { display: grid; place-items: center; min-height: 28px; border-radius: 6px; background: var(--table-head); color: var(--muted-strong); font-size: 11px; font-weight: 750; }
+.message-content { min-width: 0; display: grid; gap: 3px; }
+.message-content strong { font-size: 14px; }
+.message-content > span { overflow: hidden; color: var(--muted-strong); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.message-content small { color: var(--muted); font-size: 11px; }
+.message-open { color: var(--brand); font-size: 12px; font-weight: 700; }
+.message-empty { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+
+.discussion-post { scroll-margin-top: calc(var(--topbar-height) + 20px); }
+.discussion-post:target { animation: comment-target-highlight 1800ms ease-out; }
+@keyframes comment-target-highlight {
+  0%, 35% { background: var(--brand-soft); box-shadow: 0 0 0 8px var(--brand-soft); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}
+
 .env-badge {
   display: inline-flex;
   align-items: center;
@@ -6440,6 +6587,25 @@ select option {
     grid-row: 1;
     justify-self: end;
   }
+
+  .notification-dropdown {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    margin-right: 48px;
+  }
+
+  .notification-panel {
+    position: fixed;
+    top: 58px;
+    right: 12px;
+  }
+
+  .message-row {
+    grid-template-columns: 8px 40px minmax(0, 1fr);
+  }
+
+  .message-open { display: none; }
 
   .project-switcher {
     grid-column: 1 / -1;

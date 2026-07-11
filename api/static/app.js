@@ -131,6 +131,77 @@
     }
   }
 
+  function notificationKindLabel(kind) {
+    return kind === "comment_replied" ? "回复" : "指派";
+  }
+
+  function renderNotificationFeed(root, feed) {
+    var badge = root.querySelector("[data-notification-badge]");
+    var summary = root.querySelector("[data-notification-summary]");
+    var list = root.querySelector("[data-notification-list]");
+    var unreadCount = Number(feed && feed.unread_count || 0);
+    if (badge) {
+      badge.hidden = unreadCount === 0;
+      badge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+    }
+    if (summary) {
+      summary.textContent = unreadCount ? unreadCount + " 条未读" : "暂无未读";
+    }
+    if (!list) {
+      return;
+    }
+    list.replaceChildren();
+    var items = feed && Array.isArray(feed.items) ? feed.items : [];
+    if (!items.length) {
+      var empty = document.createElement("div");
+      empty.className = "notification-state";
+      empty.textContent = "暂无消息";
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach(function (item) {
+      var link = document.createElement("a");
+      link.className = "notification-item" + (item.read ? "" : " unread");
+      link.href = item.open_url;
+
+      var dot = document.createElement("span");
+      dot.className = "notification-dot";
+      dot.setAttribute("aria-hidden", "true");
+      var content = document.createElement("span");
+      content.className = "notification-item-content";
+      var title = document.createElement("strong");
+      title.textContent = item.title;
+      var detail = document.createElement("span");
+      detail.textContent = item.body;
+      var meta = document.createElement("small");
+      meta.textContent = notificationKindLabel(item.kind) + " · " + item.actor + " · " + item.created_at;
+      content.append(title, detail, meta);
+      link.append(dot, content);
+      list.appendChild(link);
+    });
+  }
+
+  async function initNotificationFeed(root) {
+    if (!root) {
+      return;
+    }
+    try {
+      var feed = await fetchJson("/api/v1/notifications?limit=5", {
+        headers: { accept: "application/json" },
+      });
+      renderNotificationFeed(root, feed);
+    } catch (_error) {
+      var summary = root.querySelector("[data-notification-summary]");
+      var list = root.querySelector("[data-notification-list]");
+      if (summary) {
+        summary.textContent = "加载失败";
+      }
+      if (list) {
+        list.innerHTML = '<div class="notification-state">消息加载失败，请稍后重试。</div>';
+      }
+    }
+  }
+
   function setWebFormBusy(form, busy, submitter) {
     form.dataset.webFormBusy = busy ? "true" : "false";
     form.setAttribute("aria-busy", busy ? "true" : "false");
@@ -1908,6 +1979,7 @@
               status: assignStatus ? assignStatus.value : "",
               assignee_username: assignTarget,
               body: "由讨论内容自动指派",
+              source_comment_id: Number(commentId),
             }),
           }
         );
@@ -3326,6 +3398,7 @@
   });
 
   initTopbarSearch(document);
+  initNotificationFeed(document.querySelector("[data-notification-root]"));
   initProjectSwitcher(document);
   initUserComboboxes(document);
   initSelectControls(document);

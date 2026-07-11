@@ -2,6 +2,7 @@ pub mod audit;
 pub mod auth;
 pub mod bootstrap;
 pub mod files;
+pub mod notifications;
 pub mod projects;
 pub mod rbac;
 pub mod storage;
