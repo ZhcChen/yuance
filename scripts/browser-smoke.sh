@@ -217,12 +217,7 @@ cat >"$EVAL_FILE" <<JS
 
   await open("/web");
   assert(hasText("工作台"), "工作台未渲染");
-  const dashboardSegmented = query("[data-segmented]");
-  const initialSegmentedX = dashboardSegmented.style.getPropertyValue("--segmented-indicator-x");
-  click("[data-segmented-item][hx-get*='kind=requirement']");
-  await waitFor(() => query("[data-segmented-item][hx-get*='kind=requirement']").classList.contains("active"), "工作台筛选 Tab 未激活");
-  assert(dashboardSegmented.style.getPropertyValue("--segmented-indicator-x") !== initialSegmentedX, "工作台筛选 Tab 滑块未移动");
-  assert(getComputedStyle(query("[data-segmented-indicator]")).transitionDuration.includes("0.22s"), "工作台筛选 Tab 未应用滑块动画");
+  assert(!hasText("我的工作项"), "工作台仍显示已移除的我的工作项区域");
 
   const systemTrigger = query(".topnav-trigger");
   systemTrigger.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
@@ -402,6 +397,13 @@ cat >"$EVAL_FILE" <<JS
   assert(hasText("冒烟成员"), "项目成员角色调整后未保留成员");
   assert(hasText("只读成员"), "项目成员角色调整后未显示只读成员角色");
 
+  await open("/web");
+  assert(query("a[href='/web/projects/" + projectKey + "/my-analysis']"), "项目推进缺少个人分析入口");
+  assert(query("a[href*='/web/tasks?project_key=" + projectKey + "'][href*='status=pending']"), "项目推进缺少任务待处理快捷入口");
+  await open("/web/projects/" + projectKey + "/my-analysis");
+  assert(hasText("个人项目分析"), "个人项目分析页未渲染");
+  assert(hasText("日平均处理"), "个人项目分析缺少日均指标");
+  assert(hasText("评论 / 回复"), "个人项目分析缺少协作指标");
   await open("/web");
   click(".project-switcher-trigger");
   await waitFor(() => visible(".project-switcher-panel"), "当前项目下拉未打开");

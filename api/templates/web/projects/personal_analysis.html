@@ -1,0 +1,82 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}我的项目分析 - {{ project.name }} - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack personal-analysis-page">
+  <header class="analysis-header">
+    <div>
+      <a class="work-item-back" href="/web">← 返回工作台</a>
+      <p class="eyebrow">{{ project.code }} / 个人项目分析</p>
+      <h1>{{ project.name }}</h1>
+      <p>仅统计 {{ current_user }} 在该项目中的实际处理与协作记录。</p>
+    </div>
+    <span class="status status-{{ project.status_tone }}">{{ project.status }}</span>
+  </header>
+
+  <section class="metric-grid" aria-label="个人处理产出">
+    {% for metric in output_metrics %}
+    <article class="metric metric-{{ metric.tone }}">
+      <span class="metric-label">{{ metric.label }}</span>
+      <strong>{{ metric.value }}</strong>
+      <span class="metric-hint">{{ metric.hint }}</span>
+    </article>
+    {% endfor %}
+  </section>
+
+  <section class="analysis-section">
+    <div class="section-heading">
+      <div><p class="eyebrow">处理效率</p><h2>自然周期效率</h2></div>
+      <span>统计起点：{{ joined_at }}</span>
+    </div>
+    <div class="metric-grid compact-metrics">
+      {% for metric in efficiency_metrics %}
+      <article class="metric metric-{{ metric.tone }}">
+        <span class="metric-label">{{ metric.label }}</span>
+        <strong>{{ metric.value }}</strong>
+        <span class="metric-hint">{{ metric.hint }}</span>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="analysis-columns">
+    <section class="analysis-section">
+      <div class="section-heading"><div><p class="eyebrow">当前负载</p><h2>我的待处理</h2></div></div>
+      <div class="analysis-pending-list">
+        <a href="/web/requirements?project_key={{ project.code }}&status=pending&assignee_username={{ current_username }}"><span>需求</span><strong>{{ pending.requirements }}</strong></a>
+        <a href="/web/tasks?project_key={{ project.code }}&status=pending&assignee_username={{ current_username }}"><span>任务</span><strong>{{ pending.tasks }}</strong></a>
+        <a href="/web/bugs?project_key={{ project.code }}&status=pending&assignee_username={{ current_username }}"><span>Bug</span><strong>{{ pending.bugs }}</strong></a>
+      </div>
+    </section>
+    <section class="analysis-section">
+      <div class="section-heading"><div><p class="eyebrow">协作参与</p><h2>沟通与推进</h2></div></div>
+      <dl class="analysis-collaboration">
+        <div><dt>活跃天数</dt><dd>{{ active_days }}</dd></div>
+        <div><dt>评论 / 回复</dt><dd>{{ comment_count }}</dd></div>
+        <div><dt>指派 / 流转</dt><dd>{{ handoff_count }}</dd></div>
+      </dl>
+    </section>
+  </div>
+
+  <section class="analysis-section">
+    <div class="section-heading"><div><p class="eyebrow">最近产出</p><h2>最近完成记录</h2></div><span>以实际终态操作时间排序</span></div>
+    {% if has_recent_completions %}
+    <div class="analysis-completion-list">
+      {% for item in recent_completions %}
+      <a href="/web/work-items/{{ item.key }}">
+        <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
+        <code>{{ item.key }}</code>
+        <strong>{{ item.title }}</strong>
+        <time>{{ item.completed_at }}</time>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><strong>暂无完成记录</strong><span>工作项由你推进到完成、解决、验证或关闭后会记录在这里。</span></div>
+    {% endif %}
+  </section>
+
+  <p class="analysis-note">处理量按你实际执行的终态流转事件统计；日均和月均从加入项目起按自然周期计算，并包含无处理记录的日期。</p>
+</section>
+{% endblock %}

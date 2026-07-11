@@ -187,6 +187,75 @@ async fn web_dashboard_renders_demo_projects_from_database() {
     assert!(body.contains("统一 /web 用户工作台与系统管理入口"));
     assert!(!body.contains("CRM 项目接口验收延期"));
     assert!(!body.contains("对象存储密钥轮换策略未定"));
+    assert!(!body.contains("我的工作项"));
+    assert!(body.contains("我的待处理"));
+    assert!(body.contains("/web/projects/YCE/my-analysis"));
+    assert!(body.contains("status=pending"));
+}
+
+#[tokio::test]
+async fn web_project_personal_analysis_renders_current_user_metrics() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE/my-analysis")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("个人项目分析"));
+    assert!(body.contains("日平均处理"));
+    assert!(body.contains("单日最大处理"));
+    assert!(body.contains("月平均处理"));
+    assert!(body.contains("评论 / 回复"));
+    assert!(body.contains("status=pending"));
+}
+
+#[tokio::test]
+async fn personal_project_analysis_counts_only_real_terminal_transitions() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("YCE should exist");
+
+    projects::update_work_item_status(&pool, initialized.user_id, "YCE-REQ-1", "done")
+        .await
+        .expect("requirement should complete");
+    projects::handoff_work_item(
+        &pool,
+        initialized.user_id,
+        "YCE-REQ-1",
+        projects::HandoffWorkItemInput {
+            status: "done".to_string(),
+            assignee_username: "admin".to_string(),
+            body: "补充完成说明，不应重复计算产出".to_string(),
+        },
+    )
+    .await
+    .expect("terminal item note should save");
+
+    let analysis = projects::personal_project_analysis(&pool, project.id, initialized.user_id)
+        .await
+        .expect("analysis should load");
+    assert_eq!(analysis.completed_total, 1);
+    assert_eq!(analysis.completed_requirements, 1);
 }
 
 #[tokio::test]
@@ -402,7 +471,9 @@ async fn web_projects_can_filter_by_status() {
     assert!(body.contains(r#"class="project-card" href="/web/projects/CRM""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/YCE""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/OPS""#));
-    assert!(body.contains(r#"class="active" href="/web/projects?status=on_hold""#));
+    assert!(
+        body.contains(r#"class="active" data-segmented-item href="/web/projects?status=on_hold""#)
+    );
 }
 
 #[tokio::test]
@@ -499,6 +570,14 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains("YCE-TASK-2"));
     assert!(!tasks_body.contains("OPS-TASK-1"));
     assert!(tasks_body.contains(r#"data-modal-open="work-item-create-modal""#));
+    assert!(!tasks_body.contains(r#"class="page-hero""#));
+    let panel_head = tasks_body
+        .find(r#"class="panel-head""#)
+        .expect("list panel head should render");
+    let create_button = tasks_body
+        .find(r#"data-modal-open="work-item-create-modal""#)
+        .expect("create button should render");
+    assert!(create_button > panel_head);
     assert!(tasks_body.contains(r#"id="work-item-create-modal""#));
     assert!(tasks_body.contains(r#"name="item_type" value="task""#));
     assert!(tasks_body.contains(r#"name="project_key" value="YCE" data-bug-report-item-field"#));

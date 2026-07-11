@@ -2156,6 +2156,194 @@ code {
   font-size: 13px;
 }
 
+.pending-shortcuts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.pending-shortcuts a {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: border-color var(--motion-fast) ease, background var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+
+.pending-shortcuts a:hover {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.pending-shortcuts strong {
+  color: var(--brand-strong);
+  font-size: 13px;
+}
+
+.table-actions {
+  width: 72px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.personal-analysis-page {
+  max-width: 1380px;
+  margin: 0 auto;
+}
+
+.personal-analysis-page .compact-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.analysis-header {
+  min-height: 116px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 4px 2px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.analysis-header h1 {
+  margin: 4px 0 6px;
+  font-size: 26px;
+  line-height: 36px;
+}
+
+.analysis-header p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.analysis-section {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+
+.section-heading {
+  min-height: 44px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 14px;
+}
+
+.section-heading h2 {
+  margin: 2px 0 0;
+  font-size: 18px;
+  line-height: 26px;
+}
+
+.section-heading > span {
+  padding-top: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analysis-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 28px;
+}
+
+.analysis-pending-list,
+.analysis-collaboration {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analysis-pending-list a,
+.analysis-collaboration div {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted-strong);
+  text-decoration: none;
+}
+
+.analysis-pending-list a:hover {
+  border-color: var(--brand-line);
+  background: var(--panel-hover);
+}
+
+.analysis-pending-list strong,
+.analysis-collaboration dd {
+  margin: 0;
+  color: var(--brand-strong);
+  font-size: 24px;
+  line-height: 30px;
+}
+
+.analysis-collaboration {
+  margin: 0;
+}
+
+.analysis-collaboration dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analysis-collaboration div {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.analysis-completion-list {
+  border-top: 1px solid var(--line);
+}
+
+.analysis-completion-list a {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.analysis-completion-list a:hover strong {
+  color: var(--brand-strong);
+}
+
+.analysis-completion-list time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.analysis-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--brand-line);
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
 .progress-track {
   width: 92px;
   height: 7px;
@@ -6162,6 +6350,34 @@ select option {
     height: clamp(34px, 10vw, 42px);
     flex-basis: clamp(34px, 10vw, 42px);
     font-size: 22px;
+  }
+}
+
+@media (max-width: 760px) {
+  .analysis-header,
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .section-heading > span {
+    padding-top: 0;
+  }
+
+  .analysis-columns,
+  .analysis-pending-list,
+  .analysis-collaboration,
+  .personal-analysis-page .compact-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .analysis-completion-list a {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .analysis-completion-list a code,
+  .analysis-completion-list time {
+    grid-column: 2;
   }
 }
 

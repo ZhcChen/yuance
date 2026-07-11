@@ -147,6 +147,43 @@ pub struct WorkItemAssignmentCounts {
     pub bugs: i64,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectPendingCounts {
+    pub project_id: i64,
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PersonalProjectAnalysis {
+    pub joined_at: String,
+    pub completed_total: i64,
+    pub completed_requirements: i64,
+    pub completed_tasks: i64,
+    pub completed_bugs: i64,
+    pub completed_last_30_days: i64,
+    pub pending: WorkItemAssignmentCounts,
+    pub daily_average: f64,
+    pub daily_peak: i64,
+    pub daily_peak_date: String,
+    pub monthly_average: f64,
+    pub monthly_peak: i64,
+    pub monthly_peak_month: String,
+    pub active_days: i64,
+    pub comment_count: i64,
+    pub handoff_count: i64,
+    pub recent_completions: Vec<PersonalCompletion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PersonalCompletion {
+    pub item_key: String,
+    pub item_type: String,
+    pub title: String,
+    pub completed_at: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateProjectInput {
     pub name: String,
@@ -1485,7 +1522,7 @@ pub async fn list_work_item_summaries_filtered_paginated(
                 OR p.project_key LIKE ?2
                 OR p.name LIKE ?2
               )
-              AND (?3 = '' OR wi.status = ?3)
+              AND (?3 = '' OR (?3 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?3)
               AND (?4 = '' OR wi.priority = ?4)
               AND (?5 = '' OR p.project_key = ?5)
               AND (?6 = '' OR assignee.username = ?6)
@@ -1636,7 +1673,7 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
                 OR p.project_key LIKE ?3
                 OR p.name LIKE ?3
               )
-              AND (?4 = '' OR wi.status = ?4)
+              AND (?4 = '' OR (?4 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?4)
               AND (?5 = '' OR wi.priority = ?5)
               AND (?6 = '' OR p.project_key = ?6)
               AND (?7 = '' OR assignee.username = ?7)
@@ -1817,6 +1854,242 @@ pub async fn count_pending_assigned_work_items(
         }
     }
     Ok(counts)
+}
+
+pub async fn list_project_pending_counts_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<Vec<ProjectPendingCounts>> {
+    let rows = sqlx::query_as::<_, (i64, i64, i64, i64)>(
+        r#"
+        SELECT
+            wi.project_id,
+            SUM(CASE WHEN wi.item_type = 'requirement' THEN 1 ELSE 0 END),
+            SUM(CASE WHEN wi.item_type = 'task' THEN 1 ELSE 0 END),
+            SUM(CASE WHEN wi.item_type = 'bug' THEN 1 ELSE 0 END)
+        FROM work_items wi
+        WHERE wi.assignee_user_id = ?1
+          AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+          AND wi.deleted_at IS NULL
+        GROUP BY wi.project_id
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(project_id, requirements, tasks, bugs)| ProjectPendingCounts {
+                project_id,
+                requirements,
+                tasks,
+                bugs,
+            },
+        )
+        .collect())
+}
+
+pub async fn personal_project_analysis(
+    pool: &SqlitePool,
+    project_id: i64,
+    user_id: i64,
+) -> AppResult<PersonalProjectAnalysis> {
+    let joined_at = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT COALESCE(
+            (SELECT pm.joined_at FROM project_members pm
+             WHERE pm.project_id = ?1 AND pm.user_id = ?2),
+            (SELECT p.created_at FROM projects p WHERE p.id = ?1),
+            datetime('now')
+        )
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    let (completed_total, completed_requirements, completed_tasks, completed_bugs, completed_last_30_days) =
+        sqlx::query_as::<_, (i64, i64, i64, i64, i64)>(
+        r#"
+        SELECT
+            COUNT(*),
+            COALESCE(SUM(CASE WHEN wi.item_type = 'requirement' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN wi.item_type = 'task' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN wi.item_type = 'bug' THEN 1 ELSE 0 END), 0),
+            COALESCE(SUM(CASE WHEN pa.created_at >= datetime('now', '-30 days') THEN 1 ELSE 0 END), 0)
+        FROM project_activities pa
+        LEFT JOIN work_items wi ON wi.item_key = pa.target_id
+        WHERE pa.project_id = ?1 AND pa.actor_user_id = ?2
+          AND pa.target_type = 'work_item'
+          AND pa.action IN ('work_item.status.updated', 'work_item.handoff', 'work_item.updated')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.status') ELSE NULL END
+              IN ('done', 'resolved', 'verified', 'closed')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.previous_status') ELSE NULL END
+              NOT IN ('done', 'resolved', 'verified', 'closed', 'cancelled')
+        "#,
+        )
+            .bind(project_id)
+            .bind(user_id)
+            .fetch_one(pool)
+            .await?;
+
+    let pending_rows = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT item_type, COUNT(*)
+        FROM work_items
+        WHERE project_id = ?1
+          AND assignee_user_id = ?2
+          AND status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+          AND deleted_at IS NULL
+        GROUP BY item_type
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    let mut pending = WorkItemAssignmentCounts::default();
+    for (item_type, count) in pending_rows {
+        match item_type.as_str() {
+            "requirement" => pending.requirements = count,
+            "task" => pending.tasks = count,
+            "bug" => pending.bugs = count,
+            _ => {}
+        }
+    }
+
+    let days = sqlx::query_scalar::<_, f64>(
+        "SELECT MAX(1.0, julianday(date('now')) - julianday(date(?1)) + 1.0)",
+    )
+    .bind(&joined_at)
+    .fetch_one(pool)
+    .await?;
+    let months = sqlx::query_scalar::<_, f64>(
+        r#"
+        SELECT MAX(1.0,
+            (CAST(strftime('%Y', 'now') AS INTEGER) - CAST(strftime('%Y', ?1) AS INTEGER)) * 12
+            + CAST(strftime('%m', 'now') AS INTEGER) - CAST(strftime('%m', ?1) AS INTEGER) + 1
+        )
+        "#,
+    )
+    .bind(&joined_at)
+    .fetch_one(pool)
+    .await?;
+
+    let daily_peak = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT date(pa.created_at), COUNT(*) FROM project_activities pa
+        WHERE pa.project_id = ?1 AND pa.actor_user_id = ?2 AND pa.target_type = 'work_item'
+          AND pa.action IN ('work_item.status.updated', 'work_item.handoff', 'work_item.updated')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.status') ELSE NULL END
+              IN ('done', 'resolved', 'verified', 'closed')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.previous_status') ELSE NULL END
+              NOT IN ('done', 'resolved', 'verified', 'closed', 'cancelled')
+        GROUP BY date(pa.created_at) ORDER BY COUNT(*) DESC, date(pa.created_at) DESC LIMIT 1
+        "#,
+    )
+        .bind(project_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+    let monthly_peak = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT strftime('%Y-%m', pa.created_at), COUNT(*) FROM project_activities pa
+        WHERE pa.project_id = ?1 AND pa.actor_user_id = ?2 AND pa.target_type = 'work_item'
+          AND pa.action IN ('work_item.status.updated', 'work_item.handoff', 'work_item.updated')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.status') ELSE NULL END
+              IN ('done', 'resolved', 'verified', 'closed')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.previous_status') ELSE NULL END
+              NOT IN ('done', 'resolved', 'verified', 'closed', 'cancelled')
+        GROUP BY strftime('%Y-%m', pa.created_at)
+        ORDER BY COUNT(*) DESC, strftime('%Y-%m', pa.created_at) DESC LIMIT 1
+        "#,
+    )
+        .bind(project_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+
+    let active_days = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(DISTINCT date(created_at)) FROM project_activities WHERE project_id = ?1 AND actor_user_id = ?2",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    let comment_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_item_comments c
+        JOIN work_items wi ON wi.id = c.work_item_id
+        WHERE wi.project_id = ?1
+          AND c.author_user_id = ?2
+          AND c.deleted_at IS NULL
+          AND c.body NOT LIKE '[yuance-flow] %'
+        "#,
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    let handoff_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM project_activities WHERE project_id = ?1 AND actor_user_id = ?2 AND action = 'work_item.handoff'",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    let recent_completions = sqlx::query_as::<_, (String, String, String, String)>(
+        r#"
+        SELECT pa.target_id, COALESCE(wi.item_type, ''), COALESCE(wi.title, pa.target_id), pa.created_at
+        FROM project_activities pa
+        LEFT JOIN work_items wi ON wi.item_key = pa.target_id
+        WHERE pa.project_id = ?1 AND pa.actor_user_id = ?2 AND pa.target_type = 'work_item'
+          AND pa.action IN ('work_item.status.updated', 'work_item.handoff', 'work_item.updated')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.status') ELSE NULL END
+              IN ('done', 'resolved', 'verified', 'closed')
+          AND CASE WHEN json_valid(pa.metadata) THEN json_extract(pa.metadata, '$.previous_status') ELSE NULL END
+              NOT IN ('done', 'resolved', 'verified', 'closed', 'cancelled')
+        ORDER BY pa.created_at DESC, pa.id DESC
+        LIMIT 8
+        "#,
+    )
+        .bind(project_id)
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|(item_key, item_type, title, completed_at)| PersonalCompletion {
+            item_key,
+            item_type,
+            title,
+            completed_at,
+        })
+        .collect();
+
+    Ok(PersonalProjectAnalysis {
+        joined_at,
+        completed_total,
+        completed_requirements,
+        completed_tasks,
+        completed_bugs,
+        completed_last_30_days,
+        pending,
+        daily_average: completed_total as f64 / days,
+        daily_peak: daily_peak.as_ref().map_or(0, |(_, count)| *count),
+        daily_peak_date: daily_peak.map_or_else(String::new, |(date, _)| date),
+        monthly_average: completed_total as f64 / months,
+        monthly_peak: monthly_peak.as_ref().map_or(0, |(_, count)| *count),
+        monthly_peak_month: monthly_peak.map_or_else(String::new, |(month, _)| month),
+        active_days,
+        comment_count,
+        handoff_count,
+        recent_completions,
+    })
 }
 
 pub async fn create_work_item(
@@ -2146,7 +2419,9 @@ pub async fn update_work_item_status(
     .bind(actor_user_id)
     .bind(item_key)
     .bind(format!("更新工作项 {item_key} 状态"))
-    .bind(format!(r#"{{"status":"{status}"}}"#))
+    .bind(format!(
+        r#"{{"status":"{status}","previous_status":"{current_status}"}}"#
+    ))
     .execute(&mut *tx)
     .await?;
 
@@ -2298,7 +2573,7 @@ pub async fn handoff_work_item(
     .bind(item_key)
     .bind(format!("推进工作项 {item_key}"))
     .bind(format!(
-        r#"{{"status":"{status}","assignee_username":"{next_assignee_username}"}}"#
+        r#"{{"status":"{status}","previous_status":"{current_status}","assignee_username":"{next_assignee_username}"}}"#
     ))
     .execute(&mut *tx)
     .await?;
@@ -2400,7 +2675,7 @@ pub async fn update_work_item(
     .bind(item_key)
     .bind(format!("更新工作项 {item_key}"))
     .bind(format!(
-        r#"{{"status":"{status}","priority":"{priority}","assignee_username":"{assignee_username}","due_date":"{due_date}","parent_item_key":"{parent_item_key}"}}"#
+        r#"{{"status":"{status}","previous_status":"{current_status}","priority":"{priority}","assignee_username":"{assignee_username}","due_date":"{due_date}","parent_item_key":"{parent_item_key}"}}"#
     ))
     .execute(&mut *tx)
     .await?;
@@ -3267,6 +3542,7 @@ fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<Normalize
     };
     let status = match filter.status.trim() {
         "" => String::new(),
+        "pending" => "pending".to_string(),
         value => validate_work_item_status(value)?.to_string(),
     };
     let priority = match filter.priority.trim() {
@@ -3357,7 +3633,7 @@ async fn count_work_item_summaries_filtered(
             OR p.project_key LIKE ?2
             OR p.name LIKE ?2
           )
-          AND (?3 = '' OR wi.status = ?3)
+          AND (?3 = '' OR (?3 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?3)
           AND (?4 = '' OR wi.priority = ?4)
           AND (?5 = '' OR p.project_key = ?5)
           AND (?6 = '' OR assignee.username = ?6)
@@ -3396,7 +3672,7 @@ async fn count_work_item_summaries_filtered_for_user(
             OR p.project_key LIKE ?3
             OR p.name LIKE ?3
           )
-          AND (?4 = '' OR wi.status = ?4)
+          AND (?4 = '' OR (?4 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?4)
           AND (?5 = '' OR wi.priority = ?5)
           AND (?6 = '' OR p.project_key = ?6)
           AND (?7 = '' OR assignee.username = ?7)

@@ -40,6 +40,48 @@ struct ProjectRow {
     status: String,
     status_tone: &'static str,
     updated_at: String,
+    pending_requirements: i64,
+    pending_tasks: i64,
+    pending_bugs: i64,
+}
+
+#[derive(Debug, Clone)]
+struct PersonalAnalysisMetric {
+    label: &'static str,
+    value: String,
+    hint: String,
+    tone: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct PersonalCompletionView {
+    key: String,
+    kind: &'static str,
+    title: String,
+    completed_at: String,
+}
+
+#[derive(Template)]
+#[template(path = "web/projects/personal_analysis.html")]
+struct PersonalProjectAnalysisTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    project: ProjectDetailView,
+    output_metrics: Vec<PersonalAnalysisMetric>,
+    efficiency_metrics: Vec<PersonalAnalysisMetric>,
+    pending: projects::WorkItemAssignmentCounts,
+    active_days: i64,
+    comment_count: i64,
+    handoff_count: i64,
+    joined_at: String,
+    recent_completions: Vec<PersonalCompletionView>,
+    has_recent_completions: bool,
+    current_username: String,
 }
 
 #[derive(Debug, Clone)]
@@ -448,6 +490,7 @@ struct DashboardTemplate {
     has_risk_items: bool,
     activities: Vec<Activity>,
     can_manage_projects: bool,
+    current_username: String,
 }
 
 struct DashboardRenderContext<'a> {
@@ -455,6 +498,7 @@ struct DashboardRenderContext<'a> {
     user_id: i64,
     can_access_all_projects: bool,
     current_user: String,
+    current_username: String,
     csrf_token: String,
     system_nav: SystemNav,
     current_project: Option<CurrentProjectView>,
@@ -557,7 +601,6 @@ struct WorkItemListTemplate {
     current_project_required: bool,
     topbar_project_options: Vec<ProjectOption>,
     title: &'static str,
-    description: &'static str,
     create_label: &'static str,
     item_type: &'static str,
     items: Vec<WorkItem>,
@@ -1080,6 +1123,7 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
                     user_id: 0,
                     can_access_all_projects: true,
                     current_user: "yuance_admin".to_string(),
+                    current_username: "yuance_admin".to_string(),
                     csrf_token: csrf_token.clone(),
                     system_nav: SystemNav::all(),
                     current_project: None,
@@ -1116,6 +1160,7 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
                 user_id: user.id,
                 can_access_all_projects,
                 current_user: user.display_name,
+                current_username: user.username,
                 csrf_token: csrf_token.clone(),
                 system_nav,
                 current_project,
@@ -1674,6 +1719,143 @@ pub async fn project_detail_page(
         })?
         .into_response(),
     )
+}
+
+pub async fn project_personal_analysis_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<Response> {
+    let mut context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        return Ok(Redirect::to("/web").into_response());
+    };
+    ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_project_access(pool, &context, project.id).await?;
+    let selected = projects::set_current_project_for_user(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &project_key,
+    )
+    .await?;
+    context.current_project = Some(current_project_from_domain(selected));
+
+    let username = sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = ?1")
+        .bind(context.user_id)
+        .fetch_one(pool)
+        .await?;
+    let analysis = projects::personal_project_analysis(pool, project.id, context.user_id).await?;
+    let output_metrics = vec![
+        PersonalAnalysisMetric {
+            label: "累计处理",
+            value: analysis.completed_total.to_string(),
+            hint: format!(
+                "需求 {} · 任务 {} · Bug {}",
+                analysis.completed_requirements, analysis.completed_tasks, analysis.completed_bugs
+            ),
+            tone: "info",
+        },
+        PersonalAnalysisMetric {
+            label: "近 30 日",
+            value: analysis.completed_last_30_days.to_string(),
+            hint: "实际推进至终态".to_string(),
+            tone: "ok",
+        },
+        PersonalAnalysisMetric {
+            label: "已处理 Bug",
+            value: analysis.completed_bugs.to_string(),
+            hint: "解决 / 验证 / 关闭".to_string(),
+            tone: "danger",
+        },
+        PersonalAnalysisMetric {
+            label: "当前待处理",
+            value: (analysis.pending.requirements + analysis.pending.tasks + analysis.pending.bugs)
+                .to_string(),
+            hint: format!(
+                "需求 {} · 任务 {} · Bug {}",
+                analysis.pending.requirements, analysis.pending.tasks, analysis.pending.bugs
+            ),
+            tone: "warning",
+        },
+    ];
+    let efficiency_metrics = vec![
+        PersonalAnalysisMetric {
+            label: "日平均处理",
+            value: format!("{:.2}", analysis.daily_average),
+            hint: "加入项目后的自然日均值".to_string(),
+            tone: "info",
+        },
+        PersonalAnalysisMetric {
+            label: "单日最大处理",
+            value: analysis.daily_peak.to_string(),
+            hint: if analysis.daily_peak_date.is_empty() {
+                "暂无完成记录".to_string()
+            } else {
+                analysis.daily_peak_date.clone()
+            },
+            tone: "warning",
+        },
+        PersonalAnalysisMetric {
+            label: "月平均处理",
+            value: format!("{:.2}", analysis.monthly_average),
+            hint: "加入项目后的自然月均值".to_string(),
+            tone: "info",
+        },
+        PersonalAnalysisMetric {
+            label: "单月最大处理",
+            value: analysis.monthly_peak.to_string(),
+            hint: if analysis.monthly_peak_month.is_empty() {
+                "暂无完成记录".to_string()
+            } else {
+                analysis.monthly_peak_month.clone()
+            },
+            tone: "ok",
+        },
+    ];
+    let recent_completions = analysis
+        .recent_completions
+        .iter()
+        .map(|item| PersonalCompletionView {
+            key: item.item_key.clone(),
+            kind: match item.item_type.as_str() {
+                "requirement" => "需求",
+                "task" => "任务",
+                "bug" => "Bug",
+                _ => "工作项",
+            },
+            title: item.title.clone(),
+            completed_at: display_timestamp(item.completed_at.clone()),
+        })
+        .collect::<Vec<_>>();
+
+    response::html(PersonalProjectAnalysisTemplate {
+        active: "dashboard",
+        environment: state.settings.env.clone(),
+        current_user: context.current_user,
+        csrf_token: context.csrf_token,
+        system_nav: context.system_nav,
+        current_project: context.current_project,
+        topbar_project_options: context.topbar_project_options,
+        project: project_detail_from_domain(project),
+        output_metrics,
+        efficiency_metrics,
+        pending: analysis.pending,
+        active_days: analysis.active_days,
+        comment_count: analysis.comment_count,
+        handoff_count: analysis.handoff_count,
+        joined_at: display_timestamp(analysis.joined_at),
+        has_recent_completions: !recent_completions.is_empty(),
+        recent_completions,
+        current_username: username,
+    })
+    .map(IntoResponse::into_response)
 }
 
 pub async fn project_member_add(
@@ -3885,7 +4067,6 @@ pub async fn system_audit_page(
 struct WorkItemListPageMeta {
     active: &'static str,
     title: &'static str,
-    description: &'static str,
     create_label: &'static str,
 }
 
@@ -3894,7 +4075,6 @@ impl WorkItemListPageMeta {
         Self {
             active: "requirements",
             title: "需求",
-            description: "围绕当前项目查看和推进需求。",
             create_label: "新建需求",
         }
     }
@@ -3903,7 +4083,6 @@ impl WorkItemListPageMeta {
         Self {
             active: "tasks",
             title: "任务",
-            description: "围绕当前项目处理开放状态和紧急/高优先级工作。",
             create_label: "新建任务",
         }
     }
@@ -3912,7 +4091,6 @@ impl WorkItemListPageMeta {
         Self {
             active: "bugs",
             title: "Bug",
-            description: "围绕当前项目跟踪未解决缺陷。",
             create_label: "新建 Bug",
         }
     }
@@ -3925,12 +4103,25 @@ async fn work_item_list_page(
     meta: WorkItemListPageMeta,
     query: WorkItemListQuery,
 ) -> AppResult<Response> {
-    let context = match web_context_or_redirect(&state, headers).await? {
+    let mut context = match web_context_or_redirect(&state, headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, headers, context.user_id, "work_item.view").await?;
+    }
+    let requested_project_key = query.project_key.trim().to_ascii_uppercase();
+    if !requested_project_key.is_empty() {
+        if let Some(pool) = context.pool {
+            let selected = projects::set_current_project_for_user(
+                pool,
+                context.user_id,
+                context.can_access_all_projects,
+                &requested_project_key,
+            )
+            .await?;
+            context.current_project = Some(current_project_from_domain(selected));
+        }
     }
     let current_project = context.current_project.clone();
     let project_key = current_project
@@ -4052,7 +4243,6 @@ async fn work_item_list_page(
             current_project_required,
             topbar_project_options: context.topbar_project_options,
             title: meta.title,
-            description: meta.description,
             create_label: meta.create_label,
             item_type: item_type.unwrap_or("task"),
             has_items: !items.is_empty(),
@@ -4192,6 +4382,12 @@ async fn render_dashboard(
                     .collect::<Vec<_>>(),
                 None => project_summaries,
             };
+            let pending_by_project =
+                projects::list_project_pending_counts_for_user(pool, context.user_id)
+                    .await?
+                    .into_iter()
+                    .map(|counts| (counts.project_id, counts))
+                    .collect::<HashMap<_, _>>();
             let work_item_summaries = if can_view_work_items {
                 match current_project_key.as_ref() {
                     Some(project_key) => {
@@ -4241,7 +4437,13 @@ async fn render_dashboard(
                 metrics_from_data(&project_summaries, &work_item_summaries),
                 project_summaries
                     .into_iter()
-                    .map(project_from_summary)
+                    .map(|project| {
+                        let pending = pending_by_project
+                            .get(&project.id)
+                            .cloned()
+                            .unwrap_or_default();
+                        project_from_summary_with_pending(project, pending)
+                    })
                     .collect(),
                 risk_items_from_work_items(&work_item_summaries),
                 activity_summaries
@@ -4276,6 +4478,7 @@ async fn render_dashboard(
         risk_items,
         activities,
         can_manage_projects,
+        current_username: context.current_username,
     })
 }
 
@@ -4673,6 +4876,13 @@ fn metrics_from_data(
 }
 
 fn project_from_summary(project: projects::ProjectSummary) -> ProjectRow {
+    project_from_summary_with_pending(project, projects::ProjectPendingCounts::default())
+}
+
+fn project_from_summary_with_pending(
+    project: projects::ProjectSummary,
+    pending: projects::ProjectPendingCounts,
+) -> ProjectRow {
     let (status, status_tone) = project_status_label(&project.status);
     ProjectRow {
         code: project.project_key,
@@ -4684,6 +4894,9 @@ fn project_from_summary(project: projects::ProjectSummary) -> ProjectRow {
         status: status.to_string(),
         status_tone,
         updated_at: display_timestamp(project.updated_at),
+        pending_requirements: pending.requirements,
+        pending_tasks: pending.tasks,
+        pending_bugs: pending.bugs,
     }
 }
 
@@ -6297,6 +6510,9 @@ fn sample_projects() -> Vec<ProjectRow> {
             status: "进行中".to_string(),
             status_tone: "ok",
             updated_at: "今天 16:20".to_string(),
+            pending_requirements: 1,
+            pending_tasks: 1,
+            pending_bugs: 0,
         },
         ProjectRow {
             code: "OPS".to_string(),
@@ -6308,6 +6524,9 @@ fn sample_projects() -> Vec<ProjectRow> {
             status: "待启动".to_string(),
             status_tone: "info",
             updated_at: "今天 13:05".to_string(),
+            pending_requirements: 0,
+            pending_tasks: 1,
+            pending_bugs: 0,
         },
         ProjectRow {
             code: "CRM".to_string(),
@@ -6319,6 +6538,9 @@ fn sample_projects() -> Vec<ProjectRow> {
             status: "已暂停".to_string(),
             status_tone: "warning",
             updated_at: "昨天 19:42".to_string(),
+            pending_requirements: 0,
+            pending_tasks: 0,
+            pending_bugs: 1,
         },
     ]
 }

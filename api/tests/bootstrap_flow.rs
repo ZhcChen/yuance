@@ -402,7 +402,8 @@ async fn web_renders_dashboard_after_bootstrap_with_session() {
     let body = std::str::from_utf8(&body).expect("body should be utf-8");
 
     assert!(body.contains("系统管理员"));
-    assert!(body.contains("我的工作项"));
+    assert!(!body.contains("我的工作项"));
+    assert!(body.contains("我的待处理"));
     assert!(body.contains("href=\"/favicon.ico\""));
     assert!(body.contains("/static/brand/yuance-logo.svg"));
     assert!(body.contains("data-page-transition"));

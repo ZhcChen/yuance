@@ -334,7 +334,9 @@ async fn web_renders_dashboard_shell() {
 
     assert!(body.contains("元策"));
     assert!(body.contains("href=\"/favicon.ico\""));
-    assert!(body.contains("我的工作项"));
+    assert!(!body.contains("我的工作项"));
+    assert!(body.contains("我的待处理"));
+    assert!(body.contains("/my-analysis"));
     assert!(body.contains("/web/system/storage"));
     assert!(body.contains(r#"id="confirm-action-modal""#));
     assert!(body.contains(r#"data-confirm-modal"#));

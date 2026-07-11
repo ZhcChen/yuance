@@ -92,6 +92,10 @@ pub fn build_router(state: AppState) -> Router {
             "/web/projects/{project_key}/attachments/{attachment_id}/download",
             get(web::user::project_attachment_download),
         )
+        .route(
+            "/web/projects/{project_key}/my-analysis",
+            get(web::user::project_personal_analysis_page),
+        )
         .route("/web/requirements", get(web::user::requirements_page))
         .route("/web/tasks", get(web::user::tasks_page))
         .route("/web/bugs", get(web::user::bugs_page))

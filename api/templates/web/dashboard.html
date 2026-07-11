@@ -37,8 +37,10 @@
               <th>项目</th>
               <th>项目负责人</th>
               <th>工作项</th>
+              <th>我的待处理</th>
               <th>状态</th>
               <th>更新</th>
+              <th class="table-actions">操作</th>
             </tr>
           </thead>
           <tbody>
@@ -53,8 +55,16 @@
                   <span>/ {{ project.total_work_items }} 开放</span>
                 </div>
               </td>
+              <td>
+                <div class="pending-shortcuts" aria-label="{{ project.name }}个人待处理">
+                  <a href="/web/requirements?project_key={{ project.code }}&status=pending&assignee_username={{ current_username }}">需求 <strong>{{ project.pending_requirements }}</strong></a>
+                  <a href="/web/tasks?project_key={{ project.code }}&status=pending&assignee_username={{ current_username }}">任务 <strong>{{ project.pending_tasks }}</strong></a>
+                  <a href="/web/bugs?project_key={{ project.code }}&status=pending&assignee_username={{ current_username }}">Bug <strong>{{ project.pending_bugs }}</strong></a>
+                </div>
+              </td>
               <td><span class="status status-{{ project.status_tone }}">{{ project.status }}</span></td>
               <td>{{ project.updated_at }}</td>
+              <td class="table-actions"><a class="btn btn-sm btn-secondary" href="/web/projects/{{ project.code }}/my-analysis">查看</a></td>
             </tr>
             {% endfor %}
           </tbody>
@@ -62,24 +72,6 @@
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel-head compact">
-        <div>
-          <h2>我的工作项</h2>
-          <p>htmx 局部区域，筛选操作不刷新整个页面。</p>
-        </div>
-        <div class="segmented" aria-label="工作项筛选" data-segmented>
-          <span class="segmented-indicator" aria-hidden="true" data-segmented-indicator></span>
-          <button class="active" type="button" data-segmented-item hx-get="/web/partials/work-items" hx-target="#work-items-panel" hx-swap="innerHTML">全部</button>
-          <button type="button" data-segmented-item hx-get="/web/partials/work-items?kind=requirement" hx-target="#work-items-panel" hx-swap="innerHTML">需求</button>
-          <button type="button" data-segmented-item hx-get="/web/partials/work-items?kind=task" hx-target="#work-items-panel" hx-swap="innerHTML">任务</button>
-          <button type="button" data-segmented-item hx-get="/web/partials/work-items?kind=bug" hx-target="#work-items-panel" hx-swap="innerHTML">Bug</button>
-        </div>
-      </div>
-      <div id="work-items-panel" class="work-items" hx-get="/web/partials/work-items" hx-trigger="load" hx-swap="innerHTML">
-        <div class="loading-row">加载工作项...</div>
-      </div>
-    </section>
   </div>
 
   <aside class="workspace-side" aria-label="风险与动态">

@@ -4,20 +4,6 @@
 
 {% block content %}
 <section class="page-stack">
-  <section class="page-hero">
-    <div>
-      <p class="eyebrow">工作项</p>
-      <h1>{{ title }}</h1>
-      <p>{{ description }}</p>
-    </div>
-    <div class="toolbar-actions">
-      <a class="btn btn-secondary" href="/web">返回工作台</a>
-      {% if can_manage_work_items && !current_project_required %}
-      <button class="btn btn-primary" type="button" data-modal-open="work-item-create-modal">{{ create_label }}</button>
-      {% endif %}
-    </div>
-  </section>
-
   <section class="metric-grid compact-metrics" aria-label="工作项概览">
     <article class="metric metric-info">
       <span class="metric-label">全部</span>
@@ -47,6 +33,9 @@
         <p>请先在顶部选择当前项目，避免多个项目的工作项混在一起。</p>
         {% endmatch %}
       </div>
+      {% if can_manage_work_items && !current_project_required %}
+      <button class="btn btn-primary" type="button" data-modal-open="work-item-create-modal">{{ create_label }}</button>
+      {% endif %}
     </div>
 
     <div class="filter-shell">
@@ -63,6 +52,7 @@
         状态
         <select name="status">
           <option value="">全部状态</option>
+          <option value="pending" {% if filters.status == "pending" %}selected{% endif %}>全部待处理</option>
           <option value="open" {% if filters.status == "open" %}selected{% endif %}>待处理</option>
           <option value="in_progress" {% if filters.status == "in_progress" %}selected{% endif %}>进行中</option>
           <option value="done" {% if filters.status == "done" %}selected{% endif %}>已完成</option>
