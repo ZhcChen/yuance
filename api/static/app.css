@@ -8,10 +8,10 @@
   --muted-strong: #435060;
   --line: #dfe6ed;
   --line-strong: #c9d3df;
-  --brand: #1f5fbf;
-  --brand-strong: #164a96;
-  --brand-soft: #e8f1ff;
-  --brand-line: #cfe0ff;
+  --brand: #376b9b;
+  --brand-strong: #285579;
+  --brand-soft: #edf4f9;
+  --brand-line: #cbdce9;
   --accent: #2d8a68;
   --warning: #a85b00;
   --danger: #b42318;
@@ -19,8 +19,13 @@
   --control-bg: #ffffff;
   --panel-hover: #fbfdff;
   --nav-hover: #f6f9fb;
-  --nav-active: #dbeafe;
-  --menu-active: #eaf2ff;
+  --nav-active: #e9f1f6;
+  --menu-active: #edf4f8;
+  --tab-bg: #f1f5f8;
+  --tab-active-bg: #ffffff;
+  --tab-active-border: #cbd8e2;
+  --tab-active-text: #285579;
+  --tab-active-shadow: 0 1px 3px rgb(31 48 65 / 10%), 0 4px 12px rgb(31 48 65 / 5%);
   --table-head: #fbfcfe;
   --code-bg: #eef2f6;
   --code-text: #344256;
@@ -65,10 +70,10 @@ html[data-theme="dark"] {
   --muted-strong: #c1ccda;
   --line: #293548;
   --line-strong: #3a485d;
-  --brand: #6aa6ff;
-  --brand-strong: #9cc5ff;
-  --brand-soft: #173353;
-  --brand-line: #28527f;
+  --brand: #78a7cf;
+  --brand-strong: #a9c8e2;
+  --brand-soft: #1c3244;
+  --brand-line: #36556f;
   --accent: #5ad09a;
   --warning: #f1b45f;
   --danger: #ff8078;
@@ -76,8 +81,13 @@ html[data-theme="dark"] {
   --control-bg: #101826;
   --panel-hover: #1b2736;
   --nav-hover: #1a2635;
-  --nav-active: #173353;
-  --menu-active: #193657;
+  --nav-active: #203546;
+  --menu-active: #20394d;
+  --tab-bg: #111c29;
+  --tab-active-bg: #223343;
+  --tab-active-border: #3b5267;
+  --tab-active-text: #b8d1e5;
+  --tab-active-shadow: 0 1px 3px rgb(0 0 0 / 28%), 0 5px 14px rgb(0 0 0 / 16%);
   --table-head: #121b28;
   --code-bg: #1e2a3a;
   --code-text: #cad7e6;
@@ -950,6 +960,7 @@ textarea:focus-visible {
   text-decoration: none;
   white-space: nowrap;
   flex: 0 0 auto;
+  transition: background var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 
 .topnav-item:hover {
@@ -958,9 +969,10 @@ textarea:focus-visible {
 }
 
 .topnav-item.active {
-  border-color: transparent;
-  background: var(--nav-active);
-  color: var(--brand-strong);
+  border-color: var(--tab-active-border);
+  background: var(--tab-active-bg);
+  color: var(--tab-active-text);
+  box-shadow: var(--tab-active-shadow);
 }
 
 .topnav-badge {
@@ -1965,8 +1977,8 @@ textarea:focus-visible {
   gap: 4px;
   padding: 5px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--brand-soft) 55%, var(--badge-bg));
+  border-radius: 12px;
+  background: var(--tab-bg);
 }
 
 .project-tab-indicator {
@@ -1976,9 +1988,10 @@ textarea:focus-visible {
   left: 5px;
   width: var(--tab-indicator-width, 0px);
   height: calc(100% - 10px);
-  border-radius: 10px;
-  background: var(--brand);
-  box-shadow: 0 7px 18px rgb(31 95 191 / 24%);
+  border: 1px solid var(--tab-active-border);
+  border-radius: 8px;
+  background: var(--tab-active-bg);
+  box-shadow: var(--tab-active-shadow);
   transform: translateX(var(--tab-indicator-x, 0px));
   transition: width var(--motion-base) cubic-bezier(.2,.8,.2,1), transform var(--motion-base) cubic-bezier(.2,.8,.2,1);
 }
@@ -1992,7 +2005,7 @@ textarea:focus-visible {
   gap: 8px;
   padding: 0 13px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
@@ -2017,18 +2030,18 @@ textarea:focus-visible {
 }
 
 .project-tab:hover {
-  color: var(--brand-strong);
+  color: var(--tab-active-text);
 }
 
 .project-tab.active {
   background: transparent;
-  color: #fff;
+  color: var(--tab-active-text);
   box-shadow: none;
 }
 
 .project-tab.active span {
-  background: rgb(255 255 255 / 18%);
-  color: #fff;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
 }
 
 .project-tab-panels {
@@ -2193,33 +2206,42 @@ code {
 
 .segmented {
   display: inline-flex;
-  padding: 3px;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel-soft);
+  border-radius: 12px;
+  background: var(--tab-bg);
 }
 
 .segmented button,
 .segmented a {
-  min-height: 28px;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
   padding: 0 10px;
   border: 0;
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
   text-decoration: none;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 
 .segmented button:hover,
+.segmented a:hover {
+  color: var(--tab-active-text);
+}
+
 .segmented button.active,
-.segmented a:hover,
 .segmented a.active {
-  background: var(--panel);
-  color: var(--brand);
-  box-shadow: 0 1px 5px rgb(20 35 55 / 8%);
+  border-color: var(--tab-active-border);
+  background: var(--tab-active-bg);
+  color: var(--tab-active-text);
+  box-shadow: var(--tab-active-shadow);
 }
 
 .work-items {
