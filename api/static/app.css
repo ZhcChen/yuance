@@ -403,6 +403,22 @@ body {
   min-height: 36px;
 }
 
+.discussion-assign-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.discussion-assign-status select {
+  width: auto;
+  min-width: 104px;
+  min-height: 34px;
+}
+
 .discussion-attach-button {
   display: inline-flex;
   align-items: center;
@@ -478,6 +494,7 @@ body {
 .discussion-post[data-reply-depth="4"] { margin-left: 136px; }
 
 .discussion-post-content {
+  width: 100%;
   min-width: 0;
 }
 
@@ -618,6 +635,8 @@ body {
 
 .discussion-attachments,
 .legacy-attachment-list {
+  width: 100%;
+  min-width: 0;
   display: grid;
   gap: 8px;
   margin-top: 12px;
@@ -625,6 +644,9 @@ body {
 
 .discussion-attachment,
 .legacy-attachment-row {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto;
   align-items: center;

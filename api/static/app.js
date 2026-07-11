@@ -1844,7 +1844,7 @@
 
   function setDiscussionBusy(form, busy) {
     form.dataset.discussionBusy = busy ? "true" : "false";
-    form.querySelectorAll("button, textarea, input").forEach(function (control) {
+    form.querySelectorAll("button, textarea, input, select").forEach(function (control) {
       control.disabled = busy;
     });
     var submit = form.querySelector("[data-discussion-submit]");
@@ -1853,7 +1853,7 @@
     }
   }
 
-  async function submitDiscussion(form) {
+  async function submitDiscussion(form, submitter) {
     if (form.dataset.discussionBusy === "true" || !form.reportValidity()) {
       return;
     }
@@ -1886,6 +1886,32 @@
         commentId = String(comment.id);
         form.dataset.discussionCommentId = commentId;
         form.dataset.discussionLocked = "true";
+      }
+
+      if (
+        submitter &&
+        submitter.matches("[data-discussion-assign]") &&
+        form.dataset.discussionAssignmentComplete !== "true"
+      ) {
+        var assignTarget = form.dataset.assignTarget || "";
+        var assignStatus = form.querySelector("[data-discussion-assign-status]");
+        if (!assignTarget) {
+          throw new Error("无法识别指派对象，请刷新页面后重试。");
+        }
+        discussionStatus(form, "正在更新指派和状态...", "info");
+        await fetchJson(
+          "/api/v1/work-items/" + encodeURIComponent(itemKey) + "/handoff",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body: JSON.stringify({
+              status: assignStatus ? assignStatus.value : "",
+              assignee_username: assignTarget,
+              body: "由讨论内容自动指派",
+            }),
+          }
+        );
+        form.dataset.discussionAssignmentComplete = "true";
       }
 
       for (var index = 0; index < files.length; index += 1) {
@@ -3207,7 +3233,7 @@
     var discussionForm = event.target.closest("[data-discussion-form]");
     if (discussionForm) {
       event.preventDefault();
-      submitDiscussion(discussionForm);
+      submitDiscussion(discussionForm, event.submitter);
       return;
     }
 

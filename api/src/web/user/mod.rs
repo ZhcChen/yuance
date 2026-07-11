@@ -200,6 +200,7 @@ struct WorkItemDetailView {
     has_parent: bool,
     assignee_username: String,
     assignee: String,
+    reporter_username: String,
     reporter: String,
     priority_code: String,
     priority: String,
@@ -221,6 +222,7 @@ struct WorkItemComment {
     reply_depth: usize,
     body: String,
     author: String,
+    author_username: String,
     created_at: String,
     updated_at: String,
     is_edited: bool,
@@ -653,6 +655,7 @@ struct WorkItemDetailTemplate {
 struct WorkItemDetailPartialTemplate {
     csrf_token: String,
     item: WorkItemDetailView,
+    status_options: Vec<WorkItemStatusOption>,
     comments: Vec<WorkItemComment>,
     has_comments: bool,
     can_manage_work_items: bool,
@@ -2283,7 +2286,7 @@ pub async fn work_item_detail_page(
     let can_delete_work_items =
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
-    let status_options = work_item_status_options(&item.status_code)?;
+    let status_options = work_item_status_options(&item.kind, &item.status_code)?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -4341,10 +4344,12 @@ pub async fn work_item_detail_partial(
     .await?
         && projects::ensure_project_accepts_writes(&project.status).is_ok();
 
+    let status_options = work_item_status_options(&item.kind, &item.status_code)?;
     response::html(WorkItemDetailPartialTemplate {
         csrf_token: csrf::ensure_token(&headers),
         has_comments: !comments.is_empty(),
         item,
+        status_options,
         comments,
         can_manage_work_items,
     })
@@ -5063,6 +5068,7 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         has_parent: !item.parent_item_key.trim().is_empty(),
         assignee_username: item.assignee_username,
         assignee: fallback_text(item.assignee_display_name, "未分配"),
+        reporter_username: item.reporter_username,
         reporter: fallback_text(item.reporter_display_name, "未分配"),
         priority_code: item.priority,
         priority,
@@ -5087,13 +5093,19 @@ fn comment_from_summary_with_permission(
 ) -> WorkItemComment {
     let is_edited = comment.updated_at != comment.created_at;
     let body = work_item_comment_body_for_display(&comment.body, comment.is_flow);
+    let parent_author = if comment.parent_comment_id.is_some() {
+        fallback_text(comment.parent_author_display_name, "原评论作者")
+    } else {
+        String::new()
+    };
     WorkItemComment {
         id: comment.id,
         parent_comment_id: comment.parent_comment_id,
-        parent_author: fallback_text(comment.parent_author_display_name, "原评论作者"),
+        parent_author,
         reply_depth: 0,
         body,
         author: fallback_text(comment.author_display_name, "系统"),
+        author_username: comment.author_username,
         created_at: display_timestamp(comment.created_at),
         updated_at: display_timestamp(comment.updated_at),
         is_edited,
@@ -6158,16 +6170,29 @@ fn work_item_type_options() -> Vec<WorkItemTypeOption> {
     ]
 }
 
-fn work_item_status_options(current_status: &str) -> AppResult<Vec<WorkItemStatusOption>> {
+fn work_item_status_options(
+    item_kind: &str,
+    current_status: &str,
+) -> AppResult<Vec<WorkItemStatusOption>> {
     let current_status = projects::normalize_work_item_status(current_status)?;
     let mut values = vec![current_status];
     for status in projects::allowed_work_item_status_transitions(current_status)? {
-        values.push(status);
+        let relevant = match item_kind {
+            "Bug" => matches!(
+                *status,
+                "open" | "in_progress" | "resolved" | "verified" | "closed"
+            ),
+            "需求" | "任务" => matches!(*status, "open" | "in_progress" | "done" | "closed"),
+            _ => true,
+        };
+        if relevant {
+            values.push(status);
+        }
     }
     values
         .into_iter()
         .map(|status| {
-            let (label, _, _) = work_item_labels("", status);
+            let (_, label, _) = work_item_labels("", status);
             Ok(WorkItemStatusOption {
                 value: status,
                 label,
@@ -6719,7 +6744,7 @@ fn render_sample_work_item_detail_page(
     context: WebContext<'_>,
 ) -> AppResult<Response> {
     let partial = sample_work_item_detail_partial();
-    let status_options = work_item_status_options(&partial.item.status_code)?;
+    let status_options = work_item_status_options(&partial.item.kind, &partial.item.status_code)?;
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
         state,
@@ -6754,8 +6779,11 @@ fn render_sample_work_item_detail_page(
 }
 
 fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
+    let status_options = work_item_status_options("任务", "in_progress")
+        .expect("sample work item statuses should be valid");
     WorkItemDetailPartialTemplate {
         csrf_token: "sample-csrf-token".to_string(),
+        status_options,
         item: WorkItemDetailView {
             id: 2,
             key: "YCE-TASK-2".to_string(),
@@ -6769,6 +6797,7 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
             has_parent: true,
             assignee_username: "yuance_admin".to_string(),
             assignee: "陈".to_string(),
+            reporter_username: "yuance_admin".to_string(),
             reporter: "陈".to_string(),
             priority_code: "P0".to_string(),
             priority: "紧急".to_string(),
@@ -6788,6 +6817,7 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
             reply_depth: 0,
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
             author: "陈".to_string(),
+            author_username: "yuance_admin".to_string(),
             created_at: "今天".to_string(),
             updated_at: "今天".to_string(),
             is_edited: false,
