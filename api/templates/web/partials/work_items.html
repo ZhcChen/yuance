@@ -1,23 +1,8 @@
-<div class="work-item-list">
-  {% if has_items %}
-  {% for item in items %}
-  <article class="work-item">
-    <div>
-      <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
-      <code>{{ item.key }}</code>
-      <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
-      <p>{{ item.project }} · {{ item.assignee }}</p>
-    </div>
-    <div class="work-meta">
-      <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
-      <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-    </div>
-  </article>
-  {% endfor %}
-  {% else %}
+{% if has_items %}
+{% include "web/partials/work_item_table.html" %}
+{% else %}
   <div class="empty-state">
     <strong>{{ empty_message }}</strong>
     <span>当前筛选条件下没有需要处理的工作项。</span>
   </div>
-  {% endif %}
-</div>
+{% endif %}

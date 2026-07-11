@@ -693,17 +693,23 @@ async fn web_work_item_list_paginates_current_project_items() {
     let first_body = response_body(first_response).await;
     let second_body = response_body(second_response).await;
 
-    assert!(first_body.contains("第 1/2 页"));
-    assert!(first_body.contains("显示 1-1，共 2 条，每页 1 条"));
-    assert!(first_body.contains("下一页"));
+    assert!(first_body.contains("当前显示 1-1"));
+    assert!(first_body.contains("共 2 条"));
+    assert!(first_body.contains("aria-label=\"下一页\""));
+    assert!(first_body.contains("<table class=\"data-table work-item-table\">"));
+    assert!(first_body.contains("<th class=\"work-table-actions\" scope=\"col\">操作</th>"));
+    assert!(first_body.contains(">查看</a>"));
+    assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains("value=\"100\""));
+    assert!(first_body.contains("aria-label=\"跳转页码\""));
     assert!(first_body.contains("project_key=YCE"));
     assert!(first_body.contains("page=2"));
     assert!(first_body.contains("per_page=1"));
     assert!(first_body.contains("YCE-TASK-1") ^ first_body.contains("YCE-TASK-2"));
 
-    assert!(second_body.contains("第 2/2 页"));
-    assert!(second_body.contains("显示 2-2，共 2 条，每页 1 条"));
-    assert!(second_body.contains("上一页"));
+    assert!(second_body.contains("当前显示 2-2"));
+    assert!(second_body.contains("共 2 条"));
+    assert!(second_body.contains("aria-label=\"上一页\""));
     assert!(second_body.contains("project_key=YCE"));
     assert!(second_body.contains("per_page=1"));
     assert!(second_body.contains("YCE-TASK-1") ^ second_body.contains("YCE-TASK-2"));

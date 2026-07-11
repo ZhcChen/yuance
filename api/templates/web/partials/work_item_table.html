@@ -1,0 +1,37 @@
+<div class="table-wrap work-table-wrap">
+  <table class="data-table work-item-table">
+    <thead>
+      <tr>
+        <th scope="col">编号</th>
+        <th class="work-table-title" scope="col">标题</th>
+        <th scope="col">项目</th>
+        <th scope="col">处理人</th>
+        <th scope="col">优先级</th>
+        <th scope="col">状态</th>
+        <th class="work-table-actions" scope="col">操作</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>
+          <div class="work-table-key">
+            <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
+            <code>{{ item.key }}</code>
+          </div>
+        </td>
+        <td class="work-table-title">
+          <a class="work-table-title-link" href="/web/work-items/{{ item.key }}">{{ item.title }}</a>
+        </td>
+        <td class="work-table-muted">{{ item.project }}</td>
+        <td>{{ item.assignee }}</td>
+        <td><span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span></td>
+        <td><span class="status status-{{ item.status_tone }}">{{ item.status }}</span></td>
+        <td class="work-table-actions">
+          <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}">查看</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

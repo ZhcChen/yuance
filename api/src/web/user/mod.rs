@@ -263,6 +263,13 @@ struct PaginationView {
 }
 
 #[derive(Debug, Clone)]
+struct PaginationPageView {
+    page: i64,
+    url: String,
+    current: bool,
+}
+
+#[derive(Debug, Clone)]
 struct Activity {
     title: String,
     meta: String,
@@ -611,6 +618,7 @@ struct WorkItemListTemplate {
     filters: WorkItemListFilterView,
     summary: WorkItemListSummary,
     pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
     has_items: bool,
     can_manage_work_items: bool,
 }
@@ -4252,6 +4260,13 @@ async fn work_item_list_page(
             items,
             parent_options,
             assignee_options,
+            pagination_pages: work_item_pagination_pages(
+                meta.active,
+                &filters,
+                pagination.page,
+                pagination.per_page,
+                pagination.total_pages,
+            ),
             filters,
             summary,
             pagination,
@@ -5939,8 +5954,10 @@ fn normalize_web_pagination(
     if page < 1 {
         return Err(AppError::BadRequest("页码不能小于 1".to_string()));
     }
-    if !(1..=50).contains(&per_page) {
-        return Err(AppError::BadRequest("每页数量必须在 1-50 之间".to_string()));
+    if !(1..=100).contains(&per_page) {
+        return Err(AppError::BadRequest(
+            "每页数量必须在 1-100 之间".to_string(),
+        ));
     }
     Ok(projects::Pagination { page, per_page })
 }
@@ -6117,6 +6134,28 @@ fn work_item_page_url(
     } else {
         format!("/web/{active}?{}", params.join("&"))
     }
+}
+
+fn work_item_pagination_pages(
+    active: &str,
+    filters: &WorkItemListFilterView,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: work_item_page_url(active, filters, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
 }
 
 fn push_query_param(params: &mut Vec<String>, key: &str, value: &str) {

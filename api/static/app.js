@@ -3271,6 +3271,21 @@
     }
   });
 
+  document.addEventListener("change", function (event) {
+    var pageSize = event.target.closest("[data-pagination-size]");
+    if (!pageSize) {
+      return;
+    }
+    var form = pageSize.closest("[data-pagination-form]");
+    var pageInput = form && form.querySelector("input[name='page']");
+    if (pageInput) {
+      pageInput.value = "1";
+    }
+    if (form) {
+      form.requestSubmit();
+    }
+  });
+
   function handleProjectSearchEvent(event) {
     var input = event.target.closest("[data-project-search-input]");
     if (!input) {

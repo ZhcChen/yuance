@@ -94,40 +94,8 @@
       <span>选择当前项目后再查看{{ title }}，避免跨项目混合。</span>
     </div>
     {% else if has_items %}
-    <div class="work-item-list list-page-items">
-      {% for item in items %}
-      <article class="work-item">
-        <div>
-          <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
-          <code>{{ item.key }}</code>
-          <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
-          <p>{{ item.project }} · {{ item.assignee }}</p>
-        </div>
-        <div class="work-meta">
-          <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
-          <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-        </div>
-      </article>
-      {% endfor %}
-    </div>
-    <nav class="pager" aria-label="{{ title }}分页">
-      <div class="pager-meta">
-        <strong>第 {{ pagination.page }}/{{ pagination.total_pages }} 页</strong>
-        <span>显示 {{ pagination.range_start }}-{{ pagination.range_end }}，共 {{ pagination.total_items }} 条，每页 {{ pagination.per_page }} 条</span>
-      </div>
-      <div class="pager-actions">
-        {% if pagination.has_previous %}
-        <a class="btn btn-secondary" href="{{ pagination.previous_url }}">上一页</a>
-        {% else %}
-        <span class="btn btn-secondary disabled" aria-disabled="true">上一页</span>
-        {% endif %}
-        {% if pagination.has_next %}
-        <a class="btn btn-secondary" href="{{ pagination.next_url }}">下一页</a>
-        {% else %}
-        <span class="btn btn-secondary disabled" aria-disabled="true">下一页</span>
-        {% endif %}
-      </div>
-    </nav>
+    {% include "web/partials/work_item_table.html" %}
+    {% include "web/partials/work_item_pagination.html" %}
     {% else %}
     <div class="empty-state">
       <strong>暂无{{ title }}</strong>
