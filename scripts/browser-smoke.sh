@@ -217,6 +217,12 @@ cat >"$EVAL_FILE" <<JS
 
   await open("/web");
   assert(hasText("工作台"), "工作台未渲染");
+  const dashboardSegmented = query("[data-segmented]");
+  const initialSegmentedX = dashboardSegmented.style.getPropertyValue("--segmented-indicator-x");
+  click("[data-segmented-item][hx-get*='kind=requirement']");
+  await waitFor(() => query("[data-segmented-item][hx-get*='kind=requirement']").classList.contains("active"), "工作台筛选 Tab 未激活");
+  assert(dashboardSegmented.style.getPropertyValue("--segmented-indicator-x") !== initialSegmentedX, "工作台筛选 Tab 滑块未移动");
+  assert(getComputedStyle(query("[data-segmented-indicator]")).transitionDuration.includes("0.22s"), "工作台筛选 Tab 未应用滑块动画");
 
   const systemTrigger = query(".topnav-trigger");
   systemTrigger.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
@@ -349,8 +355,15 @@ cat >"$EVAL_FILE" <<JS
 
   const projectTabs = query("[data-tabs]");
   const projectTabList = query(".project-tab-list");
+  const projectTabBadge = query("[data-tab-key='work'] span");
+  const topnavBadgeReference = frameDocument().createElement("span");
+  topnavBadgeReference.className = "topnav-badge";
+  frameDocument().body.appendChild(topnavBadgeReference);
   const initialIndicatorX = projectTabList.style.getPropertyValue("--tab-indicator-x");
   assert(query("[data-tab-indicator]"), "项目 Tabs 未渲染活动滑块");
+  assert(getComputedStyle(projectTabBadge).position === "absolute", "项目 Tab 角标未定位到右上角");
+  assert(getComputedStyle(projectTabBadge).backgroundColor === getComputedStyle(topnavBadgeReference).backgroundColor, "项目 Tab 角标未复用顶部红色角标");
+  topnavBadgeReference.remove();
   click("[data-tab-key='info']");
   await waitFor(() => query("[data-tab-key='info']").classList.contains("active"), "项目详情 Tab 未激活");
   assert(

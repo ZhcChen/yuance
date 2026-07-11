@@ -68,11 +68,12 @@
           <h2>我的工作项</h2>
           <p>htmx 局部区域，筛选操作不刷新整个页面。</p>
         </div>
-        <div class="segmented" aria-label="工作项筛选">
-          <button class="active" type="button" hx-get="/web/partials/work-items" hx-target="#work-items-panel" hx-swap="innerHTML">全部</button>
-          <button type="button" hx-get="/web/partials/work-items?kind=requirement" hx-target="#work-items-panel" hx-swap="innerHTML">需求</button>
-          <button type="button" hx-get="/web/partials/work-items?kind=task" hx-target="#work-items-panel" hx-swap="innerHTML">任务</button>
-          <button type="button" hx-get="/web/partials/work-items?kind=bug" hx-target="#work-items-panel" hx-swap="innerHTML">Bug</button>
+        <div class="segmented" aria-label="工作项筛选" data-segmented>
+          <span class="segmented-indicator" aria-hidden="true" data-segmented-indicator></span>
+          <button class="active" type="button" data-segmented-item hx-get="/web/partials/work-items" hx-target="#work-items-panel" hx-swap="innerHTML">全部</button>
+          <button type="button" data-segmented-item hx-get="/web/partials/work-items?kind=requirement" hx-target="#work-items-panel" hx-swap="innerHTML">需求</button>
+          <button type="button" data-segmented-item hx-get="/web/partials/work-items?kind=task" hx-target="#work-items-panel" hx-swap="innerHTML">任务</button>
+          <button type="button" data-segmented-item hx-get="/web/partials/work-items?kind=bug" hx-target="#work-items-panel" hx-swap="innerHTML">Bug</button>
         </div>
       </div>
       <div id="work-items-panel" class="work-items" hx-get="/web/partials/work-items" hx-trigger="load" hx-swap="innerHTML">

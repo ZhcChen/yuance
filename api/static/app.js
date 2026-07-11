@@ -916,6 +916,30 @@
     });
   }
 
+  function syncSegmentedIndicator(control) {
+    var active = control && control.querySelector("[data-segmented-item].active");
+    if (!control || !active) {
+      return;
+    }
+    control.style.setProperty("--segmented-indicator-width", active.offsetWidth + "px");
+    control.style.setProperty("--segmented-indicator-x", Math.max(0, active.offsetLeft - 5) + "px");
+  }
+
+  function activateSegmentedItem(item) {
+    var control = item && item.closest("[data-segmented]");
+    if (!control) {
+      return;
+    }
+    control.querySelectorAll("[data-segmented-item]").forEach(function (candidate) {
+      candidate.classList.toggle("active", candidate === item);
+    });
+    syncSegmentedIndicator(control);
+  }
+
+  function initSegmentedControls(root) {
+    (root || document).querySelectorAll("[data-segmented]").forEach(syncSegmentedIndicator);
+  }
+
   function isPreviewableImageType(contentType) {
     return [
       "image/avif",
@@ -2871,6 +2895,11 @@
       return;
     }
 
+    var segmentedItem = event.target.closest("[data-segmented-item]");
+    if (segmentedItem) {
+      activateSegmentedItem(segmentedItem);
+    }
+
     var themeToggle = event.target.closest("[data-theme-toggle]");
     if (themeToggle) {
       event.preventDefault();
@@ -3067,6 +3096,7 @@
     initUserComboboxes(event.target);
     initSelectControls(event.target);
     initTabs(event.target);
+    initSegmentedControls(event.target);
     initAttachmentImagePreviews(event.target);
   });
 
@@ -3268,6 +3298,7 @@
     });
   });
   initTabs(document);
+  initSegmentedControls(document);
 
   document.addEventListener("click", function (event) {
     if (
@@ -3289,6 +3320,7 @@
       positionSelectPanel(activeSelectControl);
     }
     document.querySelectorAll("[data-tabs]").forEach(syncTabIndicator);
+    document.querySelectorAll("[data-segmented]").forEach(syncSegmentedIndicator);
   });
 
   window.addEventListener("scroll", function () {

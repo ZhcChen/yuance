@@ -960,7 +960,6 @@ textarea:focus-visible {
   text-decoration: none;
   white-space: nowrap;
   flex: 0 0 auto;
-  transition: background var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
 }
 
 .topnav-item:hover {
@@ -969,10 +968,9 @@ textarea:focus-visible {
 }
 
 .topnav-item.active {
-  border-color: var(--tab-active-border);
-  background: var(--tab-active-bg);
-  color: var(--tab-active-text);
-  box-shadow: var(--tab-active-shadow);
+  border-color: transparent;
+  background: var(--nav-active);
+  color: var(--brand-strong);
 }
 
 .topnav-badge {
@@ -2003,7 +2001,7 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 13px;
+  padding: 0 18px 0 13px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -2016,6 +2014,10 @@ textarea:focus-visible {
 }
 
 .project-tab span {
+  position: absolute;
+  z-index: 2;
+  top: -5px;
+  right: -4px;
   min-width: 20px;
   min-height: 20px;
   display: inline-flex;
@@ -2023,10 +2025,13 @@ textarea:focus-visible {
   justify-content: center;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--badge-bg);
-  color: var(--muted-strong);
-  font-size: 12px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
   line-height: 20px;
+  box-shadow: 0 0 0 2px var(--tab-bg);
+  pointer-events: none;
 }
 
 .project-tab:hover {
@@ -2040,8 +2045,8 @@ textarea:focus-visible {
 }
 
 .project-tab.active span {
-  background: var(--brand-soft);
-  color: var(--brand-strong);
+  background: var(--danger);
+  color: #fff;
 }
 
 .project-tab-panels {
@@ -2205,17 +2210,35 @@ code {
 }
 
 .segmented {
+  position: relative;
   display: inline-flex;
   gap: 4px;
-  padding: 4px;
+  padding: 5px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--tab-bg);
 }
 
+.segmented-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 5px;
+  left: 5px;
+  width: var(--segmented-indicator-width, 0px);
+  height: calc(100% - 10px);
+  border: 1px solid var(--tab-active-border);
+  border-radius: 8px;
+  background: var(--tab-active-bg);
+  box-shadow: var(--tab-active-shadow);
+  transform: translateX(var(--segmented-indicator-x, 0px));
+  transition: width var(--motion-base) cubic-bezier(.2,.8,.2,1), transform var(--motion-base) cubic-bezier(.2,.8,.2,1);
+}
+
 .segmented button,
 .segmented a {
-  min-height: 32px;
+  position: relative;
+  z-index: 1;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
   padding: 0 10px;
@@ -2238,10 +2261,10 @@ code {
 
 .segmented button.active,
 .segmented a.active {
-  border-color: var(--tab-active-border);
-  background: var(--tab-active-bg);
+  border-color: transparent;
+  background: transparent;
   color: var(--tab-active-text);
-  box-shadow: var(--tab-active-shadow);
+  box-shadow: none;
 }
 
 .work-items {
@@ -6151,6 +6174,7 @@ select option {
   .image-viewer-stage video,
   .select-control-panel,
   .project-tab-indicator,
+  .segmented-indicator,
   .topbar-search-history,
   .drawer-panel,
   .project-tab-panel {
