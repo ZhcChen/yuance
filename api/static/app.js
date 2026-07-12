@@ -3754,7 +3754,7 @@
         return { label: "已上传", tone: "ok" };
       }
       if (status === "deleted") {
-        return { label: "已删除", tone: "danger" };
+        return { label: "已归档", tone: "danger" };
       }
       return { label: "待上传", tone: "warning" };
     }
@@ -3828,9 +3828,9 @@
           }
           if (canManageFiles) {
             html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + attachmentId + '" data-file-object-id="' + fileObjectId + '">移动到</button>';
-            html += '<form class="inline-form" method="post" action="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 ' + escapeHtml(item.filename || "文件") + '？删除后不能继续下载。" data-confirm-action="删除">';
+            html += '<form class="inline-form" method="post" action="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/delete" data-confirm-submit-form data-confirm-title="归档项目文件" data-confirm-message="确认归档文件 ' + escapeHtml(item.filename || "文件") + '？归档后不能继续下载，文件记录仍会保留。" data-confirm-action="归档">';
             html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
-            html += '<button class="btn btn-sm btn-danger" type="submit">删除</button>';
+            html += '<button class="btn btn-sm btn-danger" type="submit">归档</button>';
             html += '</form>';
           }
         }
