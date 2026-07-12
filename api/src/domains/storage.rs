@@ -258,6 +258,82 @@ pub async fn list_config_versions(pool: &SqlitePool) -> AppResult<Vec<StorageCon
         .collect())
 }
 
+pub async fn count_config_versions(pool: &SqlitePool) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM storage_config_versions
+        WHERE provider = ?1
+        "#,
+    )
+    .bind(STORAGE_PROVIDER_ALIYUN_OSS)
+    .fetch_one(pool)
+    .await?)
+}
+
+pub async fn list_config_versions_page(
+    pool: &SqlitePool,
+    page: i64,
+    per_page: i64,
+) -> AppResult<Vec<StorageConfigVersion>> {
+    if page < 1 {
+        return Err(AppError::BadRequest("页码不能小于 1".to_string()));
+    }
+    if per_page < 1 {
+        return Err(AppError::BadRequest("每页数量不能小于 1".to_string()));
+    }
+    let offset = (page - 1).saturating_mul(per_page);
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            v.id,
+            v.storage_config_id,
+            v.version,
+            v.provider,
+            v.endpoint,
+            v.region,
+            v.bucket,
+            v.access_key_id_hint,
+            v.status AS snapshot_status,
+            COALESCE(c.status, v.status) AS current_status,
+            COALESCE(u.display_name, '') AS created_by,
+            v.created_at
+        FROM storage_config_versions v
+        LEFT JOIN storage_configs c ON c.id = v.storage_config_id
+        LEFT JOIN users u ON u.id = v.created_by_user_id
+        WHERE v.provider = ?1
+        ORDER BY v.version DESC, v.id DESC
+        LIMIT ?2 OFFSET ?3
+        "#,
+    )
+    .bind(STORAGE_PROVIDER_ALIYUN_OSS)
+    .bind(per_page)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(storage_config_version_from_row)
+        .collect())
+}
+
 pub async fn save_config(
     pool: &SqlitePool,
     settings: &Settings,

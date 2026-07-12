@@ -454,6 +454,14 @@ struct StorageConfigVersionView {
 }
 
 #[derive(Debug, Clone)]
+struct StorageVersionsPageView {
+    versions: Vec<StorageConfigVersionView>,
+    has_versions: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
+}
+
+#[derive(Debug, Clone)]
 struct StorageBucketInspectionView {
     provider: String,
     bucket: String,
@@ -743,6 +751,8 @@ struct StorageSettingsTemplate {
     config: StorageConfigView,
     versions: Vec<StorageConfigVersionView>,
     has_versions: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
     bucket_inspection: StorageBucketInspectionView,
     message: String,
     message_tone: &'static str,
@@ -928,9 +938,21 @@ pub struct RoleWorkbenchQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct StorageSettingsQuery {
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct StorageConfigForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     endpoint: String,
     region: String,
     bucket: String,
@@ -944,18 +966,30 @@ pub struct StorageConfigForm {
 pub struct StorageProbeForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct StorageInitializeForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct StorageRollbackForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3752,6 +3786,7 @@ pub async fn system_permissions_page(
 pub async fn storage_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<StorageSettingsQuery>,
 ) -> AppResult<Response> {
     let context = match system_context_or_redirect(&state, &headers, "system.storage.view").await? {
         Ok(context) => context,
@@ -3761,8 +3796,8 @@ pub async fn storage_settings(
         .await?
         .map(storage_config_view_from_domain)
         .unwrap_or_else(empty_storage_config_view);
-    let versions = storage_versions_for_view(state.pool()?).await?;
-    let has_versions = !versions.is_empty();
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let versions_page = storage_versions_page_for_view(state.pool()?, requested_pagination).await?;
     let bucket_inspection = storage_bucket_inspection_for_page(state.pool()?, &state).await;
     let can_manage_storage =
         rbac::user_has_permission(state.pool()?, context.user_id, "system.storage.manage").await?;
@@ -3779,8 +3814,10 @@ pub async fn storage_settings(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             config,
-            versions,
-            has_versions,
+            versions: versions_page.versions,
+            has_versions: versions_page.has_versions,
+            pagination: versions_page.pagination,
+            pagination_pages: versions_page.pagination_pages,
             bucket_inspection,
             message: String::new(),
             message_tone: "info",
@@ -3801,6 +3838,7 @@ pub async fn storage_settings_save(
             Ok(context) => context,
             Err(response) => return Ok(response),
         };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
     let saved = storage::save_config(
         state.pool()?,
         &state.settings,
@@ -3831,8 +3869,7 @@ pub async fn storage_settings_save(
     .await?;
 
     let csrf_token = context.csrf_token.clone();
-    let versions = storage_versions_for_view(state.pool()?).await?;
-    let has_versions = !versions.is_empty();
+    let versions_page = storage_versions_page_for_view(state.pool()?, requested_pagination).await?;
     let bucket_inspection = storage_bucket_inspection_for_page(state.pool()?, &state).await;
     with_csrf_cookie(
         &state,
@@ -3846,8 +3883,10 @@ pub async fn storage_settings_save(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             config: storage_config_view_from_domain(saved),
-            versions,
-            has_versions,
+            versions: versions_page.versions,
+            has_versions: versions_page.has_versions,
+            pagination: versions_page.pagination,
+            pagination_pages: versions_page.pagination_pages,
             bucket_inspection,
             message: "对象存储配置已保存，密钥已加密入库。".to_string(),
             message_tone: "success",
@@ -3868,6 +3907,7 @@ pub async fn storage_settings_probe(
             Ok(context) => context,
             Err(response) => return Ok(response),
         };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
     let pool = state.pool()?;
     let (message, probe_ok, message_tone, bucket_inspection) =
         match storage::inspect_active_config(pool, &state.settings).await {
@@ -3916,8 +3956,7 @@ pub async fn storage_settings_probe(
         .await?
         .map(storage_config_view_from_domain)
         .unwrap_or_else(empty_storage_config_view);
-    let versions = storage_versions_for_view(pool).await?;
-    let has_versions = !versions.is_empty();
+    let versions_page = storage_versions_page_for_view(pool, requested_pagination).await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -3932,8 +3971,10 @@ pub async fn storage_settings_probe(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             config,
-            versions,
-            has_versions,
+            versions: versions_page.versions,
+            has_versions: versions_page.has_versions,
+            pagination: versions_page.pagination,
+            pagination_pages: versions_page.pagination_pages,
             bucket_inspection,
             message,
             message_tone,
@@ -3954,6 +3995,7 @@ pub async fn storage_settings_initialize(
             Ok(context) => context,
             Err(response) => return Ok(response),
         };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
     let pool = state.pool()?;
     let (message, init_ok, bucket_inspection) =
         match storage::initialize_active_config(pool, &state.settings).await {
@@ -3995,8 +4037,7 @@ pub async fn storage_settings_initialize(
         .await?
         .map(storage_config_view_from_domain)
         .unwrap_or_else(empty_storage_config_view);
-    let versions = storage_versions_for_view(pool).await?;
-    let has_versions = !versions.is_empty();
+    let versions_page = storage_versions_page_for_view(pool, requested_pagination).await?;
     let csrf_token = context.csrf_token.clone();
 
     with_csrf_cookie(
@@ -4011,8 +4052,10 @@ pub async fn storage_settings_initialize(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             config,
-            versions,
-            has_versions,
+            versions: versions_page.versions,
+            has_versions: versions_page.has_versions,
+            pagination: versions_page.pagination,
+            pagination_pages: versions_page.pagination_pages,
             bucket_inspection,
             message,
             message_tone: if init_ok { "success" } else { "error" },
@@ -4034,6 +4077,7 @@ pub async fn storage_settings_rollback(
             Ok(context) => context,
             Err(response) => return Ok(response),
         };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
     let pool = state.pool()?;
     let restored =
         storage::rollback_config(pool, &state.settings, context.user_id, version).await?;
@@ -4051,8 +4095,7 @@ pub async fn storage_settings_rollback(
         &request_context,
     )
     .await?;
-    let versions = storage_versions_for_view(pool).await?;
-    let has_versions = !versions.is_empty();
+    let versions_page = storage_versions_page_for_view(pool, requested_pagination).await?;
     let bucket_inspection = storage_bucket_inspection_for_page(pool, &state).await;
 
     let csrf_token = context.csrf_token.clone();
@@ -4068,8 +4111,10 @@ pub async fn storage_settings_rollback(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             config: storage_config_view_from_domain(restored),
-            versions,
-            has_versions,
+            versions: versions_page.versions,
+            has_versions: versions_page.has_versions,
+            pagination: versions_page.pagination,
+            pagination_pages: versions_page.pagination_pages,
             bucket_inspection,
             message: format!("已回滚到 v{version} 的配置快照，并生成新的激活版本。"),
             message_tone: "success",
@@ -5497,12 +5542,37 @@ fn storage_config_view_from_domain(config: storage::StorageConfig) -> StorageCon
     }
 }
 
-async fn storage_versions_for_view(pool: &SqlitePool) -> AppResult<Vec<StorageConfigVersionView>> {
-    Ok(storage::list_config_versions(pool)
-        .await?
-        .into_iter()
-        .map(storage_config_version_view_from_domain)
-        .collect())
+async fn storage_versions_page_for_view(
+    pool: &SqlitePool,
+    requested_pagination: projects::Pagination,
+) -> AppResult<StorageVersionsPageView> {
+    let total_items = storage::count_config_versions(pool).await?;
+    let total_pages = total_pages(total_items, requested_pagination.per_page);
+    let page_number = requested_pagination.page.min(total_pages);
+    let versions =
+        storage::list_config_versions_page(pool, page_number, requested_pagination.per_page)
+            .await?
+            .into_iter()
+            .map(storage_config_version_view_from_domain)
+            .collect::<Vec<_>>();
+    let pagination = storage_versions_pagination_view(
+        page_number,
+        requested_pagination.per_page,
+        total_items,
+        total_pages,
+    );
+    let pagination_pages = storage_versions_pagination_pages(
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
+
+    Ok(StorageVersionsPageView {
+        versions,
+        has_versions: total_items > 0,
+        pagination,
+        pagination_pages,
+    })
 }
 
 async fn storage_bucket_inspection_for_page(
@@ -6232,6 +6302,71 @@ fn system_users_pagination_pages(
         .map(|page| PaginationPageView {
             page,
             url: system_users_page_url(page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
+fn storage_versions_pagination_view(
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: storage_versions_page_url(page - 1, per_page),
+        next_url: storage_versions_page_url(page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn storage_versions_page_url(page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        "/web/system/storage".to_string()
+    } else {
+        format!("/web/system/storage?{}", params.join("&"))
+    }
+}
+
+fn storage_versions_pagination_pages(
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: storage_versions_page_url(page, per_page),
             current: page == current_page,
         })
         .collect()

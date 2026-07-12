@@ -435,6 +435,96 @@ async fn storage_page_renders_versions_and_can_rollback() {
 }
 
 #[tokio::test]
+async fn storage_page_paginates_versions_and_preserves_page_on_rollback() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    for index in 1..=12 {
+        storage::save_config(
+            &pool,
+            &test_settings(),
+            initialized.user_id,
+            storage::SaveStorageConfigInput {
+                endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+                region: "test".to_string(),
+                bucket: format!("yuance-version-{index}"),
+                access_key_id: format!("AKIAPAGE{index:02}SECRETID"),
+                access_key_secret: format!("PageSecretValue{index:02}!2026"),
+                activate: true,
+            },
+        )
+        .await
+        .expect("storage config should save");
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/storage?page=2")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(page_body.contains("共 12 个版本"));
+    assert!(page_body.contains("当前显示 11-12"));
+    assert!(page_body.contains(r#"href="/web/system/storage?page=2" aria-current="page">2</a>"#));
+    assert!(page_body.contains(r#"action="/web/system/storage/versions/1/rollback""#));
+    assert!(page_body.contains(r#"name="page" value="2""#));
+    assert!(page_body.contains(r#"name="per_page" value="10""#));
+
+    let invalid_rollback_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/storage/versions/1/rollback")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .body(Body::from(format!("_csrf={CSRF_TOKEN}&page=0&per_page=10")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_rollback_response.status(), StatusCode::BAD_REQUEST);
+    let active_before = storage::active_config(&pool)
+        .await
+        .expect("active config should load")
+        .expect("active config should exist");
+    assert_eq!(active_before.version, 12);
+
+    let rollback_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/storage/versions/1/rollback")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .body(Body::from(format!("_csrf={CSRF_TOKEN}&page=2&per_page=10")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(rollback_response.status(), StatusCode::OK);
+    let rollback_body = response_body(rollback_response).await;
+    assert!(rollback_body.contains("已回滚到 v1 的配置快照"));
+    assert!(rollback_body.contains("共 13 个版本"));
+    assert!(rollback_body.contains("当前显示 11-13"));
+    assert!(rollback_body.contains(r#"name="page" value="2""#));
+
+    let active = storage::active_config(&pool)
+        .await
+        .expect("active config should load")
+        .expect("active config should exist");
+    assert_eq!(active.version, 13);
+    assert_eq!(active.bucket, "yuance-version-1");
+}
+
+#[tokio::test]
 async fn storage_page_can_probe_active_config_without_leaking_secret() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
