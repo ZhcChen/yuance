@@ -147,11 +147,32 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
         .expect("reply notification should exist");
     assert_eq!(reply_notice.comment_id, Some(reply.id));
 
+    projects::handoff_work_item(
+        &pool,
+        receiver.user_id,
+        "YCE-TASK-2",
+        projects::HandoffWorkItemInput {
+            status: "in_progress".to_string(),
+            assignee_username: "admin".to_string(),
+            body: "回复后交回确认".to_string(),
+            source_comment_id: Some(reply.id),
+        },
+    )
+    .await
+    .expect("reply assignment should succeed");
+    let reply_assignment_notice = notifications::list_for_user(&pool, admin.user_id, true, 10)
+        .await
+        .expect("admin notifications should load")
+        .into_iter()
+        .find(|item| item.kind == "work_item_assigned" && item.comment_id == Some(reply.id))
+        .expect("reply assignment notification should exist");
+
     let reply_open_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri(format!("/web/messages/{}/open", reply_notice.id))
-                .header(header::COOKIE, admin.cookie)
+                .header(header::COOKIE, admin.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -160,6 +181,28 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
     assert_eq!(reply_open_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         reply_open_response.headers().get(header::LOCATION).unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{}", reply.id).as_str()
+    );
+
+    let reply_assignment_open_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", reply_assignment_notice.id))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        reply_assignment_open_response.status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        reply_assignment_open_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap(),
         format!("/web/work-items/YCE-TASK-2#comment-{}", reply.id).as_str()
     );
 }
