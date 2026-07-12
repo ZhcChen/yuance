@@ -4447,7 +4447,7 @@ pub async fn work_item_detail_partial(
     Path(item_key): Path<String>,
 ) -> AppResult<Response> {
     let Some(pool) = state.pool.as_ref() else {
-        return response::html(sample_work_item_detail_partial()).map(IntoResponse::into_response);
+        return response::html(sample_work_item_detail_partial()?).map(IntoResponse::into_response);
     };
     if bootstrap::bootstrap_required(pool).await? {
         return bootstrap_redirect(&headers);
@@ -7394,7 +7394,7 @@ fn render_sample_work_item_detail_page(
     state: &AppState,
     context: WebContext<'_>,
 ) -> AppResult<Response> {
-    let partial = sample_work_item_detail_partial();
+    let partial = sample_work_item_detail_partial()?;
     let status_options = work_item_status_options(&partial.item.kind, &partial.item.status_code)?;
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -7429,10 +7429,9 @@ fn render_sample_work_item_detail_page(
     )
 }
 
-fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
-    let status_options = work_item_status_options("任务", "in_progress")
-        .expect("sample work item statuses should be valid");
-    WorkItemDetailPartialTemplate {
+fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate> {
+    let status_options = work_item_status_options("任务", "in_progress")?;
+    Ok(WorkItemDetailPartialTemplate {
         csrf_token: "sample-csrf-token".to_string(),
         status_options,
         item: WorkItemDetailView {
@@ -7479,7 +7478,7 @@ fn sample_work_item_detail_partial() -> WorkItemDetailPartialTemplate {
         }],
         has_comments: true,
         can_manage_work_items: true,
-    }
+    })
 }
 
 fn sample_activities() -> Vec<Activity> {

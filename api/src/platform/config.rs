@@ -67,7 +67,11 @@ fn parse_duration_seconds(name: &str, value: &str) -> AppResult<i64> {
         return Err(AppError::Config(format!("{name} 不能为空")));
     }
 
-    let (number, multiplier) = match value.chars().last().expect("value should not be empty") {
+    let Some(unit) = value.chars().last() else {
+        return Err(AppError::Config(format!("{name} 不能为空")));
+    };
+
+    let (number, multiplier) = match unit {
         unit if unit.is_ascii_alphabetic() => {
             let number = &value[..value.len() - 1];
             let multiplier = match unit.to_ascii_lowercase() {

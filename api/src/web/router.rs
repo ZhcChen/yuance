@@ -21,9 +21,7 @@ impl AppState {
     pub fn for_tests() -> Self {
         Self {
             settings: Settings {
-                http_addr: "127.0.0.1:33033"
-                    .parse()
-                    .expect("test socket address should parse"),
+                http_addr: std::net::SocketAddr::from(([127, 0, 0, 1], 33033)),
                 database_url: "sqlite://:memory:".to_string(),
                 data_dir: "data".to_string(),
                 session_secret: "test-session-secret".to_string(),
