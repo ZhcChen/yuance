@@ -3586,6 +3586,233 @@ pub async fn search_visible(
     Ok(hits)
 }
 
+pub async fn search_visible_paginated(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    query: &str,
+    include_projects: bool,
+    include_work_items: bool,
+    pagination: Pagination,
+) -> AppResult<Paginated<SearchHit>> {
+    let query = query.trim();
+    let pagination = normalize_pagination(pagination)?;
+    if query.is_empty() || (!include_projects && !include_work_items) {
+        return Ok(Paginated {
+            items: Vec::new(),
+            page: pagination.page,
+            per_page: pagination.per_page,
+            total_items: 0,
+        });
+    }
+
+    let like = format!("%{query}%");
+    let total_items = if is_super_admin {
+        let (total_items,) = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT COUNT(*)
+            FROM (
+                SELECT p.id AS sort_id
+                FROM projects p
+                WHERE ?2
+                  AND (
+                    p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                    OR p.description LIKE ?1
+                  )
+                UNION ALL
+                SELECT wi.id AS sort_id
+                FROM work_items wi
+                JOIN projects p ON p.id = wi.project_id
+                WHERE ?3
+                  AND (
+                    wi.item_key LIKE ?1
+                    OR wi.title LIKE ?1
+                    OR wi.description LIKE ?1
+                    OR p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                  )
+                  AND wi.deleted_at IS NULL
+            ) hits
+            "#,
+        )
+        .bind(&like)
+        .bind(include_projects)
+        .bind(include_work_items)
+        .fetch_one(pool)
+        .await?;
+        total_items
+    } else {
+        let (total_items,) = sqlx::query_as::<_, (i64,)>(
+            r#"
+            SELECT COUNT(*)
+            FROM (
+                SELECT p.id AS sort_id
+                FROM projects p
+                JOIN project_members pm ON pm.project_id = p.id
+                    AND pm.user_id = ?2
+                WHERE ?3
+                  AND (
+                    p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                    OR p.description LIKE ?1
+                  )
+                UNION ALL
+                SELECT wi.id AS sort_id
+                FROM work_items wi
+                JOIN projects p ON p.id = wi.project_id
+                JOIN project_members pm ON pm.project_id = p.id
+                    AND pm.user_id = ?2
+                WHERE ?4
+                  AND (
+                    wi.item_key LIKE ?1
+                    OR wi.title LIKE ?1
+                    OR wi.description LIKE ?1
+                    OR p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                  )
+                  AND wi.deleted_at IS NULL
+            ) hits
+            "#,
+        )
+        .bind(&like)
+        .bind(user_id)
+        .bind(include_projects)
+        .bind(include_work_items)
+        .fetch_one(pool)
+        .await?;
+        total_items
+    };
+
+    let rows = if is_super_admin {
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            r#"
+            SELECT hit_type, hit_key, title, context, url, updated_at
+            FROM (
+                SELECT
+                    'project' AS hit_type,
+                    p.project_key AS hit_key,
+                    p.name AS title,
+                    p.description AS context,
+                    '/web/projects/' || p.project_key AS url,
+                    p.updated_at
+                FROM projects p
+                WHERE ?2
+                  AND (
+                    p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                    OR p.description LIKE ?1
+                  )
+                UNION ALL
+                SELECT
+                    wi.item_type AS hit_type,
+                    wi.item_key AS hit_key,
+                    wi.title,
+                    p.project_key || ' · ' || p.name AS context,
+                    '/web/work-items/' || wi.item_key AS url,
+                    wi.updated_at
+                FROM work_items wi
+                JOIN projects p ON p.id = wi.project_id
+                WHERE ?3
+                  AND (
+                    wi.item_key LIKE ?1
+                    OR wi.title LIKE ?1
+                    OR wi.description LIKE ?1
+                    OR p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                  )
+                  AND wi.deleted_at IS NULL
+            ) hits
+            ORDER BY updated_at DESC, hit_key DESC
+            LIMIT ?4 OFFSET ?5
+            "#,
+        )
+        .bind(&like)
+        .bind(include_projects)
+        .bind(include_work_items)
+        .bind(pagination.per_page)
+        .bind(pagination.offset())
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+            r#"
+            SELECT hit_type, hit_key, title, context, url, updated_at
+            FROM (
+                SELECT
+                    'project' AS hit_type,
+                    p.project_key AS hit_key,
+                    p.name AS title,
+                    p.description AS context,
+                    '/web/projects/' || p.project_key AS url,
+                    p.updated_at
+                FROM projects p
+                JOIN project_members pm ON pm.project_id = p.id
+                    AND pm.user_id = ?2
+                WHERE ?3
+                  AND (
+                    p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                    OR p.description LIKE ?1
+                  )
+                UNION ALL
+                SELECT
+                    wi.item_type AS hit_type,
+                    wi.item_key AS hit_key,
+                    wi.title,
+                    p.project_key || ' · ' || p.name AS context,
+                    '/web/work-items/' || wi.item_key AS url,
+                    wi.updated_at
+                FROM work_items wi
+                JOIN projects p ON p.id = wi.project_id
+                JOIN project_members pm ON pm.project_id = p.id
+                    AND pm.user_id = ?2
+                WHERE ?4
+                  AND (
+                    wi.item_key LIKE ?1
+                    OR wi.title LIKE ?1
+                    OR wi.description LIKE ?1
+                    OR p.project_key LIKE ?1
+                    OR p.name LIKE ?1
+                  )
+                  AND wi.deleted_at IS NULL
+            ) hits
+            ORDER BY updated_at DESC, hit_key DESC
+            LIMIT ?5 OFFSET ?6
+            "#,
+        )
+        .bind(&like)
+        .bind(user_id)
+        .bind(include_projects)
+        .bind(include_work_items)
+        .bind(pagination.per_page)
+        .bind(pagination.offset())
+        .fetch_all(pool)
+        .await?
+    };
+
+    let items = rows
+        .into_iter()
+        .map(
+            |(hit_type, key, title, context, url, updated_at)| SearchHit {
+                hit_type,
+                key,
+                title,
+                context,
+                url,
+                updated_at,
+            },
+        )
+        .collect();
+
+    Ok(Paginated {
+        items,
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
+}
+
 fn normalize_project_filter(filter: ProjectListFilter) -> AppResult<NormalizedProjectFilter> {
     let status = match filter.status.trim() {
         "" => String::new(),

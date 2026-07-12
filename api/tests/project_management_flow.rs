@@ -1434,6 +1434,57 @@ async fn web_search_finds_visible_projects_and_work_items() {
 }
 
 #[tokio::test]
+async fn web_search_paginates_results_with_shared_controls() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/search?q=YCE&per_page=1")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert_eq!(body.matches("class=\"search-result\"").count(), 1);
+    assert!(body.contains(r#"aria-label="搜索结果分页""#));
+    assert!(body.contains(r#"data-pagination-size"#));
+    assert!(body.contains(r#"aria-label="跳转页码""#));
+    assert!(body.contains("per_page=1"));
+
+    let second_page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/search?q=YCE&page=2&per_page=1")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(second_page_response.status(), StatusCode::OK);
+    let second_page_body = response_body(second_page_response).await;
+
+    assert_eq!(
+        second_page_body.matches("class=\"search-result\"").count(),
+        1
+    );
+    assert!(second_page_body.contains(r#"aria-current="page">2</a>"#));
+}
+
+#[tokio::test]
 async fn web_search_respects_project_membership_scope() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

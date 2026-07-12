@@ -568,6 +568,16 @@ cat >"$EVAL_FILE" <<JS
   assert(frame.contentWindow.location.pathname === "/web/work-items/" + taskKey, "任务创建后未跳转详情");
   assert(hasText("浏览器冒烟任务"), "任务详情未显示新任务");
 
+  await open("/web/search?q=" + encodeURIComponent("浏览器") + "&per_page=1");
+  const searchPager = query("nav[aria-label='搜索结果分页']");
+  assert(searchPager.querySelector(".pager-pages"), "搜索结果分页未渲染页码控件");
+  assert(searchPager.querySelector("[data-pagination-size]"), "搜索结果分页缺少每页条数选择");
+  assert(searchPager.querySelector("input[aria-label='跳转页码']"), "搜索结果分页缺少跳页输入框");
+  assert(
+    searchPager.querySelector("[data-pagination-size]")?.nextElementSibling?.matches(".select-control"),
+    "搜索结果分页每页条数未复用共享下拉控件",
+  );
+
   return "browser smoke setup passed";
 })()
 JS

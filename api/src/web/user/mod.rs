@@ -558,6 +558,8 @@ struct SearchTemplate {
     has_query: bool,
     results: Vec<SearchResult>,
     has_results: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
 }
 
 #[derive(Template)]
@@ -1128,6 +1130,10 @@ pub struct WorkItemListQuery {
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
     q: Option<String>,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1370,6 +1376,7 @@ pub async fn search_page(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let pagination = normalize_web_pagination(query.page, query.per_page)?;
     let query = query.q.unwrap_or_default().trim().to_string();
     if query.chars().count() > 128 {
         return Err(AppError::BadRequest(
@@ -1377,8 +1384,8 @@ pub async fn search_page(
         ));
     }
 
-    let results = if query.is_empty() {
-        Vec::new()
+    let (results, total_items, page_number, per_page) = if query.is_empty() {
+        (Vec::new(), 0, pagination.page, pagination.per_page)
     } else {
         match context.pool {
             Some(pool) => {
@@ -1386,28 +1393,44 @@ pub async fn search_page(
                     rbac::user_has_permission(pool, context.user_id, "project.view").await?;
                 let can_view_work_items =
                     rbac::user_has_permission(pool, context.user_id, "work_item.view").await?;
-                projects::search_visible(
+                let page = projects::search_visible_paginated(
                     pool,
                     context.user_id,
                     context.can_access_all_projects,
                     &query,
-                    20,
+                    can_view_projects,
+                    can_view_work_items,
+                    pagination,
                 )
-                .await?
-                .into_iter()
-                .filter(|hit| {
-                    if hit.hit_type == "project" {
-                        can_view_projects
-                    } else {
-                        can_view_work_items
-                    }
-                })
-                .map(search_result_from_hit)
-                .collect()
+                .await?;
+                (
+                    page.items.into_iter().map(search_result_from_hit).collect(),
+                    page.total_items,
+                    page.page,
+                    page.per_page,
+                )
             }
-            None => sample_search_results(&query),
+            None => {
+                let sample_results = sample_search_results(&query);
+                let total_items = sample_results.len() as i64;
+                (
+                    paginate_search_results(sample_results, pagination),
+                    total_items,
+                    pagination.page,
+                    pagination.per_page,
+                )
+            }
         }
     };
+    let total_pages = total_pages(total_items, per_page);
+    let pagination =
+        search_pagination_view(&query, page_number, per_page, total_items, total_pages);
+    let pagination_pages = search_pagination_pages(
+        &query,
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
     let csrf_token = context.csrf_token.clone();
 
     with_csrf_cookie(
@@ -1425,6 +1448,8 @@ pub async fn search_page(
             has_results: !results.is_empty(),
             query,
             results,
+            pagination,
+            pagination_pages,
         })?
         .into_response(),
     )
@@ -5904,6 +5929,18 @@ fn paginate_work_item_views(
         .collect()
 }
 
+fn paginate_search_results(
+    items: Vec<SearchResult>,
+    pagination: projects::Pagination,
+) -> Vec<SearchResult> {
+    let offset = pagination.offset().min(usize::MAX as i64) as usize;
+    items
+        .into_iter()
+        .skip(offset)
+        .take(pagination.per_page as usize)
+        .collect()
+}
+
 fn total_pages(total_items: i64, per_page: i64) -> i64 {
     if total_items == 0 {
         1
@@ -5975,6 +6012,74 @@ fn project_pagination_pages(
         .map(|page| PaginationPageView {
             page,
             url: project_page_url(status_filter, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
+fn search_pagination_view(
+    query: &str,
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: search_page_url(query, page - 1, per_page),
+        next_url: search_page_url(query, page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn search_page_url(query: &str, page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    push_query_param(&mut params, "q", query);
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        "/web/search".to_string()
+    } else {
+        format!("/web/search?{}", params.join("&"))
+    }
+}
+
+fn search_pagination_pages(
+    query: &str,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: search_page_url(query, page, per_page),
             current: page == current_page,
         })
         .collect()
