@@ -40,6 +40,7 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
     assert!(body.contains(r#"data-modal-open="user-create-modal""#));
     assert!(body.contains(r#"id="user-create-modal""#));
     assert!(body.contains(r#"action="/web/system/users""#));
+    assert!(body.contains(r#"data-select-search-placeholder="搜索角色""#));
     assert!(!body.contains("action-menu"));
     assert!(!body.contains("<aside class=\"sidebar\""));
 }
@@ -84,6 +85,8 @@ async fn system_users_page_paginates_with_shared_controls() {
     assert!(first_body.contains("per_page=5"));
     assert!(first_body.contains(r#"name="page" value="1""#));
     assert!(first_body.contains(r#"name="per_page" value="5""#));
+    assert!(first_body.contains(r#"id="user-role-modal-page_user_"#));
+    assert!(first_body.contains(r#"data-select-search-placeholder="搜索角色""#));
 
     let third_page_response = app
         .clone()

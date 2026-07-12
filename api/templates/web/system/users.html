@@ -137,7 +137,7 @@
         </label>
         <label>
           <span>角色</span>
-          <select name="role_code" required>
+          <select name="role_code" required data-select-searchable data-select-search-placeholder="搜索角色">
             {% for role in roles %}
             <option value="{{ role.code }}">{{ role.name }} ({{ role.code }})</option>
             {% endfor %}
@@ -170,7 +170,7 @@
       <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
       <label>
         <span>角色</span>
-        <select name="role_code" required autofocus>
+        <select name="role_code" required autofocus data-select-searchable data-select-search-placeholder="搜索角色">
           {% for role in roles %}
           <option value="{{ role.code }}" {% if user.role_code == role.code %}selected{% endif %}>{{ role.name }}</option>
           {% endfor %}
