@@ -1040,6 +1040,14 @@ async fn web_work_item_list_paginates_current_project_items() {
 
     assert!(first_body.contains("当前显示 1-1"));
     assert!(first_body.contains("共 2 条"));
+    assert!(first_body.contains(
+        r#"<span class="metric-label">开放</span>
+      <strong>1</strong>"#
+    ));
+    assert!(first_body.contains(
+        r#"<span class="metric-label">高优先级</span>
+      <strong>2</strong>"#
+    ));
     assert!(first_body.contains("aria-label=\"下一页\""));
     assert!(first_body.contains("<table class=\"data-table work-item-table\">"));
     assert!(first_body.contains("<th class=\"work-table-actions\" scope=\"col\">操作</th>"));
@@ -1055,6 +1063,14 @@ async fn web_work_item_list_paginates_current_project_items() {
 
     assert!(second_body.contains("当前显示 2-2"));
     assert!(second_body.contains("共 2 条"));
+    assert!(second_body.contains(
+        r#"<span class="metric-label">开放</span>
+      <strong>1</strong>"#
+    ));
+    assert!(second_body.contains(
+        r#"<span class="metric-label">高优先级</span>
+      <strong>2</strong>"#
+    ));
     assert!(second_body.contains("aria-label=\"上一页\""));
     assert!(second_body.contains("project_key=YCE"));
     assert!(second_body.contains("per_page=1"));

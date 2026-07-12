@@ -239,8 +239,8 @@ struct WorkItemComment {
 #[derive(Debug, Clone)]
 struct WorkItemListSummary {
     total_items: i64,
-    open_items: usize,
-    high_priority_items: usize,
+    open_items: i64,
+    high_priority_items: i64,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -4268,8 +4268,26 @@ async fn work_item_list_page(
     };
     let pagination = normalize_web_pagination(query.page, query.per_page)?;
     let current_project_required = current_project.is_none();
-    let (items, total_items, page_number, per_page) = if current_project_required {
-        (Vec::new(), 0, pagination.page, pagination.per_page)
+    let list_filter = projects::WorkItemListFilter {
+        item_type: item_type.map(ToOwned::to_owned),
+        keyword: filters.q.clone(),
+        status: filters.status.clone(),
+        priority: filters.priority.clone(),
+        project_key: filters.project_key.clone(),
+        assignee_username: filters.assignee_username.clone(),
+    };
+    let (items, total_items, page_number, per_page, summary) = if current_project_required {
+        (
+            Vec::new(),
+            0,
+            pagination.page,
+            pagination.per_page,
+            WorkItemListSummary {
+                total_items: 0,
+                open_items: 0,
+                high_priority_items: 0,
+            },
+        )
     } else {
         match context.pool {
             Some(pool) => {
@@ -4277,15 +4295,15 @@ async fn work_item_list_page(
                     pool,
                     context.user_id,
                     context.can_access_all_projects,
-                    projects::WorkItemListFilter {
-                        item_type: item_type.map(ToOwned::to_owned),
-                        keyword: filters.q.clone(),
-                        status: filters.status.clone(),
-                        priority: filters.priority.clone(),
-                        project_key: filters.project_key.clone(),
-                        assignee_username: filters.assignee_username.clone(),
-                    },
+                    list_filter.clone(),
                     pagination,
+                )
+                .await?;
+                let stats = projects::work_item_list_stats_filtered_for_user(
+                    pool,
+                    context.user_id,
+                    context.can_access_all_projects,
+                    list_filter,
                 )
                 .await?;
                 let items = page
@@ -4293,18 +4311,30 @@ async fn work_item_list_page(
                     .into_iter()
                     .map(work_item_from_summary)
                     .collect::<Vec<_>>();
-                (items, page.total_items, page.page, page.per_page)
+                (
+                    items,
+                    page.total_items,
+                    page.page,
+                    page.per_page,
+                    work_item_list_summary_from_stats(stats),
+                )
             }
             None => {
                 let sample_items = sample_work_items(item_type);
                 let total_items = sample_items.len() as i64;
                 let items = paginate_work_item_views(sample_items, pagination);
-                (items, total_items, pagination.page, pagination.per_page)
+                let summary = work_item_list_summary_from_items(&items, total_items);
+                (
+                    items,
+                    total_items,
+                    pagination.page,
+                    pagination.per_page,
+                    summary,
+                )
             }
         }
     };
     let total_pages = total_pages(total_items, per_page);
-    let summary = work_item_list_summary(&items, total_items);
     let pagination = work_item_pagination_view(
         meta.active,
         &filters,
@@ -6126,7 +6156,15 @@ fn paginate_project_views(
     paginate_items(projects, pagination)
 }
 
-fn work_item_list_summary(items: &[WorkItem], total_items: i64) -> WorkItemListSummary {
+fn work_item_list_summary_from_stats(stats: projects::WorkItemListStats) -> WorkItemListSummary {
+    WorkItemListSummary {
+        total_items: stats.total_items,
+        open_items: stats.open_items,
+        high_priority_items: stats.high_priority_items,
+    }
+}
+
+fn work_item_list_summary_from_items(items: &[WorkItem], total_items: i64) -> WorkItemListSummary {
     WorkItemListSummary {
         total_items,
         open_items: items
@@ -6137,11 +6175,11 @@ fn work_item_list_summary(items: &[WorkItem], total_items: i64) -> WorkItemListS
                     "已完成" | "已解决" | "已验证" | "已关闭"
                 )
             })
-            .count(),
+            .count() as i64,
         high_priority_items: items
             .iter()
             .filter(|item| is_high_priority_code(&item.priority_code))
-            .count(),
+            .count() as i64,
     }
 }
 

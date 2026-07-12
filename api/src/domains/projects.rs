@@ -241,6 +241,13 @@ pub struct WorkItemListFilter {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkItemListStats {
+    pub total_items: i64,
+    pub open_items: i64,
+    pub high_priority_items: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pagination {
     pub page: i64,
     pub per_page: i64,
@@ -1809,6 +1816,61 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
         page: pagination.page,
         per_page: pagination.per_page,
         total_items,
+    })
+}
+
+pub async fn work_item_list_stats_filtered_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    filter: WorkItemListFilter,
+) -> AppResult<WorkItemListStats> {
+    if is_super_admin {
+        return work_item_list_stats_filtered(pool, filter).await;
+    }
+
+    let normalized = normalize_work_item_filter(filter)?;
+    let row = sqlx::query_as::<_, (i64, i64, i64)>(
+        r#"
+        SELECT
+            COUNT(*) AS total_items,
+            COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS open_items,
+            COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        JOIN project_members pm ON pm.project_id = p.id
+            AND pm.user_id = ?1
+        LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+        WHERE (?2 = '' OR wi.item_type = ?2)
+          AND (
+            ?3 = ''
+            OR wi.item_key LIKE ?3
+            OR wi.title LIKE ?3
+            OR wi.description LIKE ?3
+            OR p.project_key LIKE ?3
+            OR p.name LIKE ?3
+          )
+          AND (?4 = '' OR (?4 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?4)
+          AND (?5 = '' OR wi.priority = ?5)
+          AND (?6 = '' OR p.project_key = ?6)
+          AND (?7 = '' OR assignee.username = ?7)
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(user_id)
+    .bind(&normalized.item_type)
+    .bind(&normalized.keyword_like)
+    .bind(&normalized.status)
+    .bind(&normalized.priority)
+    .bind(&normalized.project_key)
+    .bind(&normalized.assignee_username)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(WorkItemListStats {
+        total_items: row.0,
+        open_items: row.1,
+        high_priority_items: row.2,
     })
 }
 
@@ -3942,6 +4004,52 @@ async fn count_work_item_summaries_filtered(
     .bind(&normalized.assignee_username)
     .fetch_one(pool)
     .await?)
+}
+
+async fn work_item_list_stats_filtered(
+    pool: &SqlitePool,
+    filter: WorkItemListFilter,
+) -> AppResult<WorkItemListStats> {
+    let normalized = normalize_work_item_filter(filter)?;
+    let row = sqlx::query_as::<_, (i64, i64, i64)>(
+        r#"
+        SELECT
+            COUNT(*) AS total_items,
+            COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS open_items,
+            COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+        WHERE (?1 = '' OR wi.item_type = ?1)
+          AND (
+            ?2 = ''
+            OR wi.item_key LIKE ?2
+            OR wi.title LIKE ?2
+            OR wi.description LIKE ?2
+            OR p.project_key LIKE ?2
+            OR p.name LIKE ?2
+          )
+          AND (?3 = '' OR (?3 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?3)
+          AND (?4 = '' OR wi.priority = ?4)
+          AND (?5 = '' OR p.project_key = ?5)
+          AND (?6 = '' OR assignee.username = ?6)
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(&normalized.item_type)
+    .bind(&normalized.keyword_like)
+    .bind(&normalized.status)
+    .bind(&normalized.priority)
+    .bind(&normalized.project_key)
+    .bind(&normalized.assignee_username)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(WorkItemListStats {
+        total_items: row.0,
+        open_items: row.1,
+        high_priority_items: row.2,
+    })
 }
 
 async fn count_work_item_summaries_filtered_for_user(
