@@ -7728,7 +7728,7 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
     assert_eq!(add_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         add_response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE"
+        "/web/projects/YCE?tab=members"
     );
 
     let member_can_view = app
@@ -7778,6 +7778,10 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
         .expect("router should respond");
     assert_eq!(role_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
+        role_response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/YCE?tab=members"
+    );
+    assert_eq!(
         projects::project_member_role(&pool, 1, outsider.user_id)
             .await
             .expect("role should load")
@@ -7818,6 +7822,10 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
         .await
         .expect("router should respond");
     assert_eq!(remove_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        remove_response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/YCE?tab=members"
+    );
 
     let member_forbidden = app
         .oneshot(
