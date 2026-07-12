@@ -248,6 +248,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("async function submitBugReport"));
     assert!(body.contains("data-bug-report-form"));
     assert!(body.contains("/comments/"));
+    assert!(body.contains("function setDiscussionBusy(form, busy, activeSubmitter)"));
+    assert!(body.contains("button === activeSubmitter"));
+    assert!(body.contains("submitter.matches(\"[data-discussion-submit]\")"));
     assert!(body.contains("USERNAME_INPUT_SELECTOR"));
     assert!(body.contains("function normalizeUsernameInput"));
     assert!(body.contains("compactUsernameValue(original)"));

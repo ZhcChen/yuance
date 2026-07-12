@@ -2002,15 +2002,19 @@
     }
   }
 
-  function setDiscussionBusy(form, busy) {
+  function setDiscussionBusy(form, busy, activeSubmitter) {
     form.dataset.discussionBusy = busy ? "true" : "false";
     form.querySelectorAll("button, textarea, input, select").forEach(function (control) {
       control.disabled = busy;
     });
-    var submit = form.querySelector("[data-discussion-submit]");
-    if (submit) {
-      submit.textContent = busy ? "正在提交..." : submit.dataset.originalLabel || "发表";
-    }
+    form.querySelectorAll("[data-discussion-submit]").forEach(function (button) {
+      if (!button.dataset.originalLabel) {
+        button.dataset.originalLabel = button.textContent.trim();
+      }
+      button.textContent = busy && button === activeSubmitter
+        ? "正在提交..."
+        : button.dataset.originalLabel;
+    });
   }
 
   async function submitDiscussion(form, submitter) {
@@ -2021,11 +2025,10 @@
     var bodyInput = form.querySelector("[data-discussion-body]");
     var parentInput = form.querySelector("input[name='parent_comment_id']");
     var files = form.bugReportFiles || [];
-    var submit = form.querySelector("[data-discussion-submit]");
-    if (submit && !submit.dataset.originalLabel) {
-      submit.dataset.originalLabel = submit.textContent.trim();
-    }
-    setDiscussionBusy(form, true);
+    var submit = submitter && submitter.matches("[data-discussion-submit]")
+      ? submitter
+      : form.querySelector("[data-discussion-submit]");
+    setDiscussionBusy(form, true, submit);
     try {
       var commentId = form.dataset.discussionCommentId || "";
       if (!commentId) {
