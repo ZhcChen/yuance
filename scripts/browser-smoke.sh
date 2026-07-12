@@ -881,6 +881,12 @@ cat >"$IMAGE_PREVIEW_EVAL_FILE" <<'JS'
   const replyForm = query("#" + replyToggle.dataset.discussionReplyToggle);
   assert(!replyForm.hidden, "回复编辑器未展开");
   assert(replyForm.querySelector("input[name='parent_comment_id']")?.value, "回复未关联父级内容");
+  const mainAssignTrigger = query("[data-discussion-form]:not(.discussion-reply-form) [data-discussion-assign-status]")
+    .nextElementSibling?.querySelector(".select-control-trigger");
+  const replyAssignTrigger = replyForm.querySelector("[data-discussion-assign-status]")
+    .nextElementSibling?.querySelector(".select-control-trigger");
+  assert(mainAssignTrigger && mainAssignTrigger.getBoundingClientRect().width >= 136, "发表并指派状态下拉宽度被压缩");
+  assert(replyAssignTrigger && replyAssignTrigger.getBoundingClientRect().width >= 136, "回复并指派状态下拉宽度被压缩");
 
   return "browser smoke image preview passed";
 })()
