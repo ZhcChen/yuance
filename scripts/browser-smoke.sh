@@ -204,9 +204,20 @@ cat >"$EVAL_FILE" <<JS
   }
 
   async function open(path) {
+    const targetUrl = baseUrl + path;
     const previousDocument = frame.contentDocument;
-    frame.src = baseUrl + path;
-    await waitForFrameNavigation(previousDocument, "打开 " + path);
+    const previousUrl = frame.contentWindow?.location?.href || "";
+    frame.src = targetUrl;
+    await waitFor(() => {
+      const currentWindow = frame.contentWindow;
+      const currentDocument = frame.contentDocument;
+      return currentWindow
+        && currentDocument
+        && currentWindow.location.href === targetUrl
+        && currentDocument.readyState === "complete"
+        && (targetUrl !== previousUrl || currentDocument !== previousDocument);
+    }, "打开 " + path);
+    await sleep(120);
   }
 
   async function submitAndWait(selector) {
@@ -349,27 +360,79 @@ cat >"$EVAL_FILE" <<JS
   assert(hasText("浏览器冒烟项目"), "项目详情未显示新项目");
 
   const projectTabs = query("[data-tabs]");
-  const projectTabList = query(".project-tab-list");
-  const projectTabBadge = query("[data-tab-key='work'] span");
-  const topnavBadgeReference = frameDocument().createElement("span");
-  topnavBadgeReference.className = "topnav-badge";
-  frameDocument().body.appendChild(topnavBadgeReference);
-  const initialIndicatorX = projectTabList.style.getPropertyValue("--tab-indicator-x");
-  assert(query("[data-tab-indicator]"), "项目 Tabs 未渲染活动滑块");
-  assert(getComputedStyle(projectTabBadge).position === "absolute", "项目 Tab 角标未定位到右上角");
-  assert(getComputedStyle(projectTabBadge).backgroundColor === getComputedStyle(topnavBadgeReference).backgroundColor, "项目 Tab 角标未复用顶部红色角标");
-  topnavBadgeReference.remove();
+  const projectTabList = query("[data-content-tabs]");
+  const initialIndicatorX = projectTabList.style.getPropertyValue("--content-tab-indicator-x");
+  assert(query("[data-content-tab-indicator]"), "项目 Tabs 未渲染活动滑块");
+  assert(!query("[data-tab-key='work']").querySelector(".topnav-badge, .content-tab-badge"), "项目详情胶囊 Tab 不应渲染角标");
   click("[data-tab-key='info']");
   await waitFor(() => query("[data-tab-key='info']").classList.contains("active"), "项目详情 Tab 未激活");
   assert(
-    projectTabList.style.getPropertyValue("--tab-indicator-x") !== initialIndicatorX,
+    projectTabList.style.getPropertyValue("--content-tab-indicator-x") !== initialIndicatorX,
     "项目 Tabs 活动滑块未移动",
   );
-  assert(
-    getComputedStyle(query("[data-tab-indicator]")).transitionDuration.includes("0.22s"),
-    "项目 Tabs 活动滑块未应用过渡动画",
-  );
+  if (!frame.contentWindow.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const indicatorTransitionDuration = frame.contentWindow.getComputedStyle(
+      query("[data-content-tab-indicator]"),
+    ).transitionDuration;
+    assert(
+      indicatorTransitionDuration
+        .split(",")
+        .some((value) => Number.parseFloat(value) >= 0.35 || value.trim() === "360ms"),
+      "项目 Tabs 活动滑块未应用过渡动画，当前 transitionDuration=" + indicatorTransitionDuration,
+    );
+  }
   assert(projectTabs.querySelector("[data-tab-panel].active")?.id === "project-tab-info", "项目 Tab 面板未同步");
+
+  await open("/web/projects/" + projectKey + "?tab=files");
+  click("[data-modal-open='project-folder-create-modal']");
+  await waitFor(() => visible("#project-folder-create-modal"), "项目文件夹创建 modal 未打开");
+  fill("#project-folder-create-modal input[name='name']", "冒烟文件夹");
+  fill("#project-folder-create-modal textarea[name='description']", "用于覆盖文件夹树和移动文件。");
+  await submitAndWait("#project-folder-create-modal button[type='submit'].btn-primary");
+  await open("/web/projects/" + projectKey + "?tab=files");
+  await waitFor(() => hasText("冒烟文件夹"), "项目文件夹创建后未刷新到文件 Tab");
+  const smokeFolder = query("[data-file-folder-item][data-folder-id]:not([data-folder-id=''])");
+  const smokeFolderId = smokeFolder.dataset.folderId;
+
+  click("[data-modal-open='project-attachment-create-modal']");
+  await waitFor(() => visible("#project-attachment-create-modal"), "项目文件上传 modal 未打开");
+  await waitFor(
+    () => Array.from(query("#project-attachment-create-modal select[name='folder_id']").options)
+      .some((option) => option.textContent.includes("冒烟文件夹")),
+    "项目文件上传目标文件夹下拉未刷新",
+  );
+  click("#project-attachment-create-modal [data-modal-close]");
+  await waitFor(() => !visible("#project-attachment-create-modal"), "项目文件上传 modal 未关闭");
+
+  const csrfToken = frameDocument().querySelector('meta[name="yuance-csrf-token"]')?.content || "";
+  const attachmentResponse = await frame.contentWindow.fetch("/api/v1/projects/" + projectKey + "/attachments", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: {
+      "content-type": "application/json",
+      "accept": "application/json",
+      "x-yuance-csrf-token": csrfToken,
+    },
+    body: JSON.stringify({
+      original_filename: "smoke-project-file.txt",
+      content_type: "text/plain",
+      byte_size: 32,
+      folder_id: Number(smokeFolderId),
+    }),
+  });
+  assert(attachmentResponse.ok, "项目文件登记到目标文件夹失败：" + attachmentResponse.status);
+
+  await open("/web/projects/" + projectKey + "?tab=files");
+  click("[data-file-folder-item][data-folder-id='" + smokeFolderId + "']");
+  await waitFor(() => hasText("smoke-project-file.txt"), "项目文件夹内容未动态加载文件");
+  assert(hasText("继续上传"), "动态文件列表缺少 pending 继续上传入口");
+  assert(hasText("移动到"), "动态文件列表缺少移动文件入口");
+  assert(hasText("删除"), "动态文件列表缺少删除文件入口");
+  click("[data-file-move]");
+  await waitFor(() => visible("#project-file-move-modal"), "移动文件 modal 未打开");
+  await submitAndWait("#project-file-move-modal button[type='submit'].btn-primary");
+  await open("/web/projects/" + projectKey + "?tab=files");
+  await waitFor(() => hasText("smoke-project-file.txt"), "文件移动回根目录后全部文件视图未显示文件");
 
   await open("/web/projects/" + projectKey + "?tab=members");
   click("[data-modal-open='project-member-add-modal']");

@@ -2842,7 +2842,7 @@ async fn web_project_detail_can_register_project_attachment() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE"
+        "/web/projects/YCE?tab=files"
     );
 
     let project = projects::get_project_detail(&pool, "YCE")
@@ -3082,6 +3082,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -3102,6 +3103,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -3122,6 +3124,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "comment".to_string(),
             target_id: comment.id,
             project_id: Some(project.id),
@@ -3142,6 +3145,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -3162,6 +3166,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -3182,6 +3187,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -3213,6 +3219,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -3452,6 +3459,7 @@ async fn api_v1_project_attachment_subflows_require_rbac_permissions() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -3613,6 +3621,7 @@ async fn api_v1_attachment_download_urls_write_audit_logs() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -3629,6 +3638,7 @@ async fn api_v1_attachment_download_urls_write_audit_logs() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -3645,6 +3655,7 @@ async fn api_v1_attachment_download_urls_write_audit_logs() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "comment".to_string(),
             target_id: comment.id,
             project_id: Some(project.id),
@@ -3877,6 +3888,7 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4075,6 +4087,7 @@ async fn api_test_storage_upload_grant_is_bound_to_issuing_user() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4149,6 +4162,7 @@ async fn api_v1_attachment_upload_url_returns_signed_put_request() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4206,6 +4220,7 @@ async fn api_v1_attachment_mark_uploaded_requires_existing_object() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4265,6 +4280,7 @@ async fn api_v1_attachment_mark_uploaded_rejects_size_mismatch() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4333,6 +4349,7 @@ async fn api_v1_attachment_mark_uploaded_rejects_content_type_mismatch() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4453,6 +4470,264 @@ async fn api_v1_attachment_create_rejects_unsupported_type_and_oversized_file() 
 }
 
 #[tokio::test]
+async fn api_v1_project_file_folders_manage_upload_and_move_scope() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let folder_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/folders")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"设计文档","description":"项目文件分类"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(folder_response.status(), StatusCode::CREATED);
+    let folder_payload: serde_json::Value =
+        serde_json::from_str(&response_body(folder_response).await).expect("json should parse");
+    let folder_id = folder_payload["data"]["id"]
+        .as_i64()
+        .expect("folder id should exist");
+
+    let duplicate_folder_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/folders")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"设计文档","description":"重复文件夹"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(duplicate_folder_response.status(), StatusCode::CONFLICT);
+    let duplicate_body = response_body(duplicate_folder_response).await;
+    assert!(duplicate_body.contains("同级文件夹名称已存在"));
+
+    let sibling_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/folders")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"name":"研发文档","description":""}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(sibling_response.status(), StatusCode::CREATED);
+    let sibling_payload: serde_json::Value =
+        serde_json::from_str(&response_body(sibling_response).await).expect("json should parse");
+    let sibling_folder_id = sibling_payload["data"]["id"]
+        .as_i64()
+        .expect("sibling folder id should exist");
+
+    let duplicate_update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/folders/{sibling_folder_id}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"name":"设计文档"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(duplicate_update_response.status(), StatusCode::CONFLICT);
+    let duplicate_update_body = response_body(duplicate_update_response).await;
+    assert!(duplicate_update_body.contains("同级文件夹名称已存在"));
+
+    let child_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/folders")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"parent_id":{folder_id},"name":"终稿","description":""}}"#
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(child_response.status(), StatusCode::CREATED);
+    let child_payload: serde_json::Value =
+        serde_json::from_str(&response_body(child_response).await).expect("json should parse");
+    let child_folder_id = child_payload["data"]["id"]
+        .as_i64()
+        .expect("child folder id should exist");
+
+    let tree_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/folders/tree")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(tree_response.status(), StatusCode::OK);
+    let tree_body = response_body(tree_response).await;
+    assert!(tree_body.contains("设计文档"));
+    assert!(tree_body.contains("终稿"));
+
+    let create_attachment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/attachments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"original_filename":"spec.pdf","content_type":"application/pdf","byte_size":2048,"folder_id":{folder_id}}}"#
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_attachment_response.status(), StatusCode::CREATED);
+    let attachment_payload: serde_json::Value =
+        serde_json::from_str(&response_body(create_attachment_response).await)
+            .expect("json should parse");
+    let file_object_id = attachment_payload["data"]["file_object_id"]
+        .as_i64()
+        .expect("file object id should exist");
+    assert_eq!(
+        files::get_file_object(&pool, file_object_id)
+            .await
+            .expect("file object should load")
+            .folder_id,
+        Some(folder_id)
+    );
+
+    let ops = projects::get_project_detail(&pool, "OPS")
+        .await
+        .expect("ops project should load")
+        .expect("ops project should exist");
+    let ops_folder = files::create_folder(
+        &pool,
+        files::CreateFolderInput {
+            parent_id: None,
+            project_id: ops.id,
+            name: "OPS 文件".to_string(),
+            description: None,
+            created_by_user_id: initialized.user_id,
+        },
+    )
+    .await
+    .expect("ops folder should create");
+
+    let cross_project_attachment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/attachments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"original_filename":"cross.pdf","content_type":"application/pdf","byte_size":2048,"folder_id":{}}}"#,
+                    ops_folder.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        cross_project_attachment_response.status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    let move_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/file-objects/{file_object_id}/folder"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(r#"{{"folder_id":{child_folder_id}}}"#)))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(move_response.status(), StatusCode::OK);
+    assert_eq!(
+        files::get_file_object(&pool, file_object_id)
+            .await
+            .expect("file object should load")
+            .folder_id,
+        Some(child_folder_id)
+    );
+
+    let invalid_move_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/file-objects/{file_object_id}/folder"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(r#"{{"folder_id":{}}}"#, ops_folder.id)))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_move_response.status(), StatusCode::BAD_REQUEST);
+
+    let content_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/projects/YCE/folders/content?folder_id={child_folder_id}"
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(content_response.status(), StatusCode::OK);
+    let content_body = response_body(content_response).await;
+    assert!(content_body.contains("spec.pdf"));
+    assert!(content_body.contains(r#""folders":[]"#));
+}
+
+#[tokio::test]
 async fn web_project_attachment_download_redirects_to_signed_object_url() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -4472,6 +4747,7 @@ async fn web_project_attachment_download_redirects_to_signed_object_url() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4566,6 +4842,7 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4602,7 +4879,7 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
     assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         delete_response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE"
+        "/web/projects/YCE?tab=files"
     );
 
     let deleted = files::get_attachment(&pool, attachment.id)
@@ -4672,6 +4949,7 @@ async fn api_v1_project_attachment_delete_blocks_later_signed_urls() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -4770,6 +5048,7 @@ async fn api_v1_work_item_attachment_lifecycle_respects_project_scope() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -4852,6 +5131,7 @@ async fn web_work_item_attachment_download_redirects_to_signed_object_url() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -4933,6 +5213,7 @@ async fn web_work_item_attachment_download_serves_test_memory_object() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -4962,6 +5243,7 @@ async fn web_work_item_attachment_download_serves_test_memory_object() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -5078,6 +5360,7 @@ async fn web_work_item_attachment_download_rejects_deleted_attachment() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -5153,6 +5436,7 @@ async fn api_v1_work_item_attachment_delete_route_is_unavailable() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -6078,6 +6362,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: crm_project.id,
             project_id: Some(crm_project.id),
@@ -6094,6 +6379,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: yce_project.id,
             project_id: Some(yce_project.id),
@@ -6110,6 +6396,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: yce_item.id,
             project_id: Some(yce_project.id),
@@ -6126,6 +6413,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "comment".to_string(),
             target_id: yce_comment.id,
             project_id: Some(yce_project.id),
@@ -7106,6 +7394,7 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
@@ -7122,6 +7411,7 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
@@ -7138,6 +7428,7 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
         &pool,
         &config,
         files::CreateAttachmentInput {
+            folder_id: None,
             target_type: "comment".to_string(),
             target_id: comment.id,
             project_id: Some(project.id),

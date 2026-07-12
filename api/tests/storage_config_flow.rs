@@ -649,6 +649,7 @@ async fn file_object_metadata_uses_active_storage_config() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "roadmap.pdf".to_string(),
             content_type: "application/pdf".to_string(),
             byte_size: 1024,

@@ -235,6 +235,35 @@
     return body;
   }
 
+  function webFormJsonBody(form, submitter) {
+    var formData = new FormData(form);
+    var body = {};
+    if (submitter && submitter.name) {
+      formData.append(submitter.name, submitter.value);
+    }
+    formData.forEach(function (value, key) {
+      if (typeof value !== "string" || key === "_csrf" || key === "file_object_id") {
+        return;
+      }
+      if ((key === "parent_id" || key === "folder_id") && value.trim() === "") {
+        body[key] = null;
+        return;
+      }
+      if (key === "parent_id" || key === "folder_id") {
+        body[key] = Number(value);
+        return;
+      }
+      body[key] = value;
+    });
+    return body;
+  }
+
+  function webFormAction(form) {
+    var action = form.dataset.action || form.action || window.location.href;
+    var fileObjectId = form.querySelector("[data-file-move-file-object-id]")?.value || "";
+    return action.replace("{file_object_id}", encodeURIComponent(fileObjectId));
+  }
+
   async function submitWebForm(form, submitter) {
     if (!form || form.dataset.webFormBusy === "true") {
       return;
@@ -244,6 +273,25 @@
     }
     setWebFormBusy(form, true, submitter);
     try {
+      if (form.dataset.action) {
+        await fetchJson(webFormAction(form), {
+          method: (form.dataset.method || form.method || "POST").toUpperCase(),
+          headers: {
+            accept: "application/json",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(webFormJsonBody(form, submitter)),
+        });
+        showToast(form.dataset.successMessage || "操作已完成。", "success");
+        window.setTimeout(function () {
+          if (form.dataset.successRedirect) {
+            window.location.href = form.dataset.successRedirect;
+          } else {
+            window.location.reload();
+          }
+        }, 300);
+        return;
+      }
       var response = await fetch(form.action || window.location.href, {
         method: (form.method || "POST").toUpperCase(),
         headers: {
@@ -924,6 +972,27 @@
     syncSelectControl(control);
   }
 
+  function rebuildSelectControl(select) {
+    if (!select || select.dataset.selectEnhanced !== "true") {
+      return;
+    }
+    var control = select.nextElementSibling;
+    if (activeSelectControl === control) {
+      closeSelectControl(control, false);
+    }
+    if (control && control.classList.contains("select-control")) {
+      if (control.selectPanel) {
+        control.selectPanel.remove();
+      }
+      control.remove();
+    }
+    delete select.dataset.selectEnhanced;
+    select.classList.remove("select-native");
+    select.removeAttribute("aria-hidden");
+    select.tabIndex = 0;
+    buildSelectControl(select);
+  }
+
   function initSelectControls(root) {
     var scope = root || document;
     if (scope.matches && scope.matches("select")) {
@@ -949,6 +1018,8 @@
         indicator.style.transition = "";
       });
     } else {
+      indicator.style.transition = "";
+      void indicator.offsetWidth;
       control.style.setProperty("--content-tab-indicator-width", nextWidth + "px");
       control.style.setProperty("--content-tab-indicator-x", nextX + "px");
     }
@@ -1035,6 +1106,15 @@
       unitIndex += 1;
     }
     return (Math.round(value * 10) / 10).toString() + " " + units[unitIndex];
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function clearAttachmentResumeForChangedFile(host, file, idKey, fileKey, uploadedKey) {
@@ -1519,17 +1599,21 @@
     if (options.existingAttachmentId) {
       attachment = { id: options.existingAttachmentId };
     } else {
+      var createPayload = {
+        original_filename: filename,
+        content_type: contentType,
+        byte_size: byteSize,
+      };
+      if (options.folderId) {
+        createPayload.folder_id = Number(options.folderId);
+      }
       attachment = await fetchJson(options.createUrl, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           accept: "application/json",
         },
-        body: JSON.stringify({
-          original_filename: filename,
-          content_type: contentType,
-          byte_size: byteSize,
-        }),
+        body: JSON.stringify(createPayload),
       });
     }
     if (typeof options.onAttachmentReady === "function") {
@@ -1597,6 +1681,7 @@
           file.type ||
           "application/octet-stream",
         byteSize: Number(form.querySelector("[data-attachment-byte-size]")?.value || file.size || 0),
+        folderId: form.querySelector("select[name='folder_id']")?.value || "",
         existingAttachmentId: existingAttachmentId,
         createUrl: form.dataset.attachmentCreateUrl,
         uploadUrl: function (attachmentId) {
@@ -3455,12 +3540,16 @@
     var treeList = manager.querySelector("[data-file-folder-tree-list]");
     var toggle = manager.querySelector("[data-file-folder-tree-toggle]");
     var content = manager.querySelector("[data-file-content]");
+    var canManageFiles = Boolean(document.getElementById("project-file-move-modal"));
+    var selectedFolderId = "";
+    var contentRequestSeq = 0;
 
     if (toggle) {
       toggle.addEventListener("click", function () {
         var expanded = toggle.getAttribute("aria-expanded") === "true";
         toggle.setAttribute("aria-expanded", !expanded);
         toggle.textContent = expanded ? "▶" : "▼";
+        toggle.setAttribute("aria-label", expanded ? "展开文件夹树" : "收起文件夹树");
         if (treeList) {
           treeList.hidden = expanded;
         }
@@ -3474,7 +3563,8 @@
       var html = "";
       items.forEach(function (item) {
         var padding = depth * 16;
-        html += '<button class="file-folder-item" type="button" data-file-folder-item data-folder-id="' + item.id + '" style="padding-left:' + padding + 'px">';
+        var active = String(item.id) === selectedFolderId;
+        html += '<button class="file-folder-item' + (active ? ' active' : '') + '" type="button" data-file-folder-item data-folder-id="' + item.id + '" style="padding-left:' + padding + 'px"' + (active ? ' aria-current="true"' : '') + '>';
         html += '<span class="file-folder-icon">📁</span>';
         html += '<span class="file-folder-name">' + escapeHtml(item.name) + '</span>';
         html += '</button>';
@@ -3489,80 +3579,142 @@
       if (!projectKey) {
         return;
       }
-      fetch("/api/v1/projects/" + projectKey + "/folders/tree", {
-        headers: {
-          "x-yuance-csrf-token": csrfToken() || ""
-        }
+      fetchJson("/api/v1/projects/" + encodeURIComponent(projectKey) + "/folders/tree", {
+        headers: { accept: "application/json" },
       })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Network response was not ok");
+        .then(function (items) {
+          if (!treeList) {
+            return;
           }
-          return response.json();
+          var rootActive = selectedFolderId === "";
+          var treeHtml = '<button class="file-folder-item' + (rootActive ? ' active' : '') + '" type="button" data-file-folder-item data-folder-id=""' + (rootActive ? ' aria-current="true"' : '') + '>';
+          treeHtml += '<span class="file-folder-icon">📁</span>';
+          treeHtml += '<span class="file-folder-name">全部文件</span>';
+          treeHtml += '</button>';
+          treeHtml += renderFolderTree(Array.isArray(items) ? items : [], 1);
+          treeList.innerHTML = treeHtml;
         })
-        .then(function (data) {
-          if (data.data && data.data.items && treeList) {
-            var treeHtml = '<button class="file-folder-item active" type="button" data-file-folder-item data-folder-id="" aria-current="true">';
-            treeHtml += '<span class="file-folder-icon">📁</span>';
-            treeHtml += '<span class="file-folder-name">全部文件</span>';
-            treeHtml += '</button>';
-            treeHtml += renderFolderTree(data.data.items, 1);
-            treeList.innerHTML = treeHtml;
-          }
-        })
-        .catch(function () {});
+        .catch(function (error) {
+          showToast(error.message || "文件夹加载失败。", "error");
+        });
+    }
+
+    function attachmentStatusMeta(status) {
+      if (status === "uploaded") {
+        return { label: "已上传", tone: "ok" };
+      }
+      if (status === "deleted") {
+        return { label: "已删除", tone: "danger" };
+      }
+      return { label: "待上传", tone: "warning" };
+    }
+
+    function renderFilePreview(item) {
+      var title = escapeHtml(item.filename || "文件");
+      var source = "/web/projects/" + encodeURIComponent(projectKey) + "/attachments/" + encodeURIComponent(String(item.id)) + "/download";
+      if (item.status !== "uploaded") {
+        return "";
+      }
+      if (isPreviewableImageType(item.content_type)) {
+        return '<button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="' + source + '" data-image-title="' + title + '" data-image-gallery="project-media-' + escapeHtml(projectKey) + '" aria-label="预览图片 ' + title + '"><span class="attachment-image-frame" data-image-preview-frame><img alt="' + title + '" data-image-preview-image hidden><span class="attachment-image-state" data-image-preview-status>加载图片预览</span></span><span class="attachment-image-caption">预览图片</span></button>';
+      }
+      if (isPreviewableVideoType(item.content_type)) {
+        return '<button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="' + source + '" data-image-title="' + title + '" data-image-gallery="project-media-' + escapeHtml(projectKey) + '" aria-label="预览视频 ' + title + '"><span class="attachment-image-frame"><video src="' + source + '" muted preload="metadata" playsinline></video><span class="attachment-video-play" aria-hidden="true">▶</span></span><span class="attachment-image-caption">预览视频</span></button>';
+      }
+      return "";
+    }
+
+    function renderFolderContent(payload) {
+      var folders = Array.isArray(payload && payload.folders) ? payload.folders : [];
+      var files = Array.isArray(payload && payload.files) ? payload.files : [];
+      if (folders.length === 0 && files.length === 0) {
+        content.innerHTML = '<div class="empty-state"><strong>暂无文件</strong><span>该文件夹为空。</span></div>';
+        return;
+      }
+      var html = '<div class="attachment-list">';
+      folders.forEach(function (item) {
+        html += '<article class="attachment-row folder-row">';
+        html += '<div><strong>📁 ' + escapeHtml(item.name) + '</strong>';
+        if (item.description) {
+          html += '<span>' + escapeHtml(item.description) + '</span>';
+        }
+        html += '</div>';
+        html += '<div class="attachment-actions">';
+        html += '<button class="btn btn-sm btn-secondary" type="button" data-file-folder-open data-folder-id="' + item.id + '">打开</button>';
+        html += '</div>';
+        html += '</article>';
+      });
+      files.forEach(function (item) {
+        var status = attachmentStatusMeta(item.status);
+        html += '<article class="attachment-row">';
+        html += '<div>';
+        html += renderFilePreview(item);
+        html += '<strong>' + escapeHtml(item.filename || "") + '</strong>';
+        html += '<span>' + formatFileSize(item.byte_size) + ' · ' + escapeHtml(item.content_type || "application/octet-stream") + ' · 文件对象 #' + item.file_object_id + '</span>';
+        html += '<code>' + escapeHtml(item.object_key || "") + '</code>';
+        html += '</div>';
+        html += '<div class="attachment-actions">';
+        html += '<span class="status status-' + status.tone + '">' + status.label + '</span>';
+        if (canManageFiles && item.status === "pending") {
+          html += '<form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="' + item.id + '" data-attachment-upload-url-template="/api/v1/projects/' + encodeURIComponent(projectKey) + '/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/' + encodeURIComponent(projectKey) + '/attachments/{id}/uploaded" data-success-redirect="/web/projects/' + encodeURIComponent(projectKey) + '?tab=files">';
+          html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
+          html += '<label class="btn btn-sm btn-secondary attachment-file-button">选择文件<input class="sr-only" name="file" type="file" required data-attachment-file></label>';
+          html += '<button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>';
+          html += '<span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>';
+          html += '</form>';
+        }
+        if (item.status === "uploaded") {
+          html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + encodeURIComponent(projectKey) + '/attachments/' + item.id + '/download" target="_blank" rel="noopener">下载文件</a>';
+        } else {
+          html += '<span class="attachment-action-hint">上传完成后可下载</span>';
+        }
+        if (canManageFiles) {
+          html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + item.id + '" data-file-object-id="' + item.file_object_id + '">移动到</button>';
+          html += '<form class="inline-form" method="post" action="/web/projects/' + encodeURIComponent(projectKey) + '/attachments/' + item.id + '/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 ' + escapeHtml(item.filename || "文件") + '？删除后不能继续下载。" data-confirm-action="删除">';
+          html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
+          html += '<button class="btn btn-sm btn-danger" type="submit">删除</button>';
+          html += '</form>';
+        }
+        html += '</div>';
+        html += '</article>';
+      });
+      html += '</div>';
+      content.innerHTML = html;
+      initAttachmentImagePreviews(content);
+      loadVisibleAttachmentImages();
+      scheduleVisibleAttachmentImageChecks();
     }
 
     function loadFolderContent(folderId) {
       if (!projectKey || !content) {
         return;
       }
-      var url = "/api/v1/projects/" + projectKey + "/folders/content";
-      if (folderId) {
-        url += "?folder_id=" + folderId;
+      var requestedFolderId = folderId || "";
+      selectedFolderId = requestedFolderId;
+      var requestId = ++contentRequestSeq;
+      var url = "/api/v1/projects/" + encodeURIComponent(projectKey) + "/folders/content";
+      if (requestedFolderId) {
+        url += "?folder_id=" + encodeURIComponent(requestedFolderId);
       }
-      fetch(url, {
-        headers: {
-          "x-yuance-csrf-token": csrfToken() || ""
-        }
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Network response was not ok");
+      content.setAttribute("aria-busy", "true");
+      fetchJson(url, { headers: { accept: "application/json" } })
+        .then(function (payload) {
+          if (requestId !== contentRequestSeq || requestedFolderId !== selectedFolderId) {
+            return;
           }
-          return response.json();
+          renderFolderContent(payload || {});
         })
-        .then(function (data) {
-          if (data.data && content) {
-            var items = data.data.items || [];
-            if (items.length === 0) {
-              content.innerHTML = '<div class="empty-state"><strong>暂无文件</strong><span>该文件夹为空。</span></div>';
-              return;
-            }
-            var html = '<div class="attachment-list">';
-            items.forEach(function (item) {
-              if (item.type === "folder") {
-                html += '<article class="attachment-row folder-row">';
-                html += '<div><strong>📁 ' + escapeHtml(item.name) + '</strong></div>';
-                html += '<div class="attachment-actions">';
-                html += '<button class="btn btn-sm btn-secondary" type="button" data-file-folder-open data-folder-id="' + item.id + '">打开</button>';
-                html += '</div>';
-                html += '</article>';
-              } else {
-                html += '<article class="attachment-row">';
-                html += '<div><strong>' + escapeHtml(item.filename || "") + '</strong></div>';
-                html += '<div class="attachment-actions">';
-                html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + projectKey + '/attachments/' + item.id + '/download" target="_blank">下载</a>';
-                html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + item.id + '" data-file-object-id="' + item.file_object_id + '">移动到</button>';
-                html += '</div>';
-                html += '</article>';
-              }
-            });
-            html += '</div>';
-            content.innerHTML = html;
+        .catch(function (error) {
+          if (requestId !== contentRequestSeq || requestedFolderId !== selectedFolderId) {
+            return;
           }
+          content.innerHTML = '<div class="empty-state"><strong>文件加载失败</strong><span>' + escapeHtml(error.message || "请稍后重试。") + '</span></div>';
         })
-        .catch(function () {});
+        .finally(function () {
+          if (requestId === contentRequestSeq) {
+            content.removeAttribute("aria-busy");
+          }
+        });
     }
 
     treeList && treeList.addEventListener("click", function (event) {
@@ -3576,19 +3728,19 @@
       });
       item.classList.add("active");
       item.setAttribute("aria-current", "true");
-      var folderId = item.dataset.folderId || null;
+      var folderId = item.dataset.folderId || "";
       loadFolderContent(folderId);
     });
 
     content && content.addEventListener("click", function (event) {
       var openBtn = event.target.closest("[data-file-folder-open]");
       if (openBtn) {
-        var folderId = openBtn.dataset.folderId;
+        var folderId = openBtn.dataset.folderId || "";
         treeList.querySelectorAll("[data-file-folder-item]").forEach(function (el) {
           el.classList.remove("active");
           el.removeAttribute("aria-current");
         });
-        var targetItem = treeList.querySelector('[data-file-folder-id="' + folderId + '"]');
+        var targetItem = treeList.querySelector('[data-folder-id="' + folderId + '"]');
         if (targetItem) {
           targetItem.classList.add("active");
           targetItem.setAttribute("aria-current", "true");
@@ -3604,35 +3756,38 @@
   function initFolderSelects(projectKey) {
     var selects = document.querySelectorAll("[data-select-searchable][name='parent_id'], [data-select-searchable][name='folder_id']");
     selects.forEach(function (select) {
-      var url = "/api/v1/projects/" + projectKey + "/folders/tree";
-      fetch(url, {
-        headers: {
-          "x-yuance-csrf-token": csrfToken() || ""
-        }
-      })
-        .then(function (response) {
-          if (!response.ok) {
-            throw new Error("Network response was not ok");
+      if (select.dataset.folderOptionsLoaded === "true" || select.dataset.folderOptionsLoading === "true") {
+        return;
+      }
+      select.dataset.folderOptionsLoading = "true";
+      var url = "/api/v1/projects/" + encodeURIComponent(projectKey) + "/folders/tree";
+      fetchJson(url, { headers: { accept: "application/json" } })
+        .then(function (items) {
+          function addOptions(folderItems, prefix) {
+            (folderItems || []).forEach(function (item) {
+              if (select.querySelector('option[value="' + CSS.escape(String(item.id)) + '"]')) {
+                return;
+              }
+              var option = document.createElement("option");
+              option.value = item.id;
+              option.textContent = (prefix || "") + item.name;
+              select.appendChild(option);
+              if (item.children && item.children.length > 0) {
+                addOptions(item.children, (prefix || "") + "  ");
+              }
+            });
           }
-          return response.json();
+          addOptions(Array.isArray(items) ? items : [], "");
+          select.dataset.folderOptionsLoaded = "true";
+          rebuildSelectControl(select);
         })
-        .then(function (data) {
-          if (data.data && data.data.items) {
-            function addOptions(items, depth, prefix) {
-              items.forEach(function (item) {
-                var option = document.createElement("option");
-                option.value = item.id;
-                option.textContent = (prefix || "") + item.name;
-                select.appendChild(option);
-                if (item.children && item.children.length > 0) {
-                  addOptions(item.children, depth + 1, (prefix || "") + "  ");
-                }
-              });
-            }
-            addOptions(data.data.items, 0, "");
-          }
+        .catch(function (error) {
+          delete select.dataset.folderOptionsLoaded;
+          showToast(error.message || "文件夹选项加载失败。", "error");
         })
-        .catch(function () {});
+        .finally(function () {
+          delete select.dataset.folderOptionsLoading;
+        });
     });
   }
 

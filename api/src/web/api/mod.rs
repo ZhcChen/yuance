@@ -3396,7 +3396,7 @@ pub async fn update_folder(
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
     let folder = files::get_folder(pool, folder_id).await?;
-    let project = projects::get_project_detail(pool, &folder.project_id.to_string())
+    let project = projects::get_project_detail_by_id(pool, folder.project_id)
         .await?
         .ok_or_else(|| AppError::NotFound("文件夹所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
@@ -3417,7 +3417,10 @@ pub async fn update_folder(
         "folder.update",
         "project",
         &project.project_key,
-        &format!(r#"{{"folder_id":{},"name":"{}"}}"#, updated.id, updated.name),
+        &format!(
+            r#"{{"folder_id":{},"name":"{}"}}"#,
+            updated.id, updated.name
+        ),
     )
     .await?;
 
@@ -3434,7 +3437,7 @@ pub async fn delete_folder(
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
     let folder = files::get_folder(pool, folder_id).await?;
-    let project = projects::get_project_detail(pool, &folder.project_id.to_string())
+    let project = projects::get_project_detail_by_id(pool, folder.project_id)
         .await?
         .ok_or_else(|| AppError::NotFound("文件夹所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
@@ -3447,7 +3450,10 @@ pub async fn delete_folder(
         "folder.delete",
         "project",
         &project.project_key,
-        &format!(r#"{{"folder_id":{},"name":"{}"}}"#, deleted.id, deleted.name),
+        &format!(
+            r#"{{"folder_id":{},"name":"{}"}}"#,
+            deleted.id, deleted.name
+        ),
     )
     .await?;
 
@@ -3464,21 +3470,30 @@ pub async fn move_file_to_folder(
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
-    let _file_object = files::get_file_object(pool, file_object_id).await?;
+    let project_attachment =
+        files::get_project_attachment_for_file_object(pool, file_object_id).await?;
+    let project = projects::get_project_detail_by_id(pool, project_attachment.project_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("文件所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
     let folder_id = payload.folder_id;
 
     if let Some(fid) = folder_id {
         let folder = files::get_folder(pool, fid).await?;
-        let project = projects::get_project_detail(pool, &folder.project_id.to_string())
-            .await?
-            .ok_or_else(|| AppError::NotFound("文件夹所属项目不存在".to_string()))?;
-        ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
-        ensure_api_project_content_write_access(pool, &user, project.id).await?;
-        projects::ensure_project_accepts_writes(&project.status)?;
+        if folder.project_id != project.id {
+            return Err(AppError::BadRequest(
+                "目标文件夹不属于文件所在项目".to_string(),
+            ));
+        }
     }
 
     let updated = files::move_file_to_folder(pool, file_object_id, folder_id).await?;
-    let attachment = files::get_attachment(pool, updated.id).await?;
+    let attachment = files::get_attachment(pool, project_attachment.attachment.id).await?;
+    if attachment.file_object_id != updated.id {
+        return Err(AppError::BadRequest("文件移动状态异常".to_string()));
+    }
 
     Ok(json(attachment_payload(attachment)))
 }

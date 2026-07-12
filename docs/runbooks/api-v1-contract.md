@@ -312,6 +312,20 @@ PATCH  /api/v1/work-items/{item_key}/comments/{comment_id}
 
 写操作需要 `work_item.view` 和项目内容写入权限。评论修改还会校验评论管理范围；流程记录不能修改。评论及其回复永久保留，不提供删除接口。
 
+## 站内通知
+
+```text
+GET /api/v1/notifications
+```
+
+查询参数：
+
+```text
+limit=5
+```
+
+返回当前登录用户的站内消息摘要和未读数量。消息包括被指派、被回复等工作项协作事件；`open_url` 指向对应消息打开入口。
+
 ## 附件与直传
 
 项目、工作项、评论附件使用同一套三阶段流程：
@@ -331,10 +345,74 @@ GET    /api/v1/projects/{project_key}/attachments/{attachment_id}/download-url
 DELETE /api/v1/projects/{project_key}/attachments/{attachment_id}
 ```
 
+项目文件夹：
+
+```text
+GET    /api/v1/projects/{project_key}/folders
+POST   /api/v1/projects/{project_key}/folders
+GET    /api/v1/projects/{project_key}/folders/tree
+GET    /api/v1/projects/{project_key}/folders/content
+PATCH  /api/v1/folders/{folder_id}
+DELETE /api/v1/folders/{folder_id}
+PATCH  /api/v1/file-objects/{file_object_id}/folder
+```
+
 权限：
 
 - 列表和下载签名：需要 `project.view`，并处于项目成员范围内。
-- 登记、上传签名和上传完成：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
+- 登记、上传签名、上传完成、文件夹管理和移动文件：需要 `work_item.manage`，并且当前用户具备项目内容写入权限。
+
+项目附件登记请求可携带 `folder_id`。`folder_id` 为空表示根目录；传入时必须属于当前项目。移动文件时请求体为：
+
+```json
+{
+  "folder_id": 123
+}
+```
+
+`folder_id` 可为空，表示移动到根目录；不能把文件移动到其他项目的文件夹。
+
+创建文件夹请求：
+
+```json
+{
+  "parent_id": null,
+  "name": "设计文档",
+  "description": "项目文件分类"
+}
+```
+
+`parent_id` 可为空，表示创建顶层文件夹；传入时必须属于当前项目。同一项目同一父文件夹下的 active 文件夹名称不能重复，重复时返回 `409 conflict`。
+
+更新文件夹请求：
+
+```json
+{
+  "name": "终稿",
+  "description": "验收交付文件"
+}
+```
+
+字段均可按需传入；重命名同样受同级唯一约束限制。
+
+文件夹内容查询：
+
+```text
+GET /api/v1/projects/{project_key}/folders/content?folder_id=123
+```
+
+`folder_id` 为空时返回项目“全部文件”视图：顶层文件夹列表加项目内全部未删除文件；传入 `folder_id` 时返回该文件夹直接子文件夹和该文件夹内未删除文件。响应 `data` 结构：
+
+```json
+{
+  "folder_id": 123,
+  "folder_name": "设计文档",
+  "folders": [],
+  "files": []
+}
+```
+
+移动文件响应返回对应 `AttachmentPayload`，不额外携带 `folder_id`；需要确认位置时可查询文件夹内容或文件对象状态。
 
 工作项附件：
 

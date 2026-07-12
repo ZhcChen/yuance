@@ -1022,10 +1022,12 @@ async fn aliyun_oss_bucket_exists(
         config,
         access_key_id,
         access_key_secret,
-        "HEAD",
-        None,
-        vec![],
-        None,
+        AliyunOssBucketRequest {
+            method: "HEAD",
+            query: None,
+            headers: vec![],
+            body: None,
+        },
     )
     .await?;
     if response.status().is_success() {
@@ -1054,14 +1056,16 @@ async fn create_aliyun_oss_bucket(
         config,
         access_key_id,
         access_key_secret,
-        "PUT",
-        None,
-        vec![
-            ("content-type", "application/xml".to_string()),
-            ("x-oss-acl", "private".to_string()),
-            ("x-oss-storage-class", "Standard".to_string()),
-        ],
-        Some(body.to_string()),
+        AliyunOssBucketRequest {
+            method: "PUT",
+            query: None,
+            headers: vec![
+                ("content-type", "application/xml".to_string()),
+                ("x-oss-acl", "private".to_string()),
+                ("x-oss-storage-class", "Standard".to_string()),
+            ],
+            body: Some(body.to_string()),
+        },
     )
     .await?;
     if response.status().is_success() {
@@ -1094,10 +1098,12 @@ async fn ensure_aliyun_oss_direct_upload_cors(
         config,
         access_key_id,
         access_key_secret,
-        "GET",
-        Some("cors"),
-        vec![],
-        None,
+        AliyunOssBucketRequest {
+            method: "GET",
+            query: Some("cors"),
+            headers: vec![],
+            body: None,
+        },
     )
     .await?;
 
@@ -1130,10 +1136,12 @@ async fn ensure_aliyun_oss_direct_upload_cors(
         config,
         access_key_id,
         access_key_secret,
-        "PUT",
-        Some("cors"),
-        vec![("content-type", "application/xml".to_string())],
-        Some(next_cors_xml),
+        AliyunOssBucketRequest {
+            method: "PUT",
+            query: Some("cors"),
+            headers: vec![("content-type", "application/xml".to_string())],
+            body: Some(next_cors_xml),
+        },
     )
     .await?;
     if response.status().is_success() {
@@ -1147,19 +1155,25 @@ async fn ensure_aliyun_oss_direct_upload_cors(
     )))
 }
 
+struct AliyunOssBucketRequest<'a> {
+    method: &'a str,
+    query: Option<&'a str>,
+    headers: Vec<(&'a str, String)>,
+    body: Option<String>,
+}
+
 async fn signed_aliyun_oss_bucket_request(
     client: &reqwest::Client,
     config: &StorageConfig,
     access_key_id: &str,
     access_key_secret: &str,
-    method: &str,
-    query: Option<&str>,
-    headers: Vec<(&str, String)>,
-    body: Option<String>,
+    bucket_request: AliyunOssBucketRequest<'_>,
 ) -> AppResult<reqwest::Response> {
-    let url = aliyun_oss_bucket_url(config, query)?;
-    let mut builder = http::Request::builder().method(method).uri(&url);
-    for (name, value) in &headers {
+    let url = aliyun_oss_bucket_url(config, bucket_request.query)?;
+    let mut builder = http::Request::builder()
+        .method(bucket_request.method)
+        .uri(&url);
+    for (name, value) in &bucket_request.headers {
         builder = builder.header(*name, value);
     }
     let (mut parts, _) = builder
@@ -1178,7 +1192,7 @@ async fn signed_aliyun_oss_bucket_request(
         .await
         .map_err(|error| oss_bucket_init_error(format!("签名阿里云 OSS 管理请求失败：{error}")))?;
 
-    let reqwest_method = reqwest::Method::from_bytes(method.as_bytes())
+    let reqwest_method = reqwest::Method::from_bytes(bucket_request.method.as_bytes())
         .map_err(|error| oss_bucket_init_error(format!("OSS 管理请求方法无效：{error}")))?;
     let mut request = client.request(reqwest_method, url);
     for (name, value) in &parts.headers {
@@ -1187,7 +1201,7 @@ async fn signed_aliyun_oss_bucket_request(
             .map_err(|error| oss_bucket_init_error(format!("OSS 管理请求 Header 无效：{error}")))?;
         request = request.header(name.as_str(), value);
     }
-    if let Some(body) = body {
+    if let Some(body) = bucket_request.body {
         request = request.body(body);
     }
     request

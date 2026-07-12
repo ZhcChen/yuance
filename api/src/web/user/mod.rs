@@ -1034,6 +1034,8 @@ pub struct AttachmentForm {
     original_filename: String,
     content_type: String,
     byte_size: i64,
+    #[serde(default)]
+    folder_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2139,7 +2141,7 @@ pub async fn project_attachment_create(
                 target_type: "project".to_string(),
                 target_id: project.id,
                 project_id: Some(project.id),
-                folder_id: None,
+                folder_id: form.folder_id,
                 original_filename,
                 content_type: form.content_type,
                 byte_size: form.byte_size,
@@ -2158,7 +2160,7 @@ pub async fn project_attachment_create(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/projects/{project_key}")).into_response());
+        return Ok(Redirect::to(&format!("/web/projects/{project_key}?tab=files")).into_response());
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -2209,7 +2211,7 @@ pub async fn project_attachment_delete(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/projects/{project_key}")).into_response());
+        return Ok(Redirect::to(&format!("/web/projects/{project_key}?tab=files")).into_response());
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -4240,17 +4242,17 @@ async fn work_item_list_page(
         ensure_view_permission(pool, headers, context.user_id, "work_item.view").await?;
     }
     let requested_project_key = query.project_key.trim().to_ascii_uppercase();
-    if !requested_project_key.is_empty() {
-        if let Some(pool) = context.pool {
-            let selected = projects::set_current_project_for_user(
-                pool,
-                context.user_id,
-                context.can_access_all_projects,
-                &requested_project_key,
-            )
-            .await?;
-            context.current_project = Some(current_project_from_domain(selected));
-        }
+    if !requested_project_key.is_empty()
+        && let Some(pool) = context.pool
+    {
+        let selected = projects::set_current_project_for_user(
+            pool,
+            context.user_id,
+            context.can_access_all_projects,
+            &requested_project_key,
+        )
+        .await?;
+        context.current_project = Some(current_project_from_domain(selected));
     }
     let current_project = context.current_project.clone();
     let project_key = current_project
@@ -6613,7 +6615,7 @@ fn project_detail_tab(tab: Option<&str>) -> &'static str {
     match tab.map(str::trim) {
         Some("info") => "info",
         Some("members") => "members",
-        Some("attachments") => "attachments",
+        Some("files") | Some("attachments") => "files",
         Some("activities") => "activities",
         _ => "work",
     }

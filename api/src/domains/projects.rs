@@ -918,6 +918,81 @@ pub async fn get_project_detail(
     ))
 }
 
+pub async fn get_project_detail_by_id(
+    pool: &SqlitePool,
+    project_id: i64,
+) -> AppResult<Option<ProjectDetail>> {
+    if project_id <= 0 {
+        return Err(AppError::BadRequest("项目 ID 无效".to_string()));
+    }
+
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            p.id,
+            p.project_key,
+            p.name,
+            p.description,
+            p.status,
+            COALESCE(u.username, '') AS owner_username,
+            COALESCE(u.display_name, '') AS owner_display_name,
+            COALESCE(p.start_date, '') AS start_date,
+            COALESCE(p.due_date, '') AS due_date,
+            p.created_at,
+            p.updated_at
+        FROM projects p
+        LEFT JOIN users u ON u.id = p.owner_user_id
+        WHERE p.id = ?1
+        "#,
+    )
+    .bind(project_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(
+        |(
+            id,
+            project_key,
+            name,
+            description,
+            status,
+            owner_username,
+            owner_display_name,
+            start_date,
+            due_date,
+            created_at,
+            updated_at,
+        )| ProjectDetail {
+            id,
+            project_key,
+            name,
+            description,
+            status,
+            owner_username,
+            owner_display_name,
+            start_date,
+            due_date,
+            created_at,
+            updated_at,
+        },
+    ))
+}
+
 pub async fn list_project_members(
     pool: &SqlitePool,
     project_id: i64,

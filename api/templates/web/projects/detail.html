@@ -287,7 +287,7 @@
           <div class="file-manager" data-file-manager>
             <aside class="file-folder-tree" data-file-folder-tree>
               <div class="file-folder-tree-head">
-                <button class="file-folder-tree-toggle" type="button" data-file-folder-tree-toggle aria-expanded="true" aria-label="展开文件夹树">▶</button>
+                <button class="file-folder-tree-toggle" type="button" data-file-folder-tree-toggle aria-expanded="true" aria-label="收起文件夹树">▼</button>
                 <span>文件夹</span>
               </div>
               <nav class="file-folder-tree-list" data-file-folder-tree-list>
@@ -329,7 +329,7 @@
                     {% if attachment.status_code != "deleted" %}
                     {% if can_manage_work_items %}
                     {% if attachment.status_code == "pending" %}
-                    <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}">
+                    <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                       <label class="btn btn-sm btn-secondary attachment-file-button">
                         选择文件
@@ -568,7 +568,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/projects/{{ project.code }}/folders" data-on-success="window.location.reload()">
+    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/projects/{{ project.code }}/folders" data-method="POST" data-success-message="文件夹已创建。" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label>
         文件夹名称
@@ -602,7 +602,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/file-objects/{file_object_id}/folder" data-on-success="window.location.reload()">
+    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/file-objects/{file_object_id}/folder" data-method="PATCH" data-success-message="文件已移动。" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="file_object_id" data-file-move-file-object-id>
       <label>
@@ -629,7 +629,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/attachments" data-direct-upload data-attachment-create-url="/api/v1/projects/{{ project.code }}/attachments" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}">
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/attachments" data-direct-upload data-attachment-create-url="/api/v1/projects/{{ project.code }}/attachments" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label class="upload-picker">
         <span>选择文件</span>

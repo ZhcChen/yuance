@@ -29,6 +29,7 @@ async fn cleanup_pending_marks_only_expired_pending_file_objects_deleted() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "old-pending.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
@@ -41,6 +42,7 @@ async fn cleanup_pending_marks_only_expired_pending_file_objects_deleted() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "fresh-pending.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
@@ -53,6 +55,7 @@ async fn cleanup_pending_marks_only_expired_pending_file_objects_deleted() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "uploaded.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
@@ -196,6 +199,7 @@ async fn audit_file_objects_counts_attached_and_orphan_records() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "attached.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
@@ -210,6 +214,7 @@ async fn audit_file_objects_counts_attached_and_orphan_records() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "orphan-pending.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
@@ -222,6 +227,7 @@ async fn audit_file_objects_counts_attached_and_orphan_records() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "orphan-uploaded.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
@@ -237,6 +243,7 @@ async fn audit_file_objects_counts_attached_and_orphan_records() {
         &pool,
         &config,
         files::CreateFileObjectInput {
+            folder_id: None,
             original_filename: "orphan-deleted.txt".to_string(),
             content_type: "text/plain".to_string(),
             byte_size: 10,
