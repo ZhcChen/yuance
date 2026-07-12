@@ -43,7 +43,7 @@
           </a>
           {% if can_manage_roles %}
           {% if !role.is_system %}
-          <form method="post" action="/web/system/roles/{{ role.code }}/status">
+          <form method="post" action="/web/system/roles/{{ role.code }}/status" data-confirm-submit-form data-confirm-title="{% if role.status_code == "active" %}确认禁用角色{% else %}确认启用角色{% endif %}" data-confirm-message="{% if role.status_code == "active" %}确认禁用角色 {{ role.name }}？禁用后该角色授权不会再生效。{% else %}确认启用角色 {{ role.name }}？启用后该角色授权会重新生效。{% endif %}" data-confirm-action="{% if role.status_code == "active" %}确认禁用{% else %}确认启用{% endif %}">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             {% if role.status_code == "active" %}
             <input type="hidden" name="status" value="disabled">

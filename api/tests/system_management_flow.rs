@@ -252,6 +252,10 @@ async fn locked_user_loses_session_and_cannot_login_until_unlocked() {
     let page_body = response_body(page_response).await;
     assert!(page_body.contains("锁定"));
     assert!(page_body.contains("解锁"));
+    assert!(
+        page_body.contains(r#"action="/web/system/users/member1/status" data-confirm-submit-form"#)
+    );
+    assert!(page_body.contains("确认解锁用户"));
 
     let stale_session_response = app
         .clone()
@@ -504,6 +508,12 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
     assert!(workbench_body.contains(r#"id="role-create-modal""#));
     assert!(workbench_body.contains(r#"role="dialog""#));
     assert!(workbench_body.contains(r#"action="/web/system/roles""#));
+    assert!(
+        workbench_body.contains(
+            r#"action="/web/system/roles/system_viewer/status" data-confirm-submit-form"#
+        )
+    );
+    assert!(workbench_body.contains("确认禁用角色"));
     assert!(!workbench_body.contains("role-create-form"));
     assert!(workbench_body.contains("data-permission-tree"));
     assert!(workbench_body.contains("data-permission-group-key=\"system\""));

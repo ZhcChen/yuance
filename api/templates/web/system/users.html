@@ -54,7 +54,7 @@
               {% else %}
               {% if can_manage_users %}
               <div class="row-actions">
-                <form method="post" action="/web/system/users/{{ user.username }}/status">
+                <form method="post" action="/web/system/users/{{ user.username }}/status" data-confirm-submit-form data-confirm-title="{% if user.status_code == "active" %}确认禁用用户{% else if user.status_code == "locked" %}确认解锁用户{% else %}确认启用用户{% endif %}" data-confirm-message="{% if user.status_code == "active" %}确认禁用 {{ user.display_name }} @{{ user.username }}？该用户将无法继续登录系统。{% else if user.status_code == "locked" %}确认解锁 {{ user.display_name }} @{{ user.username }}？解锁后该用户可以重新尝试登录。{% else %}确认启用 {{ user.display_name }} @{{ user.username }}？启用后该用户可以登录系统。{% endif %}" data-confirm-action="{% if user.status_code == "active" %}确认禁用{% else if user.status_code == "locked" %}确认解锁{% else %}确认启用{% endif %}">
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                   {% if user.status_code == "active" %}
                   <input type="hidden" name="status" value="disabled">

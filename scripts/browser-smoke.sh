@@ -271,6 +271,11 @@ cat >"$EVAL_FILE" <<JS
   assert(frame.contentWindow.location.pathname === "/web/system/roles", "角色创建后未停留角色权限页");
   assert(frame.contentWindow.location.search.includes("role=smoke_viewer"), "角色创建后未选中新角色");
   assert(hasText("冒烟观察者"), "新建角色未出现在角色列表");
+  click("form[action='/web/system/roles/smoke_viewer/status'] button[type='submit']");
+  await waitFor(() => !query("#confirm-action-modal").hidden && query("#confirm-action-modal").classList.contains("open"), "角色状态确认弹窗未打开");
+  assert(hasText("确认禁用角色"), "角色状态确认文案未显示");
+  click("#confirm-action-modal .btn-secondary");
+  await waitFor(() => query("#confirm-action-modal").hidden, "角色状态确认弹窗未关闭");
   const projectGroup = query("[data-permission-group-key='project']");
   const groupParent = projectGroup.querySelector(".permission-group-head input[data-permission-parent]");
   assert(groupParent, "未找到项目权限组父级复选框");
@@ -294,6 +299,11 @@ cat >"$EVAL_FILE" <<JS
   await submitAndWait("#user-create-modal button[type='submit'].btn-primary");
   assert(frame.contentWindow.location.pathname === "/web/system/users", "用户创建后未回到用户管理页");
   assert(hasText("冒烟成员"), "新用户未出现在用户列表");
+  click("form[action='/web/system/users/smoke_user/status'] button[type='submit']");
+  await waitFor(() => !query("#confirm-action-modal").hidden && query("#confirm-action-modal").classList.contains("open"), "用户状态确认弹窗未打开");
+  assert(hasText("确认禁用用户"), "用户状态确认文案未显示");
+  click("#confirm-action-modal .btn-secondary");
+  await waitFor(() => query("#confirm-action-modal").hidden, "用户状态确认弹窗未关闭");
 
   click("[data-modal-open='user-role-modal-smoke_user']");
   await waitFor(() => visible("#user-role-modal-smoke_user"), "用户角色 modal 未打开");
