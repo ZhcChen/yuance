@@ -194,6 +194,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("word-spacing: normal"));
     assert!(body.contains(".discussion-attach-button:focus-within"));
     assert!(body.contains(".discussion-attach-button span"));
+    assert!(body.contains(".discussion-assign-status .select-control"));
+    assert!(body.contains("min-width: 168px"));
 }
 
 #[tokio::test]

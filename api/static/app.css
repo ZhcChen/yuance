@@ -412,19 +412,25 @@ body {
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
-  flex: 0 0 auto;
+  flex: 1 1 248px;
+  min-width: min(100%, 230px);
 }
 
 .discussion-assign-status select {
-  width: 136px;
-  min-width: 136px;
+  width: clamp(168px, 20vw, 220px);
+  min-width: 168px;
   min-height: 34px;
 }
 
 .discussion-assign-status .select-control {
-  width: 136px;
-  min-width: 136px;
-  flex: 0 0 136px;
+  width: clamp(168px, 20vw, 220px);
+  min-width: 168px;
+  flex: 1 1 168px;
+}
+
+.discussion-assign-status .select-control-trigger {
+  height: 34px;
+  min-height: 34px;
 }
 
 .discussion-composer-footer .btn {
@@ -798,6 +804,19 @@ body {
 
   .discussion-composer-footer {
     flex-wrap: wrap;
+  }
+
+  .discussion-assign-status {
+    width: 100%;
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+
+  .discussion-assign-status select,
+  .discussion-assign-status .select-control {
+    width: min(220px, 100%);
+    min-width: 168px;
+    flex: 0 1 220px;
   }
 
   .discussion-file-hint {
