@@ -1132,9 +1132,15 @@ textarea:focus-visible {
 }
 
 .notification-trigger:hover,
+.notification-trigger:focus-visible,
 .notification-dropdown[data-dropdown-open="true"] .notification-trigger {
   background: var(--brand-soft);
   color: var(--brand);
+}
+
+.notification-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand) 58%, transparent);
+  outline-offset: 3px;
 }
 
 .notification-trigger svg {

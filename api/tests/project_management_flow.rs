@@ -257,6 +257,10 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert_eq!(first_page_response.status(), StatusCode::OK);
     let first_body = response_body(first_page_response).await;
     assert_eq!(first_body.matches("class=\"message-row").count(), 5);
+    assert!(first_body.contains(r#"aria-haspopup="dialog""#));
+    assert!(first_body.contains(r#"aria-controls="topbar-notification-panel""#));
+    assert!(first_body.contains(r#"id="topbar-notification-panel""#));
+    assert!(first_body.contains(r#"role="dialog" aria-label="最近消息""#));
     assert!(first_body.contains(r#"aria-label="消息分页""#));
     assert!(first_body.contains("当前显示 1-5"));
     assert!(first_body.contains("共 12 条"));
@@ -297,6 +301,43 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     let unread_body = response_body(unread_page_response).await;
     assert!(unread_body.contains(r#"name="unread" value="true""#));
     assert!(unread_body.contains("/web/messages?unread=true&#38;page=2&#38;per_page=5"));
+}
+
+#[tokio::test]
+async fn web_messages_page_clamps_unread_badge_to_99_plus() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let receiver = create_regular_user(&pool, "message_badge_owner", "消息角标负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "message_badge_owner", "member")
+        .await
+        .expect("receiver should join project");
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item should exist");
+    for index in 1..=100 {
+        insert_test_notification(&pool, receiver.user_id, admin.user_id, work_item_id, index).await;
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?unread=true")
+                .header(header::COOKIE, receiver.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("未读消息 100 条"));
+    assert!(body.contains(r#"<span class="content-tab-badge">99+</span>"#));
 }
 
 #[tokio::test]
@@ -7904,6 +7945,31 @@ async fn seed_memory_storage_config(pool: &sqlx::SqlitePool, actor_user_id: i64)
     )
     .await
     .expect("memory storage config should save");
+}
+
+async fn insert_test_notification(
+    pool: &sqlx::SqlitePool,
+    recipient_user_id: i64,
+    actor_user_id: i64,
+    work_item_id: i64,
+    index: i32,
+) {
+    sqlx::query(
+        r#"
+        INSERT INTO notifications (
+            recipient_user_id, actor_user_id, kind, work_item_id, title, body
+        )
+        VALUES (?1, ?2, 'work_item_assigned', ?3, ?4, ?5)
+        "#,
+    )
+    .bind(recipient_user_id)
+    .bind(actor_user_id)
+    .bind(work_item_id)
+    .bind(format!("角标消息 {index:03}"))
+    .bind(format!("第 {index:03} 条消息"))
+    .execute(pool)
+    .await
+    .expect("notification should insert");
 }
 
 async fn write_test_object(

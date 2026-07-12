@@ -138,13 +138,21 @@
   }
 
   function renderNotificationFeed(root, feed) {
+    var trigger = root.querySelector("[data-dropdown-trigger]");
     var badge = root.querySelector("[data-notification-badge]");
     var summary = root.querySelector("[data-notification-summary]");
     var list = root.querySelector("[data-notification-list]");
     var unreadCount = Number(feed && feed.unread_count || 0);
+    var unreadLabel = unreadCount > 99 ? "99+" : String(unreadCount);
+    if (trigger) {
+      trigger.setAttribute(
+        "aria-label",
+        unreadCount ? "打开消息通知，" + unreadCount + " 条未读" : "打开消息通知，暂无未读"
+      );
+    }
     if (badge) {
       badge.hidden = unreadCount === 0;
-      badge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+      badge.textContent = unreadLabel;
     }
     if (summary) {
       summary.textContent = unreadCount ? unreadCount + " 条未读" : "暂无未读";
