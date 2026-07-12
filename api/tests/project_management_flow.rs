@@ -993,6 +993,8 @@ async fn web_work_item_list_can_filter_by_query_status_priority_and_project() {
     let body = response_body(response).await;
 
     assert!(body.contains("筛选"));
+    assert!(body.contains("全部开放项"));
+    assert!(!body.contains("全部待处理"));
     assert!(body.contains("YCE-TASK-2"));
     assert!(body.contains("设计项目与工作项数据模型"));
     assert!(!body.contains("YCE-TASK-1"));
