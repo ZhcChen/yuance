@@ -1220,6 +1220,12 @@ pub struct MessagesQuery {
 pub struct MessageActionForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    unread: bool,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1623,10 +1629,12 @@ pub async fn messages_mark_all_read(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let pagination = normalize_web_pagination(form.page, form.per_page)?;
+    let redirect_url = message_page_url(form.unread, pagination.page, pagination.per_page);
     if let Some(pool) = context.pool {
         notifications::mark_all_read(pool, context.user_id).await?;
     }
-    Ok(Redirect::to("/web/messages").into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn message_open(

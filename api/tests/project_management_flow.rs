@@ -275,7 +275,7 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
         .execute(&pool)
         .await
         .expect("notification title and body should clear");
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let first_page_response = app
         .clone()
@@ -323,12 +323,21 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert_eq!(third_body.matches("class=\"message-row").count(), 2);
     assert!(third_body.contains("当前显示 11-12"));
     assert!(third_body.contains(r#"aria-current="page">3</a>"#));
+    let all_read_all_form = html_fragment(
+        &third_body,
+        r#"<form method="post" action="/web/messages/read-all">"#,
+        "</form>",
+    );
+    assert!(!all_read_all_form.contains(r#"name="unread""#));
+    assert!(all_read_all_form.contains(r#"name="page" value="3""#));
+    assert!(all_read_all_form.contains(r#"name="per_page" value="5""#));
 
     let unread_page_response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .uri("/web/messages?unread=true&per_page=5")
-                .header(header::COOKIE, receiver.cookie)
+                .uri("/web/messages?unread=true&per_page=5&page=3")
+                .header(header::COOKIE, receiver.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -337,7 +346,81 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert_eq!(unread_page_response.status(), StatusCode::OK);
     let unread_body = response_body(unread_page_response).await;
     assert!(unread_body.contains(r#"name="unread" value="true""#));
+    assert!(unread_body.contains("当前显示 11-12"));
+    let unread_read_all_form = html_fragment(
+        &unread_body,
+        r#"<form method="post" action="/web/messages/read-all">"#,
+        "</form>",
+    );
+    assert!(unread_read_all_form.contains(r#"name="unread" value="true""#));
+    assert!(unread_read_all_form.contains(r#"name="page" value="3""#));
+    assert!(unread_read_all_form.contains(r#"name="per_page" value="5""#));
     assert!(unread_body.contains("/web/messages?unread=true&#38;page=2&#38;per_page=5"));
+
+    let invalid_read_all_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/messages/read-all")
+                .header(header::COOKIE, with_csrf_cookie(&receiver.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&unread=true&page=0&per_page=5"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_read_all_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        notifications::unread_count(&pool, receiver.user_id)
+            .await
+            .expect("unread count should load"),
+        12
+    );
+
+    let read_all_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/messages/read-all")
+                .header(header::COOKIE, with_csrf_cookie(&receiver.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&unread=true&page=3&per_page=5"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_all_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        read_all_response.headers().get(header::LOCATION).unwrap(),
+        "/web/messages?unread=true&page=3&per_page=5"
+    );
+
+    let all_tab_read_all_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/messages/read-all")
+                .header(header::COOKIE, with_csrf_cookie(&receiver.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!("_csrf={CSRF_TOKEN}&page=3&per_page=5")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(all_tab_read_all_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        all_tab_read_all_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap(),
+        "/web/messages?page=3&per_page=5"
+    );
 }
 
 #[tokio::test]
@@ -8198,6 +8281,13 @@ fn extract_json_string(body: &str, key: &str) -> String {
     let rest = &body[start..];
     let end = rest.find('"').expect("value should end");
     rest[..end].to_string()
+}
+
+fn html_fragment<'a>(body: &'a str, marker: &str, closing: &str) -> &'a str {
+    let start = body.find(marker).expect("fragment marker should exist");
+    let tail = &body[start..];
+    let end = tail.find(closing).expect("fragment closing should exist") + closing.len();
+    &tail[..end]
 }
 
 fn assert_generated_project_key(project_key: &str) {
