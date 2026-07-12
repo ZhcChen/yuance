@@ -2674,7 +2674,7 @@ fn ensure_api_work_item_accepts_writes(item: &projects::WorkItemDetail) -> AppRe
     }
 
     Err(AppError::BadRequest(
-        "工作项已删除，不能执行写入操作".to_string(),
+        "历史工作项不能执行写入操作".to_string(),
     ))
 }
 

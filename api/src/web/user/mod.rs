@@ -5684,7 +5684,7 @@ async fn user_can_write_project_content_for_user(
 fn ensure_work_item_accepts_writes(item: &WorkItemDetailView) -> AppResult<()> {
     if item.is_deleted {
         return Err(AppError::BadRequest(
-            "工作项已删除，不能执行写入操作".to_string(),
+            "历史工作项不能执行写入操作".to_string(),
         ));
     }
 
