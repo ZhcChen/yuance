@@ -2653,7 +2653,8 @@ code {
   background: var(--tab-active-bg);
   box-shadow: var(--tab-active-shadow);
   transform: translateX(var(--segmented-indicator-x, 0px));
-  transition: width var(--motion-base) cubic-bezier(.2,.8,.2,1), transform var(--motion-base) cubic-bezier(.2,.8,.2,1);
+  transition: width 360ms cubic-bezier(.22,.8,.24,1), transform 360ms cubic-bezier(.22,.8,.24,1);
+  will-change: width, transform;
 }
 
 .segmented button,

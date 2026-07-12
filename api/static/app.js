@@ -1010,13 +1010,36 @@
     });
   }
 
-  function syncSegmentedIndicator(control) {
+  function syncSegmentedIndicator(control, animate) {
     var active = control && control.querySelector("[data-segmented-item].active");
-    if (!control || !active) {
+    var indicator = control && control.querySelector("[data-segmented-indicator]");
+    if (!control || !active || !indicator) {
       return;
     }
-    control.style.setProperty("--segmented-indicator-width", active.offsetWidth + "px");
-    control.style.setProperty("--segmented-indicator-x", Math.max(0, active.offsetLeft - 5) + "px");
+    var controlRect = control.getBoundingClientRect();
+    var indicatorRect = indicator.getBoundingClientRect();
+    var previousWidth = indicatorRect.width || active.offsetWidth;
+    var previousX = indicatorRect.left - controlRect.left - indicator.offsetLeft;
+    var nextWidth = active.offsetWidth;
+    var nextX = Math.max(0, active.offsetLeft - 5);
+
+    if (indicator.segmentSlideAnimation) {
+      indicator.segmentSlideAnimation.cancel();
+    }
+    control.style.setProperty("--segmented-indicator-width", nextWidth + "px");
+    control.style.setProperty("--segmented-indicator-x", nextX + "px");
+
+    if (!animate || prefersReducedMotion() || (previousWidth === nextWidth && previousX === nextX)) {
+      return;
+    }
+    indicator.segmentSlideAnimation = indicator.animate([
+      { width: previousWidth + "px", transform: "translateX(" + previousX + "px)" },
+      { width: nextWidth + "px", transform: "translateX(" + nextX + "px)" }
+    ], {
+      duration: 360,
+      easing: "cubic-bezier(.22, .8, .24, 1)",
+      fill: "none"
+    });
   }
 
   function activateSegmentedItem(item) {
@@ -1027,11 +1050,13 @@
     control.querySelectorAll("[data-segmented-item]").forEach(function (candidate) {
       candidate.classList.toggle("active", candidate === item);
     });
-    syncSegmentedIndicator(control);
+    syncSegmentedIndicator(control, true);
   }
 
   function initSegmentedControls(root) {
-    (root || document).querySelectorAll("[data-segmented]").forEach(syncSegmentedIndicator);
+    (root || document).querySelectorAll("[data-segmented]").forEach(function (control) {
+      syncSegmentedIndicator(control, false);
+    });
   }
 
   function isPreviewableImageType(contentType) {
@@ -3456,8 +3481,12 @@
     if (activeSelectControl) {
       positionSelectPanel(activeSelectControl);
     }
-    document.querySelectorAll("[data-tabs]").forEach(syncTabIndicator);
-    document.querySelectorAll("[data-segmented]").forEach(syncSegmentedIndicator);
+    document.querySelectorAll("[data-tabs]").forEach(function (tabs) {
+      syncTabIndicator(tabs, false);
+    });
+    document.querySelectorAll("[data-segmented]").forEach(function (control) {
+      syncSegmentedIndicator(control, false);
+    });
   });
 
   window.addEventListener("scroll", function () {
