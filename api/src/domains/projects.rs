@@ -1,4 +1,4 @@
-use chrono::{FixedOffset, Utc};
+use chrono::{Duration, Utc};
 use rand_core::{OsRng, RngCore};
 use sqlx::{Row, SqlitePool};
 
@@ -4002,8 +4002,7 @@ fn validate_project_key(project_key: &str) -> AppResult<String> {
 }
 
 fn generate_project_key() -> String {
-    let china_offset = FixedOffset::east_opt(8 * 60 * 60).expect("valid fixed offset");
-    let date = Utc::now().with_timezone(&china_offset).format("%y%m%d");
+    let date = (Utc::now() + Duration::hours(8)).format("%y%m%d");
     let mut rng = OsRng;
     let random_code = rng.next_u32() % 1_000_000;
     format!("P{date}{random_code:06}")
