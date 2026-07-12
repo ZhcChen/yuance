@@ -5692,20 +5692,32 @@ async fn attachment_download_redirect(
         ));
     }
 
+    enum DownloadTarget {
+        TestMemory {
+            content_type: String,
+            content: Vec<u8>,
+        },
+        SignedRedirect {
+            url: String,
+        },
+    }
+
     let test_memory_object =
         storage::read_test_memory_object(pool, &state.settings, &attachment.object_key).await?;
-    let signed = if test_memory_object.is_none() {
-        Some(
-            storage::presign_download_url(
-                pool,
-                &state.settings,
-                &attachment.object_key,
-                storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
-            )
-            .await?,
-        )
+    let download_target = if let Some((content_type, content)) = test_memory_object {
+        DownloadTarget::TestMemory {
+            content_type,
+            content,
+        }
     } else {
-        None
+        let signed = storage::presign_download_url(
+            pool,
+            &state.settings,
+            &attachment.object_key,
+            storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        )
+        .await?;
+        DownloadTarget::SignedRedirect { url: signed.url }
     };
     audit::record(
         pool,
@@ -5717,27 +5729,31 @@ async fn attachment_download_redirect(
     )
     .await?;
 
-    if let Some((content_type, content)) = test_memory_object {
-        let is_inline_media = is_previewable_image_content_type(&content_type)
-            || is_previewable_video_content_type(&content_type);
-        let mut response = content.into_response();
-        let headers = response.headers_mut();
-        headers.insert(
-            header::CONTENT_TYPE,
-            if is_inline_media {
-                content_type.parse()?
-            } else {
-                "application/octet-stream".parse()?
-            },
-        );
-        headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
-        if !is_inline_media {
-            headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
+    match download_target {
+        DownloadTarget::TestMemory {
+            content_type,
+            content,
+        } => {
+            let is_inline_media = is_previewable_image_content_type(&content_type)
+                || is_previewable_video_content_type(&content_type);
+            let mut response = content.into_response();
+            let headers = response.headers_mut();
+            headers.insert(
+                header::CONTENT_TYPE,
+                if is_inline_media {
+                    content_type.parse()?
+                } else {
+                    "application/octet-stream".parse()?
+                },
+            );
+            headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+            if !is_inline_media {
+                headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
+            }
+            Ok(response)
         }
-        return Ok(response);
+        DownloadTarget::SignedRedirect { url } => Ok(Redirect::temporary(&url).into_response()),
     }
-
-    Ok(Redirect::temporary(&signed.expect("signed request should exist").url).into_response())
 }
 
 fn audit_log_row_from_summary(log: audit::AuditLogSummary) -> AuditLogRow {
