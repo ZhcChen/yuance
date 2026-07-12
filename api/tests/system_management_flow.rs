@@ -62,7 +62,7 @@ async fn system_users_page_paginates_with_shared_controls() {
     rbac::create_role(&pool, "page_viewer", "分页观察员", "self")
         .await
         .expect("role should create");
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let first_page_response = app
         .clone()
@@ -111,6 +111,11 @@ async fn system_users_page_paginates_with_shared_controls() {
     assert!(third_body.contains(r#"action="/web/system/users/page_user_01/status""#));
     assert!(third_body.contains(r#"action="/web/system/users/page_user_02/role""#));
     assert!(third_body.contains(r#"action="/web/system/users/page_user_02/password""#));
+    assert_pagination_fields(
+        html_fragment(&third_body, r#"action="/web/system/users""#, "</form>"),
+        3,
+        5,
+    );
     assert_pagination_fields(
         html_fragment(
             &third_body,
@@ -216,6 +221,51 @@ async fn system_users_page_paginates_with_shared_controls() {
         password_response.headers().get(header::LOCATION).unwrap(),
         "/web/system/users?page=3&per_page=5"
     );
+
+    let invalid_create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "username=bad_page_user&display_name=%E9%94%99%E8%AF%AF%E5%88%86%E9%A1%B5&email=badpage%40example.test&mobile=13800000009&password=MemberPass2026%21&role_code=member&page=0&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_create_response.status(), StatusCode::BAD_REQUEST);
+    let invalid_created =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = 'bad_page_user'")
+            .fetch_one(&pool)
+            .await
+            .expect("user count should load");
+    assert_eq!(invalid_created, 0);
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "username=page_user_new&display_name=%E5%88%86%E9%A1%B5%E6%96%B0%E7%94%A8%E6%88%B7&email=page-new%40example.test&mobile=13800000010&password=MemberPass2026%21&role_code=member&page=3&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        create_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?per_page=5"
+    );
+    assert_eq!(user_role_code(&pool, "page_user_new").await, "member");
 
     let invalid_page_response = app
         .oneshot(

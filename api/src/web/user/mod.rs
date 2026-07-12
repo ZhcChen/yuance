@@ -867,6 +867,10 @@ pub struct LogoutForm {
 pub struct CreateUserForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     username: String,
     display_name: String,
     email: String,
@@ -3402,6 +3406,8 @@ pub async fn system_users_create(
         Err(response) => return Ok(response),
     };
     let pool = state.pool()?;
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
+    let redirect_url = system_users_page_url(1, requested_pagination.per_page);
     let audit_username = form.username.clone();
     users::create_user(
         pool,
@@ -3425,7 +3431,7 @@ pub async fn system_users_create(
     )
     .await?;
 
-    Ok(Redirect::to("/web/system/users").into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_user_status_update(
