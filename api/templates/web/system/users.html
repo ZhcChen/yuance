@@ -39,7 +39,7 @@
         </thead>
         <tbody>
           {% for user in users %}
-          <tr>
+          <tr class="user-table-row">
             <td>
               <strong>{{ user.display_name }}</strong>
               <div class="muted-line">@{{ user.username }}{% if user.is_super_admin %} · 超级管理员{% endif %}</div>
@@ -56,6 +56,8 @@
               <div class="row-actions">
                 <form method="post" action="/web/system/users/{{ user.username }}/status" data-confirm-submit-form data-confirm-title="{% if user.status_code == "active" %}确认禁用用户{% else if user.status_code == "locked" %}确认解锁用户{% else %}确认启用用户{% endif %}" data-confirm-message="{% if user.status_code == "active" %}确认禁用 {{ user.display_name }} @{{ user.username }}？该用户将无法继续登录系统。{% else if user.status_code == "locked" %}确认解锁 {{ user.display_name }} @{{ user.username }}？解锁后该用户可以重新尝试登录。{% else %}确认启用 {{ user.display_name }} @{{ user.username }}？启用后该用户可以登录系统。{% endif %}" data-confirm-action="{% if user.status_code == "active" %}确认禁用{% else if user.status_code == "locked" %}确认解锁{% else %}确认启用{% endif %}">
                   <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <input type="hidden" name="page" value="{{ pagination.page }}">
+                  <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
                   {% if user.status_code == "active" %}
                   <input type="hidden" name="status" value="disabled">
                   <button class="btn btn-sm btn-secondary" type="submit">禁用</button>
@@ -80,6 +82,24 @@
         </tbody>
       </table>
     </div>
+    <nav class="pager table-pager" aria-label="用户列表分页">
+      <div class="pager-meta">
+        <strong>共 {{ pagination.total_items }} 个用户</strong>
+        <span>当前显示 {{ pagination.range_start }}-{{ pagination.range_end }}</span>
+      </div>
+      <div class="pager-pages" aria-label="页码">
+        {% if pagination.has_previous %}<a class="pager-arrow" href="{{ pagination.previous_url }}" aria-label="上一页">‹</a>{% else %}<span class="pager-arrow disabled" aria-disabled="true">‹</span>{% endif %}
+        {% for page_item in pagination_pages %}
+        <a class="pager-page {% if page_item.current %}active{% endif %}" href="{{ page_item.url }}" {% if page_item.current %}aria-current="page"{% endif %}>{{ page_item.page }}</a>
+        {% endfor %}
+        {% if pagination.has_next %}<a class="pager-arrow" href="{{ pagination.next_url }}" aria-label="下一页">›</a>{% else %}<span class="pager-arrow disabled" aria-disabled="true">›</span>{% endif %}
+      </div>
+      <form class="pager-controls" method="get" data-pagination-form>
+        <label>每页<select name="per_page" data-pagination-size><option value="10" {% if pagination.per_page == 10 %}selected{% endif %}>10</option><option value="20" {% if pagination.per_page == 20 %}selected{% endif %}>20</option><option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option><option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option></select></label>
+        <label>跳至<input name="page" type="number" min="1" max="{{ pagination.total_pages }}" value="{{ pagination.page }}" inputmode="numeric" aria-label="跳转页码"></label>
+        <button class="btn btn-sm btn-secondary" type="submit">跳转</button>
+      </form>
+    </nav>
     {% else %}
     <div class="empty-state">
       <strong>暂无用户</strong>
@@ -154,6 +174,8 @@
     </div>
     <form class="modal-body modal-form" method="post" action="/web/system/users/{{ user.username }}/role">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="page" value="{{ pagination.page }}">
+      <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
       <label>
         <span>角色</span>
         <select name="role_code" required autofocus>
@@ -182,6 +204,8 @@
     </div>
     <form class="modal-body modal-form" method="post" action="/web/system/users/{{ user.username }}/password">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="page" value="{{ pagination.page }}">
+      <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
       <label>
         <span>新密码</span>
         <input name="password" type="password" required placeholder="至少 10 个字符" autofocus>

@@ -20,6 +20,20 @@ pub struct UserSummary {
     pub updated_at: String,
 }
 
+type UserSummaryRow = (
+    i64,
+    String,
+    String,
+    String,
+    String,
+    String,
+    i64,
+    String,
+    String,
+    String,
+    String,
+);
+
 #[derive(Debug, Clone)]
 pub struct CreateUserInput {
     pub username: String,
@@ -37,23 +51,14 @@ pub struct UpdateOwnProfileInput {
     pub mobile: String,
 }
 
+pub async fn count_users(pool: &SqlitePool) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?)
+}
+
 pub async fn list_users(pool: &SqlitePool) -> AppResult<Vec<UserSummary>> {
-    let rows = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            i64,
-            String,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let rows = sqlx::query_as::<_, UserSummaryRow>(
         r#"
         SELECT
             u.id,
@@ -77,55 +82,53 @@ pub async fn list_users(pool: &SqlitePool) -> AppResult<Vec<UserSummary>> {
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(
-            |(
-                id,
-                username,
-                display_name,
-                email,
-                mobile,
-                status,
-                is_super_admin,
-                role_code,
-                role_names,
-                created_at,
-                updated_at,
-            )| UserSummary {
-                id,
-                username,
-                display_name,
-                email,
-                mobile,
-                status,
-                is_super_admin: is_super_admin != 0,
-                role_code,
-                role_names,
-                created_at,
-                updated_at,
-            },
-        )
-        .collect())
+    Ok(rows.into_iter().map(user_summary_from_row).collect())
+}
+
+pub async fn list_users_page(
+    pool: &SqlitePool,
+    page: i64,
+    per_page: i64,
+) -> AppResult<Vec<UserSummary>> {
+    if page < 1 {
+        return Err(AppError::BadRequest("页码不能小于 1".to_string()));
+    }
+    if per_page < 1 {
+        return Err(AppError::BadRequest("每页数量不能小于 1".to_string()));
+    }
+    let offset = (page - 1).saturating_mul(per_page);
+    let rows = sqlx::query_as::<_, UserSummaryRow>(
+        r#"
+        SELECT
+            u.id,
+            u.username,
+            u.display_name,
+            u.email,
+            u.mobile,
+            u.status,
+            u.is_super_admin,
+            COALESCE(GROUP_CONCAT(r.role_code, ' / '), '') AS role_codes,
+            COALESCE(GROUP_CONCAT(r.role_name, ' / '), '') AS role_names,
+            u.created_at,
+            u.updated_at
+        FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        GROUP BY u.id
+        ORDER BY u.created_at DESC, u.id DESC
+        LIMIT ?1 OFFSET ?2
+        "#,
+    )
+    .bind(per_page)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(user_summary_from_row).collect())
 }
 
 pub async fn get_user_summary(pool: &SqlitePool, user_id: i64) -> AppResult<Option<UserSummary>> {
-    let row = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            i64,
-            String,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let row = sqlx::query_as::<_, UserSummaryRow>(
         r#"
         SELECT
             u.id,
@@ -150,33 +153,7 @@ pub async fn get_user_summary(pool: &SqlitePool, user_id: i64) -> AppResult<Opti
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(
-        |(
-            id,
-            username,
-            display_name,
-            email,
-            mobile,
-            status,
-            is_super_admin,
-            role_code,
-            role_names,
-            created_at,
-            updated_at,
-        )| UserSummary {
-            id,
-            username,
-            display_name,
-            email,
-            mobile,
-            status,
-            is_super_admin: is_super_admin != 0,
-            role_code,
-            role_names,
-            created_at,
-            updated_at,
-        },
-    ))
+    Ok(row.map(user_summary_from_row))
 }
 
 pub async fn get_user_summary_by_username(
@@ -184,22 +161,7 @@ pub async fn get_user_summary_by_username(
     username: &str,
 ) -> AppResult<Option<UserSummary>> {
     let username = auth::validate_username(username)?;
-    let row = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            i64,
-            String,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let row = sqlx::query_as::<_, UserSummaryRow>(
         r#"
         SELECT
             u.id,
@@ -224,33 +186,37 @@ pub async fn get_user_summary_by_username(
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(
-        |(
-            id,
-            username,
-            display_name,
-            email,
-            mobile,
-            status,
-            is_super_admin,
-            role_code,
-            role_names,
-            created_at,
-            updated_at,
-        )| UserSummary {
-            id,
-            username,
-            display_name,
-            email,
-            mobile,
-            status,
-            is_super_admin: is_super_admin != 0,
-            role_code,
-            role_names,
-            created_at,
-            updated_at,
-        },
-    ))
+    Ok(row.map(user_summary_from_row))
+}
+
+fn user_summary_from_row(
+    (
+        id,
+        username,
+        display_name,
+        email,
+        mobile,
+        status,
+        is_super_admin,
+        role_code,
+        role_names,
+        created_at,
+        updated_at,
+    ): UserSummaryRow,
+) -> UserSummary {
+    UserSummary {
+        id,
+        username,
+        display_name,
+        email,
+        mobile,
+        status,
+        is_super_admin: is_super_admin != 0,
+        role_code,
+        role_names,
+        created_at,
+        updated_at,
+    }
 }
 
 pub async fn create_user(pool: &SqlitePool, input: CreateUserInput) -> AppResult<i64> {

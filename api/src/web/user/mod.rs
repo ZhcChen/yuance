@@ -762,6 +762,8 @@ struct SystemUsersTemplate {
     users: Vec<UserRow>,
     roles: Vec<RoleRow>,
     has_users: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
     can_manage_users: bool,
 }
 
@@ -860,6 +862,10 @@ pub struct CreateUserForm {
 pub struct UserStatusForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     status: String,
 }
 
@@ -867,6 +873,10 @@ pub struct UserStatusForm {
 pub struct UserRoleForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     role_code: String,
 }
 
@@ -874,6 +884,10 @@ pub struct UserRoleForm {
 pub struct ResetPasswordForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     password: String,
 }
 
@@ -1153,6 +1167,14 @@ pub struct MessagesQuery {
 pub struct MessageActionForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemUsersQuery {
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3256,17 +3278,30 @@ pub async fn system_dashboard(
 pub async fn system_users_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    Query(query): Query<SystemUsersQuery>,
 ) -> AppResult<Response> {
     let context = match system_context_or_redirect(&state, &headers, "system.users.view").await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
     let pool = state.pool()?;
-    let users = users::list_users(pool)
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let total_items = users::count_users(pool).await?;
+    let total_pages = total_pages(total_items, requested_pagination.per_page);
+    let page_number = requested_pagination.page.min(total_pages);
+    let users = users::list_users_page(pool, page_number, requested_pagination.per_page)
         .await?
         .into_iter()
         .map(user_row_from_summary)
         .collect::<Vec<_>>();
+    let pagination = system_users_pagination_view(
+        page_number,
+        requested_pagination.per_page,
+        total_items,
+        total_pages,
+    );
+    let pagination_pages =
+        system_users_pagination_pages(pagination.page, pagination.per_page, pagination.total_pages);
     let roles = rbac::list_roles(pool)
         .await?
         .into_iter()
@@ -3290,6 +3325,8 @@ pub async fn system_users_page(
             has_users: !users.is_empty(),
             users,
             roles,
+            pagination,
+            pagination_pages,
             can_manage_users,
         })?
         .into_response(),
@@ -3346,6 +3383,7 @@ pub async fn system_user_status_update(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
     users::set_user_status(state.pool()?, &username, &form.status).await?;
     audit::record(
         state.pool()?,
@@ -3357,7 +3395,7 @@ pub async fn system_user_status_update(
     )
     .await?;
 
-    Ok(Redirect::to("/web/system/users").into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_user_role_update(
@@ -3372,6 +3410,7 @@ pub async fn system_user_role_update(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
     users::replace_user_role(state.pool()?, &username, &form.role_code).await?;
     audit::record(
         state.pool()?,
@@ -3383,7 +3422,7 @@ pub async fn system_user_role_update(
     )
     .await?;
 
-    Ok(Redirect::to("/web/system/users").into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_user_password_reset(
@@ -3398,6 +3437,7 @@ pub async fn system_user_password_reset(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
     users::reset_user_password(state.pool()?, &username, &form.password).await?;
     audit::record(
         state.pool()?,
@@ -3409,7 +3449,7 @@ pub async fn system_user_password_reset(
     )
     .await?;
 
-    Ok(Redirect::to("/web/system/users").into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_roles_page(
@@ -5920,12 +5960,7 @@ fn paginate_project_views(
     projects: Vec<ProjectRow>,
     pagination: projects::Pagination,
 ) -> Vec<ProjectRow> {
-    let offset = pagination.offset().min(usize::MAX as i64) as usize;
-    projects
-        .into_iter()
-        .skip(offset)
-        .take(pagination.per_page as usize)
-        .collect()
+    paginate_items(projects, pagination)
 }
 
 fn work_item_list_summary(items: &[WorkItem], total_items: i64) -> WorkItemListSummary {
@@ -5968,24 +6003,20 @@ fn paginate_work_item_views(
     items: Vec<WorkItem>,
     pagination: projects::Pagination,
 ) -> Vec<WorkItem> {
-    let offset = pagination.offset().min(usize::MAX as i64) as usize;
-    items
-        .into_iter()
-        .skip(offset)
-        .take(pagination.per_page as usize)
-        .collect()
+    paginate_items(items, pagination)
 }
 
 fn paginate_search_results(
     items: Vec<SearchResult>,
     pagination: projects::Pagination,
 ) -> Vec<SearchResult> {
-    let offset = pagination.offset().min(usize::MAX as i64) as usize;
-    items
-        .into_iter()
-        .skip(offset)
-        .take(pagination.per_page as usize)
-        .collect()
+    paginate_items(items, pagination)
+}
+
+fn paginate_items<T>(items: Vec<T>, pagination: projects::Pagination) -> Vec<T> {
+    let offset = usize::try_from(pagination.offset().max(0)).unwrap_or(usize::MAX);
+    let limit = usize::try_from(pagination.per_page.max(0)).unwrap_or(usize::MAX);
+    items.into_iter().skip(offset).take(limit).collect()
 }
 
 fn total_pages(total_items: i64, per_page: i64) -> i64 {
@@ -6059,6 +6090,76 @@ fn project_pagination_pages(
         .map(|page| PaginationPageView {
             page,
             url: project_page_url(status_filter, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
+fn system_users_pagination_view(
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: system_users_page_url(page - 1, per_page),
+        next_url: system_users_page_url(page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn system_users_page_url(page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        "/web/system/users".to_string()
+    } else {
+        format!("/web/system/users?{}", params.join("&"))
+    }
+}
+
+fn system_users_redirect_url(page: Option<i64>, per_page: Option<i64>) -> AppResult<String> {
+    let pagination = normalize_web_pagination(page, per_page)?;
+    Ok(system_users_page_url(pagination.page, pagination.per_page))
+}
+
+fn system_users_pagination_pages(
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: system_users_page_url(page, per_page),
             current: page == current_page,
         })
         .collect()

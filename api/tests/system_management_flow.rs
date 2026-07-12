@@ -45,6 +45,113 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
 }
 
 #[tokio::test]
+async fn system_users_page_paginates_with_shared_controls() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    for index in 1..=12 {
+        create_user_with_role(
+            &pool,
+            &format!("page_user_{index:02}"),
+            &format!("分页用户 {index:02}"),
+            "MemberPass2026!",
+            "member",
+        )
+        .await;
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let first_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users?per_page=5")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(first_page_response.status(), StatusCode::OK);
+    let first_body = response_body(first_page_response).await;
+    assert_eq!(first_body.matches("class=\"user-table-row\"").count(), 5);
+    assert!(first_body.contains(r#"aria-label="用户列表分页""#));
+    assert!(first_body.contains("当前显示 1-5"));
+    assert!(first_body.contains("共 13 个用户"));
+    assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains("value=\"100\""));
+    assert!(first_body.contains("aria-label=\"跳转页码\""));
+    assert!(first_body.contains("page=2"));
+    assert!(first_body.contains("per_page=5"));
+    assert!(first_body.contains(r#"name="page" value="1""#));
+    assert!(first_body.contains(r#"name="per_page" value="5""#));
+
+    let third_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users?per_page=5&page=3")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(third_page_response.status(), StatusCode::OK);
+    let third_body = response_body(third_page_response).await;
+    assert_eq!(third_body.matches("class=\"user-table-row\"").count(), 3);
+    assert!(third_body.contains("当前显示 11-13"));
+    assert!(third_body.contains(r#"aria-current="page">3</a>"#));
+
+    let overflow_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users?per_page=5&page=999")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(overflow_page_response.status(), StatusCode::OK);
+    let overflow_body = response_body(overflow_page_response).await;
+    assert_eq!(overflow_body.matches("class=\"user-table-row\"").count(), 3);
+    assert!(overflow_body.contains("当前显示 11-13"));
+    assert!(overflow_body.contains(r#"aria-current="page">3</a>"#));
+
+    let status_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/page_user_01/status")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("status=disabled&page=3&per_page=5")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        status_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=3&per_page=5"
+    );
+
+    let invalid_page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users?page=0&per_page=5")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_page_response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn admin_can_create_member_user_and_member_can_login() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -411,7 +518,7 @@ async fn regular_member_cannot_access_system_users_page() {
     let response = app
         .oneshot(
             Request::builder()
-                .uri("/web/system/users")
+                .uri("/web/system/users?page=2&per_page=5")
                 .header(header::COOKIE, cookie)
                 .body(Body::empty())
                 .expect("request should build"),
