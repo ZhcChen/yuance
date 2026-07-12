@@ -346,6 +346,67 @@ async fn web_messages_page_clamps_unread_badge_to_99() {
 }
 
 #[tokio::test]
+async fn web_topnav_work_item_badge_clamps_to_99() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let assignee = create_regular_user(&pool, "topnav_badge_owner", "顶部角标负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "topnav_badge_owner", "member")
+        .await
+        .expect("assignee should join project");
+    let project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .expect("project should exist");
+    for index in 1..=100 {
+        sqlx::query(
+            r#"
+            INSERT INTO work_items (
+                project_id,
+                item_key,
+                item_type,
+                title,
+                description,
+                status,
+                priority,
+                assignee_user_id,
+                reporter_user_id
+            )
+            VALUES (?1, ?2, 'bug', ?3, '用于验证顶部导航角标上限。', 'open', 'P2', ?4, ?5)
+            "#,
+        )
+        .bind(project_id)
+        .bind(format!("YCE-BADGE-BUG-{index:03}"))
+        .bind(format!("顶部角标测试 Bug {index:03}"))
+        .bind(assignee.user_id)
+        .bind(admin.user_id)
+        .execute(&pool)
+        .await
+        .expect("work item should insert");
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/bugs")
+                .header(header::COOKIE, assignee.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains(r#"aria-label="待处理 Bug 99">99</span>"#));
+    assert!(!body.contains(r#"aria-label="待处理 Bug 99+">99+</span>"#));
+}
+
+#[tokio::test]
 async fn demo_seed_idempotently_creates_projects_and_work_items() {
     let pool = test_pool().await;
     let owner_user_id = bootstrap_admin(&pool).await;
