@@ -3804,25 +3804,27 @@
         html += '</div>';
         html += '<div class="attachment-actions">';
         html += '<span class="status status-' + status.tone + '">' + status.label + '</span>';
-        if (canManageFiles && item.status === "pending") {
-          html += '<form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="' + attachmentId + '" data-attachment-upload-url-template="/api/v1/projects/' + projectPath + '/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/' + projectPath + '/attachments/{id}/uploaded" data-success-redirect="/web/projects/' + projectPath + '?tab=files">';
-          html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
-          html += '<label class="btn btn-sm btn-secondary attachment-file-button">选择文件<input class="sr-only" name="file" type="file" required data-attachment-file></label>';
-          html += '<button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>';
-          html += '<span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>';
-          html += '</form>';
-        }
-        if (item.status === "uploaded") {
-          html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/download" target="_blank" rel="noopener">下载文件</a>';
-        } else {
-          html += '<span class="attachment-action-hint">上传完成后可下载</span>';
-        }
-        if (canManageFiles) {
-          html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + attachmentId + '" data-file-object-id="' + fileObjectId + '">移动到</button>';
-          html += '<form class="inline-form" method="post" action="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 ' + escapeHtml(item.filename || "文件") + '？删除后不能继续下载。" data-confirm-action="删除">';
-          html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
-          html += '<button class="btn btn-sm btn-danger" type="submit">删除</button>';
-          html += '</form>';
+        if (item.status !== "deleted") {
+          if (canManageFiles && item.status === "pending") {
+            html += '<form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="' + attachmentId + '" data-attachment-upload-url-template="/api/v1/projects/' + projectPath + '/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/' + projectPath + '/attachments/{id}/uploaded" data-success-redirect="/web/projects/' + projectPath + '?tab=files">';
+            html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
+            html += '<label class="btn btn-sm btn-secondary attachment-file-button">选择文件<input class="sr-only" name="file" type="file" required data-attachment-file></label>';
+            html += '<button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>';
+            html += '<span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>';
+            html += '</form>';
+          }
+          if (item.status === "uploaded") {
+            html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/download" target="_blank" rel="noopener">下载文件</a>';
+          } else {
+            html += '<span class="attachment-action-hint">上传完成后可下载</span>';
+          }
+          if (canManageFiles) {
+            html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + attachmentId + '" data-file-object-id="' + fileObjectId + '">移动到</button>';
+            html += '<form class="inline-form" method="post" action="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 ' + escapeHtml(item.filename || "文件") + '？删除后不能继续下载。" data-confirm-action="删除">';
+            html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
+            html += '<button class="btn btn-sm btn-danger" type="submit">删除</button>';
+            html += '</form>';
+          }
         }
         html += '</div>';
         html += '</article>';
