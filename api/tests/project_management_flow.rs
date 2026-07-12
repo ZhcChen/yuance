@@ -666,12 +666,15 @@ async fn web_projects_paginates_and_preserves_status_filter() {
     let body = response_body(response).await;
 
     assert!(body.contains(r#"aria-label="项目分页""#));
-    assert!(body.contains("第 1/2 页"));
-    assert!(body.contains("共 2 个项目，每页 1 个"));
+    assert!(body.contains("当前显示 1-1"));
+    assert!(body.contains("共 2 个项目"));
+    assert!(body.contains("data-pagination-size"));
+    assert!(body.contains("value=\"100\""));
+    assert!(body.contains("aria-label=\"跳转页码\""));
     assert!(!body.contains(r#"href="/web/projects/CRM""#));
     assert!(!body.contains(r#"href="/web/projects/OPS""#));
     assert!(body.contains(r#"href="/web/projects?status=in_progress">进行中"#));
-    assert!(body.contains("下一页"));
+    assert!(body.contains(r#"aria-label="下一页""#));
     assert!(body.contains("status=in_progress"));
     assert!(body.contains("page=2"));
     assert!(body.contains("per_page=1"));

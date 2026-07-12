@@ -393,6 +393,16 @@ cat >"$EVAL_FILE" <<JS
     "项目详情键盘 Tab 切换未同步 URL",
   );
 
+  await open("/web/projects");
+  const projectPager = query("nav[aria-label='项目分页']");
+  assert(projectPager.querySelector(".pager-pages"), "项目分页未渲染页码控件");
+  assert(projectPager.querySelector("[data-pagination-size]"), "项目分页缺少每页条数选择");
+  assert(projectPager.querySelector("input[aria-label='跳转页码']"), "项目分页缺少跳页输入框");
+  assert(
+    projectPager.querySelector("[data-pagination-size]")?.nextElementSibling?.matches(".select-control"),
+    "项目分页每页条数未复用共享下拉控件",
+  );
+
   await open("/web/projects/" + projectKey + "?tab=files");
   click("[data-modal-open='project-folder-create-modal']");
   await waitFor(() => visible("#project-folder-create-modal"), "项目文件夹创建 modal 未打开");

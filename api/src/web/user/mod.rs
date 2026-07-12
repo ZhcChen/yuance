@@ -575,6 +575,7 @@ struct ProjectsTemplate {
     can_manage_projects: bool,
     status_filter: String,
     pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
 }
 
 #[derive(Template)]
@@ -1571,6 +1572,12 @@ pub async fn projects_page(
         total_items,
         total_pages,
     );
+    let pagination_pages = project_pagination_pages(
+        &status_filter,
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
     let can_manage_projects = match context.pool {
         Some(pool) => rbac::user_has_permission(pool, context.user_id, "project.manage").await?,
         None => true,
@@ -1593,6 +1600,7 @@ pub async fn projects_page(
             summary,
             can_manage_projects,
             status_filter,
+            pagination_pages,
             pagination,
         })?
         .into_response(),
@@ -5941,6 +5949,27 @@ fn project_page_url(status_filter: &str, page: i64, per_page: i64) -> String {
     } else {
         format!("/web/projects?{}", params.join("&"))
     }
+}
+
+fn project_pagination_pages(
+    status_filter: &str,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: project_page_url(status_filter, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
 }
 
 fn audit_pagination_view(
