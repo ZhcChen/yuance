@@ -513,6 +513,7 @@ async fn web_dashboard_renders_demo_projects_from_database() {
     assert!(body.contains("RBAC 采用轻量权限点模型"));
     assert!(body.contains("风险队列"));
     assert!(body.contains("YCE-REQ-1"));
+    assert!(body.contains(r#"data-priority="P0">紧急</span>"#));
     assert!(body.contains("统一 /web 用户工作台与系统管理入口"));
     assert!(!body.contains("CRM 项目接口验收延期"));
     assert!(!body.contains("对象存储密钥轮换策略未定"));
