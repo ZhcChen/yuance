@@ -141,6 +141,17 @@
     return kind === "comment_replied" ? "回复" : "指派";
   }
 
+  function notificationText(value, fallback) {
+    var text = value == null ? "" : String(value).trim();
+    return text || fallback;
+  }
+
+  function notificationMetaText(item) {
+    return notificationKindLabel(item.kind) + " · "
+      + notificationText(item.actor, "系统") + " · "
+      + notificationText(item.created_at, "未知时间");
+  }
+
   function renderNotificationFeed(root, feed) {
     var trigger = root.querySelector("[data-dropdown-trigger]");
     var badge = root.querySelector("[data-notification-badge]");
@@ -176,7 +187,7 @@
     items.forEach(function (item) {
       var link = document.createElement("a");
       link.className = "notification-item" + (item.read ? "" : " unread");
-      link.href = item.open_url;
+      link.href = notificationText(item.open_url, "/web/messages");
 
       var dot = document.createElement("span");
       dot.className = "notification-dot";
@@ -184,11 +195,11 @@
       var content = document.createElement("span");
       content.className = "notification-item-content";
       var title = document.createElement("strong");
-      title.textContent = item.title;
+      title.textContent = notificationText(item.title, "消息通知");
       var detail = document.createElement("span");
-      detail.textContent = item.body;
+      detail.textContent = notificationText(item.body, "查看详情");
       var meta = document.createElement("small");
-      meta.textContent = notificationKindLabel(item.kind) + " · " + item.actor + " · " + item.created_at;
+      meta.textContent = notificationMetaText(item);
       content.append(title, detail, meta);
       link.append(dot, content);
       list.appendChild(link);

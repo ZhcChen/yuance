@@ -244,6 +244,11 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("window.location.href = \"/web/login\""));
     assert!(body.contains("function toggleTheme()"));
     assert!(body.contains("data-theme-toggle"));
+    assert!(body.contains("function notificationText(value, fallback)"));
+    assert!(body.contains("function notificationMetaText(item)"));
+    assert!(body.contains("notificationText(item.actor, \"系统\")"));
+    assert!(body.contains("notificationText(item.created_at, \"未知时间\")"));
+    assert!(body.contains("notificationText(item.open_url, \"/web/messages\")"));
     assert!(body.contains("function filterProjectOptions"));
     assert!(body.contains("data-project-search-input"));
     assert!(body.contains("function openModal"));
