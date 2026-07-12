@@ -1,12 +1,14 @@
 (function () {
   var DROPDOWN_TRANSITION_MS = 240;
   var PAGE_TRANSITION_MS = 150;
+  var CONTENT_TAB_SLIDE_MS = 360;
   var MODAL_TRANSITION_MS = 240;
   var TOAST_DURATION_MS = 4200;
   var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
   var SEARCH_HISTORY_KEY = "yuance-search-history";
   var pendingConfirmForm = null;
+  var contentTabNavigationTimer = null;
   var activeSelectControl = null;
   var imagePreviewObserver = null;
   var imagePreviewFallbackTimer = null;
@@ -956,7 +958,7 @@
       { width: previousWidth + "px", transform: "translateX(" + previousX + "px)" },
       { width: nextWidth + "px", transform: "translateX(" + nextX + "px)" }
     ], {
-      duration: 360,
+      duration: CONTENT_TAB_SLIDE_MS,
       easing: "cubic-bezier(.22, .8, .24, 1)",
       fill: "none"
     });
@@ -2629,11 +2631,20 @@
     event.preventDefault();
     closeDropdowns();
     closeModals();
+    if (link.closest("[data-content-tabs]")) {
+      if (contentTabNavigationTimer) {
+        window.clearTimeout(contentTabNavigationTimer);
+      }
+      contentTabNavigationTimer = window.setTimeout(function () {
+        contentTabNavigationTimer = null;
+        window.location.href = link.href;
+      }, CONTENT_TAB_SLIDE_MS);
+      return;
+    }
     document.body.classList.add("page-leaving");
-    var delay = link.closest("[data-content-tabs]") ? 240 : PAGE_TRANSITION_MS;
     window.setTimeout(function () {
       window.location.href = link.href;
-    }, delay);
+    }, PAGE_TRANSITION_MS);
   }
 
   function closeDropdown(root) {
