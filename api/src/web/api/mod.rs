@@ -3013,10 +3013,18 @@ fn notification_payload(notification: notifications::NotificationSummary) -> Not
         kind: notification.kind,
         title: notification.title,
         body: notification.body,
-        actor: notification.actor_display_name,
+        actor: fallback_text(notification.actor_display_name, "系统"),
         created_at: notification.created_at,
         read: !notification.read_at.is_empty(),
         open_url: format!("/web/messages/{}/open", notification.id),
+    }
+}
+
+fn fallback_text(value: String, fallback: &str) -> String {
+    if value.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        value
     }
 }
 

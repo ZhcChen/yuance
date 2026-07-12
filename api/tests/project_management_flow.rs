@@ -61,6 +61,27 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
     assert!(feed_body.contains("work_item_assigned"));
     assert!(feed_body.contains("\"unread_count\":1"));
 
+    sqlx::query("UPDATE users SET display_name = '' WHERE id = ?1")
+        .bind(admin.user_id)
+        .execute(&pool)
+        .await
+        .expect("actor display name should clear");
+    let fallback_feed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/notifications?limit=5")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(fallback_feed_response.status(), StatusCode::OK);
+    let fallback_feed_body = response_body(fallback_feed_response).await;
+    assert!(fallback_feed_body.contains(r#""actor":"系统""#));
+    assert!(!fallback_feed_body.contains(r#""actor":"""#));
+
     let assignment = notifications::list_for_user(&pool, receiver.user_id, true, 10)
         .await
         .expect("notifications should load")
