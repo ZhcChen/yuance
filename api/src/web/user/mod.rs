@@ -2638,7 +2638,7 @@ pub async fn work_item_status_update(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/work-items/{}", updated.item_key)).into_response());
+        return Ok(Redirect::to(&work_item_discussion_url(&updated.item_key)).into_response());
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -2697,7 +2697,7 @@ pub async fn work_item_handoff(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/work-items/{}", updated.item_key)).into_response());
+        return Ok(Redirect::to(&work_item_discussion_url(&updated.item_key)).into_response());
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -2970,7 +2970,7 @@ pub async fn work_item_attachment_create(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
+        return Ok(Redirect::to(&work_item_attachments_url(&item_key)).into_response());
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -3075,7 +3075,7 @@ pub async fn work_item_comment_attachment_create(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
+        return Ok(Redirect::to(&work_item_comment_url(&item_key, comment.id)).into_response());
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -4950,6 +4950,14 @@ fn safe_web_return_to(value: &str) -> &str {
 
 fn work_item_comment_url(item_key: &str, comment_id: i64) -> String {
     format!("/web/work-items/{item_key}#comment-{comment_id}")
+}
+
+fn work_item_discussion_url(item_key: &str) -> String {
+    format!("/web/work-items/{item_key}#discussion-title")
+}
+
+fn work_item_attachments_url(item_key: &str) -> String {
+    format!("/web/work-items/{item_key}#legacy-attachments")
 }
 
 fn with_csrf_cookie(

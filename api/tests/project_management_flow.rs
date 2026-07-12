@@ -3011,6 +3011,10 @@ async fn web_work_item_detail_can_transition_status_and_add_comment() {
         .expect("router should respond");
 
     assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        status_response.headers().get(header::LOCATION).unwrap(),
+        "/web/work-items/YCE-TASK-2#discussion-title"
+    );
     assert_eq!(comment_response.status(), StatusCode::SEE_OTHER);
 
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
@@ -3060,6 +3064,53 @@ async fn web_work_item_detail_can_transition_status_and_add_comment() {
         reply_response.headers().get(header::LOCATION).unwrap(),
         format!("/web/work-items/YCE-TASK-2#comment-{}", reply.id).as_str()
     );
+}
+
+#[tokio::test]
+async fn web_work_item_handoff_returns_to_discussion_context() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    create_regular_user(&pool, "handoff_target", "流转目标").await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "handoff_target",
+        "member",
+    )
+    .await
+    .expect("member should be added");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/handoff")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=in_progress&assignee_username=handoff_target&body=%E8%AF%B7%E7%BB%A7%E7%BB%AD%E5%A4%84%E7%90%86",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/work-items/YCE-TASK-2#discussion-title"
+    );
+
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(item.assignee_username, "handoff_target");
 }
 
 #[tokio::test]
@@ -3534,7 +3585,7 @@ async fn web_work_item_detail_can_register_work_item_attachment() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/work-items/YCE-TASK-2"
+        "/web/work-items/YCE-TASK-2#legacy-attachments"
     );
 
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
@@ -3624,7 +3675,7 @@ async fn web_work_item_detail_can_register_comment_attachment() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/work-items/YCE-TASK-2"
+        format!("/web/work-items/YCE-TASK-2#comment-{}", comment.id).as_str()
     );
 
     let attachments = files::list_attachments(&pool, "comment", comment.id)
