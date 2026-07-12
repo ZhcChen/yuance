@@ -108,9 +108,9 @@
 
         {% if can_manage_work_items && !item.is_deleted %}
         <footer class="discussion-post-actions">
-          <button type="button" data-discussion-reply-toggle="reply-form-{{ comment.id }}">回复</button>
+          <button class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle="reply-form-{{ comment.id }}">回复</button>
           {% if comment.can_manage %}
-          <button type="button" data-modal-open="work-item-comment-edit-modal-{{ comment.id }}">编辑</button>
+          <button class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-{{ comment.id }}">编辑</button>
           {% endif %}
         </footer>
         <form id="reply-form-{{ comment.id }}" class="discussion-composer discussion-reply-form" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ comment.author_username }}" hidden>

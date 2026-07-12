@@ -578,23 +578,8 @@ body {
 .discussion-post-actions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   margin-top: 10px;
-}
-
-.discussion-post-actions button {
-  min-height: 28px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.discussion-post-actions button:hover {
-  color: var(--brand);
 }
 
 .discussion-reply-form {

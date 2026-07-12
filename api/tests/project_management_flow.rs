@@ -1304,6 +1304,12 @@ async fn work_item_detail_partial_renders_comments() {
     assert!(body.contains("先统一项目与工作项查询模型"));
     assert!(body.contains("讨论与流转"));
     assert!(body.contains(r#"data-discussion-form"#));
+    assert!(body.contains(
+        r#"class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle"#
+    ));
+    assert!(body.contains(
+        r#"class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-"#
+    ));
 }
 
 #[tokio::test]
