@@ -147,7 +147,7 @@
     var summary = root.querySelector("[data-notification-summary]");
     var list = root.querySelector("[data-notification-list]");
     var unreadCount = Number(feed && feed.unread_count || 0);
-    var unreadLabel = unreadCount > 99 ? "99+" : String(unreadCount);
+    var unreadLabel = unreadCount > 99 ? "99" : String(unreadCount);
     if (trigger) {
       trigger.setAttribute(
         "aria-label",

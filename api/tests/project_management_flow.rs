@@ -305,7 +305,7 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
 }
 
 #[tokio::test]
-async fn web_messages_page_clamps_unread_badge_to_99_plus() {
+async fn web_messages_page_clamps_unread_badge_to_99() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, admin.user_id)
@@ -341,7 +341,8 @@ async fn web_messages_page_clamps_unread_badge_to_99_plus() {
     assert!(body.contains(
         r#"class="content-tab active" data-content-tab aria-current="page" href="/web/messages?unread=true"#
     ));
-    assert!(body.contains(r#"<span class="content-tab-badge">99+</span>"#));
+    assert!(body.contains(r#"<span class="content-tab-badge">99</span>"#));
+    assert!(!body.contains(r#"<span class="content-tab-badge">99+</span>"#));
 }
 
 #[tokio::test]

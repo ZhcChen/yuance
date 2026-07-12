@@ -4829,7 +4829,7 @@ async fn build_system_nav(
 fn topnav_badge(count: i64) -> String {
     match count {
         count if count <= 0 => String::new(),
-        count if count > 99 => "99+".to_string(),
+        count if count > 99 => "99".to_string(),
         count => count.to_string(),
     }
 }
