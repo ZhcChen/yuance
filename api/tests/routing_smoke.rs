@@ -192,6 +192,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains(".auth-form input"));
     assert!(body.contains("letter-spacing: 0"));
     assert!(body.contains("word-spacing: normal"));
+    assert!(body.contains(".discussion-attach-button:focus-within"));
+    assert!(body.contains(".discussion-attach-button span"));
 }
 
 #[tokio::test]

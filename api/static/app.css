@@ -432,6 +432,7 @@ body {
 }
 
 .discussion-attach-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -445,12 +446,27 @@ body {
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease, color var(--motion-fast) ease;
 }
 
-.discussion-attach-button:hover {
+.discussion-attach-button:hover,
+.discussion-attach-button:focus-within {
   border-color: var(--brand-line);
   background: var(--brand-soft);
   color: var(--brand);
+  box-shadow: 0 0 0 3px rgb(31 95 191 / 10%);
+}
+
+.discussion-attach-button span {
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
 }
 
 .discussion-file-hint {
