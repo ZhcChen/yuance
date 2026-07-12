@@ -232,6 +232,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("function openModal"));
     assert!(body.contains("function closeModal"));
     assert!(body.contains("data-modal-open"));
+    assert!(body.contains("select.dataset.selectAutofocus"));
+    assert!(body.contains("select.removeAttribute(\"autofocus\")"));
+    assert!(body.contains("trigger.setAttribute(\"autofocus\", \"\")"));
     assert!(body.contains("event.key === \"Escape\""));
     assert!(body.contains("function openConfirmModal"));
     assert!(body.contains("data-confirm-submit-form"));

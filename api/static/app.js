@@ -859,6 +859,11 @@
     if (select.dataset.selectEnhanced === "true" || select.multiple || select.size > 1) {
       return;
     }
+    var shouldAutofocus = select.hasAttribute("autofocus") || select.dataset.selectAutofocus === "true";
+    if (shouldAutofocus) {
+      select.dataset.selectAutofocus = "true";
+      select.removeAttribute("autofocus");
+    }
     select.dataset.selectEnhanced = "true";
     select.classList.add("select-native");
     select.setAttribute("aria-hidden", "true");
@@ -875,6 +880,9 @@
     trigger.setAttribute("aria-haspopup", "listbox");
     trigger.setAttribute("aria-expanded", "false");
     trigger.setAttribute("aria-label", selectControlLabel(select));
+    if (shouldAutofocus) {
+      trigger.setAttribute("autofocus", "");
+    }
     var value = document.createElement("span");
     value.className = "select-control-value";
     value.dataset.selectControlValue = "";
