@@ -31,7 +31,7 @@
       <div class="role-list">
         {% for role in roles %}
         <div class="role-list-row {% if role.code == selected_role_code %}active{% endif %}">
-          <a class="role-list-item" href="/web/system/roles?role={{ role.code }}">
+          <a class="role-list-item" href="/web/system/roles?role={{ role.code }}{% if pagination.page > 1 %}&page={{ pagination.page }}{% endif %}{% if pagination.per_page != 10 %}&per_page={{ pagination.per_page }}{% endif %}">
             <span>
               <strong>{{ role.name }}</strong>
               <em>{{ role.code }}{% if role.is_system %} · 系统内置{% endif %}</em>
@@ -45,6 +45,8 @@
           {% if !role.is_system %}
           <form method="post" action="/web/system/roles/{{ role.code }}/status" data-confirm-submit-form data-confirm-title="{% if role.status_code == "active" %}确认禁用角色{% else %}确认启用角色{% endif %}" data-confirm-message="{% if role.status_code == "active" %}确认禁用角色 {{ role.name }}？禁用后该角色授权不会再生效。{% else %}确认启用角色 {{ role.name }}？启用后该角色授权会重新生效。{% endif %}" data-confirm-action="{% if role.status_code == "active" %}确认禁用{% else %}确认启用{% endif %}">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="page" value="{{ pagination.page }}">
+            <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
             {% if role.status_code == "active" %}
             <input type="hidden" name="status" value="disabled">
             <button class="role-status-button" type="submit">禁用</button>
@@ -58,6 +60,25 @@
         </div>
         {% endfor %}
       </div>
+      <nav class="pager table-pager" aria-label="角色列表分页">
+        <div class="pager-meta">
+          <strong>共 {{ pagination.total_items }} 个角色</strong>
+          <span>当前显示 {{ pagination.range_start }}-{{ pagination.range_end }}</span>
+        </div>
+        <div class="pager-pages" aria-label="页码">
+          {% if pagination.has_previous %}<a class="pager-arrow" href="{{ pagination.previous_url }}" aria-label="上一页">‹</a>{% else %}<span class="pager-arrow disabled" aria-disabled="true">‹</span>{% endif %}
+          {% for page_item in pagination_pages %}
+          <a class="pager-page {% if page_item.current %}active{% endif %}" href="{{ page_item.url }}" {% if page_item.current %}aria-current="page"{% endif %}>{{ page_item.page }}</a>
+          {% endfor %}
+          {% if pagination.has_next %}<a class="pager-arrow" href="{{ pagination.next_url }}" aria-label="下一页">›</a>{% else %}<span class="pager-arrow disabled" aria-disabled="true">›</span>{% endif %}
+        </div>
+        <form class="pager-controls" method="get" data-pagination-form>
+          {% if has_selected_role %}<input type="hidden" name="role" value="{{ selected_role_code }}">{% endif %}
+          <label>每页<select name="per_page" data-pagination-size><option value="10" {% if pagination.per_page == 10 %}selected{% endif %}>10</option><option value="20" {% if pagination.per_page == 20 %}selected{% endif %}>20</option><option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option><option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option></select></label>
+          <label>跳至<input name="page" type="number" min="1" max="{{ pagination.total_pages }}" value="{{ pagination.page }}" inputmode="numeric" aria-label="跳转页码"></label>
+          <button class="btn btn-sm btn-secondary" type="submit">跳转</button>
+        </form>
+      </nav>
       {% else %}
       <div class="empty-state">
         <strong>暂无角色</strong>
@@ -69,6 +90,8 @@
     <section class="panel role-permission-panel" aria-label="权限树">
       <form method="post" action="/web/system/roles/{{ selected_role_code }}/permissions" data-permission-tree>
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="page" value="{{ pagination.page }}">
+        <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
         <div class="panel-head role-permission-head">
           <div>
             <h2>权限树</h2>
@@ -174,6 +197,8 @@
     </div>
     <form class="modal-body modal-form" method="post" action="/web/system/roles">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="page" value="{{ pagination.page }}">
+      <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
       <div class="field-grid one-column">
         <label>
           <span>角色编码</span>

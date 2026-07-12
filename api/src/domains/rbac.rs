@@ -61,6 +61,8 @@ pub struct PermissionSummary {
     pub granted: bool,
 }
 
+type RoleSummaryRow = (String, String, String, i64, String, i64);
+
 pub async fn seed_core(pool: &SqlitePool) -> AppResult<()> {
     for (role_code, role_name, is_system, data_scope_type) in SYSTEM_ROLES {
         sqlx::query(
@@ -122,7 +124,7 @@ pub async fn seed_core(pool: &SqlitePool) -> AppResult<()> {
 }
 
 pub async fn list_roles(pool: &SqlitePool) -> AppResult<Vec<RoleSummary>> {
-    let rows = sqlx::query_as::<_, (String, String, String, i64, String, i64)>(
+    let rows = sqlx::query_as::<_, RoleSummaryRow>(
         r#"
         SELECT
             r.role_code,
@@ -140,26 +142,60 @@ pub async fn list_roles(pool: &SqlitePool) -> AppResult<Vec<RoleSummary>> {
     .fetch_all(pool)
     .await?;
 
-    Ok(rows
-        .into_iter()
-        .map(
-            |(role_code, role_name, status, is_system, data_scope_type, permission_count)| {
-                RoleSummary {
-                    role_code,
-                    role_name,
-                    status,
-                    is_system: is_system != 0,
-                    data_scope_type,
-                    permission_count,
-                }
-            },
-        )
-        .collect())
+    Ok(rows.into_iter().map(role_summary_from_row).collect())
+}
+
+pub async fn count_roles(pool: &SqlitePool) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM roles")
+        .fetch_one(pool)
+        .await?)
+}
+
+pub async fn list_roles_page(
+    pool: &SqlitePool,
+    page: i64,
+    per_page: i64,
+) -> AppResult<Vec<RoleSummary>> {
+    if page < 1 {
+        return Err(AppError::BadRequest("页码不能小于 1".to_string()));
+    }
+    if per_page < 1 {
+        return Err(AppError::BadRequest("每页数量不能小于 1".to_string()));
+    }
+    let offset = (page - 1).saturating_mul(per_page);
+    let rows = sqlx::query_as::<_, RoleSummaryRow>(
+        r#"
+        SELECT
+            r.role_code,
+            r.role_name,
+            r.status,
+            r.is_system,
+            r.data_scope_type,
+            COUNT(rp.id) AS permission_count
+        FROM roles r
+        LEFT JOIN role_permissions rp ON rp.role_id = r.id
+        GROUP BY r.id
+        ORDER BY r.is_system DESC, r.id ASC
+        LIMIT ?1 OFFSET ?2
+        "#,
+    )
+    .bind(per_page)
+    .bind(offset)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(role_summary_from_row).collect())
 }
 
 pub async fn get_role(pool: &SqlitePool, role_code: &str) -> AppResult<RoleSummary> {
+    find_role(pool, role_code)
+        .await?
+        .ok_or_else(|| AppError::NotFound("角色不存在".to_string()))
+}
+
+pub async fn find_role(pool: &SqlitePool, role_code: &str) -> AppResult<Option<RoleSummary>> {
     let role_code = validate_role_code(role_code)?;
-    let row = sqlx::query_as::<_, (String, String, String, i64, String, i64)>(
+    let row = sqlx::query_as::<_, RoleSummaryRow>(
         r#"
         SELECT
             r.role_code,
@@ -176,17 +212,22 @@ pub async fn get_role(pool: &SqlitePool, role_code: &str) -> AppResult<RoleSumma
     )
     .bind(role_code)
     .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("角色不存在".to_string()))?;
+    .await?;
 
-    Ok(RoleSummary {
-        role_code: row.0,
-        role_name: row.1,
-        status: row.2,
-        is_system: row.3 != 0,
-        data_scope_type: row.4,
-        permission_count: row.5,
-    })
+    Ok(row.map(role_summary_from_row))
+}
+
+fn role_summary_from_row(
+    (role_code, role_name, status, is_system, data_scope_type, permission_count): RoleSummaryRow,
+) -> RoleSummary {
+    RoleSummary {
+        role_code,
+        role_name,
+        status,
+        is_system: is_system != 0,
+        data_scope_type,
+        permission_count,
+    }
 }
 
 pub async fn list_permissions_for_role(

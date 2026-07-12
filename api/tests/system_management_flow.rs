@@ -687,6 +687,178 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
 }
 
 #[tokio::test]
+async fn system_roles_page_paginates_with_shared_controls() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    for index in 1..=12 {
+        rbac::create_role(
+            &pool,
+            &format!("page_role_{index:02}"),
+            &format!("分页角色 {index:02}"),
+            "self",
+        )
+        .await
+        .expect("role should create");
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let first_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/roles?per_page=5")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(first_page_response.status(), StatusCode::OK);
+    let first_body = response_body(first_page_response).await;
+    assert_eq!(first_body.matches("class=\"role-list-row").count(), 5);
+    assert!(first_body.contains(r#"aria-label="角色列表分页""#));
+    assert!(first_body.contains("当前显示 1-5"));
+    assert!(first_body.contains("共 14 个角色"));
+    assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains("value=\"100\""));
+    assert!(first_body.contains("aria-label=\"跳转页码\""));
+    assert!(first_body.contains("role=system_admin"));
+    assert!(first_body.contains("page=2"));
+    assert!(first_body.contains("per_page=5"));
+    assert!(first_body.contains(r#"name="page" value="1""#));
+    assert!(first_body.contains(r#"name="per_page" value="5""#));
+
+    let third_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/roles?per_page=5&page=3")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(third_page_response.status(), StatusCode::OK);
+    let third_body = response_body(third_page_response).await;
+    assert_eq!(third_body.matches("class=\"role-list-row").count(), 4);
+    assert!(third_body.contains("当前显示 11-14"));
+    assert!(third_body.contains(r#"aria-current="page">3</a>"#));
+
+    let selected_cross_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/roles?role=page_role_12&per_page=5&page=1")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(selected_cross_page_response.status(), StatusCode::OK);
+    let selected_cross_page_body = response_body(selected_cross_page_response).await;
+    assert!(selected_cross_page_body.contains("当前角色：分页角色 12"));
+
+    let status_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/roles/page_role_12/status")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("status=disabled&page=3&per_page=5")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        status_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/roles?role=page_role_12&page=3&per_page=5"
+    );
+
+    let permissions_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/roles/page_role_12/permissions")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "permission_keys=system.users.view&page=3&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(permissions_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        permissions_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap(),
+        "/web/system/roles?role=page_role_12&page=3&per_page=5"
+    );
+
+    let invalid_create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/roles")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "role_code=page_role_bad&role_name=%E9%94%99%E8%AF%AF%E5%88%86%E9%A1%B5&data_scope_type=self&page=0&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_create_response.status(), StatusCode::BAD_REQUEST);
+    let invalid_created = rbac::find_role(&pool, "page_role_bad")
+        .await
+        .expect("role lookup should succeed");
+    assert!(invalid_created.is_none());
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/roles")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "role_code=page_role_new&role_name=%E5%88%86%E9%A1%B5%E6%96%B0%E8%A7%92%E8%89%B2&data_scope_type=self&page=1&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        create_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/roles?role=page_role_new&page=3&per_page=5"
+    );
+
+    let invalid_page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/roles?page=0&per_page=5")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_page_response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn role_permission_update_adds_parent_page_for_action_permission() {
     let pool = test_pool().await;
     rbac::seed_core(&pool)

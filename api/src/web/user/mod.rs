@@ -779,6 +779,8 @@ struct SystemRolesTemplate {
     topbar_project_options: Vec<ProjectOption>,
     roles: Vec<RoleRow>,
     has_roles: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
     selected_role_code: String,
     selected_role_name: String,
     selected_role_status: String,
@@ -895,6 +897,10 @@ pub struct ResetPasswordForm {
 pub struct CreateRoleForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     role_code: String,
     role_name: String,
     data_scope_type: String,
@@ -904,6 +910,10 @@ pub struct CreateRoleForm {
 pub struct RoleStatusForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
     status: String,
 }
 
@@ -911,6 +921,10 @@ pub struct RoleStatusForm {
 pub struct RoleWorkbenchQuery {
     #[serde(default)]
     role: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3461,8 +3475,14 @@ pub async fn system_roles_page(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
-    let role_summaries = rbac::list_roles(state.pool()?).await?;
-    let selected_role = selected_role_summary(&role_summaries, &query.role).cloned();
+    let pool = state.pool()?;
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let total_items = rbac::count_roles(pool).await?;
+    let total_pages = total_pages(total_items, requested_pagination.per_page);
+    let page_number = requested_pagination.page.min(total_pages);
+    let role_summaries =
+        rbac::list_roles_page(pool, page_number, requested_pagination.per_page).await?;
+    let selected_role = selected_role_summary(pool, &role_summaries, &query.role).await?;
     let selected_role_code = selected_role
         .as_ref()
         .map(|role| role.role_code.clone())
@@ -3475,6 +3495,19 @@ pub async fn system_roles_page(
     let permission_groups = permission_tree_from_summaries(permissions);
     let (permission_total_count, permission_granted_count) =
         permission_tree_counts(&permission_groups);
+    let pagination = role_workbench_pagination_view(
+        &selected_role_code,
+        page_number,
+        requested_pagination.per_page,
+        total_items,
+        total_pages,
+    );
+    let pagination_pages = role_workbench_pagination_pages(
+        &selected_role_code,
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
     let roles = role_summaries
         .into_iter()
         .map(role_row_from_summary)
@@ -3501,6 +3534,8 @@ pub async fn system_roles_page(
             topbar_project_options: context.topbar_project_options,
             has_roles: !roles.is_empty(),
             roles,
+            pagination,
+            pagination_pages,
             selected_role_code,
             selected_role_name: selected_role
                 .as_ref()
@@ -3546,6 +3581,7 @@ pub async fn system_roles_create(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
     rbac::create_role(
         state.pool()?,
         &form.role_code,
@@ -3553,6 +3589,13 @@ pub async fn system_roles_create(
         &form.data_scope_type,
     )
     .await?;
+    let total_items = rbac::count_roles(state.pool()?).await?;
+    let total_pages = total_pages(total_items, requested_pagination.per_page);
+    let redirect_url = role_workbench_page_url(
+        form.role_code.trim(),
+        total_pages,
+        requested_pagination.per_page,
+    );
     audit::record(
         state.pool()?,
         Some(_context.user_id),
@@ -3563,7 +3606,7 @@ pub async fn system_roles_create(
     )
     .await?;
 
-    Ok(Redirect::to(&format!("/web/system/roles?role={}", form.role_code.trim())).into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_role_status_update(
@@ -3578,6 +3621,7 @@ pub async fn system_role_status_update(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let redirect_url = role_workbench_redirect_url(&role_code, form.page, form.per_page)?;
     rbac::set_role_status(state.pool()?, &role_code, &form.status).await?;
     audit::record(
         state.pool()?,
@@ -3589,7 +3633,7 @@ pub async fn system_role_status_update(
     )
     .await?;
 
-    Ok(Redirect::to(&format!("/web/system/roles?role={role_code}")).into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_role_permissions_page(
@@ -3645,12 +3689,15 @@ pub async fn system_role_permissions_update(
 ) -> AppResult<Response> {
     let permission_keys = parse_permission_keys_form(&form)?;
     let submitted_csrf = parse_csrf_token_form(&form)?;
+    let page = parse_i64_form_value(&form, "page")?;
+    let per_page = parse_i64_form_value(&form, "per_page")?;
     csrf::verify(&headers, &submitted_csrf)?;
     let _context = match system_context_or_redirect(&state, &headers, "system.roles.manage").await?
     {
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    let redirect_url = role_workbench_redirect_url(&role_code, page, per_page)?;
     rbac::replace_role_permissions(state.pool()?, &role_code, &permission_keys).await?;
     audit::record(
         state.pool()?,
@@ -3662,7 +3709,7 @@ pub async fn system_role_permissions_update(
     )
     .await?;
 
-    Ok(Redirect::to(&format!("/web/system/roles?role={role_code}")).into_response())
+    Ok(Redirect::to(&redirect_url).into_response())
 }
 
 pub async fn system_permissions_page(
@@ -4856,6 +4903,22 @@ fn parse_permission_keys_form(form: &[u8]) -> AppResult<Vec<String>> {
         .collect())
 }
 
+fn parse_i64_form_value(form: &[u8], field_name: &str) -> AppResult<Option<i64>> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("表单解析失败：{error}")))?;
+
+    pairs
+        .into_iter()
+        .find_map(|(key, value)| (key == field_name).then_some(value))
+        .map(|value| {
+            value
+                .trim()
+                .parse::<i64>()
+                .map_err(|_| AppError::BadRequest("分页参数必须是数字".to_string()))
+        })
+        .transpose()
+}
+
 fn metrics_from_data(
     projects: &[projects::ProjectSummary],
     work_items: &[projects::WorkItemSummary],
@@ -5295,19 +5358,28 @@ fn role_row_from_summary(role: rbac::RoleSummary) -> RoleRow {
     }
 }
 
-fn selected_role_summary<'a>(
-    roles: &'a [rbac::RoleSummary],
+async fn selected_role_summary(
+    pool: &SqlitePool,
+    roles: &[rbac::RoleSummary],
     requested_role_code: &str,
-) -> Option<&'a rbac::RoleSummary> {
+) -> AppResult<Option<rbac::RoleSummary>> {
     let requested_role_code = requested_role_code.trim();
     if !requested_role_code.is_empty() {
-        return roles
+        if let Some(role) = roles
             .iter()
             .find(|role| role.role_code == requested_role_code)
-            .or_else(|| roles.first());
+            .cloned()
+        {
+            return Ok(Some(role));
+        }
+        return match rbac::find_role(pool, requested_role_code).await {
+            Ok(Some(role)) => Ok(Some(role)),
+            Ok(None) | Err(AppError::BadRequest(_)) => Ok(roles.first().cloned()),
+            Err(error) => Err(error),
+        };
     }
 
-    roles.first()
+    Ok(roles.first().cloned())
 }
 
 fn permission_tree_from_summaries(
@@ -6160,6 +6232,90 @@ fn system_users_pagination_pages(
         .map(|page| PaginationPageView {
             page,
             url: system_users_page_url(page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
+fn role_workbench_pagination_view(
+    selected_role_code: &str,
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: role_workbench_page_url(selected_role_code, page - 1, per_page),
+        next_url: role_workbench_page_url(selected_role_code, page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn role_workbench_page_url(selected_role_code: &str, page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    let selected_role_code = selected_role_code.trim();
+    if !selected_role_code.is_empty() {
+        params.push(format!("role={selected_role_code}"));
+    }
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        "/web/system/roles".to_string()
+    } else {
+        format!("/web/system/roles?{}", params.join("&"))
+    }
+}
+
+fn role_workbench_redirect_url(
+    selected_role_code: &str,
+    page: Option<i64>,
+    per_page: Option<i64>,
+) -> AppResult<String> {
+    let pagination = normalize_web_pagination(page, per_page)?;
+    Ok(role_workbench_page_url(
+        selected_role_code,
+        pagination.page,
+        pagination.per_page,
+    ))
+}
+
+fn role_workbench_pagination_pages(
+    selected_role_code: &str,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: role_workbench_page_url(selected_role_code, page, per_page),
             current: page == current_page,
         })
         .collect()
