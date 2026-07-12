@@ -937,7 +937,7 @@
       return;
     }
     list.style.setProperty("--tab-indicator-width", active.offsetWidth + "px");
-    list.style.setProperty("--tab-indicator-x", Math.max(0, active.offsetLeft - 5) + "px");
+    list.style.setProperty("--tab-indicator-x", Math.max(0, active.offsetLeft - 4) + "px");
   }
 
   function activateTab(trigger) {

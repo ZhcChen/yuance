@@ -60,23 +60,18 @@
         <span class="project-tab-indicator" aria-hidden="true" data-tab-indicator></span>
         <button class="project-tab {% if active_tab == "work" %}active{% endif %}" id="project-tab-work-trigger" type="button" role="tab" aria-selected="{% if active_tab == "work" %}true{% else %}false{% endif %}" aria-controls="project-tab-work" data-tab-trigger data-tab-target="project-tab-work" data-tab-key="work">
           工作项
-          <span>{{ summary.open_items }}</span>
         </button>
         <button class="project-tab {% if active_tab == "info" %}active{% endif %}" id="project-tab-info-trigger" type="button" role="tab" aria-selected="{% if active_tab == "info" %}true{% else %}false{% endif %}" aria-controls="project-tab-info" data-tab-trigger data-tab-target="project-tab-info" data-tab-key="info">
           详情
-          <span>{{ project.code }}</span>
         </button>
         <button class="project-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-tab-trigger data-tab-target="project-tab-members" data-tab-key="members">
           成员
-          <span>{{ summary.members }}</span>
         </button>
         <button class="project-tab {% if active_tab == "attachments" %}active{% endif %}" id="project-tab-attachments-trigger" type="button" role="tab" aria-selected="{% if active_tab == "attachments" %}true{% else %}false{% endif %}" aria-controls="project-tab-attachments" data-tab-trigger data-tab-target="project-tab-attachments" data-tab-key="attachments">
           附件
-          <span>{{ attachments.len() }}</span>
         </button>
         <button class="project-tab {% if active_tab == "activities" %}active{% endif %}" id="project-tab-activities-trigger" type="button" role="tab" aria-selected="{% if active_tab == "activities" %}true{% else %}false{% endif %}" aria-controls="project-tab-activities" data-tab-trigger data-tab-target="project-tab-activities" data-tab-key="activities">
           动态
-          <span>{{ activities.len() }}</span>
         </button>
       </div>
     </div>

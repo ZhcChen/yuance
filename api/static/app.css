@@ -2231,22 +2231,22 @@ textarea:focus-visible {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px;
+  gap: 3px;
+  padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--tab-bg);
 }
 
 .project-tab-indicator {
   position: absolute;
   z-index: 0;
-  top: 5px;
-  left: 5px;
+  top: 4px;
+  left: 4px;
   width: var(--tab-indicator-width, 0px);
-  height: calc(100% - 10px);
+  height: calc(100% - 8px);
   border: 1px solid var(--tab-active-border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--tab-active-bg);
   box-shadow: var(--tab-active-shadow);
   transform: translateX(var(--tab-indicator-x, 0px));
@@ -2256,13 +2256,13 @@ textarea:focus-visible {
 .project-tab {
   position: relative;
   z-index: 1;
-  min-height: 38px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 18px 0 13px;
+  justify-content: center;
+  padding: 0 17px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
@@ -2270,27 +2270,6 @@ textarea:focus-visible {
   font-weight: 800;
   white-space: nowrap;
   transition: color var(--motion-fast) ease;
-}
-
-.project-tab span {
-  position: absolute;
-  z-index: 2;
-  top: -5px;
-  right: -4px;
-  min-width: 20px;
-  min-height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--danger);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 20px;
-  box-shadow: 0 0 0 2px var(--tab-bg);
-  pointer-events: none;
 }
 
 .project-tab:hover {
@@ -2301,11 +2280,6 @@ textarea:focus-visible {
   background: transparent;
   color: var(--tab-active-text);
   box-shadow: none;
-}
-
-.project-tab.active span {
-  background: var(--danger);
-  color: #fff;
 }
 
 .project-tab-panels {
@@ -3644,11 +3618,21 @@ code {
   background: rgb(20 25 33 / 72%);
   color: #fff;
   cursor: pointer;
-  font-size: 24px;
-  line-height: 1;
   box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
   backdrop-filter: blur(10px);
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.image-viewer-control svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .image-viewer-control:hover,
@@ -4160,6 +4144,7 @@ code {
 }
 
 .icon-btn {
+  position: relative;
   width: 34px;
   height: 34px;
   flex: 0 0 34px;
@@ -4171,10 +4156,33 @@ code {
   background: var(--panel-soft);
   color: var(--muted-strong);
   cursor: pointer;
-  font-size: 21px;
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
   font-weight: 400;
   line-height: 1;
   transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, color var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+.icon-btn::before,
+.icon-btn::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 1.5px;
+  border-radius: 999px;
+  background: var(--muted-strong);
+  content: "";
+  transition: background-color var(--motion-fast) ease;
+}
+
+.icon-btn::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.icon-btn::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
 
 .icon-btn:hover {
@@ -4182,6 +4190,11 @@ code {
   background: var(--brand-soft);
   color: var(--brand-strong);
   transform: rotate(8deg);
+}
+
+.icon-btn:hover::before,
+.icon-btn:hover::after {
+  background: var(--brand-strong);
 }
 
 .auth-body {
