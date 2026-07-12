@@ -65,7 +65,7 @@
     <div class="analysis-completion-list">
       {% for item in recent_completions %}
       <a href="/web/work-items/{{ item.key }}">
-        <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
+        <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
         <code>{{ item.key }}</code>
         <strong>{{ item.title }}</strong>
         <time>{{ item.completed_at }}</time>

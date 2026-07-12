@@ -92,7 +92,7 @@
               {% for item in requirements %}
               <article class="work-item">
                 <div>
-                  <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
+                  <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
                   <code>{{ item.key }}</code>
                   <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
                   <p>{{ item.project }} · {{ item.assignee }}</p>
@@ -125,7 +125,7 @@
               {% for item in tasks %}
               <article class="work-item">
                 <div>
-                  <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
+                  <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
                   <code>{{ item.key }}</code>
                   <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
                   <p>{{ item.project }} · {{ item.assignee }}</p>
@@ -158,7 +158,7 @@
               {% for item in bugs %}
               <article class="work-item">
                 <div>
-                  <span class="work-kind" data-kind="{{ item.kind }}">{{ item.kind }}</span>
+                  <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
                   <code>{{ item.key }}</code>
                   <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
                   <p>{{ item.project }} · {{ item.assignee }}</p>

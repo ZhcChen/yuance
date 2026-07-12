@@ -2853,22 +2853,31 @@ code {
   line-height: 1;
 }
 
+.work-kind[data-kind="requirement"],
 .work-kind[data-kind="需求"] {
   border-color: color-mix(in srgb, var(--kind-requirement-text) 22%, transparent);
   background: var(--kind-requirement-bg);
   color: var(--kind-requirement-text);
 }
 
+.work-kind[data-kind="task"],
 .work-kind[data-kind="任务"] {
   border-color: color-mix(in srgb, var(--kind-task-text) 22%, transparent);
   background: var(--kind-task-bg);
   color: var(--kind-task-text);
 }
 
+.work-kind[data-kind="bug"],
 .work-kind[data-kind="Bug"] {
   border-color: color-mix(in srgb, var(--kind-bug-text) 22%, transparent);
   background: var(--kind-bug-bg);
   color: var(--kind-bug-text);
+}
+
+.work-kind[data-kind="project"] {
+  border-color: var(--line);
+  background: var(--table-head);
+  color: var(--muted-strong);
 }
 
 .priority[data-priority="P0"],

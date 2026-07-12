@@ -43,7 +43,7 @@
       {% for result in results %}
       <article class="search-result">
         <div>
-          <span class="work-kind" data-kind="{{ result.kind }}">{{ result.kind }}</span>
+          <span class="work-kind" data-kind="{{ result.kind_code }}">{{ result.kind }}</span>
           <code>{{ result.key }}</code>
           <h3><a href="{{ result.url }}">{{ result.title }}</a></h3>
           <p>{{ result.context }}</p>

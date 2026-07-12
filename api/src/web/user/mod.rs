@@ -56,6 +56,7 @@ struct PersonalAnalysisMetric {
 #[derive(Debug, Clone)]
 struct PersonalCompletionView {
     key: String,
+    kind_code: &'static str,
     kind: &'static str,
     title: String,
     completed_at: String,
@@ -164,6 +165,7 @@ struct ProjectDetailSummary {
 #[derive(Debug, Clone)]
 struct WorkItem {
     key: String,
+    kind_code: String,
     kind: String,
     title: String,
     project: String,
@@ -191,6 +193,7 @@ struct RiskItem {
 struct WorkItemDetailView {
     id: i64,
     key: String,
+    kind_code: String,
     kind: String,
     title: String,
     description: String,
@@ -415,6 +418,7 @@ struct MySummary {
 
 #[derive(Debug, Clone)]
 struct SearchResult {
+    kind_code: String,
     kind: String,
     key: String,
     title: String,
@@ -2097,12 +2101,8 @@ pub async fn project_personal_analysis_page(
         .iter()
         .map(|item| PersonalCompletionView {
             key: item.item_key.clone(),
-            kind: match item.item_type.as_str() {
-                "requirement" => "需求",
-                "task" => "任务",
-                "bug" => "Bug",
-                _ => "工作项",
-            },
+            kind_code: work_item_kind_code(&item.item_type),
+            kind: work_item_kind_label(&item.item_type),
             title: item.title.clone(),
             completed_at: display_timestamp(item.completed_at.clone()),
         })
@@ -5159,6 +5159,7 @@ fn work_item_from_summary(item: projects::WorkItemSummary) -> WorkItem {
     let priority = priority_label(&item.priority).to_string();
     WorkItem {
         key: item.item_key,
+        kind_code: work_item_kind_code(&item.item_type).to_string(),
         kind: kind.to_string(),
         title: item.title,
         project: format!("{} · {}", item.project_key, item.project_name),
@@ -5210,6 +5211,7 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
     WorkItemDetailView {
         id: item.id,
         key: item.item_key,
+        kind_code: work_item_kind_code(&item.item_type).to_string(),
         kind: kind.to_string(),
         title: item.title,
         description: item.description,
@@ -5822,6 +5824,7 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
 
 fn search_result_from_hit(hit: projects::SearchHit) -> SearchResult {
     SearchResult {
+        kind_code: search_hit_type_code(&hit.hit_type).to_string(),
         kind: search_hit_type_label(&hit.hit_type).to_string(),
         key: hit.key,
         title: hit.title,
@@ -6997,6 +7000,16 @@ fn search_hit_type_label(hit_type: &str) -> &'static str {
     }
 }
 
+fn search_hit_type_code(hit_type: &str) -> &'static str {
+    match hit_type {
+        "project" => "project",
+        "requirement" => "requirement",
+        "task" => "task",
+        "bug" => "bug",
+        _ => "result",
+    }
+}
+
 fn data_scope_label(data_scope_type: &str) -> &'static str {
     match data_scope_type {
         "all" => "全部数据",
@@ -7005,13 +7018,26 @@ fn data_scope_label(data_scope_type: &str) -> &'static str {
     }
 }
 
-fn work_item_labels(item_type: &str, status: &str) -> (&'static str, &'static str, &'static str) {
-    let kind = match item_type {
+fn work_item_kind_code(item_type: &str) -> &'static str {
+    match item_type {
+        "requirement" => "requirement",
+        "task" => "task",
+        "bug" => "bug",
+        _ => "work_item",
+    }
+}
+
+fn work_item_kind_label(item_type: &str) -> &'static str {
+    match item_type {
         "requirement" => "需求",
         "task" => "任务",
         "bug" => "Bug",
         _ => "工作项",
-    };
+    }
+}
+
+fn work_item_labels(item_type: &str, status: &str) -> (&'static str, &'static str, &'static str) {
+    let kind = work_item_kind_label(item_type);
     let (status, tone) = match status {
         "open" => ("待处理", "warning"),
         "in_progress" => ("进行中", "info"),
@@ -7243,6 +7269,7 @@ fn sample_search_results(query: &str) -> Vec<SearchResult> {
         .into_iter()
         .filter(|project| project.code.contains(query) || project.name.contains(query))
         .map(|project| SearchResult {
+            kind_code: "project".to_string(),
             kind: "项目".to_string(),
             key: project.code.clone(),
             title: project.name,
@@ -7259,6 +7286,7 @@ fn sample_search_results(query: &str) -> Vec<SearchResult> {
                         || item.project.contains(query)
                 })
                 .map(|item| SearchResult {
+                    kind_code: item.kind_code,
                     kind: item.kind,
                     key: item.key.clone(),
                     title: item.title,
@@ -7439,6 +7467,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
         item: WorkItemDetailView {
             id: 2,
             key: "YCE-TASK-2".to_string(),
+            kind_code: "task".to_string(),
             kind: "任务".to_string(),
             title: "设计项目与工作项数据模型".to_string(),
             description: "落地项目、成员、需求、任务、Bug、评论和动态表。".to_string(),

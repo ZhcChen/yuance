@@ -1199,6 +1199,9 @@ async fn web_project_detail_renders_project_scope() {
     assert!(body.contains("YCE-REQ-1"));
     assert!(body.contains("YCE-TASK-2"));
     assert!(body.contains("YCE-BUG-1"));
+    assert!(body.contains(r#"data-kind="requirement">需求</span>"#));
+    assert!(body.contains(r#"data-kind="task">任务</span>"#));
+    assert!(body.contains(r#"data-kind="bug">Bug</span>"#));
     assert!(body.contains("项目成员"));
     assert!(body.contains("架构计划已确认"));
     assert!(body.contains(r#"data-modal-open="project-edit-modal""#));

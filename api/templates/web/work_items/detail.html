@@ -9,7 +9,7 @@
     <div class="work-item-title-row">
       <div>
         <div class="work-item-identity">
-          <span class="kind-tag {% if item.kind == "需求" %}kind-requirement{% else if item.kind == "任务" %}kind-task{% else %}kind-bug{% endif %}">{{ item.kind }}</span>
+          <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
           <span>{{ item.key }}</span>
         </div>
         <h1>{{ item.title }}</h1>
@@ -138,7 +138,7 @@
         <label>优先级<select name="priority"><option value="P0" {% if item.priority_code == "P0" %}selected{% endif %}>紧急</option><option value="P1" {% if item.priority_code == "P1" %}selected{% endif %}>高</option><option value="P2" {% if item.priority_code == "P2" %}selected{% endif %}>中</option><option value="P3" {% if item.priority_code == "P3" %}selected{% endif %}>低</option></select></label>
         <label>处理人<select name="assignee_username" data-select-searchable data-select-search-placeholder="搜索处理人">{% for member in assignee_options %}<option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>{% endfor %}</select></label>
         <label>截止日期<input name="due_date" type="date" value="{{ item.due_date }}"></label>
-        {% if item.kind == "任务" %}<label>父级需求<select name="parent_item_key" data-select-searchable data-select-search-placeholder="搜索父需求"><option value="">不关联</option>{% for parent in parent_options %}<option value="{{ parent.key }}" {% if parent.key == item.parent_item_key %}selected{% endif %}>{{ parent.key }} · {{ parent.title }}</option>{% endfor %}</select></label>{% endif %}
+        {% if item.kind_code == "task" %}<label>父级需求<select name="parent_item_key" data-select-searchable data-select-search-placeholder="搜索父需求"><option value="">不关联</option>{% for parent in parent_options %}<option value="{{ parent.key }}" {% if parent.key == item.parent_item_key %}selected{% endif %}>{{ parent.key }} · {{ parent.title }}</option>{% endfor %}</select></label>{% endif %}
         <label class="wide-field">描述<textarea name="description" rows="7">{{ item.description }}</textarea></label>
       </div>
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-close>取消</button><button class="btn btn-primary" type="submit">保存修改</button></div>
