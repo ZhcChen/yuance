@@ -10,6 +10,9 @@
   var pendingConfirmForm = null;
   var contentTabNavigationTimer = null;
   var contentTabNavigationControl = null;
+  var contentTabResizeObserver = null;
+  var contentTabSyncFrame = null;
+  var contentTabSyncAnimate = false;
   var activeSelectControl = null;
   var imagePreviewObserver = null;
   var imagePreviewFallbackTimer = null;
@@ -1115,6 +1118,41 @@
     });
   }
 
+  function scheduleContentTabsSync(animate) {
+    contentTabSyncAnimate = contentTabSyncAnimate || Boolean(animate);
+    if (contentTabSyncFrame) {
+      return;
+    }
+    contentTabSyncFrame = window.requestAnimationFrame(function () {
+      var shouldAnimate = contentTabSyncAnimate;
+      contentTabSyncFrame = null;
+      contentTabSyncAnimate = false;
+      syncAllContentTabs(shouldAnimate);
+    });
+  }
+
+  function observeContentTabs(control) {
+    if (!control || control.dataset.contentTabsObserved === "true") {
+      return;
+    }
+    control.dataset.contentTabsObserved = "true";
+    control.addEventListener("scroll", function () {
+      syncContentTabs(control, false);
+    }, { passive: true });
+    if (!("ResizeObserver" in window)) {
+      return;
+    }
+    if (!contentTabResizeObserver) {
+      contentTabResizeObserver = new ResizeObserver(function () {
+        scheduleContentTabsSync(false);
+      });
+    }
+    contentTabResizeObserver.observe(control);
+    control.querySelectorAll("[data-content-tab]").forEach(function (tab) {
+      contentTabResizeObserver.observe(tab);
+    });
+  }
+
   function setContentTabsPending(control, pending) {
     if (!control) {
       return;
@@ -1182,6 +1220,7 @@
 
   function initContentTabs(root) {
     (root || document).querySelectorAll("[data-content-tabs]").forEach(function (control) {
+      observeContentTabs(control);
       var active = control.querySelector("[data-content-tab].active") || control.querySelector("[data-content-tab]");
       if (active) {
         activateContentTab(active, false);
@@ -3791,7 +3830,11 @@
     if (activeSelectControl) {
       positionSelectPanel(activeSelectControl);
     }
-    syncAllContentTabs(false);
+    scheduleContentTabsSync(false);
+  });
+
+  window.addEventListener("pageshow", function () {
+    scheduleContentTabsSync(false);
   });
 
   window.addEventListener("scroll", function () {
