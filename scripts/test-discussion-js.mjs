@@ -307,6 +307,21 @@ function discussionForm() {
 }
 
 const samePage = loadAppWithDom();
+assert.equal(typeof samePage.hooks.apiErrorMessage, "function");
+assert.equal(
+  samePage.hooks.apiErrorMessage({ error: { message: "项目已归档，不能继续操作" } }, "默认错误"),
+  "项目已归档，不能继续操作",
+);
+assert.equal(
+  samePage.hooks.apiErrorMessage({ error: "处理人不在项目成员中" }, "默认错误"),
+  "处理人不在项目成员中",
+);
+assert.equal(
+  samePage.hooks.apiErrorMessage({ errors: [{ detail: "文件夹名称已存在" }] }, "默认错误"),
+  "文件夹名称已存在",
+);
+assert.equal(samePage.hooks.apiErrorMessage("服务器返回文本错误", "默认错误"), "服务器返回文本错误");
+assert.equal(samePage.hooks.apiErrorMessage({}, "默认错误"), "默认错误");
 assert.equal(typeof samePage.hooks.submitDiscussion, "function");
 await samePage.hooks.submitDiscussion(discussionForm(), submitButton());
 assert.equal(samePage.fetchCalls.length, 1);

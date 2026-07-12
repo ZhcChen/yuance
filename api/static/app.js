@@ -305,6 +305,38 @@
     };
   }
 
+  function firstApiErrorMessage(value) {
+    if (!value) {
+      return "";
+    }
+    if (typeof value === "string") {
+      return value.trim();
+    }
+    if (Array.isArray(value)) {
+      for (var index = 0; index < value.length; index += 1) {
+        var nestedMessage = firstApiErrorMessage(value[index]);
+        if (nestedMessage) {
+          return nestedMessage;
+        }
+      }
+      return "";
+    }
+    if (typeof value !== "object") {
+      return "";
+    }
+    return firstApiErrorMessage(value.error)
+      || firstApiErrorMessage(value.message)
+      || firstApiErrorMessage(value.detail)
+      || firstApiErrorMessage(value.reason)
+      || firstApiErrorMessage(value.errors);
+  }
+
+  function apiErrorMessage(payload, fallback) {
+    return firstApiErrorMessage(payload)
+      || fallback
+      || "操作失败，请稍后重试。";
+  }
+
   async function submitWebForm(form, submitter) {
     if (!form || form.dataset.webFormBusy === "true") {
       return;
@@ -353,7 +385,7 @@
         return;
       }
       if (!response.ok) {
-        throw new Error(payload?.error?.message || htmlResult?.message || "操作失败，请稍后重试。");
+        throw new Error(apiErrorMessage(payload, htmlResult?.message || "操作失败，请稍后重试。"));
       }
       if (response.redirected && response.url) {
         window.location.assign(response.url);
@@ -1819,11 +1851,7 @@
       throw new Error("登录已失效，正在跳转登录页面。");
     }
     if (!response.ok) {
-      var message =
-        payload && payload.error && payload.error.message
-          ? payload.error.message
-          : "请求失败：" + response.status;
-      throw new Error(message);
+      throw new Error(apiErrorMessage(payload, "请求失败：" + response.status));
     }
     return payload.data;
   }
@@ -3266,6 +3294,7 @@
 
   if (window.__YUANCE_ENABLE_TEST_HOOKS__) {
     window.__YUANCE_TEST_HOOKS__ = Object.assign(window.__YUANCE_TEST_HOOKS__ || {}, {
+      apiErrorMessage: apiErrorMessage,
       reloadDiscussionAtComment: reloadDiscussionAtComment,
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
