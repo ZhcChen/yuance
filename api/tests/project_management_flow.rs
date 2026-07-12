@@ -684,6 +684,8 @@ async fn web_projects_renders_demo_projects_from_database() {
     let body = response_body(response).await;
 
     assert!(body.contains("项目列表"));
+    assert!(body.contains("文件协作"));
+    assert!(!body.contains("后续附件"));
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("客户线索同步"));
     assert!(body.contains("开放工作项"));
