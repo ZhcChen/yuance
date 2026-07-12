@@ -930,17 +930,40 @@
     scope.querySelectorAll?.("select").forEach(buildSelectControl);
   }
 
-  function syncTabIndicator(root) {
+  function syncTabIndicator(root, animate) {
     var list = root && root.querySelector(".project-tab-list");
     var active = list && list.querySelector("[data-tab-trigger].active");
-    if (!list || !active) {
+    var indicator = list && list.querySelector("[data-tab-indicator]");
+    if (!list || !active || !indicator) {
       return;
     }
-    list.style.setProperty("--tab-indicator-width", active.offsetWidth + "px");
-    list.style.setProperty("--tab-indicator-x", Math.max(0, active.offsetLeft - 4) + "px");
+    var listRect = list.getBoundingClientRect();
+    var indicatorRect = indicator.getBoundingClientRect();
+    var previousWidth = indicatorRect.width || active.offsetWidth;
+    var previousX = indicatorRect.left - listRect.left - indicator.offsetLeft;
+    var nextWidth = active.offsetWidth;
+    var nextX = Math.max(0, active.offsetLeft - 4);
+
+    if (indicator.tabSlideAnimation) {
+      indicator.tabSlideAnimation.cancel();
+    }
+    list.style.setProperty("--tab-indicator-width", nextWidth + "px");
+    list.style.setProperty("--tab-indicator-x", nextX + "px");
+
+    if (!animate || prefersReducedMotion() || (previousWidth === nextWidth && previousX === nextX)) {
+      return;
+    }
+    indicator.tabSlideAnimation = indicator.animate([
+      { width: previousWidth + "px", transform: "translateX(" + previousX + "px)" },
+      { width: nextWidth + "px", transform: "translateX(" + nextX + "px)" }
+    ], {
+      duration: 360,
+      easing: "cubic-bezier(.22, .8, .24, 1)",
+      fill: "none"
+    });
   }
 
-  function activateTab(trigger) {
+  function activateTab(trigger, animateIndicator) {
     var root = trigger.closest("[data-tabs]");
     if (!root) {
       return;
@@ -960,7 +983,7 @@
       panel.classList.toggle("active", active);
       panel.hidden = !active;
     });
-    syncTabIndicator(root);
+    syncTabIndicator(root, Boolean(animateIndicator));
   }
 
   function syncTabUrl(trigger) {
@@ -982,7 +1005,7 @@
     (root || document).querySelectorAll("[data-tabs]").forEach(function (tabs) {
       var active = tabs.querySelector("[data-tab-trigger].active") || tabs.querySelector("[data-tab-trigger]");
       if (active) {
-        activateTab(active);
+        activateTab(active, false);
       }
     });
   }
@@ -2988,7 +3011,7 @@
     var tabTrigger = event.target.closest("[data-tab-trigger]");
     if (tabTrigger) {
       event.preventDefault();
-      activateTab(tabTrigger);
+      activateTab(tabTrigger, true);
       syncTabUrl(tabTrigger);
       return;
     }
@@ -3113,7 +3136,7 @@
         } else if (event.key === "End") {
           nextIndex = tabs.length - 1;
         }
-        activateTab(tabs[nextIndex]);
+        activateTab(tabs[nextIndex], true);
         tabs[nextIndex].focus({ preventScroll: true });
       }
       return;
