@@ -1253,10 +1253,11 @@ async fn web_project_detail_returns_404_for_missing_project() {
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/web/projects/NOPE")
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -1264,6 +1265,78 @@ async fn web_project_detail_returns_404_for_missing_project() {
         .expect("router should respond");
 
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let html_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/NOPE/my-analysis")
+                .header(header::ACCEPT, "text/html")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(html_response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        html_response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/html; charset=utf-8"
+    );
+    let html_body = response_body(html_response).await;
+    assert!(html_body.contains("页面暂时无法访问"));
+    assert!(html_body.contains("项目不存在"));
+    assert!(!html_body.trim_start().starts_with('{'));
+
+    let async_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/NOPE/my-analysis")
+                .header(header::ACCEPT, "text/html, application/json")
+                .header("x-yuance-web-form", "fetch")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(async_response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        async_response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    let async_body = response_body(async_response).await;
+    assert!(async_body.trim_start().starts_with('{'));
+    assert!(async_body.contains("项目不存在"));
+
+    let native_post_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/status")
+                .header(header::ACCEPT, "text/html")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=unknown",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(native_post_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        native_post_response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap(),
+        "text/html; charset=utf-8"
+    );
+    let native_post_body = response_body(native_post_response).await;
+    assert!(native_post_body.contains("操作没有完成"));
+    assert!(native_post_body.contains("yuance-pending-toast"));
+    assert!(native_post_body.contains("window.location.replace"));
 }
 
 #[tokio::test]

@@ -1,9 +1,13 @@
 use axum::{
     Router,
-    http::{StatusCode, header},
-    response::{IntoResponse, Redirect},
+    body::to_bytes,
+    extract::Request,
+    http::{HeaderMap, Method, StatusCode, header},
+    middleware::Next,
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, patch, post, put},
 };
+use serde::Deserialize;
 
 use crate::{platform::config::Settings, web};
 
@@ -421,7 +425,266 @@ pub fn build_router(state: AppState) -> Router {
         .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
+        .layer(axum::middleware::from_fn(web_error_page_middleware))
         .with_state(state)
+}
+
+async fn web_error_page_middleware(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_string();
+    let method = request.method().clone();
+    let headers = request.headers().clone();
+    let response = next.run(request).await;
+
+    if !should_render_web_error_page(&path, &headers, &response) {
+        return response;
+    }
+
+    let status = response.status();
+    let (_parts, body) = response.into_parts();
+    let bytes = to_bytes(body, 64 * 1024).await.unwrap_or_default();
+    let (code, message) = serde_json::from_slice::<JsonErrorEnvelope>(&bytes)
+        .map(|payload| (payload.error.code, payload.error.message))
+        .unwrap_or_else(|_| {
+            (
+                status.canonical_reason().unwrap_or("error").to_string(),
+                status
+                    .canonical_reason()
+                    .unwrap_or("请求处理失败")
+                    .to_string(),
+            )
+        });
+
+    let auto_return = method != Method::GET;
+    (
+        status,
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        Html(render_web_error_page(status, &code, &message, auto_return)),
+    )
+        .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonErrorEnvelope {
+    error: JsonErrorBody,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonErrorBody {
+    code: String,
+    message: String,
+}
+
+fn should_render_web_error_page(
+    path: &str,
+    request_headers: &HeaderMap,
+    response: &Response,
+) -> bool {
+    if !(path == "/web" || path.starts_with("/web/"))
+        || !response.status().is_client_error() && !response.status().is_server_error()
+    {
+        return false;
+    }
+    if is_async_web_request(request_headers) {
+        return false;
+    }
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type.contains("application/json") {
+        return false;
+    }
+    let accept = request_headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    accept.is_empty() || accept.contains("text/html") || accept.contains("*/*")
+}
+
+fn is_async_web_request(headers: &HeaderMap) -> bool {
+    headers.contains_key("x-yuance-web-form")
+        || headers
+            .get("hx-request")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+        || headers
+            .get("x-requested-with")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("xmlhttprequest"))
+}
+
+fn render_web_error_page(
+    status: StatusCode,
+    code: &str,
+    message: &str,
+    auto_return: bool,
+) -> String {
+    let title = if auto_return {
+        "操作没有完成"
+    } else if status == StatusCode::UNAUTHORIZED {
+        "登录已失效"
+    } else {
+        "页面暂时无法访问"
+    };
+    let escaped_title = escape_html(title);
+    let escaped_message = escape_html(message);
+    let escaped_code = escape_html(code);
+    let message_json =
+        serde_json::to_string(message).unwrap_or_else(|_| "\"操作失败，请稍后重试。\"".to_string());
+    let auto_return_script = if auto_return {
+        format!(
+            r#"<script>
+(function () {{
+  var message = {message_json};
+  try {{
+    window.sessionStorage.setItem("yuance-pending-toast", JSON.stringify({{ message: message, tone: "error" }}));
+  }} catch (_error) {{}}
+  try {{
+    var referrer = document.referrer ? new URL(document.referrer) : null;
+    if (referrer && referrer.origin === window.location.origin && referrer.pathname.indexOf("/web") === 0) {{
+      window.location.replace(referrer.pathname + referrer.search + referrer.hash);
+    }}
+  }} catch (_error) {{}}
+}}());
+</script>"#
+        )
+    } else {
+        String::new()
+    };
+
+    format!(
+        r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{escaped_title} - 元策</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --card: rgba(255, 255, 255, .94);
+      --text: #111827;
+      --muted: #64748b;
+      --primary: #2f6fed;
+      --danger: #dc2626;
+      --border: rgba(148, 163, 184, .28);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 32px 18px;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(47, 111, 237, .12), transparent 34%),
+        radial-gradient(circle at 82% 12%, rgba(220, 38, 38, .10), transparent 28%),
+        var(--bg);
+    }}
+    main {{
+      width: min(520px, 100%);
+      padding: 30px;
+      border: 1px solid var(--border);
+      border-radius: 26px;
+      background: var(--card);
+      box-shadow: 0 24px 70px rgba(15, 23, 42, .12);
+    }}
+    .eyebrow {{
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      color: var(--danger);
+      background: rgba(220, 38, 38, .08);
+      font-size: 13px;
+      font-weight: 700;
+    }}
+    h1 {{
+      margin: 0 0 12px;
+      font-size: clamp(26px, 5vw, 34px);
+      line-height: 1.18;
+      letter-spacing: -.03em;
+    }}
+    p {{
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.75;
+    }}
+    .detail {{
+      margin-top: 18px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: #f8fafc;
+      color: #334155;
+      word-break: break-word;
+    }}
+    .actions {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }}
+    a, button {{
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 999px;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }}
+    a.primary {{
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 12px 26px rgba(47, 111, 237, .24);
+    }}
+    button.secondary {{
+      color: #334155;
+      background: #e2e8f0;
+    }}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">HTTP {status_code} · {escaped_code}</div>
+    <h1>{escaped_title}</h1>
+    <p>{intro}</p>
+    <p class="detail">{escaped_message}</p>
+    <div class="actions">
+      <a class="primary" href="/web">回到工作台</a>
+      <button class="secondary" type="button" onclick="history.length > 1 ? history.back() : location.assign('/web')">返回上一页</button>
+    </div>
+  </main>
+  {auto_return_script}
+</body>
+</html>"#,
+        status_code = status.as_u16(),
+        intro = if auto_return {
+            "系统已经拦截到本次操作的业务错误，正在尝试返回原页面并以消息提示展示原因。"
+        } else {
+            "系统没有把错误裸露成 JSON，而是用可读页面展示。你可以返回上一页或回到工作台继续操作。"
+        }
+    )
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 async fn root() -> Redirect {
