@@ -6155,7 +6155,6 @@ select option {
   font-size: 12px;
 }
 
-.role-status-button,
 .text-button {
   border: 0;
   background: transparent;
@@ -6166,13 +6165,14 @@ select option {
   font-weight: 700;
 }
 
-.role-status-button {
-  height: 100%;
+.role-status-form {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 0 12px;
   border-left: 1px solid var(--line);
 }
 
-.role-status-button:hover,
 .text-button:hover {
   color: var(--brand-strong);
   text-decoration: underline;

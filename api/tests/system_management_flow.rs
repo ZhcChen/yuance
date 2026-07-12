@@ -624,6 +624,11 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
         )
     );
     assert!(workbench_body.contains("确认禁用角色"));
+    assert!(workbench_body.contains(r#"class="role-status-form""#));
+    assert!(
+        workbench_body.contains(r#"class="btn btn-sm btn-secondary" type="submit">禁用</button>"#)
+    );
+    assert!(!workbench_body.contains("role-status-button"));
     assert!(!workbench_body.contains("role-create-form"));
     assert!(workbench_body.contains("data-permission-tree"));
     assert!(workbench_body.contains("data-permission-group-key=\"system\""));

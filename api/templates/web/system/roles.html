@@ -43,16 +43,16 @@
           </a>
           {% if can_manage_roles %}
           {% if !role.is_system %}
-          <form method="post" action="/web/system/roles/{{ role.code }}/status" data-confirm-submit-form data-confirm-title="{% if role.status_code == "active" %}确认禁用角色{% else %}确认启用角色{% endif %}" data-confirm-message="{% if role.status_code == "active" %}确认禁用角色 {{ role.name }}？禁用后该角色授权不会再生效。{% else %}确认启用角色 {{ role.name }}？启用后该角色授权会重新生效。{% endif %}" data-confirm-action="{% if role.status_code == "active" %}确认禁用{% else %}确认启用{% endif %}">
+          <form class="role-status-form" method="post" action="/web/system/roles/{{ role.code }}/status" data-confirm-submit-form data-confirm-title="{% if role.status_code == "active" %}确认禁用角色{% else %}确认启用角色{% endif %}" data-confirm-message="{% if role.status_code == "active" %}确认禁用角色 {{ role.name }}？禁用后该角色授权不会再生效。{% else %}确认启用角色 {{ role.name }}？启用后该角色授权会重新生效。{% endif %}" data-confirm-action="{% if role.status_code == "active" %}确认禁用{% else %}确认启用{% endif %}">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="page" value="{{ pagination.page }}">
             <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
             {% if role.status_code == "active" %}
             <input type="hidden" name="status" value="disabled">
-            <button class="role-status-button" type="submit">禁用</button>
+            <button class="btn btn-sm btn-secondary" type="submit">禁用</button>
             {% else %}
             <input type="hidden" name="status" value="active">
-            <button class="role-status-button" type="submit">启用</button>
+            <button class="btn btn-sm btn-secondary" type="submit">启用</button>
             {% endif %}
           </form>
           {% endif %}
