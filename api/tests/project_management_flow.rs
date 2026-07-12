@@ -265,6 +265,7 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert!(first_body.contains("当前显示 1-5"));
     assert!(first_body.contains("共 12 条"));
     assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains(r#"<option value="5" selected>当前 5</option>"#));
     assert!(first_body.contains("value=\"100\""));
     assert!(first_body.contains("aria-label=\"跳转页码\""));
     assert!(first_body.contains("page=2"));
@@ -1041,6 +1042,7 @@ async fn web_work_item_list_paginates_current_project_items() {
     assert!(first_body.contains("<th class=\"work-table-actions\" scope=\"col\">操作</th>"));
     assert!(first_body.contains(">查看</a>"));
     assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains(r#"<option value="1" selected>当前 1</option>"#));
     assert!(first_body.contains("value=\"100\""));
     assert!(first_body.contains("aria-label=\"跳转页码\""));
     assert!(first_body.contains("project_key=YCE"));

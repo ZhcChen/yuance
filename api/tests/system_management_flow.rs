@@ -79,6 +79,7 @@ async fn system_users_page_paginates_with_shared_controls() {
     assert!(first_body.contains("当前显示 1-5"));
     assert!(first_body.contains("共 13 个用户"));
     assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains(r#"<option value="5" selected>当前 5</option>"#));
     assert!(first_body.contains("value=\"100\""));
     assert!(first_body.contains("aria-label=\"跳转页码\""));
     assert!(first_body.contains("page=2"));
