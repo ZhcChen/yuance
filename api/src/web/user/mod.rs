@@ -1852,7 +1852,7 @@ pub async fn project_update(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/projects/{}", updated.project_key)).into_response());
+        return Ok(Redirect::to(&project_info_url(&updated.project_key)).into_response());
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -4950,6 +4950,10 @@ fn safe_web_return_to(value: &str) -> &str {
 
 fn work_item_comment_url(item_key: &str, comment_id: i64) -> String {
     format!("/web/work-items/{item_key}#comment-{comment_id}")
+}
+
+fn project_info_url(project_key: &str) -> String {
+    format!("/web/projects/{project_key}?tab=info")
 }
 
 fn project_members_url(project_key: &str) -> String {

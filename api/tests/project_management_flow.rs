@@ -1597,7 +1597,7 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE"
+        "/web/projects/YCE?tab=info"
     );
 
     let project = projects::get_project_detail(&pool, "YCE")
@@ -1636,7 +1636,7 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
     let detail_response = app
         .oneshot(
             Request::builder()
-                .uri("/web/projects/YCE")
+                .uri("/web/projects/YCE?tab=info")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
