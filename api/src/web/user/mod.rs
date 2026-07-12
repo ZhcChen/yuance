@@ -1022,7 +1022,7 @@ pub struct WorkItemEditForm {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct WorkItemDeleteForm {
+pub struct WorkItemRestoreForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
 }
@@ -1051,12 +1051,6 @@ pub struct WorkItemCommentForm {
     body: String,
     #[serde(default)]
     parent_comment_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct WorkItemCommentDeleteForm {
-    #[serde(default, rename = "_csrf")]
-    csrf_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2603,55 +2597,11 @@ pub async fn work_item_update(
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
 }
 
-pub async fn work_item_delete(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(item_key): Path<String>,
-    Form(form): Form<WorkItemDeleteForm>,
-) -> AppResult<Response> {
-    csrf::verify(&headers, &form.csrf_token)?;
-    let context = match web_context_or_redirect(&state, &headers).await? {
-        Ok(context) => context,
-        Err(response) => return Ok(response),
-    };
-    if let Some(pool) = context.pool {
-        ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
-            return Ok(StatusCode::NOT_FOUND.into_response());
-        };
-        ensure_project_key_access(
-            pool,
-            context.user_id,
-            context.is_super_admin,
-            &item.project_key,
-        )
-        .await?;
-        let project = projects::get_project_detail(pool, &item.project_key)
-            .await?
-            .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-        ensure_project_content_write_access(pool, &context, project.id).await?;
-        let deleted = projects::delete_work_item(pool, context.user_id, &item_key).await?;
-        audit::record(
-            pool,
-            Some(context.user_id),
-            "work_item.delete",
-            "work_item",
-            &deleted.item_key,
-            "{}",
-        )
-        .await?;
-
-        return Ok(Redirect::to(&format!("/web/work-items/{}", deleted.item_key)).into_response());
-    }
-
-    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
-}
-
 pub async fn work_item_restore(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(item_key): Path<String>,
-    Form(form): Form<WorkItemDeleteForm>,
+    Form(form): Form<WorkItemRestoreForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
     let context = match web_context_or_redirect(&state, &headers).await? {
@@ -2796,58 +2746,6 @@ pub async fn work_item_comment_update(
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
 }
 
-pub async fn work_item_comment_delete(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((item_key, comment_id)): Path<(String, i64)>,
-    Form(form): Form<WorkItemCommentDeleteForm>,
-) -> AppResult<Response> {
-    csrf::verify(&headers, &form.csrf_token)?;
-    let context = match web_context_or_redirect(&state, &headers).await? {
-        Ok(context) => context,
-        Err(response) => return Ok(response),
-    };
-    if let Some(pool) = context.pool {
-        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
-            return Ok(StatusCode::NOT_FOUND.into_response());
-        };
-        ensure_work_item_accepts_writes(&item)?;
-        ensure_project_key_access(
-            pool,
-            context.user_id,
-            context.is_super_admin,
-            &item.project_key,
-        )
-        .await?;
-        let project = projects::get_project_detail(pool, &item.project_key)
-            .await?
-            .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-        ensure_project_content_write_access(pool, &context, project.id).await?;
-        projects::delete_work_item_comment(
-            pool,
-            context.user_id,
-            context.is_super_admin,
-            &item_key,
-            comment_id,
-        )
-        .await?;
-        audit::record(
-            pool,
-            Some(context.user_id),
-            "work_item.comment.delete",
-            "comment",
-            &comment_id.to_string(),
-            &format!(r#"{{"work_item":"{item_key}"}}"#),
-        )
-        .await?;
-
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
-    }
-
-    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
-}
-
 pub async fn work_item_attachment_create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2905,67 +2803,6 @@ pub async fn work_item_attachment_create(
             "work_item",
             &item_key,
             &format!(r#"{{"file_object_id":{}}}"#, attachment.file_object_id),
-        )
-        .await?;
-
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
-    }
-
-    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
-}
-
-pub async fn work_item_attachment_delete(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((item_key, attachment_id)): Path<(String, i64)>,
-    Form(form): Form<AttachmentDeleteForm>,
-) -> AppResult<Response> {
-    csrf::verify(&headers, &form.csrf_token)?;
-    let context = match web_context_or_redirect(&state, &headers).await? {
-        Ok(context) => context,
-        Err(response) => return Ok(response),
-    };
-    if let Some(pool) = context.pool {
-        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
-            return Ok(StatusCode::NOT_FOUND.into_response());
-        };
-        ensure_work_item_accepts_writes(&item)?;
-        ensure_project_key_access(
-            pool,
-            context.user_id,
-            context.is_super_admin,
-            &item.project_key,
-        )
-        .await?;
-        let project = projects::get_project_detail(pool, &item.project_key)
-            .await?
-            .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-        ensure_project_content_write_access(pool, &context, project.id).await?;
-        projects::ensure_project_accepts_writes(&project.status)?;
-        let attachment =
-            files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
-        let activity_summary = format!("删除工作项附件 {}", attachment.original_filename);
-        let deleted = files::delete_attachment(
-            pool,
-            attachment_id,
-            "work_item",
-            item.id,
-            context.user_id,
-            Some(project.id),
-            Some(&activity_summary),
-        )
-        .await?;
-        audit::record(
-            pool,
-            Some(context.user_id),
-            "file.delete.work_item",
-            "work_item",
-            &item_key,
-            &format!(
-                r#"{{"attachment_id":{},"file_object_id":{}}}"#,
-                deleted.id, deleted.file_object_id
-            ),
         )
         .await?;
 
@@ -3070,64 +2907,6 @@ pub async fn work_item_comment_attachment_create(
             &format!(
                 r#"{{"work_item":"{}","file_object_id":{}}}"#,
                 item.key, attachment.file_object_id
-            ),
-        )
-        .await?;
-
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
-    }
-
-    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
-}
-
-pub async fn work_item_comment_attachment_delete(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
-    Form(form): Form<AttachmentDeleteForm>,
-) -> AppResult<Response> {
-    csrf::verify(&headers, &form.csrf_token)?;
-    let context = match web_context_or_redirect(&state, &headers).await? {
-        Ok(context) => context,
-        Err(response) => return Ok(response),
-    };
-    if let Some(pool) = context.pool {
-        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let (item, project, comment) =
-            load_comment_attachment_context(pool, &item_key, comment_id).await?;
-        ensure_comment_accepts_attachments(&comment)?;
-        ensure_work_item_accepts_writes(&item)?;
-        ensure_project_key_access(
-            pool,
-            context.user_id,
-            context.is_super_admin,
-            &item.project_key,
-        )
-        .await?;
-        ensure_project_content_write_access(pool, &context, project.id).await?;
-        projects::ensure_project_accepts_writes(&project.status)?;
-        let attachment =
-            files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-        let activity_summary = format!("删除评论附件 {}", attachment.original_filename);
-        let deleted = files::delete_attachment(
-            pool,
-            attachment_id,
-            "comment",
-            comment.id,
-            context.user_id,
-            Some(project.id),
-            Some(&activity_summary),
-        )
-        .await?;
-        audit::record(
-            pool,
-            Some(context.user_id),
-            "file.delete.comment",
-            "comment",
-            &comment_id.to_string(),
-            &format!(
-                r#"{{"work_item":"{}","attachment_id":{},"file_object_id":{}}}"#,
-                item.key, deleted.id, deleted.file_object_id
             ),
         )
         .await?;

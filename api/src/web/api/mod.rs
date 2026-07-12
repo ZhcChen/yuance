@@ -1371,37 +1371,6 @@ pub async fn handoff_work_item(
     Ok(json(work_item_detail_payload(updated)))
 }
 
-pub async fn delete_work_item(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path(item_key): Path<String>,
-) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
-    let item = projects::get_work_item_detail(pool, &item_key)
-        .await?
-        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
-    let project = projects::get_project_detail(pool, &item.project_key)
-        .await?
-        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let deleted = projects::delete_work_item(pool, user.id, &item_key).await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "work_item.delete",
-        "work_item",
-        &deleted.item_key,
-        "{}",
-    )
-    .await?;
-
-    Ok(json(work_item_detail_payload(deleted)))
-}
-
 pub async fn restore_work_item(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1522,45 +1491,6 @@ pub async fn update_work_item_comment(
         pool,
         Some(user.id),
         "work_item.comment.update",
-        "comment",
-        &comment_id.to_string(),
-        &format!(r#"{{"work_item":"{item_key}"}}"#),
-    )
-    .await?;
-
-    Ok(json(comment_payload(comment)))
-}
-
-pub async fn delete_work_item_comment(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((item_key, comment_id)): Path<(String, i64)>,
-) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
-    let item = projects::get_work_item_detail(pool, &item_key)
-        .await?
-        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
-    let project = projects::get_project_detail(pool, &item.project_key)
-        .await?
-        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
-    ensure_api_work_item_accepts_writes(&item)?;
-    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let comment = projects::delete_work_item_comment(
-        pool,
-        user.id,
-        user.is_super_admin,
-        &item_key,
-        comment_id,
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "work_item.comment.delete",
         "comment",
         &comment_id.to_string(),
         &format!(r#"{{"work_item":"{item_key}"}}"#),
@@ -1738,42 +1668,6 @@ pub async fn work_item_comment_attachment_download_url(
     .await?;
 
     Ok(json(payload))
-}
-
-pub async fn work_item_comment_attachment_delete(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
-) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let (user, item, project, comment) =
-        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_api_work_item_accepts_writes(&item)?;
-    ensure_api_comment_accepts_attachments(&comment)?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    projects::ensure_project_accepts_writes(&project.status)?;
-    let attachment = files::delete_attachment(
-        pool,
-        attachment_id,
-        "comment",
-        comment.id,
-        user.id,
-        Some(project.id),
-        Some("删除评论附件"),
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "file.delete",
-        "comment",
-        &comment_id.to_string(),
-        &format!(r#"{{"work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
-    )
-    .await?;
-
-    Ok(json(attachment_payload(attachment)))
 }
 
 pub async fn create_project_attachment(
@@ -2153,40 +2047,6 @@ pub async fn work_item_attachment_download_url(
     .await?;
 
     Ok(json(payload))
-}
-
-pub async fn work_item_attachment_delete(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Path((item_key, attachment_id)): Path<(String, i64)>,
-) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let (user, item, project) = require_api_work_item_context(&state, &headers, &item_key).await?;
-    ensure_api_csrf(&headers)?;
-    let pool = state.pool()?;
-    ensure_api_work_item_accepts_writes(&item)?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    projects::ensure_project_accepts_writes(&project.status)?;
-    let attachment = files::delete_attachment(
-        pool,
-        attachment_id,
-        "work_item",
-        item.id,
-        user.id,
-        Some(project.id),
-        Some("删除工作项附件"),
-    )
-    .await?;
-    audit::record(
-        pool,
-        Some(user.id),
-        "file.delete",
-        "work_item",
-        &item_key,
-        &format!(r#"{{"attachment_id":{attachment_id}}}"#),
-    )
-    .await?;
-
-    Ok(json(attachment_payload(attachment)))
 }
 
 pub async fn list_system_users(
