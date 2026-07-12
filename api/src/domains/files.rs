@@ -556,7 +556,7 @@ pub async fn mark_attachment_uploaded(
     get_attachment(pool, attachment.id).await
 }
 
-pub async fn delete_attachment(
+pub async fn archive_attachment(
     pool: &SqlitePool,
     attachment_id: i64,
     target_type: &str,
@@ -601,7 +601,7 @@ pub async fn delete_attachment(
                 summary,
                 metadata
             )
-            VALUES (?1, ?2, 'file.deleted', ?3, ?4, ?5, ?6)
+            VALUES (?1, ?2, 'file.archived', ?3, ?4, ?5, ?6)
             "#,
         )
         .bind(project_id)

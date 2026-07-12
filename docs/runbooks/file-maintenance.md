@@ -101,10 +101,10 @@ docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cl
 
 ## 对象物理删除边界
 
-当前版本的删除语义是“业务不可见 + 下载阻断”：
+当前版本的附件归档语义是“业务不可见 + 下载阻断”：
 
-- 删除附件会把 `file_objects.status` 标记为 `deleted`。
-- API 和页面不再为 deleted 附件生成下载签名。
+- 归档附件会把 `file_objects.status` 标记为 `deleted`。
+- API 和页面不再为已归档附件生成下载签名。
 - 系统不会主动删除 OSS 中的物理 object。
 
 这样做可以避免误删真实业务文件，也便于审计和人工恢复。若后续要增加物理删除，需要先补齐：

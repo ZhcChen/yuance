@@ -1866,20 +1866,20 @@ pub async fn project_attachment_delete(
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
-    let attachment = files::delete_attachment(
+    let attachment = files::archive_attachment(
         pool,
         attachment_id,
         "project",
         project.id,
         user.id,
         Some(project.id),
-        Some("删除项目附件"),
+        Some("归档项目附件"),
     )
     .await?;
     audit::record(
         pool,
         Some(user.id),
-        "file.delete",
+        "file.archive",
         "project",
         &project_key,
         &format!(r#"{{"attachment_id":{attachment_id}}}"#),
@@ -2746,7 +2746,7 @@ async fn signed_attachment_url_payload(
     query: SignedUrlQuery,
 ) -> AppResult<AttachmentSignedUrlPayload> {
     if attachment.status == "deleted" {
-        return Err(AppError::BadRequest("附件已删除，不能生成签名".to_string()));
+        return Err(AppError::BadRequest("附件已归档，不能生成签名".to_string()));
     }
     if matches!(kind, SignedUrlKind::Download) && attachment.status != "uploaded" {
         return Err(AppError::BadRequest(

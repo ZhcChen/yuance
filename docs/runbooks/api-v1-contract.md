@@ -345,6 +345,8 @@ GET    /api/v1/projects/{project_key}/attachments/{attachment_id}/download-url
 DELETE /api/v1/projects/{project_key}/attachments/{attachment_id}
 ```
 
+`DELETE` 项目附件接口为兼容 HTTP 语义保留，业务效果是归档附件：记录保留、状态码仍为 `deleted`，页面和 API 不再生成下载签名。
+
 项目文件夹：
 
 ```text

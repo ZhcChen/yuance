@@ -64,8 +64,8 @@ date: 2026-06-30
 - 附件状态变为 `uploaded`。
 - 下载链接能打开真实文件内容。
 - OSS Bucket 中能看到对应 object key。
-- 删除附件后，页面不再提供下载入口。
-- 删除后请求下载签名应失败。
+- 归档附件后，页面不再提供下载入口。
+- 归档后请求下载签名应失败。
 
 ## 工作项附件直传验证
 
@@ -111,7 +111,7 @@ date: 2026-06-30
 
 验证结束后：
 
-- 删除页面中的测试附件。
+- 归档页面中的测试附件。
 - 在 OSS 控制台确认测试 object 是否需要手工删除。
 - 执行 pending dry-run，确认没有异常遗留：
 
@@ -126,4 +126,4 @@ cd /srv/yuance/easy-deploy/production/backend
 docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
 ```
 
-当前附件删除是数据库软删除，不会主动删除 OSS 物理对象；是否删除真实对象由运维按保留策略处理。
+当前附件归档是数据库软删除，不会主动删除 OSS 物理对象；是否删除真实对象由运维按保留策略处理。

@@ -2332,8 +2332,8 @@ pub async fn project_attachment_delete(
         projects::ensure_project_accepts_writes(&project.status)?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
-        let activity_summary = format!("删除项目附件 {}", attachment.original_filename);
-        let deleted = files::delete_attachment(
+        let activity_summary = format!("归档项目附件 {}", attachment.original_filename);
+        let archived = files::archive_attachment(
             pool,
             attachment_id,
             "project",
@@ -2346,12 +2346,12 @@ pub async fn project_attachment_delete(
         audit::record(
             pool,
             Some(context.user_id),
-            "file.delete.project",
+            "file.archive.project",
             "project",
             &project_key,
             &format!(
                 r#"{{"attachment_id":{},"file_object_id":{}}}"#,
-                deleted.id, deleted.file_object_id
+                archived.id, archived.file_object_id
             ),
         )
         .await?;
@@ -5684,7 +5684,7 @@ async fn attachment_download_redirect(
     metadata: String,
 ) -> AppResult<Response> {
     if attachment.status == "deleted" {
-        return Err(AppError::BadRequest("附件已删除，不能下载".to_string()));
+        return Err(AppError::BadRequest("附件已归档，不能下载".to_string()));
     }
     if attachment.status != "uploaded" {
         return Err(AppError::BadRequest(
@@ -7041,7 +7041,7 @@ fn attachment_status_label(status: &str) -> (&'static str, &'static str) {
     match status {
         "pending" => ("待上传", "warning"),
         "uploaded" => ("已上传", "ok"),
-        "deleted" => ("已删除", "danger"),
+        "deleted" => ("已归档", "danger"),
         _ => ("未知", "info"),
     }
 }

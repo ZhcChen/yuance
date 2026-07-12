@@ -3248,7 +3248,7 @@ async fn web_work_item_detail_can_register_work_item_attachment() {
     assert!(body.contains("已有附件"));
     assert!(body.contains("待上传"));
     assert!(body.contains(r#"data-discussion-form"#));
-    assert!(!body.contains(r#"data-confirm-title="删除工作项附件""#));
+    assert!(!body.contains(r#"data-confirm-title="归档工作项附件""#));
 }
 
 #[tokio::test]
@@ -3475,17 +3475,17 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
     files::mark_attachment_uploaded(&pool, deleted_image.id, "work_item", item.id)
         .await
         .expect("deleted image should upload");
-    files::delete_attachment(
+    files::archive_attachment(
         &pool,
         deleted_image.id,
         "work_item",
         item.id,
         initialized.user_id,
         Some(project.id),
-        Some("删除工作项附件 deleted-preview.png"),
+        Some("归档工作项附件 deleted-preview.png"),
     )
     .await
-    .expect("deleted image should delete");
+    .expect("deleted image should archive");
 
     let pending_image = files::create_attachment(
         &pool,
@@ -5095,7 +5095,7 @@ async fn web_project_attachment_download_redirects_to_signed_object_url() {
 }
 
 #[tokio::test]
-async fn web_project_attachment_delete_marks_file_deleted_and_records_activity() {
+async fn web_project_attachment_archive_marks_file_archived_and_records_activity() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5129,7 +5129,7 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
     .expect("attachment should create");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
-    let delete_response = app
+    let archive_response = app
         .clone()
         .oneshot(
             Request::builder()
@@ -5148,23 +5148,23 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
         .await
         .expect("router should respond");
 
-    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(archive_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
-        delete_response.headers().get(header::LOCATION).unwrap(),
+        archive_response.headers().get(header::LOCATION).unwrap(),
         "/web/projects/YCE?tab=files"
     );
 
-    let deleted = files::get_attachment(&pool, attachment.id)
+    let archived = files::get_attachment(&pool, attachment.id)
         .await
         .expect("attachment should load");
     let activities = projects::list_project_activities(&pool, project.id, 10)
         .await
         .expect("activities should load");
-    assert_eq!(deleted.status, "deleted");
+    assert_eq!(archived.status, "deleted");
     assert!(
         activities
             .iter()
-            .any(|activity| activity.summary == "删除项目附件 delete-me.pdf")
+            .any(|activity| activity.summary == "归档项目附件 delete-me.pdf")
     );
 
     let download_response = app
@@ -5183,7 +5183,7 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
         .expect("router should respond");
     assert_eq!(download_response.status(), StatusCode::BAD_REQUEST);
     let download_body = response_body(download_response).await;
-    assert!(download_body.contains("附件已删除，不能下载"));
+    assert!(download_body.contains("附件已归档，不能下载"));
 
     let detail_response = app
         .oneshot(
@@ -5197,12 +5197,12 @@ async fn web_project_attachment_delete_marks_file_deleted_and_records_activity()
         .expect("router should respond");
     let body = response_body(detail_response).await;
     assert!(body.contains("delete-me.pdf"));
-    assert!(body.contains("已删除"));
+    assert!(body.contains("已归档"));
     assert!(!body.contains(&format!("/attachments/{}/delete", attachment.id)));
 }
 
 #[tokio::test]
-async fn api_v1_project_attachment_delete_blocks_later_signed_urls() {
+async fn api_v1_project_attachment_archive_blocks_later_signed_urls() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5236,7 +5236,7 @@ async fn api_v1_project_attachment_delete_blocks_later_signed_urls() {
     .expect("attachment should create");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
-    let delete_response = app
+    let archive_response = app
         .clone()
         .oneshot(
             Request::builder()
@@ -5252,14 +5252,14 @@ async fn api_v1_project_attachment_delete_blocks_later_signed_urls() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(delete_response.status(), StatusCode::OK);
-    let delete_body = response_body(delete_response).await;
-    assert!(delete_body.contains("\"status\":\"deleted\""));
+    assert_eq!(archive_response.status(), StatusCode::OK);
+    let archive_body = response_body(archive_response).await;
+    assert!(archive_body.contains("\"status\":\"deleted\""));
 
-    let deleted = files::get_attachment(&pool, attachment.id)
+    let archived = files::get_attachment(&pool, attachment.id)
         .await
         .expect("attachment should load");
-    assert_eq!(deleted.status, "deleted");
+    assert_eq!(archived.status, "deleted");
 
     let download_response = app
         .clone()
@@ -5277,7 +5277,7 @@ async fn api_v1_project_attachment_delete_blocks_later_signed_urls() {
         .expect("router should respond");
     assert_eq!(download_response.status(), StatusCode::BAD_REQUEST);
     let download_body = response_body(download_response).await;
-    assert!(download_body.contains("附件已删除，不能生成签名"));
+    assert!(download_body.contains("附件已归档，不能生成签名"));
 
     let upload_response = app
         .oneshot(
@@ -5609,7 +5609,7 @@ async fn web_work_item_attachment_download_serves_test_memory_object() {
 }
 
 #[tokio::test]
-async fn web_work_item_attachment_download_rejects_deleted_attachment() {
+async fn web_work_item_attachment_download_rejects_archived_attachment() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -5648,17 +5648,17 @@ async fn web_work_item_attachment_download_rejects_deleted_attachment() {
     files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
         .await
         .expect("attachment should mark uploaded");
-    files::delete_attachment(
+    files::archive_attachment(
         &pool,
         attachment.id,
         "work_item",
         item.id,
         initialized.user_id,
         Some(project.id),
-        Some("删除工作项附件"),
+        Some("归档工作项附件"),
     )
     .await
-    .expect("attachment should delete");
+    .expect("attachment should archive");
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let download_response = app
@@ -5677,7 +5677,7 @@ async fn web_work_item_attachment_download_rejects_deleted_attachment() {
 
     assert_eq!(download_response.status(), StatusCode::BAD_REQUEST);
     let body = response_body(download_response).await;
-    assert!(body.contains("附件已删除，不能下载"));
+    assert!(body.contains("附件已归档，不能下载"));
 }
 
 #[tokio::test]
@@ -5768,7 +5768,7 @@ async fn api_v1_work_item_attachment_delete_route_is_unavailable() {
     assert!(
         activities
             .iter()
-            .all(|activity| activity.summary != "删除工作项附件")
+            .all(|activity| activity.summary != "归档工作项附件")
     );
 }
 

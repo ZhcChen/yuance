@@ -347,9 +347,9 @@
                     {% endif %}
                     {% if can_manage_work_items %}
                     <button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="{{ attachment.id }}" data-file-object-id="{{ attachment.file_object_id }}">移动到</button>
-                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 {{ attachment.filename }}？删除后不能继续下载。" data-confirm-action="删除">
+                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/delete" data-confirm-submit-form data-confirm-title="归档项目文件" data-confirm-message="确认归档文件 {{ attachment.filename }}？归档后不能继续下载，文件记录仍会保留。" data-confirm-action="归档">
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button class="btn btn-sm btn-danger" type="submit">删除</button>
+                      <button class="btn btn-sm btn-danger" type="submit">归档</button>
                     </form>
                     {% endif %}
                     {% endif %}
