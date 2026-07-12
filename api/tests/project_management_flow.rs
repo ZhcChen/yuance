@@ -66,6 +66,11 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
         .execute(&pool)
         .await
         .expect("actor display name should clear");
+    sqlx::query("UPDATE notifications SET title = ' ', body = '' WHERE recipient_user_id = ?1")
+        .bind(receiver.user_id)
+        .execute(&pool)
+        .await
+        .expect("notification title and body should clear");
     let fallback_feed_response = app
         .clone()
         .oneshot(
@@ -80,7 +85,11 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
     assert_eq!(fallback_feed_response.status(), StatusCode::OK);
     let fallback_feed_body = response_body(fallback_feed_response).await;
     assert!(fallback_feed_body.contains(r#""actor":"系统""#));
+    assert!(fallback_feed_body.contains(r#""title":"消息通知""#));
+    assert!(fallback_feed_body.contains(r#""body":"查看详情""#));
     assert!(!fallback_feed_body.contains(r#""actor":"""#));
+    assert!(!fallback_feed_body.contains(r#""title":" ""#));
+    assert!(!fallback_feed_body.contains(r#""body":"""#));
 
     let assignment = notifications::list_for_user(&pool, receiver.user_id, true, 10)
         .await
@@ -262,6 +271,10 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
         .await
         .expect("notification should insert");
     }
+    sqlx::query("UPDATE notifications SET title = ' ', body = '' WHERE title = '分页消息 12'")
+        .execute(&pool)
+        .await
+        .expect("notification title and body should clear");
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let first_page_response = app
@@ -285,6 +298,8 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert!(first_body.contains(r#"aria-label="消息分页""#));
     assert!(first_body.contains("当前显示 1-5"));
     assert!(first_body.contains("共 12 条"));
+    assert!(first_body.contains("<strong>消息通知</strong>"));
+    assert!(first_body.contains("<span>查看详情</span>"));
     assert!(first_body.contains("data-pagination-size"));
     assert!(first_body.contains(r#"<option value="5" selected>当前 5</option>"#));
     assert!(first_body.contains("value=\"100\""));

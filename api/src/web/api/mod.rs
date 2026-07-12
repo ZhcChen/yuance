@@ -3011,8 +3011,8 @@ fn notification_payload(notification: notifications::NotificationSummary) -> Not
     NotificationPayload {
         id: notification.id,
         kind: notification.kind,
-        title: notification.title,
-        body: notification.body,
+        title: fallback_text(notification.title, "消息通知"),
+        body: fallback_text(notification.body, "查看详情"),
         actor: fallback_text(notification.actor_display_name, "系统"),
         created_at: notification.created_at,
         read: !notification.read_at.is_empty(),
