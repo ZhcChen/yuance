@@ -362,14 +362,6 @@ body {
   box-shadow: 0 6px 18px rgb(22 34 50 / 5%);
 }
 
-.discussion-reply-form {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.discussion-reply-form .discussion-composer-main {
-  grid-column: 1 / -1;
-}
-
 .discussion-composer-avatar,
 .discussion-avatar {
   display: grid;
@@ -595,6 +587,10 @@ body {
   margin: 12px 0 0;
   padding: 12px;
   box-shadow: none;
+}
+
+.discussion-reply-form .discussion-composer-main {
+  grid-column: 1 / -1;
 }
 
 .discussion-reply-form textarea {
