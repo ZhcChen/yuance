@@ -637,18 +637,9 @@
         <em>可一次选择多个文件；浏览器会使用短期签名 URL 逐个直传对象存储。</em>
       </label>
       <div class="composer-file-list" data-composer-file-list hidden></div>
-      <label>
-        文件名
-        <input name="original_filename" placeholder="roadmap.pdf" required data-attachment-filename>
-      </label>
-      <label>
-        Content-Type
-        <input name="content_type" value="application/octet-stream" required data-attachment-content-type>
-      </label>
-      <label>
-        文件大小 Bytes
-        <input name="byte_size" type="number" min="0" value="0" required data-attachment-byte-size>
-      </label>
+      <input name="original_filename" type="hidden" value="" data-attachment-filename>
+      <input name="content_type" type="hidden" value="application/octet-stream" data-attachment-content-type>
+      <input name="byte_size" type="hidden" value="0" data-attachment-byte-size>
       <label>
         目标文件夹
         <select name="folder_id" data-select-searchable data-select-search-placeholder="选择目标文件夹（可选）">
