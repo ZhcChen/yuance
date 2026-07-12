@@ -264,6 +264,24 @@
     return action.replace("{file_object_id}", encodeURIComponent(fileObjectId));
   }
 
+  function webFormResultFromHtml(html) {
+    if (!html) {
+      return null;
+    }
+    var result = new DOMParser().parseFromString(html, "text/html").querySelector(".inline-result");
+    if (!result) {
+      return null;
+    }
+    var message = result.textContent.trim();
+    if (!message) {
+      return null;
+    }
+    return {
+      message: message,
+      tone: result.classList.contains("storage-message-error") ? "error" : "success",
+    };
+  }
+
   async function submitWebForm(form, submitter) {
     if (!form || form.dataset.webFormBusy === "true") {
       return;
@@ -306,22 +324,22 @@
       var isJson = contentType.includes("application/json");
       var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
       var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
+      var htmlResult = webFormResultFromHtml(html);
       if (response.status === 401 || payload?.error?.code === "unauthorized") {
         redirectToLogin();
         return;
       }
       if (!response.ok) {
-        throw new Error(payload?.error?.message || "操作失败，请稍后重试。");
+        throw new Error(payload?.error?.message || htmlResult?.message || "操作失败，请稍后重试。");
       }
       if (response.redirected && response.url) {
         window.location.assign(response.url);
         return;
       }
       if (html) {
-        var result = new DOMParser().parseFromString(html, "text/html").querySelector(".inline-result");
         queueToast(
-          result?.textContent?.trim() || "操作已完成。",
-          result?.classList.contains("storage-message-error") ? "error" : "success"
+          htmlResult?.message || "操作已完成。",
+          htmlResult?.tone || "success"
         );
       }
       window.location.reload();

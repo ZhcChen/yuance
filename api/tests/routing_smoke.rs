@@ -248,6 +248,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("control.selectElement.dataset.selectPanelMinWidth"));
     assert!(body.contains("var defaultMinWidth = searchable ? 320 : 128"));
     assert!(body.contains("Math.max(rect.width, minWidth)"));
+    assert!(body.contains("function webFormResultFromHtml"));
+    assert!(body.contains(r#"querySelector(".inline-result")"#));
+    assert!(body.contains("htmlResult?.message"));
     assert!(body.contains("avatar.style.color = \"#fff\""));
     assert!(body.contains("event.key === \"Escape\""));
     assert!(body.contains("function openConfirmModal"));
