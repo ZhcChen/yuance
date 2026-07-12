@@ -22,9 +22,8 @@
           <p>按最近更新排序，展示当前项目的开放工作项压力。</p>
         </div>
         <div class="toolbar-actions">
-          <button class="btn btn-secondary" type="button" disabled>导入</button>
           {% if can_manage_projects %}
-          <a class="btn btn-primary" href="/web/projects">新建项目</a>
+          <button class="btn btn-primary" type="button" data-modal-open="project-create-modal">新建项目</button>
           {% endif %}
         </div>
       </div>
@@ -155,4 +154,8 @@
     </div>
   </section>
 </aside>
+
+{% if can_manage_projects %}
+{% include "web/partials/project_create_modal.html" %}
+{% endif %}
 {% endblock %}

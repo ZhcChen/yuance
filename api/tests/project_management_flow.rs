@@ -435,6 +435,10 @@ async fn web_dashboard_renders_demo_projects_from_database() {
     assert!(body.contains("我的待处理"));
     assert!(body.contains("/web/projects/YCE/my-analysis"));
     assert!(body.contains("status=pending"));
+    assert!(body.contains(r#"data-modal-open="project-create-modal""#));
+    assert!(body.contains(r#"id="project-create-modal""#));
+    assert!(body.contains(r#"action="/web/projects""#));
+    assert!(!body.contains(">导入</button>"));
 }
 
 #[tokio::test]
@@ -688,6 +692,7 @@ async fn web_projects_renders_demo_projects_from_database() {
     assert!(body.contains(r#"data-modal-open="project-create-modal""#));
     assert!(body.contains(r#"id="project-create-modal""#));
     assert!(body.contains(r#"action="/web/projects""#));
+    assert!(!body.contains(">导入</button>"));
     assert!(!body.contains(r#"id="project-create-form""#));
 }
 

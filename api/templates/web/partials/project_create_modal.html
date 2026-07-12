@@ -1,0 +1,54 @@
+<aside id="project-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-create-modal-title">新建项目</h2>
+        <p>项目编号由系统自动生成，例如 P260708483921，会作为工作项编号前缀。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="generated-code-note">
+        <span>自动编号</span>
+        <strong>P + 日期 + 6 位随机数字</strong>
+        <em>创建后不可修改，用于项目链接和需求、任务、Bug 编号。</em>
+      </div>
+      <div class="field-grid">
+        <label>
+          项目名称
+          <input name="name" placeholder="元策 MVP" required autofocus>
+        </label>
+        <label>
+          状态
+          <select name="status">
+            <option value="not_started">待启动</option>
+            <option value="in_progress">进行中</option>
+            <option value="acceptance">验收中</option>
+            <option value="completed">已完成</option>
+            <option value="on_hold">已暂停</option>
+            <option value="cancelled">已取消</option>
+            <option value="archived">已归档</option>
+          </select>
+        </label>
+        <label>
+          开始日期
+          <input name="start_date" type="date">
+        </label>
+        <label>
+          截止日期
+          <input name="due_date" type="date">
+        </label>
+        <label class="wide-field">
+          项目描述
+          <textarea name="description" rows="3" placeholder="说明项目目标、范围和协作边界"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建项目</button>
+      </div>
+    </form>
+  </section>
+</aside>

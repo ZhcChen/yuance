@@ -368,9 +368,10 @@ cat >"$EVAL_FILE" <<JS
     "审计日志分页每页条数未复用共享下拉控件",
   );
 
-  await open("/web/projects");
+  await open("/web");
+  assert(!hasText("导入"), "工作台不应显示未实现的导入占位按钮");
   click("[data-modal-open='project-create-modal']");
-  assert(hasText("新建项目"), "项目创建 modal 未打开");
+  assert(hasText("新建项目"), "工作台项目创建 modal 未打开");
   fill("#project-create-modal input[name='name']", "浏览器冒烟项目");
   fill("#project-create-modal textarea[name='description']", "用于验证元策关键浏览器交互。");
   await submitAndWait("#project-create-modal button[type='submit'].btn-primary");
