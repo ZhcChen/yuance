@@ -391,6 +391,22 @@ cat >"$EVAL_FILE" <<JS
   await submitAndWait("#project-folder-create-modal button[type='submit'].btn-primary");
   await open("/web/projects/" + projectKey + "?tab=files");
   await waitFor(() => hasText("冒烟文件夹"), "项目文件夹创建后未刷新到文件 Tab");
+
+  click("[data-modal-open='project-folder-create-modal']");
+  await waitFor(() => visible("#project-folder-create-modal"), "项目文件夹重复创建 modal 未打开");
+  fill("#project-folder-create-modal input[name='name']", "冒烟文件夹");
+  fill("#project-folder-create-modal textarea[name='description']", "重复名称用于验证 JSON 错误 Toast。");
+  const folderErrorLocation = frame.contentWindow.location.pathname + frame.contentWindow.location.search;
+  click("#project-folder-create-modal button[type='submit'].btn-primary");
+  await waitFor(() => hasText("同级文件夹名称已存在"), "项目文件夹重复错误未以 Toast 提示");
+  assert(visible("#project-folder-create-modal"), "项目文件夹重复错误后 modal 不应关闭");
+  assert(
+    frame.contentWindow.location.pathname + frame.contentWindow.location.search === folderErrorLocation,
+    "项目文件夹重复错误不应导航离开当前页面",
+  );
+  click("#project-folder-create-modal [data-modal-close]");
+  await waitFor(() => !visible("#project-folder-create-modal"), "项目文件夹重复错误 modal 未关闭");
+
   const smokeFolder = query("[data-file-folder-item][data-folder-id]:not([data-folder-id=''])");
   const smokeFolderId = smokeFolder.dataset.folderId;
 
