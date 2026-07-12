@@ -1314,6 +1314,7 @@ async fn work_item_detail_partial_renders_comments() {
     assert!(body.contains(
         r#"class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle"#
     ));
+    assert!(body.contains(r#"class="discussion-composer discussion-reply-form""#));
     assert!(body.contains(
         r#"class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-"#
     ));
