@@ -1423,13 +1423,72 @@
     });
   }
 
-  function syncAttachmentFileFields(form) {
-    var fileInput = form.querySelector("[data-attachment-file]");
-    var file = fileInput && fileInput.files ? fileInput.files[0] : null;
+  function syncDirectUploadMetadata(form, files) {
     var filename = form.querySelector("[data-attachment-filename]");
     var contentType = form.querySelector("[data-attachment-content-type]");
     var byteSize = form.querySelector("[data-attachment-byte-size]");
+    var totalSize = files.reduce(function (sum, file) {
+      return sum + Number(file.size || 0);
+    }, 0);
+
+    if (!files.length) {
+      if (filename) {
+        filename.value = "";
+      }
+      if (contentType) {
+        contentType.value = "application/octet-stream";
+      }
+      if (byteSize) {
+        byteSize.value = "0";
+      }
+      return;
+    }
+    if (filename) {
+      filename.value = files.length === 1
+        ? files[0].name || "attachment.bin"
+        : "已选择 " + files.length + " 个文件";
+    }
+    if (contentType) {
+      contentType.value = files.length === 1
+        ? files[0].type || "application/octet-stream"
+        : "多个文件";
+    }
+    if (byteSize) {
+      byteSize.value = String(files.length === 1 ? files[0].size || 0 : totalSize);
+    }
+  }
+
+  function syncAttachmentFileFields(form) {
+    var fileInput = form.querySelector("[data-attachment-file]");
+    var selected = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+    var file = selected[0] || null;
     var previewAnchor = fileInput && fileInput.closest(".upload-picker");
+    var acceptsMultiple = Boolean(fileInput && fileInput.multiple && !form.dataset.existingAttachmentId);
+    if (acceptsMultiple) {
+      var files = form.bugReportFiles || [];
+      var signatures = new Set(files.map(function (entry) { return entry.signature; }));
+      selected.forEach(function (selectedFile) {
+        var signature = composerFileSignature(selectedFile);
+        if (!signatures.has(signature)) {
+          files.push({ file: selectedFile, signature: signature, attachmentId: "", uploaded: false, objectUrl: "" });
+          signatures.add(signature);
+        }
+      });
+      form.bugReportFiles = files;
+      fileInput.value = "";
+      removeFilePreview(form);
+      renderComposerFiles(form);
+      if (!files.length) {
+        syncDirectUploadMetadata(form, []);
+        hideUploadTransfer(form);
+        directUploadStatus(form, "等待选择文件。", "info");
+        return;
+      }
+      syncDirectUploadMetadata(form, files.map(function (entry) { return entry.file; }));
+      directUploadStatus(form, "已选择 " + files.length + " 个文件，可继续添加或移除。", "ready");
+      setUploadTransfer(form, 0, "准备上传", "共 " + files.length + " 个文件等待提交。", "ready");
+      return;
+    }
     if (!file) {
       clearAttachmentResumeForRemovedFile(
         form,
@@ -1448,15 +1507,7 @@
       "pendingAttachmentFile"
     );
     var isResume = Boolean(form.dataset.existingAttachmentId);
-    if (filename) {
-      filename.value = file.name || "attachment.bin";
-    }
-    if (contentType) {
-      contentType.value = file.type || "application/octet-stream";
-    }
-    if (byteSize) {
-      byteSize.value = String(file.size || 0);
-    }
+    syncDirectUploadMetadata(form, [file]);
     updateFilePreview(form, previewAnchor || fileInput, file);
     directUploadStatus(
       form,
@@ -1667,68 +1718,102 @@
       return;
     }
     var fileInput = form.querySelector("[data-attachment-file]");
-    var file = fileInput && fileInput.files ? fileInput.files[0] : null;
-    if (!file) {
+    var entries = fileInput && fileInput.multiple && !form.dataset.existingAttachmentId
+      ? (form.bugReportFiles || [])
+      : [];
+    var file = entries.length
+      ? entries[0].file
+      : fileInput && fileInput.files
+        ? fileInput.files[0]
+        : null;
+    if (!file && !entries.length) {
       directUploadStatus(form, "请先选择要上传的文件。", "error");
       return;
     }
 
     setDirectUploadBusy(form, true);
     var existingAttachmentId = form.dataset.existingAttachmentId || "";
-    var selectedFileDescription = formatFileSize(file.size);
+    var uploadEntries = entries.length
+      ? entries
+      : [{ file: file, attachmentId: existingAttachmentId, uploaded: false }];
+    var selectedFileDescription = uploadEntries.length === 1
+      ? formatFileSize(file.size)
+      : uploadEntries.length + " 个文件";
     directUploadStatus(form, existingAttachmentId ? "正在获取上传签名..." : "正在登记附件元数据...", "info");
     setUploadTransfer(
       form,
       0,
       existingAttachmentId ? "准备继续上传" : "正在登记附件",
-      existingAttachmentId ? "正在复用已登记附件。" : "正在保存文件元数据。",
+      existingAttachmentId ? "正在复用已登记附件。" : "正在保存 " + selectedFileDescription + " 的元数据。",
       "info"
     );
     try {
-      await uploadAttachmentFile({
-        file: file,
-        filename: form.querySelector("[data-attachment-filename]")?.value || file.name,
-        contentType:
-          form.querySelector("[data-attachment-content-type]")?.value ||
-          file.type ||
-          "application/octet-stream",
-        byteSize: Number(form.querySelector("[data-attachment-byte-size]")?.value || file.size || 0),
-        folderId: form.querySelector("select[name='folder_id']")?.value || "",
-        existingAttachmentId: existingAttachmentId,
-        createUrl: form.dataset.attachmentCreateUrl,
-        uploadUrl: function (attachmentId) {
-          return attachmentUrlFromTemplate(form.dataset.attachmentUploadUrlTemplate, attachmentId);
-        },
-        completeUrl: function (attachmentId) {
-          return attachmentUrlFromTemplate(form.dataset.attachmentCompleteUrlTemplate, attachmentId);
-        },
-        onAttachmentReady: function (attachment) {
-          form.dataset.existingAttachmentId = String(attachment.id);
-          form.pendingAttachmentFile = file;
-        },
-        onStage: function (stage) {
-          if (stage === "signing") {
-            directUploadStatus(form, "正在获取上传签名...", "info");
-            setUploadTransfer(form, 0, "正在获取上传签名", "已登记 " + selectedFileDescription + "。", "info");
-          } else if (stage === "uploading") {
-            directUploadStatus(form, "正在直传文件到对象存储...", "info");
-            setUploadTransfer(form, 0, "正在上传", "正在传输 " + selectedFileDescription + "。", "info");
-          } else if (stage === "finalizing") {
-            directUploadStatus(form, "文件已传输，正在确认上传结果...", "info");
-            setUploadTransfer(form, 100, "正在确认上传结果", "正在更新附件状态。", "info");
-          }
-        },
-        onProgress: function (percent) {
-          if (typeof percent === "number") {
-            setUploadTransfer(form, percent, "正在上传", "已传输 " + Math.round(percent) + "% 。", "info");
-          } else {
-            setUploadTransfer(form, null, "正在上传", "浏览器未提供可计算的传输长度。", "info");
-          }
-        },
-      });
-      setUploadTransfer(form, 100, "上传完成", "附件已安全写入对象存储。", "success");
+      for (var index = 0; index < uploadEntries.length; index += 1) {
+        var entry = uploadEntries[index];
+        if (entry.uploaded) {
+          continue;
+        }
+        var currentFile = entry.file;
+        var fileNumber = index + 1;
+        var fileCount = uploadEntries.length;
+        var singleUpload = fileCount === 1;
+        await uploadAttachmentFile({
+          file: currentFile,
+          filename: singleUpload
+            ? form.querySelector("[data-attachment-filename]")?.value || currentFile.name
+            : currentFile.name || "attachment.bin",
+          contentType: singleUpload
+            ? form.querySelector("[data-attachment-content-type]")?.value ||
+              currentFile.type ||
+              "application/octet-stream"
+            : currentFile.type || "application/octet-stream",
+          byteSize: singleUpload
+            ? Number(form.querySelector("[data-attachment-byte-size]")?.value || currentFile.size || 0)
+            : currentFile.size || 0,
+          folderId: form.querySelector("select[name='folder_id']")?.value || "",
+          existingAttachmentId: entry.attachmentId || "",
+          createUrl: form.dataset.attachmentCreateUrl,
+          uploadUrl: function (attachmentId) {
+            return attachmentUrlFromTemplate(form.dataset.attachmentUploadUrlTemplate, attachmentId);
+          },
+          completeUrl: function (attachmentId) {
+            return attachmentUrlFromTemplate(form.dataset.attachmentCompleteUrlTemplate, attachmentId);
+          },
+          onAttachmentReady: function (attachment) {
+            entry.attachmentId = String(attachment.id);
+            if (singleUpload) {
+              form.dataset.existingAttachmentId = String(attachment.id);
+              form.pendingAttachmentFile = currentFile;
+            }
+          },
+          onStage: function (stage) {
+            var base = (index / fileCount) * 100;
+            if (stage === "signing") {
+              directUploadStatus(form, "正在获取上传签名 " + fileNumber + "/" + fileCount + "...", "info");
+              setUploadTransfer(form, base, "正在获取上传签名", currentFile.name || selectedFileDescription, "info");
+            } else if (stage === "uploading") {
+              directUploadStatus(form, "正在直传文件 " + fileNumber + "/" + fileCount + "...", "info");
+              setUploadTransfer(form, base, "正在上传", currentFile.name || selectedFileDescription, "info");
+            } else if (stage === "finalizing") {
+              directUploadStatus(form, "正在确认上传结果 " + fileNumber + "/" + fileCount + "...", "info");
+              setUploadTransfer(form, (fileNumber / fileCount) * 100, "正在确认上传结果", "正在更新附件状态。", "info");
+            }
+          },
+          onProgress: function (percent) {
+            if (typeof percent === "number") {
+              var overall = ((index + percent / 100) / fileCount) * 100;
+              setUploadTransfer(form, overall, "正在上传", "文件 " + fileNumber + "/" + fileCount + " 已传输 " + Math.round(percent) + "% 。", "info");
+            } else {
+              setUploadTransfer(form, null, "正在上传", "浏览器未提供可计算的传输长度。", "info");
+            }
+          },
+        });
+        entry.uploaded = true;
+        renderComposerFiles(form);
+      }
+      setUploadTransfer(form, 100, "上传完成", uploadEntries.length + " 个附件已安全写入对象存储。", "success");
       if (!existingAttachmentId) {
-        directUploadStatus(form, "附件上传完成，正在刷新页面。", "success");
+        directUploadStatus(form, uploadEntries.length + " 个附件上传完成，正在刷新页面。", "success");
       } else {
         directUploadStatus(form, "附件继续上传完成，正在刷新页面。", "success");
       }
@@ -1897,18 +1982,20 @@
       remove.disabled =
         entry.uploaded ||
         group.dataset.bugReportLocked === "true" ||
-        group.dataset.discussionLocked === "true";
+        group.dataset.discussionLocked === "true" ||
+        group.dataset.uploadBusy === "true";
       row.append(media, details, remove);
       list.appendChild(row);
     });
   }
 
   function removeComposerFile(button) {
-    var group = button.closest("[data-bug-report-group], [data-discussion-form]");
+    var group = button.closest("[data-bug-report-group], [data-discussion-form], [data-direct-upload]");
     if (
       !group ||
       group.dataset.bugReportLocked === "true" ||
-      group.dataset.discussionLocked === "true"
+      group.dataset.discussionLocked === "true" ||
+      group.dataset.uploadBusy === "true"
     ) {
       return;
     }
@@ -1923,6 +2010,18 @@
       return false;
     });
     renderComposerFiles(group);
+    if (group.matches("[data-direct-upload]")) {
+      var directFiles = group.bugReportFiles || [];
+      syncDirectUploadMetadata(group, directFiles.map(function (entry) { return entry.file; }));
+      if (directFiles.length) {
+        directUploadStatus(group, "已选择 " + directFiles.length + " 个文件，可继续添加或移除。", "ready");
+        setUploadTransfer(group, 0, "准备上传", "共 " + directFiles.length + " 个文件等待提交。", "ready");
+      } else {
+        directUploadStatus(group, "等待选择文件。", "info");
+        hideUploadTransfer(group);
+      }
+      return;
+    }
     var label = group.querySelector("[data-bug-report-image-name], [data-discussion-file-hint]");
     if (label) {
       label.textContent = group.bugReportFiles.length

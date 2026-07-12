@@ -633,9 +633,10 @@
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label class="upload-picker">
         <span>选择文件</span>
-        <input name="file" type="file" required autofocus data-attachment-file>
-        <em>文件不会经过应用服务器中转；浏览器会使用短期签名 URL 直接上传到对象存储。</em>
+        <input name="file" type="file" autofocus multiple data-attachment-file>
+        <em>可一次选择多个文件；浏览器会使用短期签名 URL 逐个直传对象存储。</em>
       </label>
+      <div class="composer-file-list" data-composer-file-list hidden></div>
       <label>
         文件名
         <input name="original_filename" placeholder="roadmap.pdf" required data-attachment-filename>

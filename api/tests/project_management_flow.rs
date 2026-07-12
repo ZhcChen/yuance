@@ -3056,7 +3056,9 @@ async fn web_project_detail_can_register_project_attachment() {
         r#"data-attachment-complete-url-template="/api/v1/projects/YCE/attachments/{id}/uploaded""#
     ));
     assert!(body.contains(r#"data-attachment-file"#));
-    assert!(body.contains("文件不会经过应用服务器中转"));
+    assert!(body.contains(r#"autofocus multiple data-attachment-file"#));
+    assert!(body.contains(r#"data-composer-file-list"#));
+    assert!(body.contains("可一次选择多个文件"));
     assert!(body.contains("/api/v1/projects/YCE/attachments/"));
     assert!(body.contains("/upload-url"));
     assert!(body.contains(r#"data-existing-attachment-id=""#));

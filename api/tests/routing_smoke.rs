@@ -245,6 +245,10 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("data-tabs-sync-url"));
     assert!(body.contains("async function submitDirectUpload"));
     assert!(body.contains("data-direct-upload"));
+    assert!(body.contains("function syncDirectUploadMetadata"));
+    assert!(body.contains("fileInput.multiple && !form.dataset.existingAttachmentId"));
+    assert!(body.contains("var uploadEntries = entries.length"));
+    assert!(body.contains("group.dataset.uploadBusy === \"true\""));
     assert!(body.contains("async function submitBugReport"));
     assert!(body.contains("data-bug-report-form"));
     assert!(body.contains("/comments/"));
