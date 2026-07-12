@@ -58,6 +58,29 @@ pub async fn list_for_user(
     limit: i64,
 ) -> AppResult<Vec<NotificationSummary>> {
     let limit = limit.clamp(1, 100);
+    list_for_user_window(pool, user_id, unread_only, limit, 0).await
+}
+
+pub async fn list_for_user_page(
+    pool: &SqlitePool,
+    user_id: i64,
+    unread_only: bool,
+    page: i64,
+    per_page: i64,
+) -> AppResult<Vec<NotificationSummary>> {
+    let page = page.max(1);
+    let per_page = per_page.clamp(1, 100);
+    let offset = (page - 1).saturating_mul(per_page);
+    list_for_user_window(pool, user_id, unread_only, per_page, offset).await
+}
+
+async fn list_for_user_window(
+    pool: &SqlitePool,
+    user_id: i64,
+    unread_only: bool,
+    limit: i64,
+    offset: i64,
+) -> AppResult<Vec<NotificationSummary>> {
     let rows = sqlx::query_as::<
         _,
         (
@@ -90,11 +113,13 @@ pub async fn list_for_user(
           AND (?2 = 0 OR n.read_at IS NULL)
         ORDER BY n.created_at DESC, n.id DESC
         LIMIT ?3
+        OFFSET ?4
         "#,
     )
     .bind(user_id)
     .bind(unread_only)
     .bind(limit)
+    .bind(offset.max(0))
     .fetch_all(pool)
     .await?;
 
@@ -112,6 +137,21 @@ pub async fn list_for_user(
             created_at: row.8,
         })
         .collect())
+}
+
+pub async fn count_for_user(pool: &SqlitePool, user_id: i64, unread_only: bool) -> AppResult<i64> {
+    Ok(sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE recipient_user_id = ?1
+          AND (?2 = 0 OR read_at IS NULL)
+        "#,
+    )
+    .bind(user_id)
+    .bind(unread_only)
+    .fetch_one(pool)
+    .await?)
 }
 
 pub async fn unread_count(pool: &SqlitePool, user_id: i64) -> AppResult<i64> {

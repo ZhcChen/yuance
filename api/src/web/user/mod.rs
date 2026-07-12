@@ -650,8 +650,11 @@ struct MessagesTemplate {
     topbar_project_options: Vec<ProjectOption>,
     notifications: Vec<NotificationView>,
     unread_count: i64,
+    unread_badge_label: String,
     unread_only: bool,
     has_notifications: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
 }
 
 #[derive(Debug, Clone)]
@@ -1140,6 +1143,10 @@ pub struct SearchQuery {
 pub struct MessagesQuery {
     #[serde(default)]
     unread: bool,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1464,17 +1471,54 @@ pub async fn messages_page(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
-    let (items, unread_count) = match context.pool {
-        Some(pool) => (
-            notifications::list_for_user(pool, context.user_id, query.unread, 100)
-                .await?
-                .into_iter()
-                .map(notification_view)
-                .collect::<Vec<_>>(),
-            notifications::unread_count(pool, context.user_id).await?,
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let (items, total_items, page_number, per_page, unread_count) = match context.pool {
+        Some(pool) => {
+            let total_items =
+                notifications::count_for_user(pool, context.user_id, query.unread).await?;
+            let total_pages = total_pages(total_items, requested_pagination.per_page);
+            let page_number = requested_pagination.page.min(total_pages);
+            let items = notifications::list_for_user_page(
+                pool,
+                context.user_id,
+                query.unread,
+                page_number,
+                requested_pagination.per_page,
+            )
+            .await?
+            .into_iter()
+            .map(notification_view)
+            .collect::<Vec<_>>();
+            (
+                items,
+                total_items,
+                page_number,
+                requested_pagination.per_page,
+                notifications::unread_count(pool, context.user_id).await?,
+            )
+        }
+        None => (
+            Vec::new(),
+            0,
+            requested_pagination.page,
+            requested_pagination.per_page,
+            0,
         ),
-        None => (Vec::new(), 0),
     };
+    let total_pages = total_pages(total_items, per_page);
+    let pagination = message_pagination_view(
+        query.unread,
+        page_number,
+        per_page,
+        total_items,
+        total_pages,
+    );
+    let pagination_pages = message_pagination_pages(
+        query.unread,
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
     response::html(MessagesTemplate {
         active: "messages",
         environment: state.settings.env.clone(),
@@ -1486,7 +1530,10 @@ pub async fn messages_page(
         has_notifications: !items.is_empty(),
         notifications: items,
         unread_count,
+        unread_badge_label: topnav_badge(unread_count),
         unread_only: query.unread,
+        pagination,
+        pagination_pages,
     })
     .map(IntoResponse::into_response)
 }
@@ -6080,6 +6127,76 @@ fn search_pagination_pages(
         .map(|page| PaginationPageView {
             page,
             url: search_page_url(query, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
+fn message_pagination_view(
+    unread_only: bool,
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: message_page_url(unread_only, page - 1, per_page),
+        next_url: message_page_url(unread_only, page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn message_page_url(unread_only: bool, page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    if unread_only {
+        params.push("unread=true".to_string());
+    }
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        "/web/messages".to_string()
+    } else {
+        format!("/web/messages?{}", params.join("&"))
+    }
+}
+
+fn message_pagination_pages(
+    unread_only: bool,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: message_page_url(unread_only, page, per_page),
             current: page == current_page,
         })
         .collect()

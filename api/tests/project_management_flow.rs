@@ -165,6 +165,98 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
 }
 
 #[tokio::test]
+async fn web_messages_page_paginates_notifications_with_shared_controls() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let receiver = create_regular_user(&pool, "message_page_owner", "消息页负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "message_page_owner", "member")
+        .await
+        .expect("receiver should join project");
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item should exist");
+    for index in 1..=12 {
+        sqlx::query(
+            r#"
+            INSERT INTO notifications (
+                recipient_user_id, actor_user_id, kind, work_item_id, title, body
+            )
+            VALUES (?1, ?2, 'work_item_assigned', ?3, ?4, ?5)
+            "#,
+        )
+        .bind(receiver.user_id)
+        .bind(admin.user_id)
+        .bind(work_item_id)
+        .bind(format!("分页消息 {index:02}"))
+        .bind(format!("第 {index:02} 条消息"))
+        .execute(&pool)
+        .await
+        .expect("notification should insert");
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let first_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?per_page=5")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(first_page_response.status(), StatusCode::OK);
+    let first_body = response_body(first_page_response).await;
+    assert_eq!(first_body.matches("class=\"message-row").count(), 5);
+    assert!(first_body.contains(r#"aria-label="消息分页""#));
+    assert!(first_body.contains("当前显示 1-5"));
+    assert!(first_body.contains("共 12 条"));
+    assert!(first_body.contains("data-pagination-size"));
+    assert!(first_body.contains("value=\"100\""));
+    assert!(first_body.contains("aria-label=\"跳转页码\""));
+    assert!(first_body.contains("page=2"));
+    assert!(first_body.contains("per_page=5"));
+
+    let third_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?per_page=5&page=3")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(third_page_response.status(), StatusCode::OK);
+    let third_body = response_body(third_page_response).await;
+    assert_eq!(third_body.matches("class=\"message-row").count(), 2);
+    assert!(third_body.contains("当前显示 11-12"));
+    assert!(third_body.contains(r#"aria-current="page">3</a>"#));
+
+    let unread_page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?unread=true&per_page=5")
+                .header(header::COOKIE, receiver.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unread_page_response.status(), StatusCode::OK);
+    let unread_body = response_body(unread_page_response).await;
+    assert!(unread_body.contains(r#"name="unread" value="true""#));
+    assert!(unread_body.contains("/web/messages?unread=true&#38;page=2&#38;per_page=5"));
+}
+
+#[tokio::test]
 async fn demo_seed_idempotently_creates_projects_and_work_items() {
     let pool = test_pool().await;
     let owner_user_id = bootstrap_admin(&pool).await;
