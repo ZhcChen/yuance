@@ -2824,7 +2824,8 @@ pub async fn update_work_item(
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))
 }
 
-pub async fn delete_work_item(
+/// 仅用于维护历史工作项；用户可见的关闭流程应走状态流转。
+pub async fn archive_work_item(
     pool: &SqlitePool,
     actor_user_id: i64,
     item_key: &str,
@@ -2880,13 +2881,13 @@ pub async fn delete_work_item(
             target_id,
             summary
         )
-        VALUES (?1, ?2, 'work_item.deleted', 'work_item', ?3, ?4)
+        VALUES (?1, ?2, 'work_item.archived', 'work_item', ?3, ?4)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
     .bind(item_key)
-    .bind(format!("删除工作项 {item_key}"))
+    .bind(format!("归档工作项 {item_key}"))
     .execute(&mut *tx)
     .await?;
 

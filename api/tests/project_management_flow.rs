@@ -6373,18 +6373,18 @@ async fn api_v1_work_item_comment_allows_edit_but_not_delete() {
 }
 
 #[tokio::test]
-async fn work_item_soft_delete_hides_from_lists_and_can_restore() {
+async fn work_item_archive_hides_from_lists_and_can_restore() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
 
-    let deleted = projects::delete_work_item(&pool, initialized.user_id, "YCE-TASK-2")
+    let archived = projects::archive_work_item(&pool, initialized.user_id, "YCE-TASK-2")
         .await
-        .expect("work item should delete");
+        .expect("work item should archive");
 
-    assert!(!deleted.deleted_at.is_empty());
+    assert!(!archived.deleted_at.is_empty());
     let tasks = projects::list_work_item_summaries(&pool, Some("task"))
         .await
         .expect("tasks should load");
@@ -6411,7 +6411,7 @@ async fn work_item_soft_delete_hides_from_lists_and_can_restore() {
     assert!(
         activities
             .iter()
-            .any(|activity| activity.summary == "删除工作项 YCE-TASK-2")
+            .any(|activity| activity.summary == "归档工作项 YCE-TASK-2")
     );
 
     let restored = projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2")
