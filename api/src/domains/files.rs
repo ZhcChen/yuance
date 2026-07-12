@@ -25,12 +25,58 @@ const ALLOWED_CONTENT_TYPES: &[&str] = &[
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileObject {
     pub id: i64,
+    pub folder_id: Option<i64>,
     pub object_key: String,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
     pub status: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileFolder {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub project_id: i64,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+    pub created_by_display_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderTreeItem {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub name: String,
+    pub description: String,
+    pub children: Vec<FolderTreeItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderContentSummary {
+    pub folder_id: Option<i64>,
+    pub folder_name: Option<String>,
+    pub folders: Vec<FileFolder>,
+    pub files: Vec<FileAttachmentSummary>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateFolderInput {
+    pub parent_id: Option<i64>,
+    pub project_id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub created_by_user_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct UpdateFolderInput {
+    pub name: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +123,7 @@ type AttachmentRow = (
 
 #[derive(Debug, Clone)]
 pub struct CreateFileObjectInput {
+    pub folder_id: Option<i64>,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
@@ -88,6 +135,7 @@ pub struct CreateAttachmentInput {
     pub target_type: String,
     pub target_id: i64,
     pub project_id: Option<i64>,
+    pub folder_id: Option<i64>,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
@@ -108,6 +156,7 @@ pub async fn create_file_object(
     let id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO file_objects (
+            folder_id,
             storage_config_id,
             provider,
             bucket,
@@ -118,10 +167,11 @@ pub async fn create_file_object(
             status,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9)
         RETURNING id
         "#,
     )
+    .bind(input.folder_id)
     .bind(storage_config.id)
     .bind(&storage_config.provider)
     .bind(&storage_config.bucket)
@@ -164,6 +214,7 @@ pub async fn create_attachment(
     let file_object_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO file_objects (
+            folder_id,
             storage_config_id,
             provider,
             bucket,
@@ -174,10 +225,11 @@ pub async fn create_attachment(
             status,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9)
         RETURNING id
         "#,
     )
+    .bind(input.folder_id)
     .bind(storage_config.id)
     .bind(&storage_config.provider)
     .bind(&storage_config.bucket)
@@ -279,10 +331,11 @@ pub async fn list_attachments(
 }
 
 pub async fn get_file_object(pool: &SqlitePool, id: i64) -> AppResult<FileObject> {
-    let row = sqlx::query_as::<_, (i64, String, String, String, i64, String, String)>(
+    let row = sqlx::query_as::<_, (i64, Option<i64>, String, String, String, i64, String, String)>(
         r#"
         SELECT
             id,
+            folder_id,
             object_key,
             original_filename,
             content_type,
@@ -297,9 +350,10 @@ pub async fn get_file_object(pool: &SqlitePool, id: i64) -> AppResult<FileObject
     .fetch_one(pool)
     .await?;
 
-    let (id, object_key, original_filename, content_type, byte_size, status, created_at) = row;
+    let (id, folder_id, object_key, original_filename, content_type, byte_size, status, created_at) = row;
     Ok(FileObject {
         id,
+        folder_id,
         object_key,
         original_filename,
         content_type,
@@ -726,4 +780,377 @@ fn is_allowed_content_type(content_type: &str) -> bool {
         .iter()
         .any(|prefix| content_type.starts_with(prefix))
         || ALLOWED_CONTENT_TYPES.contains(&content_type)
+}
+
+type FolderRow = (
+    i64,
+    Option<i64>,
+    i64,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+);
+
+fn folder_from_row(row: FolderRow) -> FileFolder {
+    let (
+        id,
+        parent_id,
+        project_id,
+        name,
+        description,
+        status,
+        created_by_display_name,
+        created_at,
+        updated_at,
+    ) = row;
+    FileFolder {
+        id,
+        parent_id,
+        project_id,
+        name,
+        description,
+        status,
+        created_by_display_name,
+        created_at,
+        updated_at,
+    }
+}
+
+pub async fn create_folder(
+    pool: &SqlitePool,
+    input: CreateFolderInput,
+) -> AppResult<FileFolder> {
+    let name = validate_folder_name(&input.name)?;
+    let description = input.description.unwrap_or_default().trim().to_string();
+
+    if let Some(parent_id) = input.parent_id {
+        if parent_id <= 0 {
+            return Err(AppError::BadRequest("父文件夹 ID 无效".to_string()));
+        }
+        let parent_folder = get_folder(pool, parent_id).await?;
+        if parent_folder.project_id != input.project_id {
+            return Err(AppError::BadRequest("父文件夹不属于当前项目".to_string()));
+        }
+    }
+
+    let id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO file_folders (
+            parent_id,
+            project_id,
+            name,
+            description,
+            created_by_user_id
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5)
+        RETURNING id
+        "#,
+    )
+    .bind(input.parent_id)
+    .bind(input.project_id)
+    .bind(&name)
+    .bind(&description)
+    .bind(input.created_by_user_id)
+    .fetch_one(pool)
+    .await?;
+
+    get_folder(pool, id).await
+}
+
+pub async fn get_folder(pool: &SqlitePool, id: i64) -> AppResult<FileFolder> {
+    get_folder_optional(pool, id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("文件夹不存在".to_string()))
+}
+
+pub async fn get_folder_optional(
+    pool: &SqlitePool,
+    id: i64,
+) -> AppResult<Option<FileFolder>> {
+    if id <= 0 {
+        return Err(AppError::BadRequest("文件夹 ID 无效".to_string()));
+    }
+
+    let row = sqlx::query_as::<_, FolderRow>(
+        r#"
+        SELECT
+            ff.id,
+            ff.parent_id,
+            ff.project_id,
+            ff.name,
+            ff.description,
+            ff.status,
+            COALESCE(u.display_name, '') AS created_by_display_name,
+            ff.created_at,
+            ff.updated_at
+        FROM file_folders ff
+        LEFT JOIN users u ON u.id = ff.created_by_user_id
+        WHERE ff.id = ?1
+          AND ff.status = 'active'
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(folder_from_row))
+}
+
+pub async fn update_folder(
+    pool: &SqlitePool,
+    id: i64,
+    input: UpdateFolderInput,
+) -> AppResult<FileFolder> {
+    let _folder = get_folder(pool, id).await?;
+
+    if let Some(name) = input.name {
+        let name = validate_folder_name(&name)?;
+        sqlx::query(
+            r#"UPDATE file_folders SET name = ?, updated_at = datetime('now') WHERE id = ?"#,
+        )
+        .bind(name)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    }
+
+    if let Some(description) = input.description {
+        let desc = description.trim().to_string();
+        sqlx::query(
+            r#"UPDATE file_folders SET description = ?, updated_at = datetime('now') WHERE id = ?"#,
+        )
+        .bind(desc)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    }
+
+    get_folder(pool, id).await
+}
+
+pub async fn delete_folder(
+    pool: &SqlitePool,
+    id: i64,
+) -> AppResult<FileFolder> {
+    let folder = get_folder(pool, id).await?;
+
+    sqlx::query(
+        r#"
+        UPDATE file_folders
+        SET status = 'deleted',
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND status = 'active'
+        "#,
+    )
+    .bind(id)
+    .execute(pool)
+    .await?;
+
+    Ok(folder)
+}
+
+pub async fn list_folders(
+    pool: &SqlitePool,
+    project_id: i64,
+    parent_id: Option<i64>,
+) -> AppResult<Vec<FileFolder>> {
+    if project_id <= 0 {
+        return Err(AppError::BadRequest("项目 ID 无效".to_string()));
+    }
+
+    let rows = sqlx::query_as::<_, FolderRow>(
+        r#"
+        SELECT
+            ff.id,
+            ff.parent_id,
+            ff.project_id,
+            ff.name,
+            ff.description,
+            ff.status,
+            COALESCE(u.display_name, '') AS created_by_display_name,
+            ff.created_at,
+            ff.updated_at
+        FROM file_folders ff
+        LEFT JOIN users u ON u.id = ff.created_by_user_id
+        WHERE ff.project_id = ?1
+          AND ff.status = 'active'
+          AND (?2 IS NULL OR ff.parent_id = ?2)
+        ORDER BY ff.created_at DESC, ff.id DESC
+        "#,
+    )
+    .bind(project_id)
+    .bind(parent_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(folder_from_row).collect())
+}
+
+pub async fn get_folder_tree(
+    pool: &SqlitePool,
+    project_id: i64,
+) -> AppResult<Vec<FolderTreeItem>> {
+    if project_id <= 0 {
+        return Err(AppError::BadRequest("项目 ID 无效".to_string()));
+    }
+
+    let rows = sqlx::query_as::<_, (i64, Option<i64>, String, String)>(
+        r#"
+        SELECT
+            ff.id,
+            ff.parent_id,
+            ff.name,
+            ff.description
+        FROM file_folders ff
+        WHERE ff.project_id = ?1
+          AND ff.status = 'active'
+        ORDER BY ff.parent_id NULLS FIRST, ff.created_at ASC, ff.id ASC
+        "#,
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    let items: Vec<FolderTreeItem> = rows
+        .into_iter()
+        .map(|(id, parent_id, name, description)| FolderTreeItem {
+            id,
+            parent_id,
+            name,
+            description,
+            children: Vec::new(),
+        })
+        .collect();
+
+    let mut item_map: std::collections::HashMap<i64, FolderTreeItem> = std::collections::HashMap::new();
+    let mut parent_map: std::collections::HashMap<i64, Vec<FolderTreeItem>> = std::collections::HashMap::new();
+
+    for item in items {
+        if let Some(parent_id) = item.parent_id {
+            parent_map.entry(parent_id).or_insert_with(Vec::new).push(item);
+        } else {
+            item_map.insert(item.id, item);
+        }
+    }
+
+    let mut queue: Vec<i64> = item_map.keys().cloned().collect();
+
+    while let Some(id) = queue.pop() {
+        if let Some(children) = parent_map.remove(&id) {
+            if let Some(parent) = item_map.get_mut(&id) {
+                for mut child in children {
+                    if let Some(grandchildren) = parent_map.remove(&child.id) {
+                        for grandchild in grandchildren {
+                            child.children.push(grandchild);
+                        }
+                    }
+                    parent.children.push(child);
+                }
+            }
+        }
+    }
+
+    Ok(item_map.into_values().collect())
+}
+
+pub async fn get_folder_content(
+    pool: &SqlitePool,
+    project_id: i64,
+    folder_id: Option<i64>,
+) -> AppResult<FolderContentSummary> {
+    if project_id <= 0 {
+        return Err(AppError::BadRequest("项目 ID 无效".to_string()));
+    }
+
+    let folder_name = if let Some(fid) = folder_id {
+        get_folder(pool, fid).await.ok().map(|f| f.name)
+    } else {
+        None
+    };
+
+    let folders = list_folders(pool, project_id, folder_id).await?;
+
+    let files = sqlx::query_as::<_, AttachmentRow>(
+        r#"
+        SELECT
+            fa.id,
+            fo.id,
+            fo.object_key,
+            fo.original_filename,
+            fo.content_type,
+            fo.byte_size,
+            fo.status,
+            COALESCE(u.display_name, '') AS created_by_display_name,
+            fa.created_at
+        FROM file_attachments fa
+        JOIN file_objects fo ON fo.id = fa.file_object_id
+        LEFT JOIN users u ON u.id = fa.created_by_user_id
+        WHERE fa.target_type = 'project'
+          AND fa.target_id = ?1
+          AND fo.status <> 'deleted'
+          AND (?2 IS NULL OR fo.folder_id = ?2)
+        ORDER BY fa.created_at DESC, fa.id DESC
+        "#,
+    )
+    .bind(project_id)
+    .bind(folder_id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(attachment_from_row)
+    .collect();
+
+    Ok(FolderContentSummary {
+        folder_id,
+        folder_name,
+        folders,
+        files,
+    })
+}
+
+pub async fn move_file_to_folder(
+    pool: &SqlitePool,
+    file_object_id: i64,
+    folder_id: Option<i64>,
+) -> AppResult<FileObject> {
+    if file_object_id <= 0 {
+        return Err(AppError::BadRequest("文件对象 ID 无效".to_string()));
+    }
+
+    if let Some(fid) = folder_id {
+        if fid <= 0 {
+            return Err(AppError::BadRequest("文件夹 ID 无效".to_string()));
+        }
+        let _ = get_folder(pool, fid).await?;
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET folder_id = ?1,
+            updated_at = datetime('now')
+        WHERE id = ?2
+        "#,
+    )
+    .bind(folder_id)
+    .bind(file_object_id)
+    .execute(pool)
+    .await?;
+
+    get_file_object(pool, file_object_id).await
+}
+
+fn validate_folder_name(name: &str) -> AppResult<String> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 255 {
+        return Err(AppError::BadRequest("文件夹名称不能为空且不能超过 255 个字符".to_string()));
+    }
+    if name.contains('/') || name.contains('\\') || name.contains('\0') {
+        return Err(AppError::BadRequest("文件夹名称不能包含斜杠或空字符".to_string()));
+    }
+    Ok(name.to_string())
 }

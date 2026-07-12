@@ -488,6 +488,53 @@ pub struct CreateAttachmentRequest {
     original_filename: String,
     content_type: String,
     byte_size: i64,
+    #[serde(default)]
+    folder_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateFolderRequest {
+    #[serde(default)]
+    parent_id: Option<i64>,
+    name: String,
+    #[serde(default)]
+    description: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFolderRequest {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderPayload {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub name: String,
+    pub description: String,
+    pub created_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderTreePayload {
+    pub id: i64,
+    pub parent_id: Option<i64>,
+    pub name: String,
+    pub description: String,
+    pub children: Vec<FolderTreePayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FolderContentPayload {
+    pub folder_id: Option<i64>,
+    pub folder_name: Option<String>,
+    pub folders: Vec<FolderPayload>,
+    pub files: Vec<AttachmentPayload>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1548,6 +1595,7 @@ pub async fn create_work_item_comment_attachment(
             target_type: "comment".to_string(),
             target_id: comment.id,
             project_id: Some(project.id),
+            folder_id: None,
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
@@ -1755,6 +1803,7 @@ pub async fn create_project_attachment(
             target_type: "project".to_string(),
             target_id: project.id,
             project_id: Some(project.id),
+            folder_id: payload.folder_id,
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
@@ -1969,6 +2018,7 @@ pub async fn create_work_item_attachment(
             target_type: "work_item".to_string(),
             target_id: item.id,
             project_id: Some(project.id),
+            folder_id: None,
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
@@ -3227,4 +3277,245 @@ fn default_data_scope_type() -> String {
 
 fn default_activate_storage_config() -> bool {
     true
+}
+
+pub async fn create_project_folder(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<CreateFolderRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let folder = files::create_folder(
+        pool,
+        files::CreateFolderInput {
+            parent_id: payload.parent_id,
+            project_id: project.id,
+            name: payload.name,
+            description: Some(payload.description),
+            created_by_user_id: user.id,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "folder.create",
+        "project",
+        &project_key,
+        &format!(r#"{{"folder_id":{},"name":"{}"}}"#, folder.id, folder.name),
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, json(folder_payload(folder))))
+}
+
+pub async fn list_project_folders(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<FolderPayload>>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    let payload = files::list_folders(pool, project.id, None)
+        .await?
+        .into_iter()
+        .map(folder_payload)
+        .collect();
+
+    Ok(json(payload))
+}
+
+pub async fn get_project_folder_tree(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<FolderTreePayload>>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    let payload = files::get_folder_tree(pool, project.id)
+        .await?
+        .into_iter()
+        .map(folder_tree_payload)
+        .collect();
+
+    Ok(json(payload))
+}
+
+pub async fn get_folder_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Query(query): Query<FolderContentQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<FolderContentPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    let content = files::get_folder_content(pool, project.id, query.folder_id).await?;
+
+    Ok(json(folder_content_payload(content)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FolderContentQuery {
+    #[serde(default)]
+    folder_id: Option<i64>,
+}
+
+pub async fn update_folder(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(folder_id): Path<i64>,
+    Json(payload): Json<UpdateFolderRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<FolderPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    let folder = files::get_folder(pool, folder_id).await?;
+    let project = projects::get_project_detail(pool, &folder.project_id.to_string())
+        .await?
+        .ok_or_else(|| AppError::NotFound("文件夹所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let updated = files::update_folder(
+        pool,
+        folder_id,
+        files::UpdateFolderInput {
+            name: payload.name,
+            description: payload.description,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "folder.update",
+        "project",
+        &project.project_key,
+        &format!(r#"{{"folder_id":{},"name":"{}"}}"#, updated.id, updated.name),
+    )
+    .await?;
+
+    Ok(json(folder_payload(updated)))
+}
+
+pub async fn delete_folder(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(folder_id): Path<i64>,
+) -> AppResult<axum::Json<ApiEnvelope<FolderPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    let folder = files::get_folder(pool, folder_id).await?;
+    let project = projects::get_project_detail(pool, &folder.project_id.to_string())
+        .await?
+        .ok_or_else(|| AppError::NotFound("文件夹所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let deleted = files::delete_folder(pool, folder_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "folder.delete",
+        "project",
+        &project.project_key,
+        &format!(r#"{{"folder_id":{},"name":"{}"}}"#, deleted.id, deleted.name),
+    )
+    .await?;
+
+    Ok(json(folder_payload(deleted)))
+}
+
+pub async fn move_file_to_folder(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(file_object_id): Path<i64>,
+    Json(payload): Json<MoveFileRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    let _file_object = files::get_file_object(pool, file_object_id).await?;
+    let folder_id = payload.folder_id;
+
+    if let Some(fid) = folder_id {
+        let folder = files::get_folder(pool, fid).await?;
+        let project = projects::get_project_detail(pool, &folder.project_id.to_string())
+            .await?
+            .ok_or_else(|| AppError::NotFound("文件夹所属项目不存在".to_string()))?;
+        ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+        ensure_api_project_content_write_access(pool, &user, project.id).await?;
+        projects::ensure_project_accepts_writes(&project.status)?;
+    }
+
+    let updated = files::move_file_to_folder(pool, file_object_id, folder_id).await?;
+    let attachment = files::get_attachment(pool, updated.id).await?;
+
+    Ok(json(attachment_payload(attachment)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MoveFileRequest {
+    #[serde(default)]
+    folder_id: Option<i64>,
+}
+
+fn folder_payload(folder: files::FileFolder) -> FolderPayload {
+    FolderPayload {
+        id: folder.id,
+        parent_id: folder.parent_id,
+        name: folder.name,
+        description: folder.description,
+        created_by: folder.created_by_display_name,
+        created_at: folder.created_at,
+        updated_at: folder.updated_at,
+    }
+}
+
+fn folder_tree_payload(item: files::FolderTreeItem) -> FolderTreePayload {
+    FolderTreePayload {
+        id: item.id,
+        parent_id: item.parent_id,
+        name: item.name,
+        description: item.description,
+        children: item.children.into_iter().map(folder_tree_payload).collect(),
+    }
+}
+
+fn folder_content_payload(content: files::FolderContentSummary) -> FolderContentPayload {
+    FolderContentPayload {
+        folder_id: content.folder_id,
+        folder_name: content.folder_name,
+        folders: content.folders.into_iter().map(folder_payload).collect(),
+        files: content.files.into_iter().map(attachment_payload).collect(),
+    }
 }

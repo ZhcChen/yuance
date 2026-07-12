@@ -6271,6 +6271,93 @@ select option {
   background: var(--table-head);
 }
 
+.file-manager {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.file-folder-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.file-folder-tree-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--table-head);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted-strong);
+}
+
+.file-folder-tree-toggle {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.file-folder-tree-list {
+  display: grid;
+  gap: 2px;
+}
+
+.file-folder-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text);
+  transition: background 120ms ease;
+}
+
+.file-folder-item:hover {
+  background: var(--panel-hover);
+}
+
+.file-folder-item.active {
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.file-folder-icon {
+  font-size: 15px;
+}
+
+.file-folder-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-content {
+  min-height: 200px;
+  display: grid;
+}
+
+.folder-row {
+  background: var(--panel-hover);
+}
+
 @media (max-width: 1280px) {
   .workspace-grid,
   .detail-grid,

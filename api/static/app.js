@@ -3442,4 +3442,224 @@
     loadVisibleAttachmentImages();
     scheduleVisibleAttachmentImageChecks();
   }, true);
+
+  function initFileManager(container) {
+    var manager = container && container.querySelector("[data-file-manager]");
+    if (!manager) {
+      return;
+    }
+    var projectKey = document.querySelector("[data-project-key]")?.dataset.projectKey || "";
+    if (!projectKey) {
+      return;
+    }
+    var treeList = manager.querySelector("[data-file-folder-tree-list]");
+    var toggle = manager.querySelector("[data-file-folder-tree-toggle]");
+    var content = manager.querySelector("[data-file-content]");
+
+    if (toggle) {
+      toggle.addEventListener("click", function () {
+        var expanded = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", !expanded);
+        toggle.textContent = expanded ? "▶" : "▼";
+        if (treeList) {
+          treeList.hidden = expanded;
+        }
+      });
+    }
+
+    function renderFolderTree(items, depth) {
+      if (!treeList || !items || items.length === 0) {
+        return "";
+      }
+      var html = "";
+      items.forEach(function (item) {
+        var padding = depth * 16;
+        html += '<button class="file-folder-item" type="button" data-file-folder-item data-folder-id="' + item.id + '" style="padding-left:' + padding + 'px">';
+        html += '<span class="file-folder-icon">📁</span>';
+        html += '<span class="file-folder-name">' + escapeHtml(item.name) + '</span>';
+        html += '</button>';
+        if (item.children && item.children.length > 0) {
+          html += renderFolderTree(item.children, depth + 1);
+        }
+      });
+      return html;
+    }
+
+    function loadFolderTree() {
+      if (!projectKey) {
+        return;
+      }
+      fetch("/api/v1/projects/" + projectKey + "/folders/tree", {
+        headers: {
+          "x-yuance-csrf-token": csrfToken() || ""
+        }
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          if (data.data && data.data.items && treeList) {
+            var treeHtml = '<button class="file-folder-item active" type="button" data-file-folder-item data-folder-id="" aria-current="true">';
+            treeHtml += '<span class="file-folder-icon">📁</span>';
+            treeHtml += '<span class="file-folder-name">全部文件</span>';
+            treeHtml += '</button>';
+            treeHtml += renderFolderTree(data.data.items, 1);
+            treeList.innerHTML = treeHtml;
+          }
+        })
+        .catch(function () {});
+    }
+
+    function loadFolderContent(folderId) {
+      if (!projectKey || !content) {
+        return;
+      }
+      var url = "/api/v1/projects/" + projectKey + "/folders/content";
+      if (folderId) {
+        url += "?folder_id=" + folderId;
+      }
+      fetch(url, {
+        headers: {
+          "x-yuance-csrf-token": csrfToken() || ""
+        }
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          if (data.data && content) {
+            var items = data.data.items || [];
+            if (items.length === 0) {
+              content.innerHTML = '<div class="empty-state"><strong>暂无文件</strong><span>该文件夹为空。</span></div>';
+              return;
+            }
+            var html = '<div class="attachment-list">';
+            items.forEach(function (item) {
+              if (item.type === "folder") {
+                html += '<article class="attachment-row folder-row">';
+                html += '<div><strong>📁 ' + escapeHtml(item.name) + '</strong></div>';
+                html += '<div class="attachment-actions">';
+                html += '<button class="btn btn-sm btn-secondary" type="button" data-file-folder-open data-folder-id="' + item.id + '">打开</button>';
+                html += '</div>';
+                html += '</article>';
+              } else {
+                html += '<article class="attachment-row">';
+                html += '<div><strong>' + escapeHtml(item.filename || "") + '</strong></div>';
+                html += '<div class="attachment-actions">';
+                html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + projectKey + '/attachments/' + item.id + '/download" target="_blank">下载</a>';
+                html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + item.id + '" data-file-object-id="' + item.file_object_id + '">移动到</button>';
+                html += '</div>';
+                html += '</article>';
+              }
+            });
+            html += '</div>';
+            content.innerHTML = html;
+          }
+        })
+        .catch(function () {});
+    }
+
+    treeList && treeList.addEventListener("click", function (event) {
+      var item = event.target.closest("[data-file-folder-item]");
+      if (!item) {
+        return;
+      }
+      treeList.querySelectorAll("[data-file-folder-item]").forEach(function (el) {
+        el.classList.remove("active");
+        el.removeAttribute("aria-current");
+      });
+      item.classList.add("active");
+      item.setAttribute("aria-current", "true");
+      var folderId = item.dataset.folderId || null;
+      loadFolderContent(folderId);
+    });
+
+    content && content.addEventListener("click", function (event) {
+      var openBtn = event.target.closest("[data-file-folder-open]");
+      if (openBtn) {
+        var folderId = openBtn.dataset.folderId;
+        treeList.querySelectorAll("[data-file-folder-item]").forEach(function (el) {
+          el.classList.remove("active");
+          el.removeAttribute("aria-current");
+        });
+        var targetItem = treeList.querySelector('[data-file-folder-id="' + folderId + '"]');
+        if (targetItem) {
+          targetItem.classList.add("active");
+          targetItem.setAttribute("aria-current", "true");
+        }
+        loadFolderContent(folderId);
+      }
+    });
+
+    loadFolderTree();
+    loadFolderContent(null);
+  }
+
+  function initFolderSelects(projectKey) {
+    var selects = document.querySelectorAll("[data-select-searchable][name='parent_id'], [data-select-searchable][name='folder_id']");
+    selects.forEach(function (select) {
+      var url = "/api/v1/projects/" + projectKey + "/folders/tree";
+      fetch(url, {
+        headers: {
+          "x-yuance-csrf-token": csrfToken() || ""
+        }
+      })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("Network response was not ok");
+          }
+          return response.json();
+        })
+        .then(function (data) {
+          if (data.data && data.data.items) {
+            function addOptions(items, depth, prefix) {
+              items.forEach(function (item) {
+                var option = document.createElement("option");
+                option.value = item.id;
+                option.textContent = (prefix || "") + item.name;
+                select.appendChild(option);
+                if (item.children && item.children.length > 0) {
+                  addOptions(item.children, depth + 1, (prefix || "") + "  ");
+                }
+              });
+            }
+            addOptions(data.data.items, 0, "");
+          }
+        })
+        .catch(function () {});
+    });
+  }
+
+  document.addEventListener("click", function (event) {
+    var fileMoveBtn = event.target.closest("[data-file-move]");
+    if (fileMoveBtn) {
+      event.preventDefault();
+      var modal = document.getElementById("project-file-move-modal");
+      if (!modal) {
+        return;
+      }
+      var fileObjectId = fileMoveBtn.dataset.fileObjectId;
+      var input = modal.querySelector("[data-file-move-file-object-id]");
+      if (input) {
+        input.value = fileObjectId;
+      }
+      var actionInput = modal.querySelector("form");
+      if (actionInput && fileObjectId) {
+        actionInput.dataset.action = "/api/v1/file-objects/" + fileObjectId + "/folder";
+      }
+      openModal(modal, fileMoveBtn);
+    }
+  });
+
+  var projectKey = document.querySelector("[data-project-key]")?.dataset.projectKey || "";
+  if (projectKey) {
+    initFileManager(document);
+    initFolderSelects(projectKey);
+  }
 })();

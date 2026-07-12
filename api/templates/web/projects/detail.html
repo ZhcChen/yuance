@@ -3,7 +3,7 @@
 {% block title %}{{ project.name }} - 元策{% endblock %}
 
 {% block content %}
-<section class="page-stack">
+<section class="page-stack" data-project-key="{{ project.code }}">
   <section class="page-hero detail-hero">
     <div>
       <p class="eyebrow">项目 / {{ project.code }}</p>
@@ -67,8 +67,8 @@
         <button class="content-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-content-tab data-tab-target="project-tab-members" data-tab-key="members">
           成员
         </button>
-        <button class="content-tab {% if active_tab == "attachments" %}active{% endif %}" id="project-tab-attachments-trigger" type="button" role="tab" aria-selected="{% if active_tab == "attachments" %}true{% else %}false{% endif %}" aria-controls="project-tab-attachments" data-content-tab data-tab-target="project-tab-attachments" data-tab-key="attachments">
-          附件
+        <button class="content-tab {% if active_tab == "files" %}active{% endif %}" id="project-tab-files-trigger" type="button" role="tab" aria-selected="{% if active_tab == "files" %}true{% else %}false{% endif %}" aria-controls="project-tab-files" data-content-tab data-tab-target="project-tab-files" data-tab-key="files">
+          文件
         </button>
         <button class="content-tab {% if active_tab == "activities" %}active{% endif %}" id="project-tab-activities-trigger" type="button" role="tab" aria-selected="{% if active_tab == "activities" %}true{% else %}false{% endif %}" aria-controls="project-tab-activities" data-content-tab data-tab-target="project-tab-activities" data-tab-key="activities">
           动态
@@ -272,81 +272,99 @@
         </section>
       </section>
 
-      <section id="project-tab-attachments" class="project-tab-panel {% if active_tab == "attachments" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-attachments-trigger" data-tab-panel {% if active_tab != "attachments" %}hidden{% endif %}>
+      <section id="project-tab-files" class="project-tab-panel {% if active_tab == "files" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-files-trigger" data-tab-panel {% if active_tab != "files" %}hidden{% endif %}>
         <section class="project-tab-section">
           <div class="project-tab-section-head">
             <div>
-              <h3>项目附件</h3>
-              <p>沉淀项目级文档、合同、图稿和交付物；可通过 API 获取上传/下载签名。</p>
+              <h3>项目文件</h3>
+              <p>沉淀项目级文档、合同、图稿和交付物；支持文件夹分类管理。</p>
             </div>
             {% if can_manage_work_items %}
-            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-attachment-create-modal">上传附件</button>
+            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-folder-create-modal">新建文件夹</button>
+            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-attachment-create-modal">上传文件</button>
             {% endif %}
           </div>
-          {% if has_attachments %}
-          <div class="attachment-list">
-            {% for attachment in attachments %}
-            <article class="attachment-row">
-              <div>
-                {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
-                <button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览图片 {{ attachment.filename }}">
-                  <span class="attachment-image-frame" data-image-preview-frame>
-                    <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
-                    <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
-                  </span>
-                  <span class="attachment-image-caption">预览图片</span>
-                </button>
-                {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
-                <button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览视频 {{ attachment.filename }}">
-                  <span class="attachment-image-frame">
-                    <video src="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
-                    <span class="attachment-video-play" aria-hidden="true">▶</span>
-                  </span>
-                  <span class="attachment-image-caption">预览视频</span>
-                </button>
-                {% endif %}
-                <strong>{{ attachment.filename }}</strong>
-                <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · 文件对象 #{{ attachment.file_object_id }}</span>
-                <code>{{ attachment.object_key }}</code>
+          <div class="file-manager" data-file-manager>
+            <aside class="file-folder-tree" data-file-folder-tree>
+              <div class="file-folder-tree-head">
+                <button class="file-folder-tree-toggle" type="button" data-file-folder-tree-toggle aria-expanded="true" aria-label="展开文件夹树">▶</button>
+                <span>文件夹</span>
               </div>
-              <div class="attachment-actions">
-                <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
-                {% if attachment.status_code != "deleted" %}
-                {% if can_manage_work_items %}
-                {% if attachment.status_code == "pending" %}
-                <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}">
-                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                  <label class="btn btn-sm btn-secondary attachment-file-button">
-                    选择文件
-                    <input class="sr-only" name="file" type="file" required data-attachment-file>
-                  </label>
-                  <button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>
-                  <span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>
-                </form>
-                {% endif %}
-                {% endif %}
-                {% if attachment.status_code == "uploaded" %}
-                <a class="btn btn-sm btn-secondary" href="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载附件</a>
-                {% else %}
-                <span class="attachment-action-hint">上传完成后可下载</span>
-                {% endif %}
-                {% if can_manage_work_items %}
-                <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/delete" data-confirm-submit-form data-confirm-title="删除项目附件" data-confirm-message="确认删除附件 {{ attachment.filename }}？删除后不能继续下载。" data-confirm-action="删除">
-                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                  <button class="btn btn-sm btn-danger" type="submit">删除</button>
-                </form>
-                {% endif %}
-                {% endif %}
+              <nav class="file-folder-tree-list" data-file-folder-tree-list>
+                <button class="file-folder-item active" type="button" data-file-folder-item data-folder-id="" aria-current="true">
+                  <span class="file-folder-icon">📁</span>
+                  <span class="file-folder-name">全部文件</span>
+                </button>
+              </nav>
+            </aside>
+            <main class="file-content" data-file-content>
+              {% if has_attachments %}
+              <div class="attachment-list">
+                {% for attachment in attachments %}
+                <article class="attachment-row">
+                  <div>
+                    {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
+                    <button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览图片 {{ attachment.filename }}">
+                      <span class="attachment-image-frame" data-image-preview-frame>
+                        <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
+                        <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
+                      </span>
+                      <span class="attachment-image-caption">预览图片</span>
+                    </button>
+                    {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
+                    <button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览视频 {{ attachment.filename }}">
+                      <span class="attachment-image-frame">
+                        <video src="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
+                        <span class="attachment-video-play" aria-hidden="true">▶</span>
+                      </span>
+                      <span class="attachment-image-caption">预览视频</span>
+                    </button>
+                    {% endif %}
+                    <strong>{{ attachment.filename }}</strong>
+                    <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · 文件对象 #{{ attachment.file_object_id }}</span>
+                    <code>{{ attachment.object_key }}</code>
+                  </div>
+                  <div class="attachment-actions">
+                    <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
+                    {% if attachment.status_code != "deleted" %}
+                    {% if can_manage_work_items %}
+                    {% if attachment.status_code == "pending" %}
+                    <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}">
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <label class="btn btn-sm btn-secondary attachment-file-button">
+                        选择文件
+                        <input class="sr-only" name="file" type="file" required data-attachment-file>
+                      </label>
+                      <button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>
+                      <span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>
+                    </form>
+                    {% endif %}
+                    {% endif %}
+                    {% if attachment.status_code == "uploaded" %}
+                    <a class="btn btn-sm btn-secondary" href="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载文件</a>
+                    {% else %}
+                    <span class="attachment-action-hint">上传完成后可下载</span>
+                    {% endif %}
+                    {% if can_manage_work_items %}
+                    <button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="{{ attachment.id }}" data-file-object-id="{{ attachment.file_object_id }}">移动到</button>
+                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 {{ attachment.filename }}？删除后不能继续下载。" data-confirm-action="删除">
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-danger" type="submit">删除</button>
+                    </form>
+                    {% endif %}
+                    {% endif %}
+                  </div>
+                </article>
+                {% endfor %}
               </div>
-            </article>
-            {% endfor %}
+              {% else %}
+              <div class="empty-state">
+                <strong>暂无文件</strong>
+                <span>上传文件或创建文件夹后会在这里展示。</span>
+              </div>
+              {% endif %}
+            </main>
           </div>
-          {% else %}
-          <div class="empty-state">
-            <strong>暂无附件</strong>
-            <span>登记已上传文件后会在这里展示。</span>
-          </div>
-          {% endif %}
         </section>
       </section>
 
@@ -540,12 +558,73 @@
   </section>
 </aside>
 
+<aside id="project-folder-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-folder-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-folder-create-modal-title">新建文件夹</h2>
+        <p>创建文件夹用于分类管理项目文件，支持多级嵌套。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/projects/{{ project.code }}/folders" data-on-success="window.location.reload()">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        文件夹名称
+        <input name="name" placeholder="输入文件夹名称" required autofocus>
+      </label>
+      <label>
+        父文件夹
+        <select name="parent_id" data-select-searchable data-select-search-placeholder="选择父文件夹（可选）">
+          <option value="">无（创建为顶层文件夹）</option>
+        </select>
+      </label>
+      <label>
+        描述
+        <textarea name="description" rows="3" placeholder="文件夹说明（可选）"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建文件夹</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="project-file-move-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-file-move-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-file-move-modal-title">移动文件</h2>
+        <p>将文件移动到指定文件夹。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/file-objects/{file_object_id}/folder" data-on-success="window.location.reload()">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="file_object_id" data-file-move-file-object-id>
+      <label>
+        目标文件夹
+        <select name="folder_id" data-select-searchable data-select-search-placeholder="选择目标文件夹">
+          <option value="">根目录</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">移动文件</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
 <aside id="project-attachment-create-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-attachment-create-modal-title" tabindex="-1">
     <div class="modal-head">
       <div>
-        <h2 id="project-attachment-create-modal-title">上传项目附件</h2>
+        <h2 id="project-attachment-create-modal-title">上传项目文件</h2>
         <p>选择文件后会自动登记元数据、获取上传签名、直传对象存储并标记完成。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
@@ -569,10 +648,16 @@
         文件大小 Bytes
         <input name="byte_size" type="number" min="0" value="0" required data-attachment-byte-size>
       </label>
+      <label>
+        目标文件夹
+        <select name="folder_id" data-select-searchable data-select-search-placeholder="选择目标文件夹（可选）">
+          <option value="">根目录</option>
+        </select>
+      </label>
       <div class="upload-status" role="status" aria-live="polite" data-upload-status>等待选择文件。</div>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit" data-upload-submit>上传附件</button>
+        <button class="btn btn-primary" type="submit" data-upload-submit>上传文件</button>
       </div>
     </form>
   </section>

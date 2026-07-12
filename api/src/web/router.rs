@@ -338,6 +338,26 @@ pub fn build_router(state: AppState) -> Router {
             delete(web::api::project_attachment_delete),
         )
         .route(
+            "/api/v1/projects/{project_key}/folders",
+            get(web::api::list_project_folders).post(web::api::create_project_folder),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/folders/tree",
+            get(web::api::get_project_folder_tree),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/folders/content",
+            get(web::api::get_folder_content),
+        )
+        .route(
+            "/api/v1/folders/{folder_id}",
+            patch(web::api::update_folder).delete(web::api::delete_folder),
+        )
+        .route(
+            "/api/v1/file-objects/{file_object_id}/folder",
+            patch(web::api::move_file_to_folder),
+        )
+        .route(
             "/api/v1/work-items",
             get(web::api::list_work_items).post(web::api::create_work_item),
         )
