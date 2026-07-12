@@ -2101,6 +2101,37 @@
     status.dataset.tone = tone || "info";
   }
 
+  function isDiscussionControlLocked(form, control) {
+    if (!form || !control) {
+      return false;
+    }
+    if (
+      form.dataset.discussionLocked === "true" &&
+      control.matches("[data-discussion-body], [data-discussion-files], [data-composer-file-remove], [data-discussion-reply-cancel]")
+    ) {
+      return true;
+    }
+    if (
+      form.dataset.discussionLocked === "true" &&
+      form.dataset.discussionPendingAssign !== "true" &&
+      control.matches("[data-discussion-assign]")
+    ) {
+      return true;
+    }
+    if (form.dataset.discussionAssignmentComplete === "true") {
+      if (control.matches("[data-discussion-assign-status]")) {
+        return true;
+      }
+      var selectControl = control.closest && control.closest(".select-control");
+      return Boolean(
+        selectControl &&
+        selectControl.selectElement &&
+        selectControl.selectElement.matches("[data-discussion-assign-status]")
+      );
+    }
+    return false;
+  }
+
   function syncDiscussionFiles(input) {
     var form = input.closest("[data-discussion-form]");
     if (!form || form.dataset.discussionLocked === "true") {
@@ -2134,7 +2165,7 @@
   function setDiscussionBusy(form, busy, activeSubmitter) {
     form.dataset.discussionBusy = busy ? "true" : "false";
     form.querySelectorAll("button, textarea, input, select").forEach(function (control) {
-      control.disabled = busy;
+      control.disabled = busy || isDiscussionControlLocked(form, control);
     });
     form.querySelectorAll("[data-discussion-submit]").forEach(function (button) {
       if (!button.dataset.originalLabel) {
@@ -2157,6 +2188,12 @@
     var submit = submitter && submitter.matches("[data-discussion-submit]")
       ? submitter
       : form.querySelector("[data-discussion-submit]");
+    var shouldAssign =
+      form.dataset.discussionPendingAssign === "true" ||
+      Boolean(submitter && submitter.matches("[data-discussion-assign]"));
+    if (shouldAssign) {
+      form.dataset.discussionPendingAssign = "true";
+    }
     setDiscussionBusy(form, true, submit);
     try {
       var commentId = form.dataset.discussionCommentId || "";
@@ -2181,8 +2218,7 @@
       }
 
       if (
-        submitter &&
-        submitter.matches("[data-discussion-assign]") &&
+        shouldAssign &&
         form.dataset.discussionAssignmentComplete !== "true"
       ) {
         var assignTarget = form.dataset.assignTarget || "";
@@ -2205,6 +2241,7 @@
           }
         );
         form.dataset.discussionAssignmentComplete = "true";
+        delete form.dataset.discussionPendingAssign;
       }
 
       for (var index = 0; index < files.length; index += 1) {
@@ -2262,7 +2299,11 @@
         window.location.reload();
       }, 350);
     } catch (error) {
-      discussionStatus(form, (error && error.message) || "提交失败，请重试。", "error");
+      var errorMessage = (error && error.message) || "提交失败，请重试。";
+      if (form.dataset.discussionCommentId) {
+        errorMessage = "内容已发表，未完成的指派或附件可直接重试。" + errorMessage;
+      }
+      discussionStatus(form, errorMessage, "error");
       setDiscussionBusy(form, false);
     }
   }

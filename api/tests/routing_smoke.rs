@@ -199,6 +199,8 @@ async fn static_app_css_is_bundled() {
     assert_eq!(body.matches(".discussion-reply-form {").count(), 1);
     assert!(body.contains(".discussion-assign-status .select-control"));
     assert!(body.contains("min-width: 168px"));
+    assert!(body.contains(".image-viewer-stage video {"));
+    assert!(body.contains("pointer-events: auto;"));
     assert!(body.contains(".pager-controls .select-control"));
     assert!(body.contains("flex: 0 0 76px"));
     assert!(body.contains(".toast-close"));
@@ -277,6 +279,14 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("data-bug-report-form"));
     assert!(body.contains("/comments/"));
     assert!(body.contains("function setDiscussionBusy(form, busy, activeSubmitter)"));
+    assert!(body.contains("function isDiscussionControlLocked(form, control)"));
+    assert!(body.contains("control.disabled = busy || isDiscussionControlLocked(form, control);"));
+    assert!(body.contains("control.matches(\"[data-discussion-assign]\")"));
+    assert!(
+        body.contains("selectControl.selectElement.matches(\"[data-discussion-assign-status]\")")
+    );
+    assert!(body.contains("form.dataset.discussionPendingAssign = \"true\""));
+    assert!(body.contains("内容已发表，未完成的指派或附件可直接重试。"));
     assert!(body.contains("button === activeSubmitter"));
     assert!(body.contains("submitter.matches(\"[data-discussion-submit]\")"));
     assert!(body.contains("USERNAME_INPUT_SELECTOR"));

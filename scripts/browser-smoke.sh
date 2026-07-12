@@ -484,7 +484,7 @@ cat >"$EVAL_FILE" <<JS
   await waitFor(() => hasText("smoke-project-file.txt"), "项目文件夹内容未动态加载文件");
   assert(hasText("继续上传"), "动态文件列表缺少 pending 继续上传入口");
   assert(hasText("移动到"), "动态文件列表缺少移动文件入口");
-  assert(hasText("删除"), "动态文件列表缺少删除文件入口");
+  assert(hasText("归档"), "动态文件列表缺少归档文件入口");
   click("[data-file-move]");
   await waitFor(() => visible("#project-file-move-modal"), "移动文件 modal 未打开");
   await submitAndWait("#project-file-move-modal button[type='submit'].btn-primary");
@@ -708,6 +708,10 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   const failedAttachmentId = form.bugReportFiles?.[0]?.attachmentId;
   assert(failedAttachmentId, "上传失败后未保留待上传附件");
   assert(form.dataset.discussionCommentId, "上传失败后未保留已发表内容");
+  assert(form.querySelector("[data-discussion-body]").disabled, "已发表内容在失败重试前未锁定");
+  assert(form.querySelector("[data-discussion-files]").disabled, "已登记附件选择器在失败重试前未锁定");
+  assert(form.querySelector("[data-composer-file-remove]")?.disabled, "已登记附件移除按钮在失败重试前未锁定");
+  assert(form.querySelector("[data-discussion-assign]").disabled, "普通发表失败重试不应再允许切换为发表并指派");
   window.XMLHttpRequest = NativeXMLHttpRequest;
 
   form.requestSubmit(form.querySelector("[data-discussion-submit]"));
