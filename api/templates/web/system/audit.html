@@ -69,21 +69,13 @@
       <strong>共 {{ pagination.total_items }} 条</strong>
       <span>当前显示 {{ pagination.range_start }}-{{ pagination.range_end }}</span>
     </div>
-    <div class="pager-pages" aria-label="页码">
-      {% if pagination.has_previous %}<a class="pager-arrow" href="{{ pagination.previous_url }}" aria-label="上一页">‹</a>{% else %}<span class="pager-arrow disabled" aria-disabled="true">‹</span>{% endif %}
-      {% for page_item in pagination_pages %}
-      <a class="pager-page {% if page_item.current %}active{% endif %}" href="{{ page_item.url }}" {% if page_item.current %}aria-current="page"{% endif %}>{{ page_item.page }}</a>
-      {% endfor %}
-      {% if pagination.has_next %}<a class="pager-arrow" href="{{ pagination.next_url }}" aria-label="下一页">›</a>{% else %}<span class="pager-arrow disabled" aria-disabled="true">›</span>{% endif %}
-    </div>
+    {% include "web/partials/pagination_pages.html" %}
     <form class="pager-controls" method="get" data-pagination-form>
       <input type="hidden" name="actor" value="{{ filters.actor }}">
       <input type="hidden" name="action" value="{{ filters.action }}">
       <input type="hidden" name="target_type" value="{{ filters.target_type }}">
       <input type="hidden" name="target_id" value="{{ filters.target_id }}">
-      <label>每页<select name="per_page" data-pagination-size><option value="10" {% if pagination.per_page == 10 %}selected{% endif %}>10</option><option value="20" {% if pagination.per_page == 20 %}selected{% endif %}>20</option><option value="50" {% if pagination.per_page == 50 %}selected{% endif %}>50</option><option value="100" {% if pagination.per_page == 100 %}selected{% endif %}>100</option></select></label>
-      <label>跳至<input name="page" type="number" min="1" max="{{ pagination.total_pages }}" value="{{ pagination.page }}" inputmode="numeric" aria-label="跳转页码"></label>
-      <button class="btn btn-sm btn-secondary" type="submit">跳转</button>
+      {% include "web/partials/pagination_size_jump.html" %}
     </form>
   </nav>
   {% else %}
