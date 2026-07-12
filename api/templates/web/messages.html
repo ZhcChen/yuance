@@ -18,9 +18,10 @@
     {% endif %}
   </header>
 
-  <nav class="message-tabs" aria-label="消息筛选">
-    <a class="{% if !unread_only %}active{% endif %}" href="/web/messages">全部消息</a>
-    <a class="{% if unread_only %}active{% endif %}" href="/web/messages?unread=true">未读消息{% if unread_count > 0 %}<span>{{ unread_count }}</span>{% endif %}</a>
+  <nav class="content-tabs content-tabs-compact" aria-label="消息筛选" data-content-tabs>
+    <span class="content-tabs-indicator" aria-hidden="true" data-content-tab-indicator></span>
+    <a class="content-tab {% if !unread_only %}active{% endif %}" data-content-tab href="/web/messages">全部消息</a>
+    <a class="content-tab {% if unread_only %}active{% endif %}" data-content-tab href="/web/messages?unread=true">未读消息{% if unread_count > 0 %}<span class="content-tab-badge">{{ unread_count }}</span>{% endif %}</a>
   </nav>
 
   {% if has_notifications %}

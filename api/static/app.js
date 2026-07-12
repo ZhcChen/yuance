@@ -930,30 +930,29 @@
     scope.querySelectorAll?.("select").forEach(buildSelectControl);
   }
 
-  function syncTabIndicator(root, animate) {
-    var list = root && root.querySelector(".project-tab-list");
-    var active = list && list.querySelector("[data-tab-trigger].active");
-    var indicator = list && list.querySelector("[data-tab-indicator]");
-    if (!list || !active || !indicator) {
+  function syncContentTabs(control, animate) {
+    var active = control && control.querySelector("[data-content-tab].active");
+    var indicator = control && control.querySelector("[data-content-tab-indicator]");
+    if (!control || !active || !indicator) {
       return;
     }
-    var listRect = list.getBoundingClientRect();
+    var controlRect = control.getBoundingClientRect();
     var indicatorRect = indicator.getBoundingClientRect();
     var previousWidth = indicatorRect.width || active.offsetWidth;
-    var previousX = indicatorRect.left - listRect.left - indicator.offsetLeft;
+    var previousX = indicatorRect.left - controlRect.left - indicator.offsetLeft;
     var nextWidth = active.offsetWidth;
     var nextX = Math.max(0, active.offsetLeft - 4);
 
-    if (indicator.tabSlideAnimation) {
-      indicator.tabSlideAnimation.cancel();
+    if (indicator.contentTabAnimation) {
+      indicator.contentTabAnimation.cancel();
     }
-    list.style.setProperty("--tab-indicator-width", nextWidth + "px");
-    list.style.setProperty("--tab-indicator-x", nextX + "px");
+    control.style.setProperty("--content-tab-indicator-width", nextWidth + "px");
+    control.style.setProperty("--content-tab-indicator-x", nextX + "px");
 
     if (!animate || prefersReducedMotion() || (previousWidth === nextWidth && previousX === nextX)) {
       return;
     }
-    indicator.tabSlideAnimation = indicator.animate([
+    indicator.contentTabAnimation = indicator.animate([
       { width: previousWidth + "px", transform: "translateX(" + previousX + "px)" },
       { width: nextWidth + "px", transform: "translateX(" + nextX + "px)" }
     ], {
@@ -963,27 +962,29 @@
     });
   }
 
-  function activateTab(trigger, animateIndicator) {
-    var root = trigger.closest("[data-tabs]");
-    if (!root) {
+  function activateContentTab(item, animateIndicator) {
+    var control = item && item.closest("[data-content-tabs]");
+    if (!control) {
       return;
     }
-    var targetId = trigger.getAttribute("data-tab-target");
-    if (!targetId) {
-      return;
+    control.querySelectorAll("[data-content-tab]").forEach(function (candidate) {
+      var active = candidate === item;
+      candidate.classList.toggle("active", active);
+      if (candidate.hasAttribute("role")) {
+        candidate.setAttribute("aria-selected", active ? "true" : "false");
+        candidate.tabIndex = active ? 0 : -1;
+      }
+    });
+    var targetId = item.getAttribute("data-tab-target");
+    var root = item.closest("[data-tabs]");
+    if (targetId && root) {
+      root.querySelectorAll("[data-tab-panel]").forEach(function (panel) {
+        var active = panel.id === targetId;
+        panel.classList.toggle("active", active);
+        panel.hidden = !active;
+      });
     }
-    root.querySelectorAll("[data-tab-trigger]").forEach(function (item) {
-      var active = item === trigger;
-      item.classList.toggle("active", active);
-      item.setAttribute("aria-selected", active ? "true" : "false");
-      item.tabIndex = active ? 0 : -1;
-    });
-    root.querySelectorAll("[data-tab-panel]").forEach(function (panel) {
-      var active = panel.id === targetId;
-      panel.classList.toggle("active", active);
-      panel.hidden = !active;
-    });
-    syncTabIndicator(root, Boolean(animateIndicator));
+    syncContentTabs(control, Boolean(animateIndicator));
   }
 
   function syncTabUrl(trigger) {
@@ -1001,61 +1002,12 @@
     window.history.replaceState(null, "", nextUrl.pathname + nextUrl.search + nextUrl.hash);
   }
 
-  function initTabs(root) {
-    (root || document).querySelectorAll("[data-tabs]").forEach(function (tabs) {
-      var active = tabs.querySelector("[data-tab-trigger].active") || tabs.querySelector("[data-tab-trigger]");
+  function initContentTabs(root) {
+    (root || document).querySelectorAll("[data-content-tabs]").forEach(function (control) {
+      var active = control.querySelector("[data-content-tab].active") || control.querySelector("[data-content-tab]");
       if (active) {
-        activateTab(active, false);
+        activateContentTab(active, false);
       }
-    });
-  }
-
-  function syncSegmentedIndicator(control, animate) {
-    var active = control && control.querySelector("[data-segmented-item].active");
-    var indicator = control && control.querySelector("[data-segmented-indicator]");
-    if (!control || !active || !indicator) {
-      return;
-    }
-    var controlRect = control.getBoundingClientRect();
-    var indicatorRect = indicator.getBoundingClientRect();
-    var previousWidth = indicatorRect.width || active.offsetWidth;
-    var previousX = indicatorRect.left - controlRect.left - indicator.offsetLeft;
-    var nextWidth = active.offsetWidth;
-    var nextX = Math.max(0, active.offsetLeft - 5);
-
-    if (indicator.segmentSlideAnimation) {
-      indicator.segmentSlideAnimation.cancel();
-    }
-    control.style.setProperty("--segmented-indicator-width", nextWidth + "px");
-    control.style.setProperty("--segmented-indicator-x", nextX + "px");
-
-    if (!animate || prefersReducedMotion() || (previousWidth === nextWidth && previousX === nextX)) {
-      return;
-    }
-    indicator.segmentSlideAnimation = indicator.animate([
-      { width: previousWidth + "px", transform: "translateX(" + previousX + "px)" },
-      { width: nextWidth + "px", transform: "translateX(" + nextX + "px)" }
-    ], {
-      duration: 360,
-      easing: "cubic-bezier(.22, .8, .24, 1)",
-      fill: "none"
-    });
-  }
-
-  function activateSegmentedItem(item) {
-    var control = item && item.closest("[data-segmented]");
-    if (!control) {
-      return;
-    }
-    control.querySelectorAll("[data-segmented-item]").forEach(function (candidate) {
-      candidate.classList.toggle("active", candidate === item);
-    });
-    syncSegmentedIndicator(control, true);
-  }
-
-  function initSegmentedControls(root) {
-    (root || document).querySelectorAll("[data-segmented]").forEach(function (control) {
-      syncSegmentedIndicator(control, false);
     });
   }
 
@@ -2678,9 +2630,10 @@
     closeDropdowns();
     closeModals();
     document.body.classList.add("page-leaving");
+    var delay = link.closest("[data-content-tabs]") ? 240 : PAGE_TRANSITION_MS;
     window.setTimeout(function () {
       window.location.href = link.href;
-    }, PAGE_TRANSITION_MS);
+    }, delay);
   }
 
   function closeDropdown(root) {
@@ -2890,6 +2843,16 @@
   showQueuedToast();
 
   document.addEventListener("click", function (event) {
+    var contentTab = event.target.closest("[data-content-tab]");
+    if (contentTab) {
+      activateContentTab(contentTab, true);
+      if (contentTab.hasAttribute("data-tab-target")) {
+        event.preventDefault();
+        syncTabUrl(contentTab);
+        return;
+      }
+    }
+
     var link = event.target.closest("a[href]");
     if (link) {
       navigateWithTransition(event, link);
@@ -3033,19 +2996,6 @@
       return;
     }
 
-    var tabTrigger = event.target.closest("[data-tab-trigger]");
-    if (tabTrigger) {
-      event.preventDefault();
-      activateTab(tabTrigger, true);
-      syncTabUrl(tabTrigger);
-      return;
-    }
-
-    var segmentedItem = event.target.closest("[data-segmented-item]");
-    if (segmentedItem) {
-      activateSegmentedItem(segmentedItem);
-    }
-
     var themeToggle = event.target.closest("[data-theme-toggle]");
     if (themeToggle) {
       event.preventDefault();
@@ -3145,9 +3095,9 @@
       return;
     }
 
-    var currentTab = event.target.closest("[data-tab-trigger]");
+    var currentTab = event.target.closest("[data-content-tab][role='tab']");
     if (currentTab && ["ArrowLeft", "ArrowRight", "Home", "End"].indexOf(event.key) >= 0) {
-      var tabs = Array.from(currentTab.closest("[data-tabs]").querySelectorAll("[data-tab-trigger]"));
+      var tabs = Array.from(currentTab.closest("[data-content-tabs]").querySelectorAll("[data-content-tab]"));
       var index = tabs.indexOf(currentTab);
       if (index >= 0) {
         event.preventDefault();
@@ -3161,7 +3111,7 @@
         } else if (event.key === "End") {
           nextIndex = tabs.length - 1;
         }
-        activateTab(tabs[nextIndex], true);
+        activateContentTab(tabs[nextIndex], true);
         tabs[nextIndex].focus({ preventScroll: true });
       }
       return;
@@ -3241,8 +3191,7 @@
     initProjectSwitcher(event.target);
     initUserComboboxes(event.target);
     initSelectControls(event.target);
-    initTabs(event.target);
-    initSegmentedControls(event.target);
+    initContentTabs(event.target);
     initAttachmentImagePreviews(event.target);
   });
 
@@ -3459,8 +3408,7 @@
       }
     });
   });
-  initTabs(document);
-  initSegmentedControls(document);
+  initContentTabs(document);
 
   document.addEventListener("click", function (event) {
     if (
@@ -3481,11 +3429,8 @@
     if (activeSelectControl) {
       positionSelectPanel(activeSelectControl);
     }
-    document.querySelectorAll("[data-tabs]").forEach(function (tabs) {
-      syncTabIndicator(tabs, false);
-    });
-    document.querySelectorAll("[data-segmented]").forEach(function (control) {
-      syncSegmentedIndicator(control, false);
+    document.querySelectorAll("[data-content-tabs]").forEach(function (control) {
+      syncContentTabs(control, false);
     });
   });
 

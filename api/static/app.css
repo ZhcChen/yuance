@@ -1203,11 +1203,6 @@ textarea:focus-visible {
 
 .messages-page { max-width: 1040px; margin: 0 auto; }
 .messages-heading { align-items: flex-end; }
-.message-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-.message-tabs a { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; color: var(--muted-strong); font-size: 13px; font-weight: 700; text-decoration: none; }
-.message-tabs a.active { color: var(--brand); }
-.message-tabs a.active::after { position: absolute; right: 10px; bottom: -1px; left: 10px; height: 2px; background: var(--brand); content: ""; }
-.message-tabs span { min-width: 18px; padding: 1px 5px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 10px; text-align: center; }
 .message-list { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
 .message-row { display: grid; grid-template-columns: 8px 46px minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 82px; padding: 12px 16px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; }
 .message-row:last-child { border-bottom: 0; }
@@ -2227,62 +2222,6 @@ textarea:focus-visible {
   line-height: 24px;
 }
 
-.project-tab-list {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--tab-bg);
-}
-
-.project-tab-indicator {
-  position: absolute;
-  z-index: 0;
-  top: 4px;
-  left: 4px;
-  width: var(--tab-indicator-width, 0px);
-  height: calc(100% - 8px);
-  border: 1px solid var(--tab-active-border);
-  border-radius: 999px;
-  background: var(--tab-active-bg);
-  box-shadow: var(--tab-active-shadow);
-  transform: translateX(var(--tab-indicator-x, 0px));
-  transition: width 360ms cubic-bezier(.22,.8,.24,1), transform 360ms cubic-bezier(.22,.8,.24,1);
-  will-change: width, transform;
-}
-
-.project-tab {
-  position: relative;
-  z-index: 1;
-  min-height: 36px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 17px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted-strong);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 800;
-  white-space: nowrap;
-  transition: color var(--motion-fast) ease;
-}
-
-.project-tab:hover {
-  color: var(--tab-active-text);
-}
-
-.project-tab.active {
-  background: transparent;
-  color: var(--tab-active-text);
-  box-shadow: none;
-}
-
 .project-tab-panels {
   padding: 16px;
 }
@@ -2631,63 +2570,91 @@ code {
   color: var(--warning);
 }
 
-.segmented {
+.content-tabs {
   position: relative;
+  width: max-content;
+  justify-self: start;
   display: inline-flex;
-  gap: 4px;
-  padding: 5px;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--tab-bg);
 }
 
-.segmented-indicator {
+.content-tabs-indicator {
   position: absolute;
   z-index: 0;
-  top: 5px;
-  left: 5px;
-  width: var(--segmented-indicator-width, 0px);
-  height: calc(100% - 10px);
+  top: 4px;
+  left: 4px;
+  width: var(--content-tab-indicator-width, 0px);
+  height: calc(100% - 8px);
   border: 1px solid var(--tab-active-border);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--tab-active-bg);
   box-shadow: var(--tab-active-shadow);
-  transform: translateX(var(--segmented-indicator-x, 0px));
+  transform: translateX(var(--content-tab-indicator-x, 0px));
   transition: width 360ms cubic-bezier(.22,.8,.24,1), transform 360ms cubic-bezier(.22,.8,.24,1);
   will-change: width, transform;
 }
 
-.segmented button,
-.segmented a {
+.content-tab {
   position: relative;
   z-index: 1;
-  min-height: 38px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
-  padding: 0 10px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 16px;
   border: 0;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 750;
   text-decoration: none;
-  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+  white-space: nowrap;
+  transition: color var(--motion-fast) ease;
 }
 
-.segmented button:hover,
-.segmented a:hover {
+.content-tab:hover,
+.content-tab:focus-visible,
+.content-tab.active {
   color: var(--tab-active-text);
 }
 
-.segmented button.active,
-.segmented a.active {
-  border-color: transparent;
-  background: transparent;
-  color: var(--tab-active-text);
-  box-shadow: none;
+.content-tab-badge {
+  position: absolute;
+  z-index: 2;
+  top: -5px;
+  right: -4px;
+  min-width: 18px;
+  min-height: 18px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 18px;
+  box-shadow: 0 0 0 2px var(--tab-bg);
+  pointer-events: none;
+}
+
+.content-tabs-compact .content-tab {
+  min-height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+.content-tabs-scroll {
+  overflow-x: auto;
 }
 
 .work-items {
@@ -6586,7 +6553,7 @@ select option {
     display: grid;
   }
 
-  .project-tab-list {
+  .project-tabs-head .content-tabs {
     width: 100%;
     overflow-x: auto;
     justify-content: flex-start;
@@ -6765,8 +6732,7 @@ select option {
   .image-viewer-stage img,
   .image-viewer-stage video,
   .select-control-panel,
-  .project-tab-indicator,
-  .segmented-indicator,
+  .content-tabs-indicator,
   .topbar-search-history,
   .drawer-panel,
   .project-tab-panel {

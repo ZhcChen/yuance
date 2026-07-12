@@ -56,21 +56,21 @@
         <p class="eyebrow">项目详情</p>
         <h2>项目工作区</h2>
       </div>
-      <div class="project-tab-list" role="tablist" aria-label="项目详情导航">
-        <span class="project-tab-indicator" aria-hidden="true" data-tab-indicator></span>
-        <button class="project-tab {% if active_tab == "work" %}active{% endif %}" id="project-tab-work-trigger" type="button" role="tab" aria-selected="{% if active_tab == "work" %}true{% else %}false{% endif %}" aria-controls="project-tab-work" data-tab-trigger data-tab-target="project-tab-work" data-tab-key="work">
+      <div class="content-tabs" role="tablist" aria-label="项目详情导航" data-content-tabs>
+        <span class="content-tabs-indicator" aria-hidden="true" data-content-tab-indicator></span>
+        <button class="content-tab {% if active_tab == "work" %}active{% endif %}" id="project-tab-work-trigger" type="button" role="tab" aria-selected="{% if active_tab == "work" %}true{% else %}false{% endif %}" aria-controls="project-tab-work" data-content-tab data-tab-target="project-tab-work" data-tab-key="work">
           工作项
         </button>
-        <button class="project-tab {% if active_tab == "info" %}active{% endif %}" id="project-tab-info-trigger" type="button" role="tab" aria-selected="{% if active_tab == "info" %}true{% else %}false{% endif %}" aria-controls="project-tab-info" data-tab-trigger data-tab-target="project-tab-info" data-tab-key="info">
+        <button class="content-tab {% if active_tab == "info" %}active{% endif %}" id="project-tab-info-trigger" type="button" role="tab" aria-selected="{% if active_tab == "info" %}true{% else %}false{% endif %}" aria-controls="project-tab-info" data-content-tab data-tab-target="project-tab-info" data-tab-key="info">
           详情
         </button>
-        <button class="project-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-tab-trigger data-tab-target="project-tab-members" data-tab-key="members">
+        <button class="content-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-content-tab data-tab-target="project-tab-members" data-tab-key="members">
           成员
         </button>
-        <button class="project-tab {% if active_tab == "attachments" %}active{% endif %}" id="project-tab-attachments-trigger" type="button" role="tab" aria-selected="{% if active_tab == "attachments" %}true{% else %}false{% endif %}" aria-controls="project-tab-attachments" data-tab-trigger data-tab-target="project-tab-attachments" data-tab-key="attachments">
+        <button class="content-tab {% if active_tab == "attachments" %}active{% endif %}" id="project-tab-attachments-trigger" type="button" role="tab" aria-selected="{% if active_tab == "attachments" %}true{% else %}false{% endif %}" aria-controls="project-tab-attachments" data-content-tab data-tab-target="project-tab-attachments" data-tab-key="attachments">
           附件
         </button>
-        <button class="project-tab {% if active_tab == "activities" %}active{% endif %}" id="project-tab-activities-trigger" type="button" role="tab" aria-selected="{% if active_tab == "activities" %}true{% else %}false{% endif %}" aria-controls="project-tab-activities" data-tab-trigger data-tab-target="project-tab-activities" data-tab-key="activities">
+        <button class="content-tab {% if active_tab == "activities" %}active{% endif %}" id="project-tab-activities-trigger" type="button" role="tab" aria-selected="{% if active_tab == "activities" %}true{% else %}false{% endif %}" aria-controls="project-tab-activities" data-content-tab data-tab-target="project-tab-activities" data-tab-key="activities">
           动态
         </button>
       </div>

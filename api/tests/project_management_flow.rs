@@ -624,9 +624,9 @@ async fn web_projects_can_filter_by_status() {
     assert!(body.contains(r#"class="project-card" href="/web/projects/CRM""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/YCE""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/OPS""#));
-    assert!(
-        body.contains(r#"class="active" data-segmented-item href="/web/projects?status=on_hold""#)
-    );
+    assert!(body.contains(
+        r#"class="content-tab active" data-content-tab href="/web/projects?status=on_hold""#
+    ));
 }
 
 #[tokio::test]
