@@ -196,6 +196,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains(".discussion-attach-button span"));
     assert!(body.contains(".discussion-assign-status .select-control"));
     assert!(body.contains("min-width: 168px"));
+    assert!(body.contains(".pager-controls .select-control"));
+    assert!(body.contains("flex: 0 0 76px"));
 }
 
 #[tokio::test]
