@@ -148,7 +148,15 @@ function loadAppWithDom() {
     window,
     URL,
     URLSearchParams,
-    FormData,
+    FormData: class {
+      constructor(form) {
+        this.values = new Map(Object.entries(form?.formData || {}));
+      }
+
+      get(name) {
+        return this.values.get(name) || "";
+      }
+    },
     Headers,
     MutationObserver: class {
       observe() {}
@@ -160,6 +168,13 @@ function loadAppWithDom() {
     },
     fetch: async (url, options) => {
       fetchCalls.push({ url, options });
+      if (String(url) === "/api/v1/work-items") {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ data: { key: "YCE-TASK-3" } }),
+        };
+      }
       return {
         ok: true,
         status: 201,
@@ -181,6 +196,48 @@ function loadAppWithDom() {
     },
     hooks: window.__YUANCE_TEST_HOOKS__,
     window,
+  };
+}
+
+function bugReportForm(successRedirect) {
+  const status = elementStub("div");
+  const title = elementStub("input");
+  title.value = "项目内新建任务";
+
+  return {
+    dataset: {
+      bugReportCreateUrl: "/api/v1/work-items",
+      successRedirect,
+      workItemLabel: "工作项",
+    },
+    formData: {
+      project_key: "YCE",
+      item_type: "task",
+      title: "项目内新建任务",
+      description: "从项目详情页创建",
+      priority: "P2",
+      assignee_username: "",
+      due_date: "",
+      parent_item_key: "YCE-REQ-1",
+    },
+    reportValidity() {
+      return true;
+    },
+    querySelector(selector) {
+      if (selector === "[data-bug-report-status]") {
+        return status;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "[data-bug-report-group]") {
+        return [];
+      }
+      if (selector === "input, select, textarea, button") {
+        return [title];
+      }
+      return [];
+    },
   };
 }
 
@@ -263,5 +320,12 @@ otherPage.window.location.pathname = "/web/work-items/OTHER";
 otherPage.hooks.reloadDiscussionAtComment("YCE-TASK-2", 456);
 assert.deepEqual(otherPage.assignCalls, ["/web/work-items/YCE-TASK-2#comment-456"]);
 assert.equal(otherPage.reloadCount, 0);
+
+const projectCreate = loadAppWithDom();
+assert.equal(typeof projectCreate.hooks.submitBugReport, "function");
+await projectCreate.hooks.submitBugReport(bugReportForm("/web/projects/YCE?tab=work"));
+assert.equal(projectCreate.fetchCalls.length, 1);
+assert.equal(projectCreate.fetchCalls[0].url, "/api/v1/work-items");
+assert.equal(projectCreate.window.location.href, "/web/projects/YCE?tab=work");
 
 console.log("discussion js behavior ok");

@@ -2485,6 +2485,14 @@
     });
   }
 
+  function bugReportSuccessUrl(form, item) {
+    var redirect = form.dataset.successRedirect || "";
+    if (redirect) {
+      return redirect.replace("{key}", encodeURIComponent(item.key || ""));
+    }
+    return "/web/work-items/" + encodeURIComponent(item.key);
+  }
+
   async function submitBugReport(form) {
     if (form.dataset.bugReportBusy === "true") {
       return;
@@ -2603,9 +2611,9 @@
         }
       }
 
-      bugReportStatus(form, itemLabel + "创建完成，正在打开详情页。", "success");
+      bugReportStatus(form, itemLabel + "创建完成，正在打开结果页。", "success");
       window.setTimeout(function () {
-        window.location.href = "/web/work-items/" + encodeURIComponent(item.key);
+        window.location.href = bugReportSuccessUrl(form, item);
       }, 450);
     } catch (error) {
       bugReportStatus(form, error.message || itemLabel + "创建失败，请稍后重试。", "error");
@@ -3259,6 +3267,7 @@
   if (window.__YUANCE_ENABLE_TEST_HOOKS__) {
     window.__YUANCE_TEST_HOOKS__ = Object.assign(window.__YUANCE_TEST_HOOKS__ || {}, {
       reloadDiscussionAtComment: reloadDiscussionAtComment,
+      submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
     });
   }

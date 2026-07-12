@@ -469,7 +469,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items" data-bug-report-form data-bug-report-create-url="/api/v1/work-items" data-work-item-label="工作项">
+    <form class="modal-body modal-form" method="post" action="/web/work-items" data-bug-report-form data-bug-report-create-url="/api/v1/work-items" data-work-item-label="工作项" data-success-redirect="/web/projects/{{ project.code }}?tab=work">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="project_key" value="{{ project.code }}" data-bug-report-item-field>
       <input type="hidden" name="redirect_to" value="project">

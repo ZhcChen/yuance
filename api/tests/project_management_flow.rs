@@ -2920,6 +2920,7 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert!(page_body.contains(r#"id="project-attachment-create-modal""#));
     assert!(page_body.contains("项目内新建工作项"));
     assert!(page_body.contains(r#"name="redirect_to" value="project""#));
+    assert!(page_body.contains(r#"data-success-redirect="/web/projects/YCE?tab=work""#));
     assert!(page_body.contains("父级需求"));
     assert!(page_body.contains("YCE-REQ-1"));
 
@@ -2942,13 +2943,13 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         create_response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE"
+        "/web/projects/YCE?tab=work"
     );
 
     let detail_response = app
         .oneshot(
             Request::builder()
-                .uri("/web/projects/YCE")
+                .uri("/web/projects/YCE?tab=work")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -2968,6 +2969,7 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert!(detail_body.contains("项目内新建任务"));
     assert!(detail_body.contains("YCE-TASK-3"));
     assert!(detail_body.contains("创建工作项"));
+    assert!(detail_body.contains(r#"id="project-tab-work" class="project-tab-panel active""#));
 }
 
 #[tokio::test]

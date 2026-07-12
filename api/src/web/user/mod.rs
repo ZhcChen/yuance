@@ -2451,7 +2451,7 @@ pub async fn work_items_create(
         .await?;
 
         if form.redirect_to == "project" {
-            return Ok(Redirect::to(&format!("/web/projects/{}", item.project_key)).into_response());
+            return Ok(Redirect::to(&project_work_url(&item.project_key)).into_response());
         }
 
         return Ok(Redirect::to(&format!("/web/work-items/{}", item.item_key)).into_response());
@@ -4954,6 +4954,10 @@ fn work_item_comment_url(item_key: &str, comment_id: i64) -> String {
 
 fn project_members_url(project_key: &str) -> String {
     format!("/web/projects/{project_key}?tab=members")
+}
+
+fn project_work_url(project_key: &str) -> String {
+    format!("/web/projects/{project_key}?tab=work")
 }
 
 fn work_item_discussion_url(item_key: &str) -> String {
