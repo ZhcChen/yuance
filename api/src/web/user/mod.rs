@@ -6291,7 +6291,17 @@ fn work_item_status_options(
     current_status: &str,
 ) -> AppResult<Vec<WorkItemStatusOption>> {
     let current_status = projects::normalize_work_item_status(current_status)?;
-    let mut values = vec![current_status];
+    // cancelled 只兼容历史数据；页面状态下拉只提供恢复到进行中。
+    let selected_status = if current_status == "cancelled" {
+        "in_progress"
+    } else {
+        current_status
+    };
+    let mut values = if current_status == "cancelled" {
+        Vec::new()
+    } else {
+        vec![current_status]
+    };
     for status in projects::allowed_work_item_status_transitions(current_status)? {
         let relevant = match item_kind {
             "Bug" => matches!(
@@ -6301,7 +6311,7 @@ fn work_item_status_options(
             "需求" | "任务" => matches!(*status, "open" | "in_progress" | "done" | "closed"),
             _ => true,
         };
-        if relevant {
+        if relevant && !values.contains(status) {
             values.push(status);
         }
     }
@@ -6312,7 +6322,7 @@ fn work_item_status_options(
             Ok(WorkItemStatusOption {
                 value: status,
                 label,
-                selected: status == current_status,
+                selected: status == selected_status,
             })
         })
         .collect()

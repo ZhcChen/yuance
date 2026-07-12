@@ -2616,10 +2616,11 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert_eq!(start_response.status(), StatusCode::SEE_OTHER);
 
     let progress_page = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/web/work-items/OPS-TASK-1")
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -2633,6 +2634,26 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert!(!progress_body.contains(r#"value="resolved"#));
     assert!(!progress_body.contains(r#"value="verified"#));
     assert!(!progress_body.contains("取消工作项"));
+
+    sqlx::query("UPDATE work_items SET status = 'cancelled' WHERE item_key = 'OPS-TASK-1'")
+        .execute(&pool)
+        .await
+        .expect("legacy cancelled item should be shaped");
+    let cancelled_page = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/OPS-TASK-1")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cancelled_page.status(), StatusCode::OK);
+    let cancelled_body = response_body(cancelled_page).await;
+    assert!(cancelled_body.contains("重新打开"));
+    assert!(cancelled_body.contains(r#"<option value="in_progress" selected"#));
+    assert!(!cancelled_body.contains(r#"<option value="cancelled""#));
 }
 
 #[tokio::test]
