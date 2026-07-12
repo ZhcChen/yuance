@@ -2920,6 +2920,10 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert!(progress_body.contains("指派 / 流转"));
     assert!(progress_body.contains("关闭任务"));
     assert!(progress_body.contains("发表并指派"));
+    assert!(
+        progress_body
+            .contains(r#"data-discussion-assign-status data-select-panel-min-width="208""#)
+    );
     assert!(!progress_body.contains(r#"value="resolved"#));
     assert!(!progress_body.contains(r#"value="verified"#));
     assert!(!progress_body.contains("取消工作项"));

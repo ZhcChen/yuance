@@ -34,7 +34,7 @@
           <input class="sr-only" type="file" multiple data-discussion-files>
         </label>
         <span class="discussion-file-hint" data-discussion-file-hint>支持多个文件，图片和视频可预览</span>
-        <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status>{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
+        <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
         <button class="btn btn-secondary" type="submit" data-discussion-submit>发表</button>
         <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>发表并指派</button>
       </div>
@@ -128,7 +128,7 @@
               </label>
               <span class="discussion-file-hint" data-discussion-file-hint>可添加多个文件</span>
               <button class="btn btn-secondary" type="button" data-discussion-reply-cancel>取消</button>
-              <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status>{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
+              <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
               <button class="btn btn-secondary" type="submit" data-discussion-submit>回复</button>
               <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>回复并指派</button>
             </div>
