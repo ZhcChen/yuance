@@ -133,7 +133,7 @@ origin: docs/brainstorms/yuance-mvp-requirements.md
 
 ### Deferred to Implementation
 
-- 表单提交失败后的错误回显位置：当前多数 POST 通过 redirect 或错误响应处理。实现时需要逐个确认失败路径，决定是否继续整页错误，或引入 modal 内错误提示。
+- 表单提交失败后的错误提示位置：当前共享 Web 表单提交器会拦截 JSON / HTML 错误并以 Toast 或局部错误区提示，弹窗保持打开，避免用户上下文丢失。
 - `autofocus` 精确落点：实现时根据每个弹窗第一个可编辑字段设置。
 - Dashboard 的新建项目按钮接入：需要确认是否复用项目创建 modal，或保持当前非功能按钮先隐藏。
 
@@ -326,7 +326,7 @@ flowchart TB
 ## System-Wide Impact
 
 - **Interaction graph:** 触发器按钮 -> JS modal controller -> modal 表单 -> 现有 POST handler -> redirect 后整页重渲染。
-- **Error propagation:** 现有服务端错误处理保持不变；如果后续要在 modal 内局部显示错误，需要新增 htmx partial 策略，暂不纳入第一版。
+- **Error propagation:** 服务端错误协议保持不变；共享 Web 表单提交器负责解析 JSON / HTML 错误、展示 Toast 或局部错误区，并在失败时保持当前弹窗上下文。
 - **State lifecycle risks:** modal 打开/关闭只影响前端类名和焦点；业务状态仍由 SQLite 和现有事务管理。
 - **API surface parity:** `/api` 不变；Web POST action 不变。
 - **Integration coverage:** 需要覆盖 modal 化后表单仍提交到同一路由、权限仍生效。
@@ -337,7 +337,7 @@ flowchart TB
 | Risk | Mitigation |
 |------|------------|
 | 每个页面复制 modal HTML 造成维护困难 | 统一 CSS/JS/data 属性和命名约定；表单内容可在页面内，但结构遵循共享组件 |
-| 弹窗内表单提交失败时用户上下文丢失 | 第一版保持现有整页错误/重定向；后续再做 htmx modal 内错误回显 |
+| 弹窗表单业务错误处理不一致 | 共享 Web 表单提交器拦截业务错误并 Toast 提示，失败时不关闭弹窗、不跳转 JSON |
 | 多个用户/角色行生成大量 modal 导致 HTML 变长 | 当前数据规模较小可接受；后续可引入按需 htmx 加载 modal |
 | 焦点和 Escape 与现有 drawer/dropdown 冲突 | modal 打开时关闭其他浮层；Escape 统一关闭最上层 modal |
 | 移动端弹窗溢出 | modal panel 使用 `width: min(...)`、`max-height` 和内部滚动 |
