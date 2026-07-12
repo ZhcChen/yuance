@@ -253,8 +253,12 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("select.removeAttribute(\"autofocus\")"));
     assert!(body.contains("trigger.setAttribute(\"autofocus\", \"\")"));
     assert!(body.contains("control.selectElement.dataset.selectPanelMinWidth"));
-    assert!(body.contains("var defaultMinWidth = searchable ? 320 : 128"));
+    assert!(body.contains("var defaultMinWidth = searchable ? 320 : 168"));
     assert!(body.contains("Math.max(rect.width, minWidth)"));
+    assert!(body.contains("function renderSelectOptions(control)"));
+    assert!(body.contains("new MutationObserver(function (mutations)"));
+    assert!(body.contains("optionsChanged"));
+    assert!(body.contains("control.selectObserver.disconnect()"));
     assert!(body.contains("function webFormResultFromHtml"));
     assert!(body.contains(r#"querySelector(".inline-result")"#));
     assert!(body.contains("htmlResult?.message"));

@@ -757,11 +757,60 @@
     value.textContent = option ? option.textContent.trim() : "请选择";
     trigger.disabled = select.disabled;
     trigger.setAttribute("aria-disabled", select.disabled ? "true" : "false");
+    if (select.disabled && activeSelectControl === control) {
+      closeSelectControl(control, false);
+    }
     control.selectPanel.querySelectorAll("[data-select-option]").forEach(function (button) {
       var selected = button.dataset.value === select.value;
       button.classList.toggle("selected", selected);
       button.setAttribute("aria-selected", selected ? "true" : "false");
     });
+  }
+
+  function createSelectOptionButton(control, option) {
+    var button = document.createElement("button");
+    button.className = "select-control-option";
+    button.type = "button";
+    button.dataset.selectOption = "";
+    button.dataset.value = option.value;
+    button.textContent = option.textContent.trim();
+    button.disabled = option.disabled;
+    button.setAttribute("role", "option");
+    button.addEventListener("click", function () { chooseSelectOption(control, button); });
+    button.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        focusSelectOption(control, event.key === "ArrowDown" ? 1 : -1);
+      } else if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        focusSelectOption(control, event.key === "Home" ? "first" : "last");
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        chooseSelectOption(control, button);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        closeSelectControl(control, true);
+      }
+    });
+    return button;
+  }
+
+  function renderSelectOptions(control) {
+    var select = control && control.selectElement;
+    var options = control && control.selectPanel && control.selectPanel.querySelector("[data-select-options]");
+    if (!select || !options) {
+      return;
+    }
+    options.replaceChildren();
+    select.querySelectorAll("option").forEach(function (option) {
+      options.appendChild(createSelectOptionButton(control, option));
+    });
+    var search = control.selectPanel.querySelector("[data-select-search]");
+    filterSelectOptions(control, search ? search.value : "");
+    syncSelectControl(control);
+    if (activeSelectControl === control) {
+      positionSelectPanel(control);
+    }
   }
 
   function positionSelectPanel(control) {
@@ -774,7 +823,7 @@
     var gutter = 8;
     var searchable = control.selectElement.dataset.selectSearchable !== undefined;
     var configuredMinWidth = Number(control.selectElement.dataset.selectPanelMinWidth || 0);
-    var defaultMinWidth = searchable ? 320 : 128;
+    var defaultMinWidth = searchable ? 320 : 168;
     var minWidth = configuredMinWidth > 0 ? configuredMinWidth : defaultMinWidth;
     var width = Math.min(Math.max(rect.width, minWidth), window.innerWidth - 24);
     var left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
@@ -949,33 +998,7 @@
     }
     var options = document.createElement("div");
     options.className = "select-control-options";
-    select.querySelectorAll("option").forEach(function (option) {
-      var button = document.createElement("button");
-      button.className = "select-control-option";
-      button.type = "button";
-      button.dataset.selectOption = "";
-      button.dataset.value = option.value;
-      button.textContent = option.textContent.trim();
-      button.disabled = option.disabled;
-      button.setAttribute("role", "option");
-      button.addEventListener("click", function () { chooseSelectOption(control, button); });
-      button.addEventListener("keydown", function (event) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          event.preventDefault();
-          focusSelectOption(control, event.key === "ArrowDown" ? 1 : -1);
-        } else if (event.key === "Home" || event.key === "End") {
-          event.preventDefault();
-          focusSelectOption(control, event.key === "Home" ? "first" : "last");
-        } else if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          chooseSelectOption(control, button);
-        } else if (event.key === "Escape") {
-          event.preventDefault();
-          closeSelectControl(control, true);
-        }
-      });
-      options.appendChild(button);
-    });
+    options.dataset.selectOptions = "";
     var empty = document.createElement("div");
     empty.className = "select-control-empty";
     empty.dataset.selectEmpty = "";
@@ -1007,8 +1030,27 @@
     select.form?.addEventListener("reset", function () {
       window.setTimeout(function () { syncSelectControl(control); }, 0);
     });
-    new MutationObserver(function () { syncSelectControl(control); }).observe(select, { attributes: true, attributeFilter: ["disabled"] });
-    syncSelectControl(control);
+    var selectObserver = new MutationObserver(function (mutations) {
+      var optionsChanged = mutations.some(function (mutation) {
+        return mutation.type === "childList"
+          || mutation.type === "characterData"
+          || (mutation.target && mutation.target.tagName === "OPTION");
+      });
+      if (optionsChanged) {
+        renderSelectOptions(control);
+      } else {
+        syncSelectControl(control);
+      }
+    });
+    selectObserver.observe(select, {
+      attributes: true,
+      attributeFilter: ["disabled", "value", "label", "selected"],
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    control.selectObserver = selectObserver;
+    renderSelectOptions(control);
   }
 
   function rebuildSelectControl(select) {
@@ -1022,6 +1064,9 @@
     if (control && control.classList.contains("select-control")) {
       if (control.selectPanel) {
         control.selectPanel.remove();
+      }
+      if (control.selectObserver) {
+        control.selectObserver.disconnect();
       }
       control.remove();
     }
