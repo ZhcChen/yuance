@@ -2678,6 +2678,10 @@ code {
   overflow-x: auto;
 }
 
+.content-tabs[data-content-tabs-pending] .content-tabs-indicator {
+  box-shadow: var(--tab-active-shadow), 0 0 0 3px rgb(72 113 247 / 10%);
+}
+
 .work-items {
   min-height: 184px;
 }

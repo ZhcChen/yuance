@@ -43,14 +43,14 @@
       </div>
       <div class="content-tabs content-tabs-scroll" aria-label="项目状态筛选" data-content-tabs>
         <span class="content-tabs-indicator" aria-hidden="true" data-content-tab-indicator></span>
-        <a class="content-tab {% if status_filter == "" %}active{% endif %}" data-content-tab href="/web/projects">全部</a>
-        <a class="content-tab {% if status_filter == "not_started" %}active{% endif %}" data-content-tab href="/web/projects?status=not_started">待启动</a>
-        <a class="content-tab {% if status_filter == "in_progress" %}active{% endif %}" data-content-tab href="/web/projects?status=in_progress">进行中</a>
-        <a class="content-tab {% if status_filter == "acceptance" %}active{% endif %}" data-content-tab href="/web/projects?status=acceptance">验收中</a>
-        <a class="content-tab {% if status_filter == "completed" %}active{% endif %}" data-content-tab href="/web/projects?status=completed">已完成</a>
-        <a class="content-tab {% if status_filter == "on_hold" %}active{% endif %}" data-content-tab href="/web/projects?status=on_hold">已暂停</a>
-        <a class="content-tab {% if status_filter == "cancelled" %}active{% endif %}" data-content-tab href="/web/projects?status=cancelled">已取消</a>
-        <a class="content-tab {% if status_filter == "archived" %}active{% endif %}" data-content-tab href="/web/projects?status=archived">已归档</a>
+        <a class="content-tab {% if status_filter == "" %}active{% endif %}" data-content-tab {% if status_filter == "" %}aria-current="page"{% endif %} href="/web/projects">全部</a>
+        <a class="content-tab {% if status_filter == "not_started" %}active{% endif %}" data-content-tab {% if status_filter == "not_started" %}aria-current="page"{% endif %} href="/web/projects?status=not_started">待启动</a>
+        <a class="content-tab {% if status_filter == "in_progress" %}active{% endif %}" data-content-tab {% if status_filter == "in_progress" %}aria-current="page"{% endif %} href="/web/projects?status=in_progress">进行中</a>
+        <a class="content-tab {% if status_filter == "acceptance" %}active{% endif %}" data-content-tab {% if status_filter == "acceptance" %}aria-current="page"{% endif %} href="/web/projects?status=acceptance">验收中</a>
+        <a class="content-tab {% if status_filter == "completed" %}active{% endif %}" data-content-tab {% if status_filter == "completed" %}aria-current="page"{% endif %} href="/web/projects?status=completed">已完成</a>
+        <a class="content-tab {% if status_filter == "on_hold" %}active{% endif %}" data-content-tab {% if status_filter == "on_hold" %}aria-current="page"{% endif %} href="/web/projects?status=on_hold">已暂停</a>
+        <a class="content-tab {% if status_filter == "cancelled" %}active{% endif %}" data-content-tab {% if status_filter == "cancelled" %}aria-current="page"{% endif %} href="/web/projects?status=cancelled">已取消</a>
+        <a class="content-tab {% if status_filter == "archived" %}active{% endif %}" data-content-tab {% if status_filter == "archived" %}aria-current="page"{% endif %} href="/web/projects?status=archived">已归档</a>
       </div>
     </div>
 

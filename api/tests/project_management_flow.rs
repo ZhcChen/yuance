@@ -338,6 +338,9 @@ async fn web_messages_page_clamps_unread_badge_to_99_plus() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
     assert!(body.contains("未读消息 100 条"));
+    assert!(body.contains(
+        r#"class="content-tab active" data-content-tab aria-current="page" href="/web/messages?unread=true"#
+    ));
     assert!(body.contains(r#"<span class="content-tab-badge">99+</span>"#));
 }
 
@@ -811,7 +814,7 @@ async fn web_projects_can_filter_by_status() {
     assert!(!body.contains(r#"class="project-card" href="/web/projects/YCE""#));
     assert!(!body.contains(r#"class="project-card" href="/web/projects/OPS""#));
     assert!(body.contains(
-        r#"class="content-tab active" data-content-tab href="/web/projects?status=on_hold""#
+        r#"class="content-tab active" data-content-tab aria-current="page" href="/web/projects?status=on_hold""#
     ));
 }
 

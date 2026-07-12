@@ -203,6 +203,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("pointer-events: auto;"));
     assert!(body.contains(".pager-controls .select-control"));
     assert!(body.contains("flex: 0 0 76px"));
+    assert!(body.contains(".content-tabs[data-content-tabs-pending]"));
+    assert!(body.contains("0 0 0 3px"));
     assert!(body.contains(".toast-close"));
     assert!(body.contains("place-items: center"));
     assert!(body.contains(".role-status-form"));
@@ -263,6 +265,11 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("data-confirm-submit"));
     assert!(body.contains("function syncTabUrl"));
     assert!(body.contains("data-tabs-sync-url"));
+    assert!(body.contains("function clearContentTabNavigation"));
+    assert!(body.contains("contentTabNavigationControl"));
+    assert!(body.contains("document.fonts.ready"));
+    assert!(body.contains("candidate.setAttribute(\"aria-current\", \"page\")"));
+    assert!(body.contains("setContentTabsPending(contentTabNavigationControl, true)"));
     assert!(body.contains("async function submitDirectUpload"));
     assert!(body.contains("data-direct-upload"));
     assert!(body.contains("function syncDirectUploadMetadata"));

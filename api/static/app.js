@@ -9,6 +9,7 @@
   var SEARCH_HISTORY_KEY = "yuance-search-history";
   var pendingConfirmForm = null;
   var contentTabNavigationTimer = null;
+  var contentTabNavigationControl = null;
   var activeSelectControl = null;
   var imagePreviewObserver = null;
   var imagePreviewFallbackTimer = null;
@@ -1063,6 +1064,31 @@
     }
   }
 
+  function syncAllContentTabs(animate) {
+    document.querySelectorAll("[data-content-tabs]").forEach(function (control) {
+      syncContentTabs(control, Boolean(animate));
+    });
+  }
+
+  function setContentTabsPending(control, pending) {
+    if (!control) {
+      return;
+    }
+    control.toggleAttribute("data-content-tabs-pending", Boolean(pending));
+    control.setAttribute("aria-busy", pending ? "true" : "false");
+  }
+
+  function clearContentTabNavigation() {
+    if (contentTabNavigationTimer) {
+      window.clearTimeout(contentTabNavigationTimer);
+      contentTabNavigationTimer = null;
+    }
+    if (contentTabNavigationControl) {
+      setContentTabsPending(contentTabNavigationControl, false);
+      contentTabNavigationControl = null;
+    }
+  }
+
   function activateContentTab(item, animateIndicator) {
     var control = item && item.closest("[data-content-tabs]");
     if (!control) {
@@ -1074,6 +1100,12 @@
       if (candidate.hasAttribute("role")) {
         candidate.setAttribute("aria-selected", active ? "true" : "false");
         candidate.tabIndex = active ? 0 : -1;
+      } else if (candidate.matches("a[href]")) {
+        if (active) {
+          candidate.setAttribute("aria-current", "page");
+        } else {
+          candidate.removeAttribute("aria-current");
+        }
       }
     });
     var targetId = item.getAttribute("data-tab-target");
@@ -1110,6 +1142,13 @@
         activateContentTab(active, false);
       }
     });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () {
+        syncAllContentTabs(false);
+      }).catch(function () {
+        // Font loading failure should not block the existing tab layout.
+      });
+    }
   }
 
   function isPreviewableImageType(contentType) {
@@ -2892,15 +2931,17 @@
     closeDropdowns();
     closeModals();
     if (link.closest("[data-content-tabs]")) {
-      if (contentTabNavigationTimer) {
-        window.clearTimeout(contentTabNavigationTimer);
-      }
+      clearContentTabNavigation();
+      contentTabNavigationControl = link.closest("[data-content-tabs]");
+      setContentTabsPending(contentTabNavigationControl, true);
       contentTabNavigationTimer = window.setTimeout(function () {
         contentTabNavigationTimer = null;
+        contentTabNavigationControl = null;
         window.location.href = link.href;
       }, CONTENT_TAB_SLIDE_MS);
       return;
     }
+    clearContentTabNavigation();
     document.body.classList.add("page-leaving");
     window.setTimeout(function () {
       window.location.href = link.href;
@@ -3705,9 +3746,7 @@
     if (activeSelectControl) {
       positionSelectPanel(activeSelectControl);
     }
-    document.querySelectorAll("[data-content-tabs]").forEach(function (control) {
-      syncContentTabs(control, false);
-    });
+    syncAllContentTabs(false);
   });
 
   window.addEventListener("scroll", function () {
