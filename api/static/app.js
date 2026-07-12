@@ -1109,12 +1109,16 @@
   }
 
   function escapeHtml(value) {
-    return String(value || "")
+    return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function pathSegment(value) {
+    return encodeURIComponent(String(value == null ? "" : value));
   }
 
   function clearAttachmentResumeForChangedFile(host, file, idKey, fileKey, uploadedKey) {
@@ -3568,7 +3572,8 @@
       items.forEach(function (item) {
         var padding = depth * 16;
         var active = String(item.id) === selectedFolderId;
-        html += '<button class="file-folder-item' + (active ? ' active' : '') + '" type="button" data-file-folder-item data-folder-id="' + item.id + '" style="padding-left:' + padding + 'px"' + (active ? ' aria-current="true"' : '') + '>';
+        var folderId = escapeHtml(item.id);
+        html += '<button class="file-folder-item' + (active ? ' active' : '') + '" type="button" data-file-folder-item data-folder-id="' + folderId + '" style="padding-left:' + padding + 'px"' + (active ? ' aria-current="true"' : '') + '>';
         html += '<span class="file-folder-icon">📁</span>';
         html += '<span class="file-folder-name">' + escapeHtml(item.name) + '</span>';
         html += '</button>';
@@ -3615,15 +3620,17 @@
 
     function renderFilePreview(item) {
       var title = escapeHtml(item.filename || "文件");
-      var source = "/web/projects/" + encodeURIComponent(projectKey) + "/attachments/" + encodeURIComponent(String(item.id)) + "/download";
+      var source = "/web/projects/" + pathSegment(projectKey) + "/attachments/" + pathSegment(item.id) + "/download";
+      var sourceAttr = escapeHtml(source);
+      var galleryId = escapeHtml("project-media-" + projectKey);
       if (item.status !== "uploaded") {
         return "";
       }
       if (isPreviewableImageType(item.content_type)) {
-        return '<button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="' + source + '" data-image-title="' + title + '" data-image-gallery="project-media-' + escapeHtml(projectKey) + '" aria-label="预览图片 ' + title + '"><span class="attachment-image-frame" data-image-preview-frame><img alt="' + title + '" data-image-preview-image hidden><span class="attachment-image-state" data-image-preview-status>加载图片预览</span></span><span class="attachment-image-caption">预览图片</span></button>';
+        return '<button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="' + sourceAttr + '" data-image-title="' + title + '" data-image-gallery="' + galleryId + '" aria-label="预览图片 ' + title + '"><span class="attachment-image-frame" data-image-preview-frame><img alt="' + title + '" data-image-preview-image hidden><span class="attachment-image-state" data-image-preview-status>加载图片预览</span></span><span class="attachment-image-caption">预览图片</span></button>';
       }
       if (isPreviewableVideoType(item.content_type)) {
-        return '<button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="' + source + '" data-image-title="' + title + '" data-image-gallery="project-media-' + escapeHtml(projectKey) + '" aria-label="预览视频 ' + title + '"><span class="attachment-image-frame"><video src="' + source + '" muted preload="metadata" playsinline></video><span class="attachment-video-play" aria-hidden="true">▶</span></span><span class="attachment-image-caption">预览视频</span></button>';
+        return '<button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="' + sourceAttr + '" data-image-title="' + title + '" data-image-gallery="' + galleryId + '" aria-label="预览视频 ' + title + '"><span class="attachment-image-frame"><video src="' + sourceAttr + '" muted preload="metadata" playsinline></video><span class="attachment-video-play" aria-hidden="true">▶</span></span><span class="attachment-image-caption">预览视频</span></button>';
       }
       return "";
     }
@@ -3637,6 +3644,7 @@
       }
       var html = '<div class="attachment-list">';
       folders.forEach(function (item) {
+        var folderId = escapeHtml(item.id);
         html += '<article class="attachment-row folder-row">';
         html += '<div><strong>📁 ' + escapeHtml(item.name) + '</strong>';
         if (item.description) {
@@ -3644,23 +3652,27 @@
         }
         html += '</div>';
         html += '<div class="attachment-actions">';
-        html += '<button class="btn btn-sm btn-secondary" type="button" data-file-folder-open data-folder-id="' + item.id + '">打开</button>';
+        html += '<button class="btn btn-sm btn-secondary" type="button" data-file-folder-open data-folder-id="' + folderId + '">打开</button>';
         html += '</div>';
         html += '</article>';
       });
       files.forEach(function (item) {
         var status = attachmentStatusMeta(item.status);
+        var attachmentId = escapeHtml(item.id);
+        var attachmentPath = pathSegment(item.id);
+        var fileObjectId = escapeHtml(item.file_object_id);
+        var projectPath = pathSegment(projectKey);
         html += '<article class="attachment-row">';
         html += '<div>';
         html += renderFilePreview(item);
         html += '<strong>' + escapeHtml(item.filename || "") + '</strong>';
-        html += '<span>' + formatFileSize(item.byte_size) + ' · ' + escapeHtml(item.content_type || "application/octet-stream") + ' · 文件对象 #' + item.file_object_id + '</span>';
+        html += '<span>' + formatFileSize(item.byte_size) + ' · ' + escapeHtml(item.content_type || "application/octet-stream") + ' · 文件对象 #' + fileObjectId + '</span>';
         html += '<code>' + escapeHtml(item.object_key || "") + '</code>';
         html += '</div>';
         html += '<div class="attachment-actions">';
         html += '<span class="status status-' + status.tone + '">' + status.label + '</span>';
         if (canManageFiles && item.status === "pending") {
-          html += '<form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="' + item.id + '" data-attachment-upload-url-template="/api/v1/projects/' + encodeURIComponent(projectKey) + '/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/' + encodeURIComponent(projectKey) + '/attachments/{id}/uploaded" data-success-redirect="/web/projects/' + encodeURIComponent(projectKey) + '?tab=files">';
+          html += '<form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="' + attachmentId + '" data-attachment-upload-url-template="/api/v1/projects/' + projectPath + '/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/' + projectPath + '/attachments/{id}/uploaded" data-success-redirect="/web/projects/' + projectPath + '?tab=files">';
           html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
           html += '<label class="btn btn-sm btn-secondary attachment-file-button">选择文件<input class="sr-only" name="file" type="file" required data-attachment-file></label>';
           html += '<button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>';
@@ -3668,13 +3680,13 @@
           html += '</form>';
         }
         if (item.status === "uploaded") {
-          html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + encodeURIComponent(projectKey) + '/attachments/' + item.id + '/download" target="_blank" rel="noopener">下载文件</a>';
+          html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/download" target="_blank" rel="noopener">下载文件</a>';
         } else {
           html += '<span class="attachment-action-hint">上传完成后可下载</span>';
         }
         if (canManageFiles) {
-          html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + item.id + '" data-file-object-id="' + item.file_object_id + '">移动到</button>';
-          html += '<form class="inline-form" method="post" action="/web/projects/' + encodeURIComponent(projectKey) + '/attachments/' + item.id + '/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 ' + escapeHtml(item.filename || "文件") + '？删除后不能继续下载。" data-confirm-action="删除">';
+          html += '<button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="' + attachmentId + '" data-file-object-id="' + fileObjectId + '">移动到</button>';
+          html += '<form class="inline-form" method="post" action="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/delete" data-confirm-submit-form data-confirm-title="删除项目文件" data-confirm-message="确认删除文件 ' + escapeHtml(item.filename || "文件") + '？删除后不能继续下载。" data-confirm-action="删除">';
           html += '<input type="hidden" name="_csrf" value="' + escapeHtml(csrfToken()) + '">';
           html += '<button class="btn btn-sm btn-danger" type="submit">删除</button>';
           html += '</form>';
