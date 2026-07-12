@@ -745,7 +745,10 @@
     var rect = trigger.getBoundingClientRect();
     var gutter = 8;
     var searchable = control.selectElement.dataset.selectSearchable !== undefined;
-    var width = Math.min(searchable ? Math.max(rect.width, 320) : rect.width, window.innerWidth - 24);
+    var configuredMinWidth = Number(control.selectElement.dataset.selectPanelMinWidth || 0);
+    var defaultMinWidth = searchable ? 320 : 128;
+    var minWidth = configuredMinWidth > 0 ? configuredMinWidth : defaultMinWidth;
+    var width = Math.min(Math.max(rect.width, minWidth), window.innerWidth - 24);
     var left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
     panel.style.width = width + "px";
     panel.style.left = left + "px";
