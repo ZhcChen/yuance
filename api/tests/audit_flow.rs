@@ -354,9 +354,12 @@ async fn audit_page_can_filter_and_paginate_logs() {
     assert!(body.contains(r#"value="oss""#));
     assert!(body.contains("保存对象存储配置"));
     assert!(!body.contains("创建用户"));
-    assert!(body.contains("第 1/2 页"));
-    assert!(body.contains("共 2 条，每页 1 条"));
-    assert!(body.contains("下一页"));
+    assert!(body.contains("当前显示 1-1"));
+    assert!(body.contains("共 2 条"));
+    assert!(body.contains("data-pagination-size"));
+    assert!(body.contains("value=\"100\""));
+    assert!(body.contains("aria-label=\"跳转页码\""));
+    assert!(body.contains(r#"aria-label="下一页""#));
     assert!(body.contains("action=storage.config.save"));
     assert!(body.contains("target_type=storage_config"));
     assert!(body.contains("target_id=oss"));

@@ -492,6 +492,7 @@ struct SystemAuditTemplate {
     has_logs: bool,
     filters: AuditLogFilterView,
     pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
 }
 
 #[derive(Template)]
@@ -3960,6 +3961,12 @@ pub async fn system_audit_page(
         page.total_items,
         total_pages,
     );
+    let pagination_pages = audit_pagination_pages(
+        &filters,
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -3977,6 +3984,7 @@ pub async fn system_audit_page(
             logs,
             filters,
             pagination,
+            pagination_pages,
         })?
         .into_response(),
     )
@@ -6020,6 +6028,27 @@ fn audit_page_url(filters: &AuditLogFilterView, page: i64, per_page: i64) -> Str
     } else {
         format!("/web/system/audit?{}", params.join("&"))
     }
+}
+
+fn audit_pagination_pages(
+    filters: &AuditLogFilterView,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: audit_page_url(filters, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
 }
 
 fn work_item_pagination_view(

@@ -348,6 +348,16 @@ cat >"$EVAL_FILE" <<JS
   await submitAndWait("[data-confirm-submit]");
   assert(hasText("已回滚到 v1 的配置快照"), "对象存储回滚未成功");
 
+  await open("/web/system/audit?per_page=1");
+  const auditPager = query("nav[aria-label='审计日志分页']");
+  assert(auditPager.querySelector(".pager-pages"), "审计日志分页未渲染页码控件");
+  assert(auditPager.querySelector("[data-pagination-size]"), "审计日志分页缺少每页条数选择");
+  assert(auditPager.querySelector("input[aria-label='跳转页码']"), "审计日志分页缺少跳页输入框");
+  assert(
+    auditPager.querySelector("[data-pagination-size]")?.nextElementSibling?.matches(".select-control"),
+    "审计日志分页每页条数未复用共享下拉控件",
+  );
+
   await open("/web/projects");
   click("[data-modal-open='project-create-modal']");
   assert(hasText("新建项目"), "项目创建 modal 未打开");
