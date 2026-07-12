@@ -1778,6 +1778,17 @@
     );
   }
 
+  function reloadDiscussionAtComment(itemKey, commentId) {
+    var targetPath = "/web/work-items/" + encodeURIComponent(itemKey);
+    var targetHash = "comment-" + encodeURIComponent(String(commentId));
+    if (window.location.pathname === targetPath) {
+      window.location.hash = targetHash;
+      window.location.reload();
+      return;
+    }
+    window.location.assign(targetPath + "#" + targetHash);
+  }
+
   function csrfToken() {
     return document
       .querySelector('meta[name="yuance-csrf-token"]')
@@ -2428,9 +2439,9 @@
       if (files.length) {
         setUploadTransfer(form, 100, "附件上传完成", files.length + " 个文件已全部保存。", "success");
       }
-      discussionStatus(form, "发表成功，正在刷新讨论...", "success");
+      discussionStatus(form, "发表成功，正在定位讨论...", "success");
       window.setTimeout(function () {
-        window.location.reload();
+        reloadDiscussionAtComment(itemKey, commentId);
       }, 350);
     } catch (error) {
       var errorMessage = (error && error.message) || "提交失败，请重试。";
@@ -3243,6 +3254,13 @@
     pendingConfirmForm = null;
     closeModal(document.querySelector("[data-confirm-modal]"), false);
     submitWebForm(form, form.querySelector("button[type='submit']"));
+  }
+
+  if (window.__YUANCE_ENABLE_TEST_HOOKS__) {
+    window.__YUANCE_TEST_HOOKS__ = Object.assign(window.__YUANCE_TEST_HOOKS__ || {}, {
+      reloadDiscussionAtComment: reloadDiscussionAtComment,
+      submitDiscussion: submitDiscussion,
+    });
   }
 
   applyTheme(readThemePreference());

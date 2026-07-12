@@ -1,9 +1,11 @@
-.PHONY: help api-run api-test api-build api-fmt api-clippy api-browser-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 deploy-production deploy-validate
+.PHONY: help api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 deploy-production deploy-validate
 
 help:
 	@echo "元策开发命令"
 	@echo "  make api-run"
 	@echo "  make api-test"
+	@echo "  make api-js-test"
+	@echo "  make api-full-test"
 	@echo "  make api-build"
 	@echo "  make api-fmt"
 	@echo "  make api-clippy"
@@ -20,6 +22,11 @@ api-run:
 
 api-test:
 	cargo test -p yuance-api
+
+api-js-test:
+	node scripts/test-discussion-js.mjs
+
+api-full-test: api-js-test api-test
 
 api-build:
 	cargo build -p yuance-api

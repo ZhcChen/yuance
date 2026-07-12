@@ -2833,7 +2833,7 @@ pub async fn work_item_comment_create(
             .await?
             .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
-        projects::add_work_item_comment_reply(
+        let comment = projects::add_work_item_comment_reply(
             pool,
             context.user_id,
             &item_key,
@@ -2851,7 +2851,7 @@ pub async fn work_item_comment_create(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
+        return Ok(Redirect::to(&work_item_comment_url(&item_key, comment.id)).into_response());
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -2885,7 +2885,7 @@ pub async fn work_item_comment_update(
             .await?
             .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
-        projects::update_work_item_comment(
+        let comment = projects::update_work_item_comment(
             pool,
             context.user_id,
             context.is_super_admin,
@@ -2904,7 +2904,7 @@ pub async fn work_item_comment_update(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/work-items/{item_key}")).into_response());
+        return Ok(Redirect::to(&work_item_comment_url(&item_key, comment.id)).into_response());
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -4946,6 +4946,10 @@ fn safe_web_return_to(value: &str) -> &str {
     } else {
         "/web"
     }
+}
+
+fn work_item_comment_url(item_key: &str, comment_id: i64) -> String {
+    format!("/web/work-items/{item_key}#comment-{comment_id}")
 }
 
 fn with_csrf_cookie(

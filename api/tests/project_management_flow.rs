@@ -2995,6 +2995,7 @@ async fn web_work_item_detail_can_transition_status_and_add_comment() {
         .await
         .expect("router should respond");
     let comment_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -3021,10 +3022,43 @@ async fn web_work_item_detail_can_transition_status_and_add_comment() {
         .expect("comments should load");
 
     assert_eq!(item.status, "done");
-    assert!(
-        comments
-            .iter()
-            .any(|comment| comment.body == "这条评论用于验证闭环")
+    let created_comment = comments
+        .iter()
+        .find(|comment| comment.body == "这条评论用于验证闭环")
+        .expect("created web comment should exist");
+    let created_comment_id = created_comment.id;
+    assert_eq!(
+        comment_response.headers().get(header::LOCATION).unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{created_comment_id}").as_str()
+    );
+
+    let reply_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&body=%E8%BF%99%E6%98%AF%E7%BD%91%E9%A1%B5%E5%9B%9E%E5%A4%8D&parent_comment_id={}",
+                    created_comment_id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reply_response.status(), StatusCode::SEE_OTHER);
+    let comments = projects::list_work_item_comments(&pool, item.id)
+        .await
+        .expect("comments should reload");
+    let reply = comments
+        .iter()
+        .find(|comment| comment.body == "这是网页回复")
+        .expect("web reply should exist");
+    assert_eq!(reply.parent_comment_id, Some(created_comment_id));
+    assert_eq!(
+        reply_response.headers().get(header::LOCATION).unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{}", reply.id).as_str()
     );
 }
 
@@ -3240,6 +3274,13 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
         .await
         .expect("router should respond");
     assert_eq!(maintainer_edit_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        maintainer_edit_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{comment_id}").as_str()
+    );
 
     let edited_by_maintainer = projects::get_work_item_comment(&pool, item.id, comment_id)
         .await
@@ -3262,6 +3303,10 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
         .await
         .expect("router should respond");
     assert_eq!(edit_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        edit_response.headers().get(header::LOCATION).unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{comment_id}").as_str()
+    );
 
     let edited = projects::get_work_item_comment(&pool, item.id, comment_id)
         .await

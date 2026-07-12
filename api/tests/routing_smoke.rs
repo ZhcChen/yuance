@@ -303,6 +303,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     );
     assert!(body.contains("form.dataset.discussionPendingAssign = \"true\""));
     assert!(body.contains("内容已发表，未完成的指派或附件可直接重试。"));
+    assert!(body.contains("function reloadDiscussionAtComment(itemKey, commentId)"));
+    assert!(body.contains("window.location.hash = targetHash"));
+    assert!(body.contains("reloadDiscussionAtComment(itemKey, commentId)"));
     assert!(body.contains("button === activeSubmitter"));
     assert!(body.contains("submitter.matches(\"[data-discussion-submit]\")"));
     assert!(body.contains("USERNAME_INPUT_SELECTOR"));
