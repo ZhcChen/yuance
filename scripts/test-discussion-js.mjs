@@ -75,6 +75,7 @@ function elementStub(tagName = "div") {
 function loadAppWithDom() {
   const fetchCalls = [];
   const assignCalls = [];
+  const sessionItems = new Map();
   let reloadCount = 0;
 
   const documentElement = elementStub("html");
@@ -111,6 +112,17 @@ function loadAppWithDom() {
       },
       setItem() {},
       removeItem() {},
+    },
+    sessionStorage: {
+      getItem(key) {
+        return sessionItems.get(key) || null;
+      },
+      setItem(key, value) {
+        sessionItems.set(key, String(value));
+      },
+      removeItem(key) {
+        sessionItems.delete(key);
+      },
     },
     location: {
       pathname: "/web/work-items/YCE-TASK-2",
@@ -195,6 +207,7 @@ function loadAppWithDom() {
       return reloadCount;
     },
     hooks: window.__YUANCE_TEST_HOOKS__,
+    sessionItems,
     window,
   };
 }
@@ -326,6 +339,10 @@ assert.equal(typeof samePage.hooks.submitDiscussion, "function");
 await samePage.hooks.submitDiscussion(discussionForm(), submitButton());
 assert.equal(samePage.fetchCalls.length, 1);
 assert.equal(samePage.fetchCalls[0].url, "/api/v1/work-items/YCE-TASK-2/comments");
+assert.deepEqual(JSON.parse(samePage.sessionItems.get("yuance-pending-toast")), {
+  message: "内容已发表。",
+  tone: "success",
+});
 assert.equal(samePage.window.location.hash, "comment-123");
 assert.equal(samePage.reloadCount, 1);
 assert.deepEqual(samePage.assignCalls, []);
@@ -341,6 +358,10 @@ assert.equal(typeof projectCreate.hooks.submitBugReport, "function");
 await projectCreate.hooks.submitBugReport(bugReportForm("/web/projects/YCE?tab=work"));
 assert.equal(projectCreate.fetchCalls.length, 1);
 assert.equal(projectCreate.fetchCalls[0].url, "/api/v1/work-items");
+assert.deepEqual(JSON.parse(projectCreate.sessionItems.get("yuance-pending-toast")), {
+  message: "工作项创建完成。",
+  tone: "success",
+});
 assert.equal(projectCreate.window.location.href, "/web/projects/YCE?tab=work");
 
 console.log("discussion js behavior ok");

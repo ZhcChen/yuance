@@ -114,8 +114,10 @@
         TOAST_STORAGE_KEY,
         JSON.stringify({ message: message, tone: tone || "success" })
       );
+      return true;
     } catch (_error) {
       // The next page can still load when sessionStorage is unavailable.
+      return false;
     }
   }
 
@@ -134,6 +136,13 @@
       } catch (_storageError) {
         // Ignore storage restrictions after the page has already loaded.
       }
+    }
+  }
+
+  function queueSuccessBeforeNavigation(message) {
+    var toastMessage = message || "操作已完成。";
+    if (!queueToast(toastMessage, "success")) {
+      showToast(toastMessage, "success");
     }
   }
 
@@ -355,7 +364,7 @@
           },
           body: JSON.stringify(webFormJsonBody(form, submitter)),
         });
-        showToast(form.dataset.successMessage || "操作已完成。", "success");
+        queueSuccessBeforeNavigation(form.dataset.successMessage || "操作已完成。");
         window.setTimeout(function () {
           if (form.dataset.successRedirect) {
             window.location.href = form.dataset.successRedirect;
@@ -2020,6 +2029,11 @@
       } else {
         directUploadStatus(form, "附件继续上传完成，正在刷新页面。", "success");
       }
+      queueSuccessBeforeNavigation(
+        existingAttachmentId
+          ? "附件继续上传完成。"
+          : uploadEntries.length + " 个附件上传完成。"
+      );
       window.setTimeout(function () {
         window.location.href = form.dataset.successRedirect || window.location.href;
       }, 450);
@@ -2468,6 +2482,7 @@
         setUploadTransfer(form, 100, "附件上传完成", files.length + " 个文件已全部保存。", "success");
       }
       discussionStatus(form, "发表成功，正在定位讨论...", "success");
+      queueSuccessBeforeNavigation("内容已发表。");
       window.setTimeout(function () {
         reloadDiscussionAtComment(itemKey, commentId);
       }, 350);
@@ -2640,6 +2655,7 @@
       }
 
       bugReportStatus(form, itemLabel + "创建完成，正在打开结果页。", "success");
+      queueSuccessBeforeNavigation(itemLabel + "创建完成。");
       window.setTimeout(function () {
         window.location.href = bugReportSuccessUrl(form, item);
       }, 450);
