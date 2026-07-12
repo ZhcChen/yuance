@@ -1,6 +1,7 @@
 ---
 date: 2026-07-10
 topic: ui-system-and-work-item-composer
+status: completed
 origin: docs/brainstorms/2026-07-10-ui-system-and-work-item-composer-requirements.md
 ---
 

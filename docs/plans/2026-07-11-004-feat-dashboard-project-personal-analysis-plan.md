@@ -1,6 +1,7 @@
 ---
 date: 2026-07-11
 topic: dashboard-project-personal-analysis
+status: completed
 origin: docs/brainstorms/2026-07-11-dashboard-project-personal-analysis-requirements.md
 ---
 

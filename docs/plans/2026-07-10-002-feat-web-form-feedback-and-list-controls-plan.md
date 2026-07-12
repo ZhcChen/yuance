@@ -1,6 +1,7 @@
 ---
 date: 2026-07-10
 topic: web-form-feedback-and-list-controls
+status: completed
 origin: docs/brainstorms/2026-07-10-web-form-feedback-and-list-controls-requirements.md
 ---
 

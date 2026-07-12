@@ -1,6 +1,7 @@
 ---
 date: 2026-07-11
 topic: work-item-discussion-and-action-layout
+status: completed
 origin: docs/brainstorms/2026-07-11-work-item-discussion-and-action-layout-requirements.md
 ---
 
