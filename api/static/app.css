@@ -369,10 +369,10 @@ body {
   width: 38px;
   height: 38px;
   overflow: hidden;
-  border: 1px solid var(--brand-line);
+  border: 1px solid transparent;
   border-radius: 50%;
   background: var(--brand-soft);
-  color: var(--brand);
+  color: #fff;
   font-size: 13px;
   font-weight: 800;
 }
@@ -411,12 +411,19 @@ body {
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .discussion-assign-status select {
-  width: auto;
-  min-width: 104px;
+  width: 112px;
+  min-width: 112px;
   min-height: 34px;
+}
+
+.discussion-assign-status .select-control {
+  width: 112px;
+  min-width: 112px;
+  flex: 0 0 112px;
 }
 
 .discussion-attach-button {
