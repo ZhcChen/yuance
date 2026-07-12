@@ -1,7 +1,7 @@
 ---
 date: 2026-06-29
 topic: current-project-context
-status: active
+status: completed
 origin: docs/brainstorms/current-project-context-requirements.md
 ---
 
@@ -208,6 +208,17 @@ flowchart TB
 - 选择一个项目后，任务页只展示该项目工作项。
 - 切换项目后，需求 / 任务 / Bug 页面随项目变化。
 - 顶部搜索和用户头像下拉仍正常。
+
+## Completion Evidence
+
+当前计划已落地，状态于 2026-07-13 收敛为 `completed`。关键证据：
+
+- 当前项目偏好读写和权限校验：`api/src/domains/projects.rs` 中的 `get_current_project_for_user`、`get_or_select_current_project_for_user`、`set_current_project_for_user`。
+- Web/API 切换入口：`api/src/web/user/mod.rs` 的 `current_project_update`，以及 `api/src/web/api/mod.rs` 的 `/api/v1/current-project` 处理。
+- 需求 / 任务 / Bug 列表默认当前项目：`api/src/web/user/mod.rs` 的 `work_items_page` 和 `api/templates/web/work_items/list.html`。
+- API 工作项列表默认当前项目：`api/src/web/api/mod.rs` 的 `default_api_project_key` 与 `list_work_items`。
+- 工作台项目推进和个人待处理入口：`api/templates/web/dashboard.html` 与 `api/src/web/user/mod.rs` 的 dashboard 渲染逻辑。
+- 回归覆盖：`api/tests/project_management_flow.rs` 已覆盖当前项目自动选择、项目详情同步、任务列表过滤、API 当前项目权限和默认范围。
 
 ## Risks
 
