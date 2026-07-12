@@ -59,6 +59,9 @@ async fn system_users_page_paginates_with_shared_controls() {
         )
         .await;
     }
+    rbac::create_role(&pool, "page_viewer", "分页观察员", "self")
+        .await
+        .expect("role should create");
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
     let first_page_response = app
@@ -105,6 +108,36 @@ async fn system_users_page_paginates_with_shared_controls() {
     assert_eq!(third_body.matches("class=\"user-table-row\"").count(), 3);
     assert!(third_body.contains("当前显示 11-13"));
     assert!(third_body.contains(r#"aria-current="page">3</a>"#));
+    assert!(third_body.contains(r#"action="/web/system/users/page_user_01/status""#));
+    assert!(third_body.contains(r#"action="/web/system/users/page_user_02/role""#));
+    assert!(third_body.contains(r#"action="/web/system/users/page_user_02/password""#));
+    assert_pagination_fields(
+        html_fragment(
+            &third_body,
+            r#"action="/web/system/users/page_user_01/status""#,
+            "</form>",
+        ),
+        3,
+        5,
+    );
+    assert_pagination_fields(
+        html_fragment(
+            &third_body,
+            r#"action="/web/system/users/page_user_02/role""#,
+            "</form>",
+        ),
+        3,
+        5,
+    );
+    assert_pagination_fields(
+        html_fragment(
+            &third_body,
+            r#"action="/web/system/users/page_user_02/password""#,
+            "</form>",
+        ),
+        3,
+        5,
+    );
 
     let overflow_page_response = app
         .clone()
@@ -139,6 +172,48 @@ async fn system_users_page_paginates_with_shared_controls() {
     assert_eq!(status_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         status_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=3&per_page=5"
+    );
+
+    let role_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/page_user_02/role")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "role_code=page_viewer&page=3&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(role_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        role_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=3&per_page=5"
+    );
+
+    let password_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/page_user_02/password")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "password=MemberPass2027%21&page=3&per_page=5",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(password_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        password_response.headers().get(header::LOCATION).unwrap(),
         "/web/system/users?page=3&per_page=5"
     );
 
@@ -1244,6 +1319,18 @@ async fn response_body(response: axum::response::Response) -> String {
     std::str::from_utf8(&body)
         .expect("body should be utf-8")
         .to_string()
+}
+
+fn html_fragment<'a>(body: &'a str, marker: &str, closing: &str) -> &'a str {
+    let start = body.find(marker).expect("fragment marker should exist");
+    let tail = &body[start..];
+    let end = tail.find(closing).expect("fragment closing should exist") + closing.len();
+    &tail[..end]
+}
+
+fn assert_pagination_fields(fragment: &str, page: i64, per_page: i64) {
+    assert!(fragment.contains(&format!(r#"name="page" value="{page}""#)));
+    assert!(fragment.contains(&format!(r#"name="per_page" value="{per_page}""#)));
 }
 
 async fn test_pool() -> sqlx::SqlitePool {
