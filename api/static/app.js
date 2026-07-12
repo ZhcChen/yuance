@@ -3202,6 +3202,7 @@
           nextIndex = tabs.length - 1;
         }
         activateContentTab(tabs[nextIndex], true);
+        syncTabUrl(tabs[nextIndex]);
         tabs[nextIndex].focus({ preventScroll: true });
       }
       return;

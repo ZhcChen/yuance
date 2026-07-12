@@ -382,6 +382,16 @@ cat >"$EVAL_FILE" <<JS
     );
   }
   assert(projectTabs.querySelector("[data-tab-panel].active")?.id === "project-tab-info", "项目 Tab 面板未同步");
+  query("[data-tab-key='info']").focus();
+  query("[data-tab-key='info']").dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown", {
+    key: "ArrowRight",
+    bubbles: true,
+  }));
+  await waitFor(() => query("[data-tab-key='members']").classList.contains("active"), "项目详情键盘 Tab 未激活下一项");
+  assert(
+    frame.contentWindow.location.search.includes("tab=members"),
+    "项目详情键盘 Tab 切换未同步 URL",
+  );
 
   await open("/web/projects/" + projectKey + "?tab=files");
   click("[data-modal-open='project-folder-create-modal']");
