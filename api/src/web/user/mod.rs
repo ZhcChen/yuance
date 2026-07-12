@@ -682,7 +682,7 @@ struct WorkItemDetailTemplate {
     has_comments: bool,
     has_attachments: bool,
     can_manage_work_items: bool,
-    can_delete_work_items: bool,
+    can_restore_work_items: bool,
 }
 
 #[derive(Template)]
@@ -2402,7 +2402,7 @@ pub async fn work_item_detail_page(
     let can_manage_work_items =
         user_can_write_project_content_for_context(pool, &context, project.id).await?
             && project_accepts_writes;
-    let can_delete_work_items =
+    let can_restore_work_items =
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
@@ -2428,7 +2428,7 @@ pub async fn work_item_detail_page(
             attachments,
             comments,
             can_manage_work_items,
-            can_delete_work_items,
+            can_restore_work_items,
         })?
         .into_response(),
     )
@@ -6725,7 +6725,7 @@ fn render_sample_work_item_detail_page(
             attachments: Vec::new(),
             comments: partial.comments,
             can_manage_work_items: true,
-            can_delete_work_items: true,
+            can_restore_work_items: true,
         })?
         .into_response(),
     )

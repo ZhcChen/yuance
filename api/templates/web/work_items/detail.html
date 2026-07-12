@@ -28,7 +28,7 @@
         <h2>历史工作项</h2>
         <p>该工作项曾于 {{ item.deleted_at }} 删除，现仅供审计查看。</p>
       </div>
-      {% if can_delete_work_items %}
+      {% if can_restore_work_items %}
       <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/restore">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn btn-primary" type="submit">恢复工作项</button>
