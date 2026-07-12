@@ -198,6 +198,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("min-width: 168px"));
     assert!(body.contains(".pager-controls .select-control"));
     assert!(body.contains("flex: 0 0 76px"));
+    assert!(body.contains(".toast-close"));
+    assert!(body.contains("place-items: center"));
 }
 
 #[tokio::test]
