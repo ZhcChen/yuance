@@ -198,13 +198,13 @@ storage_configs / storage_config_versions
 
 ### 关键页面
 
-- `/web`：工作台，显示项目统计、我的工作项、风险和最近动态。
+- `/web`：工作台，显示项目统计、项目推进、当前用户待处理快捷入口、风险和最近动态；不再保留独立“我的工作项”区块。
 - `/web/projects`：项目列表，支持状态、负责人、关键字筛选。
 - `/web/projects/:id`：项目详情，显示概览、成员、需求、任务、Bug、动态、附件。
 - `/web/requirements`：跨项目需求列表。
 - `/web/tasks`：跨项目任务列表。
 - `/web/bugs`：跨项目 Bug 列表。
-- `/web/me`：我的工作项、我的项目、账号信息。
+- `/web/me`：个人资料、账号信息、我的项目和指派给我的工作项。
 - `/web/system/users`：用户列表、启停、重置密码、角色绑定。
 - `/web/system/roles`：角色列表、角色权限分配。
 - `/web/system/storage`：阿里云 OSS 配置、探测、保存、激活。
@@ -214,9 +214,9 @@ storage_configs / storage_config_versions
 
 - 列表筛选：`hx-get` 刷新列表容器。
 - 创建 / 编辑：modal 或 drawer partial。
-- 状态流转：按钮 `hx-post` 后刷新行、详情和 toast。
+- 状态流转：普通 POST / fetch 提交后返回完整页面或 Toast，不再依赖工作项局部 htmx partial。
 - 删除 / 禁用：确认弹窗后局部刷新。
-- 表单错误：返回 `422` 和原表单 partial。
+- 表单错误：Web 表单和弹窗拦截 JSON / HTML 错误并以 Toast 或局部错误区提示，避免直接跳转到 JSON。
 - 成功跳转：使用 `HX-Redirect`。
 
 ## API V1 Surface
@@ -310,7 +310,7 @@ POST /api/v1/storage/download-url
 **Approach:**
 - `/web/projects` 使用项目列表模板。
 - `/web/requirements`、`/web/tasks`、`/web/bugs` 复用工作项列表模板，只改 `item_type` 筛选。
-- htmx partial 继续服务“我的工作项”区域。
+- 工作台不再保留独立“我的工作项”partial；项目推进表直接展示当前用户在每个项目内的待处理快捷入口。
 
 **Patterns to follow:**
 - 当前 `api/templates/layouts/web.html` 的 shell。

@@ -28,7 +28,7 @@ topic: current-project-context
 **全局能力边界**
 - R9. 项目列表、个人中心、系统管理、审计日志、对象存储设置不受当前项目强制过滤。
 - R10. 全局搜索仍可跨项目搜索，但结果必须保留项目标识；后续可增加“仅当前项目”选项。
-- R11. 工作台可以保留“我的工作项”等个人跨项目入口，但项目工作区内容应优先围绕当前项目展示。
+- R11. 当前口径已被 `docs/brainstorms/2026-07-11-dashboard-project-personal-analysis-requirements.md` 调整：工作台移除“我的工作项”区域，改用项目推进表内的个人待处理快捷入口。
 
 ## Success Criteria
 
