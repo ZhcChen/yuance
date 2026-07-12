@@ -938,30 +938,20 @@
     if (!control || !active || !indicator) {
       return;
     }
-    var controlRect = control.getBoundingClientRect();
-    var indicatorRect = indicator.getBoundingClientRect();
-    var previousWidth = indicatorRect.width || active.offsetWidth;
-    var previousX = indicatorRect.left - controlRect.left - indicator.offsetLeft;
     var nextWidth = active.offsetWidth;
     var nextX = Math.max(0, active.offsetLeft - 4);
 
-    if (indicator.contentTabAnimation) {
-      indicator.contentTabAnimation.cancel();
+    if (!animate || prefersReducedMotion()) {
+      indicator.style.transition = "none";
+      control.style.setProperty("--content-tab-indicator-width", nextWidth + "px");
+      control.style.setProperty("--content-tab-indicator-x", nextX + "px");
+      window.requestAnimationFrame(function () {
+        indicator.style.transition = "";
+      });
+    } else {
+      control.style.setProperty("--content-tab-indicator-width", nextWidth + "px");
+      control.style.setProperty("--content-tab-indicator-x", nextX + "px");
     }
-    control.style.setProperty("--content-tab-indicator-width", nextWidth + "px");
-    control.style.setProperty("--content-tab-indicator-x", nextX + "px");
-
-    if (!animate || prefersReducedMotion() || (previousWidth === nextWidth && previousX === nextX)) {
-      return;
-    }
-    indicator.contentTabAnimation = indicator.animate([
-      { width: previousWidth + "px", transform: "translateX(" + previousX + "px)" },
-      { width: nextWidth + "px", transform: "translateX(" + nextX + "px)" }
-    ], {
-      duration: CONTENT_TAB_SLIDE_MS,
-      easing: "cubic-bezier(.22, .8, .24, 1)",
-      fill: "none"
-    });
   }
 
   function activateContentTab(item, animateIndicator) {
