@@ -3385,6 +3385,10 @@
   }, true);
 
   document.addEventListener("submit", function (event) {
+    if (event.defaultPrevented) {
+      return;
+    }
+
     var discussionForm = event.target.closest("[data-discussion-form]");
     if (discussionForm) {
       event.preventDefault();

@@ -448,6 +448,19 @@ cat >"$EVAL_FILE" <<JS
     "项目成员候选用户未选中",
   );
   fill("#project-member-add-modal select[name='member_role']", "member");
+  const memberAddForm = query("#project-member-add-modal form");
+  let blockedSubmitFetches = 0;
+  const originalFrameFetch = frame.contentWindow.fetch.bind(frame.contentWindow);
+  frame.contentWindow.fetch = (...args) => {
+    blockedSubmitFetches += 1;
+    return Promise.reject(new Error("submit should have been blocked before fetch"));
+  };
+  memberAddForm.addEventListener("submit", (event) => event.preventDefault(), { capture: true, once: true });
+  memberAddForm.requestSubmit(query("#project-member-add-modal button[type='submit'].btn-primary"));
+  await sleep(200);
+  frame.contentWindow.fetch = originalFrameFetch;
+  assert(blockedSubmitFetches === 0, "已取消的表单提交仍触发了 Ajax 请求");
+  assert(visible("#project-member-add-modal"), "已取消的表单提交不应关闭项目成员 modal");
   await submitAndWait("#project-member-add-modal button[type='submit'].btn-primary");
   await open("/web/projects/" + projectKey + "?tab=members");
   assert(hasText("冒烟成员"), "项目成员添加后未显示新成员");
