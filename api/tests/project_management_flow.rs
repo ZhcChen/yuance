@@ -509,6 +509,7 @@ async fn web_dashboard_renders_demo_projects_from_database() {
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("YCE"));
     assert!(body.contains("工作项"));
+    assert!(body.contains("开放 / 共"));
     assert!(body.contains("RBAC 采用轻量权限点模型"));
     assert!(body.contains("风险队列"));
     assert!(body.contains("YCE-REQ-1"));
