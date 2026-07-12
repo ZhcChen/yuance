@@ -1,7 +1,7 @@
 ---
 title: feat: 设计元策 V1 完整版本
 type: feat
-status: active
+status: completed
 date: 2026-06-26
 origin: docs/brainstorms/yuance-mvp-requirements.md
 ---
@@ -483,6 +483,19 @@ POST /api/v1/storage/download-url
 
 **Verification:**
 - 关键操作可追溯，团队后续开发有明确规范文档。
+
+## Completion Evidence
+
+当前 V1 完整设计计划已落地，状态于 2026-07-13 收敛为 `completed`。关键证据：
+
+- 项目与工作项数据模型：`api/migrations/202606260002_create_project_management_tables.sql`、`api/src/domains/projects.rs` 和 `api/tests/project_management_flow.rs` 已覆盖项目、成员、需求、任务、Bug、评论和活动。
+- 工作台、项目列表和工作项列表：`api/templates/web/dashboard.html`、`api/templates/web/projects.html`、`api/templates/web/work_items/list.html`、`api/templates/web/partials/work_item_table.html` 已落地真实数据、筛选、统计、分页和创建入口。
+- 项目详情与工作项详情：`api/templates/web/projects/detail.html`、`api/templates/web/work_items/detail.html`、`api/templates/web/partials/work_item_detail.html` 已覆盖概览、成员、需求/任务/Bug、动态、附件、讨论、回复和流转。
+- 系统用户、角色和权限管理：`api/src/domains/users.rs`、`api/src/domains/rbac.rs`、`api/templates/web/system/users.html`、`api/templates/web/system/roles.html`、`api/templates/web/system/permissions.html`、`api/tests/system_management_flow.rs` 已覆盖页面、权限树、角色授权和会话失效。
+- CSRF、退出登录和 session 生命周期：`api/src/platform/security/csrf.rs`、`api/src/domains/auth.rs`、`api/src/web/user/mod.rs`、`api/tests/auth_security_flow.rs`、`api/tests/bootstrap_flow.rs` 已覆盖 Web/API 登录、退出、初始化和写操作保护。
+- 对象存储配置和文件底座：`api/src/domains/storage.rs`、`api/src/domains/files.rs`、`api/templates/web/system/storage.html`、`docs/runbooks/aliyun-oss-manual-validation.md`、`docs/runbooks/file-maintenance.md` 已覆盖配置、探测、版本、签名上传/下载、项目/工作项/评论附件和文件夹。
+- 审计、活动和运行规范：`api/src/domains/audit.rs`、`api/templates/web/system/audit.html`、`api/tests/audit_flow.rs`、`docs/runbooks/api-migrations.md`、`docs/standards/*` 已覆盖关键系统操作审计、项目活动和运行规范。
+- 后续用户提出的 V1 增强也已合入独立完成计划：当前项目上下文、文件上传预览、统一 UI 控件、工作项讨论/右侧操作面板、指派通知、项目个人分析等见 `docs/plans/2026-06-29-*`、`2026-07-09-*`、`2026-07-10-*`、`2026-07-11-*` 的 `completed` 计划。
 
 ## Implementation Dependency Graph
 

@@ -1,7 +1,7 @@
 ---
 title: feat: 完善文件上传与图片预览
 type: feat
-status: complete
+status: completed
 date: 2026-07-10
 origin: docs/brainstorms/2026-07-10-file-upload-image-preview-requirements.md
 ---

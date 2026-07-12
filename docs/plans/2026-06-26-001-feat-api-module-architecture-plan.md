@@ -1,7 +1,7 @@
 ---
 title: feat: 搭建 api 模块技术架构
 type: feat
-status: active
+status: completed
 date: 2026-06-26
 origin: docs/brainstorms/yuance-mvp-requirements.md
 ---
@@ -1077,7 +1077,7 @@ make api-docs-check
 
 ## Implementation Units
 
-- [ ] **Unit 1: Rust workspace 与 api 模块骨架**
+- [x] **Unit 1: Rust workspace 与 api 模块骨架**
 
 **Goal:** 建立 root workspace、`api` crate、基础 README、`.env.example`、目录占位和根 Makefile 入口。
 
@@ -1117,7 +1117,7 @@ make api-docs-check
 - `api` crate 可独立构建。
 - 根目录命令不依赖尚未存在的外部服务。
 
-- [ ] **Unit 2: Axum 服务、路由分区与嵌入式资源**
+- [x] **Unit 2: Axum 服务、路由分区与嵌入式资源**
 
 **Goal:** 建立 `/`、`/web`、`/api` 的基础路由和嵌入式静态资源服务。
 
@@ -1157,7 +1157,7 @@ make api-docs-check
 **Verification:**
 - 两个入口边界清晰，`/api` 不返回 HTML 页面，系统管理不通过 `/admin` 暴露。
 
-- [ ] **Unit 3: SQLite、迁移、schema 和 migration guard**
+- [x] **Unit 3: SQLite、迁移、schema 和 migration guard**
 
 **Goal:** 建立 SQLite 连接、迁移目录、迁移命令、guard 规则和 schema snapshot 机制。
 
@@ -1195,7 +1195,7 @@ make api-docs-check
 **Verification:**
 - 数据库结构变化有明确、可审查、不可改历史的流程。
 
-- [ ] **Unit 4: Auth、Session、CSRF、Bootstrap、RBAC 基础与内存缓存**
+- [x] **Unit 4: Auth、Session、CSRF、Bootstrap、RBAC 基础与内存缓存**
 
 **Goal:** 建立首次系统管理员初始化、登录、登出、session 持久化、内存 session cache、RBAC 基础表、权限快照和 CSRF。
 
@@ -1275,7 +1275,7 @@ make api-docs-check
 - 无 Redis 情况下仍有可控、可恢复的登录态。
 - 初始化、登录、权限快照、系统管理权限都基于同一用户模型和轻量 RBAC。
 
-- [ ] **Unit 5: Domain 基础表、RBAC 管理、repository/service 规范和分页**
+- [x] **Unit 5: Domain 基础表、RBAC 管理、repository/service 规范和分页**
 
 **Goal:** 建立 users、roles、permissions、projects、work_items、comments、activities、settings、audit 的基础数据访问、RBAC 管理和分页规则。
 
@@ -1340,7 +1340,7 @@ make api-docs-check
 **Verification:**
 - 新业务 domain 有稳定分层模板，后续不散写 SQL。
 
-- [ ] **Unit 6: `/web` 用户工作区 MVP 页面**
+- [x] **Unit 6: `/web` 用户工作区 MVP 页面**
 
 **Goal:** 建立工作台、项目、需求、任务、Bug 的服务端渲染页面和 htmx 局部交互基线。
 
@@ -1375,7 +1375,7 @@ make api-docs-check
 **Verification:**
 - 用户可完成最小项目工作闭环。
 
-- [ ] **Unit 7: `/web/system` 系统管理 MVP 页面**
+- [x] **Unit 7: `/web/system` 系统管理 MVP 页面**
 
 **Goal:** 在统一 `/web` shell 内建立系统管理、用户管理、角色管理、权限点查看、项目全局管理、系统设置、审计日志。
 
@@ -1434,7 +1434,7 @@ make api-docs-check
 **Verification:**
 - 系统管理能力在统一用户界面内完成，权限完全来自轻量 RBAC，且不引入独立后台和前端构建链。
 
-- [ ] **Unit 8: 阿里云 OSS 对象存储设置与签名底座**
+- [x] **Unit 8: 阿里云 OSS 对象存储设置与签名底座**
 
 **Goal:** 建立对象存储配置、版本管理、密钥加密、探测、上传签名、下载签名和文件元数据基础能力。
 
@@ -1486,7 +1486,7 @@ make api-docs-check
 **Verification:**
 - 后续项目附件、评论附件、Bug 截图可复用同一对象存储底座，不需要重新设计上传链路。
 
-- [ ] **Unit 9: `/api/v1` JSON API 契约**
+- [x] **Unit 9: `/api/v1` JSON API 契约**
 
 **Goal:** 建立 JSON API 路由、错误 envelope、分页 envelope 和基础资源接口。
 
@@ -1523,7 +1523,7 @@ make api-docs-check
 **Verification:**
 - 程序化接口与 htmx 页面边界清晰。
 
-- [ ] **Unit 10: 文档、运行手册和开发规范沉淀**
+- [x] **Unit 10: 文档、运行手册和开发规范沉淀**
 
 **Goal:** 把本计划中的长期规则、参考项目可复用开发规范和对象存储规则沉淀为 README、标准和运行手册。
 
@@ -1557,6 +1557,20 @@ make api-docs-check
 
 **Verification:**
 - 后续实现者能从文档明确目录、命令、迁移、分页、页面 UI、SQL、Git 和对象存储规则。
+
+## Completion Evidence
+
+当前架构计划已落地，状态于 2026-07-13 收敛为 `completed`。关键证据：
+
+- Workspace 与 `api` 模块：根 `Cargo.toml`、`api/Cargo.toml`、`api/src/main.rs`、`api/src/lib.rs` 已存在，当前仓库仍保持单 `api` Rust 服务形态。
+- Axum 路由、`/web`/`/api` 分区和嵌入资源：`api/src/web/router.rs` 已覆盖 `/web`、`/api/healthz`、`/api/readyz`、`/api/v1/*` 和 `/static/*`，静态资源通过 `include_str!` 打进二进制。
+- SQLite、迁移和 CLI：`api/src/platform/db.rs` 的 `MIGRATOR`、`api/src/app/migrate.rs`、`api/migrations/*.sql` 和 `api/tests/cli_migrate_flow.rs` 已覆盖显式迁移、状态和版本校验。
+- Auth、session、bootstrap、CSRF、RBAC：`api/src/domains/auth.rs`、`bootstrap.rs`、`rbac.rs`、`api/src/platform/security/csrf.rs`、`api/tests/bootstrap_flow.rs`、`api/tests/auth_security_flow.rs` 已覆盖初始化、登录、权限和 CSRF 关键路径。
+- Domain、分页和项目协作：`api/src/domains/projects.rs`、`files.rs`、`notifications.rs`、`api/src/web/user/mod.rs`、`api/templates/web/work_items/*`、`api/tests/project_management_flow.rs` 已覆盖项目、成员、工作项、评论、附件、通知和共享分页控件。
+- 系统管理：`api/templates/web/system/*`、`api/src/domains/users.rs`、`api/src/domains/rbac.rs`、`api/tests/system_management_flow.rs` 已覆盖用户、角色、权限、对象存储和审计页面。
+- 对象存储与文件底座：`api/src/domains/storage.rs`、`api/src/domains/files.rs`、`api/migrations/202606260003_create_file_storage_tables.sql`、`api/tests/storage_config_flow.rs`、`api/tests/cli_files_flow.rs` 已覆盖加密配置、版本、探测、签名和附件关系。
+- `/api/v1` JSON 契约：`api/src/web/api/mod.rs`、`docs/runbooks/api-v1-contract.md`、`api/tests/routing_smoke.rs` 已覆盖当前 API 路由和契约文档一致性。
+- 运行手册与标准文档：`docs/runbooks/api-migrations.md`、`docs/runbooks/production-deployment.md`、`docs/runbooks/file-maintenance.md`、`docs/standards/git-workflow.md`、`docs/standards/sql-repository-convention.md`、`docs/standards/web-ui-density.md`、`docs/standards/provider-runtime-config.md` 已承接本计划的 Git、SQL、迁移、部署、UI 密度和敏感配置治理规则。
 
 ## System-Wide Impact
 
