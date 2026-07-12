@@ -353,6 +353,7 @@
       var name = avatar.getAttribute("data-avatar-name") || "";
       avatar.textContent = avatarInitial(name);
       avatar.style.backgroundColor = AVATAR_COLORS[hashText(name) % AVATAR_COLORS.length];
+      avatar.style.color = "#fff";
     });
   }
 
