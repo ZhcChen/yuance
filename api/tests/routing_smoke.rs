@@ -354,6 +354,7 @@ async fn web_renders_dashboard_shell() {
     assert!(body.contains("/web/system/storage"));
     assert!(body.contains(r#"id="confirm-action-modal""#));
     assert!(body.contains(r#"data-confirm-modal"#));
+    assert!(body.contains(r#"class="account-menu-action" type="submit">退出登录</button>"#));
 }
 
 #[test]
