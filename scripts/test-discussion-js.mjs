@@ -619,6 +619,59 @@ assert.equal(samePage.hooks.apiErrorMessage("服务器返回文本错误", "默�
 assert.equal(samePage.hooks.apiErrorMessage({}, "默认错误"), "默认错误");
 assert.equal(typeof samePage.hooks.submitDiscussion, "function");
 assert.equal(typeof samePage.hooks.syncRichTextForm, "function");
+assert.equal(typeof samePage.hooks.richAttachmentMetadata, "function");
+const richFileAttachment = {
+  dataset: { yuanceAttachmentKind: "file" },
+  textContent: "rich-doc.txt",
+  matches(selector) {
+    return selector === "a[href]";
+  },
+  querySelector() {
+    return null;
+  },
+  getAttribute(name) {
+    if (name === "href") {
+      return "/web/work-items/YCE-TASK-2/comments/1/attachments/2/download";
+    }
+    if (name === "title") {
+      return "rich-doc.txt";
+    }
+    return "";
+  },
+};
+const richFileMeta = samePage.hooks.richAttachmentMetadata(richFileAttachment);
+assert.equal(richFileMeta.kind, "file");
+assert.equal(richFileMeta.previewable, false);
+assert.equal(richFileMeta.source, "/web/work-items/YCE-TASK-2/comments/1/attachments/2/download");
+assert.equal(richFileMeta.title, "rich-doc.txt");
+const richImageAttachment = {
+  dataset: { yuanceAttachmentKind: "image" },
+  matches() {
+    return false;
+  },
+  querySelector(selector) {
+    if (selector === "img, video") {
+      return {
+        tagName: "IMG",
+        currentSrc: "",
+        src: "/web/work-items/YCE-TASK-2/comments/1/attachments/3/download",
+        getAttribute(name) {
+          return name === "alt" ? "截图.png" : "";
+        },
+      };
+    }
+    return null;
+  },
+};
+const richImageMeta = samePage.hooks.richAttachmentMetadata(richImageAttachment);
+assert.equal(richImageMeta.kind, "image");
+assert.equal(richImageMeta.previewable, true);
+assert.equal(richImageMeta.source, "/web/work-items/YCE-TASK-2/comments/1/attachments/3/download");
+assert.equal(richImageMeta.title, "截图.png");
+assert.equal(
+  samePage.hooks.absoluteAttachmentUrl("/web/work-items/YCE-TASK-2/comments/1/attachments/2/download"),
+  "https://yuance.test/web/work-items/YCE-TASK-2/comments/1/attachments/2/download",
+);
 const failedRichForm = richDiscussionForm("error");
 assert.equal(samePage.hooks.syncRichTextForm(failedRichForm.form), false);
 assert.equal(failedRichForm.status.textContent, "有文件上传失败，请重试或移除失败项后再提交。");

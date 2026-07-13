@@ -24,6 +24,7 @@
     rotation: 0,
     source: "",
   };
+  var activeRichAttachmentMenu = null;
   var AVATAR_COLORS = [
     "#1f5fbf",
     "#2d8a68",
@@ -3745,6 +3746,226 @@
       .catch(function () {});
   }
 
+  function richAttachmentElement(target) {
+    if (!target || typeof target.closest !== "function") {
+      return null;
+    }
+    return target.closest(".discussion-rich-body [data-yuance-attachment-kind]");
+  }
+
+  function richAttachmentMetadata(attachment) {
+    if (!attachment) {
+      return null;
+    }
+    var kind = attachment.dataset.yuanceAttachmentKind || "";
+    var media = attachment.matches("img, video")
+      ? attachment
+      : attachment.querySelector("img, video");
+    var source = "";
+    var title = "";
+    if (kind === "file" && attachment.matches("a[href]")) {
+      source = attachment.getAttribute("href") || "";
+      title = attachment.getAttribute("title") || attachment.textContent || "附件";
+    } else if (media) {
+      source = media.currentSrc || media.getAttribute("src") || media.src || "";
+      title =
+        attachment.querySelector("figcaption")?.textContent ||
+        media.getAttribute("alt") ||
+        media.getAttribute("title") ||
+        "正文媒体";
+      if (!kind) {
+        kind = media.tagName === "VIDEO" ? "video" : "image";
+      }
+    }
+    if (!source) {
+      return null;
+    }
+    return {
+      kind: kind || "file",
+      previewable: kind === "image" || kind === "video",
+      source: source,
+      title: String(title || "附件").replace(/\s+/g, " ").trim(),
+    };
+  }
+
+  function absoluteAttachmentUrl(source) {
+    try {
+      return new URL(source, window.location.href).toString();
+    } catch (_error) {
+      return source || "";
+    }
+  }
+
+  function copyTextToClipboard(text) {
+    if (!text) {
+      return Promise.reject(new Error("没有可复制的内容。"));
+    }
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        if (document.execCommand("copy")) {
+          resolve();
+        } else {
+          reject(new Error("浏览器拒绝复制。"));
+        }
+      } catch (error) {
+        reject(error);
+      } finally {
+        textarea.remove();
+      }
+    });
+  }
+
+  function openRichAttachmentPreview(attachment) {
+    var meta = richAttachmentMetadata(attachment);
+    if (!meta || !meta.previewable) {
+      showToast("该附件不支持预览。", "error");
+      return;
+    }
+    attachment.dataset.imageSource = meta.source;
+    attachment.dataset.imageTitle = meta.title;
+    attachment.dataset.mediaKind = meta.kind === "video" ? "video" : "image";
+    openImageViewer([attachment], 0, attachment);
+  }
+
+  function downloadRichAttachment(attachment) {
+    var meta = richAttachmentMetadata(attachment);
+    if (!meta) {
+      showToast("附件下载地址不可用。", "error");
+      return;
+    }
+    var link = document.createElement("a");
+    link.href = meta.source;
+    link.download = meta.title || "附件";
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function ensureRichAttachmentMenu() {
+    if (activeRichAttachmentMenu) {
+      return activeRichAttachmentMenu;
+    }
+    var menu = document.createElement("div");
+    menu.className = "rich-attachment-menu";
+    menu.dataset.richAttachmentMenu = "";
+    menu.setAttribute("role", "menu");
+    menu.hidden = true;
+
+    var title = document.createElement("div");
+    title.className = "rich-attachment-menu-title";
+    title.dataset.richAttachmentMenuTitle = "";
+
+    var copy = document.createElement("button");
+    copy.type = "button";
+    copy.dataset.richAttachmentMenuAction = "copy";
+    copy.setAttribute("role", "menuitem");
+    copy.innerHTML = "<span>复制</span><em>复制附件链接</em>";
+
+    var preview = document.createElement("button");
+    preview.type = "button";
+    preview.dataset.richAttachmentMenuAction = "preview";
+    preview.setAttribute("role", "menuitem");
+    preview.innerHTML = "<span>预览</span><em>查看图片 / 视频</em>";
+
+    var download = document.createElement("button");
+    download.type = "button";
+    download.dataset.richAttachmentMenuAction = "download";
+    download.setAttribute("role", "menuitem");
+    download.innerHTML = "<span>下载</span><em>保存到本地</em>";
+
+    menu.append(title, copy, preview, download);
+    document.body.appendChild(menu);
+    activeRichAttachmentMenu = menu;
+    return menu;
+  }
+
+  function closeRichAttachmentMenu() {
+    var menu = activeRichAttachmentMenu;
+    if (!menu || menu.hidden) {
+      return;
+    }
+    menu.classList.remove("open");
+    menu.hidden = true;
+    menu.richAttachment = null;
+  }
+
+  function positionRichAttachmentMenu(menu, x, y) {
+    var margin = 10;
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+    var rect = menu.getBoundingClientRect();
+    var left = Math.min(Math.max(margin, x), window.innerWidth - rect.width - margin);
+    var top = Math.min(Math.max(margin, y), window.innerHeight - rect.height - margin);
+    menu.style.left = Math.max(margin, left) + "px";
+    menu.style.top = Math.max(margin, top) + "px";
+  }
+
+  function openRichAttachmentMenu(attachment, x, y) {
+    var meta = richAttachmentMetadata(attachment);
+    if (!meta) {
+      return;
+    }
+    var menu = ensureRichAttachmentMenu();
+    var title = menu.querySelector("[data-rich-attachment-menu-title]");
+    var preview = menu.querySelector("[data-rich-attachment-menu-action='preview']");
+    menu.richAttachment = attachment;
+    if (title) {
+      title.textContent = meta.title;
+    }
+    if (preview) {
+      preview.hidden = !meta.previewable;
+    }
+    menu.hidden = false;
+    menu.classList.add("open");
+    positionRichAttachmentMenu(menu, x, y);
+  }
+
+  function openRichAttachmentMenuNear(attachment) {
+    var rect = attachment.getBoundingClientRect();
+    openRichAttachmentMenu(
+      attachment,
+      rect.left + Math.min(36, rect.width / 2),
+      rect.top + Math.min(36, rect.height / 2)
+    );
+  }
+
+  function handleRichAttachmentMenuAction(button) {
+    var menu = button.closest("[data-rich-attachment-menu]");
+    var attachment = menu && menu.richAttachment;
+    var action = button.dataset.richAttachmentMenuAction || "";
+    var meta = richAttachmentMetadata(attachment);
+    if (!attachment || !meta) {
+      closeRichAttachmentMenu();
+      return;
+    }
+    if (action === "copy") {
+      copyTextToClipboard(absoluteAttachmentUrl(meta.source))
+        .then(function () {
+          showToast("附件链接已复制。", "success");
+        })
+        .catch(function () {
+          showToast("复制失败，请重试。", "error");
+        });
+    } else if (action === "preview") {
+      openRichAttachmentPreview(attachment);
+    } else if (action === "download") {
+      downloadRichAttachment(attachment);
+    }
+    closeRichAttachmentMenu();
+  }
+
   function stopImageViewerMedia(modal) {
     var video = modal && modal.querySelector("[data-image-viewer-video]");
     if (!video) {
@@ -4068,6 +4289,8 @@
       apiErrorMessage: apiErrorMessage,
       filterSelectOptions: filterSelectOptions,
       reloadDiscussionAtComment: reloadDiscussionAtComment,
+      richAttachmentMetadata: richAttachmentMetadata,
+      absoluteAttachmentUrl: absoluteAttachmentUrl,
       selectPanelContentMinWidth: selectPanelContentMinWidth,
       selectPanelTargetWidth: selectPanelTargetWidth,
       submitBugReport: submitBugReport,
@@ -4083,6 +4306,16 @@
   showQueuedToast();
 
   document.addEventListener("click", function (event) {
+    var richMenuAction = event.target.closest("[data-rich-attachment-menu-action]");
+    if (richMenuAction) {
+      event.preventDefault();
+      handleRichAttachmentMenuAction(richMenuAction);
+      return;
+    }
+    if (!event.target.closest("[data-rich-attachment-menu]")) {
+      closeRichAttachmentMenu();
+    }
+
     var contentTab = event.target.closest("[data-content-tab]");
     if (contentTab) {
       activateContentTab(contentTab, true);
@@ -4091,6 +4324,13 @@
         syncTabUrl(contentTab);
         return;
       }
+    }
+
+    var richFileAttachment = event.target.closest(".discussion-rich-body a[data-yuance-attachment-kind='file']");
+    if (richFileAttachment) {
+      event.preventDefault();
+      openRichAttachmentMenuNear(richFileAttachment);
+      return;
     }
 
     var link = event.target.closest("a[href]");
@@ -4341,6 +4581,17 @@
     }
   });
 
+  document.addEventListener("contextmenu", function (event) {
+    var attachment = richAttachmentElement(event.target);
+    if (!attachment) {
+      closeRichAttachmentMenu();
+      return;
+    }
+    event.preventDefault();
+    closeDropdowns();
+    openRichAttachmentMenu(attachment, event.clientX, event.clientY);
+  });
+
   document.addEventListener("keydown", function (event) {
     var userComboboxInput = event.target.closest("[data-user-combobox-input]");
     if (userComboboxInput) {
@@ -4449,6 +4700,10 @@
     }
 
     if (event.key === "Escape") {
+      if (activeRichAttachmentMenu && !activeRichAttachmentMenu.hidden) {
+        closeRichAttachmentMenu();
+        return;
+      }
       if (currentModal) {
         closeModal(currentModal, true);
         return;
@@ -4720,6 +4975,7 @@
   });
 
   window.addEventListener("resize", function () {
+    closeRichAttachmentMenu();
     if (activeSelectControl) {
       positionSelectPanel(activeSelectControl);
     }
@@ -4731,6 +4987,7 @@
   });
 
   window.addEventListener("scroll", function () {
+    closeRichAttachmentMenu();
     if (activeSelectControl) {
       closeSelectControl(activeSelectControl, false);
     }

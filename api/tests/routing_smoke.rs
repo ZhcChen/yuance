@@ -194,6 +194,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("word-spacing: normal"));
     assert!(body.contains(".rich-text-editor:focus-within"));
     assert!(body.contains(".rich-attachment"));
+    assert!(body.contains(".rich-attachment-menu"));
+    assert!(body.contains("cursor: context-menu"));
     assert!(body.contains(".discussion-reply-form"));
     assert!(body.contains(".discussion-reply-target"));
     assert!(!body.contains(".discussion-post[data-reply-depth"));
@@ -310,6 +312,10 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("form.dataset.discussionPendingAssign = \"true\""));
     assert!(body.contains("内容已发表，未完成的指派或附件可直接重试。"));
     assert!(body.contains("function reloadDiscussionAtComment(itemKey, commentId)"));
+    assert!(body.contains("function openRichAttachmentMenu"));
+    assert!(body.contains("function handleRichAttachmentMenuAction"));
+    assert!(body.contains("data-rich-attachment-menu-action"));
+    assert!(body.contains(".discussion-rich-body a[data-yuance-attachment-kind='file']"));
     assert!(body.contains("window.location.hash = targetHash"));
     assert!(body.contains("reloadDiscussionAtComment(itemKey, commentId)"));
     assert!(body.contains("button === activeSubmitter"));
