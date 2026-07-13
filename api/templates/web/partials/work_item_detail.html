@@ -47,7 +47,7 @@
   <ol class="discussion-thread">
     {% for comment in comments %}
     {% if comment.is_flow %}
-    <li class="discussion-flow-event" data-reply-depth="{{ comment.reply_depth }}">
+    <li class="discussion-flow-event">
       <span class="flow-event-dot" aria-hidden="true"></span>
       <div>
         <p><strong>{{ comment.author }}</strong> 进行了流转</p>
@@ -56,13 +56,17 @@
       </div>
     </li>
     {% else %}
-    <li class="discussion-post" id="comment-{{ comment.id }}" data-reply-depth="{{ comment.reply_depth }}">
+    <li class="discussion-post" id="comment-{{ comment.id }}">
       <div class="discussion-avatar" data-user-avatar data-avatar-name="{{ comment.author }}" aria-hidden="true">{{ comment.author }}</div>
       <article class="discussion-post-content">
         <header class="discussion-post-head">
           <div>
             <strong>{{ comment.author }}</strong>
-            {% if comment.parent_author != "" %}<span class="discussion-reply-target">回复 {{ comment.parent_author }}</span>{% endif %}
+            {% match comment.parent_comment_id %}
+            {% when Some with (parent_comment_id) %}
+            <a class="discussion-reply-target" href="#comment-{{ parent_comment_id }}" aria-label="查看 {{ comment.parent_author }} 的原评论">回复 {{ comment.parent_author }}</a>
+            {% when None %}
+            {% endmatch %}
           </div>
           <div class="discussion-post-time">
             <span>发表于 {{ comment.created_at }}</span>

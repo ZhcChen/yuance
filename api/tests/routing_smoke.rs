@@ -195,6 +195,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains(".discussion-attach-button:focus-within"));
     assert!(body.contains(".discussion-attach-button span"));
     assert!(body.contains(".discussion-reply-form"));
+    assert!(body.contains(".discussion-reply-target"));
+    assert!(!body.contains(".discussion-post[data-reply-depth"));
     assert!(body.contains("grid-column: 1 / -1"));
     assert_eq!(body.matches(".discussion-reply-form {").count(), 1);
     assert!(body.contains(".discussion-assign-status .select-control"));

@@ -6717,18 +6717,18 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
 }
 
 #[tokio::test]
-async fn api_v1_work_item_comments_support_threaded_replies() {
+async fn api_v1_work_item_comments_render_flat_reply_timeline() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
-    let replier = create_regular_user(&pool, "thread_replier", "回复成员").await;
+    let replier = create_regular_user(&pool, "timeline_replier", "回复成员").await;
     projects::add_project_member(
         &pool,
         initialized.user_id,
         "YCE",
-        "thread_replier",
+        "timeline_replier",
         "member",
     )
     .await
@@ -6756,13 +6756,29 @@ async fn api_v1_work_item_comments_support_threaded_replies() {
         .as_i64()
         .expect("parent id should exist");
 
+    let standalone_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"这是中间普通评论"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(standalone_response.status(), StatusCode::CREATED);
+
     let reply_response = app
         .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/api/v1/work-items/YCE-TASK-2/comments")
-                .header(header::COOKIE, replier.cookie)
+                .header(header::COOKIE, replier.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(format!(
@@ -6776,6 +6792,29 @@ async fn api_v1_work_item_comments_support_threaded_replies() {
     let reply_body = response_body(reply_response).await;
     assert!(reply_body.contains(&format!(r#""parent_comment_id":{parent_id}"#)));
     assert!(reply_body.contains(r#""parent_author":"系统管理员""#));
+    let reply_payload: serde_json::Value =
+        serde_json::from_str(&reply_body).expect("json should parse");
+    let reply_id = reply_payload["data"]["id"]
+        .as_i64()
+        .expect("reply id should exist");
+
+    let nested_reply_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"body":"这是对回复的回复","parent_comment_id":{reply_id}}}"#
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(nested_reply_response.status(), StatusCode::CREATED);
 
     let detail_response = app
         .oneshot(
@@ -6789,9 +6828,29 @@ async fn api_v1_work_item_comments_support_threaded_replies() {
         .expect("router should respond");
     let detail_body = response_body(detail_response).await;
     assert!(detail_body.contains("这是主题内容"));
+    assert!(detail_body.contains("这是中间普通评论"));
     assert!(detail_body.contains("这是对主题的回复"));
+    assert!(detail_body.contains("这是对回复的回复"));
     assert!(detail_body.contains("回复 系统管理员"));
-    assert!(detail_body.contains(r#"data-reply-depth="1""#));
+    assert!(detail_body.contains("回复 回复成员"));
+    assert!(detail_body.contains(r##"class="discussion-reply-target" href="#comment-"##));
+    assert!(detail_body.contains(">回复 系统管理员</a>"));
+    assert!(detail_body.contains(">回复 回复成员</a>"));
+    assert!(!detail_body.contains("data-reply-depth"));
+
+    let parent_position = detail_body.find("这是主题内容").expect("parent rendered");
+    let standalone_position = detail_body
+        .find("这是中间普通评论")
+        .expect("standalone comment rendered");
+    let reply_position = detail_body
+        .find("这是对主题的回复")
+        .expect("reply rendered");
+    let nested_reply_position = detail_body
+        .find("这是对回复的回复")
+        .expect("nested reply rendered");
+    assert!(parent_position < standalone_position);
+    assert!(standalone_position < reply_position);
+    assert!(reply_position < nested_reply_position);
 }
 
 #[tokio::test]

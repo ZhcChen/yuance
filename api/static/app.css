@@ -522,11 +522,6 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.discussion-post[data-reply-depth="1"] { margin-left: 34px; }
-.discussion-post[data-reply-depth="2"] { margin-left: 68px; }
-.discussion-post[data-reply-depth="3"] { margin-left: 102px; }
-.discussion-post[data-reply-depth="4"] { margin-left: 136px; }
-
 .discussion-post-content {
   width: 100%;
   min-width: 0;
@@ -552,9 +547,26 @@ body {
 }
 
 .discussion-reply-target {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid var(--brand-line);
+  border-radius: 999px;
+  background: var(--brand-soft);
   color: var(--brand);
   font-size: 12px;
   font-weight: 650;
+  line-height: 16px;
+  text-decoration: none;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.discussion-reply-target:hover,
+.discussion-reply-target:focus-visible {
+  border-color: rgba(37, 99, 235, 0.34);
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--brand-strong);
 }
 
 .discussion-post-time {
@@ -814,13 +826,6 @@ body {
 
   .discussion-composer-footer .btn-primary {
     margin-left: auto;
-  }
-
-  .discussion-post[data-reply-depth="1"],
-  .discussion-post[data-reply-depth="2"],
-  .discussion-post[data-reply-depth="3"],
-  .discussion-post[data-reply-depth="4"] {
-    margin-left: 18px;
   }
 
   .discussion-post-time {

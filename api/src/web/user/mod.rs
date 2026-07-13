@@ -223,7 +223,6 @@ struct WorkItemComment {
     id: i64,
     parent_comment_id: Option<i64>,
     parent_author: String,
-    reply_depth: usize,
     body: String,
     author: String,
     author_username: String,
@@ -5474,7 +5473,6 @@ fn comment_from_summary_with_permission(
         id: comment.id,
         parent_comment_id: comment.parent_comment_id,
         parent_author,
-        reply_depth: 0,
         body,
         author: fallback_text(comment.author_display_name, "系统"),
         author_username: comment.author_username,
@@ -5486,59 +5484,6 @@ fn comment_from_summary_with_permission(
         has_attachments: false,
         can_manage: can_manage && !comment.is_flow,
     }
-}
-
-fn flatten_comment_threads(comments: Vec<WorkItemComment>) -> Vec<WorkItemComment> {
-    let all_ids = comments
-        .iter()
-        .map(|comment| comment.id)
-        .collect::<HashSet<_>>();
-    let mut child_ids = HashMap::<i64, Vec<i64>>::new();
-    let mut root_ids = Vec::new();
-    let order = comments
-        .iter()
-        .map(|comment| comment.id)
-        .collect::<Vec<_>>();
-    for comment in &comments {
-        match comment.parent_comment_id {
-            Some(parent_id) if all_ids.contains(&parent_id) && !comment.is_flow => {
-                child_ids.entry(parent_id).or_default().push(comment.id);
-            }
-            _ => root_ids.push(comment.id),
-        }
-    }
-    let mut nodes = comments
-        .into_iter()
-        .map(|comment| (comment.id, comment))
-        .collect::<HashMap<_, _>>();
-    let mut flattened = Vec::new();
-
-    fn append_thread(
-        id: i64,
-        depth: usize,
-        nodes: &mut HashMap<i64, WorkItemComment>,
-        child_ids: &HashMap<i64, Vec<i64>>,
-        flattened: &mut Vec<WorkItemComment>,
-    ) {
-        let Some(mut comment) = nodes.remove(&id) else {
-            return;
-        };
-        comment.reply_depth = depth.min(4);
-        flattened.push(comment);
-        if let Some(children) = child_ids.get(&id) {
-            for child_id in children {
-                append_thread(*child_id, depth + 1, nodes, child_ids, flattened);
-            }
-        }
-    }
-
-    for root_id in root_ids {
-        append_thread(root_id, 0, &mut nodes, &child_ids, &mut flattened);
-    }
-    for id in order {
-        append_thread(id, 0, &mut nodes, &child_ids, &mut flattened);
-    }
-    flattened
 }
 
 fn comment_with_attachments(
@@ -6209,10 +6154,7 @@ async fn load_work_item_detail(
         ));
     }
 
-    Ok(Some((
-        work_item_detail_from_domain(item),
-        flatten_comment_threads(comments),
-    )))
+    Ok(Some((work_item_detail_from_domain(item), comments)))
 }
 
 async fn load_work_item_detail_for_user(
@@ -6250,10 +6192,7 @@ async fn load_work_item_detail_for_user(
         ));
     }
 
-    Ok(Some((
-        work_item_detail_from_domain(item),
-        flatten_comment_threads(comments),
-    )))
+    Ok(Some((work_item_detail_from_domain(item), comments)))
 }
 
 async fn load_project_member_options(
@@ -7706,7 +7645,6 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             id: 1,
             parent_comment_id: None,
             parent_author: String::new(),
-            reply_depth: 0,
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
             author: "陈".to_string(),
             author_username: "yuance_admin".to_string(),
