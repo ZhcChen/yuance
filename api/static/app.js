@@ -146,6 +146,20 @@
     }
   }
 
+  function isSuccessWebRedirect(url) {
+    try {
+      var target = new URL(url, window.location.href);
+      var path = target.pathname;
+      return (
+        target.origin === window.location.origin &&
+        (path === "/web" || path.indexOf("/web/") === 0) &&
+        path !== "/web/login"
+      );
+    } catch (_error) {
+      return false;
+    }
+  }
+
   function notificationKindLabel(kind) {
     return kind === "comment_replied" ? "回复" : "指派";
   }
@@ -397,6 +411,9 @@
         throw new Error(apiErrorMessage(payload, htmlResult?.message || "操作失败，请稍后重试。"));
       }
       if (response.redirected && response.url) {
+        if (isSuccessWebRedirect(response.url)) {
+          queueSuccessBeforeNavigation(form.dataset.successMessage || "操作已完成。");
+        }
         window.location.assign(response.url);
         return;
       }
@@ -3314,6 +3331,7 @@
       reloadDiscussionAtComment: reloadDiscussionAtComment,
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
+      submitWebForm: submitWebForm,
     });
   }
 

@@ -72,7 +72,7 @@ function elementStub(tagName = "div") {
   };
 }
 
-function loadAppWithDom() {
+function loadAppWithDom(options = {}) {
   const fetchCalls = [];
   const assignCalls = [];
   const sessionItems = new Map();
@@ -125,6 +125,8 @@ function loadAppWithDom() {
       },
     },
     location: {
+      origin: "https://yuance.test",
+      href: "https://yuance.test/web/work-items/YCE-TASK-2",
       pathname: "/web/work-items/YCE-TASK-2",
       hash: "",
       assign(url) {
@@ -168,6 +170,10 @@ function loadAppWithDom() {
       get(name) {
         return this.values.get(name) || "";
       }
+
+      forEach(callback) {
+        this.values.forEach((value, key) => callback(value, key));
+      }
     },
     Headers,
     MutationObserver: class {
@@ -180,6 +186,9 @@ function loadAppWithDom() {
     },
     fetch: async (url, options) => {
       fetchCalls.push({ url, options });
+      if (typeof context.fetchOverride === "function") {
+        return context.fetchOverride(url, options);
+      }
       if (String(url) === "/api/v1/work-items") {
         return {
           ok: true,
@@ -194,6 +203,7 @@ function loadAppWithDom() {
       };
     },
   };
+  context.fetchOverride = options.fetch;
   context.globalThis = context;
 
   vm.runInNewContext(readFileSync("api/static/app.js", "utf8"), context, {
@@ -319,6 +329,48 @@ function discussionForm() {
   };
 }
 
+function webPostForm(successMessage) {
+  const submit = {
+    tagName: "BUTTON",
+    dataset: {},
+    disabled: false,
+    textContent: "提交",
+  };
+  return {
+    action: "https://yuance.test/web/messages/read-all",
+    method: "post",
+    dataset: successMessage ? { successMessage } : {},
+    formData: { _csrf: "token" },
+    reportValidity() {
+      return true;
+    },
+    setAttribute(name, value) {
+      this[name] = String(value);
+    },
+    querySelector() {
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "button[type='submit'], input[type='submit']") {
+        return [submit];
+      }
+      return [];
+    },
+  };
+}
+
+function redirectedHtmlResponse(url) {
+  return {
+    ok: true,
+    status: 200,
+    redirected: true,
+    url,
+    headers: { get: () => "text/html; charset=utf-8" },
+    text: async () => "",
+    json: async () => ({}),
+  };
+}
+
 const samePage = loadAppWithDom();
 assert.equal(typeof samePage.hooks.apiErrorMessage, "function");
 assert.equal(
@@ -363,5 +415,30 @@ assert.deepEqual(JSON.parse(projectCreate.sessionItems.get("yuance-pending-toast
   tone: "success",
 });
 assert.equal(projectCreate.window.location.href, "/web/projects/YCE?tab=work");
+
+const redirectedPost = loadAppWithDom({
+  fetch: async () => redirectedHtmlResponse("https://yuance.test/web/messages?unread=true"),
+});
+assert.equal(typeof redirectedPost.hooks.submitWebForm, "function");
+await redirectedPost.hooks.submitWebForm(webPostForm("消息已全部标为已读。"));
+assert.deepEqual(redirectedPost.assignCalls, ["https://yuance.test/web/messages?unread=true"]);
+assert.deepEqual(JSON.parse(redirectedPost.sessionItems.get("yuance-pending-toast")), {
+  message: "消息已全部标为已读。",
+  tone: "success",
+});
+
+const loginRedirect = loadAppWithDom({
+  fetch: async () => redirectedHtmlResponse("https://yuance.test/web/login"),
+});
+await loginRedirect.hooks.submitWebForm(webPostForm("不应出现"));
+assert.deepEqual(loginRedirect.assignCalls, ["https://yuance.test/web/login"]);
+assert.equal(loginRedirect.sessionItems.has("yuance-pending-toast"), false);
+
+const nonWebRedirect = loadAppWithDom({
+  fetch: async () => redirectedHtmlResponse("https://yuance.test/webhook"),
+});
+await nonWebRedirect.hooks.submitWebForm(webPostForm("不应出现"));
+assert.deepEqual(nonWebRedirect.assignCalls, ["https://yuance.test/webhook"]);
+assert.equal(nonWebRedirect.sessionItems.has("yuance-pending-toast"), false);
 
 console.log("discussion js behavior ok");
