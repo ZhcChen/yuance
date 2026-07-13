@@ -1890,7 +1890,7 @@ async fn web_current_project_redirects_project_scoped_pages_to_selected_project(
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fprojects%2FYCE%3Ftab%3Dwork",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fprojects%2FYCE",
                 ))
                 .expect("request should build"),
         )
@@ -1900,7 +1900,7 @@ async fn web_current_project_redirects_project_scoped_pages_to_selected_project(
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/OPS?tab=work"
+        "/web/projects/OPS"
     );
     let current = projects::get_current_project_for_user(&pool, initialized.user_id, true)
         .await
@@ -2019,12 +2019,9 @@ async fn web_project_detail_renders_project_scope() {
 
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("统一项目、需求、任务、Bug 的轻量项目管理系统"));
-    assert!(body.contains("YCE-REQ-1"));
-    assert!(body.contains("YCE-TASK-2"));
-    assert!(body.contains("YCE-BUG-1"));
-    assert!(body.contains(r#"data-kind="requirement">需求</span>"#));
-    assert!(body.contains(r#"data-kind="task">任务</span>"#));
-    assert!(body.contains(r#"data-kind="bug">Bug</span>"#));
+    assert!(body.contains("项目资料"));
+    assert!(body.contains(r#"id="project-tab-info" class="project-tab-panel active""#));
+    assert!(!body.contains(r#"id="project-tab-work""#));
     assert!(body.contains("项目成员"));
     assert!(body.contains("架构计划已确认"));
     assert!(body.contains(r#"data-modal-open="project-edit-modal""#));
@@ -2061,7 +2058,8 @@ async fn web_project_detail_tab_query_selects_initial_tab() {
         )
     );
     assert!(body.contains(r#"id="project-tab-members" class="project-tab-panel active""#));
-    assert!(body.contains(r#"id="project-tab-work" class="project-tab-panel " role="tabpanel" aria-labelledby="project-tab-work-trigger" data-tab-panel hidden"#));
+    assert!(!body.contains(r#"id="project-tab-work""#));
+    assert!(!body.contains(r#"data-tab-key="work""#));
 }
 
 #[tokio::test]
@@ -2216,7 +2214,7 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE?tab=info"
+        "/web/projects/YCE"
     );
 
     let project = projects::get_project_detail(&pool, "YCE")
@@ -2255,7 +2253,7 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
     let detail_response = app
         .oneshot(
             Request::builder()
-                .uri("/web/projects/YCE?tab=info")
+                .uri("/web/projects/YCE")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -3536,10 +3534,14 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert!(page_body.contains(r#"data-modal-open="project-work-item-create-modal""#));
     assert!(page_body.contains(r#"id="project-work-item-create-modal""#));
     assert!(page_body.contains(r#"id="project-member-add-modal""#));
-    assert!(page_body.contains(r#"id="project-attachment-create-modal""#));
+    assert!(!page_body.contains(r#"id="project-attachment-create-modal""#));
+    assert!(!page_body.contains(r#"id="project-tab-files""#));
+    assert!(!page_body.contains(r#"data-tab-key="files""#));
     assert!(page_body.contains("项目内新建工作项"));
     assert!(page_body.contains(r#"name="redirect_to" value="project""#));
-    assert!(page_body.contains(r#"data-success-redirect="/web/projects/YCE?tab=work""#));
+    assert!(page_body.contains(r#"data-success-redirect="/web/projects/YCE""#));
+    assert!(page_body.contains(r#"id="project-tab-info" class="project-tab-panel active""#));
+    assert!(!page_body.contains(r#"id="project-tab-work""#));
     assert!(page_body.contains("父级需求"));
     assert!(page_body.contains("YCE-REQ-1"));
     assert!(page_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
@@ -3564,13 +3566,13 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         create_response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE?tab=work"
+        "/web/projects/YCE"
     );
 
     let detail_response = app
         .oneshot(
             Request::builder()
-                .uri("/web/projects/YCE?tab=work")
+                .uri("/web/projects/YCE")
                 .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -3587,10 +3589,9 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert_eq!(task.title, "项目内新建任务");
     assert_eq!(task.parent_item_key, "YCE-REQ-1");
     assert_eq!(task.parent_title, "统一 /web 用户工作台与系统管理入口");
-    assert!(detail_body.contains("项目内新建任务"));
-    assert!(detail_body.contains("YCE-TASK-3"));
     assert!(detail_body.contains("创建工作项"));
-    assert!(detail_body.contains(r#"id="project-tab-work" class="project-tab-panel active""#));
+    assert!(detail_body.contains(r#"id="project-tab-info" class="project-tab-panel active""#));
+    assert!(!detail_body.contains(r#"id="project-tab-work""#));
 }
 
 #[tokio::test]
@@ -4135,7 +4136,7 @@ async fn web_project_detail_can_register_project_attachment() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE?tab=files"
+        "/web/projects/YCE"
     );
 
     let project = projects::get_project_detail(&pool, "YCE")
@@ -4170,36 +4171,10 @@ async fn web_project_detail_can_register_project_attachment() {
         .expect("router should respond");
     let body = response_body(detail_response).await;
 
-    assert!(body.contains("项目附件"));
-    assert!(body.contains("roadmap.pdf"));
-    assert!(body.contains("application/pdf"));
-    assert!(body.contains(r#"data-direct-upload"#));
-    assert!(body.contains(r#"data-attachment-create-url="/api/v1/projects/YCE/attachments""#));
-    assert!(body.contains(
-        r#"data-attachment-upload-url-template="/api/v1/projects/YCE/attachments/{id}/upload-url""#
-    ));
-    assert!(body.contains(
-        r#"data-attachment-complete-url-template="/api/v1/projects/YCE/attachments/{id}/uploaded""#
-    ));
-    assert!(body.contains(r#"data-attachment-file"#));
-    assert!(body.contains(r#"autofocus multiple data-attachment-file"#));
-    assert!(body.contains(r#"data-composer-file-list"#));
-    assert!(body.contains(r#"name="original_filename" type="hidden""#));
-    assert!(body.contains(r#"name="content_type" type="hidden""#));
-    assert!(body.contains(r#"name="byte_size" type="hidden""#));
-    assert!(body.contains("可一次选择多个文件"));
-    assert!(!body.contains(">Content-Type<"));
-    assert!(!body.contains(">文件大小 Bytes<"));
-    assert!(body.contains("/api/v1/projects/YCE/attachments/"));
-    assert!(body.contains("/upload-url"));
-    assert!(body.contains(r#"data-existing-attachment-id=""#));
-    assert!(body.contains(r#"class="inline-form attachment-resume-form""#));
-    assert!(body.contains("继续上传"));
-    assert!(body.contains("选择文件后继续上传"));
-    assert!(body.contains("上传完成后可下载"));
-    assert!(body.contains("/delete"));
-    assert!(body.contains(r#"data-confirm-submit-form"#));
-    assert!(!body.contains(r#">上传签名</a>"#));
+    assert!(!body.contains(r#"id="project-tab-files""#));
+    assert!(!body.contains(r#"id="project-attachment-create-modal""#));
+    assert!(!body.contains(r#"data-attachment-create-url="/api/v1/projects/YCE/attachments""#));
+    assert!(!body.contains("上传项目文件"));
 }
 
 #[tokio::test]
@@ -4584,11 +4559,11 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         .await
         .expect("router should respond");
     let project_body = response_body(project_response).await;
-    assert!(project_body.contains(&format!(
+    assert!(!project_body.contains(&format!(
         r#"data-image-source="/web/projects/YCE/attachments/{}/download""#,
         project_image.id
     )));
-    assert!(project_body.contains(r#"data-image-gallery="project-media-YCE""#));
+    assert!(!project_body.contains(r#"data-image-gallery="project-media-YCE""#));
 }
 
 #[tokio::test]
@@ -6180,7 +6155,7 @@ async fn web_project_attachment_archive_marks_file_archived_and_records_activity
     assert_eq!(archive_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         archive_response.headers().get(header::LOCATION).unwrap(),
-        "/web/projects/YCE?tab=files"
+        "/web/projects/YCE"
     );
 
     let archived = files::get_attachment(&pool, attachment.id)
@@ -8412,6 +8387,7 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
         .await
         .expect("demo seed should apply");
     let outsider = create_regular_user(&pool, "outsider", "外部成员").await;
+    let batch_peer = create_regular_user(&pool, "batch_peer", "批量成员").await;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let member_tab_response = app
@@ -8427,11 +8403,16 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
         .expect("router should respond");
     assert_eq!(member_tab_response.status(), StatusCode::OK);
     let member_tab_body = response_body(member_tab_response).await;
-    assert!(member_tab_body.contains(r#"data-user-combobox"#));
-    assert!(member_tab_body.contains(r#"data-user-option"#));
+    assert!(member_tab_body.contains(r#"class="data-table member-table""#));
+    assert!(member_tab_body.contains(r#"<th scope="col">成员</th>"#));
+    assert!(member_tab_body.contains(r#"<th class="table-actions" scope="col">操作</th>"#));
+    assert!(member_tab_body.contains(r#"data-member-batch-form"#));
+    assert!(member_tab_body.contains(r#"data-member-candidate"#));
     assert!(member_tab_body.contains(r#"data-username="outsider""#));
+    assert!(member_tab_body.contains(r#"data-username="batch_peer""#));
     assert!(member_tab_body.contains("外部成员"));
-    assert!(member_tab_body.contains("只能从候选用户中选择"));
+    assert!(member_tab_body.contains("批量成员"));
+    assert!(member_tab_body.contains("可一次选择多个已启用用户"));
 
     let add_response = app
         .clone()
@@ -8442,7 +8423,7 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&username=outsider&member_role=maintainer",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&username=outsider&username=batch_peer&member_role=maintainer",
                 ))
                 .expect("request should build"),
         )
@@ -8469,6 +8450,11 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
     let member_page = response_body(member_can_view).await;
     assert!(member_page.contains("@outsider"));
     assert!(member_page.contains("项目管理员"));
+    assert!(
+        projects::is_project_member(&pool, 1, batch_peer.user_id)
+            .await
+            .expect("batch membership should load")
+    );
 
     let admin_project_page = app
         .clone()

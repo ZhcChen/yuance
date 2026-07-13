@@ -139,7 +139,6 @@ struct ProjectUserOption {
 #[derive(Debug, Clone)]
 struct AttachmentView {
     id: i64,
-    file_object_id: i64,
     filename: String,
     content_type: String,
     is_previewable_image: bool,
@@ -150,7 +149,6 @@ struct AttachmentView {
     status_tone: &'static str,
     created_by: String,
     created_at: String,
-    object_key: String,
 }
 
 #[derive(Debug, Clone)]
@@ -609,17 +607,10 @@ struct ProjectDetailTemplate {
     project: ProjectDetailView,
     summary: ProjectDetailSummary,
     requirements: Vec<WorkItem>,
-    tasks: Vec<WorkItem>,
-    bugs: Vec<WorkItem>,
     members: Vec<ProjectMemberView>,
     member_candidates: Vec<ProjectUserOption>,
-    attachments: Vec<AttachmentView>,
     activities: Vec<Activity>,
-    has_requirements: bool,
-    has_tasks: bool,
-    has_bugs: bool,
     has_activities: bool,
-    has_attachments: bool,
     has_member_candidates: bool,
     project_item_type_options: Vec<WorkItemTypeOption>,
     can_edit_project: bool,
@@ -1133,14 +1124,6 @@ pub struct WorkItemCommentForm {
     body_format: String,
     #[serde(default)]
     parent_comment_id: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ProjectMemberForm {
-    #[serde(default, rename = "_csrf")]
-    csrf_token: String,
-    username: String,
-    member_role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1975,11 +1958,6 @@ pub async fn project_detail_page(
     } else {
         Vec::new()
     };
-    let attachments = files::list_attachments(pool, "project", project.id)
-        .await?
-        .into_iter()
-        .map(attachment_from_summary)
-        .collect::<Vec<_>>();
     let activities = projects::list_project_activities(pool, project.id, 10)
         .await?
         .into_iter()
@@ -1999,20 +1977,13 @@ pub async fn project_detail_page(
             system_nav: context.system_nav,
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
-            has_requirements: !requirements.is_empty(),
-            has_tasks: !tasks.is_empty(),
-            has_bugs: !bugs.is_empty(),
             has_activities: !activities.is_empty(),
             project,
             summary,
             requirements,
-            tasks,
-            bugs,
             members,
             has_member_candidates: !member_candidates.is_empty(),
             member_candidates,
-            has_attachments: !attachments.is_empty(),
-            attachments,
             activities,
             project_item_type_options: work_item_type_options(),
             can_edit_project,
@@ -2162,8 +2133,9 @@ pub async fn project_member_add(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(project_key): Path<String>,
-    Form(form): Form<ProjectMemberForm>,
+    RawForm(form): RawForm,
 ) -> AppResult<Response> {
+    let form = parse_project_member_form(&form)?;
     csrf::verify(&headers, &form.csrf_token)?;
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
@@ -2176,24 +2148,43 @@ pub async fn project_member_add(
             .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
         ensure_project_access(pool, &context, project.id).await?;
         ensure_project_member_manage_access(pool, &context, project.id).await?;
-        let member = projects::add_project_member(
-            pool,
-            context.user_id,
-            &project_key,
-            &form.username,
-            &form.member_role,
-        )
-        .await?;
+        let mut seen_usernames = HashSet::new();
+        let usernames = form
+            .usernames
+            .iter()
+            .map(|username| username.trim())
+            .filter(|username| !username.is_empty())
+            .filter(|username| seen_usernames.insert((*username).to_string()))
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if usernames.is_empty() {
+            return Err(AppError::BadRequest(
+                "请至少选择一个要加入的项目成员".to_string(),
+            ));
+        }
+        let mut added_usernames = Vec::new();
+        for username in usernames {
+            let member = projects::add_project_member(
+                pool,
+                context.user_id,
+                &project_key,
+                &username,
+                &form.member_role,
+            )
+            .await?;
+            added_usernames.push(member.username);
+        }
+        let added_usernames_json =
+            serde_json::to_string(&added_usernames).unwrap_or_else(|_| "[]".to_string());
+        let member_role_json =
+            serde_json::to_string(&form.member_role).unwrap_or_else(|_| "\"member\"".to_string());
         audit::record(
             pool,
             Some(context.user_id),
             "project.member.add",
             "project",
             &project_key,
-            &format!(
-                r#"{{"username":"{}","member_role":"{}"}}"#,
-                member.username, member.member_role
-            ),
+            &format!(r#"{{"usernames":{added_usernames_json},"member_role":{member_role_json}}}"#),
         )
         .await?;
 
@@ -2333,7 +2324,7 @@ pub async fn project_attachment_create(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/projects/{project_key}?tab=files")).into_response());
+        return Ok(Redirect::to(&project_info_url(&project_key)).into_response());
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -2384,7 +2375,7 @@ pub async fn project_attachment_delete(
         )
         .await?;
 
-        return Ok(Redirect::to(&format!("/web/projects/{project_key}?tab=files")).into_response());
+        return Ok(Redirect::to(&project_info_url(&project_key)).into_response());
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -2466,7 +2457,7 @@ pub async fn work_items_create(
         .await?;
 
         if form.redirect_to == "project" {
-            return Ok(Redirect::to(&project_work_url(&item.project_key)).into_response());
+            return Ok(Redirect::to(&project_info_url(&item.project_key)).into_response());
         }
 
         return Ok(Redirect::to(&format!("/web/work-items/{}", item.item_key)).into_response());
@@ -5094,15 +5085,11 @@ fn work_item_comment_url(item_key: &str, comment_id: i64) -> String {
 }
 
 fn project_info_url(project_key: &str) -> String {
-    format!("/web/projects/{project_key}?tab=info")
+    format!("/web/projects/{project_key}")
 }
 
 fn project_members_url(project_key: &str) -> String {
     format!("/web/projects/{project_key}?tab=members")
-}
-
-fn project_work_url(project_key: &str) -> String {
-    format!("/web/projects/{project_key}?tab=work")
 }
 
 fn work_item_discussion_url(item_key: &str) -> String {
@@ -5156,6 +5143,37 @@ fn parse_permission_keys_form(form: &[u8]) -> AppResult<Vec<String>> {
             }
         })
         .collect())
+}
+
+#[derive(Debug)]
+struct ParsedProjectMemberForm {
+    csrf_token: String,
+    usernames: Vec<String>,
+    member_role: String,
+}
+
+fn parse_project_member_form(form: &[u8]) -> AppResult<ParsedProjectMemberForm> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("成员表单解析失败：{error}")))?;
+    let mut csrf_token = String::new();
+    let mut usernames = Vec::new();
+    let mut member_role = String::new();
+    for (key, value) in pairs {
+        match key.as_str() {
+            csrf::CSRF_FIELD_NAME => csrf_token = value,
+            "username" => usernames.push(value),
+            "member_role" => member_role = value,
+            _ => {}
+        }
+    }
+    if member_role.trim().is_empty() {
+        member_role = "member".to_string();
+    }
+    Ok(ParsedProjectMemberForm {
+        csrf_token,
+        usernames,
+        member_role,
+    })
 }
 
 fn parse_i64_form_value(form: &[u8], field_name: &str) -> AppResult<Option<i64>> {
@@ -5321,7 +5339,6 @@ fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> Attachme
     let is_previewable_video = is_previewable_video_content_type(&attachment.content_type);
     AttachmentView {
         id: attachment.id,
-        file_object_id: attachment.file_object_id,
         filename: attachment.original_filename,
         content_type: attachment.content_type,
         is_previewable_image,
@@ -5332,7 +5349,6 @@ fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> Attachme
         status_tone,
         created_by: fallback_text(attachment.created_by_display_name, "系统"),
         created_at: display_timestamp(attachment.created_at),
-        object_key: attachment.object_key,
     }
 }
 
@@ -7344,11 +7360,11 @@ fn work_item_active_key(kind: &str) -> &'static str {
 
 fn project_detail_tab(tab: Option<&str>) -> &'static str {
     match tab.map(str::trim) {
-        Some("info") => "info",
+        Some("info") | Some("work") => "info",
         Some("members") => "members",
-        Some("files") | Some("attachments") => "files",
+        Some("files") | Some("attachments") => "info",
         Some("activities") => "activities",
-        _ => "work",
+        _ => "info",
     }
 }
 
@@ -7622,25 +7638,18 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
                 created_at: "今天".to_string(),
                 updated_at: "今天 16:20".to_string(),
             },
-            has_requirements: !requirements.is_empty(),
-            has_tasks: !tasks.is_empty(),
-            has_bugs: !bugs.is_empty(),
             has_activities: !activities.is_empty(),
             summary,
             requirements,
-            tasks,
-            bugs,
             members,
             has_member_candidates: !member_candidates.is_empty(),
             member_candidates,
-            has_attachments: false,
-            attachments: Vec::new(),
             activities,
             project_item_type_options: work_item_type_options(),
             can_edit_project: true,
             can_manage_project: true,
             can_manage_work_items: true,
-            active_tab: "work",
+            active_tab: "info",
         })?
         .into_response(),
     )

@@ -54,21 +54,15 @@
     <div class="project-tabs-head">
       <div>
         <p class="eyebrow">项目详情</p>
-        <h2>项目工作区</h2>
+        <h2>项目资料</h2>
       </div>
       <div class="content-tabs" role="tablist" aria-label="项目详情导航" data-content-tabs>
         <span class="content-tabs-indicator" aria-hidden="true" data-content-tab-indicator></span>
-        <button class="content-tab {% if active_tab == "work" %}active{% endif %}" id="project-tab-work-trigger" type="button" role="tab" aria-selected="{% if active_tab == "work" %}true{% else %}false{% endif %}" aria-controls="project-tab-work" data-content-tab data-tab-target="project-tab-work" data-tab-key="work">
-          工作项
-        </button>
         <button class="content-tab {% if active_tab == "info" %}active{% endif %}" id="project-tab-info-trigger" type="button" role="tab" aria-selected="{% if active_tab == "info" %}true{% else %}false{% endif %}" aria-controls="project-tab-info" data-content-tab data-tab-target="project-tab-info" data-tab-key="info">
           详情
         </button>
         <button class="content-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-content-tab data-tab-target="project-tab-members" data-tab-key="members">
           成员
-        </button>
-        <button class="content-tab {% if active_tab == "files" %}active{% endif %}" id="project-tab-files-trigger" type="button" role="tab" aria-selected="{% if active_tab == "files" %}true{% else %}false{% endif %}" aria-controls="project-tab-files" data-content-tab data-tab-target="project-tab-files" data-tab-key="files">
-          文件
         </button>
         <button class="content-tab {% if active_tab == "activities" %}active{% endif %}" id="project-tab-activities-trigger" type="button" role="tab" aria-selected="{% if active_tab == "activities" %}true{% else %}false{% endif %}" aria-controls="project-tab-activities" data-content-tab data-tab-target="project-tab-activities" data-tab-key="activities">
           动态
@@ -77,109 +71,6 @@
     </div>
 
     <div class="project-tab-panels">
-      <section id="project-tab-work" class="project-tab-panel {% if active_tab == "work" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-work-trigger" data-tab-panel {% if active_tab != "work" %}hidden{% endif %}>
-        <div class="project-work-columns">
-          <section class="project-tab-section">
-            <div class="project-tab-section-head">
-              <div>
-                <h3>需求</h3>
-                <p>项目范围和目标。</p>
-              </div>
-              <a class="btn btn-sm btn-secondary" href="/web/requirements">查看全部</a>
-            </div>
-            {% if has_requirements %}
-            <div class="work-item-list">
-              {% for item in requirements %}
-              <article class="work-item">
-                <div>
-                  <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
-                  <code>{{ item.key }}</code>
-                  <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
-                  <p>{{ item.project }} · {{ item.assignee }}</p>
-                </div>
-                <div class="work-meta">
-                  <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
-                  <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-                </div>
-              </article>
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty-state">
-              <strong>暂无需求</strong>
-              <span>点击右上角新建工作项，选择需求后即可加入当前项目。</span>
-            </div>
-            {% endif %}
-          </section>
-
-          <section class="project-tab-section">
-            <div class="project-tab-section-head">
-              <div>
-                <h3>任务</h3>
-                <p>拆解后的执行事项。</p>
-              </div>
-              <a class="btn btn-sm btn-secondary" href="/web/tasks">查看全部</a>
-            </div>
-            {% if has_tasks %}
-            <div class="work-item-list">
-              {% for item in tasks %}
-              <article class="work-item">
-                <div>
-                  <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
-                  <code>{{ item.key }}</code>
-                  <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
-                  <p>{{ item.project }} · {{ item.assignee }}</p>
-                </div>
-                <div class="work-meta">
-                  <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
-                  <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-                </div>
-              </article>
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty-state">
-              <strong>暂无任务</strong>
-              <span>需求确认后可以拆分为任务。</span>
-            </div>
-            {% endif %}
-          </section>
-
-          <section class="project-tab-section">
-            <div class="project-tab-section-head">
-              <div>
-                <h3>Bug</h3>
-                <p>项目缺陷和阻塞事项。</p>
-              </div>
-              <a class="btn btn-sm btn-secondary" href="/web/bugs">查看全部</a>
-            </div>
-            {% if has_bugs %}
-            <div class="work-item-list">
-              {% for item in bugs %}
-              <article class="work-item">
-                <div>
-                  <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
-                  <code>{{ item.key }}</code>
-                  <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
-                  <p>{{ item.project }} · {{ item.assignee }}</p>
-                </div>
-                <div class="work-meta">
-                  <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
-                  <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-                </div>
-              </article>
-              {% endfor %}
-            </div>
-            {% else %}
-            <div class="empty-state">
-              <strong>暂无 Bug</strong>
-              <span>当前项目没有缺陷记录。</span>
-            </div>
-            {% endif %}
-          </section>
-        </div>
-      </section>
-
       <section id="project-tab-info" class="project-tab-panel {% if active_tab == "info" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-info-trigger" data-tab-panel {% if active_tab != "info" %}hidden{% endif %}>
         <div class="project-detail-overview">
           <section class="project-tab-section">
@@ -247,123 +138,43 @@
             <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-member-add-modal">添加成员</button>
             {% endif %}
           </div>
-          <div class="member-list">
-            {% for member in members %}
-            <article class="member-row">
-              <div>
-                <strong>{{ member.display_name }}</strong>
-                <span>@{{ member.username }} · {{ member.joined_at }}</span>
-              </div>
-              <div class="member-actions">
-                <span class="status status-info">{{ member.role }}</span>
-                {% if can_manage_project %}
-                {% if member.username != project.owner_username %}
-                <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-member-role-modal-{{ member.username }}">调整角色</button>
-                <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/members/{{ member.username }}/remove" data-confirm-submit-form data-confirm-title="移除项目成员" data-confirm-message="确认将 {{ member.display_name }} 从项目 {{ project.code }} 中移除？" data-confirm-action="移除">
-                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                  <button class="btn btn-sm btn-secondary" type="submit">移除</button>
-                </form>
-                {% endif %}
-                {% endif %}
-              </div>
-            </article>
-            {% endfor %}
-          </div>
-        </section>
-      </section>
-
-      <section id="project-tab-files" class="project-tab-panel {% if active_tab == "files" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-files-trigger" data-tab-panel {% if active_tab != "files" %}hidden{% endif %}>
-        <section class="project-tab-section">
-          <div class="project-tab-section-head">
-            <div>
-              <h3>项目文件</h3>
-              <p>沉淀项目级文档、合同、图稿和交付物；支持文件夹分类管理。</p>
-            </div>
-            {% if can_manage_work_items %}
-            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-folder-create-modal">新建文件夹</button>
-            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-attachment-create-modal">上传文件</button>
-            {% endif %}
-          </div>
-          <div class="file-manager" data-file-manager>
-            <aside class="file-folder-tree" data-file-folder-tree>
-              <div class="file-folder-tree-head">
-                <button class="file-folder-tree-toggle" type="button" data-file-folder-tree-toggle aria-expanded="true" aria-label="收起文件夹树">▼</button>
-                <span>文件夹</span>
-              </div>
-              <nav class="file-folder-tree-list" data-file-folder-tree-list>
-                <button class="file-folder-item active" type="button" data-file-folder-item data-folder-id="" aria-current="true">
-                  <span class="file-folder-icon">📁</span>
-                  <span class="file-folder-name">全部文件</span>
-                </button>
-              </nav>
-            </aside>
-            <main class="file-content" data-file-content>
-              {% if has_attachments %}
-              <div class="attachment-list">
-                {% for attachment in attachments %}
-                <article class="attachment-row">
-                  <div>
-                    {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
-                    <button class="attachment-image-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览图片 {{ attachment.filename }}">
-                      <span class="attachment-image-frame" data-image-preview-frame>
-                        <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
-                        <span class="attachment-image-state" data-image-preview-status>加载图片预览</span>
-                      </span>
-                      <span class="attachment-image-caption">预览图片</span>
-                    </button>
-                    {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
-                    <button class="attachment-image-preview attachment-video-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="project-media-{{ project.code }}" aria-label="预览视频 {{ attachment.filename }}">
-                      <span class="attachment-image-frame">
-                        <video src="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
-                        <span class="attachment-video-play" aria-hidden="true">▶</span>
-                      </span>
-                      <span class="attachment-image-caption">预览视频</span>
-                    </button>
-                    {% endif %}
-                    <strong>{{ attachment.filename }}</strong>
-                    <span>{{ attachment.byte_size }} · {{ attachment.content_type }} · 文件对象 #{{ attachment.file_object_id }}</span>
-                    <code>{{ attachment.object_key }}</code>
-                  </div>
-                  <div class="attachment-actions">
-                    <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
-                    {% if attachment.status_code != "deleted" %}
-                    {% if can_manage_work_items %}
-                    {% if attachment.status_code == "pending" %}
-                    <form class="inline-form attachment-resume-form" method="post" data-direct-upload data-existing-attachment-id="{{ attachment.id }}" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
+          <div class="table-wrap member-table-wrap">
+            <table class="data-table member-table">
+              <thead>
+                <tr>
+                  <th scope="col">成员</th>
+                  <th scope="col">用户名</th>
+                  <th scope="col">项目角色</th>
+                  <th scope="col">加入时间</th>
+                  <th class="table-actions" scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for member in members %}
+                <tr>
+                  <td><strong>{{ member.display_name }}</strong></td>
+                  <td><code>@{{ member.username }}</code></td>
+                  <td><span class="status status-info">{{ member.role }}</span></td>
+                  <td class="work-table-muted">{{ member.joined_at }}</td>
+                  <td class="table-actions">
+                    {% if can_manage_project %}
+                    {% if member.username != project.owner_username %}
+                    <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-member-role-modal-{{ member.username }}">调整角色</button>
+                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/members/{{ member.username }}/remove" data-confirm-submit-form data-confirm-title="移除项目成员" data-confirm-message="确认将 {{ member.display_name }} 从项目 {{ project.code }} 中移除？" data-confirm-action="移除">
                       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <label class="btn btn-sm btn-secondary attachment-file-button">
-                        选择文件
-                        <input class="sr-only" name="file" type="file" required data-attachment-file>
-                      </label>
-                      <button class="btn btn-sm btn-primary" type="submit" data-upload-submit>继续上传</button>
-                      <span class="upload-status attachment-inline-status" role="status" aria-live="polite" data-upload-status>选择文件后继续上传。</span>
+                      <button class="btn btn-sm btn-secondary" type="submit">移除</button>
                     </form>
-                    {% endif %}
-                    {% endif %}
-                    {% if attachment.status_code == "uploaded" %}
-                    <a class="btn btn-sm btn-secondary" href="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载文件</a>
                     {% else %}
-                    <span class="attachment-action-hint">上传完成后可下载</span>
+                    <span class="attachment-action-hint">项目负责人</span>
                     {% endif %}
-                    {% if can_manage_work_items %}
-                    <button class="btn btn-sm btn-secondary" type="button" data-file-move data-attachment-id="{{ attachment.id }}" data-file-object-id="{{ attachment.file_object_id }}">移动到</button>
-                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/attachments/{{ attachment.id }}/delete" data-confirm-submit-form data-confirm-title="归档项目文件" data-confirm-message="确认归档文件 {{ attachment.filename }}？归档后不能继续下载，文件记录仍会保留。" data-confirm-action="归档">
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button class="btn btn-sm btn-danger" type="submit">归档</button>
-                    </form>
+                    {% else %}
+                    <span class="attachment-action-hint">无操作</span>
                     {% endif %}
-                    {% endif %}
-                  </div>
-                </article>
+                  </td>
+                </tr>
                 {% endfor %}
-              </div>
-              {% else %}
-              <div class="empty-state">
-                <strong>暂无文件</strong>
-                <span>上传文件或创建文件夹后会在这里展示。</span>
-              </div>
-              {% endif %}
-            </main>
+              </tbody>
+            </table>
           </div>
         </section>
       </section>
@@ -469,7 +280,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items" data-bug-report-form data-bug-report-create-url="/api/v1/work-items" data-work-item-label="工作项" data-success-redirect="/web/projects/{{ project.code }}?tab=work">
+    <form class="modal-body modal-form" method="post" action="/web/work-items" data-bug-report-form data-bug-report-create-url="/api/v1/work-items" data-work-item-label="工作项" data-success-redirect="/web/projects/{{ project.code }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="project_key" value="{{ project.code }}" data-bug-report-item-field>
       <input type="hidden" name="redirect_to" value="project">
@@ -547,156 +358,51 @@
   </section>
 </aside>
 
-<aside id="project-folder-create-modal" class="modal" data-modal hidden aria-hidden="true">
-  <div class="modal-backdrop" data-modal-close></div>
-  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-folder-create-modal-title" tabindex="-1">
-    <div class="modal-head">
-      <div>
-        <h2 id="project-folder-create-modal-title">新建文件夹</h2>
-        <p>创建文件夹用于分类管理项目文件，支持多级嵌套。</p>
-      </div>
-      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
-    </div>
-    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/projects/{{ project.code }}/folders" data-method="POST" data-success-message="文件夹已创建。" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label>
-        文件夹名称
-        <input name="name" placeholder="输入文件夹名称" required autofocus>
-      </label>
-      <label>
-        父文件夹
-        <select name="parent_id" data-select-searchable data-select-search-placeholder="选择父文件夹（可选）">
-          <option value="">无（创建为顶层文件夹）</option>
-        </select>
-      </label>
-      <label>
-        描述
-        <textarea name="description" rows="3" placeholder="文件夹说明（可选）"></textarea>
-      </label>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit">创建文件夹</button>
-      </div>
-    </form>
-  </section>
-</aside>
-
-<aside id="project-file-move-modal" class="modal" data-modal hidden aria-hidden="true">
-  <div class="modal-backdrop" data-modal-close></div>
-  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-file-move-modal-title" tabindex="-1">
-    <div class="modal-head">
-      <div>
-        <h2 id="project-file-move-modal-title">移动文件</h2>
-        <p>将文件移动到指定文件夹。</p>
-      </div>
-      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
-    </div>
-    <form class="modal-body modal-form" method="post" data-web-form data-action="/api/v1/file-objects/{file_object_id}/folder" data-method="PATCH" data-success-message="文件已移动。" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="file_object_id" data-file-move-file-object-id>
-      <label>
-        目标文件夹
-        <select name="folder_id" data-select-searchable data-select-search-placeholder="选择目标文件夹">
-          <option value="">根目录</option>
-        </select>
-      </label>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit">移动文件</button>
-      </div>
-    </form>
-  </section>
-</aside>
-
-<aside id="project-attachment-create-modal" class="modal" data-modal hidden aria-hidden="true">
-  <div class="modal-backdrop" data-modal-close></div>
-  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-attachment-create-modal-title" tabindex="-1">
-    <div class="modal-head">
-      <div>
-        <h2 id="project-attachment-create-modal-title">上传项目文件</h2>
-        <p>选择文件后会自动登记元数据、获取上传签名、直传对象存储并标记完成。</p>
-      </div>
-      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
-    </div>
-    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/attachments" data-direct-upload data-attachment-create-url="/api/v1/projects/{{ project.code }}/attachments" data-attachment-upload-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/upload-url" data-attachment-complete-url-template="/api/v1/projects/{{ project.code }}/attachments/{id}/uploaded" data-success-redirect="/web/projects/{{ project.code }}?tab=files">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label class="upload-picker">
-        <span>选择文件</span>
-        <input name="file" type="file" autofocus multiple data-attachment-file>
-        <em>可一次选择多个文件；浏览器会使用短期签名 URL 逐个直传对象存储。</em>
-      </label>
-      <div class="composer-file-list" data-composer-file-list hidden></div>
-      <input name="original_filename" type="hidden" value="" data-attachment-filename>
-      <input name="content_type" type="hidden" value="application/octet-stream" data-attachment-content-type>
-      <input name="byte_size" type="hidden" value="0" data-attachment-byte-size>
-      <label>
-        目标文件夹
-        <select name="folder_id" data-select-searchable data-select-search-placeholder="选择目标文件夹（可选）">
-          <option value="">根目录</option>
-        </select>
-      </label>
-      <div class="upload-status" role="status" aria-live="polite" data-upload-status>等待选择文件。</div>
-      <div class="modal-actions">
-        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit" data-upload-submit>上传文件</button>
-      </div>
-    </form>
-  </section>
-</aside>
 {% endif %}
 
 {% if can_manage_project %}
 <aside id="project-member-add-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
-  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-member-add-modal-title" tabindex="-1">
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-member-add-modal-title" tabindex="-1">
     <div class="modal-head">
       <div>
         <h2 id="project-member-add-modal-title">添加项目成员</h2>
-        <p>搜索已启用用户并加入 {{ project.code }} 项目；已在项目中的成员不会重复出现。</p>
+        <p>可一次选择多个已启用用户加入 {{ project.code }} 项目；已在项目中的成员不会重复出现。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/members">
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/members" data-member-batch-form>
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <label>
-        选择用户
-        <div class="search-combobox" data-user-combobox>
-          <input type="hidden" name="username" data-user-combobox-value>
-          <input
-            id="project-member-user-search"
-            type="search"
-            placeholder="{% if has_member_candidates %}搜索姓名或用户名{% else %}暂无可加入用户{% endif %}"
-            autocomplete="off"
-            role="combobox"
-            aria-expanded="false"
-            aria-autocomplete="list"
-            aria-controls="project-member-user-options"
-            data-user-combobox-input
-            {% if has_member_candidates %}required autofocus{% else %}disabled{% endif %}
-          >
-          <div id="project-member-user-options" class="search-combobox-panel" role="listbox" data-user-combobox-panel hidden>
-            {% for user in member_candidates %}
-            <button
-              class="search-combobox-option"
-              type="button"
-              role="option"
-              data-user-option
-              data-username="{{ user.username }}"
-              data-display-name="{{ user.display_name }}"
-              data-roles="{{ user.roles }}"
-            >
-              <span>
-                <strong>{{ user.display_name }}</strong>
-                <em>@{{ user.username }}</em>
-              </span>
-              <small>{{ user.roles }}</small>
-            </button>
-            {% endfor %}
-            <div class="search-combobox-empty" data-user-combobox-empty {% if has_member_candidates %}hidden{% endif %}>没有可加入用户</div>
-          </div>
+      <div class="member-picker">
+        <label>
+          搜索用户
+          <input id="project-member-user-search" type="search" placeholder="{% if has_member_candidates %}搜索姓名、用户名或角色{% else %}暂无可加入用户{% endif %}" autocomplete="off" data-member-candidate-search {% if has_member_candidates %}autofocus{% else %}disabled{% endif %}>
+        </label>
+        <div class="member-picker-head">
+          <span>候选用户</span>
+          <strong data-member-selected-count>已选择 0 人</strong>
         </div>
-        <em class="field-hint">只能从候选用户中选择，避免手填用户名出错。</em>
-      </label>
+        {% if has_member_candidates %}
+        <div class="member-candidate-list" id="project-member-user-options" data-member-candidate-list>
+          {% for user in member_candidates %}
+          <label class="member-candidate" data-member-candidate data-username="{{ user.username }}" data-display-name="{{ user.display_name }}" data-roles="{{ user.roles }}">
+            <input type="checkbox" name="username" value="{{ user.username }}" data-member-candidate-checkbox>
+            <span>
+              <strong>{{ user.display_name }}</strong>
+              <em>@{{ user.username }}</em>
+            </span>
+            <small>{{ user.roles }}</small>
+          </label>
+          {% endfor %}
+          <div class="search-combobox-empty" data-member-candidate-empty hidden>没有匹配用户</div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>没有可加入用户</strong>
+          <span>当前所有可用用户都已经在项目中。</span>
+        </div>
+        {% endif %}
+      </div>
       <label>
         项目角色
         <select name="member_role">
@@ -707,7 +413,7 @@
       </label>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit" {% if !has_member_candidates %}disabled{% endif %}>加入项目</button>
+        <button class="btn btn-primary" type="submit" data-member-batch-submit {% if !has_member_candidates %}disabled{% endif %}>加入项目</button>
       </div>
     </form>
   </section>

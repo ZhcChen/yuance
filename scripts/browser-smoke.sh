@@ -384,9 +384,12 @@ cat >"$EVAL_FILE" <<JS
   const projectTabList = query("[data-content-tabs]");
   const initialIndicatorX = projectTabList.style.getPropertyValue("--content-tab-indicator-x");
   assert(query("[data-content-tab-indicator]"), "项目 Tabs 未渲染活动滑块");
-  assert(!query("[data-tab-key='work']").querySelector(".topnav-badge, .content-tab-badge"), "项目详情胶囊 Tab 不应渲染角标");
-  click("[data-tab-key='info']");
-  await waitFor(() => query("[data-tab-key='info']").classList.contains("active"), "项目详情 Tab 未激活");
+  assert(!frameDocument().querySelector("[data-tab-key='work']"), "项目详情不应显示工作项 Tab");
+  assert(!frameDocument().querySelector("[data-tab-key='files']"), "项目详情不应显示文件 Tab");
+  assert(projectTabList.querySelectorAll(".topnav-badge, .content-tab-badge").length === 0, "项目详情胶囊 Tab 不应渲染角标");
+  assert(projectTabs.querySelector("[data-tab-panel].active")?.id === "project-tab-info", "项目详情默认应显示详情面板");
+  click("[data-tab-key='members']");
+  await waitFor(() => query("[data-tab-key='members']").classList.contains("active"), "项目详情 Tab 未激活成员项");
   assert(
     projectTabList.style.getPropertyValue("--content-tab-indicator-x") !== initialIndicatorX,
     "项目 Tabs 活动滑块未移动",
@@ -402,15 +405,15 @@ cat >"$EVAL_FILE" <<JS
       "项目 Tabs 活动滑块未应用过渡动画，当前 transitionDuration=" + indicatorTransitionDuration,
     );
   }
-  assert(projectTabs.querySelector("[data-tab-panel].active")?.id === "project-tab-info", "项目 Tab 面板未同步");
-  query("[data-tab-key='info']").focus();
-  query("[data-tab-key='info']").dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown", {
+  assert(projectTabs.querySelector("[data-tab-panel].active")?.id === "project-tab-members", "项目 Tab 面板未同步");
+  query("[data-tab-key='members']").focus();
+  query("[data-tab-key='members']").dispatchEvent(new frame.contentWindow.KeyboardEvent("keydown", {
     key: "ArrowRight",
     bubbles: true,
   }));
-  await waitFor(() => query("[data-tab-key='members']").classList.contains("active"), "项目详情键盘 Tab 未激活下一项");
+  await waitFor(() => query("[data-tab-key='activities']").classList.contains("active"), "项目详情键盘 Tab 未激活下一项");
   assert(
-    frame.contentWindow.location.search.includes("tab=members"),
+    frame.contentWindow.location.search.includes("tab=activities"),
     "项目详情键盘 Tab 切换未同步 URL",
   );
 
@@ -425,83 +428,26 @@ cat >"$EVAL_FILE" <<JS
   );
 
   await open("/web/projects/" + projectKey + "?tab=files");
-  click("[data-modal-open='project-folder-create-modal']");
-  await waitFor(() => visible("#project-folder-create-modal"), "项目文件夹创建 modal 未打开");
-  fill("#project-folder-create-modal input[name='name']", "冒烟文件夹");
-  fill("#project-folder-create-modal textarea[name='description']", "用于覆盖文件夹树和移动文件。");
-  await submitAndWait("#project-folder-create-modal button[type='submit'].btn-primary");
-  await open("/web/projects/" + projectKey + "?tab=files");
-  await waitFor(() => hasText("冒烟文件夹"), "项目文件夹创建后未刷新到文件 Tab");
-
-  click("[data-modal-open='project-folder-create-modal']");
-  await waitFor(() => visible("#project-folder-create-modal"), "项目文件夹重复创建 modal 未打开");
-  fill("#project-folder-create-modal input[name='name']", "冒烟文件夹");
-  fill("#project-folder-create-modal textarea[name='description']", "重复名称用于验证 JSON 错误 Toast。");
-  const folderErrorLocation = frame.contentWindow.location.pathname + frame.contentWindow.location.search;
-  click("#project-folder-create-modal button[type='submit'].btn-primary");
-  await waitFor(() => hasText("同级文件夹名称已存在"), "项目文件夹重复错误未以 Toast 提示");
-  assert(visible("#project-folder-create-modal"), "项目文件夹重复错误后 modal 不应关闭");
-  assert(
-    frame.contentWindow.location.pathname + frame.contentWindow.location.search === folderErrorLocation,
-    "项目文件夹重复错误不应导航离开当前页面",
-  );
-  click("#project-folder-create-modal [data-modal-close]");
-  await waitFor(() => !visible("#project-folder-create-modal"), "项目文件夹重复错误 modal 未关闭");
-
-  const smokeFolder = query("[data-file-folder-item][data-folder-id]:not([data-folder-id=''])");
-  const smokeFolderId = smokeFolder.dataset.folderId;
-
-  click("[data-modal-open='project-attachment-create-modal']");
-  await waitFor(() => visible("#project-attachment-create-modal"), "项目文件上传 modal 未打开");
-  await waitFor(
-    () => Array.from(query("#project-attachment-create-modal select[name='folder_id']").options)
-      .some((option) => option.textContent.includes("冒烟文件夹")),
-    "项目文件上传目标文件夹下拉未刷新",
-  );
-  click("#project-attachment-create-modal [data-modal-close]");
-  await waitFor(() => !visible("#project-attachment-create-modal"), "项目文件上传 modal 未关闭");
-
-  const csrfToken = frameDocument().querySelector('meta[name="yuance-csrf-token"]')?.content || "";
-  const attachmentResponse = await frame.contentWindow.fetch("/api/v1/projects/" + projectKey + "/attachments", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "content-type": "application/json",
-      "accept": "application/json",
-      "x-yuance-csrf-token": csrfToken,
-    },
-    body: JSON.stringify({
-      original_filename: "smoke-project-file.txt",
-      content_type: "text/plain",
-      byte_size: 32,
-      folder_id: Number(smokeFolderId),
-    }),
-  });
-  assert(attachmentResponse.ok, "项目文件登记到目标文件夹失败：" + attachmentResponse.status);
-
-  await open("/web/projects/" + projectKey + "?tab=files");
-  click("[data-file-folder-item][data-folder-id='" + smokeFolderId + "']");
-  await waitFor(() => hasText("smoke-project-file.txt"), "项目文件夹内容未动态加载文件");
-  assert(hasText("继续上传"), "动态文件列表缺少 pending 继续上传入口");
-  assert(hasText("移动到"), "动态文件列表缺少移动文件入口");
-  assert(hasText("归档"), "动态文件列表缺少归档文件入口");
-  click("[data-file-move]");
-  await waitFor(() => visible("#project-file-move-modal"), "移动文件 modal 未打开");
-  await submitAndWait("#project-file-move-modal button[type='submit'].btn-primary");
-  await open("/web/projects/" + projectKey + "?tab=files");
-  await waitFor(() => hasText("smoke-project-file.txt"), "文件移动回根目录后全部文件视图未显示文件");
+  assert(!frameDocument().querySelector("[data-tab-key='files']"), "历史文件 Tab 地址不应重新渲染文件入口");
+  assert(query("[data-tab-key='info']").classList.contains("active"), "历史文件 Tab 地址应回落到详情");
+  assert(!frameDocument().querySelector("[data-modal-open='project-attachment-create-modal']"), "项目详情不应保留项目文件上传入口");
 
   await open("/web/projects/" + projectKey + "?tab=members");
   click("[data-modal-open='project-member-add-modal']");
   await waitFor(() => visible("#project-member-add-modal"), "项目成员添加 modal 未打开");
   fill("#project-member-user-search", "smoke_user");
+  const smokeMemberCandidate = "#project-member-user-options [data-member-candidate][data-username='smoke_user']";
   await waitFor(
-    () => !query("#project-member-user-options [data-user-option][data-username='smoke_user']").hidden,
+    () => {
+      const candidate = frameDocument().querySelector(smokeMemberCandidate);
+      return candidate && !candidate.hidden;
+    },
     "项目成员候选用户未出现",
   );
-  click("#project-member-user-options [data-user-option][data-username='smoke_user']");
+  click(smokeMemberCandidate + " input[type='checkbox']");
   await waitFor(
-    () => query("#project-member-add-modal input[name='username']").value === "smoke_user",
+    () => query(smokeMemberCandidate + " input[type='checkbox']").checked
+      && query("#project-member-add-modal [data-member-selected-count]").textContent.includes("1"),
     "项目成员候选用户未选中",
   );
   fill("#project-member-add-modal select[name='member_role']", "member");
@@ -710,7 +656,28 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   const detailHtml = await detailResponse.text();
   assert(detailHtml.includes("smoke-screenshot-original.png"), "任务详情未渲染已上传附件");
   assert(detailHtml.includes("附上浏览器冒烟截图"), "任务详情未保留附件所属发表内容");
-  assert(detailHtml.includes("下载"), "任务详情未提供已上传附件下载入口");
+  const detailDocument = new DOMParser().parseFromString(detailHtml, "text/html");
+  const detailAttachment = detailDocument.querySelector(".discussion-rich-body [data-yuance-attachment-kind='image']");
+  assert(detailAttachment, "任务详情未以内联富文本渲染已上传图片");
+  assert(!detailDocument.querySelector(".discussion-attachments"), "富文本附件不应额外渲染独立文件列表");
+
+  const menuProbe = detailAttachment.closest(".discussion-rich-body")?.cloneNode(true);
+  assert(menuProbe, "任务详情未提供可验证的富文本正文");
+  document.body.appendChild(menuProbe);
+  const publishedAttachment = menuProbe.querySelector("[data-yuance-attachment-kind='image']");
+  assert(publishedAttachment, "当前讨论流未渲染富文本附件节点");
+  publishedAttachment.dispatchEvent(new MouseEvent("contextmenu", {
+    bubbles: true,
+    cancelable: true,
+    clientX: 120,
+    clientY: 120,
+    button: 2,
+  }));
+  await waitFor(() => document.querySelector("[data-rich-attachment-menu].open"), "富文本附件右键菜单未打开");
+  const attachmentMenu = query("[data-rich-attachment-menu]");
+  assert(attachmentMenu.textContent.includes("复制"), "富文本附件右键菜单缺少复制入口");
+  assert(attachmentMenu.textContent.includes("预览"), "富文本附件右键菜单缺少预览入口");
+  assert(attachmentMenu.textContent.includes("下载"), "富文本附件右键菜单缺少下载入口");
 
   return "browser smoke upload passed";
 })()
@@ -746,46 +713,51 @@ cat >"$GALLERY_SEED_EVAL_FILE" <<'JS'
     atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ/QAAAABJRU5ErkJggg=="),
     (character) => character.charCodeAt(0),
   );
-  const createResponse = await fetch(`/api/v1/work-items/${workItemKey}/attachments`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-      "x-yuance-csrf-token": csrf,
-    },
-    body: JSON.stringify({
-      original_filename: "smoke-screenshot-gallery.png",
-      content_type: "image/png",
-      byte_size: pngBytes.byteLength,
-    }),
-  });
-  assert(createResponse.ok, "图库测试附件登记失败");
-  const attachment = (await createResponse.json()).data;
-  const signingResponse = await fetch(
-    `/api/v1/work-items/${workItemKey}/attachments/${attachment.id}/upload-url`,
-    { credentials: "same-origin", headers: { accept: "application/json" } },
-  );
-  assert(signingResponse.ok, "图库测试附件签名失败");
-  const request = (await signingResponse.json()).data.request;
-  const headers = Object.fromEntries(request.headers || []);
-  headers["x-yuance-csrf-token"] = csrf;
-  const uploadResponse = await fetch(request.url, {
-    method: request.method || "PUT",
-    credentials: "same-origin",
-    headers,
-    body: pngBytes,
-  });
-  assert(uploadResponse.ok, "图库测试附件直传失败");
-  const completeResponse = await fetch(
-    `/api/v1/work-items/${workItemKey}/attachments/${attachment.id}/uploaded`,
-    {
+  async function createGalleryAttachment(filename) {
+    const createResponse = await fetch(`/api/v1/work-items/${workItemKey}/attachments`, {
       method: "POST",
       credentials: "same-origin",
-      headers: { accept: "application/json", "x-yuance-csrf-token": csrf },
-    },
-  );
-  assert(completeResponse.ok, "图库测试附件确认失败");
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        "x-yuance-csrf-token": csrf,
+      },
+      body: JSON.stringify({
+        original_filename: filename,
+        content_type: "image/png",
+        byte_size: pngBytes.byteLength,
+      }),
+    });
+    assert(createResponse.ok, "图库测试附件登记失败");
+    const attachment = (await createResponse.json()).data;
+    const signingResponse = await fetch(
+      `/api/v1/work-items/${workItemKey}/attachments/${attachment.id}/upload-url`,
+      { credentials: "same-origin", headers: { accept: "application/json" } },
+    );
+    assert(signingResponse.ok, "图库测试附件签名失败");
+    const request = (await signingResponse.json()).data.request;
+    const headers = Object.fromEntries(request.headers || []);
+    headers["x-yuance-csrf-token"] = csrf;
+    const uploadResponse = await fetch(request.url, {
+      method: request.method || "PUT",
+      credentials: "same-origin",
+      headers,
+      body: pngBytes,
+    });
+    assert(uploadResponse.ok, "图库测试附件直传失败");
+    const completeResponse = await fetch(
+      `/api/v1/work-items/${workItemKey}/attachments/${attachment.id}/uploaded`,
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { accept: "application/json", "x-yuance-csrf-token": csrf },
+      },
+    );
+    assert(completeResponse.ok, "图库测试附件确认失败");
+  }
+
+  await createGalleryAttachment("smoke-screenshot-gallery-1.png");
+  await createGalleryAttachment("smoke-screenshot-gallery-2.png");
   return "browser smoke gallery seed passed";
 })()
 JS

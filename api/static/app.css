@@ -2737,15 +2737,9 @@ textarea:focus-visible {
   animation: project-tab-in 140ms ease both;
 }
 
-.project-work-columns,
 .project-detail-overview {
   display: grid;
   gap: 14px;
-}
-
-.project-work-columns {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
 }
 
 .project-detail-overview {
@@ -3446,48 +3440,105 @@ code {
   font-size: 13px;
 }
 
-.member-list {
-  display: grid;
+.member-table-wrap {
+  border-top: 1px solid var(--line);
 }
 
-.member-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
-}
-
-.member-row:last-child {
-  border-bottom: 0;
-}
-
-.member-row div {
-  display: grid;
-  gap: 3px;
-}
-
-.member-row strong {
+.member-table td:first-child strong {
+  color: var(--text);
   font-size: 14px;
 }
 
-.member-row span {
-  color: var(--muted);
+.member-table code {
+  color: var(--muted-strong);
   font-size: 12px;
 }
 
-.member-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.member-table .table-actions {
+  min-width: 168px;
 }
 
-.member-add-form {
+.member-picker {
   display: grid;
+  gap: 10px;
+}
+
+.member-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px 16px;
-  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.member-picker-head strong {
+  color: var(--brand-strong);
+}
+
+.member-candidate-list {
+  max-height: 280px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+}
+
+.member-candidate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+.member-candidate:hover,
+.member-candidate:focus-within {
+  border-color: var(--brand-line);
+  box-shadow: 0 10px 24px rgb(22 34 50 / 8%);
+  transform: translateY(-1px);
+}
+
+.member-candidate:has(input:checked) {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.member-candidate input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.member-candidate span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.member-candidate strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.member-candidate em,
+.member-candidate small {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.member-candidate small {
+  white-space: nowrap;
 }
 
 .attachment-list {
@@ -6960,10 +7011,6 @@ select option {
 
   .system-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .project-work-columns {
-    grid-template-columns: 1fr;
   }
 
   .project-detail-overview {

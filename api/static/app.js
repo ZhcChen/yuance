@@ -853,6 +853,58 @@
     });
   }
 
+  function memberBatchFormFor(element) {
+    return element && element.closest("[data-member-batch-form]");
+  }
+
+  function updateMemberBatchForm(form) {
+    if (!form) {
+      return;
+    }
+    var selected = form.querySelectorAll("[data-member-candidate-checkbox]:checked").length;
+    var count = form.querySelector("[data-member-selected-count]");
+    var submit = form.querySelector("[data-member-batch-submit]");
+    if (count) {
+      count.textContent = "已选择 " + selected + " 人";
+    }
+    if (submit) {
+      submit.disabled = selected === 0;
+    }
+  }
+
+  function filterMemberCandidates(input) {
+    var form = memberBatchFormFor(input);
+    if (!form) {
+      return;
+    }
+    var keyword = (input.value || "").trim().toLocaleLowerCase("zh-CN");
+    var visibleCount = 0;
+    form.querySelectorAll("[data-member-candidate]").forEach(function (candidate) {
+      var haystack = [
+        candidate.getAttribute("data-username") || "",
+        candidate.getAttribute("data-display-name") || "",
+        candidate.getAttribute("data-roles") || "",
+        candidate.textContent || "",
+      ].join(" ").toLocaleLowerCase("zh-CN");
+      var visible = !keyword || haystack.indexOf(keyword) >= 0;
+      candidate.hidden = !visible;
+      if (visible) {
+        visibleCount += 1;
+      }
+    });
+    var empty = form.querySelector("[data-member-candidate-empty]");
+    if (empty) {
+      empty.hidden = visibleCount > 0;
+      empty.textContent = keyword ? "没有匹配用户" : "没有可加入用户";
+    }
+  }
+
+  function initMemberBatchForms(root) {
+    (root || document).querySelectorAll("[data-member-batch-form]").forEach(function (form) {
+      updateMemberBatchForm(form);
+    });
+  }
+
   function selectControlLabel(select) {
     var label = select.labels && select.labels[0];
     if (!label) {
@@ -1455,7 +1507,7 @@
       return;
     }
     var nextUrl = new URL(window.location.href);
-    if (tabKey === "work") {
+    if (tabKey === "info") {
       nextUrl.searchParams.delete("tab");
     } else {
       nextUrl.searchParams.set("tab", tabKey);
@@ -4863,6 +4915,7 @@
     initTopbarSearch(event.target);
     initProjectSwitcher(event.target);
     initUserComboboxes(event.target);
+    initMemberBatchForms(event.target);
     initSelectControls(event.target);
     initContentTabs(event.target);
     initAttachmentImagePreviews(event.target);
@@ -4975,6 +5028,13 @@
         }
       }
     });
+    var memberBatchForm = event.target.closest("[data-member-batch-form]");
+    if (memberBatchForm && !memberBatchForm.querySelector("[data-member-candidate-checkbox]:checked")) {
+      event.preventDefault();
+      updateMemberBatchForm(memberBatchForm);
+      showToast("请至少选择一个要加入的项目成员。", "error");
+      memberBatchForm.querySelector("[data-member-candidate-search]")?.focus({ preventScroll: true });
+    }
   }, true);
 
   document.addEventListener("submit", function (event) {
@@ -5073,6 +5133,20 @@
     document.addEventListener(eventName, handleUserComboboxInput);
   });
 
+  document.addEventListener("input", function (event) {
+    var input = event.target.closest("[data-member-candidate-search]");
+    if (input) {
+      filterMemberCandidates(input);
+    }
+  });
+
+  document.addEventListener("change", function (event) {
+    var checkbox = event.target.closest("[data-member-candidate-checkbox]");
+    if (checkbox) {
+      updateMemberBatchForm(memberBatchFormFor(checkbox));
+    }
+  });
+
   ["input", "change"].forEach(function (eventName) {
     document.addEventListener(eventName, handleUsernameInput, true);
   });
@@ -5081,6 +5155,7 @@
   initNotificationFeed(document.querySelector("[data-notification-root]"));
   initProjectSwitcher(document);
   initUserComboboxes(document);
+  initMemberBatchForms(document);
   initSelectControls(document);
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initAttachmentImagePreviews(document);
