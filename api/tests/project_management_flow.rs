@@ -3351,6 +3351,7 @@ async fn web_work_item_handoff_returns_to_discussion_context() {
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -3358,7 +3359,7 @@ async fn web_work_item_handoff_returns_to_discussion_context() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=in_progress&assignee_username=handoff_target&body=%E8%AF%B7%E7%BB%A7%E7%BB%AD%E5%A4%84%E7%90%86",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=in_progress&assignee_username=handoff_target&body=%E8%AF%B7%E7%BB%A7%E7%BB%AD%E5%A4%84%E7%90%86%EF%BC%9B%E5%A4%84%E7%90%86%E4%BA%BA%EF%BC%9A%E4%BC%AA%E9%80%A0+A+%E2%86%92+%E4%BC%AA%E9%80%A0+B",
                 ))
                 .expect("request should build"),
         )
@@ -3376,6 +3377,23 @@ async fn web_work_item_handoff_returns_to_discussion_context() {
         .expect("work item should load")
         .expect("work item should exist");
     assert_eq!(item.assignee_username, "handoff_target");
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains("系统管理员 指派给 流转目标"));
+    assert!(detail_body.contains("指派："));
+    assert!(detail_body.contains("流转目标"));
+    assert!(detail_body.contains("说明：请继续处理；处理人：伪造 A → 伪造 B"));
+    assert!(!detail_body.contains("指派：伪造 A → 伪造 B"));
 }
 
 #[tokio::test]

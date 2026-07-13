@@ -223,6 +223,7 @@ struct WorkItemComment {
     id: i64,
     parent_comment_id: Option<i64>,
     parent_author: String,
+    flow_title: String,
     body: String,
     author: String,
     author_username: String,
@@ -5464,6 +5465,7 @@ fn comment_from_summary_with_permission(
 ) -> WorkItemComment {
     let is_edited = comment.updated_at != comment.created_at;
     let body = work_item_comment_body_for_display(&comment.body, comment.is_flow);
+    let author = fallback_text(comment.author_display_name, "系统");
     let parent_author = if comment.parent_comment_id.is_some() {
         fallback_text(comment.parent_author_display_name, "原评论作者")
     } else {
@@ -5473,8 +5475,9 @@ fn comment_from_summary_with_permission(
         id: comment.id,
         parent_comment_id: comment.parent_comment_id,
         parent_author,
+        flow_title: work_item_flow_title(&author, &body, comment.is_flow),
         body,
-        author: fallback_text(comment.author_display_name, "系统"),
+        author,
         author_username: comment.author_username,
         created_at: display_timestamp(comment.created_at),
         updated_at: display_timestamp(comment.updated_at),
@@ -5503,14 +5506,68 @@ fn work_item_comment_body_for_display(body: &str, is_flow: bool) -> String {
         return body.to_string();
     }
 
-    body.split('；')
+    let (system_summary, note) = split_flow_system_summary(body);
+    let mut display_body = system_summary
+        .split('；')
+        .filter(|part| !part.is_empty())
         .map(|part| {
             part.strip_prefix("负责人：")
-                .map(|value| format!("处理人：{value}"))
+                .or_else(|| part.strip_prefix("处理人："))
+                .map(|value| format!("指派：{value}"))
                 .unwrap_or_else(|| part.to_string())
         })
         .collect::<Vec<_>>()
-        .join("；")
+        .join("；");
+    if let Some(note) = note {
+        if display_body.is_empty() {
+            display_body = format!("说明：{note}");
+        } else {
+            display_body.push_str("；说明：");
+            display_body.push_str(note);
+        }
+    }
+    display_body
+}
+
+fn work_item_flow_title(author: &str, body: &str, is_flow: bool) -> String {
+    if !is_flow {
+        return String::new();
+    }
+
+    let (system_summary, _) = split_flow_system_summary(body);
+    for part in system_summary.split('；') {
+        let Some(assignee_change) = part
+            .strip_prefix("指派：")
+            .or_else(|| part.strip_prefix("处理人："))
+            .or_else(|| part.strip_prefix("负责人："))
+        else {
+            continue;
+        };
+        if let Some((_, next_assignee)) = assignee_change.split_once('→') {
+            let next_assignee = next_assignee.trim();
+            if !next_assignee.is_empty() {
+                return format!("{author} 指派给 {next_assignee}");
+            }
+        }
+    }
+
+    if system_summary
+        .split('；')
+        .any(|part| part.starts_with("状态："))
+    {
+        return format!("{author} 更新了状态");
+    }
+
+    format!("{author} 记录了流转")
+}
+
+fn split_flow_system_summary(body: &str) -> (&str, Option<&str>) {
+    if let Some(note) = body.strip_prefix("说明：") {
+        return ("", Some(note));
+    }
+    body.split_once("；说明：")
+        .map(|(system_summary, note)| (system_summary, Some(note)))
+        .unwrap_or((body, None))
 }
 
 fn activity_from_summary(activity: projects::ProjectActivitySummary) -> Activity {
@@ -7645,6 +7702,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             id: 1,
             parent_comment_id: None,
             parent_author: String::new(),
+            flow_title: String::new(),
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
             author: "陈".to_string(),
             author_username: "yuance_admin".to_string(),
@@ -7686,18 +7744,43 @@ mod tests {
     fn flow_comment_display_renames_legacy_assignee_label() {
         assert_eq!(
             work_item_comment_body_for_display("负责人：张三 → 李四", true),
-            "处理人：张三 → 李四"
+            "指派：张三 → 李四"
         );
         assert_eq!(
             work_item_comment_body_for_display(
-                "状态：待处理 → 进行中；负责人：张三 → 李四；说明：负责人：不要改",
+                "状态：待处理 → 进行中；负责人：张三 → 李四；说明：负责人：不要改；处理人：也不要改",
                 true
             ),
-            "状态：待处理 → 进行中；处理人：张三 → 李四；说明：负责人：不要改"
+            "状态：待处理 → 进行中；指派：张三 → 李四；说明：负责人：不要改；处理人：也不要改"
+        );
+        assert_eq!(
+            work_item_comment_body_for_display("处理人：张三 → 李四", true),
+            "指派：张三 → 李四"
         );
         assert_eq!(
             work_item_comment_body_for_display("负责人：张三", false),
             "负责人：张三"
         );
+    }
+
+    #[test]
+    fn flow_comment_title_highlights_assignment_target() {
+        assert_eq!(
+            work_item_flow_title("王五", "状态：待处理 → 进行中；指派：张三 → 李四", true),
+            "王五 指派给 李四"
+        );
+        assert_eq!(
+            work_item_flow_title("王五", "状态：待处理 → 进行中", true),
+            "王五 更新了状态"
+        );
+        assert_eq!(
+            work_item_flow_title("王五", "说明：补充进展", true),
+            "王五 记录了流转"
+        );
+        assert_eq!(
+            work_item_flow_title("王五", "说明：补充进展；处理人：张三 → 李四", true),
+            "王五 记录了流转"
+        );
+        assert_eq!(work_item_flow_title("王五", "普通评论", false), "");
     }
 }
