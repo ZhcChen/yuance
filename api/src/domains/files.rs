@@ -811,8 +811,9 @@ fn validate_target_type(target_type: &str) -> AppResult<&'static str> {
         "project" => Ok("project"),
         "work_item" => Ok("work_item"),
         "comment" => Ok("comment"),
+        "project_resource" => Ok("project_resource"),
         _ => Err(AppError::BadRequest(
-            "附件目标类型只能是 project / work_item / comment".to_string(),
+            "附件目标类型只能是 project / work_item / comment / project_resource".to_string(),
         )),
     }
 }

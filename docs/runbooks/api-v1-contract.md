@@ -197,6 +197,64 @@ viewer
 - `completed`、`on_hold`、`cancelled`、`archived` 项目会阻止成员新增、调整和移除。
 - 如果成员仍负责未关闭工作项，移除会返回 `400 bad_request`，需要先转交或关闭相关工作项。
 
+## 项目资料库
+
+资料库用于保存项目级对接参数、客户资料、会议纪要和实施文档。资料正文为富文本 HTML，
+正文内附件绑定到 `project_resource` 目标。
+
+```text
+GET    /api/v1/projects/{project_key}/resources
+POST   /api/v1/projects/{project_key}/resources
+GET    /api/v1/projects/{project_key}/resources/{resource_id}
+PATCH  /api/v1/projects/{project_key}/resources/{resource_id}
+DELETE /api/v1/projects/{project_key}/resources/{resource_id}
+POST   /api/v1/projects/{project_key}/resources/{resource_id}/archive
+```
+
+列表参数：
+
+```text
+q=关键词
+category=integration|customer|meeting|implementation|other
+status=active|archived|all
+```
+
+创建请求：
+
+```json
+{
+  "title": "正式环境对接参数",
+  "category": "integration",
+  "body": "<p>正文</p>",
+  "body_format": "html",
+  "access_password": "可选单条访问密码"
+}
+```
+
+更新请求字段都是可选字段：
+
+```json
+{
+  "title": "更新后的资料标题",
+  "category": "customer",
+  "body": "<p>更新后的正文</p>",
+  "body_format": "html"
+}
+```
+
+语义：
+
+- `access_password` 只在创建时设置；为空表示不加访问密码。
+- 访问密码长度为 `4..=128`，服务端只保存 Argon2 哈希。
+- 设置访问密码的资料，列表只返回元信息和受保护摘要；详情 API 返回 `403 forbidden`，需要通过 Web 详情页验证该条资料密码后查看正文。
+- `DELETE` 和 `POST .../archive` 业务效果一致：归档资料，保留记录和历史动态，不物理删除。
+
+权限：
+
+- 列表和未加密详情：需要 `project.view`，并处于项目成员范围内。
+- 创建、更新、归档和资料正文附件写入：需要 `project.view`，并且当前用户具备项目内容写入权限。
+- `completed`、`on_hold`、`cancelled`、`archived` 项目会阻止资料写入。
+
 ## 工作项
 
 需求、任务、Bug 共用工作项模型。
@@ -454,6 +512,20 @@ GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachme
 - 列表和下载签名：需要 `work_item.view`，并处于项目成员范围内。
 - 登记、上传签名和上传完成：需要 `work_item.view`，并且当前用户具备项目内容写入权限；流程记录评论不能登记附件。
 - 工作项附件和评论附件随协作记录永久保留，不提供删除接口。
+
+资料正文附件：
+
+```text
+POST /api/v1/projects/{project_key}/resources/{resource_id}/attachments
+GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url
+POST /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded
+GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url
+```
+
+权限：
+
+- 登记、上传签名和上传完成：需要 `project.view`，并且当前用户具备项目内容写入权限。
+- 下载签名：未设置访问密码的资料需要项目成员范围；已设置访问密码的资料不通过 API 生成下载签名，必须先在 Web 详情页验证访问密码，再使用短期受控下载入口。
 
 附件登记请求：
 

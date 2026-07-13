@@ -9,7 +9,10 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domains::{audit, auth, bootstrap, files, notifications, projects, rbac, storage, users},
+    domains::{
+        audit, auth, bootstrap, files, notifications, project_resources, projects, rbac, storage,
+        users,
+    },
     platform::{
         crypto,
         error::{AppError, AppResult},
@@ -130,6 +133,24 @@ pub struct ProjectDetailPayload {
     pub due_date: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectResourcePayload {
+    pub id: i64,
+    pub project_key: String,
+    pub title: String,
+    pub category: String,
+    pub body: String,
+    pub body_format: String,
+    pub summary: String,
+    pub status: String,
+    pub is_protected: bool,
+    pub created_by: String,
+    pub updated_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -413,6 +434,41 @@ pub struct UpdateProjectRequest {
     start_date: Option<String>,
     #[serde(default)]
     due_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResourceQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    category: String,
+    #[serde(default)]
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectResourceRequest {
+    title: String,
+    #[serde(default)]
+    category: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    body_format: String,
+    #[serde(default)]
+    access_password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateProjectResourceRequest {
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    body_format: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1970,6 +2026,336 @@ pub async fn project_attachment_delete(
     Ok(json(attachment_payload(attachment)))
 }
 
+pub async fn list_project_resources(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Query(query): Query<ResourceQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectResourcePayload>>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    let payload = project_resources::list_resources(
+        pool,
+        project.id,
+        project_resources::ProjectResourceFilter {
+            keyword: query.q,
+            category: query.category,
+            status: query.status,
+        },
+    )
+    .await?
+    .into_iter()
+    .map(project_resource_summary_payload)
+    .collect();
+
+    Ok(json(payload))
+}
+
+pub async fn create_project_resource(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<CreateProjectResourceRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let resource = project_resources::create_resource(
+        pool,
+        user.id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: payload.title,
+            category: payload.category,
+            body: payload.body,
+            body_format: payload.body_format,
+            access_password: payload.access_password,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project_resource.create",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"project":"{}"}}"#, project.project_key),
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        json(project_resource_payload(resource)),
+    ))
+}
+
+pub async fn get_project_resource(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let (_user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    if resource.is_protected {
+        return Err(AppError::Forbidden(
+            "受保护资料需要在页面验证访问密码".to_string(),
+        ));
+    }
+    Ok(json(project_resource_payload(resource)))
+}
+
+pub async fn update_project_resource(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Json(payload): Json<UpdateProjectResourceRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let updated = project_resources::update_resource(
+        pool,
+        user.id,
+        resource.id,
+        project_resources::UpdateProjectResourceInput {
+            title: payload.title.unwrap_or_else(|| resource.title.clone()),
+            category: payload
+                .category
+                .unwrap_or_else(|| resource.category.clone()),
+            body: payload.body.unwrap_or_else(|| resource.body.clone()),
+            body_format: payload
+                .body_format
+                .unwrap_or_else(|| resource.body_format.clone()),
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project_resource.update",
+        "project_resource",
+        &updated.id.to_string(),
+        &format!(r#"{{"project":"{}"}}"#, project.project_key),
+    )
+    .await?;
+
+    Ok(json(project_resource_payload(updated)))
+}
+
+pub async fn archive_project_resource(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let archived =
+        project_resources::archive_resource(pool, user.id, project.id, resource.id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project_resource.archive",
+        "project_resource",
+        &archived.id.to_string(),
+        &format!(r#"{{"project":"{}"}}"#, project.project_key),
+    )
+    .await?;
+
+    Ok(json(project_resource_payload(archived)))
+}
+
+pub async fn create_project_resource_attachment(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Json(payload): Json<CreateAttachmentRequest>,
+) -> AppResult<impl IntoResponse> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if resource.status == "archived" {
+        return Err(AppError::BadRequest(
+            "已归档资料不能继续添加附件".to_string(),
+        ));
+    }
+    let config = storage::active_config(pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let attachment = files::create_attachment(
+        pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "project_resource".to_string(),
+            target_id: resource.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: payload.original_filename,
+            content_type: payload.content_type,
+            byte_size: payload.byte_size,
+            created_by_user_id: user.id,
+            activity_summary: None,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.attach.project_resource",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(
+            r#"{{"project":"{}","file_object_id":{}}}"#,
+            project.project_key, attachment.file_object_id
+        ),
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, json(attachment_payload(attachment))))
+}
+
+pub async fn project_resource_attachment_upload_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if resource.status == "archived" {
+        return Err(AppError::BadRequest(
+            "已归档资料不能继续上传附件".to_string(),
+        ));
+    }
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+
+    Ok(json(
+        signed_attachment_url_payload(
+            &state,
+            pool,
+            attachment,
+            user.id,
+            SignedUrlKind::Upload,
+            query,
+        )
+        .await?,
+    ))
+}
+
+pub async fn project_resource_attachment_mark_uploaded(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if resource.status == "archived" {
+        return Err(AppError::BadRequest(
+            "已归档资料不能继续上传附件".to_string(),
+        ));
+    }
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    storage::verify_uploaded_object(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        attachment.byte_size,
+        &attachment.content_type,
+    )
+    .await?;
+    let attachment =
+        files::mark_attachment_uploaded(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.upload.completed",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(
+            r#"{{"project":"{}","attachment_id":{attachment_id}}}"#,
+            project.project_key
+        ),
+    )
+    .await?;
+
+    Ok(json(attachment_payload(attachment)))
+}
+
+pub async fn project_resource_attachment_download_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    if resource.is_protected {
+        return Err(AppError::Forbidden(
+            "受保护资料附件需要先验证访问密码".to_string(),
+        ));
+    }
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    let payload = signed_attachment_url_payload(
+        &state,
+        pool,
+        attachment,
+        user.id,
+        SignedUrlKind::Download,
+        query,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.download.url",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(
+            r#"{{"source":"api","project":"{}","attachment_id":{},"file_object_id":{}}}"#,
+            project.project_key, payload.attachment.id, payload.attachment.file_object_id
+        ),
+    )
+    .await?;
+
+    Ok(json(payload))
+}
+
 pub async fn create_work_item_attachment(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2692,6 +3078,28 @@ async fn require_api_comment_context(
     Ok((user, item, project, comment))
 }
 
+async fn require_api_project_resource_context(
+    state: &AppState,
+    headers: &HeaderMap,
+    project_key: &str,
+    resource_id: i64,
+) -> AppResult<(
+    auth::AuthUser,
+    projects::ProjectDetail,
+    project_resources::ProjectResourceDetail,
+)> {
+    let user = require_api_user(state, headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
+
+    Ok((user, project, resource))
+}
+
 async fn ensure_api_project_access(
     pool: &sqlx::SqlitePool,
     user_id: i64,
@@ -3076,6 +3484,68 @@ fn project_member_summary_payload(member: projects::ProjectMemberSummary) -> Pro
         username: member.username,
         member_role: member.member_role,
         joined_at: member.joined_at,
+    }
+}
+
+fn project_resource_summary_payload(
+    resource: project_resources::ProjectResourceSummary,
+) -> ProjectResourcePayload {
+    let is_protected = resource.is_protected;
+    ProjectResourcePayload {
+        id: resource.id,
+        project_key: resource.project_key.clone(),
+        title: resource.title,
+        category: resource.category,
+        body: String::new(),
+        body_format: resource.body_format,
+        summary: if is_protected {
+            "受保护资料，验证访问密码后查看正文。".to_string()
+        } else {
+            resource.summary
+        },
+        status: resource.status,
+        is_protected,
+        created_by: resource.created_by_display_name,
+        updated_by: resource.updated_by_display_name,
+        created_at: resource.created_at,
+        updated_at: resource.updated_at,
+        url: format!(
+            "/web/projects/{}/resources/{}",
+            resource.project_key, resource.id
+        ),
+    }
+}
+
+fn project_resource_payload(
+    resource: project_resources::ProjectResourceDetail,
+) -> ProjectResourcePayload {
+    let is_protected = resource.is_protected;
+    ProjectResourcePayload {
+        id: resource.id,
+        project_key: resource.project_key.clone(),
+        title: resource.title,
+        category: resource.category,
+        body: if is_protected {
+            String::new()
+        } else {
+            resource.body
+        },
+        body_format: resource.body_format,
+        summary: if is_protected {
+            "受保护资料，验证访问密码后查看正文。".to_string()
+        } else {
+            resource.summary
+        },
+        status: resource.status,
+        is_protected,
+        created_by: resource.created_by_display_name,
+        updated_by: resource.updated_by_display_name,
+        created_at: resource.created_at,
+        updated_at: resource.updated_at,
+        url: format!(
+            "/web/projects/{}/resources/{}",
+            resource.project_key, resource.id
+        ),
     }
 }
 

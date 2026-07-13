@@ -7,17 +7,18 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
-use serde::Deserialize;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::{
     domains::{
         audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        files, notifications, projects, rbac, storage, users,
+        files, notifications, project_resources, projects, rbac, storage, users,
     },
     platform::error::{AppError, AppResult},
-    platform::security::csrf,
+    platform::{crypto, security::csrf},
     web::{audit_context, response, router::AppState},
 };
 
@@ -135,6 +136,72 @@ struct ProjectUserOption {
     username: String,
     roles: String,
 }
+
+#[derive(Debug, Clone)]
+struct ProjectResourceView {
+    id: i64,
+    title: String,
+    category_code: String,
+    category: String,
+    summary: String,
+    status_code: String,
+    status: String,
+    status_tone: &'static str,
+    is_protected: bool,
+    created_by: String,
+    updated_by: String,
+    created_at: String,
+    updated_at: String,
+    url: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProjectResourceFilterView {
+    q: String,
+    category: String,
+    status: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectResourceCategoryOption {
+    value: &'static str,
+    label: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectResourceDetailView {
+    id: i64,
+    title: String,
+    category_code: String,
+    category: String,
+    body: String,
+    body_format: String,
+    body_html: String,
+    editor_body_html: String,
+    summary: String,
+    status_code: String,
+    status: String,
+    status_tone: &'static str,
+    is_protected: bool,
+    created_by: String,
+    updated_by: String,
+    archived_by: String,
+    archived_at: String,
+    created_at: String,
+    updated_at: String,
+    edit_url: String,
+    archive_url: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct ProjectResourceAccessGrant {
+    resource_id: i64,
+    user_id: i64,
+    expires_at: i64,
+}
+
+const PROJECT_RESOURCE_ACCESS_AAD: &[u8] = b"yuance:project-resource-access:v1";
+const PROJECT_RESOURCE_ACCESS_TTL_SECONDS: i64 = 15 * 60;
 
 #[derive(Debug, Clone)]
 struct AttachmentView {
@@ -611,6 +678,10 @@ struct ProjectDetailTemplate {
     requirements: Vec<WorkItem>,
     members: Vec<ProjectMemberView>,
     member_candidates: Vec<ProjectUserOption>,
+    resources: Vec<ProjectResourceView>,
+    has_resources: bool,
+    resource_filters: ProjectResourceFilterView,
+    resource_category_options: Vec<ProjectResourceCategoryOption>,
     activities: Vec<Activity>,
     has_activities: bool,
     has_member_candidates: bool,
@@ -619,6 +690,24 @@ struct ProjectDetailTemplate {
     can_manage_project: bool,
     can_manage_work_items: bool,
     active_tab: &'static str,
+}
+
+#[derive(Template)]
+#[template(path = "web/projects/resource_detail.html")]
+struct ProjectResourceDetailTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    project: ProjectDetailView,
+    resource: ProjectResourceDetailView,
+    resource_category_options: Vec<ProjectResourceCategoryOption>,
+    can_manage_resources: bool,
+    is_unlocked: bool,
+    unlock_error: String,
 }
 
 #[derive(Template)]
@@ -1167,6 +1256,27 @@ pub struct AttachmentDeleteForm {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ProjectResourceForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    title: String,
+    category: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    body_format: String,
+    #[serde(default)]
+    access_password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProjectResourceUnlockForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WorkItemCommentForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
@@ -1199,6 +1309,18 @@ pub struct WorkItemsQuery {
 pub struct ProjectDetailQuery {
     #[serde(default)]
     tab: String,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    category: String,
+    #[serde(default)]
+    status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResourceAccessQuery {
+    #[serde(default)]
+    access: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1998,6 +2120,28 @@ pub async fn project_detail_page(
         .into_iter()
         .map(project_member_from_summary)
         .collect::<Vec<_>>();
+    let resource_filters = ProjectResourceFilterView {
+        q: query.q.trim().to_string(),
+        category: query.category.trim().to_string(),
+        status: if query.status.trim().is_empty() {
+            "active".to_string()
+        } else {
+            query.status.trim().to_string()
+        },
+    };
+    let resources = project_resources::list_resources(
+        pool,
+        project.id,
+        project_resources::ProjectResourceFilter {
+            keyword: resource_filters.q.clone(),
+            category: resource_filters.category.clone(),
+            status: resource_filters.status.clone(),
+        },
+    )
+    .await?
+    .into_iter()
+    .map(project_resource_from_summary)
+    .collect::<Vec<_>>();
     let summary = project_detail_summary(&requirements, &tasks, &bugs, &members);
     let has_project_manage_permission =
         rbac::user_has_permission(pool, context.user_id, "project.manage").await?;
@@ -2050,6 +2194,10 @@ pub async fn project_detail_page(
             members,
             has_member_candidates: !member_candidates.is_empty(),
             member_candidates,
+            has_resources: !resources.is_empty(),
+            resources,
+            resource_filters,
+            resource_category_options: project_resource_category_options(),
             activities,
             project_item_type_options: work_item_type_options(),
             can_edit_project,
@@ -2478,6 +2626,340 @@ pub async fn project_attachment_download(
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
+pub async fn project_resource_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Form(form): Form<ProjectResourceForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        projects::ensure_project_accepts_writes(&project.status)?;
+        let resource = project_resources::create_resource(
+            pool,
+            context.user_id,
+            project_resources::CreateProjectResourceInput {
+                project_id: project.id,
+                title: form.title,
+                category: form.category,
+                body: form.body,
+                body_format: form.body_format,
+                access_password: form.access_password,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project_resource.create",
+            "project_resource",
+            &resource.id.to_string(),
+            &format!(r#"{{"project":"{}"}}"#, project.project_key),
+        )
+        .await?;
+
+        return Ok(
+            Redirect::to(&project_resource_url(&project.project_key, resource.id)).into_response(),
+        );
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
+}
+
+pub async fn project_resource_detail_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let mut context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        return Ok(Redirect::to("/web/projects/YCE?tab=library").into_response());
+    };
+    ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_project_access(pool, &context, project.id).await?;
+    let selected_project = projects::set_current_project_for_user(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &project_key,
+    )
+    .await?;
+    context.current_project = Some(current_project_from_domain(selected_project));
+    refresh_context_system_nav(pool, &mut context).await?;
+    let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
+    let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
+    let can_manage_resources =
+        user_can_write_project_content_for_context(pool, &context, project.id).await?
+            && project_accepts_writes
+            && resource.status != "archived";
+    let is_unlocked = !resource.is_protected;
+
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(ProjectResourceDetailTemplate {
+            active: "projects",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            project: project_detail_from_domain(project),
+            resource: project_resource_from_detail(resource, None),
+            resource_category_options: project_resource_category_options(),
+            can_manage_resources,
+            is_unlocked,
+            unlock_error: String::new(),
+        })?
+        .into_response(),
+    )
+}
+
+pub async fn project_resource_unlock(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Form(form): Form<ProjectResourceUnlockForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let mut context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        return Ok(Redirect::to("/web/projects/YCE?tab=library").into_response());
+    };
+    ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_project_access(pool, &context, project.id).await?;
+    let selected_project = projects::set_current_project_for_user(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &project_key,
+    )
+    .await?;
+    context.current_project = Some(current_project_from_domain(selected_project));
+    refresh_context_system_nav(pool, &mut context).await?;
+    let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
+    let verified =
+        project_resources::verify_resource_password(pool, resource.id, &form.password).await?;
+    let audit_action = if verified {
+        "project_resource.unlock.success"
+    } else {
+        "project_resource.unlock.failed"
+    };
+    audit::record(
+        pool,
+        Some(context.user_id),
+        audit_action,
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"project":"{}"}}"#, project.project_key),
+    )
+    .await?;
+    let access_token = if verified && resource.is_protected {
+        Some(issue_project_resource_access_token(
+            &state,
+            context.user_id,
+            resource.id,
+        )?)
+    } else {
+        None
+    };
+    let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
+    let can_manage_resources =
+        user_can_write_project_content_for_context(pool, &context, project.id).await?
+            && project_accepts_writes
+            && resource.status != "archived";
+    let unlock_error = if verified {
+        String::new()
+    } else {
+        "访问密码不正确，请重新输入。".to_string()
+    };
+
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(ProjectResourceDetailTemplate {
+            active: "projects",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            project: project_detail_from_domain(project),
+            resource: project_resource_from_detail(resource, access_token.as_deref()),
+            resource_category_options: project_resource_category_options(),
+            can_manage_resources,
+            is_unlocked: verified,
+            unlock_error,
+        })?
+        .into_response(),
+    )
+}
+
+pub async fn project_resource_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Form(form): Form<ProjectResourceForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        projects::ensure_project_accepts_writes(&project.status)?;
+        let existing =
+            project_resources::get_project_resource(pool, project.id, resource_id).await?;
+        let resource = project_resources::update_resource(
+            pool,
+            context.user_id,
+            existing.id,
+            project_resources::UpdateProjectResourceInput {
+                title: form.title,
+                category: form.category,
+                body: form.body,
+                body_format: form.body_format,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project_resource.update",
+            "project_resource",
+            &resource.id.to_string(),
+            &format!(r#"{{"project":"{}"}}"#, project.project_key),
+        )
+        .await?;
+
+        return Ok(
+            Redirect::to(&project_resource_url(&project.project_key, resource.id)).into_response(),
+        );
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
+}
+
+pub async fn project_resource_archive(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Form(form): Form<AttachmentDeleteForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        projects::ensure_project_accepts_writes(&project.status)?;
+        let resource =
+            project_resources::archive_resource(pool, context.user_id, project.id, resource_id)
+                .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project_resource.archive",
+            "project_resource",
+            &resource.id.to_string(),
+            &format!(r#"{{"project":"{}"}}"#, project.project_key),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&project_library_url(&project.project_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
+}
+
+pub async fn project_resource_attachment_download(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let resource =
+            project_resources::get_project_resource(pool, project.id, resource_id).await?;
+        if resource.is_protected
+            && !verify_project_resource_access_token(
+                &state,
+                &query.access,
+                context.user_id,
+                resource.id,
+            )?
+        {
+            return Err(AppError::Forbidden("请先验证资料访问密码".to_string()));
+        }
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+                .await?;
+
+        return attachment_download_redirect(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+            "project_resource",
+            &resource.id.to_string(),
+            format!(
+                r#"{{"source":"web","project":"{}","attachment_id":{attachment_id}}}"#,
+                project.project_key
+            ),
+        )
+        .await;
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
 }
 
 pub async fn work_items_create(
@@ -5160,6 +5642,22 @@ fn project_members_url(project_key: &str) -> String {
     format!("/web/projects/{project_key}?tab=members")
 }
 
+fn project_library_url(project_key: &str) -> String {
+    format!("/web/projects/{project_key}?tab=library")
+}
+
+fn project_resource_url(project_key: &str, resource_id: i64) -> String {
+    format!("/web/projects/{project_key}/resources/{resource_id}")
+}
+
+fn project_resource_edit_url(project_key: &str, resource_id: i64) -> String {
+    format!("/web/projects/{project_key}/resources/{resource_id}/edit")
+}
+
+fn project_resource_archive_url(project_key: &str, resource_id: i64) -> String {
+    format!("/web/projects/{project_key}/resources/{resource_id}/archive")
+}
+
 fn work_item_discussion_url(item_key: &str) -> String {
     format!("/web/work-items/{item_key}#discussion-title")
 }
@@ -5178,6 +5676,63 @@ fn with_csrf_cookie(
         csrf::cookie_header(csrf_token, state.settings.env == "production").parse()?,
     );
     Ok(response)
+}
+
+fn issue_project_resource_access_token(
+    state: &AppState,
+    user_id: i64,
+    resource_id: i64,
+) -> AppResult<String> {
+    let grant = ProjectResourceAccessGrant {
+        resource_id,
+        user_id,
+        expires_at: Utc::now().timestamp() + PROJECT_RESOURCE_ACCESS_TTL_SECONDS,
+    };
+    let plaintext = serde_json::to_string(&grant)
+        .map_err(|error| AppError::Crypto(format!("资料访问凭证序列化失败：{error}")))?;
+    crypto::encrypt_secret(
+        &state.settings.security_master_key,
+        &plaintext,
+        PROJECT_RESOURCE_ACCESS_AAD,
+    )
+}
+
+fn verify_project_resource_access_token(
+    state: &AppState,
+    token: &str,
+    user_id: i64,
+    resource_id: i64,
+) -> AppResult<bool> {
+    if token.trim().is_empty() {
+        return Ok(false);
+    }
+    let plaintext = match crypto::decrypt_secret(
+        &state.settings.security_master_key,
+        token,
+        PROJECT_RESOURCE_ACCESS_AAD,
+    ) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    let grant = match serde_json::from_str::<ProjectResourceAccessGrant>(&plaintext) {
+        Ok(value) => value,
+        Err(_) => return Ok(false),
+    };
+    Ok(grant.user_id == user_id
+        && grant.resource_id == resource_id
+        && grant.expires_at >= Utc::now().timestamp())
+}
+
+fn append_resource_access_token_to_body(body_html: &str, access_token: &str) -> String {
+    if access_token.trim().is_empty() {
+        return body_html.to_string();
+    }
+    let query =
+        serde_urlencoded::to_string([("access", access_token)]).unwrap_or_else(|_| String::new());
+    if query.is_empty() {
+        return body_html.to_string();
+    }
+    body_html.replace("/download\"", &format!("/download?{query}\""))
 }
 
 fn is_htmx(headers: &HeaderMap) -> bool {
@@ -5418,6 +5973,95 @@ fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> Attachme
         created_by: fallback_text(attachment.created_by_display_name, "系统"),
         created_at: display_timestamp(attachment.created_at),
     }
+}
+
+fn project_resource_from_summary(
+    resource: project_resources::ProjectResourceSummary,
+) -> ProjectResourceView {
+    let (status, status_tone) = project_resource_status_label(&resource.status);
+    let is_protected = resource.is_protected;
+    ProjectResourceView {
+        id: resource.id,
+        title: resource.title,
+        category_code: resource.category.clone(),
+        category: project_resources::category_label(&resource.category).to_string(),
+        summary: if is_protected {
+            "受保护资料，验证访问密码后查看正文。".to_string()
+        } else {
+            resource.summary
+        },
+        status_code: resource.status,
+        status: status.to_string(),
+        status_tone,
+        is_protected,
+        created_by: fallback_text(resource.created_by_display_name, "系统"),
+        updated_by: fallback_text(resource.updated_by_display_name, "系统"),
+        created_at: display_timestamp(resource.created_at),
+        updated_at: display_timestamp(resource.updated_at),
+        url: project_resource_url(&resource.project_key, resource.id),
+    }
+}
+
+fn project_resource_from_detail(
+    resource: project_resources::ProjectResourceDetail,
+    access_token: Option<&str>,
+) -> ProjectResourceDetailView {
+    let (status, status_tone) = project_resource_status_label(&resource.status);
+    let project_key = resource.project_key.clone();
+    let resource_id = resource.id;
+    let editor_body_html =
+        project_resources::resource_body_html_for_display(&resource.body, &resource.body_format);
+    let body_html = access_token
+        .map(|token| append_resource_access_token_to_body(&resource.body_html, token))
+        .unwrap_or(resource.body_html);
+    ProjectResourceDetailView {
+        id: resource.id,
+        title: resource.title,
+        category_code: resource.category.clone(),
+        category: project_resources::category_label(&resource.category).to_string(),
+        body: resource.body,
+        body_format: resource.body_format,
+        body_html,
+        editor_body_html,
+        summary: resource.summary,
+        status_code: resource.status,
+        status: status.to_string(),
+        status_tone,
+        is_protected: resource.is_protected,
+        created_by: fallback_text(resource.created_by_display_name, "系统"),
+        updated_by: fallback_text(resource.updated_by_display_name, "系统"),
+        archived_by: fallback_text(resource.archived_by_display_name, "系统"),
+        archived_at: display_timestamp(resource.archived_at),
+        created_at: display_timestamp(resource.created_at),
+        updated_at: display_timestamp(resource.updated_at),
+        edit_url: project_resource_edit_url(&project_key, resource_id),
+        archive_url: project_resource_archive_url(&project_key, resource_id),
+    }
+}
+
+fn project_resource_category_options() -> Vec<ProjectResourceCategoryOption> {
+    vec![
+        ProjectResourceCategoryOption {
+            value: "integration",
+            label: "对接参数",
+        },
+        ProjectResourceCategoryOption {
+            value: "customer",
+            label: "客户资料",
+        },
+        ProjectResourceCategoryOption {
+            value: "meeting",
+            label: "会议纪要",
+        },
+        ProjectResourceCategoryOption {
+            value: "implementation",
+            label: "实施文档",
+        },
+        ProjectResourceCategoryOption {
+            value: "other",
+            label: "其他",
+        },
+    ]
 }
 
 fn project_detail_summary(
@@ -7204,6 +7848,14 @@ fn project_member_role_label(role: &str) -> &'static str {
     }
 }
 
+fn project_resource_status_label(status: &str) -> (&'static str, &'static str) {
+    match status {
+        "active" => ("可用", "ok"),
+        "archived" => ("已归档", "info"),
+        _ => ("未知", "warning"),
+    }
+}
+
 fn user_status_label(status: &str) -> (&'static str, &'static str) {
     match status {
         "active" => ("启用", "ok"),
@@ -7432,6 +8084,7 @@ fn project_detail_tab(tab: Option<&str>) -> &'static str {
     match tab.map(str::trim) {
         Some("info") | Some("work") => "info",
         Some("members") => "members",
+        Some("library") | Some("resources") => "library",
         Some("files") | Some("attachments") => "info",
         Some("activities") => "activities",
         _ => "info",
@@ -7679,6 +8332,22 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
         username: "tester".to_string(),
         roles: "普通成员".to_string(),
     }];
+    let resources = vec![ProjectResourceView {
+        id: 1,
+        title: "上游对接参数".to_string(),
+        category_code: "integration".to_string(),
+        category: "对接参数".to_string(),
+        summary: "保存测试环境、正式环境和回调说明。".to_string(),
+        status_code: "active".to_string(),
+        status: "可用".to_string(),
+        status_tone: "ok",
+        is_protected: true,
+        created_by: "陈".to_string(),
+        updated_by: "陈".to_string(),
+        created_at: "今天".to_string(),
+        updated_at: "今天 16:20".to_string(),
+        url: "/web/projects/YCE/resources/1".to_string(),
+    }];
     let activities = sample_activities();
     let summary = project_detail_summary(&requirements, &tasks, &bugs, &members);
 
@@ -7714,6 +8383,10 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             members,
             has_member_candidates: !member_candidates.is_empty(),
             member_candidates,
+            has_resources: !resources.is_empty(),
+            resources,
+            resource_filters: ProjectResourceFilterView::default(),
+            resource_category_options: project_resource_category_options(),
             activities,
             project_item_type_options: work_item_type_options(),
             can_edit_project: true,

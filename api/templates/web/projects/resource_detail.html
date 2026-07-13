@@ -1,0 +1,139 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}{{ resource.title }} - {{ project.name }} - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack resource-detail-page" data-project-key="{{ project.code }}" data-resource-id="{{ resource.id }}">
+  <section class="page-hero detail-hero resource-hero">
+    <div>
+      <p class="eyebrow">资料库 / {{ project.code }}</p>
+      <h1>{{ resource.title }}</h1>
+      {% if resource.is_protected && !is_unlocked %}
+      <p>这条资料已设置访问密码，验证通过后可查看正文和附件。</p>
+      {% else %}
+      <p>{{ resource.summary }}</p>
+      {% endif %}
+      <div class="detail-meta">
+        <span class="resource-category">{{ resource.category }}</span>
+        <span class="status status-{{ resource.status_tone }}">{{ resource.status }}</span>
+        {% if resource.is_protected %}
+        <span class="resource-lock-badge">保险箱</span>
+        {% endif %}
+        <span>创建：{{ resource.created_by }} · {{ resource.created_at }}</span>
+        <span>更新：{{ resource.updated_by }} · {{ resource.updated_at }}</span>
+        {% if resource.status_code == "archived" %}
+        <span>归档：{{ resource.archived_by }} · {{ resource.archived_at }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="toolbar-actions">
+      <a class="btn btn-secondary" href="/web/projects/{{ project.code }}?tab=library">返回资料库</a>
+      {% if can_manage_resources && is_unlocked %}
+      <button class="btn btn-secondary" type="button" data-modal-open="project-resource-edit-modal">编辑资料</button>
+      <form class="inline-form" method="post" action="{{ resource.archive_url }}" data-confirm-submit-form data-confirm-title="归档资料" data-confirm-message="确认归档资料「{{ resource.title }}」？归档后不会删除历史内容。" data-confirm-action="归档">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <button class="btn btn-secondary" type="submit">归档</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if resource.is_protected && !is_unlocked %}
+  <section class="resource-lock-panel">
+    <div class="resource-lock-card">
+      <span class="resource-lock-mark" aria-hidden="true">⌁</span>
+      <div>
+        <p class="eyebrow">访问验证</p>
+        <h2>这条资料已设置访问密码</h2>
+        <p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p>
+      </div>
+      <form class="modal-form resource-unlock-form" method="post" action="/web/projects/{{ project.code }}/resources/{{ resource.id }}/unlock">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <label>
+          访问密码
+          <input name="password" type="password" minlength="4" maxlength="128" autocomplete="off" required autofocus>
+        </label>
+        {% if unlock_error != "" %}
+        <div class="form-error">{{ unlock_error }}</div>
+        {% endif %}
+        <button class="btn btn-primary" type="submit">验证并查看</button>
+      </form>
+    </div>
+  </section>
+  {% else %}
+  <section class="project-tabs-card resource-content-card">
+    <div class="project-tabs-head">
+      <div>
+        <p class="eyebrow">资料正文</p>
+        <h2>{{ resource.title }}</h2>
+      </div>
+      <div class="resource-detail-side">
+        <span>{{ resource.category }}</span>
+        <span>{{ resource.updated_at }}</span>
+      </div>
+    </div>
+    <article class="resource-rich-body discussion-rich-body">
+      {{ resource.body_html|safe }}
+    </article>
+  </section>
+  {% endif %}
+</section>
+
+{% if can_manage_resources && is_unlocked %}
+<aside id="project-resource-edit-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-resource-edit-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-resource-edit-modal-title">编辑资料</h2>
+        <p>编辑正文时可以继续粘贴截图或拖拽文件；访问密码不在这里修改。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="{{ resource.edit_url }}" data-resource-form data-resource-project-key="{{ project.code }}" data-resource-id="{{ resource.id }}" data-resource-update-url="/api/v1/projects/{{ project.code }}/resources/{{ resource.id }}" data-success-redirect-template="/web/projects/{{ project.code }}/resources/{id}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid">
+        <label class="wide-field">
+          标题
+          <input name="title" value="{{ resource.title }}" required autofocus data-resource-field>
+        </label>
+        <label>
+          分类
+          <select name="category" data-resource-field>
+            {% for option in resource_category_options %}
+            <option value="{{ option.value }}" {% if resource.category_code == option.value %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <input type="hidden" name="body" value="{{ resource.body }}" data-resource-body data-discussion-body>
+        <input type="hidden" name="body_format" value="{{ resource.body_format }}" data-resource-body-format data-discussion-body-format>
+        <div class="work-item-rich-create resource-rich-create wide-field">
+          <div class="work-item-rich-create-head">
+            <strong>资料正文</strong>
+            <span>支持富文本、粘贴截图、拖拽图片 / 视频 / 文件。</span>
+          </div>
+          <div class="rich-text-editor" data-rich-text-editor data-resource-rich-editor data-resource-id="{{ resource.id }}" data-placeholder="填写资料正文，也可以直接粘贴截图或拖拽文件...">
+            <div class="rich-text-toolbar" aria-label="富文本工具栏">
+              <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
+              <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
+              <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
+              <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
+              <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
+              <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
+              <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
+            </div>
+            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="填写资料正文，也可以直接粘贴截图或拖拽文件...">{{ resource.editor_body_html|safe }}</div>
+            <div class="rich-text-drop-hint">新增附件会直接上传并写入资料正文，提交后保存最新正文。</div>
+          </div>
+          <div class="upload-status" role="status" aria-live="polite" data-resource-status data-discussion-status>可以继续编辑资料正文。</div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit" data-resource-submit>保存资料</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
+{% endblock %}

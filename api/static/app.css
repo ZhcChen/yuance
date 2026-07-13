@@ -2857,6 +2857,226 @@ textarea:focus-visible {
   line-height: 24px;
 }
 
+.resource-library-section {
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-soft) 100%);
+}
+
+.resource-library-head {
+  align-items: center;
+}
+
+.resource-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px 150px auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.resource-filter-bar label {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.resource-list {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.resource-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 10px 26px rgb(22 34 50 / 5%);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+.resource-card:hover {
+  border-color: var(--brand-line);
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.resource-card-main {
+  min-width: 0;
+}
+
+.resource-card-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.resource-card h4 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.resource-card h4 a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.resource-card h4 a:hover {
+  color: var(--brand-strong);
+}
+
+.resource-card p {
+  margin: 6px 0 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.resource-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.resource-card-actions {
+  display: flex;
+  align-items: center;
+}
+
+.resource-category,
+.resource-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.resource-category {
+  border: 1px solid var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+.resource-lock-badge {
+  border: 1px solid var(--warning-line);
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.resource-empty {
+  margin: 16px;
+}
+
+.resource-detail-page .resource-hero h1 {
+  max-width: 920px;
+}
+
+.resource-lock-panel {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  padding: 24px;
+}
+
+.resource-lock-card {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.resource-lock-card h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
+  letter-spacing: -.02em;
+}
+
+.resource-lock-card p {
+  margin: 6px 0 0;
+  color: var(--muted-strong);
+  line-height: 22px;
+}
+
+.resource-lock-mark {
+  width: 48px;
+  height: 48px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.resource-unlock-form {
+  display: grid;
+  gap: 14px;
+}
+
+.form-error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger-line);
+  border-radius: 12px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.resource-content-card {
+  overflow: hidden;
+}
+
+.resource-detail-side {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.resource-rich-body {
+  min-height: 220px;
+  padding: 22px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 26px;
+}
+
+.resource-rich-create .rich-text-editor {
+  min-height: 280px;
+}
+
 @keyframes project-tab-in {
   from {
     opacity: 0;

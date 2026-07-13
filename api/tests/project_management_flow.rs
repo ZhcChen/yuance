@@ -5,7 +5,9 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, files, notifications, projects, rbac, storage, users},
+    domains::{
+        auth, bootstrap, files, notifications, project_resources, projects, rbac, storage, users,
+    },
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -59,6 +61,171 @@ async fn rich_text_comments_are_sanitized_and_rendered_safely() {
     assert!(detail_body.contains("<strong>完成</strong>"));
     assert!(!detail_body.contains("alert(1)"));
     assert!(!detail_body.contains("javascript:"));
+}
+
+#[tokio::test]
+async fn project_resource_library_requires_password_for_protected_details() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"title":"正式环境对接参数","category":"integration","body":"","body_format":"html","access_password":"safe-pass"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_status = create_response.status();
+    let create_body = response_body(create_response).await;
+    assert_eq!(create_status, StatusCode::CREATED, "{create_body}");
+    let created: serde_json::Value =
+        serde_json::from_str(&create_body).expect("create response should be json");
+    let resource_id = created["data"]["id"]
+        .as_i64()
+        .expect("resource id should exist");
+    let stored = project_resources::get_resource(&pool, resource_id)
+        .await
+        .expect("resource should load")
+        .expect("resource should exist");
+    assert!(stored.is_protected);
+    assert!(
+        project_resources::verify_resource_password(&pool, resource_id, "safe-pass")
+            .await
+            .expect("password should verify")
+    );
+
+    let patch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>正式参数：client_id=yuance</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let patch_status = patch_response.status();
+    let patch_body = response_body(patch_response).await;
+    assert_eq!(patch_status, StatusCode::OK, "{patch_body}");
+    assert!(patch_body.contains("受保护资料，验证访问密码后查看正文"));
+    assert!(!patch_body.contains("client_id=yuance"));
+
+    let api_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(api_detail_response.status(), StatusCode::FORBIDDEN);
+
+    let secret_search_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resources?q=client_id")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(secret_search_response.status(), StatusCode::OK);
+    let secret_search_body = response_body(secret_search_response).await;
+    assert!(!secret_search_body.contains("正式环境对接参数"));
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE?tab=library")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = response_body(list_response).await;
+    assert!(list_body.contains("正式环境对接参数"));
+    assert!(list_body.contains("保险箱"));
+    assert!(list_body.contains("受保护资料，验证访问密码后查看正文"));
+    assert!(!list_body.contains("client_id=yuance"));
+
+    let locked_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(locked_response.status(), StatusCode::OK);
+    let locked_body = response_body(locked_response).await;
+    assert!(locked_body.contains("这条资料已设置访问密码"));
+    assert!(!locked_body.contains("client_id=yuance"));
+
+    let wrong_unlock = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/projects/YCE/resources/{resource_id}/unlock"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&password=wrong-pass"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(wrong_unlock.status(), StatusCode::OK);
+    let wrong_body = response_body(wrong_unlock).await;
+    assert!(wrong_body.contains("访问密码不正确"));
+    assert!(!wrong_body.contains("client_id=yuance"));
+
+    let correct_unlock = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/projects/YCE/resources/{resource_id}/unlock"))
+                .header(header::COOKIE, admin.cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!("_csrf={CSRF_TOKEN}&password=safe-pass")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(correct_unlock.status(), StatusCode::OK);
+    let unlocked_body = response_body(correct_unlock).await;
+    assert!(unlocked_body.contains("client_id=yuance"));
 }
 
 #[tokio::test]

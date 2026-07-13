@@ -2001,6 +2001,10 @@
     return form ? form.querySelector("[data-discussion-body]") : null;
   }
 
+  function resourceFormForEditor(editor) {
+    return editor ? editor.closest("[data-resource-form]") : null;
+  }
+
   function richTextCommand(command, editor) {
     var input = richTextInput(editor);
     if (!input) {
@@ -2107,6 +2111,20 @@
   }
 
   function richTextDownloadUrl(editor, attachmentId) {
+    var resourceForm = resourceFormForEditor(editor);
+    var projectKey = editor?.dataset.projectKey || resourceForm?.dataset.resourceProjectKey || "";
+    var resourceId = editor?.dataset.resourceId || resourceForm?.dataset.resourceId || "";
+    if (projectKey && resourceId && attachmentId) {
+      return (
+        "/web/projects/" +
+        encodeURIComponent(projectKey) +
+        "/resources/" +
+        encodeURIComponent(String(resourceId)) +
+        "/attachments/" +
+        encodeURIComponent(String(attachmentId)) +
+        "/download"
+      );
+    }
     var itemKey = editor?.dataset.itemKey || editor?.closest("[data-discussion-form]")?.dataset.itemKey || "";
     var commentId = editor?.dataset.commentId || editor?.closest("[data-discussion-form]")?.dataset.discussionCommentId || "";
     if (!itemKey || !commentId || !attachmentId) {
@@ -2437,6 +2455,70 @@
   async function uploadRichAttachment(editor, node, file, options) {
     var uploadOptions = options || {};
     var form = editor.closest("[data-discussion-form]");
+    var resourceForm = resourceFormForEditor(editor);
+    if (resourceForm) {
+      var projectKey = editor.dataset.projectKey || resourceForm.dataset.resourceProjectKey || "";
+      var resourceId = editor.dataset.resourceId || resourceForm.dataset.resourceId || "";
+      if (!projectKey || !resourceId) {
+        throw new Error("资料尚未创建，无法上传附件。");
+      }
+      try {
+        await uploadAttachmentFile({
+          file: file,
+          filename: file.name || "attachment.bin",
+          contentType: file.type || "application/octet-stream",
+          byteSize: file.size || 0,
+          existingAttachmentId: node.dataset.attachmentId || "",
+          createUrl:
+            "/api/v1/projects/" + encodeURIComponent(projectKey) +
+            "/resources/" + encodeURIComponent(resourceId) + "/attachments",
+          uploadUrl: function (attachmentId) {
+            return (
+              "/api/v1/projects/" + encodeURIComponent(projectKey) +
+              "/resources/" + encodeURIComponent(resourceId) +
+              "/attachments/" + encodeURIComponent(String(attachmentId)) + "/upload-url"
+            );
+          },
+          completeUrl: function (attachmentId) {
+            return (
+              "/api/v1/projects/" + encodeURIComponent(projectKey) +
+              "/resources/" + encodeURIComponent(resourceId) +
+              "/attachments/" + encodeURIComponent(String(attachmentId)) + "/uploaded"
+            );
+          },
+          onAttachmentReady: function (attachment) {
+            node.dataset.attachmentId = String(attachment.id);
+          },
+          onStage: function (stage) {
+            if (stage === "signing") {
+              setRichAttachmentState(node, "uploading", "正在获取上传签名 · " + formatFileSize(file.size), 0);
+            } else if (stage === "uploading") {
+              setRichAttachmentState(node, "uploading", "正在上传 · " + formatFileSize(file.size), 0);
+            } else if (stage === "finalizing") {
+              setRichAttachmentState(node, "uploading", "正在确认上传结果", 100);
+            }
+          },
+          onProgress: function (percent) {
+            setRichAttachmentState(
+              node,
+              "uploading",
+              typeof percent === "number" ? "正在上传 " + Math.round(percent) + "%" : "正在上传",
+              percent
+            );
+          },
+        });
+        node.dataset.downloadUrl = richTextDownloadUrl(editor, node.dataset.attachmentId);
+        setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
+        resourceStatus(resourceForm, "文件上传完成，可继续编辑或保存。", "success");
+      } catch (error) {
+        setRichAttachmentState(node, "error", error.message || "上传失败，可重试。", null);
+        resourceStatus(resourceForm, error.message || "上传失败，可重试。", "error");
+        if (uploadOptions.throwOnError) {
+          throw error;
+        }
+      }
+      return;
+    }
     var itemKey = editor.dataset.itemKey || form?.dataset.itemKey || "";
     try {
       var commentId = await ensureDiscussionDraft(editor);
@@ -2505,10 +2587,13 @@
     insertNodesAtSelection(input, nodes);
     if (richTextUploadDeferred(editor)) {
       var form = editor.closest("[data-bug-report-form]");
+      var resourceForm = resourceFormForEditor(editor);
       nodes.forEach(function (node) {
         setRichAttachmentState(node, "queued", "创建后上传 · " + formatFileSize(node.richFile.size), 0);
       });
-      if (form) {
+      if (resourceForm) {
+        resourceStatus(resourceForm, "已添加 " + nodes.length + " 个附件，提交后会自动上传到资料正文。", "ready");
+      } else if (form) {
         bugReportStatus(form, "已添加 " + nodes.length + " 个附件，创建后会自动上传到图文说明。", "ready");
       }
       return;
@@ -2590,6 +2675,15 @@
     status.dataset.tone = tone || "info";
   }
 
+  function resourceStatus(form, message, tone) {
+    var status = form.querySelector("[data-resource-status]");
+    if (!status) {
+      return;
+    }
+    status.textContent = message;
+    status.dataset.tone = tone || "info";
+  }
+
   function setDirectUploadBusy(form, busy) {
     form.dataset.uploadBusy = busy ? "true" : "false";
     form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
@@ -2607,6 +2701,19 @@
         return;
       }
       control.disabled = busy || isBugReportControlLocked(form, control);
+    });
+    form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
+      input.setAttribute("contenteditable", busy ? "false" : "true");
+    });
+  }
+
+  function setResourceBusy(form, busy) {
+    form.dataset.resourceBusy = busy ? "true" : "false";
+    form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
+      if (control.matches("[data-modal-close]")) {
+        return;
+      }
+      control.disabled = busy;
     });
     form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
       input.setAttribute("contenteditable", busy ? "false" : "true");
@@ -3755,6 +3862,119 @@
     } catch (error) {
       bugReportStatus(form, error.message || itemLabel + "创建失败，请稍后重试。", "error");
       setBugReportBusy(form, false);
+    }
+  }
+
+  async function submitProjectResource(form) {
+    if (form.dataset.resourceBusy === "true") {
+      return;
+    }
+    if (!form.reportValidity()) {
+      return;
+    }
+    var editor = richTextEditorForForm(form);
+    if (!editor || !richTextEditorHasUserContent(editor)) {
+      resourceStatus(form, "资料正文不能为空。", "error");
+      richTextInput(editor)?.focus({ preventScroll: true });
+      return;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='uploading']")) {
+      resourceStatus(form, "文件仍在上传，请等待完成后再保存。", "error");
+      return;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='error']")) {
+      resourceStatus(form, "有文件上传失败，请重试或移除失败项后再保存。", "error");
+      return;
+    }
+
+    var formData = new FormData(form);
+    var projectKey = form.dataset.resourceProjectKey || "";
+    var resourceId = form.dataset.resourceId || "";
+    setResourceBusy(form, true);
+    try {
+      if (!resourceId) {
+        resourceStatus(form, "正在创建资料...", "info");
+        var created = await fetchJson(
+          form.dataset.resourceCreateUrl ||
+            ("/api/v1/projects/" + encodeURIComponent(projectKey) + "/resources"),
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body: JSON.stringify({
+              title: formData.get("title") || "",
+              category: formData.get("category") || "other",
+              body: "",
+              body_format: "html",
+              access_password: formData.get("access_password") || "",
+            }),
+          }
+        );
+        resourceId = String(created.id);
+        form.dataset.resourceId = resourceId;
+        editor.dataset.resourceId = resourceId;
+        editor.dataset.projectKey = projectKey;
+      } else {
+        editor.dataset.resourceId = resourceId;
+        editor.dataset.projectKey = projectKey;
+      }
+
+      var attachments = Array.from(editor.querySelectorAll("[data-rich-attachment]"));
+      for (var index = 0; index < attachments.length; index += 1) {
+        var node = attachments[index];
+        if (node.dataset.uploadState === "uploaded") {
+          continue;
+        }
+        if (!node.richFile) {
+          throw new Error("附件文件已失效，请移除后重新选择。");
+        }
+        resourceStatus(form, "正在上传资料附件 " + (index + 1) + "/" + attachments.length + "...", "info");
+        await uploadRichAttachment(editor, node, node.richFile, { throwOnError: true });
+      }
+
+      var body = serializeRichTextEditor(editor);
+      if (richTextIsEmptyHtml(body)) {
+        throw new Error("资料正文不能为空。");
+      }
+      var bodyInput = form.querySelector("[data-resource-body]");
+      var formatInput = form.querySelector("[data-resource-body-format]");
+      if (bodyInput) {
+        bodyInput.value = body;
+      }
+      if (formatInput) {
+        formatInput.value = "html";
+      }
+      resourceStatus(form, "正在保存资料正文...", "info");
+      var saved = await fetchJson(
+        form.dataset.resourceUpdateUrl ||
+          ("/api/v1/projects/" +
+            encodeURIComponent(projectKey) +
+            "/resources/" +
+            encodeURIComponent(resourceId)),
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({
+            title: formData.get("title") || "",
+            category: formData.get("category") || "other",
+            body: body,
+            body_format: "html",
+          }),
+        }
+      );
+      resourceStatus(form, "资料已保存。", "success");
+      queueSuccessBeforeNavigation("资料已保存。");
+      var redirectTemplate =
+        form.dataset.successRedirectTemplate ||
+        "/web/projects/" + encodeURIComponent(projectKey) + "/resources/{id}";
+      window.setTimeout(function () {
+        window.location.href = redirectTemplate.replace(
+          "{id}",
+          encodeURIComponent(String(saved.id || resourceId))
+        );
+      }, 300);
+    } catch (error) {
+      resourceStatus(form, error.message || "资料保存失败，请重试。", "error");
+      setResourceBusy(form, false);
     }
   }
 
@@ -5193,7 +5413,11 @@
 
   document.addEventListener("submit", function (event) {
     normalizeUsernameInputs(event.target);
-    if (event.target.querySelector("[data-rich-text-editor]") && !syncRichTextForm(event.target)) {
+    if (
+      !event.target.closest("[data-resource-form]") &&
+      event.target.querySelector("[data-rich-text-editor]") &&
+      !syncRichTextForm(event.target)
+    ) {
       event.preventDefault();
       return;
     }
@@ -5226,6 +5450,13 @@
     if (discussionForm) {
       event.preventDefault();
       submitDiscussion(discussionForm, event.submitter);
+      return;
+    }
+
+    var resourceForm = event.target.closest("[data-resource-form]");
+    if (resourceForm) {
+      event.preventDefault();
+      submitProjectResource(resourceForm);
       return;
     }
 

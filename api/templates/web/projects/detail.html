@@ -64,6 +64,9 @@
         <button class="content-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-content-tab data-tab-target="project-tab-members" data-tab-key="members">
           成员
         </button>
+        <button class="content-tab {% if active_tab == "library" %}active{% endif %}" id="project-tab-library-trigger" type="button" role="tab" aria-selected="{% if active_tab == "library" %}true{% else %}false{% endif %}" aria-controls="project-tab-library" data-content-tab data-tab-target="project-tab-library" data-tab-key="library">
+          资料库
+        </button>
         <button class="content-tab {% if active_tab == "activities" %}active{% endif %}" id="project-tab-activities-trigger" type="button" role="tab" aria-selected="{% if active_tab == "activities" %}true{% else %}false{% endif %}" aria-controls="project-tab-activities" data-content-tab data-tab-target="project-tab-activities" data-tab-key="activities">
           动态
         </button>
@@ -176,6 +179,78 @@
               </tbody>
             </table>
           </div>
+        </section>
+      </section>
+
+      <section id="project-tab-library" class="project-tab-panel {% if active_tab == "library" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-library-trigger" data-tab-panel {% if active_tab != "library" %}hidden{% endif %}>
+        <section class="project-tab-section resource-library-section">
+          <div class="project-tab-section-head resource-library-head">
+            <div>
+              <h3>资料库</h3>
+              <p>保存项目对接参数、客户资料、会议纪要和实施文档。</p>
+            </div>
+            {% if can_manage_work_items %}
+            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-resource-create-modal">新建资料</button>
+            {% endif %}
+          </div>
+
+          <form class="resource-filter-bar" method="get" action="/web/projects/{{ project.code }}">
+            <input type="hidden" name="tab" value="library">
+            <label>
+              关键词
+              <input name="q" type="search" value="{{ resource_filters.q }}" placeholder="搜索标题、正文或分类">
+            </label>
+            <label>
+              分类
+              <select name="category">
+                <option value="">全部分类</option>
+                {% for option in resource_category_options %}
+                <option value="{{ option.value }}" {% if resource_filters.category == option.value %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              状态
+              <select name="status">
+                <option value="active" {% if resource_filters.status == "active" %}selected{% endif %}>未归档</option>
+                <option value="archived" {% if resource_filters.status == "archived" %}selected{% endif %}>已归档</option>
+                <option value="all" {% if resource_filters.status == "all" %}selected{% endif %}>全部</option>
+              </select>
+            </label>
+            <button class="btn btn-secondary" type="submit">筛选</button>
+          </form>
+
+          {% if has_resources %}
+          <div class="resource-list">
+            {% for resource in resources %}
+            <article id="resource-{{ resource.id }}" class="resource-card {% if resource.is_protected %}resource-card-protected{% endif %}" data-category="{{ resource.category_code }}" data-status="{{ resource.status_code }}">
+              <div class="resource-card-main">
+                <div class="resource-card-title-row">
+                  <span class="resource-category">{{ resource.category }}</span>
+                  <span class="status status-{{ resource.status_tone }}">{{ resource.status }}</span>
+                  {% if resource.is_protected %}
+                  <span class="resource-lock-badge" title="查看详情需要访问密码">保险箱</span>
+                  {% endif %}
+                </div>
+                <h4><a href="{{ resource.url }}">{{ resource.title }}</a></h4>
+                <p>{{ resource.summary }}</p>
+                <div class="resource-card-meta">
+                  <span>创建：{{ resource.created_by }} · {{ resource.created_at }}</span>
+                  <span>更新：{{ resource.updated_by }} · {{ resource.updated_at }}</span>
+                </div>
+              </div>
+              <div class="resource-card-actions">
+                <a class="btn btn-sm btn-secondary" href="{{ resource.url }}">查看</a>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="empty-state resource-empty">
+            <strong>暂无资料</strong>
+            <span>可以先新增对接参数、客户资料或会议纪要，资料正文支持粘贴截图和拖拽文件。</span>
+          </div>
+          {% endif %}
         </section>
       </section>
 
@@ -358,6 +433,68 @@
   </section>
 </aside>
 
+{% endif %}
+
+{% if can_manage_work_items %}
+<aside id="project-resource-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-resource-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-resource-create-modal-title">新建资料</h2>
+        <p>资料归属 {{ project.code }}，可选设置单条访问密码；不设置则所有项目成员可直接查看。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/resources" data-resource-form data-resource-project-key="{{ project.code }}" data-resource-create-url="/api/v1/projects/{{ project.code }}/resources" data-success-redirect-template="/web/projects/{{ project.code }}/resources/{id}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid">
+        <label class="wide-field">
+          标题
+          <input name="title" placeholder="例如：正式环境对接参数" required autofocus data-resource-field>
+        </label>
+        <label>
+          分类
+          <select name="category" data-resource-field>
+            {% for option in resource_category_options %}
+            <option value="{{ option.value }}">{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          访问密码
+          <input name="access_password" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="可选，不填则不加密" data-resource-field>
+        </label>
+        <input type="hidden" name="body" value="" data-resource-body data-discussion-body>
+        <input type="hidden" name="body_format" value="html" data-resource-body-format data-discussion-body-format>
+        <div class="work-item-rich-create resource-rich-create wide-field">
+          <div class="work-item-rich-create-head">
+            <strong>资料正文</strong>
+            <span>支持富文本、粘贴截图、拖拽图片 / 视频 / 文件；文件会作为正文内联附件保存。</span>
+          </div>
+          <div class="rich-text-editor" data-rich-text-editor data-rich-upload-deferred="true" data-resource-rich-editor data-placeholder="填写资料正文，也可以直接粘贴截图或拖拽文件...">
+            <div class="rich-text-toolbar" aria-label="富文本工具栏">
+              <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
+              <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
+              <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
+              <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
+              <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
+              <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
+              <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
+            </div>
+            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="填写资料正文，也可以直接粘贴截图或拖拽文件..."></div>
+            <div class="rich-text-drop-hint">粘贴或拖拽的文件会先显示在正文中，提交后自动上传并写入资料正文。</div>
+          </div>
+          <div class="upload-status" role="status" aria-live="polite" data-resource-status data-discussion-status>可直接输入富文本，也可以粘贴截图或拖拽文件。</div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit" data-resource-submit>创建资料</button>
+      </div>
+    </form>
+  </section>
+</aside>
 {% endif %}
 
 {% if can_manage_project %}

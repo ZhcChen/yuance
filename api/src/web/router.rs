@@ -104,6 +104,30 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::project_attachment_download),
         )
         .route(
+            "/web/projects/{project_key}/resources",
+            post(web::user::project_resource_create),
+        )
+        .route(
+            "/web/projects/{project_key}/resources/{resource_id}",
+            get(web::user::project_resource_detail_page),
+        )
+        .route(
+            "/web/projects/{project_key}/resources/{resource_id}/unlock",
+            post(web::user::project_resource_unlock),
+        )
+        .route(
+            "/web/projects/{project_key}/resources/{resource_id}/edit",
+            post(web::user::project_resource_update),
+        )
+        .route(
+            "/web/projects/{project_key}/resources/{resource_id}/archive",
+            post(web::user::project_resource_archive),
+        )
+        .route(
+            "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download",
+            get(web::user::project_resource_attachment_download),
+        )
+        .route(
             "/web/projects/{project_key}/my-analysis",
             get(web::user::project_personal_analysis_page),
         )
@@ -338,6 +362,36 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/projects/{project_key}/attachments/{attachment_id}",
             delete(web::api::project_attachment_delete),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources",
+            get(web::api::list_project_resources).post(web::api::create_project_resource),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}",
+            get(web::api::get_project_resource)
+                .patch(web::api::update_project_resource)
+                .delete(web::api::archive_project_resource),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/archive",
+            post(web::api::archive_project_resource),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments",
+            post(web::api::create_project_resource_attachment),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url",
+            get(web::api::project_resource_attachment_upload_url),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded",
+            post(web::api::project_resource_attachment_mark_uploaded),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url",
+            get(web::api::project_resource_attachment_download_url),
         )
         .route(
             "/api/v1/projects/{project_key}/folders",

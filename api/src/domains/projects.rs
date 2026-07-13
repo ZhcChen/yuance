@@ -4545,12 +4545,12 @@ fn ensure_comment_html_tag_sources_are_controlled(body: &str, tag_name: &str) ->
             .map(|relative_end| tag_start + relative_end)
             .unwrap_or(body.len());
         let tag_html = &body[tag_start..tag_end];
-        if let Some(source) = html_attribute_value(tag_html, "src") {
-            if !comment_attachment_url_like(&source) {
-                return Err(AppError::BadRequest(
-                    "正文媒体必须使用已上传的评论附件".to_string(),
-                ));
-            }
+        if let Some(source) = html_attribute_value(tag_html, "src")
+            && !comment_attachment_url_like(&source)
+        {
+            return Err(AppError::BadRequest(
+                "正文媒体必须使用已上传的评论附件".to_string(),
+            ));
         }
         search_from = tag_end.saturating_add(1);
     }
