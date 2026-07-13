@@ -199,6 +199,9 @@ async fn static_app_css_is_bundled() {
     assert_eq!(body.matches(".discussion-reply-form {").count(), 1);
     assert!(body.contains(".discussion-assign-status .select-control"));
     assert!(body.contains("min-width: 168px"));
+    assert!(body.contains(".select-control-option-label"));
+    assert!(body.contains("white-space: nowrap"));
+    assert!(body.contains("text-overflow: ellipsis"));
     assert!(body.contains(".image-viewer-stage video {"));
     assert!(body.contains("pointer-events: auto;"));
     assert!(body.contains(".pager-controls .select-control"));
@@ -257,9 +260,8 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("select.dataset.selectAutofocus"));
     assert!(body.contains("select.removeAttribute(\"autofocus\")"));
     assert!(body.contains("trigger.setAttribute(\"autofocus\", \"\")"));
-    assert!(body.contains("control.selectElement.dataset.selectPanelMinWidth"));
+    assert!(body.contains("select.dataset.selectPanelMinWidth"));
     assert!(body.contains("var defaultMinWidth = searchable ? 320 : 168"));
-    assert!(body.contains("Math.max(rect.width, minWidth)"));
     assert!(body.contains("function renderSelectOptions(control)"));
     assert!(body.contains("new MutationObserver(function (mutations)"));
     assert!(body.contains("optionsChanged"));

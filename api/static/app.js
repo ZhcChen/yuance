@@ -14,6 +14,7 @@
   var contentTabSyncFrame = null;
   var contentTabSyncAnimate = false;
   var activeSelectControl = null;
+  var selectMeasureCanvas = null;
   var imagePreviewObserver = null;
   var imagePreviewFallbackTimer = null;
   var imageViewerState = {
@@ -893,9 +894,12 @@
     button.type = "button";
     button.dataset.selectOption = "";
     button.dataset.value = option.value;
-    button.textContent = option.textContent.trim();
     button.disabled = option.disabled;
     button.setAttribute("role", "option");
+    var label = document.createElement("span");
+    label.className = "select-control-option-label";
+    label.textContent = option.textContent.trim();
+    button.appendChild(label);
     button.addEventListener("click", function () { chooseSelectOption(control, button); });
     button.addEventListener("keydown", function (event) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -933,6 +937,103 @@
     }
   }
 
+  function measuredTextWidth(text, font) {
+    try {
+      if (!selectMeasureCanvas) {
+        selectMeasureCanvas = document.createElement("canvas");
+      }
+      var context = selectMeasureCanvas.getContext && selectMeasureCanvas.getContext("2d");
+      if (!context) {
+        return 0;
+      }
+      if (font) {
+        context.font = font;
+      }
+      var metrics = context.measureText(String(text || ""));
+      return Number.isFinite(metrics.width) ? metrics.width : 0;
+    } catch (_error) {
+      return 0;
+    }
+  }
+
+  function selectPanelTextFont(panel) {
+    var sample = panel && (
+      panel.querySelector("[data-select-option]")
+      || panel.querySelector("[data-select-search]")
+    );
+    if (!sample || !window.getComputedStyle) {
+      return "";
+    }
+    var style = window.getComputedStyle(sample);
+    return style.font || [
+      style.fontStyle,
+      style.fontVariant,
+      style.fontWeight,
+      style.fontSize,
+      style.fontFamily,
+    ].filter(Boolean).join(" ");
+  }
+
+  function textVisualWidth(text, font) {
+    var measured = measuredTextWidth(text, font);
+    if (measured > 0) {
+      return measured;
+    }
+    return Array.from(String(text || "")).reduce(function (width, char) {
+      var code = char.codePointAt(0) || 0;
+      if (/\s/.test(char)) {
+        return width + 4;
+      }
+      if (/[MW@#%&]/.test(char)) {
+        return width + 12;
+      }
+      if (code <= 0x007f || (code >= 0xff61 && code <= 0xff9f)) {
+        return width + 7;
+      }
+      return width + 13;
+    }, 0);
+  }
+
+  function selectPanelContentMinWidth(control) {
+    var panel = control && control.selectPanel;
+    if (!panel) {
+      return 0;
+    }
+    var contentWidth = 0;
+    var font = selectPanelTextFont(panel);
+    panel.querySelectorAll("[data-select-option]").forEach(function (option) {
+      if (option.disabled) {
+        return;
+      }
+      contentWidth = Math.max(contentWidth, textVisualWidth(option.textContent, font));
+    });
+    var search = panel.querySelector("[data-select-search]");
+    if (search) {
+      contentWidth = Math.max(contentWidth, textVisualWidth(search.placeholder || "", font));
+    }
+    if (!contentWidth) {
+      return 0;
+    }
+    return Math.ceil(contentWidth + 58);
+  }
+
+  function selectPanelTargetWidth(control, triggerWidth, viewportWidth) {
+    var select = control && control.selectElement;
+    if (!select) {
+      return 168;
+    }
+    var searchable = select.dataset.selectSearchable !== undefined;
+    var configuredMinWidth = Number(select.dataset.selectPanelMinWidth || 0);
+    var defaultMinWidth = searchable ? 320 : 168;
+    var minWidth = Math.max(
+      configuredMinWidth > 0 ? configuredMinWidth : defaultMinWidth,
+      selectPanelContentMinWidth(control)
+    );
+    var viewport = Number(viewportWidth || 0);
+    var maxWidth = viewport > 24 ? viewport - 24 : (viewport > 0 ? viewport : 168);
+    return Math.min(Math.max(Number(triggerWidth || 0), minWidth), maxWidth);
+  }
+
   function positionSelectPanel(control) {
     var panel = control && control.selectPanel;
     var trigger = control && control.querySelector("[data-select-control-trigger]");
@@ -941,12 +1042,10 @@
     }
     var rect = trigger.getBoundingClientRect();
     var gutter = 8;
-    var searchable = control.selectElement.dataset.selectSearchable !== undefined;
-    var configuredMinWidth = Number(control.selectElement.dataset.selectPanelMinWidth || 0);
-    var defaultMinWidth = searchable ? 320 : 168;
-    var minWidth = configuredMinWidth > 0 ? configuredMinWidth : defaultMinWidth;
-    var width = Math.min(Math.max(rect.width, minWidth), window.innerWidth - 24);
-    var left = Math.max(12, Math.min(rect.left, window.innerWidth - width - 12));
+    var width = selectPanelTargetWidth(control, rect.width, window.innerWidth);
+    var viewportWidth = Number(window.innerWidth || 0);
+    var sideGutter = viewportWidth > 24 ? 12 : 0;
+    var left = Math.max(sideGutter, Math.min(rect.left, viewportWidth - width - sideGutter));
     panel.style.width = width + "px";
     panel.style.left = left + "px";
     panel.style.maxHeight = Math.min(320, Math.floor(window.innerHeight * 0.48)) + "px";
@@ -963,7 +1062,7 @@
     control.selectPanel.querySelectorAll("[data-select-option]").forEach(function (option) {
       var matches = !query || (option.textContent || "").toLocaleLowerCase("zh-CN").includes(query);
       option.hidden = !matches;
-      if (matches) {
+      if (matches && !option.disabled) {
         visible += 1;
       }
     });
@@ -982,8 +1081,17 @@
     control.classList.remove("open");
     trigger.setAttribute("aria-expanded", "false");
     if (panel) {
+      if (control.selectOpenFrame) {
+        window.cancelAnimationFrame(control.selectOpenFrame);
+        control.selectOpenFrame = null;
+      }
+      if (control.selectCloseTimer) {
+        window.clearTimeout(control.selectCloseTimer);
+        control.selectCloseTimer = null;
+      }
       panel.classList.remove("open");
-      window.setTimeout(function () {
+      control.selectCloseTimer = window.setTimeout(function () {
+        control.selectCloseTimer = null;
         if (!panel.classList.contains("open")) {
           panel.hidden = true;
         }
@@ -1024,13 +1132,24 @@
     }
     var panel = control.selectPanel;
     var trigger = control.querySelector("[data-select-control-trigger]");
+    if (control.selectCloseTimer) {
+      window.clearTimeout(control.selectCloseTimer);
+      control.selectCloseTimer = null;
+    }
     panel.hidden = false;
     activeSelectControl = control;
     control.classList.add("open");
     trigger.setAttribute("aria-expanded", "true");
     filterSelectOptions(control, "");
     positionSelectPanel(control);
-    window.requestAnimationFrame(function () {
+    if (control.selectOpenFrame) {
+      window.cancelAnimationFrame(control.selectOpenFrame);
+    }
+    control.selectOpenFrame = window.requestAnimationFrame(function () {
+      control.selectOpenFrame = null;
+      if (activeSelectControl !== control || panel.hidden || !control.classList.contains("open")) {
+        return;
+      }
       panel.classList.add("open");
       var search = panel.querySelector("[data-select-search]");
       var current = panel.querySelector("[data-select-option].selected");
@@ -1182,6 +1301,14 @@
       closeSelectControl(control, false);
     }
     if (control && control.classList.contains("select-control")) {
+      if (control.selectOpenFrame) {
+        window.cancelAnimationFrame(control.selectOpenFrame);
+        control.selectOpenFrame = null;
+      }
+      if (control.selectCloseTimer) {
+        window.clearTimeout(control.selectCloseTimer);
+        control.selectCloseTimer = null;
+      }
       if (control.selectPanel) {
         control.selectPanel.remove();
       }
@@ -3376,7 +3503,10 @@
   if (window.__YUANCE_ENABLE_TEST_HOOKS__) {
     window.__YUANCE_TEST_HOOKS__ = Object.assign(window.__YUANCE_TEST_HOOKS__ || {}, {
       apiErrorMessage: apiErrorMessage,
+      filterSelectOptions: filterSelectOptions,
       reloadDiscussionAtComment: reloadDiscussionAtComment,
+      selectPanelContentMinWidth: selectPanelContentMinWidth,
+      selectPanelTargetWidth: selectPanelTargetWidth,
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
       submitWebForm: submitWebForm,

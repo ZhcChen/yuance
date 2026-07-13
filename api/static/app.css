@@ -5347,7 +5347,17 @@ select option {
   cursor: pointer;
   font-size: 13px;
   line-height: 18px;
+  overflow: hidden;
   text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.select-control-option-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .select-control-option:hover,
@@ -5364,6 +5374,7 @@ select option {
 
 .select-control-option.selected::after {
   content: "✓";
+  flex: 0 0 auto;
   color: var(--brand);
   font-weight: 900;
 }

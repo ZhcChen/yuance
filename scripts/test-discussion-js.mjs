@@ -89,7 +89,19 @@ function loadAppWithDom(options = {}) {
     contains() {
       return true;
     },
-    createElement: (tagName) => elementStub(tagName),
+    createElement: (tagName) => {
+      const element = elementStub(tagName);
+      if (String(tagName).toLowerCase() === "canvas" && options.canvasMeasureText) {
+        const canvasContext = {
+          font: "",
+          measureText(text) {
+            return { width: options.canvasMeasureText(String(text), this.font) };
+          },
+        };
+        element.getContext = () => canvasContext;
+      }
+      return element;
+    },
     createElementNS: (_namespace, tagName) => elementStub(tagName),
     getElementById() {
       return null;
@@ -147,6 +159,16 @@ function loadAppWithDom(options = {}) {
       return 1;
     },
     cancelAnimationFrame() {},
+    getComputedStyle() {
+      return {
+        font: options.computedFont || "",
+        fontFamily: "sans-serif",
+        fontSize: "13px",
+        fontStyle: "normal",
+        fontVariant: "normal",
+        fontWeight: "400",
+      };
+    },
     matchMedia() {
       return {
         matches: false,
@@ -386,6 +408,142 @@ function redirectedHtmlResponse(url) {
 
 const samePage = loadAppWithDom();
 assert.equal(typeof samePage.hooks.apiErrorMessage, "function");
+assert.equal(typeof samePage.hooks.filterSelectOptions, "function");
+assert.equal(typeof samePage.hooks.selectPanelTargetWidth, "function");
+const shortSelectPanel = {
+  querySelectorAll: () => [{ textContent: "待处理", disabled: false }],
+  querySelector: () => null,
+};
+const longSelectPanel = {
+  querySelectorAll: () => [
+    { textContent: "待处理", disabled: false },
+    { textContent: "指派给非常非常长的成员名称 @longusername", disabled: false },
+  ],
+  querySelector: () => null,
+};
+const wideLatinSelectPanel = {
+  querySelectorAll: () => [{ textContent: "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW", disabled: false }],
+  querySelector: () => null,
+};
+const disabledLongSelectPanel = {
+  querySelectorAll: () => [
+    { textContent: "待处理", disabled: false },
+    { textContent: "禁用但非常非常长的历史状态选项 @disabled-long-value", disabled: true },
+  ],
+  querySelector: () => null,
+};
+const searchableSelectPanel = {
+  querySelectorAll: () => [{ textContent: "项目成员", disabled: false }],
+  querySelector: (selector) => selector === "[data-select-search]"
+    ? { placeholder: "搜索非常非常长非常非常长的父需求标题或处理人名称" }
+    : null,
+};
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: {} }, selectPanel: shortSelectPanel },
+    120,
+    1024,
+  ),
+  168,
+);
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: {} }, selectPanel: shortSelectPanel },
+    240,
+    1024,
+  ),
+  240,
+);
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectSearchable: "" } }, selectPanel: shortSelectPanel },
+    120,
+    1024,
+  ),
+  320,
+);
+assert(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectSearchable: "" } }, selectPanel: searchableSelectPanel },
+    120,
+    1024,
+  ) > 320,
+);
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectPanelMinWidth: "208" } }, selectPanel: shortSelectPanel },
+    120,
+    1024,
+  ),
+  208,
+);
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectPanelMinWidth: "208" } }, selectPanel: disabledLongSelectPanel },
+    120,
+    1024,
+  ),
+  208,
+);
+assert(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectPanelMinWidth: "208" } }, selectPanel: longSelectPanel },
+    120,
+    1024,
+  ) > 208,
+);
+assert(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: {} }, selectPanel: wideLatinSelectPanel },
+    120,
+    1024,
+  ) > 500,
+);
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectPanelMinWidth: "208" } }, selectPanel: longSelectPanel },
+    120,
+    260,
+  ),
+  236,
+);
+assert.equal(
+  samePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: { selectPanelMinWidth: "208" } }, selectPanel: longSelectPanel },
+    120,
+    160,
+  ),
+  136,
+);
+const canvasMeasurePage = loadAppWithDom({
+  computedFont: "700 16px TestFont",
+  canvasMeasureText: (_text, font) => font === "700 16px TestFont" ? 444 : 1,
+});
+const canvasMeasuredPanel = {
+  querySelectorAll: () => [{ textContent: "WW", disabled: false }],
+  querySelector: (selector) => selector === "[data-select-option]" ? {} : null,
+};
+assert.equal(
+  canvasMeasurePage.hooks.selectPanelTargetWidth(
+    { selectElement: { dataset: {} }, selectPanel: canvasMeasuredPanel },
+    120,
+    1024,
+  ),
+  502,
+);
+const disabledOnlyOption = { textContent: "已停用人员 @old-user", disabled: true, hidden: false };
+const disabledOnlyEmpty = { hidden: true };
+samePage.hooks.filterSelectOptions(
+  {
+    selectPanel: {
+      querySelectorAll: () => [disabledOnlyOption],
+      querySelector: (selector) => selector === "[data-select-empty]" ? disabledOnlyEmpty : null,
+    },
+  },
+  "old-user",
+);
+assert.equal(disabledOnlyOption.hidden, false);
+assert.equal(disabledOnlyEmpty.hidden, false);
 assert.equal(
   samePage.hooks.apiErrorMessage({ error: { message: "项目已归档，不能继续操作" } }, "默认错误"),
   "项目已归档，不能继续操作",
