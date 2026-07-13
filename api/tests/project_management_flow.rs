@@ -1653,8 +1653,11 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains(r#"name="item_type" value="task""#));
     assert!(tasks_body.contains(r#"name="project_key" value="YCE" data-bug-report-item-field"#));
     assert!(tasks_body.contains(r#"data-bug-report-form"#));
-    assert!(tasks_body.contains(r#"data-bug-report-groups"#));
-    assert!(tasks_body.contains(r#"type="file" multiple data-bug-report-image"#));
+    assert!(tasks_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
+    assert!(tasks_body.contains(r#"data-bug-report-description"#));
+    assert!(tasks_body.contains("支持直接粘贴截图、拖拽图片 / 视频 / 文件"));
+    assert!(!tasks_body.contains(r#"data-bug-report-groups"#));
+    assert!(!tasks_body.contains(r#"type="file" multiple data-bug-report-image"#));
     assert!(tasks_body.contains(r#"data-select-search-placeholder="搜索处理人""#));
     assert!(!tasks_body.contains(r#"class="work-type-tabs""#));
     assert!(!tasks_body.contains(r#"id="work-item-create-form""#));
@@ -1666,10 +1669,11 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("YCE-REQ-1"));
     assert!(!bugs_body.contains("OPS-TASK-1"));
     assert!(bugs_body.contains(r#"data-bug-report-form"#));
-    assert!(bugs_body.contains(r#"data-bug-report-groups"#));
-    assert!(bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
-    assert!(bugs_body.contains("每组说明会保存为一条评论"));
-    assert!(bugs_body.contains("多个图片、视频或文档"));
+    assert!(bugs_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
+    assert!(bugs_body.contains("创建后会自动生成首条图文讨论"));
+    assert!(!bugs_body.contains(r#"data-bug-report-groups"#));
+    assert!(!bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
+    assert!(!bugs_body.contains("每组说明会保存为一条评论"));
     assert!(!bugs_body.contains(r#"class="work-type-tabs""#));
 
     projects::set_current_project_for_user(&pool, initialized.user_id, true, "OPS")
@@ -3535,6 +3539,8 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert!(page_body.contains(r#"data-success-redirect="/web/projects/YCE?tab=work""#));
     assert!(page_body.contains("父级需求"));
     assert!(page_body.contains("YCE-REQ-1"));
+    assert!(page_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
+    assert!(page_body.contains(r#"data-bug-report-description"#));
 
     let create_response = app
         .clone()

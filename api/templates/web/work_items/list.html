@@ -164,37 +164,26 @@
           标题
           <input name="title" placeholder="输入{{ title }}标题" required autofocus data-bug-report-item-field>
         </label>
-        <label class="wide-field">
-          描述
-          <textarea name="description" rows="4" placeholder="补充背景、验收口径、复现步骤或处理说明" data-bug-report-item-field></textarea>
-        </label>
-        <div class="bug-report-builder wide-field" data-bug-report-builder>
-          <div class="bug-report-builder-head">
-            <div>
-              <strong>图文说明与附件</strong>
-              <span>每组说明会保存为一条评论，可附加多个图片、视频或文档。</span>
+        <input type="hidden" name="description" value="" data-bug-report-description>
+        <div class="work-item-rich-create wide-field">
+          <div class="work-item-rich-create-head">
+            <strong>说明内容</strong>
+            <span>支持直接粘贴截图、拖拽图片 / 视频 / 文件；创建后会自动生成首条图文讨论。</span>
+          </div>
+          <div class="rich-text-editor" data-rich-text-editor data-rich-upload-deferred="true" data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...">
+            <div class="rich-text-toolbar" aria-label="富文本工具栏">
+              <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
+              <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
+              <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
+              <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
+              <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
+              <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
+              <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
             </div>
-            <button class="btn btn-sm btn-secondary" type="button" data-bug-report-add>新增一组</button>
+            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图..."></div>
+            <div class="rich-text-drop-hint">粘贴或拖拽进来的文件会先显示在正文中，提交创建后自动上传并保留在首条讨论里。</div>
           </div>
-          <div class="bug-report-groups" data-bug-report-groups>
-            <article class="bug-report-group" data-bug-report-group>
-              <div class="bug-report-group-head">
-                <strong data-bug-report-group-title>第 1 组</strong>
-                <button class="btn btn-sm btn-secondary" type="button" data-bug-report-remove>移除</button>
-              </div>
-              <label class="upload-picker bug-report-image-picker">
-                <span>添加附件</span>
-                <input type="file" multiple data-bug-report-image>
-                <em data-bug-report-image-name>可一次选择多个文件，单个文件不超过 100 MB。</em>
-              </label>
-              <div class="composer-file-list" data-composer-file-list hidden></div>
-              <label>
-                说明内容
-                <textarea rows="3" placeholder="补充现象、步骤、验收说明或附件用途" data-bug-report-body></textarea>
-              </label>
-            </article>
-          </div>
-          <div class="upload-status" role="status" aria-live="polite" data-bug-report-status>可添加多组图文说明；空白分组会自动跳过。</div>
+          <div class="upload-status" role="status" aria-live="polite" data-bug-report-status>可直接输入富文本，也可以粘贴截图或拖拽文件。</div>
         </div>
       </div>
       <div class="modal-actions">

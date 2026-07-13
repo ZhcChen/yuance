@@ -566,14 +566,18 @@ cat >"$EVAL_FILE" <<JS
   assert(assigneeControl.selectPanel.querySelector(".select-control-search"), "处理人下拉缺少搜索输入");
   frame.contentWindow.document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   fill("#work-item-create-modal input[name='title']", "浏览器冒烟任务");
-  fill("#work-item-create-modal textarea[name='description']", "覆盖 modal、直接上传和确认弹窗。");
-  const composerInput = query("#work-item-create-modal [data-bug-report-image]");
+  const createEditor = query("#work-item-create-modal [data-rich-text-input]");
+  createEditor.focus();
+  createEditor.innerHTML = "<p>覆盖 modal、富文本粘贴/拖拽上传和确认弹窗。</p>";
+  createEditor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "覆盖 modal、富文本粘贴/拖拽上传和确认弹窗。" }));
   const composerFiles = new DataTransfer();
   composerFiles.items.add(new File(["alpha"], "smoke-note-a.txt", { type: "text/plain" }));
   composerFiles.items.add(new File(["beta"], "smoke-note-b.txt", { type: "text/plain" }));
-  composerInput.files = composerFiles.files;
-  composerInput.dispatchEvent(new Event("change", { bubbles: true }));
-  assert(query("#work-item-create-modal [data-composer-file-list]").children.length === 2, "任务创建器未渲染两个附件");
+  createEditor.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: composerFiles }));
+  await waitFor(
+    () => query("#work-item-create-modal").querySelectorAll("[data-rich-attachment][data-upload-state='queued']").length === 2,
+    "任务创建器富文本未渲染两个待上传附件",
+  );
   await submitAndWait("#work-item-create-modal button[type='submit'].btn-primary");
   const taskKey = projectKey + "-TASK-1";
   assert(frame.contentWindow.location.pathname === "/web/work-items/" + taskKey, "任务创建后未跳转详情");

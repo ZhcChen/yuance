@@ -525,6 +525,10 @@ body {
   cursor: progress;
 }
 
+.rich-attachment[data-upload-state="queued"] {
+  cursor: default;
+}
+
 .rich-attachment[data-upload-state="uploaded"] {
   cursor: default;
 }
@@ -667,6 +671,7 @@ body {
 }
 
 .rich-attachment[data-upload-state="uploading"] .rich-attachment-overlay,
+.rich-attachment[data-upload-state="queued"] .rich-attachment-overlay,
 .rich-attachment[data-upload-state="error"] .rich-attachment-overlay {
   opacity: 1;
   pointer-events: auto;
@@ -4481,6 +4486,28 @@ code {
   display: grid;
   gap: 12px;
   padding-top: 4px;
+}
+
+.work-item-rich-create {
+  display: grid;
+  gap: 10px;
+}
+
+.work-item-rich-create-head {
+  display: grid;
+  gap: 4px;
+}
+
+.work-item-rich-create-head strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.work-item-rich-create-head span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .bug-report-builder-head,

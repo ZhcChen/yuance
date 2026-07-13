@@ -194,6 +194,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("word-spacing: normal"));
     assert!(body.contains(".rich-text-editor:focus-within"));
     assert!(body.contains(".rich-attachment"));
+    assert!(body.contains(".rich-attachment[data-upload-state=\"queued\"]"));
+    assert!(body.contains(".work-item-rich-create"));
     assert!(body.contains(".rich-attachment-menu"));
     assert!(body.contains("cursor: context-menu"));
     assert!(body.contains(".discussion-reply-form"));
@@ -300,6 +302,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(!body.contains("data-confirm-title=\"删除项目文件\""));
     assert!(!body.contains("确认删除文件"));
     assert!(body.contains("async function submitBugReport"));
+    assert!(body.contains("async function publishBugReportRichText"));
+    assert!(body.contains("function syncBugReportRichDescription"));
+    assert!(body.contains("editor.dataset.richUploadDeferred === \"true\""));
     assert!(body.contains("data-bug-report-form"));
     assert!(body.contains("/comments/"));
     assert!(body.contains("function setDiscussionBusy(form, busy, activeSubmitter)"));

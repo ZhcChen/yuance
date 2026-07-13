@@ -248,6 +248,57 @@ function bugReportForm(successRedirect) {
   const status = elementStub("div");
   const title = elementStub("input");
   title.value = "项目内新建任务";
+  const formData = {
+    project_key: "YCE",
+    item_type: "task",
+    title: "项目内新建任务",
+    description: "",
+    priority: "P2",
+    assignee_username: "",
+    due_date: "",
+    parent_item_key: "YCE-REQ-1",
+  };
+  const description = elementStub("input");
+  Object.defineProperty(description, "value", {
+    get() {
+      return formData.description;
+    },
+    set(value) {
+      formData.description = String(value);
+    },
+  });
+  const richInput = {
+    innerHTML: "<p>富文本说明</p>",
+    textContent: "富文本说明",
+    setAttribute() {},
+    cloneNode() {
+      return {
+        innerHTML: this.innerHTML,
+        textContent: this.textContent,
+        querySelectorAll() {
+          return [];
+        },
+      };
+    },
+    querySelector() {
+      return null;
+    },
+  };
+  const richEditor = {
+    dataset: { richUploadDeferred: "true" },
+    querySelector(selector) {
+      if (selector === "[data-rich-text-input]") {
+        return richInput;
+      }
+      if (selector === "[data-rich-attachment][data-upload-state='uploading']") {
+        return null;
+      }
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
 
   return {
     dataset: {
@@ -255,22 +306,19 @@ function bugReportForm(successRedirect) {
       successRedirect,
       workItemLabel: "工作项",
     },
-    formData: {
-      project_key: "YCE",
-      item_type: "task",
-      title: "项目内新建任务",
-      description: "从项目详情页创建",
-      priority: "P2",
-      assignee_username: "",
-      due_date: "",
-      parent_item_key: "YCE-REQ-1",
-    },
+    formData,
     reportValidity() {
       return true;
     },
     querySelector(selector) {
       if (selector === "[data-bug-report-status]") {
         return status;
+      }
+      if (selector === "[data-rich-text-editor]") {
+        return richEditor;
+      }
+      if (selector === "[data-bug-report-description]") {
+        return description;
       }
       return null;
     },
@@ -279,7 +327,10 @@ function bugReportForm(successRedirect) {
         return [];
       }
       if (selector === "input, select, textarea, button") {
-        return [title];
+        return [title, description];
+      }
+      if (selector === "[data-rich-text-input]") {
+        return [richInput];
       }
       return [];
     },
@@ -699,9 +750,20 @@ assert.equal(otherPage.reloadCount, 0);
 
 const projectCreate = loadAppWithDom();
 assert.equal(typeof projectCreate.hooks.submitBugReport, "function");
-await projectCreate.hooks.submitBugReport(bugReportForm("/web/projects/YCE?tab=work"));
-assert.equal(projectCreate.fetchCalls.length, 1);
+const projectCreateForm = bugReportForm("/web/projects/YCE?tab=work");
+assert.equal(
+  projectCreate.hooks.richTextEditorHasUserContent(projectCreateForm.querySelector("[data-rich-text-editor]")),
+  true,
+);
+await projectCreate.hooks.submitBugReport(projectCreateForm);
+assert.equal(projectCreate.fetchCalls.length, 2);
 assert.equal(projectCreate.fetchCalls[0].url, "/api/v1/work-items");
+assert.equal(JSON.parse(projectCreate.fetchCalls[0].options.body).description, "富文本说明");
+assert.equal(projectCreate.fetchCalls[1].url, "/api/v1/work-items/YCE-TASK-3/comments");
+assert.deepEqual(JSON.parse(projectCreate.fetchCalls[1].options.body), {
+  body: "<p>富文本说明</p>",
+  body_format: "html",
+});
 assert.deepEqual(JSON.parse(projectCreate.sessionItems.get("yuance-pending-toast")), {
   message: "工作项创建完成。",
   tone: "success",

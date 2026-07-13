@@ -1869,6 +1869,37 @@
     return !text && html.indexOf("/comments/") < 0 && html.indexOf("/attachments/") < 0;
   }
 
+  function richTextPlainText(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return "";
+    }
+    var clone = input.cloneNode(true);
+    clone.querySelectorAll("[data-rich-attachment]").forEach(function (node) {
+      var replacement = document.createElement("span");
+      replacement.textContent = " " + (node.dataset.filename || "附件") + " ";
+      node.replaceWith(replacement);
+    });
+    return String(clone.textContent || "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function richTextEditorHasUserContent(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return false;
+    }
+    if (input.querySelector("[data-rich-attachment]")) {
+      return true;
+    }
+    return Boolean(richTextPlainText(editor));
+  }
+
+  function richTextUploadDeferred(editor) {
+    return Boolean(editor && editor.dataset.richUploadDeferred === "true");
+  }
+
   function richTextDownloadUrl(editor, attachmentId) {
     var itemKey = editor?.dataset.itemKey || editor?.closest("[data-discussion-form]")?.dataset.itemKey || "";
     var commentId = editor?.dataset.commentId || editor?.closest("[data-discussion-form]")?.dataset.discussionCommentId || "";
@@ -2197,7 +2228,8 @@
     }
   }
 
-  async function uploadRichAttachment(editor, node, file) {
+  async function uploadRichAttachment(editor, node, file, options) {
+    var uploadOptions = options || {};
     var form = editor.closest("[data-discussion-form]");
     var itemKey = editor.dataset.itemKey || form?.dataset.itemKey || "";
     try {
@@ -2248,6 +2280,9 @@
       if (form) {
         discussionStatus(form, error.message || "上传失败，可重试。", "error");
       }
+      if (uploadOptions.throwOnError) {
+        throw error;
+      }
     }
   }
 
@@ -2262,6 +2297,16 @@
       return node;
     });
     insertNodesAtSelection(input, nodes);
+    if (richTextUploadDeferred(editor)) {
+      var form = editor.closest("[data-bug-report-form]");
+      nodes.forEach(function (node) {
+        setRichAttachmentState(node, "queued", "创建后上传 · " + formatFileSize(node.richFile.size), 0);
+      });
+      if (form) {
+        bugReportStatus(form, "已添加 " + nodes.length + " 个附件，创建后会自动上传到图文说明。", "ready");
+      }
+      return;
+    }
     nodes.forEach(function (node) {
       uploadRichAttachment(editor, node, node.richFile);
     });
@@ -2356,6 +2401,9 @@
         return;
       }
       control.disabled = busy || isBugReportControlLocked(form, control);
+    });
+    form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
+      input.setAttribute("contenteditable", busy ? "false" : "true");
     });
   }
 
@@ -3263,6 +3311,86 @@
       });
   }
 
+  function syncBugReportRichDescription(form) {
+    var editor = richTextEditorForForm(form);
+    var description = form.querySelector("[data-bug-report-description]");
+    if (!editor || !description) {
+      return;
+    }
+    var plainText = richTextPlainText(editor);
+    if (!plainText && editor.querySelector("[data-rich-attachment]")) {
+      plainText = "见首条图文说明";
+    }
+    description.value = plainText.length > 5000
+      ? plainText.slice(0, 4990) + "..."
+      : plainText;
+  }
+
+  async function publishBugReportRichText(form, item) {
+    var editor = richTextEditorForForm(form);
+    if (!editor || !richTextEditorHasUserContent(editor)) {
+      return null;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='uploading']")) {
+      throw new Error("文件仍在上传，请等待完成后再提交。");
+    }
+    var itemKey = item && item.key ? String(item.key) : "";
+    if (!itemKey) {
+      throw new Error("工作项创建结果缺少编号，请刷新后重试。");
+    }
+    editor.dataset.itemKey = itemKey;
+    var attachments = Array.from(editor.querySelectorAll("[data-rich-attachment]"));
+    var useDraft = Boolean(editor.dataset.commentId || attachments.length);
+    var commentId = "";
+
+    if (useDraft) {
+      bugReportStatus(form, "正在准备首条图文说明...", "info");
+      commentId = await ensureDiscussionDraft(editor);
+      for (var index = 0; index < attachments.length; index += 1) {
+        var node = attachments[index];
+        if (node.dataset.uploadState === "uploaded") {
+          continue;
+        }
+        if (!node.richFile) {
+          throw new Error("附件文件已失效，请移除后重新选择。");
+        }
+        bugReportStatus(
+          form,
+          "正在上传图文附件 " + (index + 1) + "/" + attachments.length + "...",
+          "info"
+        );
+        await uploadRichAttachment(editor, node, node.richFile, { throwOnError: true });
+      }
+    }
+
+    var body = serializeRichTextEditor(editor);
+    if (richTextIsEmptyHtml(body)) {
+      return null;
+    }
+    if (useDraft) {
+      bugReportStatus(form, "正在发布首条图文说明...", "info");
+      return fetchJson(
+        "/api/v1/work-items/" +
+          encodeURIComponent(itemKey) +
+          "/comments/" +
+          encodeURIComponent(commentId) +
+          "/publish",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ body: body, body_format: "html" }),
+        }
+      );
+    }
+
+    bugReportStatus(form, "正在保存首条图文说明...", "info");
+    return fetchJson("/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ body: body, body_format: "html" }),
+    });
+  }
+
   function isBugReportControlLocked(form, control) {
     if (form.dataset.bugReportItemKey && control.matches("[data-bug-report-item-field]")) {
       return true;
@@ -3296,6 +3424,7 @@
     if (form.dataset.bugReportBusy === "true") {
       return;
     }
+    syncBugReportRichDescription(form);
     if (!form.reportValidity()) {
       return;
     }
@@ -3329,6 +3458,8 @@
       } else {
         bugReportStatus(form, "继续完成已创建" + itemLabel + "的附件上传...", "info");
       }
+
+      await publishBugReportRichText(form, item);
 
       for (var i = 0; i < groups.length; i += 1) {
         var group = groups[i];
@@ -4291,8 +4422,11 @@
       reloadDiscussionAtComment: reloadDiscussionAtComment,
       richAttachmentMetadata: richAttachmentMetadata,
       absoluteAttachmentUrl: absoluteAttachmentUrl,
+      richTextPlainText: richTextPlainText,
+      richTextEditorHasUserContent: richTextEditorHasUserContent,
       selectPanelContentMinWidth: selectPanelContentMinWidth,
       selectPanelTargetWidth: selectPanelTargetWidth,
+      publishBugReportRichText: publishBugReportRichText,
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
       submitWebForm: submitWebForm,
