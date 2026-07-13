@@ -331,7 +331,7 @@ function discussionForm() {
 
 function webPostForm(successMessage, options = {}) {
   const submit = {
-    tagName: "BUTTON",
+    tagName: options.submitTagName || "BUTTON",
     dataset: {},
     disabled: false,
     textContent: options.buttonText || "提交",
@@ -444,6 +444,18 @@ assert.equal(
     webPostForm(undefined, { buttonText: "全部标为已读" })
   ),
   "全部标为已读成功。",
+);
+assert.equal(
+  redirectedPost.hooks.webFormSuccessMessage(
+    webPostForm(undefined, { buttonText: "", ariaLabel: "保存筛选" })
+  ),
+  "保存筛选成功。",
+);
+assert.equal(
+  redirectedPost.hooks.webFormSuccessMessage(
+    webPostForm(undefined, { buttonText: "", buttonValue: "重置密码", submitTagName: "INPUT" })
+  ),
+  "重置密码成功。",
 );
 
 const derivedMessagePost = loadAppWithDom({
