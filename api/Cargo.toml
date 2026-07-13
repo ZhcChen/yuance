@@ -6,6 +6,7 @@ rust-version = "1.94"
 
 [dependencies]
 argon2 = "0.5.3"
+ammonia = "4.1.2"
 askama = "0.16.0"
 axum = "0.8.9"
 aes-gcm = "0.10.3"

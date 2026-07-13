@@ -192,8 +192,8 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains(".auth-form input"));
     assert!(body.contains("letter-spacing: 0"));
     assert!(body.contains("word-spacing: normal"));
-    assert!(body.contains(".discussion-attach-button:focus-within"));
-    assert!(body.contains(".discussion-attach-button span"));
+    assert!(body.contains(".rich-text-editor:focus-within"));
+    assert!(body.contains(".rich-attachment"));
     assert!(body.contains(".discussion-reply-form"));
     assert!(body.contains(".discussion-reply-target"));
     assert!(!body.contains(".discussion-post[data-reply-depth"));

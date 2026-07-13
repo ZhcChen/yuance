@@ -225,6 +225,7 @@ struct WorkItemComment {
     parent_author: String,
     flow_title: String,
     body: String,
+    body_html: String,
     author: String,
     author_username: String,
     created_at: String,
@@ -1127,6 +1128,8 @@ pub struct WorkItemCommentForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
     body: String,
+    #[serde(default)]
+    body_format: String,
     #[serde(default)]
     parent_comment_id: Option<i64>,
 }
@@ -2844,11 +2847,12 @@ pub async fn work_item_comment_create(
             .await?
             .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
-        let comment = projects::add_work_item_comment_reply(
+        let comment = projects::add_work_item_comment_reply_with_format(
             pool,
             context.user_id,
             &item_key,
             &form.body,
+            &form.body_format,
             form.parent_comment_id,
         )
         .await?;
@@ -2896,13 +2900,14 @@ pub async fn work_item_comment_update(
             .await?
             .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
-        let comment = projects::update_work_item_comment(
+        let comment = projects::update_work_item_comment_with_format(
             pool,
             context.user_id,
             context.is_super_admin,
             &item_key,
             comment_id,
             &form.body,
+            &form.body_format,
         )
         .await?;
         audit::record(
@@ -5465,6 +5470,11 @@ fn comment_from_summary_with_permission(
 ) -> WorkItemComment {
     let is_edited = comment.updated_at != comment.created_at;
     let body = work_item_comment_body_for_display(&comment.body, comment.is_flow);
+    let body_html = projects::work_item_comment_body_html_for_display(
+        &body,
+        &comment.body_format,
+        comment.is_flow,
+    );
     let author = fallback_text(comment.author_display_name, "系统");
     let parent_author = if comment.parent_comment_id.is_some() {
         fallback_text(comment.parent_author_display_name, "原评论作者")
@@ -5477,6 +5487,7 @@ fn comment_from_summary_with_permission(
         parent_author,
         flow_title: work_item_flow_title(&author, &body, comment.is_flow),
         body,
+        body_html,
         author,
         author_username: comment.author_username,
         created_at: display_timestamp(comment.created_at),
@@ -7704,6 +7715,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             parent_author: String::new(),
             flow_title: String::new(),
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
+            body_html: "<p>先统一项目与工作项查询模型，再继续补页面交互。</p>".to_string(),
             author: "陈".to_string(),
             author_username: "yuance_admin".to_string(),
             created_at: "今天".to_string(),

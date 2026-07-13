@@ -13,6 +13,248 @@ use yuance_api::{
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[tokio::test]
+async fn rich_text_comments_are_sanitized_and_rendered_safely() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>修复 <strong>完成</strong><script>alert(1)</script><a href=\"javascript:alert(1)\">坏链接</a></p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_status = create_response.status();
+    let create_body = response_body(create_response).await;
+    assert_eq!(create_status, StatusCode::CREATED, "{create_body}");
+    assert!(create_body.contains(r#""body_format":"html""#));
+    assert!(!create_body.contains("<script>"));
+    assert!(!create_body.contains("javascript:"));
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains("<strong>完成</strong>"));
+    assert!(!detail_body.contains("alert(1)"));
+    assert!(!detail_body.contains("javascript:"));
+}
+
+#[tokio::test]
+async fn rich_text_comments_reject_uncontrolled_media_sources() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>外部截图</p><img src=\"https://tracker.example.invalid/pixel.png\" alt=\"pixel\">","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::BAD_REQUEST);
+    let create_body = response_body(create_response).await;
+    assert!(create_body.contains("正文媒体必须使用已上传的评论附件"));
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(!detail_body.contains("tracker.example.invalid"));
+}
+
+#[tokio::test]
+async fn rich_text_draft_comments_are_hidden_until_published() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, admin.user_id).await;
+    let other = create_regular_user(&pool, "draft_peer", "草稿旁观者").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "draft_peer", "member")
+        .await
+        .expect("other user should join project");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let draft_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/comments/draft")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"","body_format":"html"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(draft_response.status(), StatusCode::CREATED);
+    let draft_body = response_body(draft_response).await;
+    let draft_json: serde_json::Value =
+        serde_json::from_str(&draft_body).expect("draft response should be json");
+    let draft_id = draft_json["data"]["id"]
+        .as_i64()
+        .expect("draft id should be present");
+    assert_eq!(draft_json["data"]["is_draft"].as_bool(), Some(true));
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = response_body(list_response).await;
+    assert!(!list_body.contains(&format!(r#""id":{draft_id}"#)));
+
+    let activity_count_before_attachment =
+        projects::list_project_activities(&pool, project.id, 100)
+            .await
+            .expect("activities should load")
+            .len();
+    let draft_attachment_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{draft_id}/attachments"
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"original_filename":"draft-only.png","content_type":"image/png","byte_size":68}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(draft_attachment_response.status(), StatusCode::CREATED);
+    let activity_count_after_attachment = projects::list_project_activities(&pool, project.id, 100)
+        .await
+        .expect("activities should load")
+        .len();
+    assert_eq!(
+        activity_count_after_attachment,
+        activity_count_before_attachment
+    );
+
+    let forbidden_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{draft_id}/attachments"
+                ))
+                .header(header::COOKIE, other.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+
+    let publish_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{draft_id}/publish"
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>草稿发布 <strong>完成</strong></p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(publish_response.status(), StatusCode::OK);
+    let publish_body = response_body(publish_response).await;
+    assert!(publish_body.contains(r#""is_draft":false"#));
+    let activity_count_after_publish = projects::list_project_activities(&pool, project.id, 100)
+        .await
+        .expect("activities should load")
+        .len();
+    assert_eq!(
+        activity_count_after_publish,
+        activity_count_after_attachment + 1
+    );
+
+    let published_list_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/comments")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(published_list_response.status(), StatusCode::OK);
+    let published_list_body = response_body(published_list_response).await;
+    assert!(published_list_body.contains(&format!(r#""id":{draft_id}"#)));
+}
+
+#[tokio::test]
 async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
@@ -3986,9 +4228,10 @@ async fn web_work_item_detail_can_register_comment_attachment() {
         .expect("router should respond");
     let body = response_body(detail_response).await;
 
-    assert!(body.contains("添加附件"));
+    assert!(body.contains("截图可直接粘贴"));
     assert!(body.contains("comment-log.txt"));
-    assert!(body.contains(r#"data-discussion-files"#));
+    assert!(body.contains(r#"data-rich-text-editor"#));
+    assert!(!body.contains(r#"data-discussion-files"#));
     assert!(!body.contains("删除评论附件"));
 }
 

@@ -189,10 +189,12 @@ pub struct CommentPayload {
     pub parent_comment_id: Option<i64>,
     pub parent_author: String,
     pub body: String,
+    pub body_format: String,
     pub author: String,
     pub created_at: String,
     pub updated_at: String,
     pub is_flow: bool,
+    pub is_draft: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -467,6 +469,8 @@ pub struct HandoffWorkItemRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateCommentRequest {
     body: String,
+    #[serde(default)]
+    body_format: String,
     #[serde(default)]
     parent_comment_id: Option<i64>,
 }
@@ -1421,11 +1425,12 @@ pub async fn create_work_item_comment(
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let comment = projects::add_work_item_comment_reply(
+    let comment = projects::add_work_item_comment_reply_with_format(
         pool,
         user.id,
         &item_key,
         &payload.body,
+        &payload.body_format,
         payload.parent_comment_id,
     )
     .await?;
@@ -1440,6 +1445,77 @@ pub async fn create_work_item_comment(
     .await?;
 
     Ok((StatusCode::CREATED, json(comment_payload(comment))))
+}
+
+pub async fn create_work_item_comment_draft(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Json(payload): Json<CreateCommentRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    let comment = projects::create_work_item_comment_draft(
+        pool,
+        user.id,
+        &item_key,
+        payload.parent_comment_id,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, json(comment_payload(comment))))
+}
+
+pub async fn publish_work_item_comment_draft(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id)): Path<(String, i64)>,
+    Json(payload): Json<CreateCommentRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    let comment = projects::publish_work_item_comment_draft(
+        pool,
+        user.id,
+        &item_key,
+        comment_id,
+        &payload.body,
+        &payload.body_format,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.comment.create",
+        "work_item",
+        &item_key,
+        "{}",
+    )
+    .await?;
+
+    Ok(json(comment_payload(comment)))
 }
 
 pub async fn list_work_item_comments(
@@ -1478,13 +1554,14 @@ pub async fn update_work_item_comment(
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let comment = projects::update_work_item_comment(
+    let comment = projects::update_work_item_comment_with_format(
         pool,
         user.id,
         user.is_super_admin,
         &item_key,
         comment_id,
         &payload.body,
+        &payload.body_format,
     )
     .await?;
     audit::record(
@@ -1517,7 +1594,11 @@ pub async fn create_work_item_comment_attachment(
     let config = storage::active_config(pool)
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
-    let activity_summary = format!("登记评论附件 {}", payload.original_filename);
+    let activity_summary = if comment.is_draft {
+        None
+    } else {
+        Some(format!("登记评论附件 {}", payload.original_filename))
+    };
     let attachment = files::create_attachment(
         pool,
         &config,
@@ -1530,7 +1611,7 @@ pub async fn create_work_item_comment_attachment(
             content_type: payload.content_type,
             byte_size: payload.byte_size,
             created_by_user_id: user.id,
-            activity_summary: Some(activity_summary),
+            activity_summary,
         },
     )
     .await?;
@@ -2602,7 +2683,11 @@ async fn require_api_comment_context(
 )> {
     let (user, item, project) = require_api_work_item_context(state, headers, item_key).await?;
     let pool = state.pool()?;
-    let comment = projects::get_work_item_comment(pool, item.id, comment_id).await?;
+    let comment =
+        projects::get_work_item_comment_including_drafts(pool, item.id, comment_id).await?;
+    if comment.is_draft && comment.author_user_id != Some(user.id) {
+        return Err(AppError::Forbidden("无权访问该草稿评论".to_string()));
+    }
 
     Ok((user, item, project, comment))
 }
@@ -3000,10 +3085,12 @@ fn comment_payload(comment: projects::WorkItemCommentSummary) -> CommentPayload 
         parent_comment_id: comment.parent_comment_id,
         parent_author: comment.parent_author_display_name,
         body: comment.body,
+        body_format: comment.body_format,
         author: comment.author_display_name,
         created_at: comment.created_at,
         updated_at: comment.updated_at,
         is_flow: comment.is_flow,
+        is_draft: comment.is_draft,
     }
 }
 

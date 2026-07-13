@@ -351,6 +351,65 @@ function discussionForm() {
   };
 }
 
+function richDiscussionForm(uploadState) {
+  const status = elementStub("div");
+  const bodyInput = {
+    dataset: {},
+    disabled: false,
+    value: "",
+    matches(selector) {
+      return selector === "[data-discussion-body]";
+    },
+  };
+  const formatInput = { value: "" };
+  const richInput = {
+    innerHTML: "<p>保留正文</p>",
+    focus() {},
+    cloneNode() {
+      return {
+        innerHTML: this.innerHTML,
+        querySelectorAll() {
+          return [];
+        },
+      };
+    },
+  };
+  const attachment = uploadState ? { dataset: { uploadState } } : null;
+  const editor = {
+    querySelector(selector) {
+      if (selector === "[data-rich-text-input]") {
+        return richInput;
+      }
+      if (selector === "[data-rich-attachment][data-upload-state='uploading']") {
+        return uploadState === "uploading" ? attachment : null;
+      }
+      if (selector === "[data-rich-attachment][data-upload-state='error']") {
+        return uploadState === "error" ? attachment : null;
+      }
+      return null;
+    },
+  };
+  const form = {
+    dataset: { itemKey: "YCE-TASK-2" },
+    querySelector(selector) {
+      if (selector === "[data-rich-text-editor]") {
+        return editor;
+      }
+      if (selector === "[data-discussion-body]") {
+        return bodyInput;
+      }
+      if (selector === "[data-discussion-body-format]") {
+        return formatInput;
+      }
+      if (selector === "[data-discussion-status]") {
+        return status;
+      }
+      return null;
+    },
+  };
+  return { bodyInput, formatInput, form, status };
+}
+
 function webPostForm(successMessage, options = {}) {
   const submit = {
     tagName: options.submitTagName || "BUTTON",
@@ -559,6 +618,15 @@ assert.equal(
 assert.equal(samePage.hooks.apiErrorMessage("服务器返回文本错误", "默认错误"), "服务器返回文本错误");
 assert.equal(samePage.hooks.apiErrorMessage({}, "默认错误"), "默认错误");
 assert.equal(typeof samePage.hooks.submitDiscussion, "function");
+assert.equal(typeof samePage.hooks.syncRichTextForm, "function");
+const failedRichForm = richDiscussionForm("error");
+assert.equal(samePage.hooks.syncRichTextForm(failedRichForm.form), false);
+assert.equal(failedRichForm.status.textContent, "有文件上传失败，请重试或移除失败项后再提交。");
+assert.equal(failedRichForm.bodyInput.value, "");
+const readyRichForm = richDiscussionForm("");
+assert.equal(samePage.hooks.syncRichTextForm(readyRichForm.form), true);
+assert.equal(readyRichForm.bodyInput.value, "<p>保留正文</p>");
+assert.equal(readyRichForm.formatInput.value, "html");
 await samePage.hooks.submitDiscussion(discussionForm(), submitButton());
 assert.equal(samePage.fetchCalls.length, 1);
 assert.equal(samePage.fetchCalls[0].url, "/api/v1/work-items/YCE-TASK-2/comments");

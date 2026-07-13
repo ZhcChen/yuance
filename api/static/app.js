@@ -1782,6 +1782,428 @@
     }
   }
 
+  function richTextEditorForForm(form) {
+    return form ? form.querySelector("[data-rich-text-editor]") : null;
+  }
+
+  function richTextInput(editor) {
+    return editor ? editor.querySelector("[data-rich-text-input]") : null;
+  }
+
+  function discussionBodyInput(form) {
+    return form ? form.querySelector("[data-discussion-body]") : null;
+  }
+
+  function richTextCommand(command, editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return;
+    }
+    input.focus({ preventScroll: true });
+    if (command === "createLink") {
+      var url = window.prompt("输入链接地址");
+      if (!url) {
+        return;
+      }
+      document.execCommand("createLink", false, url);
+      return;
+    }
+    document.execCommand(command, false, null);
+  }
+
+  function richTextIsEmptyHtml(html) {
+    var text = String(html || "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return !text && html.indexOf("/comments/") < 0 && html.indexOf("/attachments/") < 0;
+  }
+
+  function richTextDownloadUrl(editor, attachmentId) {
+    var itemKey = editor?.dataset.itemKey || editor?.closest("[data-discussion-form]")?.dataset.itemKey || "";
+    var commentId = editor?.dataset.commentId || editor?.closest("[data-discussion-form]")?.dataset.discussionCommentId || "";
+    if (!itemKey || !commentId || !attachmentId) {
+      return "";
+    }
+    return (
+      "/web/work-items/" +
+      encodeURIComponent(itemKey) +
+      "/comments/" +
+      encodeURIComponent(String(commentId)) +
+      "/attachments/" +
+      encodeURIComponent(String(attachmentId)) +
+      "/download"
+    );
+  }
+
+  function serializeRichTextEditor(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return "";
+    }
+    var clone = input.cloneNode(true);
+    clone.querySelectorAll("[data-rich-attachment]").forEach(function (node) {
+      if (node.dataset.uploadState !== "uploaded" || !node.dataset.attachmentId) {
+        node.remove();
+        return;
+      }
+      var filename = node.dataset.filename || "附件";
+      var contentType = node.dataset.contentType || "application/octet-stream";
+      var attachmentId = node.dataset.attachmentId || "";
+      var downloadUrl = node.dataset.downloadUrl || richTextDownloadUrl(editor, attachmentId);
+      var isImage = isPreviewableImageType(contentType);
+      var isVideo = isPreviewableVideoType(contentType);
+      var replacement = document.createElement(isImage || isVideo ? "figure" : "p");
+      replacement.dataset.yuanceAttachmentId = attachmentId;
+      replacement.dataset.yuanceAttachmentKind = isImage ? "image" : isVideo ? "video" : "file";
+      if (isImage) {
+        var image = document.createElement("img");
+        image.src = downloadUrl;
+        image.alt = filename;
+        replacement.appendChild(image);
+        var caption = document.createElement("figcaption");
+        caption.textContent = filename;
+        replacement.appendChild(caption);
+      } else if (isVideo) {
+        var video = document.createElement("video");
+        video.src = downloadUrl;
+        video.controls = true;
+        video.preload = "metadata";
+        replacement.appendChild(video);
+        var videoCaption = document.createElement("figcaption");
+        videoCaption.textContent = filename;
+        replacement.appendChild(videoCaption);
+      } else {
+        var link = document.createElement("a");
+        link.href = downloadUrl;
+        link.textContent = filename;
+        replacement.appendChild(link);
+      }
+      node.replaceWith(replacement);
+    });
+    clone.querySelectorAll("[contenteditable]").forEach(function (node) {
+      node.removeAttribute("contenteditable");
+    });
+    return clone.innerHTML.trim();
+  }
+
+  function syncRichTextForm(form) {
+    var editor = richTextEditorForForm(form);
+    var bodyInput = discussionBodyInput(form);
+    var formatInput = form?.querySelector("[data-discussion-body-format]");
+    if (!editor || !bodyInput) {
+      return true;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='uploading']")) {
+      discussionStatus(form, "文件仍在上传，请等待完成后再提交。", "error");
+      return false;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='error']")) {
+      discussionStatus(form, "有文件上传失败，请重试或移除失败项后再提交。", "error");
+      return false;
+    }
+    var html = serializeRichTextEditor(editor);
+    if (richTextIsEmptyHtml(html)) {
+      discussionStatus(form, "评论内容不能为空。", "error");
+      richTextInput(editor)?.focus({ preventScroll: true });
+      return false;
+    }
+    bodyInput.value = html;
+    if (formatInput) {
+      formatInput.value = "html";
+    }
+    return true;
+  }
+
+  function insertNodeAtSelection(input, node) {
+    input.focus({ preventScroll: true });
+    var selection = window.getSelection && window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !input.contains(selection.anchorNode)) {
+      input.appendChild(node);
+      input.appendChild(document.createElement("br"));
+      return;
+    }
+    var range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.setEndAfter(node);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function createRichProgress(percent) {
+    var ring = document.createElement("span");
+    ring.className = "upload-progress-ring rich-attachment-progress";
+    ring.setAttribute("role", "progressbar");
+    ring.setAttribute("aria-valuemin", "0");
+    ring.setAttribute("aria-valuemax", "100");
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 44 44");
+    svg.setAttribute("aria-hidden", "true");
+    var track = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    track.setAttribute("class", "upload-progress-track");
+    track.setAttribute("cx", "22");
+    track.setAttribute("cy", "22");
+    track.setAttribute("r", "18");
+    var progress = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    progress.setAttribute("class", "upload-progress-value");
+    progress.setAttribute("cx", "22");
+    progress.setAttribute("cy", "22");
+    progress.setAttribute("r", "18");
+    progress.dataset.richProgressCircle = "";
+    svg.append(track, progress);
+    var value = document.createElement("span");
+    value.dataset.richProgressValue = "";
+    ring.append(svg, value);
+    updateRichProgress(ring, percent);
+    return ring;
+  }
+
+  function updateRichProgress(ring, percent) {
+    if (!ring) {
+      return;
+    }
+    var hasPercent = typeof percent === "number" && Number.isFinite(percent);
+    var normalized = hasPercent ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
+    var circle = ring.querySelector("[data-rich-progress-circle]");
+    var value = ring.querySelector("[data-rich-progress-value]");
+    if (circle) {
+      circle.style.strokeDashoffset = String(113.1 - (113.1 * normalized) / 100);
+    }
+    if (value) {
+      value.textContent = hasPercent ? normalized + "%" : "…";
+    }
+    if (hasPercent) {
+      ring.setAttribute("aria-valuenow", String(normalized));
+      ring.setAttribute("aria-valuetext", "上传 " + normalized + "%");
+    } else {
+      ring.removeAttribute("aria-valuenow");
+      ring.setAttribute("aria-valuetext", "上传中");
+    }
+  }
+
+  function createRichAttachmentNode(file) {
+    var node = document.createElement("article");
+    node.className = "rich-attachment";
+    node.contentEditable = "false";
+    node.dataset.richAttachment = "";
+    node.dataset.uploadState = "uploading";
+    node.dataset.filename = file.name || "未命名文件";
+    node.dataset.contentType = file.type || "application/octet-stream";
+
+    var media = document.createElement("span");
+    media.className = "rich-attachment-media";
+    var isImage = isPreviewableImageType(file.type);
+    var isVideo = isPreviewableVideoType(file.type);
+    if (isImage || isVideo) {
+      var objectUrl = URL.createObjectURL(file);
+      node.dataset.objectUrl = objectUrl;
+      if (isImage) {
+        var image = document.createElement("img");
+        image.src = objectUrl;
+        image.alt = file.name || "本地图片";
+        media.appendChild(image);
+      } else {
+        var video = document.createElement("video");
+        video.src = objectUrl;
+        video.muted = true;
+        video.preload = "metadata";
+        video.playsInline = true;
+        media.appendChild(video);
+      }
+    } else {
+      media.textContent = (file.name?.split(".").pop() || "FILE").slice(0, 5).toUpperCase();
+    }
+
+    var main = document.createElement("span");
+    main.className = "rich-attachment-main";
+    var name = document.createElement("strong");
+    name.textContent = file.name || "未命名文件";
+    var status = document.createElement("span");
+    status.dataset.richAttachmentStatus = "";
+    status.textContent = "准备上传 · " + formatFileSize(file.size);
+    main.append(name, status);
+
+    var actions = document.createElement("span");
+    actions.className = "rich-attachment-actions";
+    var progress = createRichProgress(0);
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.hidden = true;
+    retry.dataset.richAttachmentRetry = "";
+    retry.textContent = "↻";
+    retry.setAttribute("aria-label", "重试上传 " + (file.name || "附件"));
+    var remove = document.createElement("button");
+    remove.type = "button";
+    remove.dataset.richAttachmentRemove = "";
+    remove.textContent = "×";
+    remove.setAttribute("aria-label", "移除 " + (file.name || "附件"));
+    actions.append(progress, retry, remove);
+
+    node.append(media, main, actions);
+    return node;
+  }
+
+  async function ensureDiscussionDraft(editor) {
+    if (editor.dataset.commentId) {
+      return editor.dataset.commentId;
+    }
+    var form = editor.closest("[data-discussion-form]");
+    if (form && form.dataset.discussionCommentId) {
+      editor.dataset.commentId = form.dataset.discussionCommentId;
+      return form.dataset.discussionCommentId;
+    }
+    var itemKey = editor.dataset.itemKey || form?.dataset.itemKey || "";
+    if (!itemKey) {
+      throw new Error("无法识别工作项，请刷新页面后重试。");
+    }
+    var parentInput = form?.querySelector("input[name='parent_comment_id']");
+    var comment = await fetchJson(
+      "/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments/draft",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          body: "",
+          body_format: "html",
+          parent_comment_id: parentInput && parentInput.value ? Number(parentInput.value) : null,
+        }),
+      }
+    );
+    editor.dataset.commentId = String(comment.id);
+    if (form) {
+      form.dataset.discussionCommentId = String(comment.id);
+      form.dataset.discussionDraft = "true";
+    }
+    return String(comment.id);
+  }
+
+  function setRichAttachmentState(node, state, message, percent) {
+    node.dataset.uploadState = state;
+    var status = node.querySelector("[data-rich-attachment-status]");
+    var progress = node.querySelector(".rich-attachment-progress");
+    var retry = node.querySelector("[data-rich-attachment-retry]");
+    if (status) {
+      status.textContent = message;
+    }
+    updateRichProgress(progress, percent);
+    if (retry) {
+      retry.hidden = state !== "error";
+    }
+  }
+
+  async function uploadRichAttachment(editor, node, file) {
+    var form = editor.closest("[data-discussion-form]");
+    var itemKey = editor.dataset.itemKey || form?.dataset.itemKey || "";
+    try {
+      var commentId = await ensureDiscussionDraft(editor);
+      await uploadAttachmentFile({
+        file: file,
+        filename: file.name || "attachment.bin",
+        contentType: file.type || "application/octet-stream",
+        byteSize: file.size || 0,
+        existingAttachmentId: node.dataset.attachmentId || "",
+        createUrl:
+          "/api/v1/work-items/" + encodeURIComponent(itemKey) +
+          "/comments/" + encodeURIComponent(commentId) + "/attachments",
+        uploadUrl: function (attachmentId) {
+          return attachmentUrlForComment(itemKey, commentId, attachmentId, "upload-url");
+        },
+        completeUrl: function (attachmentId) {
+          return attachmentUrlForComment(itemKey, commentId, attachmentId, "uploaded");
+        },
+        onAttachmentReady: function (attachment) {
+          node.dataset.attachmentId = String(attachment.id);
+        },
+        onStage: function (stage) {
+          if (stage === "signing") {
+            setRichAttachmentState(node, "uploading", "正在获取上传签名 · " + formatFileSize(file.size), 0);
+          } else if (stage === "uploading") {
+            setRichAttachmentState(node, "uploading", "正在上传 · " + formatFileSize(file.size), 0);
+          } else if (stage === "finalizing") {
+            setRichAttachmentState(node, "uploading", "正在确认上传结果", 100);
+          }
+        },
+        onProgress: function (percent) {
+          setRichAttachmentState(
+            node,
+            "uploading",
+            typeof percent === "number" ? "正在上传 " + Math.round(percent) + "%" : "正在上传",
+            percent
+          );
+        },
+      });
+      node.dataset.downloadUrl = richTextDownloadUrl(editor, node.dataset.attachmentId);
+      setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
+      if (form) {
+        discussionStatus(form, "文件上传完成，可继续编辑或发表。", "success");
+      }
+    } catch (error) {
+      setRichAttachmentState(node, "error", error.message || "上传失败，可重试。", null);
+      if (form) {
+        discussionStatus(form, error.message || "上传失败，可重试。", "error");
+      }
+    }
+  }
+
+  function insertRichFiles(editor, files) {
+    var input = richTextInput(editor);
+    if (!input || !files.length) {
+      return;
+    }
+    files.forEach(function (file) {
+      var node = createRichAttachmentNode(file);
+      node.richFile = file;
+      insertNodeAtSelection(input, node);
+      uploadRichAttachment(editor, node, file);
+    });
+  }
+
+  function initRichTextEditors(scope) {
+    (scope || document).querySelectorAll("[data-rich-text-editor]:not([data-rich-ready])").forEach(function (editor) {
+      editor.dataset.richReady = "true";
+      var input = richTextInput(editor);
+      if (!input) {
+        return;
+      }
+      input.addEventListener("paste", function (event) {
+        var files = Array.from(event.clipboardData?.files || []);
+        if (files.length) {
+          event.preventDefault();
+          insertRichFiles(editor, files);
+          return;
+        }
+        var text = event.clipboardData?.getData("text/plain");
+        if (text) {
+          event.preventDefault();
+          document.execCommand("insertText", false, text);
+        }
+      });
+      ["dragenter", "dragover"].forEach(function (eventName) {
+        input.addEventListener(eventName, function (event) {
+          if (Array.from(event.dataTransfer?.items || []).some(function (item) { return item.kind === "file"; })) {
+            event.preventDefault();
+            editor.dataset.dragActive = "true";
+          }
+        });
+      });
+      ["dragleave", "drop"].forEach(function (eventName) {
+        input.addEventListener(eventName, function (event) {
+          if (eventName === "drop") {
+            var files = Array.from(event.dataTransfer?.files || []);
+            if (files.length) {
+              event.preventDefault();
+              insertRichFiles(editor, files);
+            }
+          }
+          editor.dataset.dragActive = "false";
+        });
+      });
+    });
+  }
+
   function directUploadStatus(form, message, tone) {
     var status = form.querySelector("[data-upload-status]");
     if (!status) {
@@ -2546,6 +2968,9 @@
     form.querySelectorAll("button, textarea, input, select").forEach(function (control) {
       control.disabled = busy || isDiscussionControlLocked(form, control);
     });
+    form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
+      input.setAttribute("contenteditable", busy ? "false" : "true");
+    });
     form.querySelectorAll("[data-discussion-submit]").forEach(function (button) {
       if (!button.dataset.originalLabel) {
         button.dataset.originalLabel = button.textContent.trim();
@@ -2557,11 +2982,15 @@
   }
 
   async function submitDiscussion(form, submitter) {
-    if (form.dataset.discussionBusy === "true" || !form.reportValidity()) {
+    if (form.dataset.discussionBusy === "true") {
+      return;
+    }
+    if (!syncRichTextForm(form) || !form.reportValidity()) {
       return;
     }
     var itemKey = form.dataset.itemKey || "";
     var bodyInput = form.querySelector("[data-discussion-body]");
+    var bodyFormatInput = form.querySelector("[data-discussion-body-format]");
     var parentInput = form.querySelector("input[name='parent_comment_id']");
     var files = form.bugReportFiles || [];
     var submit = submitter && submitter.matches("[data-discussion-submit]")
@@ -2576,7 +3005,22 @@
     setDiscussionBusy(form, true, submit);
     try {
       var commentId = form.dataset.discussionCommentId || "";
-      if (!commentId) {
+      if (commentId && form.dataset.discussionDraft === "true") {
+        discussionStatus(form, "正在发布内容...", "info");
+        await fetchJson(
+          "/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments/" + encodeURIComponent(commentId) + "/publish",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body: JSON.stringify({
+              body: bodyInput ? bodyInput.value.trim() : "",
+              body_format: bodyFormatInput ? bodyFormatInput.value : "html",
+            }),
+          }
+        );
+        delete form.dataset.discussionDraft;
+        form.dataset.discussionLocked = "true";
+      } else if (!commentId) {
         discussionStatus(form, "正在发表内容...", "info");
         var comment = await fetchJson(
           "/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments",
@@ -2585,6 +3029,7 @@
             headers: { "content-type": "application/json", accept: "application/json" },
             body: JSON.stringify({
               body: bodyInput ? bodyInput.value.trim() : "",
+              body_format: bodyFormatInput ? bodyFormatInput.value : "html",
               parent_comment_id: parentInput && parentInput.value
                 ? Number(parentInput.value)
                 : null,
@@ -2681,7 +3126,9 @@
     } catch (error) {
       var errorMessage = (error && error.message) || "提交失败，请重试。";
       if (form.dataset.discussionCommentId) {
-        errorMessage = "内容已发表，未完成的指派或附件可直接重试。" + errorMessage;
+        errorMessage = form.dataset.discussionDraft === "true"
+          ? "草稿和已上传文件已保留，可直接重试。" + errorMessage
+          : "内容已发表，未完成的指派或附件可直接重试。" + errorMessage;
       }
       discussionStatus(form, errorMessage, "error");
       setDiscussionBusy(form, false);
@@ -3510,6 +3957,7 @@
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
       submitWebForm: submitWebForm,
+      syncRichTextForm: syncRichTextForm,
       webFormSuccessMessage: webFormSuccessMessage,
     });
   }
@@ -3563,6 +4011,18 @@
     if (attachmentImagePreview) {
       event.preventDefault();
       openAttachmentImagePreview(attachmentImagePreview);
+      return;
+    }
+
+    var richMedia = event.target.closest(".discussion-rich-body img, .discussion-rich-body video");
+    if (richMedia) {
+      event.preventDefault();
+      richMedia.dataset.imageSource = richMedia.currentSrc || richMedia.src || "";
+      richMedia.dataset.imageTitle = richMedia.getAttribute("alt") || richMedia.getAttribute("title") || "正文媒体";
+      if (richMedia.tagName === "VIDEO") {
+        richMedia.dataset.mediaKind = "video";
+      }
+      openImageViewer([richMedia], 0, richMedia);
       return;
     }
 
@@ -3623,9 +4083,40 @@
         });
         replyForm.hidden = !shouldOpen;
         if (shouldOpen) {
-          replyForm.querySelector("[data-discussion-body]")?.focus({ preventScroll: true });
+          replyForm.querySelector("[data-rich-text-input]")?.focus({ preventScroll: true });
           replyForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
         }
+      }
+      return;
+    }
+
+    var richCommand = event.target.closest("[data-rich-command]");
+    if (richCommand) {
+      event.preventDefault();
+      richTextCommand(richCommand.dataset.richCommand || "", richCommand.closest("[data-rich-text-editor]"));
+      return;
+    }
+
+    var richRetry = event.target.closest("[data-rich-attachment-retry]");
+    if (richRetry) {
+      event.preventDefault();
+      var retryNode = richRetry.closest("[data-rich-attachment]");
+      var retryEditor = richRetry.closest("[data-rich-text-editor]");
+      if (retryNode && retryEditor && retryNode.richFile) {
+        uploadRichAttachment(retryEditor, retryNode, retryNode.richFile);
+      }
+      return;
+    }
+
+    var richRemove = event.target.closest("[data-rich-attachment-remove]");
+    if (richRemove) {
+      event.preventDefault();
+      var removeNode = richRemove.closest("[data-rich-attachment]");
+      if (removeNode) {
+        if (removeNode.dataset.objectUrl) {
+          URL.revokeObjectURL(removeNode.dataset.objectUrl);
+        }
+        removeNode.remove();
       }
       return;
     }
@@ -3870,6 +4361,7 @@
     initSelectControls(event.target);
     initContentTabs(event.target);
     initAttachmentImagePreviews(event.target);
+    initRichTextEditors(event.target);
   });
 
   function syncPermissionParent(parent) {
@@ -3910,6 +4402,7 @@
   }
 
   document.querySelectorAll("[data-permission-tree]").forEach(syncPermissionTree);
+  initRichTextEditors(document);
 
   document.addEventListener("change", function (event) {
     var discussionFiles = event.target.closest("[data-discussion-files]");
@@ -3962,6 +4455,10 @@
 
   document.addEventListener("submit", function (event) {
     normalizeUsernameInputs(event.target);
+    if (event.target.querySelector("[data-rich-text-editor]") && !syncRichTextForm(event.target)) {
+      event.preventDefault();
+      return;
+    }
     event.target.querySelectorAll("[data-user-combobox]").forEach(function (combobox) {
       if (!validateUserCombobox(combobox)) {
         event.preventDefault();

@@ -1,6 +1,7 @@
 use chrono::{Duration, Utc};
 use rand_core::{OsRng, RngCore};
 use sqlx::{Row, SqlitePool};
+use std::borrow::Cow;
 
 use crate::{
     domains::notifications::{self, CreateNotification},
@@ -16,6 +17,8 @@ const PROJECT_STATUS_ON_HOLD: &str = "on_hold";
 const PROJECT_STATUS_CANCELLED: &str = "cancelled";
 const PROJECT_STATUS_ARCHIVED: &str = "archived";
 const WORK_ITEM_FLOW_COMMENT_PREFIX: &str = "[yuance-flow] ";
+pub const COMMENT_BODY_FORMAT_PLAIN: &str = "plain";
+pub const COMMENT_BODY_FORMAT_HTML: &str = "html";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DemoSeedResult {
@@ -118,12 +121,14 @@ pub struct WorkItemCommentSummary {
     pub parent_comment_id: Option<i64>,
     pub parent_author_display_name: String,
     pub body: String,
+    pub body_format: String,
     pub author_user_id: Option<i64>,
     pub author_username: String,
     pub author_display_name: String,
     pub created_at: String,
     pub updated_at: String,
     pub is_flow: bool,
+    pub is_draft: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2419,6 +2424,8 @@ pub async fn list_work_item_comments(
         (
             i64,
             String,
+            String,
+            i64,
             Option<i64>,
             String,
             String,
@@ -2432,6 +2439,8 @@ pub async fn list_work_item_comments(
         SELECT
             c.id,
             c.body,
+            c.body_format,
+            c.is_draft,
             c.author_user_id,
             COALESCE(u.username, '') AS author_username,
             COALESCE(u.display_name, '') AS author_display_name,
@@ -2445,6 +2454,7 @@ pub async fn list_work_item_comments(
         LEFT JOIN users parent_author ON parent_author.id = parent.author_user_id
         WHERE c.work_item_id = ?1
           AND c.deleted_at IS NULL
+          AND c.is_draft = 0
         ORDER BY c.created_at ASC, c.id ASC
         "#,
     )
@@ -2458,6 +2468,8 @@ pub async fn list_work_item_comments(
             |(
                 id,
                 body,
+                body_format,
+                is_draft,
                 author_user_id,
                 author_username,
                 author_display_name,
@@ -2472,12 +2484,14 @@ pub async fn list_work_item_comments(
                     parent_comment_id,
                     parent_author_display_name,
                     body,
+                    body_format,
                     author_user_id,
                     author_username,
                     author_display_name,
                     created_at,
                     updated_at,
                     is_flow,
+                    is_draft: is_draft != 0,
                 }
             },
         )
@@ -3039,11 +3053,26 @@ pub async fn add_work_item_comment_reply(
     body: &str,
     parent_comment_id: Option<i64>,
 ) -> AppResult<WorkItemCommentSummary> {
-    let body = validate_optional_text(body, "评论内容", 5000)?;
-    if body.is_empty() {
-        return Err(AppError::BadRequest("评论内容不能为空".to_string()));
-    }
-    ensure_plain_work_item_comment_body(&body)?;
+    add_work_item_comment_reply_with_format(
+        pool,
+        actor_user_id,
+        item_key,
+        body,
+        COMMENT_BODY_FORMAT_PLAIN,
+        parent_comment_id,
+    )
+    .await
+}
+
+pub async fn add_work_item_comment_reply_with_format(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    body: &str,
+    body_format: &str,
+    parent_comment_id: Option<i64>,
+) -> AppResult<WorkItemCommentSummary> {
+    let prepared = prepare_work_item_comment_body(body, body_format)?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -3076,18 +3105,22 @@ pub async fn add_work_item_comment_reply(
             work_item_id,
             author_user_id,
             body,
+            body_format,
             parent_comment_id
         )
-        VALUES (?1, ?2, ?3, ?4)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         RETURNING id
         "#,
     )
     .bind(work_item_id)
     .bind(actor_user_id)
-    .bind(&body)
+    .bind(&prepared.body)
+    .bind(&prepared.body_format)
     .bind(parent_comment_id)
     .fetch_one(&mut *tx)
     .await?;
+
+    ensure_comment_body_attachment_references(pool, comment_id, &prepared.body).await?;
 
     sqlx::query(
         r#"
@@ -3110,7 +3143,7 @@ pub async fn add_work_item_comment_reply(
                 work_item_id,
                 comment_id: Some(comment_id),
                 title: &format!("你在 {item_key} 的内容收到回复"),
-                body: &body,
+                body: &prepared.plain_text,
             },
         )
         .await?;
@@ -3138,55 +3171,183 @@ pub async fn add_work_item_comment_reply(
 
     tx.commit().await?;
 
-    let row = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            Option<i64>,
-            String,
-            String,
-            String,
-            String,
-            Option<i64>,
-            String,
-        ),
-    >(
+    get_work_item_comment(pool, work_item_id, comment_id).await
+}
+
+pub async fn create_work_item_comment_draft(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    parent_comment_id: Option<i64>,
+) -> AppResult<WorkItemCommentSummary> {
+    let Some((work_item_id, project_status)) = sqlx::query_as::<_, (i64, String)>(
         r#"
-        SELECT
-            c.id,
-            c.body,
-            c.author_user_id,
-            COALESCE(u.username, '') AS author_username,
-            COALESCE(u.display_name, '') AS author_display_name,
-            c.created_at,
-            c.updated_at,
-            c.parent_comment_id,
-            COALESCE(parent_author.display_name, '') AS parent_author_display_name
-        FROM work_item_comments c
-        LEFT JOIN users u ON u.id = c.author_user_id
-        LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
-        LEFT JOIN users parent_author ON parent_author.id = parent.author_user_id
-        WHERE c.id = ?1
+        SELECT wi.id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
         "#,
     )
-    .bind(comment_id)
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    if let Some(parent_comment_id) = parent_comment_id {
+        let parent = get_work_item_comment(pool, work_item_id, parent_comment_id).await?;
+        if parent.is_flow {
+            return Err(AppError::BadRequest("不能回复系统流程记录".to_string()));
+        }
+    }
+
+    let comment_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO work_item_comments (
+            work_item_id,
+            author_user_id,
+            body,
+            body_format,
+            parent_comment_id,
+            is_draft
+        )
+        VALUES (?1, ?2, '', 'html', ?3, 1)
+        RETURNING id
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(actor_user_id)
+    .bind(parent_comment_id)
     .fetch_one(pool)
     .await?;
 
-    let (body, is_flow) = normalize_work_item_comment_body(row.1);
-    Ok(WorkItemCommentSummary {
-        id: row.0,
-        parent_comment_id: row.7,
-        parent_author_display_name: row.8,
-        body,
-        author_user_id: row.2,
-        author_username: row.3,
-        author_display_name: row.4,
-        created_at: row.5,
-        updated_at: row.6,
-        is_flow,
-    })
+    get_work_item_comment_including_drafts(pool, work_item_id, comment_id).await
+}
+
+pub async fn publish_work_item_comment_draft(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    comment_id: i64,
+    body: &str,
+    body_format: &str,
+) -> AppResult<WorkItemCommentSummary> {
+    let prepared = prepare_work_item_comment_body(body, body_format)?;
+    let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
+        r#"
+        SELECT wi.id, wi.project_id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let draft = get_work_item_comment_including_drafts(pool, work_item_id, comment_id).await?;
+    if !draft.is_draft {
+        return Err(AppError::BadRequest("该评论不是草稿".to_string()));
+    }
+    if draft.is_flow {
+        return Err(AppError::Forbidden("流程记录不能作为草稿发布".to_string()));
+    }
+    if draft.author_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden("只能发布自己的草稿评论".to_string()));
+    }
+    ensure_comment_body_attachment_references(pool, comment_id, &prepared.body).await?;
+
+    let mut reply_recipient = None;
+    if let Some(parent_comment_id) = draft.parent_comment_id {
+        let parent = get_work_item_comment(pool, work_item_id, parent_comment_id).await?;
+        if parent.is_flow {
+            return Err(AppError::BadRequest("不能回复系统流程记录".to_string()));
+        }
+        reply_recipient = parent.author_user_id;
+    }
+
+    let mut tx = pool.begin().await?;
+    let updated_count = sqlx::query(
+        r#"
+        UPDATE work_item_comments
+        SET body = ?3,
+            body_format = ?4,
+            is_draft = 0,
+            created_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND is_draft = 1
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .bind(&prepared.body)
+    .bind(&prepared.body_format)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if updated_count == 0 {
+        return Err(AppError::NotFound("草稿评论不存在".to_string()));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if let Some(recipient_user_id) = reply_recipient {
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id,
+                actor_user_id,
+                kind: "comment_replied",
+                work_item_id,
+                comment_id: Some(comment_id),
+                title: &format!("你在 {item_key} 的内容收到回复"),
+                body: &prepared.plain_text,
+            },
+        )
+        .await?;
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_activities (
+            project_id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            summary
+        )
+        VALUES (?1, ?2, 'work_item.commented', 'work_item', ?3, ?4)
+        "#,
+    )
+    .bind(project_id)
+    .bind(actor_user_id)
+    .bind(item_key)
+    .bind(format!("评论工作项 {item_key}"))
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    get_work_item_comment(pool, work_item_id, comment_id).await
 }
 
 pub async fn get_work_item_comment(
@@ -3194,11 +3355,30 @@ pub async fn get_work_item_comment(
     work_item_id: i64,
     comment_id: i64,
 ) -> AppResult<WorkItemCommentSummary> {
+    get_work_item_comment_by_visibility(pool, work_item_id, comment_id, false).await
+}
+
+pub async fn get_work_item_comment_including_drafts(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+) -> AppResult<WorkItemCommentSummary> {
+    get_work_item_comment_by_visibility(pool, work_item_id, comment_id, true).await
+}
+
+async fn get_work_item_comment_by_visibility(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+    include_drafts: bool,
+) -> AppResult<WorkItemCommentSummary> {
     let row = sqlx::query_as::<
         _,
         (
             i64,
             String,
+            String,
+            i64,
             Option<i64>,
             String,
             String,
@@ -3212,6 +3392,8 @@ pub async fn get_work_item_comment(
         SELECT
             c.id,
             c.body,
+            c.body_format,
+            c.is_draft,
             c.author_user_id,
             COALESCE(u.username, '') AS author_username,
             COALESCE(u.display_name, '') AS author_display_name,
@@ -3226,10 +3408,12 @@ pub async fn get_work_item_comment(
         WHERE c.id = ?1
           AND c.work_item_id = ?2
           AND c.deleted_at IS NULL
+          AND (?3 OR c.is_draft = 0)
         "#,
     )
     .bind(comment_id)
     .bind(work_item_id)
+    .bind(if include_drafts { 1_i64 } else { 0_i64 })
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound("评论不存在".to_string()))?;
@@ -3237,15 +3421,17 @@ pub async fn get_work_item_comment(
     let (body, is_flow) = normalize_work_item_comment_body(row.1);
     Ok(WorkItemCommentSummary {
         id: row.0,
-        parent_comment_id: row.7,
-        parent_author_display_name: row.8,
+        parent_comment_id: row.9,
+        parent_author_display_name: row.10,
         body,
-        author_user_id: row.2,
-        author_username: row.3,
-        author_display_name: row.4,
-        created_at: row.5,
-        updated_at: row.6,
+        body_format: row.2,
+        author_user_id: row.4,
+        author_username: row.5,
+        author_display_name: row.6,
+        created_at: row.7,
+        updated_at: row.8,
         is_flow,
+        is_draft: row.3 != 0,
     })
 }
 
@@ -3257,11 +3443,28 @@ pub async fn update_work_item_comment(
     comment_id: i64,
     body: &str,
 ) -> AppResult<WorkItemCommentSummary> {
-    let body = validate_optional_text(body, "评论内容", 5000)?;
-    if body.is_empty() {
-        return Err(AppError::BadRequest("评论内容不能为空".to_string()));
-    }
-    ensure_plain_work_item_comment_body(&body)?;
+    update_work_item_comment_with_format(
+        pool,
+        actor_user_id,
+        actor_is_super_admin,
+        item_key,
+        comment_id,
+        body,
+        COMMENT_BODY_FORMAT_PLAIN,
+    )
+    .await
+}
+
+pub async fn update_work_item_comment_with_format(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    actor_is_super_admin: bool,
+    item_key: &str,
+    comment_id: i64,
+    body: &str,
+    body_format: &str,
+) -> AppResult<WorkItemCommentSummary> {
+    let prepared = prepare_work_item_comment_body(body, body_format)?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -3282,6 +3485,11 @@ pub async fn update_work_item_comment(
     if comment.is_flow {
         return Err(AppError::Forbidden("流程记录不能修改".to_string()));
     }
+    if comment.is_draft {
+        return Err(AppError::BadRequest(
+            "草稿评论不能通过编辑入口修改".to_string(),
+        ));
+    }
     if !user_can_manage_work_item_comment(
         pool,
         project_id,
@@ -3293,21 +3501,25 @@ pub async fn update_work_item_comment(
     {
         return Err(AppError::Forbidden("无权修改该评论".to_string()));
     }
+    ensure_comment_body_attachment_references(pool, comment_id, &prepared.body).await?;
 
     let mut tx = pool.begin().await?;
     let updated_count = sqlx::query(
         r#"
         UPDATE work_item_comments
         SET body = ?3,
+            body_format = ?4,
             updated_at = datetime('now')
         WHERE id = ?1
           AND work_item_id = ?2
           AND deleted_at IS NULL
+          AND is_draft = 0
         "#,
     )
     .bind(comment_id)
     .bind(work_item_id)
-    .bind(&body)
+    .bind(&prepared.body)
+    .bind(&prepared.body_format)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -4126,6 +4338,315 @@ fn validate_optional_text(value: &str, field_name: &str, max_chars: usize) -> Ap
         )));
     }
     Ok(value.to_string())
+}
+
+#[derive(Debug, Clone)]
+struct PreparedWorkItemCommentBody {
+    body: String,
+    body_format: String,
+    plain_text: String,
+}
+
+fn prepare_work_item_comment_body(
+    body: &str,
+    body_format: &str,
+) -> AppResult<PreparedWorkItemCommentBody> {
+    let body_format = normalize_comment_body_format(body_format)?;
+    match body_format.as_str() {
+        COMMENT_BODY_FORMAT_HTML => {
+            let raw_body = validate_optional_text(body, "评论内容", 20000)?;
+            ensure_plain_work_item_comment_body(&html_to_plain_text(&raw_body))?;
+            ensure_comment_html_media_sources_are_controlled(&raw_body)?;
+            let body = sanitize_comment_html(&raw_body);
+            let plain_text = html_to_plain_text(&body);
+            if plain_text.is_empty() && !comment_html_has_media_reference(&body) {
+                return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+            }
+            Ok(PreparedWorkItemCommentBody {
+                body,
+                body_format,
+                plain_text,
+            })
+        }
+        _ => {
+            let body = validate_optional_text(body, "评论内容", 5000)?;
+            if body.is_empty() {
+                return Err(AppError::BadRequest("评论内容不能为空".to_string()));
+            }
+            ensure_plain_work_item_comment_body(&body)?;
+            Ok(PreparedWorkItemCommentBody {
+                plain_text: body.clone(),
+                body,
+                body_format,
+            })
+        }
+    }
+}
+
+fn normalize_comment_body_format(body_format: &str) -> AppResult<String> {
+    match body_format.trim() {
+        "" | COMMENT_BODY_FORMAT_PLAIN => Ok(COMMENT_BODY_FORMAT_PLAIN.to_string()),
+        COMMENT_BODY_FORMAT_HTML => Ok(COMMENT_BODY_FORMAT_HTML.to_string()),
+        _ => Err(AppError::BadRequest(
+            "评论格式只能是 plain / html".to_string(),
+        )),
+    }
+}
+
+pub fn work_item_comment_body_html_for_display(
+    body: &str,
+    body_format: &str,
+    is_flow: bool,
+) -> String {
+    if is_flow || body_format != COMMENT_BODY_FORMAT_HTML {
+        return plain_text_to_html(body);
+    }
+
+    sanitize_comment_html(body)
+}
+
+pub fn work_item_comment_plain_text(body: &str, body_format: &str) -> String {
+    if body_format == COMMENT_BODY_FORMAT_HTML {
+        html_to_plain_text(&sanitize_comment_html(body))
+    } else {
+        body.trim().to_string()
+    }
+}
+
+fn sanitize_comment_html(body: &str) -> String {
+    ammonia::Builder::default()
+        .add_tags(&["figure", "figcaption", "img", "video"])
+        .add_tag_attributes("img", &["src", "alt", "title", "loading"])
+        .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
+        .add_generic_attributes(&["data-yuance-attachment-id", "data-yuance-attachment-kind"])
+        .attribute_filter(|element, attribute, value| match (element, attribute) {
+            ("img", "src") | ("source", "src") | ("video", "src")
+                if !comment_attachment_url_like(value) =>
+            {
+                None
+            }
+            _ => Some(Cow::Borrowed(value)),
+        })
+        .clean(body)
+        .to_string()
+}
+
+fn comment_attachment_url_like(value: &str) -> bool {
+    let value = value.trim();
+    let path = value.split('?').next().unwrap_or(value);
+    path.starts_with("/web/work-items/")
+        && path.contains("/comments/")
+        && path.contains("/attachments/")
+        && path.ends_with("/download")
+}
+
+fn ensure_comment_html_media_sources_are_controlled(body: &str) -> AppResult<()> {
+    for tag_name in ["img", "source", "video"] {
+        ensure_comment_html_tag_sources_are_controlled(body, tag_name)?;
+    }
+    Ok(())
+}
+
+fn ensure_comment_html_tag_sources_are_controlled(body: &str, tag_name: &str) -> AppResult<()> {
+    let lower_body = body.to_ascii_lowercase();
+    let marker = format!("<{tag_name}");
+    let mut search_from = 0;
+    while let Some(relative_start) = lower_body[search_from..].find(&marker) {
+        let tag_start = search_from + relative_start;
+        let tag_end = lower_body[tag_start..]
+            .find('>')
+            .map(|relative_end| tag_start + relative_end)
+            .unwrap_or(body.len());
+        let tag_html = &body[tag_start..tag_end];
+        if let Some(source) = html_src_attribute_value(tag_html) {
+            if !comment_attachment_url_like(&source) {
+                return Err(AppError::BadRequest(
+                    "正文媒体必须使用已上传的评论附件".to_string(),
+                ));
+            }
+        }
+        search_from = tag_end.saturating_add(1);
+    }
+    Ok(())
+}
+
+fn html_src_attribute_value(tag_html: &str) -> Option<String> {
+    let lower_tag = tag_html.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(relative_start) = lower_tag[search_from..].find("src") {
+        let attr_start = search_from + relative_start;
+        let before = lower_tag[..attr_start].chars().next_back();
+        let valid_prefix = before.is_some_and(|character| {
+            character == '<' || character == '/' || character.is_whitespace()
+        });
+        let mut cursor = attr_start + "src".len();
+        if valid_prefix {
+            cursor += lower_tag[cursor..].len() - lower_tag[cursor..].trim_start().len();
+            if cursor < lower_tag.len() && lower_tag[cursor..].starts_with('=') {
+                cursor += 1;
+                cursor += lower_tag[cursor..].len() - lower_tag[cursor..].trim_start().len();
+                return Some(read_html_attribute_value(tag_html, cursor));
+            }
+        }
+        search_from = attr_start + "src".len();
+    }
+    None
+}
+
+fn read_html_attribute_value(tag_html: &str, marker_start: usize) -> String {
+    let bytes = tag_html.as_bytes();
+    if marker_start >= bytes.len() {
+        return String::new();
+    }
+    let quote = bytes[marker_start] as char;
+    if quote == '"' || quote == '\'' {
+        let value_start = marker_start + 1;
+        let value_end = tag_html[value_start..]
+            .find(quote)
+            .map(|relative_end| value_start + relative_end)
+            .unwrap_or(tag_html.len());
+        return tag_html[value_start..value_end].trim().to_string();
+    }
+    let value_end = tag_html[marker_start..]
+        .find(|character: char| character.is_whitespace() || character == '>')
+        .map(|relative_end| marker_start + relative_end)
+        .unwrap_or(tag_html.len());
+    tag_html[marker_start..value_end].trim().to_string()
+}
+
+fn plain_text_to_html(value: &str) -> String {
+    let escaped = escape_html(value);
+    let paragraphs = escaped
+        .split("\n\n")
+        .map(|paragraph| {
+            let content = paragraph.replace('\n', "<br>");
+            if content.trim().is_empty() {
+                "<p><br></p>".to_string()
+            } else {
+                format!("<p>{content}</p>")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    if paragraphs.is_empty() {
+        "<p><br></p>".to_string()
+    } else {
+        paragraphs
+    }
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn html_to_plain_text(value: &str) -> String {
+    let mut output = String::new();
+    let mut in_tag = false;
+    for character in value.chars() {
+        match character {
+            '<' => {
+                in_tag = true;
+                output.push(' ');
+            }
+            '>' => {
+                in_tag = false;
+                output.push(' ');
+            }
+            _ if !in_tag => output.push(character),
+            _ => {}
+        }
+    }
+    decode_basic_html_entities(&output)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn decode_basic_html_entities(value: &str) -> String {
+    value
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+}
+
+fn comment_html_has_media_reference(body: &str) -> bool {
+    body.contains("/comments/") && body.contains("/attachments/")
+}
+
+fn extract_comment_attachment_references(body: &str) -> AppResult<Vec<(i64, i64)>> {
+    let mut references = Vec::new();
+    let mut remaining = body;
+    while let Some(comment_marker) = remaining.find("/comments/") {
+        remaining = &remaining[comment_marker + "/comments/".len()..];
+        let comment_digits = remaining
+            .chars()
+            .take_while(|character| character.is_ascii_digit())
+            .collect::<String>();
+        if comment_digits.is_empty()
+            || !remaining[comment_digits.len()..].starts_with("/attachments/")
+        {
+            continue;
+        }
+        remaining = &remaining[comment_digits.len() + "/attachments/".len()..];
+        let attachment_digits = remaining
+            .chars()
+            .take_while(|character| character.is_ascii_digit())
+            .collect::<String>();
+        if attachment_digits.is_empty() {
+            continue;
+        }
+        let comment_id = comment_digits
+            .parse::<i64>()
+            .map_err(|_| AppError::BadRequest("评论附件引用无效".to_string()))?;
+        let attachment_id = attachment_digits
+            .parse::<i64>()
+            .map_err(|_| AppError::BadRequest("评论附件引用无效".to_string()))?;
+        references.push((comment_id, attachment_id));
+    }
+    references.sort_unstable();
+    references.dedup();
+    Ok(references)
+}
+
+async fn ensure_comment_body_attachment_references(
+    pool: &SqlitePool,
+    comment_id: i64,
+    body: &str,
+) -> AppResult<()> {
+    for (referenced_comment_id, attachment_id) in extract_comment_attachment_references(body)? {
+        if referenced_comment_id != comment_id {
+            return Err(AppError::BadRequest("不能引用其他评论的附件".to_string()));
+        }
+        let status = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT fo.status
+            FROM file_attachments fa
+            JOIN file_objects fo ON fo.id = fa.file_object_id
+            WHERE fa.id = ?1
+              AND fa.target_type = 'comment'
+              AND fa.target_id = ?2
+            "#,
+        )
+        .bind(attachment_id)
+        .bind(comment_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("评论附件引用不存在".to_string()))?;
+        if status != "uploaded" {
+            return Err(AppError::BadRequest(
+                "只能引用已上传完成的评论附件".to_string(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn validate_optional_date(value: &str, field_name: &str) -> AppResult<String> {

@@ -296,7 +296,9 @@ cancelled   -> in_progress
 ```text
 GET    /api/v1/work-items/{item_key}/comments
 POST   /api/v1/work-items/{item_key}/comments
+POST   /api/v1/work-items/{item_key}/comments/draft
 PATCH  /api/v1/work-items/{item_key}/comments/{comment_id}
+POST   /api/v1/work-items/{item_key}/comments/{comment_id}/publish
 ```
 
 创建/更新请求：
@@ -304,9 +306,15 @@ PATCH  /api/v1/work-items/{item_key}/comments/{comment_id}
 ```json
 {
   "body": "评论内容",
+  "body_format": "plain",
   "parent_comment_id": 123
 }
 ```
+
+富文本评论使用 `body_format = "html"`。服务端会白名单清洗 HTML；旧客户端不传
+`body_format` 时仍按纯文本处理。粘贴或拖拽文件时可先创建草稿评论，再把文件上传到该
+评论，最终通过 publish 端点发布草稿。草稿在发布前不会出现在评论列表、工作项详情、消息
+通知或项目动态中。
 
 `parent_comment_id` 可为空；传入时必须指向同一工作项内的普通评论，不能回复流程记录。响应会返回 `parent_comment_id` 与 `parent_author`。
 

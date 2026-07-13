@@ -645,37 +645,17 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
   assert(text().includes("浏览器冒烟任务"), "任务详情未打开");
 
   const form = query("[data-discussion-form]:not(.discussion-reply-form)");
-  const input = query("[data-discussion-form]:not(.discussion-reply-form) [data-discussion-files]");
-  query("[data-discussion-form]:not(.discussion-reply-form) [data-discussion-body]").value = "附上浏览器冒烟截图";
+  const editor = query("[data-discussion-form]:not(.discussion-reply-form) [data-rich-text-input]");
+  editor.innerHTML = "<p>附上浏览器冒烟截图</p>";
   const pngBytes = Uint8Array.from(
     atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLJ/QAAAABJRU5ErkJggg=="),
     (character) => character.charCodeAt(0),
   );
   const file = new File([pngBytes], "smoke-screenshot-original.png", { type: "image/png" });
-  const dataTransfer = new DataTransfer();
-  dataTransfer.items.add(file);
-  input.files = dataTransfer.files;
-  input.dispatchEvent(new Event("change", { bubbles: true }));
-
-  await waitFor(() => text().includes("已选择 1 个附件"), "附件选择状态未更新");
-  await waitFor(() => {
-    const preview = form.querySelector("[data-local-image-preview] img");
-    return preview && preview.src.startsWith("blob:");
-  }, "图片本地预览未生成");
-  form.querySelector("[data-local-image-preview]").click();
-  const localViewer = query("[data-image-viewer]");
-  await waitFor(() => localViewer.classList.contains("open"), "本地图片查看器未打开");
-  query("[data-image-viewer] [data-modal-close]").click();
-  await waitFor(() => localViewer.hidden, "本地图片查看器未关闭");
-
-  const transfer = form.querySelector("[data-upload-transfer]");
-  assert(transfer && !transfer.hidden && transfer.textContent.includes("0%"), "上传进度环未显示准备状态");
-  assert(transfer.closest("[data-discussion-form]") === form, "上传进度未显示在当前讨论编辑器内");
-  assert(form.checkValidity(), "讨论表单校验未通过");
 
   let observedProgress = false;
   const progressObserver = new MutationObserver(() => {
-    const ring = form.querySelector("[data-upload-progress-ring]");
+    const ring = form.querySelector(".rich-attachment-progress");
     if (ring && ring.getAttribute("aria-valuenow") === "50") {
       observedProgress = true;
     }
@@ -701,21 +681,23 @@ cat >"$UPLOAD_EVAL_FILE" <<'JS'
       }, 0);
     };
   };
-  form.requestSubmit(form.querySelector("[data-discussion-submit]"));
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+  editor.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  await waitFor(() => form.querySelector("[data-rich-attachment] img")?.src.startsWith("blob:"), "富文本图片本地预览未生成");
   await waitFor(() => observedProgress, "上传进度环未响应真实字节进度");
   await waitFor(() => text().includes("对象存储上传连接失败"), "附件上传失败状态未显示");
   progressObserver.disconnect();
-  const failedAttachmentId = form.bugReportFiles?.[0]?.attachmentId;
-  assert(failedAttachmentId, "上传失败后未保留待上传附件");
-  assert(form.dataset.discussionCommentId, "上传失败后未保留已发表内容");
-  assert(form.querySelector("[data-discussion-body]").disabled, "已发表内容在失败重试前未锁定");
-  assert(form.querySelector("[data-discussion-files]").disabled, "已登记附件选择器在失败重试前未锁定");
-  assert(form.querySelector("[data-composer-file-remove]")?.disabled, "已登记附件移除按钮在失败重试前未锁定");
-  assert(form.querySelector("[data-discussion-assign]").disabled, "普通发表失败重试不应再允许切换为发表并指派");
+  const failedAttachment = form.querySelector("[data-rich-attachment]");
+  assert(failedAttachment?.dataset.attachmentId, "上传失败后未保留待上传附件");
+  assert(form.dataset.discussionCommentId, "上传失败后未保留草稿评论");
+  assert(form.dataset.discussionDraft === "true", "上传后未标记为草稿评论");
   window.XMLHttpRequest = NativeXMLHttpRequest;
 
+  failedAttachment.querySelector("[data-rich-attachment-retry]").click();
+  await waitFor(() => failedAttachment.dataset.uploadState === "uploaded", "富文本附件重试上传未完成", 20000);
   form.requestSubmit(form.querySelector("[data-discussion-submit]"));
-  await waitFor(() => text().includes("附件上传完成"), "附件直传未完成", 20000);
+  await waitFor(() => text().includes("发表成功"), "富文本草稿未发布成功", 20000);
 
   const detailResponse = await fetch(`/web/work-items/${workItemKey}`, {
     credentials: "same-origin",

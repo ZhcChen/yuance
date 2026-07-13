@@ -381,8 +381,16 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_work_item_comments).post(web::api::create_work_item_comment),
         )
         .route(
+            "/api/v1/work-items/{item_key}/comments/draft",
+            post(web::api::create_work_item_comment_draft),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}",
             axum::routing::patch(web::api::update_work_item_comment),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/publish",
+            post(web::api::publish_work_item_comment_draft),
         )
         .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
