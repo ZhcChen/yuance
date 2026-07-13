@@ -4357,6 +4357,7 @@ fn prepare_work_item_comment_body(
             let raw_body = validate_optional_text(body, "评论内容", 20000)?;
             ensure_plain_work_item_comment_body(&html_to_plain_text(&raw_body))?;
             ensure_comment_html_media_sources_are_controlled(&raw_body)?;
+            ensure_comment_html_attachment_links_are_controlled(&raw_body)?;
             let body = sanitize_comment_html(&raw_body);
             let plain_text = html_to_plain_text(&body);
             if plain_text.is_empty() && !comment_html_has_media_reference(&body) {
@@ -4418,7 +4419,12 @@ fn sanitize_comment_html(body: &str) -> String {
         .add_tags(&["figure", "figcaption", "img", "video"])
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
-        .add_generic_attributes(&["data-yuance-attachment-id", "data-yuance-attachment-kind"])
+        .add_tag_attributes("a", &["href", "title"])
+        .add_generic_attributes(&[
+            "data-yuance-attachment-id",
+            "data-yuance-attachment-kind",
+            "data-yuance-align",
+        ])
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") | ("source", "src") | ("video", "src")
                 if !comment_attachment_url_like(value) =>
@@ -4447,6 +4453,30 @@ fn ensure_comment_html_media_sources_are_controlled(body: &str) -> AppResult<()>
     Ok(())
 }
 
+fn ensure_comment_html_attachment_links_are_controlled(body: &str) -> AppResult<()> {
+    let lower_body = body.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(relative_start) = lower_body[search_from..].find("<a") {
+        let tag_start = search_from + relative_start;
+        let tag_end = lower_body[tag_start..]
+            .find('>')
+            .map(|relative_end| tag_start + relative_end)
+            .unwrap_or(body.len());
+        let tag_html = &body[tag_start..tag_end];
+        let lower_tag = &lower_body[tag_start..tag_end];
+        if lower_tag.contains("data-yuance-attachment-kind")
+            && let Some(href) = html_attribute_value(tag_html, "href")
+            && !comment_attachment_url_like(&href)
+        {
+            return Err(AppError::BadRequest(
+                "正文附件链接必须使用已上传的评论附件".to_string(),
+            ));
+        }
+        search_from = tag_end.saturating_add(1);
+    }
+    Ok(())
+}
+
 fn ensure_comment_html_tag_sources_are_controlled(body: &str, tag_name: &str) -> AppResult<()> {
     let lower_body = body.to_ascii_lowercase();
     let marker = format!("<{tag_name}");
@@ -4458,7 +4488,7 @@ fn ensure_comment_html_tag_sources_are_controlled(body: &str, tag_name: &str) ->
             .map(|relative_end| tag_start + relative_end)
             .unwrap_or(body.len());
         let tag_html = &body[tag_start..tag_end];
-        if let Some(source) = html_src_attribute_value(tag_html) {
+        if let Some(source) = html_attribute_value(tag_html, "src") {
             if !comment_attachment_url_like(&source) {
                 return Err(AppError::BadRequest(
                     "正文媒体必须使用已上传的评论附件".to_string(),
@@ -4470,16 +4500,17 @@ fn ensure_comment_html_tag_sources_are_controlled(body: &str, tag_name: &str) ->
     Ok(())
 }
 
-fn html_src_attribute_value(tag_html: &str) -> Option<String> {
+fn html_attribute_value(tag_html: &str, attribute_name: &str) -> Option<String> {
     let lower_tag = tag_html.to_ascii_lowercase();
+    let attribute_name = attribute_name.to_ascii_lowercase();
     let mut search_from = 0;
-    while let Some(relative_start) = lower_tag[search_from..].find("src") {
+    while let Some(relative_start) = lower_tag[search_from..].find(&attribute_name) {
         let attr_start = search_from + relative_start;
         let before = lower_tag[..attr_start].chars().next_back();
         let valid_prefix = before.is_some_and(|character| {
             character == '<' || character == '/' || character.is_whitespace()
         });
-        let mut cursor = attr_start + "src".len();
+        let mut cursor = attr_start + attribute_name.len();
         if valid_prefix {
             cursor += lower_tag[cursor..].len() - lower_tag[cursor..].trim_start().len();
             if cursor < lower_tag.len() && lower_tag[cursor..].starts_with('=') {
@@ -4488,7 +4519,7 @@ fn html_src_attribute_value(tag_html: &str) -> Option<String> {
                 return Some(read_html_attribute_value(tag_html, cursor));
             }
         }
-        search_from = attr_start + "src".len();
+        search_from = attr_start + attribute_name.len();
     }
     None
 }

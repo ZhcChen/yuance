@@ -498,55 +498,96 @@ body {
 }
 
 .rich-attachment {
+  position: relative;
   min-width: 0;
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+  max-width: 100%;
   margin: 10px 0;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
+  vertical-align: top;
+  text-align: left;
+  user-select: none;
+}
+
+.rich-attachment[data-align="center"] {
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.rich-attachment[data-align="right"] {
+  margin-left: auto;
+}
+
+.rich-attachment[data-rich-selected="true"] {
+  outline: 3px solid rgb(37 99 235 / 18%);
+  outline-offset: 3px;
 }
 
 .rich-attachment[data-upload-state="uploading"] {
-  border-color: var(--brand-line);
-  background: var(--brand-soft);
+  cursor: progress;
 }
 
 .rich-attachment[data-upload-state="uploaded"] {
-  border-color: var(--success-line);
-  background: var(--success-bg);
+  cursor: default;
 }
 
 .rich-attachment[data-upload-state="error"] {
-  border-color: var(--danger-line);
-  background: var(--danger-bg);
+  cursor: default;
+}
+
+.rich-attachment--media {
+  display: block;
+  width: fit-content;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgb(22 34 50 / 8%);
+}
+
+.rich-attachment--file {
+  width: min(420px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 42px 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 20px rgb(22 34 50 / 6%);
 }
 
 .rich-attachment-media {
-  width: 72px;
-  height: 58px;
+  position: relative;
   display: grid;
   place-items: center;
   overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
+  border-radius: inherit;
+  background: rgb(236 241 247 / 88%);
   color: var(--brand-strong);
   font-size: 10px;
   font-weight: 900;
 }
 
+.rich-attachment--media .rich-attachment-media {
+  max-width: min(460px, 100%);
+}
+
+.rich-attachment-file-icon {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--brand-line);
+  border-radius: 12px;
+  background: var(--brand-soft);
+}
+
 .rich-attachment-media img,
 .rich-attachment-media video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  display: block;
+  width: auto;
+  max-width: min(460px, 100%);
+  max-height: 360px;
+  object-fit: contain;
 }
 
 .rich-attachment-main {
+  flex: 1 1 auto;
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -571,35 +612,92 @@ body {
 }
 
 .rich-attachment-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
 }
 
 .rich-attachment-actions button {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   display: inline-grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 1px solid rgb(255 255 255 / 56%);
   border-radius: 50%;
-  background: var(--panel);
-  color: var(--muted-strong);
+  background: rgb(15 23 42 / 52%);
+  color: #fff;
   cursor: pointer;
   font-size: 12px;
   font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 6px 14px rgb(15 23 42 / 18%);
+  transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
 }
 
 .rich-attachment-actions button:hover {
-  border-color: var(--brand-line);
-  background: var(--brand-soft);
-  color: var(--brand);
+  background: rgb(15 23 42 / 72%);
+  transform: translateY(-1px);
 }
 
 .rich-attachment-progress {
-  width: 40px;
-  height: 40px;
+  --upload-progress-color: #fff;
+  width: 54px;
+  height: 54px;
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+}
+
+.rich-attachment-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: rgb(15 23 42 / 58%);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) ease;
+}
+
+.rich-attachment[data-upload-state="uploading"] .rich-attachment-overlay,
+.rich-attachment[data-upload-state="error"] .rich-attachment-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rich-attachment-overlay-inner {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.rich-attachment-overlay-status {
+  max-width: min(260px, 72vw);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+}
+
+.rich-attachment-overlay [data-rich-attachment-retry] {
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid rgb(255 255 255 / 52%);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 18%);
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .discussion-rich-body {
@@ -614,10 +712,69 @@ body {
   margin-bottom: 0;
 }
 
+.discussion-rich-body figure[data-yuance-attachment-kind] {
+  width: fit-content;
+  max-width: 100%;
+  margin: 10px 0;
+}
+
+.discussion-rich-body [data-yuance-align="center"] {
+  margin-right: auto;
+  margin-left: auto;
+  text-align: center;
+}
+
+.discussion-rich-body [data-yuance-align="right"] {
+  margin-left: auto;
+  text-align: right;
+}
+
+.discussion-rich-body figcaption {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .discussion-rich-body img,
 .discussion-rich-body video {
   max-width: 100%;
   border-radius: 10px;
+}
+
+.discussion-rich-body a[data-yuance-attachment-kind="file"] {
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 18px;
+  text-decoration: none;
+  box-shadow: 0 8px 20px rgb(22 34 50 / 6%);
+}
+
+.discussion-rich-body a[data-yuance-attachment-kind="file"]::before {
+  content: "FILE";
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--brand-line);
+  border-radius: 11px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
 }
 
 .discussion-composer-footer {
@@ -4139,6 +4296,23 @@ code {
   color: var(--text);
   font-size: 11px;
   font-weight: 800;
+}
+
+.rich-attachment-overlay .rich-attachment-progress {
+  --upload-progress-color: #fff;
+  width: 54px;
+  height: 54px;
+  background: rgb(255 255 255 / 14%);
+  color: #fff;
+}
+
+.rich-attachment-overlay .rich-attachment-progress .upload-progress-track {
+  stroke: rgb(255 255 255 / 24%);
+}
+
+.rich-attachment-overlay .rich-attachment-progress span {
+  color: #fff;
+  font-weight: 900;
 }
 
 .upload-transfer-details {

@@ -106,6 +106,113 @@ async fn rich_text_comments_reject_uncontrolled_media_sources() {
 }
 
 #[tokio::test]
+async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, admin.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+
+    let draft = projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None)
+        .await
+        .expect("draft should be created");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: "rich-doc.txt".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_size: 42,
+            created_by_user_id: admin.user_id,
+            activity_summary: Some("登记评论附件 rich-doc.txt".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should be created");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+        .await
+        .expect("attachment should be marked uploaded");
+
+    let file_url = format!(
+        "/web/work-items/YCE-TASK-2/comments/{}/attachments/{}/download",
+        draft.id, attachment.id
+    );
+    let body = format!(
+        r#"<p>补充设计说明</p><a href="{file_url}" title="rich-doc.txt" data-yuance-attachment-id="{}" data-yuance-attachment-kind="file" data-yuance-align="center">rich-doc.txt</a>"#,
+        attachment.id
+    );
+    let published = projects::publish_work_item_comment_draft(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        draft.id,
+        &body,
+        "html",
+    )
+    .await
+    .expect("draft should publish with controlled file link");
+    assert_eq!(published.body_format, "html");
+    assert!(
+        published
+            .body
+            .contains(r#"data-yuance-attachment-kind="file""#)
+    );
+    assert!(published.body.contains(r#"data-yuance-align="center""#));
+
+    let rejected_draft =
+        projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None)
+            .await
+            .expect("draft should be created");
+    let rejected = projects::publish_work_item_comment_draft(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        rejected_draft.id,
+        r#"<p>伪装附件</p><a href="https://tracker.example.invalid/file.txt" data-yuance-attachment-kind="file">bad.txt</a>"#,
+        "html",
+    )
+    .await;
+    assert!(rejected.is_err());
+    let error = rejected.expect_err("external attachment link should be rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("正文附件链接必须使用已上传的评论附件"),
+        "{error:?}"
+    );
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains(r#"data-yuance-attachment-kind="file""#));
+    assert!(detail_body.contains("rich-doc.txt"));
+    assert!(!detail_body.contains("tracker.example.invalid"));
+}
+
+#[tokio::test]
 async fn rich_text_draft_comments_are_hidden_until_published() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

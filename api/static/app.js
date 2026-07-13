@@ -1799,6 +1799,10 @@
     if (!input) {
       return;
     }
+    var attachmentAlign = richTextAlignmentFromCommand(command);
+    if (attachmentAlign && applySelectedRichAttachmentAlignment(editor, attachmentAlign)) {
+      return;
+    }
     input.focus({ preventScroll: true });
     if (command === "createLink") {
       var url = window.prompt("输入链接地址");
@@ -1809,6 +1813,50 @@
       return;
     }
     document.execCommand(command, false, null);
+  }
+
+  function richTextAlignmentFromCommand(command) {
+    if (command === "justifyCenter") {
+      return "center";
+    }
+    if (command === "justifyRight") {
+      return "right";
+    }
+    if (command === "justifyLeft") {
+      return "left";
+    }
+    return "";
+  }
+
+  function clearRichAttachmentSelection(editor, except) {
+    if (!editor) {
+      return;
+    }
+    editor.querySelectorAll("[data-rich-attachment][data-rich-selected='true']").forEach(function (node) {
+      if (node !== except) {
+        delete node.dataset.richSelected;
+      }
+    });
+    editor.richSelectedAttachment = except || null;
+  }
+
+  function selectRichAttachment(editor, node) {
+    if (!editor || !node) {
+      return;
+    }
+    clearRichAttachmentSelection(editor, node);
+    node.dataset.richSelected = "true";
+    editor.richSelectedAttachment = node;
+  }
+
+  function applySelectedRichAttachmentAlignment(editor, align) {
+    var node = editor && editor.richSelectedAttachment;
+    if (!node || !editor.contains(node)) {
+      return false;
+    }
+    node.dataset.align = align || "left";
+    selectRichAttachment(editor, node);
+    return true;
   }
 
   function richTextIsEmptyHtml(html) {
@@ -1854,31 +1902,34 @@
       var downloadUrl = node.dataset.downloadUrl || richTextDownloadUrl(editor, attachmentId);
       var isImage = isPreviewableImageType(contentType);
       var isVideo = isPreviewableVideoType(contentType);
-      var replacement = document.createElement(isImage || isVideo ? "figure" : "p");
+      var replacement = document.createElement(isImage || isVideo ? "figure" : "a");
+      var align = node.dataset.align || "left";
       replacement.dataset.yuanceAttachmentId = attachmentId;
       replacement.dataset.yuanceAttachmentKind = isImage ? "image" : isVideo ? "video" : "file";
+      replacement.dataset.yuanceAlign = align;
       if (isImage) {
         var image = document.createElement("img");
-        image.src = downloadUrl;
+        image.setAttribute("src", downloadUrl);
         image.alt = filename;
+        image.setAttribute("loading", "lazy");
         replacement.appendChild(image);
         var caption = document.createElement("figcaption");
         caption.textContent = filename;
         replacement.appendChild(caption);
       } else if (isVideo) {
         var video = document.createElement("video");
-        video.src = downloadUrl;
-        video.controls = true;
-        video.preload = "metadata";
+        video.setAttribute("src", downloadUrl);
+        video.setAttribute("controls", "controls");
+        video.setAttribute("preload", "metadata");
+        video.setAttribute("playsinline", "playsinline");
         replacement.appendChild(video);
         var videoCaption = document.createElement("figcaption");
         videoCaption.textContent = filename;
         replacement.appendChild(videoCaption);
       } else {
-        var link = document.createElement("a");
-        link.href = downloadUrl;
-        link.textContent = filename;
-        replacement.appendChild(link);
+        replacement.setAttribute("href", downloadUrl);
+        replacement.title = filename;
+        replacement.textContent = filename;
       }
       node.replaceWith(replacement);
     });
@@ -1916,21 +1967,51 @@
     return true;
   }
 
-  function insertNodeAtSelection(input, node) {
+  function richTextCaretParagraph() {
+    var paragraph = document.createElement("p");
+    paragraph.appendChild(document.createElement("br"));
+    return paragraph;
+  }
+
+  function placeCaretInRichTextNode(node) {
+    var selection = window.getSelection && window.getSelection();
+    if (!selection || !node) {
+      return;
+    }
+    var range = document.createRange();
+    range.setStart(node, 0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function insertNodesAtSelection(input, nodes) {
     input.focus({ preventScroll: true });
+    var trailingParagraph = richTextCaretParagraph();
+    var fragment = document.createDocumentFragment();
+    nodes.forEach(function (node) {
+      fragment.appendChild(node);
+    });
+    fragment.appendChild(trailingParagraph);
     var selection = window.getSelection && window.getSelection();
     if (!selection || selection.rangeCount === 0 || !input.contains(selection.anchorNode)) {
-      input.appendChild(node);
-      input.appendChild(document.createElement("br"));
+      input.appendChild(fragment);
+      placeCaretInRichTextNode(trailingParagraph);
       return;
     }
     var range = selection.getRangeAt(0);
+    var startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement;
+    var block = startElement && startElement.closest("p, div, li");
+    if (block && block !== input && input.contains(block)) {
+      range = document.createRange();
+      range.setStartAfter(block);
+      range.collapse(true);
+    }
     range.deleteContents();
-    range.insertNode(node);
-    range.setStartAfter(node);
-    range.setEndAfter(node);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    range.insertNode(fragment);
+    placeCaretInRichTextNode(trailingParagraph);
   }
 
   function createRichProgress(percent) {
@@ -1985,18 +2066,19 @@
   }
 
   function createRichAttachmentNode(file) {
-    var node = document.createElement("article");
-    node.className = "rich-attachment";
+    var isImage = isPreviewableImageType(file.type);
+    var isVideo = isPreviewableVideoType(file.type);
+    var node = document.createElement(isImage || isVideo ? "figure" : "span");
+    node.className = "rich-attachment " + (isImage || isVideo ? "rich-attachment--media" : "rich-attachment--file");
     node.contentEditable = "false";
     node.dataset.richAttachment = "";
     node.dataset.uploadState = "uploading";
+    node.dataset.align = "left";
     node.dataset.filename = file.name || "未命名文件";
     node.dataset.contentType = file.type || "application/octet-stream";
 
     var media = document.createElement("span");
     media.className = "rich-attachment-media";
-    var isImage = isPreviewableImageType(file.type);
-    var isVideo = isPreviewableVideoType(file.type);
     if (isImage || isVideo) {
       var objectUrl = URL.createObjectURL(file);
       node.dataset.objectUrl = objectUrl;
@@ -2014,6 +2096,7 @@
         media.appendChild(video);
       }
     } else {
+      media.classList.add("rich-attachment-file-icon");
       media.textContent = (file.name?.split(".").pop() || "FILE").slice(0, 5).toUpperCase();
     }
 
@@ -2028,21 +2111,36 @@
 
     var actions = document.createElement("span");
     actions.className = "rich-attachment-actions";
-    var progress = createRichProgress(0);
-    var retry = document.createElement("button");
-    retry.type = "button";
-    retry.hidden = true;
-    retry.dataset.richAttachmentRetry = "";
-    retry.textContent = "↻";
-    retry.setAttribute("aria-label", "重试上传 " + (file.name || "附件"));
     var remove = document.createElement("button");
     remove.type = "button";
     remove.dataset.richAttachmentRemove = "";
     remove.textContent = "×";
     remove.setAttribute("aria-label", "移除 " + (file.name || "附件"));
-    actions.append(progress, retry, remove);
+    actions.append(remove);
 
-    node.append(media, main, actions);
+    var overlay = document.createElement("span");
+    overlay.className = "rich-attachment-overlay";
+    var overlayInner = document.createElement("span");
+    overlayInner.className = "rich-attachment-overlay-inner";
+    var progress = createRichProgress(0);
+    var overlayStatus = document.createElement("span");
+    overlayStatus.className = "rich-attachment-overlay-status";
+    overlayStatus.dataset.richAttachmentOverlayStatus = "";
+    overlayStatus.textContent = "准备上传";
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.hidden = true;
+    retry.dataset.richAttachmentRetry = "";
+    retry.textContent = "重试";
+    retry.setAttribute("aria-label", "重试上传 " + (file.name || "附件"));
+    overlayInner.append(progress, overlayStatus, retry);
+    overlay.appendChild(overlayInner);
+
+    if (isImage || isVideo) {
+      node.append(media, actions, overlay);
+    } else {
+      node.append(media, main, actions, overlay);
+    }
     return node;
   }
 
@@ -2083,10 +2181,14 @@
   function setRichAttachmentState(node, state, message, percent) {
     node.dataset.uploadState = state;
     var status = node.querySelector("[data-rich-attachment-status]");
+    var overlayStatus = node.querySelector("[data-rich-attachment-overlay-status]");
     var progress = node.querySelector(".rich-attachment-progress");
     var retry = node.querySelector("[data-rich-attachment-retry]");
     if (status) {
       status.textContent = message;
+    }
+    if (overlayStatus) {
+      overlayStatus.textContent = message;
     }
     updateRichProgress(progress, percent);
     if (retry) {
@@ -2153,11 +2255,14 @@
     if (!input || !files.length) {
       return;
     }
-    files.forEach(function (file) {
+    var nodes = files.map(function (file) {
       var node = createRichAttachmentNode(file);
       node.richFile = file;
-      insertNodeAtSelection(input, node);
-      uploadRichAttachment(editor, node, file);
+      return node;
+    });
+    insertNodesAtSelection(input, nodes);
+    nodes.forEach(function (node) {
+      uploadRichAttachment(editor, node, node.richFile);
     });
   }
 
@@ -2168,6 +2273,17 @@
       if (!input) {
         return;
       }
+      editor.addEventListener("click", function (event) {
+        if (event.target.closest("[data-rich-command]")) {
+          return;
+        }
+        var attachment = event.target.closest("[data-rich-attachment]");
+        if (attachment && editor.contains(attachment)) {
+          selectRichAttachment(editor, attachment);
+        } else {
+          clearRichAttachmentSelection(editor, null);
+        }
+      });
       input.addEventListener("paste", function (event) {
         var files = Array.from(event.clipboardData?.files || []);
         if (files.length) {
