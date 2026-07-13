@@ -1291,9 +1291,15 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
 
     let can_access_all_projects =
         user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
-    let system_nav = build_system_nav(pool, user.id, can_access_all_projects).await?;
     let (current_project, topbar_project_options) =
         build_project_context(pool, user.id, can_access_all_projects).await?;
+    let system_nav = build_system_nav(
+        pool,
+        user.id,
+        can_access_all_projects,
+        current_project.as_ref().map(|project| project.key.as_str()),
+    )
+    .await?;
 
     let csrf_token = csrf::ensure_token(&headers);
     with_csrf_cookie(
@@ -1869,18 +1875,21 @@ pub async fn current_project_update(
         Err(response) => return Ok(response),
     };
 
+    let mut selected_project_key = form.project_key.trim().to_ascii_uppercase();
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
-        projects::set_current_project_for_user(
+        let selected = projects::set_current_project_for_user(
             pool,
             context.user_id,
             context.can_access_all_projects,
             &form.project_key,
         )
         .await?;
+        selected_project_key = selected.project_key;
     }
 
-    Ok(Redirect::to(safe_web_return_to(&form.return_to)).into_response())
+    let return_to = project_switch_return_to(&form.return_to, &selected_project_key);
+    Ok(Redirect::to(&return_to).into_response())
 }
 
 pub async fn project_detail_page(
@@ -1910,6 +1919,7 @@ pub async fn project_detail_page(
     )
     .await?;
     context.current_project = Some(current_project_from_domain(selected_project));
+    refresh_context_system_nav(pool, &mut context).await?;
 
     let all_items = projects::list_project_work_items(pool, project.id, None).await?;
     let requirements = all_items
@@ -2035,6 +2045,7 @@ pub async fn project_personal_analysis_page(
     )
     .await?;
     context.current_project = Some(current_project_from_domain(selected));
+    refresh_context_system_nav(pool, &mut context).await?;
 
     let username = sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = ?1")
         .bind(context.user_id)
@@ -4267,6 +4278,7 @@ async fn work_item_list_page(
         )
         .await?;
         context.current_project = Some(current_project_from_domain(selected));
+        refresh_context_system_nav(pool, &mut context).await?;
     }
     let current_project = context.current_project.clone();
     let project_key = current_project
@@ -4715,9 +4727,15 @@ async fn web_context_or_redirect<'a>(
 
     let can_access_all_projects =
         user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
-    let system_nav = build_system_nav(pool, user.id, can_access_all_projects).await?;
     let (current_project, topbar_project_options) =
         build_project_context(pool, user.id, can_access_all_projects).await?;
+    let system_nav = build_system_nav(
+        pool,
+        user.id,
+        can_access_all_projects,
+        current_project.as_ref().map(|project| project.key.as_str()),
+    )
+    .await?;
 
     Ok(Ok(WebContext {
         user_id: user.id,
@@ -4764,9 +4782,15 @@ async fn system_context_or_redirect(
     }
     let can_access_all_projects =
         user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
-    let system_nav = build_system_nav(pool, user.id, can_access_all_projects).await?;
     let (current_project, topbar_project_options) =
         build_project_context(pool, user.id, can_access_all_projects).await?;
+    let system_nav = build_system_nav(
+        pool,
+        user.id,
+        can_access_all_projects,
+        current_project.as_ref().map(|project| project.key.as_str()),
+    )
+    .await?;
     Ok(Ok(SystemContext {
         user_id: user.id,
         current_user: user.display_name,
@@ -4814,18 +4838,41 @@ async fn build_project_context(
     Ok((current_project, project_options))
 }
 
+async fn refresh_context_system_nav(
+    pool: &SqlitePool,
+    context: &mut WebContext<'_>,
+) -> AppResult<()> {
+    context.system_nav = build_system_nav(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        context
+            .current_project
+            .as_ref()
+            .map(|project| project.key.as_str()),
+    )
+    .await?;
+    Ok(())
+}
+
 async fn build_system_nav(
     pool: &SqlitePool,
     user_id: i64,
     can_access_all_projects: bool,
+    current_project_key: Option<&str>,
 ) -> AppResult<SystemNav> {
     let dashboard = rbac::user_has_permission(pool, user_id, "system.dashboard.view").await?;
     let users = rbac::user_has_permission(pool, user_id, "system.users.view").await?;
     let roles = rbac::user_has_permission(pool, user_id, "system.roles.view").await?;
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
-    let assignment_counts =
-        projects::count_pending_assigned_work_items(pool, user_id, can_access_all_projects).await?;
+    let assignment_counts = projects::count_pending_assigned_work_items(
+        pool,
+        user_id,
+        can_access_all_projects,
+        current_project_key,
+    )
+    .await?;
 
     Ok(SystemNav {
         visible: dashboard || users || roles || storage || audit,
@@ -4946,6 +4993,94 @@ fn safe_web_return_to(value: &str) -> &str {
     } else {
         "/web"
     }
+}
+
+fn project_switch_return_to(value: &str, project_key: &str) -> String {
+    let safe_return_to = safe_web_return_to(value);
+    let project_key = project_key.trim().to_ascii_uppercase();
+    if project_key.is_empty() {
+        return safe_return_to.to_string();
+    }
+
+    rewrite_project_scoped_path(safe_return_to, &project_key)
+        .or_else(|| rewrite_work_item_list_project_query(safe_return_to, &project_key))
+        .unwrap_or_else(|| safe_return_to.to_string())
+}
+
+fn split_url_fragment(value: &str) -> (&str, Option<&str>) {
+    value
+        .split_once('#')
+        .map_or((value, None), |(base, fragment)| (base, Some(fragment)))
+}
+
+fn rewrite_project_scoped_path(value: &str, project_key: &str) -> Option<String> {
+    let (without_fragment, fragment) = split_url_fragment(value);
+    let (path, query) = without_fragment
+        .split_once('?')
+        .map_or((without_fragment, None), |(path, query)| {
+            (path, Some(query))
+        });
+    let rest = path.strip_prefix("/web/projects/")?;
+    if rest.is_empty() {
+        return None;
+    }
+
+    let suffix = rest.find('/').map_or("", |index| &rest[index..]);
+    let mut rewritten = format!("/web/projects/{project_key}{suffix}");
+    if let Some(query) = query.filter(|query| !query.is_empty()) {
+        rewritten.push('?');
+        rewritten.push_str(query);
+    }
+    if let Some(fragment) = fragment.filter(|fragment| !fragment.is_empty()) {
+        rewritten.push('#');
+        rewritten.push_str(fragment);
+    }
+    Some(rewritten)
+}
+
+fn rewrite_work_item_list_project_query(value: &str, project_key: &str) -> Option<String> {
+    let (without_fragment, fragment) = split_url_fragment(value);
+    let (path, query) = without_fragment
+        .split_once('?')
+        .map_or((without_fragment, ""), |(path, query)| (path, query));
+    if !matches!(path, "/web/requirements" | "/web/tasks" | "/web/bugs") {
+        return None;
+    }
+
+    let mut pairs = if query.is_empty() {
+        Vec::new()
+    } else {
+        serde_urlencoded::from_str::<Vec<(String, String)>>(query).ok()?
+    };
+    let mut replaced_project_key = false;
+    pairs.retain_mut(|(key, value)| {
+        if key == "page" {
+            return false;
+        }
+        if key == "project_key" {
+            if replaced_project_key {
+                return false;
+            }
+            *value = project_key.to_string();
+            replaced_project_key = true;
+        }
+        true
+    });
+    if !replaced_project_key {
+        pairs.push(("project_key".to_string(), project_key.to_string()));
+    }
+
+    let mut rewritten = path.to_string();
+    let query = serde_urlencoded::to_string(pairs).ok()?;
+    if !query.is_empty() {
+        rewritten.push('?');
+        rewritten.push_str(&query);
+    }
+    if let Some(fragment) = fragment.filter(|fragment| !fragment.is_empty()) {
+        rewritten.push('#');
+        rewritten.push_str(fragment);
+    }
+    Some(rewritten)
 }
 
 fn work_item_comment_url(item_key: &str, comment_id: i64) -> String {

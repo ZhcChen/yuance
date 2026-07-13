@@ -1953,39 +1953,30 @@ pub async fn list_assigned_work_item_summaries(
 pub async fn count_pending_assigned_work_items(
     pool: &SqlitePool,
     user_id: i64,
-    is_super_admin: bool,
+    can_access_all_projects: bool,
+    project_key: Option<&str>,
 ) -> AppResult<WorkItemAssignmentCounts> {
-    let rows = if is_super_admin {
-        sqlx::query_as::<_, (String, i64)>(
-            r#"
-            SELECT wi.item_type, COUNT(*)
-            FROM work_items wi
-            WHERE wi.assignee_user_id = ?1
-              AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
-              AND wi.deleted_at IS NULL
-            GROUP BY wi.item_type
-            "#,
-        )
-        .bind(user_id)
-        .fetch_all(pool)
-        .await?
-    } else {
-        sqlx::query_as::<_, (String, i64)>(
-            r#"
-            SELECT wi.item_type, COUNT(*)
-            FROM work_items wi
-            JOIN project_members pm ON pm.project_id = wi.project_id
-                AND pm.user_id = ?1
-            WHERE wi.assignee_user_id = ?1
-              AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
-              AND wi.deleted_at IS NULL
-            GROUP BY wi.item_type
-            "#,
-        )
-        .bind(user_id)
-        .fetch_all(pool)
-        .await?
-    };
+    let project_key = project_key.unwrap_or("").trim().to_ascii_uppercase();
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT wi.item_type, COUNT(*)
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        LEFT JOIN project_members pm ON pm.project_id = wi.project_id
+            AND pm.user_id = ?1
+        WHERE wi.assignee_user_id = ?1
+          AND (?2 = 1 OR pm.user_id IS NOT NULL)
+          AND (?3 = '' OR p.project_key = ?3)
+          AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+          AND wi.deleted_at IS NULL
+        GROUP BY wi.item_type
+        "#,
+    )
+    .bind(user_id)
+    .bind(if can_access_all_projects { 1 } else { 0 })
+    .bind(project_key)
+    .fetch_all(pool)
+    .await?;
 
     let mut counts = WorkItemAssignmentCounts::default();
     for (item_type, count) in rows {

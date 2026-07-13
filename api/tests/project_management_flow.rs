@@ -590,6 +590,138 @@ async fn web_topnav_work_item_badge_clamps_to_99() {
 }
 
 #[tokio::test]
+async fn web_topnav_work_item_badges_follow_current_project() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let assignee = create_regular_user(&pool, "project_badge_owner", "项目角标负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "project_badge_owner", "member")
+        .await
+        .expect("assignee should join YCE");
+    projects::add_project_member(&pool, admin.user_id, "OPS", "project_badge_owner", "member")
+        .await
+        .expect("assignee should join OPS");
+    let yce_project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .expect("YCE project should exist");
+    let ops_project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'OPS'")
+            .fetch_one(&pool)
+            .await
+            .expect("OPS project should exist");
+    for index in 1..=2 {
+        sqlx::query(
+            r#"
+            INSERT INTO work_items (
+                project_id,
+                item_key,
+                item_type,
+                title,
+                description,
+                status,
+                priority,
+                assignee_user_id,
+                reporter_user_id
+            )
+            VALUES (?1, ?2, 'task', ?3, '用于验证当前项目顶部任务角标。', 'open', 'P2', ?4, ?5)
+            "#,
+        )
+        .bind(yce_project_id)
+        .bind(format!("YCE-PROJECT-BADGE-TASK-{index}"))
+        .bind(format!("YCE 项目角标任务 {index}"))
+        .bind(assignee.user_id)
+        .bind(admin.user_id)
+        .execute(&pool)
+        .await
+        .expect("YCE work item should insert");
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO work_items (
+            project_id,
+            item_key,
+            item_type,
+            title,
+            description,
+            status,
+            priority,
+            assignee_user_id,
+            reporter_user_id
+        )
+        VALUES (?1, 'OPS-PROJECT-BADGE-BUG-1', 'bug', 'OPS 项目角标 Bug', '用于验证当前项目顶部 Bug 角标。', 'open', 'P1', ?2, ?3)
+        "#,
+    )
+    .bind(ops_project_id)
+    .bind(assignee.user_id)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .expect("OPS work item should insert");
+    projects::set_current_project_for_user(&pool, assignee.user_id, false, "YCE")
+        .await
+        .expect("assignee should select YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let yce_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, assignee.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(yce_response.status(), StatusCode::OK);
+    let yce_body = response_body(yce_response).await;
+    assert!(yce_body.contains(r#"name="project_key" value="YCE""#));
+    assert!(yce_body.contains(r#"aria-label="待处理任务 2">2</span>"#));
+    assert!(!yce_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
+
+    let switch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/current-project")
+                .header(header::COOKIE, with_csrf_cookie(&assignee.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fbugs",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(switch_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        switch_response.headers().get(header::LOCATION).unwrap(),
+        "/web/bugs?project_key=OPS"
+    );
+
+    let ops_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/bugs?project_key=OPS")
+                .header(header::COOKIE, assignee.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(ops_response.status(), StatusCode::OK);
+    let ops_body = response_body(ops_response).await;
+    assert!(ops_body.contains(r#"name="project_key" value="OPS""#));
+    assert!(ops_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
+    assert!(!ops_body.contains(r#"aria-label="待处理任务 2">2</span>"#));
+}
+
+#[tokio::test]
 async fn demo_seed_idempotently_creates_projects_and_work_items() {
     let pool = test_pool().await;
     let owner_user_id = bootstrap_admin(&pool).await;
@@ -1383,6 +1515,73 @@ async fn web_current_project_rejects_projects_outside_member_scope() {
         .expect("current project should load")
         .expect("current project should remain");
     assert_eq!(current.project_key, "YCE");
+}
+
+#[tokio::test]
+async fn web_current_project_redirects_project_scoped_pages_to_selected_project() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/current-project")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fprojects%2FYCE%3Ftab%3Dwork",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/OPS?tab=work"
+    );
+    let current = projects::get_current_project_for_user(&pool, initialized.user_id, true)
+        .await
+        .expect("current project should load")
+        .expect("current project should exist");
+    assert_eq!(current.project_key, "OPS");
+}
+
+#[tokio::test]
+async fn web_current_project_rewrites_work_item_list_project_query() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/current-project")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Ftasks%3Fproject_key%3DYCE%26status%3Dpending%26page%3D3%26per_page%3D20",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/tasks?project_key=OPS&status=pending&per_page=20"
+    );
 }
 
 #[tokio::test]
@@ -6372,7 +6571,7 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
     let item_key = extract_json_string(&create_body, "key");
 
     let first_counts =
-        projects::count_pending_assigned_work_items(&pool, first_owner.user_id, false)
+        projects::count_pending_assigned_work_items(&pool, first_owner.user_id, false, None)
             .await
             .expect("first owner counts should load");
     assert_eq!(first_counts.bugs, 1);
@@ -6416,12 +6615,14 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
         .expect("flow comment should exist")
         .id;
 
-    let old_counts = projects::count_pending_assigned_work_items(&pool, first_owner.user_id, false)
-        .await
-        .expect("old owner counts should load");
-    let next_counts = projects::count_pending_assigned_work_items(&pool, next_owner.user_id, false)
-        .await
-        .expect("next owner counts should load");
+    let old_counts =
+        projects::count_pending_assigned_work_items(&pool, first_owner.user_id, false, None)
+            .await
+            .expect("old owner counts should load");
+    let next_counts =
+        projects::count_pending_assigned_work_items(&pool, next_owner.user_id, false, None)
+            .await
+            .expect("next owner counts should load");
     assert_eq!(old_counts.bugs, 0);
     assert_eq!(next_counts.bugs, 1);
 
@@ -6509,7 +6710,7 @@ async fn api_v1_work_item_handoff_updates_assignee_flow_record_and_badges() {
         .expect("router should respond");
     assert_eq!(resolve_response.status(), StatusCode::OK);
     let resolved_counts =
-        projects::count_pending_assigned_work_items(&pool, final_owner.user_id, false)
+        projects::count_pending_assigned_work_items(&pool, final_owner.user_id, false, None)
             .await
             .expect("resolved counts should load");
     assert_eq!(resolved_counts.bugs, 0);
