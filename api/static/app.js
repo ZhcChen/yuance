@@ -229,6 +229,7 @@
     var badge = root.querySelector("[data-notification-badge]");
     var summary = root.querySelector("[data-notification-summary]");
     var list = root.querySelector("[data-notification-list]");
+    var readAllButton = root.querySelector("[data-notification-read-all] button[type='submit']");
     var unreadCount = Number(feed && feed.unread_count || 0);
     var unreadLabel = unreadCount > 99 ? "99" : String(unreadCount);
     if (trigger) {
@@ -249,6 +250,9 @@
     }
     if (summary) {
       summary.textContent = unreadCount ? unreadCount + " 条未读" : "暂无未读";
+    }
+    if (readAllButton) {
+      readAllButton.disabled = unreadCount === 0;
     }
     if (!list) {
       return;
@@ -302,6 +306,150 @@
       if (list) {
         list.innerHTML = '<div class="notification-state">消息加载失败，请稍后重试。</div>';
       }
+    }
+  }
+
+  function isMessageCenterUrl(url) {
+    try {
+      var target = new URL(url, window.location.href);
+      return target.origin === window.location.origin && target.pathname === "/web/messages";
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function currentMessageCenter() {
+    return document.querySelector("[data-message-center]");
+  }
+
+  function setMessageCenterLoading(root, loading) {
+    if (!root) {
+      return;
+    }
+    root.dataset.messageCenterLoading = loading ? "true" : "false";
+    root.setAttribute("aria-busy", loading ? "true" : "false");
+  }
+
+  function replaceMessageCenterFromHtml(html) {
+    var parser = new DOMParser();
+    var nextDocument = parser.parseFromString(html || "", "text/html");
+    var current = currentMessageCenter();
+    var next = nextDocument.querySelector("[data-message-center]");
+    if (!current || !next) {
+      throw new Error("消息列表刷新失败，请重新打开消息中心。");
+    }
+    if (nextDocument.title) {
+      document.title = nextDocument.title;
+    }
+    current.replaceWith(next);
+    initContentTabs(next);
+    initSelectControls(next);
+    return next;
+  }
+
+  async function loadMessageCenter(url, options) {
+    var root = currentMessageCenter();
+    if (!root || !isMessageCenterUrl(url)) {
+      return false;
+    }
+    var nextUrl = new URL(url, window.location.href);
+    setMessageCenterLoading(root, true);
+    try {
+      var response = await fetch(nextUrl.href, {
+        method: "GET",
+        headers: { accept: "text/html" },
+        credentials: "same-origin",
+      });
+      if (response.status === 401) {
+        redirectToLogin();
+        return true;
+      }
+      var html = await response.text();
+      if (!response.ok) {
+        throw new Error(webFormResultFromHtml(html)?.message || "消息列表加载失败，请稍后重试。");
+      }
+      var finalUrl = response.url && isMessageCenterUrl(response.url) ? response.url : nextUrl.href;
+      replaceMessageCenterFromHtml(html);
+      if (options && options.history !== false && window.history && window.history.pushState) {
+        if (options.replace) {
+          window.history.replaceState({ yuanceMessageCenter: true }, "", finalUrl);
+        } else {
+          window.history.pushState({ yuanceMessageCenter: true }, "", finalUrl);
+        }
+      }
+      return true;
+    } catch (error) {
+      setMessageCenterLoading(currentMessageCenter(), false);
+      showToast(error instanceof Error ? error.message : "消息列表加载失败，请稍后重试。", "error");
+      return true;
+    }
+  }
+
+  function submitMessageCenterForm(form) {
+    var target = new URL(form.action || window.location.href, window.location.href);
+    var params = new URLSearchParams(new FormData(form));
+    target.search = params.toString();
+    loadMessageCenter(target.href, { history: true });
+  }
+
+  async function refreshNotificationFeed(root) {
+    var notificationRoot = root || document.querySelector("[data-notification-root]");
+    if (notificationRoot) {
+      await initNotificationFeed(notificationRoot);
+    }
+  }
+
+  async function submitMessageReadAll(form, submitter) {
+    if (!form || form.dataset.webFormBusy === "true") {
+      return;
+    }
+    if (!form.reportValidity()) {
+      return;
+    }
+    var successMessage = webFormSuccessMessage(form, submitter);
+    setWebFormBusy(form, true, submitter);
+    try {
+      var response = await fetch(form.action || "/web/messages/read-all", {
+        method: (form.method || "POST").toUpperCase(),
+        headers: {
+          accept: "text/html, application/json",
+          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "x-yuance-web-form": "fetch",
+        },
+        body: webFormBody(form, submitter),
+        credentials: "same-origin",
+      });
+      var contentType = response.headers.get("content-type") || "";
+      var isJson = contentType.includes("application/json");
+      var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
+      var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
+      if (response.status === 401 || payload?.error?.code === "unauthorized") {
+        redirectToLogin();
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(apiErrorMessage(payload, webFormResultFromHtml(html)?.message || "操作失败，请稍后重试。"));
+      }
+      var redirectedMessagePage = response.url && isMessageCenterUrl(response.url);
+      var keepCurrentMessageUrl = currentMessageCenter()
+        && form.matches
+        && form.matches("[data-notification-read-all]");
+      if (keepCurrentMessageUrl) {
+        await loadMessageCenter(window.location.href, { history: false });
+      } else if (currentMessageCenter() && redirectedMessagePage && html) {
+        replaceMessageCenterFromHtml(html);
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({ yuanceMessageCenter: true }, "", response.url);
+        }
+      } else if (currentMessageCenter()) {
+        await loadMessageCenter(window.location.href, { history: false });
+      }
+      await refreshNotificationFeed(form.closest("[data-notification-root]"));
+      showToast(successMessage, "success");
+      setWebFormBusy(form, false, submitter);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "操作失败，请稍后重试。", "error");
+      setWebFormBusy(form, false, submitter);
     }
   }
 
@@ -4283,6 +4431,10 @@
     if (root.dropdownCloseTimer) {
       window.clearTimeout(root.dropdownCloseTimer);
     }
+    if (root.dropdownHoverCloseTimer) {
+      window.clearTimeout(root.dropdownHoverCloseTimer);
+      root.dropdownHoverCloseTimer = null;
+    }
     root.dataset.dropdownOpen = "false";
     root.dataset.hoverOpen = "false";
     trigger.setAttribute("aria-expanded", "false");
@@ -4313,6 +4465,10 @@
     }
     if (root.dropdownCloseTimer) {
       window.clearTimeout(root.dropdownCloseTimer);
+    }
+    if (root.dropdownHoverCloseTimer) {
+      window.clearTimeout(root.dropdownHoverCloseTimer);
+      root.dropdownHoverCloseTimer = null;
     }
     closeDropdowns(root);
     root.dataset.dropdownOpen = "true";
@@ -4485,8 +4641,11 @@
       selectPanelContentMinWidth: selectPanelContentMinWidth,
       selectPanelTargetWidth: selectPanelTargetWidth,
       publishBugReportRichText: publishBugReportRichText,
+      replaceMessageCenterFromHtml: replaceMessageCenterFromHtml,
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
+      submitMessageReadAll: submitMessageReadAll,
+      loadMessageCenter: loadMessageCenter,
       submitWebForm: submitWebForm,
       syncRichTextForm: syncRichTextForm,
       webFormSuccessMessage: webFormSuccessMessage,
@@ -4522,6 +4681,13 @@
     if (richFileAttachment) {
       event.preventDefault();
       openRichAttachmentMenuNear(richFileAttachment);
+      return;
+    }
+
+    var messageCenterLink = event.target.closest("[data-message-center] a[href]");
+    if (messageCenterLink && isMessageCenterUrl(messageCenterLink.href) && isPlainWebNavigation(event, messageCenterLink)) {
+      event.preventDefault();
+      loadMessageCenter(messageCenterLink.href, { history: true });
       return;
     }
 
@@ -4749,7 +4915,15 @@
     });
 
     root.addEventListener("mouseleave", function () {
-      closeDropdown(root);
+      if (root.dropdownHoverCloseTimer) {
+        window.clearTimeout(root.dropdownHoverCloseTimer);
+      }
+      root.dropdownHoverCloseTimer = window.setTimeout(function () {
+        root.dropdownHoverCloseTimer = null;
+        if (!root.matches(":hover")) {
+          closeDropdown(root);
+        }
+      }, 180);
     });
   });
 
@@ -5076,6 +5250,20 @@
       return;
     }
 
+    var readAllForm = event.target.closest("[data-message-read-all-form], [data-notification-read-all]");
+    if (readAllForm) {
+      event.preventDefault();
+      submitMessageReadAll(readAllForm, event.submitter || readAllForm.querySelector("button[type='submit']"));
+      return;
+    }
+
+    var messageCenterForm = event.target.closest("[data-message-center-form]");
+    if (messageCenterForm) {
+      event.preventDefault();
+      submitMessageCenterForm(messageCenterForm);
+      return;
+    }
+
     var webForm = event.target.closest("form[method='post']");
     if (
       webForm &&
@@ -5163,6 +5351,14 @@
   initUserComboboxes(document);
   initMemberBatchForms(document);
   initSelectControls(document);
+  if (currentMessageCenter() && window.history && window.history.replaceState) {
+    window.history.replaceState({ yuanceMessageCenter: true }, "", window.location.href);
+  }
+  window.addEventListener("popstate", function () {
+    if (currentMessageCenter() && isMessageCenterUrl(window.location.href)) {
+      loadMessageCenter(window.location.href, { history: false });
+    }
+  });
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initAttachmentImagePreviews(document);
   window.addEventListener("pagehide", function () {

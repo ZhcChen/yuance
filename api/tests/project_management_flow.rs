@@ -728,6 +728,8 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert!(first_body.contains(r#"aria-controls="topbar-notification-panel""#));
     assert!(first_body.contains(r#"id="topbar-notification-panel""#));
     assert!(first_body.contains(r#"role="dialog" aria-label="最近消息""#));
+    assert!(first_body.contains("data-notification-read-all"));
+    assert!(first_body.contains("data-message-center"));
     assert!(first_body.contains(r#"aria-label="消息分页""#));
     assert!(first_body.contains("当前显示 1-5"));
     assert!(first_body.contains("共 12 条"));
@@ -739,6 +741,8 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert!(first_body.contains("aria-label=\"跳转页码\""));
     assert!(first_body.contains("page=2"));
     assert!(first_body.contains("per_page=5"));
+    assert!(first_body.contains(r#"href="/web/messages?filter=unread&#38;per_page=5""#));
+    assert!(first_body.contains(r#"href="/web/messages?filter=read&#38;per_page=5""#));
 
     let third_page_response = app
         .clone()
@@ -758,10 +762,11 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert!(third_body.contains(r#"aria-current="page">3</a>"#));
     let all_read_all_form = html_fragment(
         &third_body,
-        r#"<form method="post" action="/web/messages/read-all">"#,
+        r#"<form method="post" action="/web/messages/read-all" data-message-read-all-form data-success-message="消息已全部标为已读。">"#,
         "</form>",
     );
     assert!(!all_read_all_form.contains(r#"name="unread""#));
+    assert!(!all_read_all_form.contains(r#"name="filter""#));
     assert!(all_read_all_form.contains(r#"name="page" value="3""#));
     assert!(all_read_all_form.contains(r#"name="per_page" value="5""#));
 
@@ -778,17 +783,18 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
         .expect("router should respond");
     assert_eq!(unread_page_response.status(), StatusCode::OK);
     let unread_body = response_body(unread_page_response).await;
-    assert!(unread_body.contains(r#"name="unread" value="true""#));
+    assert!(unread_body.contains(r#"name="filter" value="unread""#));
+    assert!(unread_body.contains(r#"href="/web/messages?filter=read&#38;per_page=5""#));
     assert!(unread_body.contains("当前显示 11-12"));
     let unread_read_all_form = html_fragment(
         &unread_body,
-        r#"<form method="post" action="/web/messages/read-all">"#,
+        r#"<form method="post" action="/web/messages/read-all" data-message-read-all-form data-success-message="消息已全部标为已读。">"#,
         "</form>",
     );
-    assert!(unread_read_all_form.contains(r#"name="unread" value="true""#));
+    assert!(unread_read_all_form.contains(r#"name="filter" value="unread""#));
     assert!(unread_read_all_form.contains(r#"name="page" value="3""#));
     assert!(unread_read_all_form.contains(r#"name="per_page" value="5""#));
-    assert!(unread_body.contains("/web/messages?unread=true&#38;page=2&#38;per_page=5"));
+    assert!(unread_body.contains("/web/messages?filter=unread&#38;page=2&#38;per_page=5"));
 
     let invalid_read_all_response = app
         .clone()
@@ -822,7 +828,7 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
                 .header(header::COOKIE, with_csrf_cookie(&receiver.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(format!(
-                    "_csrf={CSRF_TOKEN}&unread=true&page=3&per_page=5"
+                    "_csrf={CSRF_TOKEN}&filter=unread&page=3&per_page=5"
                 )))
                 .expect("request should build"),
         )
@@ -831,8 +837,24 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
     assert_eq!(read_all_response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         read_all_response.headers().get(header::LOCATION).unwrap(),
-        "/web/messages?unread=true&page=3&per_page=5"
+        "/web/messages?filter=unread&page=3&per_page=5"
     );
+
+    let read_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?filter=read&per_page=5")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_page_response.status(), StatusCode::OK);
+    let read_body = response_body(read_page_response).await;
+    assert!(read_body.contains(r#"class="content-tab active" data-content-tab aria-current="page" href="/web/messages?filter=read&#38;per_page=5""#));
+    assert_eq!(read_body.matches("class=\"message-row").count(), 5);
 
     let all_tab_read_all_response = app
         .oneshot(
@@ -894,7 +916,7 @@ async fn web_messages_page_clamps_unread_badge_to_99() {
         r#"class="notification-badge" data-notification-badge aria-label="未读消息 99">99</span>"#
     ));
     assert!(body.contains(
-        r#"class="content-tab active" data-content-tab aria-current="page" href="/web/messages?unread=true"#
+        r#"class="content-tab active" data-content-tab aria-current="page" href="/web/messages?filter=unread"#
     ));
     assert!(body.contains(r#"<span class="content-tab-badge">99</span>"#));
     assert!(!body.contains(r#"<span class="content-tab-badge">99+</span>"#));

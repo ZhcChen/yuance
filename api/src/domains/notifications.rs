@@ -25,6 +25,23 @@ pub struct CreateNotification<'a> {
     pub body: &'a str,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationFilter {
+    All,
+    Unread,
+    Read,
+}
+
+impl NotificationFilter {
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Unread => "unread",
+            Self::Read => "read",
+        }
+    }
+}
+
 pub async fn create_in_transaction(
     tx: &mut Transaction<'_, Sqlite>,
     input: CreateNotification<'_>,
@@ -58,7 +75,12 @@ pub async fn list_for_user(
     limit: i64,
 ) -> AppResult<Vec<NotificationSummary>> {
     let limit = limit.clamp(1, 100);
-    list_for_user_window(pool, user_id, unread_only, limit, 0).await
+    let filter = if unread_only {
+        NotificationFilter::Unread
+    } else {
+        NotificationFilter::All
+    };
+    list_for_user_window(pool, user_id, filter, limit, 0).await
 }
 
 pub async fn list_for_user_page(
@@ -68,16 +90,31 @@ pub async fn list_for_user_page(
     page: i64,
     per_page: i64,
 ) -> AppResult<Vec<NotificationSummary>> {
+    let filter = if unread_only {
+        NotificationFilter::Unread
+    } else {
+        NotificationFilter::All
+    };
+    list_for_user_page_filtered(pool, user_id, filter, page, per_page).await
+}
+
+pub async fn list_for_user_page_filtered(
+    pool: &SqlitePool,
+    user_id: i64,
+    filter: NotificationFilter,
+    page: i64,
+    per_page: i64,
+) -> AppResult<Vec<NotificationSummary>> {
     let page = page.max(1);
     let per_page = per_page.clamp(1, 100);
     let offset = (page - 1).saturating_mul(per_page);
-    list_for_user_window(pool, user_id, unread_only, per_page, offset).await
+    list_for_user_window(pool, user_id, filter, per_page, offset).await
 }
 
 async fn list_for_user_window(
     pool: &SqlitePool,
     user_id: i64,
-    unread_only: bool,
+    filter: NotificationFilter,
     limit: i64,
     offset: i64,
 ) -> AppResult<Vec<NotificationSummary>> {
@@ -118,14 +155,18 @@ async fn list_for_user_window(
            AND c.deleted_at IS NULL
         LEFT JOIN users actor ON actor.id = n.actor_user_id
         WHERE n.recipient_user_id = ?1
-          AND (?2 = 0 OR n.read_at IS NULL)
+          AND (
+              ?2 = 'all'
+              OR (?2 = 'unread' AND n.read_at IS NULL)
+              OR (?2 = 'read' AND n.read_at IS NOT NULL)
+          )
         ORDER BY n.created_at DESC, n.id DESC
         LIMIT ?3
         OFFSET ?4
         "#,
     )
     .bind(user_id)
-    .bind(unread_only)
+    .bind(filter.as_query_value())
     .bind(limit)
     .bind(offset.max(0))
     .fetch_all(pool)
@@ -148,16 +189,33 @@ async fn list_for_user_window(
 }
 
 pub async fn count_for_user(pool: &SqlitePool, user_id: i64, unread_only: bool) -> AppResult<i64> {
+    let filter = if unread_only {
+        NotificationFilter::Unread
+    } else {
+        NotificationFilter::All
+    };
+    count_for_user_filtered(pool, user_id, filter).await
+}
+
+pub async fn count_for_user_filtered(
+    pool: &SqlitePool,
+    user_id: i64,
+    filter: NotificationFilter,
+) -> AppResult<i64> {
     Ok(sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
         FROM notifications
         WHERE recipient_user_id = ?1
-          AND (?2 = 0 OR read_at IS NULL)
+          AND (
+              ?2 = 'all'
+              OR (?2 = 'unread' AND read_at IS NULL)
+              OR (?2 = 'read' AND read_at IS NOT NULL)
+          )
         "#,
     )
     .bind(user_id)
-    .bind(unread_only)
+    .bind(filter.as_query_value())
     .fetch_one(pool)
     .await?)
 }

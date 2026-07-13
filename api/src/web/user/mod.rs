@@ -659,10 +659,59 @@ struct MessagesTemplate {
     notifications: Vec<NotificationView>,
     unread_count: i64,
     unread_badge_label: String,
-    unread_only: bool,
+    filter: &'static str,
+    filter_all: bool,
+    filter_unread: bool,
+    filter_read: bool,
+    all_tab_url: String,
+    unread_tab_url: String,
+    read_tab_url: String,
+    empty_title: &'static str,
     has_notifications: bool,
     pagination: PaginationView,
     pagination_pages: Vec<PaginationPageView>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MessageFilter {
+    All,
+    Unread,
+    Read,
+}
+
+impl MessageFilter {
+    fn from_query(filter: &str, unread: bool) -> Self {
+        match filter.trim().to_ascii_lowercase().as_str() {
+            "unread" => Self::Unread,
+            "read" => Self::Read,
+            _ if unread => Self::Unread,
+            _ => Self::All,
+        }
+    }
+
+    fn as_query_value(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::Unread => "unread",
+            Self::Read => "read",
+        }
+    }
+
+    fn as_notification_filter(self) -> notifications::NotificationFilter {
+        match self {
+            Self::All => notifications::NotificationFilter::All,
+            Self::Unread => notifications::NotificationFilter::Unread,
+            Self::Read => notifications::NotificationFilter::Read,
+        }
+    }
+
+    fn empty_title(self) -> &'static str {
+        match self {
+            Self::All => "暂无消息",
+            Self::Unread => "没有未读消息",
+            Self::Read => "没有已读消息",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1202,6 +1251,8 @@ pub struct SearchQuery {
 #[derive(Debug, Deserialize)]
 pub struct MessagesQuery {
     #[serde(default)]
+    filter: String,
+    #[serde(default)]
     unread: bool,
     #[serde(default)]
     page: Option<i64>,
@@ -1213,6 +1264,8 @@ pub struct MessagesQuery {
 pub struct MessageActionForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    filter: String,
     #[serde(default)]
     unread: bool,
     #[serde(default)]
@@ -1552,16 +1605,21 @@ pub async fn messages_page(
         Err(response) => return Ok(response),
     };
     let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let filter = MessageFilter::from_query(&query.filter, query.unread);
     let (items, total_items, page_number, per_page, unread_count) = match context.pool {
         Some(pool) => {
-            let total_items =
-                notifications::count_for_user(pool, context.user_id, query.unread).await?;
-            let total_pages = total_pages(total_items, requested_pagination.per_page);
-            let page_number = requested_pagination.page.min(total_pages);
-            let items = notifications::list_for_user_page(
+            let total_items = notifications::count_for_user_filtered(
                 pool,
                 context.user_id,
-                query.unread,
+                filter.as_notification_filter(),
+            )
+            .await?;
+            let total_pages = total_pages(total_items, requested_pagination.per_page);
+            let page_number = requested_pagination.page.min(total_pages);
+            let items = notifications::list_for_user_page_filtered(
+                pool,
+                context.user_id,
+                filter.as_notification_filter(),
                 page_number,
                 requested_pagination.per_page,
             )
@@ -1586,19 +1644,17 @@ pub async fn messages_page(
         ),
     };
     let total_pages = total_pages(total_items, per_page);
-    let pagination = message_pagination_view(
-        query.unread,
-        page_number,
-        per_page,
-        total_items,
-        total_pages,
-    );
+    let pagination =
+        message_pagination_view(filter, page_number, per_page, total_items, total_pages);
     let pagination_pages = message_pagination_pages(
-        query.unread,
+        filter,
         pagination.page,
         pagination.per_page,
         pagination.total_pages,
     );
+    let filter_all = filter == MessageFilter::All;
+    let filter_unread = filter == MessageFilter::Unread;
+    let filter_read = filter == MessageFilter::Read;
     response::html(MessagesTemplate {
         active: "messages",
         environment: state.settings.env.clone(),
@@ -1611,7 +1667,14 @@ pub async fn messages_page(
         notifications: items,
         unread_count,
         unread_badge_label: topnav_badge(unread_count),
-        unread_only: query.unread,
+        filter: filter.as_query_value(),
+        filter_all,
+        filter_unread,
+        filter_read,
+        all_tab_url: message_page_url(MessageFilter::All, 1, per_page),
+        unread_tab_url: message_page_url(MessageFilter::Unread, 1, per_page),
+        read_tab_url: message_page_url(MessageFilter::Read, 1, per_page),
+        empty_title: filter.empty_title(),
         pagination,
         pagination_pages,
     })
@@ -1629,7 +1692,8 @@ pub async fn messages_mark_all_read(
         Err(response) => return Ok(response),
     };
     let pagination = normalize_web_pagination(form.page, form.per_page)?;
-    let redirect_url = message_page_url(form.unread, pagination.page, pagination.per_page);
+    let filter = MessageFilter::from_query(&form.filter, form.unread);
+    let redirect_url = message_page_url(filter, pagination.page, pagination.per_page);
     if let Some(pool) = context.pool {
         notifications::mark_all_read(pool, context.user_id).await?;
     }
@@ -6792,7 +6856,7 @@ fn search_pagination_pages(
 }
 
 fn message_pagination_view(
-    unread_only: bool,
+    filter: MessageFilter,
     page: i64,
     per_page: i64,
     total_items: i64,
@@ -6814,17 +6878,19 @@ fn message_pagination_view(
         total_pages,
         has_previous,
         has_next,
-        previous_url: message_page_url(unread_only, page - 1, per_page),
-        next_url: message_page_url(unread_only, page + 1, per_page),
+        previous_url: message_page_url(filter, page - 1, per_page),
+        next_url: message_page_url(filter, page + 1, per_page),
         range_start,
         range_end,
     }
 }
 
-fn message_page_url(unread_only: bool, page: i64, per_page: i64) -> String {
+fn message_page_url(filter: MessageFilter, page: i64, per_page: i64) -> String {
     let mut params = Vec::new();
-    if unread_only {
-        params.push("unread=true".to_string());
+    match filter {
+        MessageFilter::All => {}
+        MessageFilter::Unread => params.push("filter=unread".to_string()),
+        MessageFilter::Read => params.push("filter=read".to_string()),
     }
     if page > 1 {
         params.push(format!("page={page}"));
@@ -6841,7 +6907,7 @@ fn message_page_url(unread_only: bool, page: i64, per_page: i64) -> String {
 }
 
 fn message_pagination_pages(
-    unread_only: bool,
+    filter: MessageFilter,
     current_page: i64,
     per_page: i64,
     total_pages: i64,
@@ -6855,7 +6921,7 @@ fn message_pagination_pages(
     (start..=end)
         .map(|page| PaginationPageView {
             page,
-            url: message_page_url(unread_only, page, per_page),
+            url: message_page_url(filter, page, per_page),
             current: page == current_page,
         })
         .collect()

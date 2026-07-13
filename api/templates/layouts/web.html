@@ -130,7 +130,13 @@
           <div id="topbar-notification-panel" class="notification-panel" data-dropdown-menu role="dialog" aria-label="最近消息" hidden>
             <div class="notification-panel-head">
               <div><strong>消息</strong><span data-notification-summary>正在加载...</span></div>
-              <a href="/web/messages">查看全部</a>
+              <div class="notification-panel-actions">
+                <form class="notification-read-all-form" method="post" action="/web/messages/read-all" data-notification-read-all data-success-message="消息已全部标为已读。">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button type="submit" {% if system_nav.notifications_badge == "" %}disabled{% endif %}>一键已读</button>
+                </form>
+                <a href="/web/messages">查看全部</a>
+              </div>
             </div>
             <div class="notification-list" data-notification-list>
               <div class="notification-state">正在加载消息...</div>

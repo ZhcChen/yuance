@@ -40,11 +40,17 @@ function elementStub(tagName = "div") {
     append(...children) {
       this.children.push(...children);
     },
+    replaceChildren(...children) {
+      this.children = children;
+    },
     after() {},
     before() {},
     remove() {},
     setAttribute(name, value) {
       this[name] = String(value);
+    },
+    removeAttribute(name) {
+      delete this[name];
     },
     getAttribute() {
       return "";
@@ -337,13 +343,71 @@ function bugReportForm(successRedirect) {
   };
 }
 
-function submitButton() {
+function submitButton(label = "发表") {
   return {
     dataset: {},
     disabled: false,
-    textContent: "发表",
+    textContent: label,
     matches(selector) {
       return selector === "[data-discussion-submit]";
+    },
+  };
+}
+
+function notificationRootStub() {
+  const trigger = elementStub("button");
+  const badge = elementStub("span");
+  const summary = elementStub("span");
+  const list = elementStub("div");
+  const readAllButton = submitButton("一键已读");
+  return {
+    trigger,
+    badge,
+    summary,
+    list,
+    readAllButton,
+    querySelector(selector) {
+      if (selector === "[data-dropdown-trigger]") {
+        return trigger;
+      }
+      if (selector === "[data-notification-badge]") {
+        return badge;
+      }
+      if (selector === "[data-notification-summary]") {
+        return summary;
+      }
+      if (selector === "[data-notification-list]") {
+        return list;
+      }
+      if (selector === "[data-notification-read-all] button[type='submit']") {
+        return readAllButton;
+      }
+      return null;
+    },
+  };
+}
+
+function messageReadAllForm(root) {
+  const submit = submitButton("全部标为已读");
+  return {
+    action: "https://yuance.test/web/messages/read-all",
+    method: "post",
+    dataset: { successMessage: "消息已全部标为已读。" },
+    formData: { _csrf: "token", filter: "unread" },
+    reportValidity() {
+      return true;
+    },
+    setAttribute(name, value) {
+      this[name] = String(value);
+    },
+    closest(selector) {
+      return selector === "[data-notification-root]" ? root : null;
+    },
+    querySelector(selector) {
+      return selector === "button[type='submit']" ? submit : null;
+    },
+    querySelectorAll(selector) {
+      return selector === "button[type='submit'], input[type='submit']" ? [submit] : [];
     },
   };
 }
@@ -786,6 +850,39 @@ assert.equal(
   ),
   "全部标为已读成功。",
 );
+
+const notificationRoot = notificationRootStub();
+const readAllApp = loadAppWithDom({
+  fetch: async (url) => {
+    if (String(url).includes("/web/messages/read-all")) {
+      return {
+        ok: true,
+        status: 200,
+        url: "https://yuance.test/web/messages?filter=unread",
+        headers: { get: () => "text/html" },
+        text: async () => "<!doctype html><title>消息中心 - 元策</title>",
+      };
+    }
+    if (String(url) === "/api/v1/notifications?limit=5") {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ data: { unread_count: 0, items: [] } }),
+      };
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  },
+});
+assert.equal(typeof readAllApp.hooks.submitMessageReadAll, "function");
+await readAllApp.hooks.submitMessageReadAll(messageReadAllForm(notificationRoot));
+assert.equal(readAllApp.fetchCalls[0].url, "https://yuance.test/web/messages/read-all");
+assert.equal(String(readAllApp.fetchCalls[0].options.body), "_csrf=token&filter=unread");
+assert.equal(readAllApp.fetchCalls[1].url, "/api/v1/notifications?limit=5");
+assert.equal(notificationRoot.summary.textContent, "暂无未读");
+assert.equal(notificationRoot.readAllButton.disabled, true);
+assert.deepEqual(readAllApp.assignCalls, []);
+assert.equal(readAllApp.reloadCount, 0);
+
 assert.equal(
   redirectedPost.hooks.webFormSuccessMessage(
     webPostForm(undefined, { buttonText: "", ariaLabel: "保存筛选" })

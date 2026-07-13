@@ -3,7 +3,7 @@
 {% block title %}消息中心 - 元策{% endblock %}
 
 {% block content %}
-<section class="page-stack messages-page">
+<section class="page-stack messages-page" data-message-center aria-busy="false">
   <header class="page-heading messages-heading">
     <div>
       <span class="section-kicker">协作通知</span>
@@ -11,9 +11,9 @@
       <p>查看工作项指派和讨论回复，未读消息 {{ unread_count }} 条。</p>
     </div>
     {% if unread_count > 0 %}
-    <form method="post" action="/web/messages/read-all">
+    <form method="post" action="/web/messages/read-all" data-message-read-all-form data-success-message="消息已全部标为已读。">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      {% if unread_only %}<input type="hidden" name="unread" value="true">{% endif %}
+      {% if !filter_all %}<input type="hidden" name="filter" value="{{ filter }}">{% endif %}
       <input type="hidden" name="page" value="{{ pagination.page }}">
       <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
       <button class="btn btn-secondary" type="submit">全部标为已读</button>
@@ -23,8 +23,9 @@
 
   <nav class="content-tabs content-tabs-compact" aria-label="消息筛选" data-content-tabs>
     <span class="content-tabs-indicator" aria-hidden="true" data-content-tab-indicator></span>
-    <a class="content-tab {% if !unread_only %}active{% endif %}" data-content-tab {% if !unread_only %}aria-current="page"{% endif %} href="/web/messages{% if pagination.per_page != 10 %}?per_page={{ pagination.per_page }}{% endif %}">全部消息</a>
-    <a class="content-tab {% if unread_only %}active{% endif %}" data-content-tab {% if unread_only %}aria-current="page"{% endif %} href="/web/messages?unread=true{% if pagination.per_page != 10 %}&per_page={{ pagination.per_page }}{% endif %}">未读消息{% if unread_count > 0 %}<span class="content-tab-badge">{{ unread_badge_label }}</span>{% endif %}</a>
+    <a class="content-tab {% if filter_all %}active{% endif %}" data-content-tab {% if filter_all %}aria-current="page"{% endif %} href="{{ all_tab_url }}">全部消息</a>
+    <a class="content-tab {% if filter_unread %}active{% endif %}" data-content-tab {% if filter_unread %}aria-current="page"{% endif %} href="{{ unread_tab_url }}">未读消息{% if unread_count > 0 %}<span class="content-tab-badge">{{ unread_badge_label }}</span>{% endif %}</a>
+    <a class="content-tab {% if filter_read %}active{% endif %}" data-content-tab {% if filter_read %}aria-current="page"{% endif %} href="{{ read_tab_url }}">已读消息</a>
   </nav>
 
   {% if has_notifications %}
@@ -48,14 +49,14 @@
       <span>当前显示 {{ pagination.range_start }}-{{ pagination.range_end }}</span>
     </div>
     {% include "web/partials/pagination_pages.html" %}
-    <form class="pager-controls" method="get" data-pagination-form>
-      {% if unread_only %}<input type="hidden" name="unread" value="true">{% endif %}
+    <form class="pager-controls" method="get" data-pagination-form data-message-center-form>
+      {% if !filter_all %}<input type="hidden" name="filter" value="{{ filter }}">{% endif %}
       {% include "web/partials/pagination_size_jump.html" %}
     </form>
   </nav>
   {% else %}
   <div class="empty-state message-empty">
-    <strong>{% if unread_only %}没有未读消息{% else %}暂无消息{% endif %}</strong>
+    <strong>{{ empty_title }}</strong>
     <span>新的指派和回复会显示在这里。</span>
   </div>
   {% endif %}
