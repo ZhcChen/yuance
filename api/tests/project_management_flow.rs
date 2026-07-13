@@ -209,6 +209,9 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
     let detail_body = response_body(detail_response).await;
     assert!(detail_body.contains(r#"data-yuance-attachment-kind="file""#));
     assert!(detail_body.contains("rich-doc.txt"));
+    assert!(!detail_body.contains(&format!(
+        r#"<a class="btn btn-sm btn-secondary" href="{file_url}" target="_blank" rel="noopener">下载</a>"#
+    )));
     assert!(!detail_body.contains("tracker.example.invalid"));
 }
 

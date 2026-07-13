@@ -4414,6 +4414,24 @@ pub fn work_item_comment_plain_text(body: &str, body_format: &str) -> String {
     }
 }
 
+pub fn work_item_comment_inline_attachment_ids(
+    comment_id: i64,
+    body: &str,
+    body_format: &str,
+) -> Vec<i64> {
+    if body_format != COMMENT_BODY_FORMAT_HTML {
+        return Vec::new();
+    }
+
+    extract_comment_attachment_references(body)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(referenced_comment_id, attachment_id)| {
+            (referenced_comment_id == comment_id).then_some(attachment_id)
+        })
+        .collect()
+}
+
 fn sanitize_comment_html(body: &str) -> String {
     ammonia::Builder::default()
         .add_tags(&["figure", "figcaption", "img", "video"])

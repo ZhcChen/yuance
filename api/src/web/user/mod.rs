@@ -225,6 +225,7 @@ struct WorkItemComment {
     parent_author: String,
     flow_title: String,
     body: String,
+    body_format: String,
     body_html: String,
     author: String,
     author_username: String,
@@ -5487,6 +5488,7 @@ fn comment_from_summary_with_permission(
         parent_author,
         flow_title: work_item_flow_title(&author, &body, comment.is_flow),
         body,
+        body_format: comment.body_format,
         body_html,
         author,
         author_username: comment.author_username,
@@ -5504,8 +5506,14 @@ fn comment_with_attachments(
     mut comment: WorkItemComment,
     attachments: Vec<files::FileAttachmentSummary>,
 ) -> WorkItemComment {
+    let inline_attachment_ids = projects::work_item_comment_inline_attachment_ids(
+        comment.id,
+        &comment.body,
+        &comment.body_format,
+    );
     comment.attachments = attachments
         .into_iter()
+        .filter(|attachment| !inline_attachment_ids.contains(&attachment.id))
         .map(attachment_from_summary)
         .collect::<Vec<_>>();
     comment.has_attachments = !comment.attachments.is_empty();
@@ -7715,6 +7723,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             parent_author: String::new(),
             flow_title: String::new(),
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
+            body_format: "plain".to_string(),
             body_html: "<p>先统一项目与工作项查询模型，再继续补页面交互。</p>".to_string(),
             author: "陈".to_string(),
             author_username: "yuance_admin".to_string(),
