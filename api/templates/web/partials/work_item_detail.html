@@ -162,7 +162,7 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/edit">
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/edit" data-success-message="评论已更新。">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label>
         内容

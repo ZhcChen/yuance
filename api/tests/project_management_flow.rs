@@ -3154,6 +3154,7 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert_eq!(open_page.status(), StatusCode::OK);
     let open_body = response_body(open_page).await;
     assert!(open_body.contains("重新打开"));
+    assert!(open_body.contains(r#"data-success-message="任务已重新打开。""#));
     assert!(!open_body.contains("取消工作项"));
     assert!(open_body.contains(r#"name="status" value="in_progress""#));
 
@@ -3189,6 +3190,9 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     let progress_body = response_body(progress_page).await;
     assert!(progress_body.contains("指派 / 流转"));
     assert!(progress_body.contains("关闭任务"));
+    assert!(progress_body.contains(r#"data-success-message="任务已关闭。""#));
+    assert!(progress_body.contains(r#"data-success-message="任务已保存。""#));
+    assert!(progress_body.contains(r#"data-success-message="指派已更新。""#));
     assert!(progress_body.contains("发表并指派"));
     assert!(
         progress_body
@@ -3380,6 +3384,7 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
     let detail_body = response_body(detail_response).await;
     assert!(detail_body.contains("已编辑评论"));
     assert!(detail_body.contains("编辑发表内容"));
+    assert!(detail_body.contains(r#"data-success-message="评论已更新。""#));
     assert!(!detail_body.contains("删除评论"));
 
     let delete_response = app
@@ -6804,6 +6809,7 @@ async fn work_item_archive_hides_from_lists_and_can_restore() {
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let archived = projects::archive_work_item(&pool, initialized.user_id, "YCE-TASK-2")
         .await
@@ -6838,6 +6844,20 @@ async fn work_item_archive_hides_from_lists_and_can_restore() {
             .iter()
             .any(|activity| activity.summary == "归档工作项 YCE-TASK-2")
     );
+
+    let archived_detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(archived_detail_response.status(), StatusCode::OK);
+    let archived_detail_body = response_body(archived_detail_response).await;
+    assert!(archived_detail_body.contains(r#"data-success-message="任务已恢复。""#));
 
     let restored = projects::restore_work_item(&pool, initialized.user_id, "YCE-TASK-2")
         .await

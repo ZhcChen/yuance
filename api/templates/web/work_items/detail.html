@@ -29,7 +29,7 @@
         <p>该工作项曾于 {{ item.deleted_at }} 移出常规列表，现仅供审计查看。</p>
       </div>
       {% if can_restore_work_items %}
-      <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/restore">
+      <form class="inline-form" method="post" action="/web/work-items/{{ item.key }}/restore" data-success-message="{{ item.kind }}已恢复。">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn btn-primary" type="submit">恢复工作项</button>
       </form>
@@ -97,13 +97,13 @@
           <button class="btn btn-primary" type="button" data-modal-open="work-item-handoff-modal">指派 / 流转</button>
           <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑内容</button>
           {% if item.status_code == "closed" || item.status_code == "cancelled" %}
-          <form method="post" action="/web/work-items/{{ item.key }}/status">
+          <form method="post" action="/web/work-items/{{ item.key }}/status" data-success-message="{{ item.kind }}已重新打开。">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="status" value="in_progress">
             <button class="btn btn-secondary" type="submit">重新打开</button>
           </form>
           {% else %}
-          <form method="post" action="/web/work-items/{{ item.key }}/status" data-confirm-submit-form data-confirm-title="确认关闭{{ item.kind }}" data-confirm-message="关闭后协作记录仍会保留，也可以再次打开。" data-confirm-action="确认关闭">
+          <form method="post" action="/web/work-items/{{ item.key }}/status" data-confirm-submit-form data-success-message="{{ item.kind }}已关闭。" data-confirm-title="确认关闭{{ item.kind }}" data-confirm-message="关闭后协作记录仍会保留，也可以再次打开。" data-confirm-action="确认关闭">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="status" value="closed">
             <button class="btn btn-close-item" type="submit">关闭{{ item.kind }}</button>
@@ -130,7 +130,7 @@
       <div><h2 id="work-item-edit-modal-title">编辑{{ item.kind }}</h2><p>更新工作项的核心内容与协作信息。</p></div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/edit">
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/edit" data-success-message="{{ item.kind }}已保存。">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <div class="field-grid">
         <label class="wide-field">标题<input name="title" value="{{ item.title }}" required autofocus></label>
@@ -153,7 +153,7 @@
       <div><h2 id="work-item-handoff-modal-title">指派 / 流转</h2><p>可以只更换处理人，也可以同时推进状态；每次操作都会保留记录。</p></div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/handoff">
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/handoff" data-success-message="指派已更新。">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <div class="field-grid one-column">
         <label>状态<select name="status" required>{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
