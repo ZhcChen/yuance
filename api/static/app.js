@@ -146,6 +146,53 @@
     }
   }
 
+  function controlText(control) {
+    if (!control) {
+      return "";
+    }
+    var label = "";
+    if (typeof control.getAttribute === "function") {
+      label = control.getAttribute("aria-label") || "";
+    }
+    if (!label && control.value) {
+      label = control.value;
+    }
+    if (!label && control.textContent) {
+      label = control.textContent;
+    }
+    return String(label).replace(/\s+/g, " ").trim();
+  }
+
+  function actionSuccessMessage(label) {
+    var action = String(label || "")
+      .replace(/\s+/g, " ")
+      .replace(/^确认\s*/, "")
+      .replace(/处理中[.。…]*$/, "")
+      .trim();
+    if (!action) {
+      return "操作已完成。";
+    }
+    if (/^(保存|创建|修改|重置|启用|禁用|解锁|移除|回滚|归档|恢复|关闭|重新打开|指派|发表|回复|上传|全部标为已读|标为已读|提交)/.test(action)) {
+      return action + "成功。";
+    }
+    return action + "已完成。";
+  }
+
+  function webFormSuccessMessage(form, submitter) {
+    var explicit = String(form?.dataset?.successMessage || "").trim();
+    if (explicit) {
+      return explicit;
+    }
+    var confirmAction = String(form?.dataset?.confirmAction || "").trim();
+    if (confirmAction) {
+      return actionSuccessMessage(confirmAction);
+    }
+    return actionSuccessMessage(
+      controlText(submitter)
+        || controlText(form?.querySelector?.("button[type='submit'], input[type='submit']"))
+    );
+  }
+
   function isSuccessWebRedirect(url) {
     try {
       var target = new URL(url, window.location.href);
@@ -367,6 +414,7 @@
     if (!form.reportValidity()) {
       return;
     }
+    var successMessage = webFormSuccessMessage(form, submitter);
     setWebFormBusy(form, true, submitter);
     try {
       if (form.dataset.action) {
@@ -378,7 +426,7 @@
           },
           body: JSON.stringify(webFormJsonBody(form, submitter)),
         });
-        queueSuccessBeforeNavigation(form.dataset.successMessage || "操作已完成。");
+        queueSuccessBeforeNavigation(successMessage);
         window.setTimeout(function () {
           if (form.dataset.successRedirect) {
             window.location.href = form.dataset.successRedirect;
@@ -412,14 +460,14 @@
       }
       if (response.redirected && response.url) {
         if (isSuccessWebRedirect(response.url)) {
-          queueSuccessBeforeNavigation(form.dataset.successMessage || "操作已完成。");
+          queueSuccessBeforeNavigation(successMessage);
         }
         window.location.assign(response.url);
         return;
       }
       if (html) {
         queueToast(
-          htmlResult?.message || "操作已完成。",
+          htmlResult?.message || successMessage,
           htmlResult?.tone || "success"
         );
       }
@@ -3332,6 +3380,7 @@
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
       submitWebForm: submitWebForm,
+      webFormSuccessMessage: webFormSuccessMessage,
     });
   }
 

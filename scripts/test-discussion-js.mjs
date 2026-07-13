@@ -329,17 +329,27 @@ function discussionForm() {
   };
 }
 
-function webPostForm(successMessage) {
+function webPostForm(successMessage, options = {}) {
   const submit = {
     tagName: "BUTTON",
     dataset: {},
     disabled: false,
-    textContent: "提交",
+    textContent: options.buttonText || "提交",
+    value: options.buttonValue || "",
+    getAttribute(name) {
+      if (name === "aria-label") {
+        return options.ariaLabel || "";
+      }
+      return "";
+    },
   };
   return {
     action: "https://yuance.test/web/messages/read-all",
     method: "post",
-    dataset: successMessage ? { successMessage } : {},
+    dataset: {
+      ...(successMessage ? { successMessage } : {}),
+      ...(options.confirmAction ? { confirmAction: options.confirmAction } : {}),
+    },
     formData: { _csrf: "token" },
     reportValidity() {
       return true;
@@ -347,7 +357,10 @@ function webPostForm(successMessage) {
     setAttribute(name, value) {
       this[name] = String(value);
     },
-    querySelector() {
+    querySelector(selector) {
+      if (selector === "button[type='submit'], input[type='submit']") {
+        return submit;
+      }
       return null;
     },
     querySelectorAll(selector) {
@@ -424,6 +437,55 @@ await redirectedPost.hooks.submitWebForm(webPostForm("消息已全部标为已�
 assert.deepEqual(redirectedPost.assignCalls, ["https://yuance.test/web/messages?unread=true"]);
 assert.deepEqual(JSON.parse(redirectedPost.sessionItems.get("yuance-pending-toast")), {
   message: "消息已全部标为已读。",
+  tone: "success",
+});
+assert.equal(
+  redirectedPost.hooks.webFormSuccessMessage(
+    webPostForm(undefined, { buttonText: "全部标为已读" })
+  ),
+  "全部标为已读成功。",
+);
+
+const derivedMessagePost = loadAppWithDom({
+  fetch: async () => redirectedHtmlResponse("https://yuance.test/web/me"),
+});
+await derivedMessagePost.hooks.submitWebForm(
+  webPostForm(undefined, { buttonText: "保存资料" })
+);
+assert.deepEqual(derivedMessagePost.assignCalls, ["https://yuance.test/web/me"]);
+assert.deepEqual(JSON.parse(derivedMessagePost.sessionItems.get("yuance-pending-toast")), {
+  message: "保存资料成功。",
+  tone: "success",
+});
+
+const confirmActionPost = loadAppWithDom({
+  fetch: async () => redirectedHtmlResponse("https://yuance.test/web/system/users"),
+});
+await confirmActionPost.hooks.submitWebForm(
+  webPostForm(undefined, { buttonText: "禁用", confirmAction: "确认禁用" })
+);
+assert.deepEqual(confirmActionPost.assignCalls, ["https://yuance.test/web/system/users"]);
+assert.deepEqual(JSON.parse(confirmActionPost.sessionItems.get("yuance-pending-toast")), {
+  message: "禁用成功。",
+  tone: "success",
+});
+
+const clickedSubmitterPost = loadAppWithDom({
+  fetch: async () => redirectedHtmlResponse("https://yuance.test/web/system/storage"),
+});
+await clickedSubmitterPost.hooks.submitWebForm(
+  webPostForm(undefined, { buttonText: "保存草稿" }),
+  {
+    tagName: "BUTTON",
+    dataset: {},
+    disabled: false,
+    textContent: "保存并激活",
+    getAttribute: () => "",
+  },
+);
+assert.deepEqual(clickedSubmitterPost.assignCalls, ["https://yuance.test/web/system/storage"]);
+assert.deepEqual(JSON.parse(clickedSubmitterPost.sessionItems.get("yuance-pending-toast")), {
+  message: "保存并激活成功。",
   tone: "success",
 });
 
