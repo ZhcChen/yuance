@@ -240,6 +240,12 @@
     if (badge) {
       badge.hidden = unreadCount === 0;
       badge.textContent = unreadLabel;
+      badge.setAttribute("aria-hidden", unreadCount === 0 ? "true" : "false");
+      if (unreadCount) {
+        badge.setAttribute("aria-label", "未读消息 " + unreadLabel);
+      } else {
+        badge.removeAttribute("aria-label");
+      }
     }
     if (summary) {
       summary.textContent = unreadCount ? unreadCount + " 条未读" : "暂无未读";

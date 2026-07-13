@@ -301,6 +301,7 @@ struct SystemNav {
     requirements_badge: String,
     tasks_badge: String,
     bugs_badge: String,
+    notifications_badge: String,
 }
 
 impl SystemNav {
@@ -315,6 +316,7 @@ impl SystemNav {
             requirements_badge: String::new(),
             tasks_badge: String::new(),
             bugs_badge: String::new(),
+            notifications_badge: String::new(),
         }
     }
 }
@@ -4863,13 +4865,14 @@ async fn build_system_nav(
     let roles = rbac::user_has_permission(pool, user_id, "system.roles.view").await?;
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
-    let assignment_counts = projects::count_pending_assigned_work_items(
+    let work_item_counts = projects::count_pending_visible_work_items(
         pool,
         user_id,
         can_access_all_projects,
         current_project_key,
     )
     .await?;
+    let unread_notifications = notifications::unread_count(pool, user_id).await?;
 
     Ok(SystemNav {
         visible: dashboard || users || roles || storage || audit,
@@ -4878,9 +4881,10 @@ async fn build_system_nav(
         roles,
         storage,
         audit,
-        requirements_badge: topnav_badge(assignment_counts.requirements),
-        tasks_badge: topnav_badge(assignment_counts.tasks),
-        bugs_badge: topnav_badge(assignment_counts.bugs),
+        requirements_badge: topnav_badge(work_item_counts.requirements),
+        tasks_badge: topnav_badge(work_item_counts.tasks),
+        bugs_badge: topnav_badge(work_item_counts.bugs),
+        notifications_badge: topnav_badge(unread_notifications),
     })
 }
 

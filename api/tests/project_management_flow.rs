@@ -413,6 +413,23 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
     assert!(feed_body.contains("work_item_assigned"));
     assert!(feed_body.contains("\"unread_count\":1"));
 
+    let receiver_web_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(receiver_web_response.status(), StatusCode::OK);
+    let receiver_web_body = response_body(receiver_web_response).await;
+    assert!(receiver_web_body.contains(
+        r#"class="notification-badge" data-notification-badge aria-label="未读消息 1">1</span>"#
+    ));
+
     sqlx::query("UPDATE users SET display_name = '' WHERE id = ?1")
         .bind(admin.user_id)
         .execute(&pool)
@@ -874,6 +891,9 @@ async fn web_messages_page_clamps_unread_badge_to_99() {
     let body = response_body(response).await;
     assert!(body.contains("未读消息 100 条"));
     assert!(body.contains(
+        r#"class="notification-badge" data-notification-badge aria-label="未读消息 99">99</span>"#
+    ));
+    assert!(body.contains(
         r#"class="content-tab active" data-content-tab aria-current="page" href="/web/messages?unread=true"#
     ));
     assert!(body.contains(r#"<span class="content-tab-badge">99</span>"#));
@@ -1032,7 +1052,8 @@ async fn web_topnav_work_item_badges_follow_current_project() {
     assert_eq!(yce_response.status(), StatusCode::OK);
     let yce_body = response_body(yce_response).await;
     assert!(yce_body.contains(r#"name="project_key" value="YCE""#));
-    assert!(yce_body.contains(r#"aria-label="待处理任务 2">2</span>"#));
+    assert!(yce_body.contains(r#"aria-label="待处理需求 1">1</span>"#));
+    assert!(yce_body.contains(r#"aria-label="待处理任务 3">3</span>"#));
     assert!(!yce_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
 
     let switch_response = app
@@ -1069,8 +1090,9 @@ async fn web_topnav_work_item_badges_follow_current_project() {
     assert_eq!(ops_response.status(), StatusCode::OK);
     let ops_body = response_body(ops_response).await;
     assert!(ops_body.contains(r#"name="project_key" value="OPS""#));
+    assert!(ops_body.contains(r#"aria-label="待处理任务 1">1</span>"#));
     assert!(ops_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
-    assert!(!ops_body.contains(r#"aria-label="待处理任务 2">2</span>"#));
+    assert!(!ops_body.contains(r#"aria-label="待处理任务 3">3</span>"#));
 }
 
 #[tokio::test]
