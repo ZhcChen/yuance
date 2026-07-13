@@ -100,7 +100,11 @@ async fn list_for_user_window(
             n.id,
             n.kind,
             wi.item_key,
-            n.comment_id,
+            CASE
+                WHEN n.comment_id IS NULL THEN NULL
+                WHEN c.id IS NULL THEN NULL
+                ELSE n.comment_id
+            END,
             n.title,
             n.body,
             COALESCE(actor.display_name, ''),
@@ -108,6 +112,10 @@ async fn list_for_user_window(
             n.created_at
         FROM notifications n
         JOIN work_items wi ON wi.id = n.work_item_id
+        LEFT JOIN work_item_comments c
+            ON c.id = n.comment_id
+           AND c.work_item_id = n.work_item_id
+           AND c.deleted_at IS NULL
         LEFT JOIN users actor ON actor.id = n.actor_user_id
         WHERE n.recipient_user_id = ?1
           AND (?2 = 0 OR n.read_at IS NULL)
@@ -193,10 +201,24 @@ pub async fn mark_read(
         ),
     >(
         r#"
-        SELECT n.id, n.kind, wi.item_key, n.comment_id, n.title, n.body,
-               COALESCE(actor.display_name, ''), COALESCE(n.read_at, ''), n.created_at
+        SELECT
+            n.id,
+            n.kind,
+            wi.item_key,
+            CASE
+                WHEN n.comment_id IS NULL THEN NULL
+                WHEN c.id IS NULL THEN NULL
+                ELSE n.comment_id
+            END,
+            n.title,
+            n.body,
+            COALESCE(actor.display_name, ''), COALESCE(n.read_at, ''), n.created_at
         FROM notifications n
         JOIN work_items wi ON wi.id = n.work_item_id
+        LEFT JOIN work_item_comments c
+            ON c.id = n.comment_id
+           AND c.work_item_id = n.work_item_id
+           AND c.deleted_at IS NULL
         LEFT JOIN users actor ON actor.id = n.actor_user_id
         WHERE n.id = ?1 AND n.recipient_user_id = ?2
         "#,

@@ -214,6 +214,70 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
         format!("/web/work-items/YCE-TASK-2#comment-{}", reply.id).as_str()
     );
 
+    let deleted_parent_comment_id = projects::add_work_item_comment_reply(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        "这条回复稍后会隐藏",
+        None,
+    )
+    .await
+    .expect("deleted parent comment should be created")
+    .id;
+    let deleted_reply = projects::add_work_item_comment_reply(
+        &pool,
+        receiver.user_id,
+        "YCE-TASK-2",
+        "隐藏后通知应回到工作项顶部",
+        Some(deleted_parent_comment_id),
+    )
+    .await
+    .expect("deleted reply should be created");
+    let deleted_comment_notice = notifications::list_for_user(&pool, admin.user_id, true, 10)
+        .await
+        .expect("admin notifications should load")
+        .into_iter()
+        .find(|item| item.kind == "comment_replied" && item.comment_id == Some(deleted_reply.id))
+        .expect("deleted reply notification should exist");
+    sqlx::query(
+        "UPDATE work_item_comments SET deleted_at = datetime('now'), deleted_by_user_id = ?1 WHERE id = ?2",
+    )
+    .bind(admin.user_id)
+    .bind(deleted_reply.id)
+    .execute(&pool)
+    .await
+    .expect("reply comment should be hidden");
+    let deleted_comment_open_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", deleted_comment_notice.id))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(
+        deleted_comment_open_response.status(),
+        StatusCode::SEE_OTHER
+    );
+    assert_eq!(
+        deleted_comment_open_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap(),
+        "/web/work-items/YCE-TASK-2"
+    );
+    let opened_deleted_notice = notifications::list_for_user(&pool, admin.user_id, false, 10)
+        .await
+        .expect("admin notifications should load")
+        .into_iter()
+        .find(|item| item.id == deleted_comment_notice.id)
+        .expect("opened deleted reply notification should remain listed");
+    assert_eq!(opened_deleted_notice.comment_id, None);
+    assert!(!opened_deleted_notice.read_at.is_empty());
+
     let reply_assignment_open_response = app
         .oneshot(
             Request::builder()
