@@ -401,22 +401,23 @@ body {
 .rich-text-editor {
   position: relative;
   overflow: hidden;
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel-soft);
+  box-shadow: 0 8px 22px rgb(22 34 50 / 6%), 0 1px 4px rgb(22 34 50 / 4%);
   transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease;
 }
 
 .rich-text-editor:focus-within {
   border-color: var(--brand-line);
   background: var(--control-bg);
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 9%);
+  box-shadow: 0 12px 30px rgb(22 34 50 / 10%), 0 0 0 3px rgb(37 99 235 / 9%);
 }
 
 .rich-text-editor[data-drag-active="true"] {
   border-color: var(--brand);
   background: var(--brand-soft);
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+  box-shadow: 0 14px 34px rgb(31 95 191 / 14%), 0 0 0 3px rgb(37 99 235 / 12%);
 }
 
 .rich-text-toolbar {
