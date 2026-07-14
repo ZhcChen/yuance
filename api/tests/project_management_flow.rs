@@ -710,6 +710,108 @@ async fn work_item_detail_renders_rich_description_media_safely() {
 }
 
 #[tokio::test]
+async fn work_item_detail_uses_initial_rich_comment_when_description_is_plain_summary() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, admin.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let item = projects::create_work_item(
+        &pool,
+        admin.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "bug".to_string(),
+            title: "截图富文本主内容".to_string(),
+            description: "main-shot.png".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: String::new(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let draft =
+        projects::create_work_item_comment_draft(&pool, admin.user_id, &item.item_key, None)
+            .await
+            .expect("draft should be created");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: "main-shot.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 128,
+            created_by_user_id: admin.user_id,
+            activity_summary: Some("登记评论附件 main-shot.png".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should be created");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+        .await
+        .expect("attachment should be marked uploaded");
+    let image_url = format!(
+        "/web/work-items/{}/comments/{}/attachments/{}/download",
+        item.item_key, draft.id, attachment.id
+    );
+    let body = format!(
+        r#"<figure data-yuance-attachment-id="{}" data-yuance-attachment-kind="image" data-yuance-align="left"><img src="{image_url}" alt="截图" loading="lazy"><figcaption>main-shot.png</figcaption></figure>"#,
+        attachment.id
+    );
+    projects::publish_work_item_comment_draft(
+        &pool,
+        admin.user_id,
+        &item.item_key,
+        draft.id,
+        &body,
+        "html",
+    )
+    .await
+    .expect("draft should publish");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", item.item_key))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let description_start = body
+        .find(r#"<section class="work-item-description""#)
+        .expect("description section should render");
+    let description_end = body[description_start..]
+        .find(r#"<section class="discussion-section""#)
+        .map(|index| description_start + index)
+        .expect("discussion section should follow description");
+    let description_section = &body[description_start..description_end];
+    assert!(description_section.contains(&format!(r#"src="{image_url}""#)));
+    assert!(description_section.contains(r#"data-yuance-attachment-kind="image""#));
+    assert!(description_section.contains(r#"<figcaption>main-shot.png</figcaption>"#));
+    assert!(!description_section.contains(r#"<p>main-shot.png</p>"#));
+}
+
+#[tokio::test]
 async fn rich_text_draft_comments_are_hidden_until_published() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

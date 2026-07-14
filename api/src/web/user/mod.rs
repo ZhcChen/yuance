@@ -7159,6 +7159,7 @@ async fn load_work_item_detail(
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
     };
+    let mut item = work_item_detail_from_domain(item);
     let mut comments = Vec::new();
     for comment in projects::list_work_item_comments(pool, item.id).await? {
         let attachments = files::list_attachments(pool, "comment", comment.id).await?;
@@ -7167,8 +7168,9 @@ async fn load_work_item_detail(
             attachments,
         ));
     }
+    promote_initial_rich_comment_to_description(&mut item, &comments);
 
-    Ok(Some((work_item_detail_from_domain(item), comments)))
+    Ok(Some((item, comments)))
 }
 
 async fn load_work_item_detail_for_user(
@@ -7180,6 +7182,7 @@ async fn load_work_item_detail_for_user(
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
     };
+    let mut item = work_item_detail_from_domain(item);
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
@@ -7205,8 +7208,65 @@ async fn load_work_item_detail_for_user(
             attachments,
         ));
     }
+    promote_initial_rich_comment_to_description(&mut item, &comments);
 
-    Ok(Some((work_item_detail_from_domain(item), comments)))
+    Ok(Some((item, comments)))
+}
+
+fn promote_initial_rich_comment_to_description(
+    item: &mut WorkItemDetailView,
+    comments: &[WorkItemComment],
+) {
+    if item
+        .description_html
+        .contains("data-yuance-attachment-kind=\"image\"")
+        || item
+            .description_html
+            .contains("data-yuance-attachment-kind=\"video\"")
+        || item.description_html.contains("<img")
+        || item.description_html.contains("<video")
+    {
+        return;
+    }
+
+    let Some(comment) = comments.iter().find(|comment| {
+        !comment.is_flow && comment.parent_comment_id.is_none() && comment.body_format == "html"
+    }) else {
+        return;
+    };
+
+    if !comment.body_html.contains("data-yuance-attachment-kind")
+        || !work_item_description_matches_comment_summary(&item.description, comment)
+    {
+        return;
+    }
+
+    item.description_html = comment.body_html.clone();
+}
+
+fn work_item_description_matches_comment_summary(
+    description: &str,
+    comment: &WorkItemComment,
+) -> bool {
+    let description = normalized_plain_summary(description);
+    if description.is_empty() {
+        return false;
+    }
+    if description == normalized_plain_summary("见首条图文说明") {
+        return true;
+    }
+
+    let comment_plain = projects::work_item_comment_plain_text(&comment.body, &comment.body_format);
+    normalized_plain_summary(&comment_plain) == description
+}
+
+fn normalized_plain_summary(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
 }
 
 async fn load_project_member_options(
