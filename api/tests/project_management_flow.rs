@@ -613,6 +613,103 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
 }
 
 #[tokio::test]
+async fn work_item_detail_renders_rich_description_media_safely() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, admin.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: "detail-shot.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 128,
+            created_by_user_id: admin.user_id,
+            activity_summary: Some("登记工作项详情图片 detail-shot.png".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should be created");
+    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should be marked uploaded");
+    let image_url = format!(
+        "/web/work-items/{}/attachments/{}/download",
+        item.item_key, attachment.id
+    );
+    let rich_description = format!(
+        r#"<p>详情截图</p><figure data-yuance-attachment-id="{}" data-yuance-attachment-kind="image" data-yuance-align="center"><img src="{image_url}" alt="详情截图" loading="lazy"><script>alert(1)</script></figure><img src="https://tracker.example.invalid/out.png">"#,
+        attachment.id
+    );
+
+    projects::update_work_item(
+        &pool,
+        admin.user_id,
+        &item.item_key,
+        projects::UpdateWorkItemInput {
+            title: item.title,
+            description: rich_description,
+            status: item.status,
+            priority: item.priority,
+            assignee_username: item.assignee_username,
+            due_date: item.due_date,
+            parent_item_key: item.parent_item_key,
+        },
+    )
+    .await
+    .expect("work item should update");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let description_start = body
+        .find(r#"<section class="work-item-description""#)
+        .expect("description section should render");
+    let description_end = body[description_start..]
+        .find(r#"<section class="discussion-section""#)
+        .map(|index| description_start + index)
+        .expect("discussion section should follow description");
+    let description_section = &body[description_start..description_end];
+    assert!(
+        description_section.contains(r#"class="work-item-description-body discussion-rich-body""#)
+    );
+    assert!(description_section.contains(r#"<p>详情截图</p>"#));
+    assert!(description_section.contains(&format!(r#"src="{image_url}""#)));
+    assert!(description_section.contains(r#"data-yuance-attachment-kind="image""#));
+    assert!(!description_section.contains("alert(1)"));
+    assert!(!description_section.contains("tracker.example.invalid"));
+}
+
+#[tokio::test]
 async fn rich_text_draft_comments_are_hidden_until_published() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

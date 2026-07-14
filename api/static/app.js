@@ -1623,6 +1623,11 @@
     }
   }
 
+  function clearPageTransitionState() {
+    document.body.classList.remove("page-leaving");
+    clearContentTabNavigation();
+  }
+
   function activateContentTab(item, animateIndicator) {
     var control = item && item.closest("[data-content-tabs]");
     if (!control) {
@@ -5586,6 +5591,7 @@
     window.history.replaceState({ yuanceMessageCenter: true }, "", window.location.href);
   }
   window.addEventListener("popstate", function () {
+    clearPageTransitionState();
     if (currentMessageCenter() && isMessageCenterUrl(window.location.href)) {
       loadMessageCenter(window.location.href, { history: false });
     }
@@ -5625,6 +5631,7 @@
   });
 
   window.addEventListener("pageshow", function () {
+    clearPageTransitionState();
     scheduleContentTabsSync(false);
   });
 

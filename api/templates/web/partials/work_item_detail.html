@@ -6,7 +6,7 @@
     </div>
     <span class="content-updated">更新于 {{ item.updated_at }}</span>
   </div>
-  <div class="work-item-description-body">{{ item.description }}</div>
+  <div class="work-item-description-body discussion-rich-body">{{ item.description_html|safe }}</div>
 </section>
 
 <section class="discussion-section" aria-labelledby="discussion-title">

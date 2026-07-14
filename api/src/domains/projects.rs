@@ -4445,6 +4445,14 @@ pub fn work_item_comment_body_html_for_display(
     sanitize_comment_html(body)
 }
 
+pub fn work_item_description_html_for_display(description: &str, item_key: &str) -> String {
+    if !looks_like_rich_work_item_description(description) {
+        return plain_text_to_html(description);
+    }
+
+    sanitize_work_item_description_html(description, item_key)
+}
+
 pub fn work_item_comment_plain_text(body: &str, body_format: &str) -> String {
     if body_format == COMMENT_BODY_FORMAT_HTML {
         html_to_plain_text(&sanitize_comment_html(body))
@@ -4494,12 +4502,66 @@ fn sanitize_comment_html(body: &str) -> String {
         .to_string()
 }
 
+fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
+    let item_key = item_key.to_string();
+    ammonia::Builder::default()
+        .add_tags(&["figure", "figcaption", "img", "video"])
+        .add_tag_attributes("img", &["src", "alt", "title", "loading"])
+        .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
+        .add_tag_attributes("a", &["href", "title"])
+        .add_generic_attributes(&[
+            "data-yuance-attachment-id",
+            "data-yuance-attachment-kind",
+            "data-yuance-align",
+        ])
+        .attribute_filter(
+            move |element, attribute, value| match (element, attribute) {
+                ("img", "src") | ("source", "src") | ("video", "src")
+                    if !comment_attachment_url_like(value)
+                        && !work_item_attachment_url_like(value, &item_key) =>
+                {
+                    None
+                }
+                _ => Some(Cow::Borrowed(value)),
+            },
+        )
+        .clean(body)
+        .to_string()
+}
+
+fn looks_like_rich_work_item_description(description: &str) -> bool {
+    let lower = description.trim().to_ascii_lowercase();
+    [
+        "<p",
+        "<br",
+        "<ul",
+        "<ol",
+        "<li",
+        "<figure",
+        "<figcaption",
+        "<img",
+        "<video",
+        "<strong",
+        "<em",
+        "<a ",
+    ]
+    .iter()
+    .any(|marker| lower.contains(marker))
+}
+
 fn comment_attachment_url_like(value: &str) -> bool {
     let value = value.trim();
     let path = value.split('?').next().unwrap_or(value);
     path.starts_with("/web/work-items/")
         && path.contains("/comments/")
         && path.contains("/attachments/")
+        && path.ends_with("/download")
+}
+
+fn work_item_attachment_url_like(value: &str, item_key: &str) -> bool {
+    let value = value.trim();
+    let path = value.split('?').next().unwrap_or(value);
+    path.starts_with(&format!("/web/work-items/{item_key}/attachments/"))
         && path.ends_with("/download")
 }
 

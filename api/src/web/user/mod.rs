@@ -262,6 +262,7 @@ struct WorkItemDetailView {
     kind: String,
     title: String,
     description: String,
+    description_html: String,
     project_key: String,
     project_name: String,
     parent_item_key: String,
@@ -6302,6 +6303,8 @@ fn risk_item_from_summary(item: projects::WorkItemSummary) -> RiskItem {
 fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetailView {
     let (kind, status, status_tone) = work_item_labels(&item.item_type, &item.status);
     let priority = priority_label(&item.priority).to_string();
+    let description_html =
+        projects::work_item_description_html_for_display(&item.description, &item.item_key);
     WorkItemDetailView {
         id: item.id,
         key: item.item_key,
@@ -6309,6 +6312,7 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         kind: kind.to_string(),
         title: item.title,
         description: item.description,
+        description_html,
         project_key: item.project_key,
         project_name: item.project_name,
         parent_item_key: item.parent_item_key.clone(),
@@ -8667,6 +8671,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             kind: "任务".to_string(),
             title: "设计项目与工作项数据模型".to_string(),
             description: "落地项目、成员、需求、任务、Bug、评论和动态表。".to_string(),
+            description_html: "<p>落地项目、成员、需求、任务、Bug、评论和动态表。</p>".to_string(),
             project_key: "YCE".to_string(),
             project_name: "元策 MVP".to_string(),
             parent_item_key: "YCE-REQ-1".to_string(),

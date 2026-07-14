@@ -341,6 +341,8 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("function syncTabUrl"));
     assert!(body.contains("data-tabs-sync-url"));
     assert!(body.contains("function clearContentTabNavigation"));
+    assert!(body.contains("function clearPageTransitionState"));
+    assert!(body.contains("document.body.classList.remove(\"page-leaving\")"));
     assert!(body.contains("contentTabNavigationControl"));
     assert!(body.contains("document.fonts.ready"));
     assert!(body.contains("candidate.setAttribute(\"aria-current\", \"page\")"));
