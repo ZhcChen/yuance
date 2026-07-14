@@ -418,6 +418,31 @@ struct TestStorageUploadGrant {
 }
 
 const TEST_STORAGE_UPLOAD_GRANT_AAD: &[u8] = b"yuance:test-storage-upload:v1";
+const AI_PENDING_CONFIRMATION_STATUS: &str = "pending_confirmation";
+
+#[derive(Debug, Clone)]
+struct ApiTokenActor {
+    display_name: String,
+}
+
+#[derive(Debug, Clone)]
+struct ApiPrincipal {
+    user: auth::AuthUser,
+    token_actor: Option<ApiTokenActor>,
+}
+
+impl ApiPrincipal {
+    fn actor_display_name_snapshot(&self) -> String {
+        self.token_actor
+            .as_ref()
+            .map(|actor| actor.display_name.clone())
+            .unwrap_or_default()
+    }
+
+    fn is_token_actor(&self) -> bool {
+        self.token_actor.is_some()
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct WorkItemQuery {
@@ -1386,7 +1411,8 @@ pub async fn create_work_item(
     headers: HeaderMap,
     Json(payload): Json<CreateWorkItemRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -1408,6 +1434,7 @@ pub async fn create_work_item(
             assignee_username: payload.assignee_username,
             due_date: payload.due_date,
             parent_item_key: payload.parent_item_key,
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
     .await?;
@@ -1449,7 +1476,8 @@ pub async fn update_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<UpdateWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -1462,6 +1490,25 @@ pub async fn update_work_item(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    let token_actor_submitted_status = principal.is_token_actor() && payload.status.is_some();
+    let status = match payload.status {
+        Some(status) if principal.is_token_actor() => {
+            ensure_ai_target_status(&status)?;
+            status
+        }
+        Some(status) => status,
+        None => item.status.clone(),
+    };
+    let assignee_username = match payload.assignee_username {
+        Some(assignee_username)
+            if token_actor_submitted_status && assignee_username.trim().is_empty() =>
+        {
+            user.username.clone()
+        }
+        Some(assignee_username) => assignee_username,
+        None if token_actor_submitted_status => user.username.clone(),
+        None => item.assignee_username.clone(),
+    };
     let updated = projects::update_work_item(
         pool,
         user.id,
@@ -1471,15 +1518,14 @@ pub async fn update_work_item(
             description: payload
                 .description
                 .unwrap_or_else(|| item.description.clone()),
-            status: payload.status.unwrap_or_else(|| item.status.clone()),
+            status,
             priority: payload.priority.unwrap_or_else(|| item.priority.clone()),
-            assignee_username: payload
-                .assignee_username
-                .unwrap_or_else(|| item.assignee_username.clone()),
+            assignee_username,
             due_date: payload.due_date.unwrap_or_else(|| item.due_date.clone()),
             parent_item_key: payload
                 .parent_item_key
                 .unwrap_or_else(|| item.parent_item_key.clone()),
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
     .await?;
@@ -1502,7 +1548,8 @@ pub async fn handoff_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<HandoffWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -1516,15 +1563,28 @@ pub async fn handoff_work_item(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    let status = if principal.is_token_actor() {
+        ensure_ai_target_status(&payload.status)?;
+        AI_PENDING_CONFIRMATION_STATUS.to_string()
+    } else {
+        payload.status
+    };
+    let assignee_username =
+        if principal.is_token_actor() && payload.assignee_username.trim().is_empty() {
+            user.username.clone()
+        } else {
+            payload.assignee_username
+        };
     let updated = projects::handoff_work_item(
         pool,
         user.id,
         &item_key,
         projects::HandoffWorkItemInput {
-            status: payload.status,
-            assignee_username: payload.assignee_username,
+            status,
+            assignee_username,
             body: payload.body,
             source_comment_id: payload.source_comment_id,
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
     .await?;
@@ -1581,7 +1641,8 @@ pub async fn create_work_item_comment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -1594,14 +1655,16 @@ pub async fn create_work_item_comment(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_work_item_accepts_writes(&item)?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let comment = projects::add_work_item_comment_reply_with_format(
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let actor_display_name_snapshot = principal.actor_display_name_snapshot();
+    let comment = projects::add_work_item_comment_reply_with_format_and_actor(
         pool,
         user.id,
         &item_key,
         &payload.body,
         &payload.body_format,
         payload.parent_comment_id,
+        &actor_display_name_snapshot,
     )
     .await?;
     audit::record(
@@ -3275,15 +3338,38 @@ fn ensure_api_csrf(headers: &HeaderMap) -> AppResult<()> {
 }
 
 async fn require_api_user(state: &AppState, headers: &HeaderMap) -> AppResult<auth::AuthUser> {
+    Ok(require_api_principal(state, headers).await?.user)
+}
+
+async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResult<ApiPrincipal> {
     let pool = state.pool()?;
     if let Some(raw_token) = api_tokens::bearer_token(headers) {
-        return api_tokens::user_from_bearer_token(pool, &raw_token)
+        let authenticated = api_tokens::authenticated_token_from_bearer_token(pool, &raw_token)
             .await?
-            .ok_or(AppError::Unauthorized);
+            .ok_or(AppError::Unauthorized)?;
+        let display_name =
+            api_token_actor_display_name(&authenticated.user, &authenticated.token_name);
+        return Ok(ApiPrincipal {
+            user: authenticated.user,
+            token_actor: Some(ApiTokenActor { display_name }),
+        });
     }
-    auth::user_from_headers(pool, headers)
+    let user = auth::user_from_headers(pool, headers)
         .await?
-        .ok_or(AppError::Unauthorized)
+        .ok_or(AppError::Unauthorized)?;
+    Ok(ApiPrincipal {
+        user,
+        token_actor: None,
+    })
+}
+
+fn api_token_actor_display_name(user: &auth::AuthUser, token_name: &str) -> String {
+    let owner = if user.display_name.trim().is_empty() {
+        user.username.trim()
+    } else {
+        user.display_name.trim()
+    };
+    format!("{} 的 AI助手「{}」", owner, token_name.trim())
 }
 
 async fn api_user_can_access_all_projects(
@@ -3483,6 +3569,17 @@ fn ensure_api_comment_accepts_attachments(
     }
 
     Err(AppError::Forbidden("流程记录不能添加附件".to_string()))
+}
+
+fn ensure_ai_target_status(status: &str) -> AppResult<()> {
+    if status.trim() == AI_PENDING_CONFIRMATION_STATUS {
+        return Ok(());
+    }
+
+    Err(AppError::BadRequest(
+        "AI 助手通过 OpenAPI 只能将工作项提交为待确认，最终完成、验证或关闭需由用户确认"
+            .to_string(),
+    ))
 }
 
 async fn ensure_api_permission(

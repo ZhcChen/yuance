@@ -223,6 +223,7 @@ pub struct CreateWorkItemInput {
     pub assignee_username: String,
     pub due_date: String,
     pub parent_item_key: String,
+    pub actor_display_name_snapshot: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -301,6 +302,7 @@ pub struct UpdateWorkItemInput {
     pub assignee_username: String,
     pub due_date: String,
     pub parent_item_key: String,
+    pub actor_display_name_snapshot: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -309,6 +311,7 @@ pub struct HandoffWorkItemInput {
     pub assignee_username: String,
     pub body: String,
     pub source_comment_id: Option<i64>,
+    pub actor_display_name_snapshot: String,
 }
 
 pub async fn seed_demo_data(pool: &SqlitePool, owner_user_id: i64) -> AppResult<DemoSeedResult> {
@@ -2283,6 +2286,8 @@ pub async fn create_work_item(
     let due_date = validate_optional_date(&input.due_date, "工作项截止日期")?;
     let parent_item_key = input.parent_item_key.trim();
     let assignee_username = input.assignee_username.trim();
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(&input.actor_display_name_snapshot);
     let item_segment = work_item_key_segment(item_type);
 
     let (project_id, project_status) = sqlx::query_as::<_, (i64, String)>(
@@ -2357,6 +2362,7 @@ pub async fn create_work_item(
         CreateNotification {
             recipient_user_id: assignee_user_id,
             actor_user_id,
+            actor_display_name_snapshot: &actor_display_name_snapshot,
             kind: "work_item_assigned",
             work_item_id,
             comment_id: None,
@@ -2371,16 +2377,18 @@ pub async fn create_work_item(
         INSERT INTO project_activities (
             project_id,
             actor_user_id,
+            actor_display_name_snapshot,
             action,
             target_type,
             target_id,
             summary
         )
-        VALUES (?1, ?2, 'work_item.created', 'work_item', ?3, ?4)
+        VALUES (?1, ?2, ?3, 'work_item.created', 'work_item', ?4, ?5)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(&item_key)
     .bind(format!("创建工作项 {item_key}"))
     .execute(&mut *tx)
@@ -2482,11 +2490,11 @@ pub async fn list_work_item_comments(
             c.is_draft,
             c.author_user_id,
             COALESCE(u.username, '') AS author_username,
-            COALESCE(u.display_name, '') AS author_display_name,
+            COALESCE(NULLIF(c.actor_display_name_snapshot, ''), u.display_name, '') AS author_display_name,
             c.created_at,
             c.updated_at,
             c.parent_comment_id,
-            COALESCE(parent_author.display_name, '') AS parent_author_display_name
+            COALESCE(NULLIF(parent.actor_display_name_snapshot, ''), parent_author.display_name, '') AS parent_author_display_name
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
         LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
@@ -2649,6 +2657,8 @@ pub async fn handoff_work_item(
     let status = validate_work_item_status(&input.status)?;
     let assignee_username = input.assignee_username.trim();
     let body = validate_optional_text(&input.body, "处理说明", 5000)?;
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(&input.actor_display_name_snapshot);
     let Some((
         work_item_id,
         project_id,
@@ -2763,14 +2773,16 @@ pub async fn handoff_work_item(
     .execute(&mut *tx)
     .await?;
 
-    let should_notify_assignment =
-        current_assignee_user_id != next_assignee_user_id || input.source_comment_id.is_some();
+    let should_notify_assignment = current_assignee_user_id != next_assignee_user_id
+        || input.source_comment_id.is_some()
+        || !actor_display_name_snapshot.is_empty();
     if should_notify_assignment && let Some(recipient_user_id) = next_assignee_user_id {
         notifications::create_in_transaction(
             &mut tx,
             CreateNotification {
                 recipient_user_id,
                 actor_user_id,
+                actor_display_name_snapshot: &actor_display_name_snapshot,
                 kind: "work_item_assigned",
                 work_item_id,
                 comment_id: input.source_comment_id,
@@ -2786,13 +2798,15 @@ pub async fn handoff_work_item(
         INSERT INTO work_item_comments (
             work_item_id,
             author_user_id,
+            actor_display_name_snapshot,
             body
         )
-        VALUES (?1, ?2, ?3)
+        VALUES (?1, ?2, ?3, ?4)
         "#,
     )
     .bind(work_item_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(encode_flow_comment_body(&flow_summary))
     .execute(&mut *tx)
     .await?;
@@ -2802,17 +2816,19 @@ pub async fn handoff_work_item(
         INSERT INTO project_activities (
             project_id,
             actor_user_id,
+            actor_display_name_snapshot,
             action,
             target_type,
             target_id,
             summary,
             metadata
         )
-        VALUES (?1, ?2, 'work_item.handoff', 'work_item', ?3, ?4, ?5)
+        VALUES (?1, ?2, ?3, 'work_item.handoff', 'work_item', ?4, ?5, ?6)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(item_key)
     .bind(format!("推进工作项 {item_key}"))
     .bind(format!(
@@ -2841,6 +2857,8 @@ pub async fn update_work_item(
     let assignee_username = input.assignee_username.trim();
     let due_date = validate_optional_date(&input.due_date, "工作项截止日期")?;
     let parent_item_key = input.parent_item_key.trim();
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(&input.actor_display_name_snapshot);
 
     let Some((work_item_id, project_id, project_status, item_type, current_status)) =
         sqlx::query_as::<_, (i64, i64, String, String, String)>(
@@ -2904,17 +2922,19 @@ pub async fn update_work_item(
         INSERT INTO project_activities (
             project_id,
             actor_user_id,
+            actor_display_name_snapshot,
             action,
             target_type,
             target_id,
             summary,
             metadata
         )
-        VALUES (?1, ?2, 'work_item.updated', 'work_item', ?3, ?4, ?5)
+        VALUES (?1, ?2, ?3, 'work_item.updated', 'work_item', ?4, ?5, ?6)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(item_key)
     .bind(format!("更新工作项 {item_key}"))
     .bind(format!(
@@ -3111,7 +3131,30 @@ pub async fn add_work_item_comment_reply_with_format(
     body_format: &str,
     parent_comment_id: Option<i64>,
 ) -> AppResult<WorkItemCommentSummary> {
+    add_work_item_comment_reply_with_format_and_actor(
+        pool,
+        actor_user_id,
+        item_key,
+        body,
+        body_format,
+        parent_comment_id,
+        "",
+    )
+    .await
+}
+
+pub async fn add_work_item_comment_reply_with_format_and_actor(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    body: &str,
+    body_format: &str,
+    parent_comment_id: Option<i64>,
+    actor_display_name_snapshot: &str,
+) -> AppResult<WorkItemCommentSummary> {
     let prepared = prepare_work_item_comment_body(body, body_format)?;
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -3143,16 +3186,18 @@ pub async fn add_work_item_comment_reply_with_format(
         INSERT INTO work_item_comments (
             work_item_id,
             author_user_id,
+            actor_display_name_snapshot,
             body,
             body_format,
             parent_comment_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         RETURNING id
         "#,
     )
     .bind(work_item_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(&prepared.body)
     .bind(&prepared.body_format)
     .bind(parent_comment_id)
@@ -3178,6 +3223,7 @@ pub async fn add_work_item_comment_reply_with_format(
             CreateNotification {
                 recipient_user_id,
                 actor_user_id,
+                actor_display_name_snapshot: &actor_display_name_snapshot,
                 kind: "comment_replied",
                 work_item_id,
                 comment_id: Some(comment_id),
@@ -3193,16 +3239,18 @@ pub async fn add_work_item_comment_reply_with_format(
         INSERT INTO project_activities (
             project_id,
             actor_user_id,
+            actor_display_name_snapshot,
             action,
             target_type,
             target_id,
             summary
         )
-        VALUES (?1, ?2, 'work_item.commented', 'work_item', ?3, ?4)
+        VALUES (?1, ?2, ?3, 'work_item.commented', 'work_item', ?4, ?5)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(item_key)
     .bind(format!("评论工作项 {item_key}"))
     .execute(&mut *tx)
@@ -3354,6 +3402,7 @@ pub async fn publish_work_item_comment_draft(
             CreateNotification {
                 recipient_user_id,
                 actor_user_id,
+                actor_display_name_snapshot: "",
                 kind: "comment_replied",
                 work_item_id,
                 comment_id: Some(comment_id),
@@ -3435,11 +3484,11 @@ async fn get_work_item_comment_by_visibility(
             c.is_draft,
             c.author_user_id,
             COALESCE(u.username, '') AS author_username,
-            COALESCE(u.display_name, '') AS author_display_name,
+            COALESCE(NULLIF(c.actor_display_name_snapshot, ''), u.display_name, '') AS author_display_name,
             c.created_at,
             c.updated_at,
             c.parent_comment_id,
-            COALESCE(parent_author.display_name, '') AS parent_author_display_name
+            COALESCE(NULLIF(parent.actor_display_name_snapshot, ''), parent_author.display_name, '') AS parent_author_display_name
         FROM work_item_comments c
         LEFT JOIN users u ON u.id = c.author_user_id
         LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
@@ -3614,7 +3663,7 @@ pub async fn list_recent_activities(
             pa.id,
             p.project_key,
             pa.summary,
-            COALESCE(u.display_name, '') AS actor_display_name,
+            COALESCE(NULLIF(pa.actor_display_name_snapshot, ''), u.display_name, '') AS actor_display_name,
             pa.created_at
         FROM project_activities pa
         JOIN projects p ON p.id = pa.project_id
@@ -3657,7 +3706,7 @@ pub async fn list_recent_activities_for_user(
             pa.id,
             p.project_key,
             pa.summary,
-            COALESCE(u.display_name, '') AS actor_display_name,
+            COALESCE(NULLIF(pa.actor_display_name_snapshot, ''), u.display_name, '') AS actor_display_name,
             pa.created_at
         FROM project_activities pa
         JOIN projects p ON p.id = pa.project_id
@@ -3698,7 +3747,7 @@ pub async fn list_project_activities(
             pa.id,
             p.project_key,
             pa.summary,
-            COALESCE(u.display_name, '') AS actor_display_name,
+            COALESCE(NULLIF(pa.actor_display_name_snapshot, ''), u.display_name, '') AS actor_display_name,
             pa.created_at
         FROM project_activities pa
         JOIN projects p ON p.id = pa.project_id
@@ -4970,6 +5019,7 @@ fn work_item_status_label(status: &str) -> &'static str {
     match status {
         "open" => "待处理",
         "in_progress" => "进行中",
+        "pending_confirmation" => "待确认",
         "done" => "已完成",
         "resolved" => "已解决",
         "verified" => "已验证",
@@ -4977,6 +5027,10 @@ fn work_item_status_label(status: &str) -> &'static str {
         "cancelled" => "已取消",
         _ => "未知",
     }
+}
+
+fn normalize_actor_display_name_snapshot(display_name: &str) -> String {
+    display_name.trim().chars().take(160).collect()
 }
 
 fn assignee_label(display_name: &str) -> &str {
@@ -5138,13 +5192,14 @@ fn validate_work_item_status(status: &str) -> AppResult<&'static str> {
     match status.trim() {
         "open" => Ok("open"),
         "in_progress" => Ok("in_progress"),
+        "pending_confirmation" => Ok("pending_confirmation"),
         "done" => Ok("done"),
         "verified" => Ok("verified"),
         "resolved" => Ok("resolved"),
         "closed" => Ok("closed"),
         "cancelled" => Ok("cancelled"),
         _ => Err(AppError::BadRequest(
-            "工作项状态只能是 open / in_progress / done / verified / resolved / closed / cancelled"
+            "工作项状态只能是 open / in_progress / pending_confirmation / done / verified / resolved / closed / cancelled"
                 .to_string(),
         )),
     }
@@ -5158,8 +5213,9 @@ pub fn allowed_work_item_status_transitions(
     current_status: &str,
 ) -> AppResult<&'static [&'static str]> {
     match validate_work_item_status(current_status)? {
-        "open" => Ok(&["in_progress", "closed"]),
-        "in_progress" => Ok(&["open", "done", "resolved", "closed"]),
+        "open" => Ok(&["in_progress", "pending_confirmation", "closed"]),
+        "in_progress" => Ok(&["open", "pending_confirmation", "done", "resolved", "closed"]),
+        "pending_confirmation" => Ok(&["in_progress", "done", "resolved", "verified", "closed"]),
         "done" => Ok(&["in_progress", "verified", "closed"]),
         "resolved" => Ok(&["in_progress", "verified", "closed"]),
         "verified" => Ok(&["in_progress", "closed"]),

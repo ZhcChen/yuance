@@ -55,6 +55,7 @@
           <option value="pending" {% if filters.status == "pending" %}selected{% endif %}>全部开放项</option>
           <option value="open" {% if filters.status == "open" %}selected{% endif %}>待处理</option>
           <option value="in_progress" {% if filters.status == "in_progress" %}selected{% endif %}>进行中</option>
+          <option value="pending_confirmation" {% if filters.status == "pending_confirmation" %}selected{% endif %}>待确认</option>
           <option value="done" {% if filters.status == "done" %}selected{% endif %}>已完成</option>
           <option value="resolved" {% if filters.status == "resolved" %}selected{% endif %}>已解决</option>
           <option value="verified" {% if filters.status == "verified" %}selected{% endif %}>已验证</option>

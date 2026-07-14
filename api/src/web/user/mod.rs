@@ -3121,6 +3121,7 @@ pub async fn work_items_create(
                 assignee_username: form.assignee_username,
                 due_date: form.due_date,
                 parent_item_key: form.parent_item_key,
+                actor_display_name_snapshot: String::new(),
             },
         )
         .await?;
@@ -3365,6 +3366,7 @@ pub async fn work_item_handoff(
                 assignee_username: form.assignee_username,
                 body: form.body,
                 source_comment_id: None,
+                actor_display_name_snapshot: String::new(),
             },
         )
         .await?;
@@ -3426,6 +3428,7 @@ pub async fn work_item_update(
                 assignee_username: form.assignee_username,
                 due_date: form.due_date,
                 parent_item_key: form.parent_item_key,
+                actor_display_name_snapshot: String::new(),
             },
         )
         .await?;
@@ -8062,9 +8065,17 @@ fn work_item_status_options(
         let relevant = match item_kind {
             "Bug" => matches!(
                 *status,
-                "open" | "in_progress" | "resolved" | "verified" | "closed"
+                "open"
+                    | "in_progress"
+                    | "pending_confirmation"
+                    | "resolved"
+                    | "verified"
+                    | "closed"
             ),
-            "需求" | "任务" => matches!(*status, "open" | "in_progress" | "done" | "closed"),
+            "需求" | "任务" => matches!(
+                *status,
+                "open" | "in_progress" | "pending_confirmation" | "done" | "closed"
+            ),
             _ => true,
         };
         if relevant && !values.contains(status) {
@@ -8275,6 +8286,7 @@ fn work_item_labels(item_type: &str, status: &str) -> (&'static str, &'static st
     let (status, tone) = match status {
         "open" => ("待处理", "warning"),
         "in_progress" => ("进行中", "info"),
+        "pending_confirmation" => ("待确认", "warning"),
         "done" => ("已完成", "ok"),
         "verified" => ("已验证", "ok"),
         "resolved" => ("已解决", "ok"),

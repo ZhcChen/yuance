@@ -1,7 +1,7 @@
 ---
 title: feat: AI 助手 Token 身份与待确认流转
 type: feat
-status: active
+status: completed
 date: 2026-07-14
 ---
 
@@ -99,7 +99,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: API Token 代理身份上下文**
+- [x] **Unit 1: API Token 代理身份上下文**
 
 **Goal:** 让 OpenAPI handler 能区分 Cookie session 用户与 Bearer Token AI 助手，并拿到 token id、token 名称和代理显示名。
 
@@ -131,7 +131,7 @@ flowchart TB
 **Verification:**
 - 所有 OpenAPI 入口仍能通过真实用户权限校验，且 Bearer Token 路径可获得 token 名称。
 
-- [ ] **Unit 2: 待确认状态与 Web 状态机**
+- [x] **Unit 2: 待确认状态与 Web 状态机**
 
 **Goal:** 给需求、任务、Bug 新增 `pending_confirmation` 状态，并保证 Web 列表、统计、角标、标签和状态下拉都正确展示。
 
@@ -166,7 +166,7 @@ flowchart TB
 **Verification:**
 - UI 和 API 返回的状态码、状态文案、状态 tone 一致。
 
-- [ ] **Unit 3: AI 助手流转约束与默认指派**
+- [x] **Unit 3: AI 助手流转约束与默认指派**
 
 **Goal:** 对 Bearer Token 发起的工作项状态变更强制“待确认”，默认指派回 token owner，并记录 AI 助手身份。
 
@@ -200,7 +200,7 @@ flowchart TB
 **Verification:**
 - MCP 通过 OpenAPI 处理工作项时只能留下待确认记录，不能直接关闭。
 
-- [ ] **Unit 4: 持久化 AI 助手展示与历史快照**
+- [x] **Unit 4: 持久化 AI 助手展示与历史快照**
 
 **Goal:** 在评论、流转、项目动态、通知等用户可见历史中稳定展示 AI 助手身份。
 
@@ -236,7 +236,7 @@ flowchart TB
 **Verification:**
 - 用户可以清楚分辨“本人操作”和“本人授权的 AI 助手操作”。
 
-- [ ] **Unit 5: MCP 工具和 OpenAPI 文档收紧**
+- [x] **Unit 5: MCP 工具和 OpenAPI 文档收紧**
 
 **Goal:** 更新 MCP 工具、OpenAPI 契约和初始化说明，明确 AI 只能提交待确认，并提供更安全的工具语义。
 

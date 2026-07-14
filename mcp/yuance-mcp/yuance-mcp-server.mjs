@@ -230,20 +230,23 @@ registerTool(
   server,
   'yuance_handoff_work_item',
   {
-    title: '流转并指派工作项',
-    description: '更新工作项状态、处理人并记录流转说明。需要 work_item:read 和 work_item:write scope。',
+    title: '提交工作项待确认',
+    description:
+      'AI 助手完成处理后提交待确认，并记录流转说明。服务端会把状态限制为 pending_confirmation，最终完成、验证或关闭必须由用户确认。需要 work_item:read 和 work_item:write scope。',
     inputSchema: {
       item_key: z.string().min(1).describe('工作项编号。'),
-      status: z.string().min(1).describe('目标状态枚举值。'),
-      assignee_username: z.string().optional().describe('新处理人用户名，可留空。'),
-      body: z.string().optional().describe('流转说明。'),
+      assignee_username: z
+        .string()
+        .optional()
+        .describe('新处理人用户名，可留空；留空时服务端默认指派回 Token 所属用户。'),
+      body: z.string().optional().describe('待确认说明，建议概括 AI 已完成的处理内容。'),
       source_comment_id: z.number().int().optional().describe('来源评论 ID，可留空。'),
     },
   },
-  ({ item_key, status, assignee_username = '', body = '', source_comment_id }) =>
+  ({ item_key, assignee_username = '', body = '', source_comment_id }) =>
     yuanceRequest(`/api/v1/work-items/${encodeURIComponent(item_key)}/handoff`, {
       method: 'POST',
-      body: { status, assignee_username, body, source_comment_id },
+      body: { status: 'pending_confirmation', assignee_username, body, source_comment_id },
     }),
 );
 

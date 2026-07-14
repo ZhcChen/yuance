@@ -18,6 +18,7 @@ pub struct NotificationSummary {
 pub struct CreateNotification<'a> {
     pub recipient_user_id: i64,
     pub actor_user_id: i64,
+    pub actor_display_name_snapshot: &'a str,
     pub kind: &'a str,
     pub work_item_id: i64,
     pub comment_id: Option<i64>,
@@ -46,18 +47,21 @@ pub async fn create_in_transaction(
     tx: &mut Transaction<'_, Sqlite>,
     input: CreateNotification<'_>,
 ) -> AppResult<()> {
-    if input.recipient_user_id == input.actor_user_id {
+    if input.recipient_user_id == input.actor_user_id
+        && input.actor_display_name_snapshot.trim().is_empty()
+    {
         return Ok(());
     }
     sqlx::query(
         r#"
         INSERT INTO notifications (
-            recipient_user_id, actor_user_id, kind, work_item_id, comment_id, title, body
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            recipient_user_id, actor_user_id, actor_display_name_snapshot, kind, work_item_id, comment_id, title, body
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         "#,
     )
     .bind(input.recipient_user_id)
     .bind(input.actor_user_id)
+    .bind(input.actor_display_name_snapshot.trim())
     .bind(input.kind)
     .bind(input.work_item_id)
     .bind(input.comment_id)
@@ -144,7 +148,7 @@ async fn list_for_user_window(
             END,
             n.title,
             n.body,
-            COALESCE(actor.display_name, ''),
+            COALESCE(NULLIF(n.actor_display_name_snapshot, ''), actor.display_name, ''),
             COALESCE(n.read_at, ''),
             n.created_at
         FROM notifications n

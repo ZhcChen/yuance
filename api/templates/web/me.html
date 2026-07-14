@@ -281,14 +281,14 @@
     <div class="modal-head">
       <div>
         <h2 id="me-api-token-modal-title">创建访问 Token</h2>
-        <p>建议只勾选 MCP 实际需要的权限。Token 明文只显示一次。</p>
+        <p>建议只勾选 MCP 实际需要的权限。Token 名称会作为 AI 助手名称展示，明文只显示一次。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
     <form class="modal-body modal-form" method="post" action="/web/me/api-tokens">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <label>
-        名称
+        AI 助手名称
         <input name="name" value="MCP 本地访问" required autofocus>
       </label>
       <label>

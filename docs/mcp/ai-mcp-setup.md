@@ -14,6 +14,8 @@ date: 2026-07-14
 - MCP server 是本地 Node.js 脚本，不发布 npm。
 - MCP server 不直连数据库，只请求元策 HTTP API。
 - 认证使用个人中心创建的 `yuance_pat_*` Personal Access Token。
+- Token 绑定创建它的真实用户，并继承该用户的项目范围、RBAC 和业务权限；Token 名称会作为该用户的 AI 助手标识展示在评论、流转和通知中。
+- AI 助手通过 OpenAPI/MCP 处理需求、任务或 Bug 时，只能提交到“待确认”；最终完成、验证或关闭必须由真实用户在元策中确认。
 - 受保护资料默认不返回正文；只有用户明确授权并提供该条资料密码时，才调用解锁工具。
 
 ## 1. 在元策创建 Personal Access Token
@@ -25,6 +27,20 @@ date: 2026-07-14
 ```
 
 点击“创建访问 Token”，建议按 MCP 需要选择最小权限：
+
+Token 名称建议填写清晰的 AI 助手名称，例如：
+
+```text
+Claude Code 本地助手
+Cursor 项目助手
+Codex CLI 助手
+```
+
+后续 AI 通过该 Token 操作时，页面会显示类似：
+
+```text
+张三 的 AI助手「Claude Code 本地助手」
+```
 
 ```text
 project:read          读取项目
@@ -48,6 +64,16 @@ YCE,OPS   只允许访问 YCE 和 OPS 项目
 ```
 
 项目范围不会绕过元策自身的项目成员范围、RBAC 和业务权限校验。
+
+AI 助手写入限制：
+
+```text
+- 可以读取项目、需求、任务、Bug、评论、资料库和消息。
+- 可以发表评论。
+- 可以把工作项提交为“待确认”。
+- 不能直接把工作项改成已完成、已解决、已验证或已关闭。
+- 提交待确认后，默认指派回 Token 所属真实用户，由用户最终确认。
+```
 
 ## 2. 克隆开源仓库并复制 MCP 脚本
 
@@ -178,7 +204,7 @@ yuance_list_work_items
 yuance_get_work_item
 yuance_list_work_item_comments
 yuance_create_work_item_comment
-yuance_handoff_work_item
+yuance_handoff_work_item          提交待确认，不直接关闭工作项
 yuance_list_project_resources
 yuance_get_project_resource
 yuance_unlock_project_resource

@@ -53,6 +53,13 @@ pub struct CreatedApiToken {
 }
 
 #[derive(Debug, Clone)]
+pub struct AuthenticatedApiToken {
+    pub token_id: i64,
+    pub token_name: String,
+    pub user: AuthUser,
+}
+
+#[derive(Debug, Clone)]
 pub struct CreateApiTokenInput {
     pub name: String,
     pub scopes: Vec<String>,
@@ -73,13 +80,22 @@ pub async fn user_from_bearer_token(
     pool: &SqlitePool,
     raw_token: &str,
 ) -> AppResult<Option<AuthUser>> {
+    Ok(authenticated_token_from_bearer_token(pool, raw_token)
+        .await?
+        .map(|token| token.user))
+}
+
+pub async fn authenticated_token_from_bearer_token(
+    pool: &SqlitePool,
+    raw_token: &str,
+) -> AppResult<Option<AuthenticatedApiToken>> {
     if !raw_token.starts_with(TOKEN_PREFIX) {
         return Ok(None);
     }
     let token_hash = hash_token(raw_token);
-    let row = sqlx::query_as::<_, (i64, String, String, i64)>(
+    let row = sqlx::query_as::<_, (i64, String, i64, String, String, i64)>(
         r#"
-        SELECT u.id, u.username, u.display_name, u.is_super_admin
+        SELECT t.id, t.name, u.id, u.username, u.display_name, u.is_super_admin
         FROM api_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = ?1
@@ -92,7 +108,7 @@ pub async fn user_from_bearer_token(
     .fetch_optional(pool)
     .await?;
 
-    let Some((id, username, display_name, is_super_admin)) = row else {
+    let Some((token_id, token_name, id, username, display_name, is_super_admin)) = row else {
         return Ok(None);
     };
 
@@ -108,11 +124,15 @@ pub async fn user_from_bearer_token(
     .execute(pool)
     .await?;
 
-    Ok(Some(AuthUser {
-        id,
-        username,
-        display_name,
-        is_super_admin: is_super_admin != 0,
+    Ok(Some(AuthenticatedApiToken {
+        token_id,
+        token_name,
+        user: AuthUser {
+            id,
+            username,
+            display_name,
+            is_super_admin: is_super_admin != 0,
+        },
     }))
 }
 
