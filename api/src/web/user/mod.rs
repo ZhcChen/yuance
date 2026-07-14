@@ -13,7 +13,7 @@ use sqlx::SqlitePool;
 
 use crate::{
     domains::{
-        audit, auth,
+        api_tokens, audit, auth,
         bootstrap::{self, BootstrapInitInput},
         files, notifications, project_resources, projects, rbac, storage, users,
     },
@@ -478,6 +478,21 @@ struct UserProfileView {
 }
 
 #[derive(Debug, Clone)]
+struct ApiTokenView {
+    id: i64,
+    name: String,
+    scopes_label: String,
+    project_scope: String,
+    token_suffix: String,
+    expires_at: String,
+    last_used_at: String,
+    created_at: String,
+    status: &'static str,
+    status_tone: &'static str,
+    is_revoked: bool,
+}
+
+#[derive(Debug, Clone)]
 struct MySummary {
     project_count: usize,
     assigned_count: usize,
@@ -622,6 +637,10 @@ struct MeTemplate {
     summary: MySummary,
     projects: Vec<ProjectRow>,
     assigned_items: Vec<WorkItem>,
+    api_tokens: Vec<ApiTokenView>,
+    has_api_tokens: bool,
+    created_api_token: String,
+    has_created_api_token: bool,
     has_projects: bool,
     has_assigned_items: bool,
 }
@@ -1344,6 +1363,25 @@ pub struct MePasswordForm {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MeApiTokenCreateForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    project_scope: String,
+    #[serde(default)]
+    expires_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MeApiTokenRevokeForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WorkItemListQuery {
     #[serde(default)]
     q: String,
@@ -1494,10 +1532,19 @@ pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppRe
         Err(response) => return Ok(response),
     };
 
-    let (profile, projects, assigned_items) = match context.pool {
+    render_me_response(&state, &headers, context, String::new()).await
+}
+
+async fn render_me_response(
+    state: &AppState,
+    headers: &HeaderMap,
+    context: WebContext<'_>,
+    created_api_token: String,
+) -> AppResult<Response> {
+    let (profile, projects, assigned_items, api_tokens) = match context.pool {
         Some(pool) => {
             let Some(profile) = users::get_user_summary(pool, context.user_id).await? else {
-                return login_redirect(&headers);
+                return login_redirect(headers);
             };
             let projects =
                 if rbac::user_has_permission(pool, context.user_id, "project.view").await? {
@@ -1523,20 +1570,32 @@ pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppRe
                 } else {
                     Vec::new()
                 };
+            let api_tokens = api_tokens::list_tokens(pool, context.user_id)
+                .await?
+                .into_iter()
+                .map(api_token_view)
+                .collect::<Vec<_>>();
 
-            (user_profile_from_summary(profile), projects, assigned_items)
+            (
+                user_profile_from_summary(profile),
+                projects,
+                assigned_items,
+                api_tokens,
+            )
         }
         None => (
             sample_user_profile(),
             sample_projects(),
             sample_work_items(None),
+            Vec::new(),
         ),
     };
     let summary = my_summary(&projects, &assigned_items);
     let csrf_token = context.csrf_token.clone();
+    let has_created_api_token = !created_api_token.is_empty();
 
     with_csrf_cookie(
-        &state,
+        state,
         &csrf_token,
         response::html(MeTemplate {
             active: "me",
@@ -1548,6 +1607,10 @@ pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppRe
             topbar_project_options: context.topbar_project_options,
             has_projects: !projects.is_empty(),
             has_assigned_items: !assigned_items.is_empty(),
+            has_api_tokens: !api_tokens.is_empty(),
+            api_tokens,
+            created_api_token,
+            has_created_api_token,
             profile,
             summary,
             projects,
@@ -1622,6 +1685,72 @@ pub async fn me_password_update(
             "user",
             &context.current_user,
             "{}",
+        )
+        .await?;
+    }
+
+    Ok(Redirect::to("/web/me").into_response())
+}
+
+pub async fn me_api_token_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_api_token_create_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let mut raw_token = String::new();
+    if let Some(pool) = context.pool {
+        let created = api_tokens::create_token(
+            pool,
+            context.user_id,
+            api_tokens::CreateApiTokenInput {
+                name: form.name,
+                scopes: form.scopes,
+                project_scope: form.project_scope,
+                expires_at: form.expires_at,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "api_token.create",
+            "api_token",
+            &created.token.id.to_string(),
+            r#"{"source":"web"}"#,
+        )
+        .await?;
+        raw_token = created.raw_token;
+    }
+
+    render_me_response(&state, &headers, context, raw_token).await
+}
+
+pub async fn me_api_token_revoke(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    Form(form): Form<MeApiTokenRevokeForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        let token = api_tokens::revoke_token(pool, context.user_id, token_id).await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "api_token.revoke",
+            "api_token",
+            &token.id.to_string(),
+            r#"{"source":"web"}"#,
         )
         .await?;
     }
@@ -5768,6 +5897,34 @@ fn parse_permission_keys_form(form: &[u8]) -> AppResult<Vec<String>> {
         .collect())
 }
 
+fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("访问 Token 表单解析失败：{error}")))?;
+    let mut csrf_token = String::new();
+    let mut name = String::new();
+    let mut scopes = Vec::new();
+    let mut project_scope = String::new();
+    let mut expires_at = String::new();
+    for (key, value) in pairs {
+        match key.as_str() {
+            csrf::CSRF_FIELD_NAME => csrf_token = value,
+            "name" => name = value,
+            "scopes" => scopes.push(value),
+            "project_scope" => project_scope = value,
+            "expires_at" => expires_at = value,
+            _ => {}
+        }
+    }
+
+    Ok(MeApiTokenCreateForm {
+        csrf_token,
+        name,
+        scopes,
+        project_scope,
+        expires_at,
+    })
+}
+
 #[derive(Debug)]
 struct ParsedProjectMemberForm {
     csrf_token: String,
@@ -6751,6 +6908,55 @@ fn user_profile_from_summary(user: users::UserSummary) -> UserProfileView {
         created_at: display_timestamp(user.created_at),
         updated_at: display_timestamp(user.updated_at),
         is_super_admin: user.is_super_admin,
+    }
+}
+
+fn api_token_view(token: api_tokens::ApiTokenSummary) -> ApiTokenView {
+    let is_revoked = !token.revoked_at.trim().is_empty();
+    let is_expired = !token.expires_at.trim().is_empty() && token.expires_at < chrono_now_text();
+    let (status, status_tone) = if is_revoked {
+        ("已撤销", "danger")
+    } else if is_expired {
+        ("已过期", "warning")
+    } else {
+        ("可用", "success")
+    };
+
+    ApiTokenView {
+        id: token.id,
+        name: token.name,
+        scopes_label: token
+            .scopes
+            .iter()
+            .map(|scope| api_token_scope_label(scope))
+            .collect::<Vec<_>>()
+            .join("、"),
+        project_scope: if token.project_scope == "all" {
+            "全部可见项目".to_string()
+        } else {
+            token.project_scope
+        },
+        token_suffix: token.token_suffix,
+        expires_at: display_optional_timestamp(token.expires_at, "永不过期"),
+        last_used_at: display_optional_timestamp(token.last_used_at, "尚未使用"),
+        created_at: display_timestamp(token.created_at),
+        status,
+        status_tone,
+        is_revoked,
+    }
+}
+
+fn api_token_scope_label(scope: &str) -> &'static str {
+    match scope {
+        api_tokens::SCOPE_PROJECT_READ => "项目读取",
+        api_tokens::SCOPE_WORK_ITEM_READ => "工作项读取",
+        api_tokens::SCOPE_WORK_ITEM_WRITE => "工作项写入",
+        api_tokens::SCOPE_COMMENT_WRITE => "评论写入",
+        api_tokens::SCOPE_RESOURCE_READ => "资料读取",
+        api_tokens::SCOPE_RESOURCE_WRITE => "资料写入",
+        api_tokens::SCOPE_RESOURCE_UNLOCK => "资料解锁",
+        api_tokens::SCOPE_NOTIFICATION_READ => "消息读取",
+        _ => "未知权限",
     }
 }
 
@@ -8101,6 +8307,18 @@ fn fallback_text(value: String, fallback: &str) -> String {
 
 fn display_timestamp(value: String) -> String {
     value.replace('T', " ")
+}
+
+fn display_optional_timestamp(value: String, fallback: &str) -> String {
+    if value.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        display_timestamp(value)
+    }
+}
+
+fn chrono_now_text() -> String {
+    Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
 fn format_byte_size(byte_size: i64) -> String {

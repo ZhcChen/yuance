@@ -53,6 +53,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/me", get(web::user::me_page))
         .route("/web/me/profile", post(web::user::me_profile_update))
         .route("/web/me/password", post(web::user::me_password_update))
+        .route("/web/me/api-tokens", post(web::user::me_api_token_create))
+        .route(
+            "/web/me/api-tokens/{token_id}/revoke",
+            post(web::user::me_api_token_revoke),
+        )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
         .route(
@@ -248,12 +253,22 @@ pub fn build_router(state: AppState) -> Router {
             "/web/partials/work-items/{item_key}",
             get(web::user::work_item_detail_partial),
         )
+        .route("/web/api-docs", get(api_docs))
+        .route("/api/openapi.json", get(openapi_json))
         .route("/api/healthz", get(web::api::healthz))
         .route("/api/readyz", get(web::api::readyz))
         .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
         .route("/api/v1/auth/login", post(web::api::login))
         .route("/api/v1/auth/me", get(web::api::me))
         .route("/api/v1/auth/logout", post(web::api::logout))
+        .route(
+            "/api/v1/me/tokens",
+            get(web::api::list_api_tokens).post(web::api::create_api_token),
+        )
+        .route(
+            "/api/v1/me/tokens/{token_id}",
+            delete(web::api::revoke_api_token),
+        )
         .route(
             "/api/v1/bootstrap/init",
             axum::routing::post(web::api::bootstrap_init),
@@ -376,6 +391,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}/archive",
             post(web::api::archive_project_resource),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/unlock",
+            post(web::api::unlock_project_resource),
         )
         .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}/attachments",
@@ -791,6 +810,190 @@ async fn static_htmx() -> impl IntoResponse {
             "application/javascript; charset=utf-8",
         )],
         include_str!("../../static/vendor/htmx.min.js"),
+    )
+}
+
+async fn openapi_json() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../../../docs/openapi/yuance.openapi.json"),
+    )
+}
+
+async fn api_docs() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenAPI 与 MCP - 元策</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fc;
+      --card: rgba(255, 255, 255, .92);
+      --text: #172033;
+      --muted: #667085;
+      --border: rgba(102, 112, 133, .18);
+      --primary: #3f72e5;
+      --primary-soft: rgba(63, 114, 229, .10);
+      --shadow: 0 22px 70px rgba(20, 33, 61, .12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(63, 114, 229, .14), transparent 30%),
+        radial-gradient(circle at 90% 0%, rgba(239, 68, 68, .10), transparent 24%),
+        var(--bg);
+    }
+    .hero {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 32px 22px 20px;
+    }
+    .hero-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+      gap: 22px;
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      margin: 0 0 12px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      color: var(--primary);
+      background: var(--primary-soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.08;
+      letter-spacing: -.04em;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.75;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .btn {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      border-radius: 999px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .btn-primary {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 12px 30px rgba(63, 114, 229, .22);
+    }
+    .btn-secondary {
+      color: #344054;
+      background: #eef2f8;
+    }
+    .mcp-panel {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .mcp-step {
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: rgba(248, 250, 252, .82);
+    }
+    .mcp-step strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: #2458c7;
+      background: var(--primary-soft);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .92em;
+    }
+    #app {
+      min-height: 72vh;
+      margin-top: 10px;
+      background: #fff;
+    }
+    @media (max-width: 860px) {
+      .hero-card { grid-template-columns: 1fr; padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="hero-card">
+      <div>
+        <p class="eyebrow">OpenAPI · MCP for AI Agents</p>
+        <h1>元策 API 文档</h1>
+        <p>这里提供标准 OpenAPI 契约与 Scalar 在线文档。AI Agent 可基于 MCP 初始化指南克隆开源仓库，复制本地 MCP server，并通过 Personal Access Token 安全访问元策数据。</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/api/openapi.json">下载 OpenAPI JSON</a>
+          <a class="btn btn-secondary" href="https://github.com/ZhcChen/yuance/blob/main/docs/mcp/ai-mcp-setup.md">查看 MCP 初始化指南</a>
+          <a class="btn btn-secondary" href="/web/me">创建访问 Token</a>
+        </div>
+      </div>
+      <div class="mcp-panel" aria-label="MCP 初始化摘要">
+        <div class="mcp-step">
+          <strong>1. 克隆开源仓库</strong>
+          <p><code>git clone https://github.com/ZhcChen/yuance.git</code></p>
+        </div>
+        <div class="mcp-step">
+          <strong>2. 复制 MCP 脚本并安装依赖</strong>
+          <p><code>cp -R mcp/yuance-mcp ~/.yuance-mcp</code> 后执行 <code>npm install</code>。</p>
+        </div>
+        <div class="mcp-step">
+          <strong>3. 配置 MCP client</strong>
+          <p>使用 <code>node ~/.yuance-mcp/yuance-mcp-server.mjs</code>，并设置 <code>YUANCE_BASE_URL</code> 与 <code>YUANCE_API_TOKEN</code>。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/api/openapi.json',
+      layout: 'modern',
+      theme: 'default',
+      hideDownloadButton: false,
+      metaData: {
+        title: '元策 API',
+        description: 'OpenAPI 与 MCP for AI Agents'
+      }
+    });
+  </script>
+</body>
+</html>"#,
     )
 }
 

@@ -31,10 +31,13 @@ date: 2026-06-30
 }
 ```
 
-- 认证：当前复用 Web Cookie session。
+- 认证：支持 Web Cookie session 和 Personal Access Token。
+  - 浏览器 Web 调用默认使用 `yuance_session` Cookie。
+  - MCP / 外部脚本建议使用 `Authorization: Bearer yuance_pat_xxx`。
 - CSRF：所有会改变状态的 Cookie API 必须提供 CSRF。
   - 登录和初始化成功响应会设置 `yuance_csrf` cookie，并在 JSON 中返回 `csrf_token`。
   - 后续写请求传 `x-yuance-csrf-token: <csrf_token>`。
+  - Bearer Token 写请求不依赖 Cookie，因此不需要 CSRF。
 - JSON 请求头：写请求建议使用 `Content-Type: application/json`。
 - 未登录：返回 `401 unauthorized`。
 - 无功能权限或数据范围权限：返回 `403 forbidden`。
@@ -66,6 +69,9 @@ POST /api/v1/bootstrap/init
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
 POST /api/v1/auth/logout
+GET  /api/v1/me/tokens
+POST /api/v1/me/tokens
+DELETE /api/v1/me/tokens/{token_id}
 ```
 
 初始化请求：
@@ -89,6 +95,72 @@ POST /api/v1/auth/logout
 ```
 
 登录成功返回当前用户和 CSRF token，并设置 session cookie。
+
+## Personal Access Token
+
+PAT 用于 MCP 和外部脚本调用。Token 明文只在创建成功时返回一次，服务端只保存哈希。
+
+创建请求：
+
+```json
+{
+  "name": "MCP 本地访问",
+  "scopes": [
+    "project:read",
+    "work_item:read",
+    "comment:write",
+    "resource:read",
+    "notification:read"
+  ],
+  "project_scope": "all",
+  "expires_at": "2026-12-31"
+}
+```
+
+创建响应：
+
+```json
+{
+  "data": {
+    "token": {
+      "id": 1,
+      "name": "MCP 本地访问",
+      "scopes": ["project:read"],
+      "project_scope": "all",
+      "token_suffix": "abcd1234",
+      "expires_at": "",
+      "revoked_at": "",
+      "last_used_at": "",
+      "created_at": "2026-07-14 10:00:00",
+      "updated_at": "2026-07-14 10:00:00"
+    },
+    "raw_token": "yuance_pat_xxx"
+  }
+}
+```
+
+支持的 scope：
+
+```text
+project:read
+work_item:read
+work_item:write
+comment:write
+resource:read
+resource:write
+resource:unlock
+notification:read
+```
+
+重要语义：
+
+- `GET/POST/DELETE /api/v1/me/tokens*` 只能通过浏览器 Cookie session 使用，不能用 PAT 管理其它 PAT。
+- PAT 过期或撤销后，Bearer 请求返回 `401 unauthorized`。
+- PAT 缺少接口所需 scope 时，返回 `403 forbidden`。
+- `project_scope` 为 `all` 表示允许访问当前用户可见的全部项目；也可以填写单个项目编号或逗号分隔项目编号，例如 `YCE,OPS`。
+- 对列表接口，PAT 会按 `project_scope` 缩小项目和工作项结果集；对单项目接口，越权项目会返回 `403 forbidden`。
+- 即使 `project_scope=all`，仍然会继续执行元策内的项目成员范围、RBAC 和业务权限校验。
+- Cookie session 写请求仍必须提供 CSRF；Bearer PAT 写请求不需要 CSRF。
 
 ## 当前项目上下文
 
@@ -209,6 +281,7 @@ GET    /api/v1/projects/{project_key}/resources/{resource_id}
 PATCH  /api/v1/projects/{project_key}/resources/{resource_id}
 DELETE /api/v1/projects/{project_key}/resources/{resource_id}
 POST   /api/v1/projects/{project_key}/resources/{resource_id}/archive
+POST   /api/v1/projects/{project_key}/resources/{resource_id}/unlock
 ```
 
 列表参数：
@@ -246,8 +319,18 @@ status=active|archived|all
 
 - `access_password` 只在创建时设置；为空表示不加访问密码。
 - 访问密码长度为 `4..=128`，服务端只保存 Argon2 哈希。
-- 设置访问密码的资料，列表只返回元信息和受保护摘要；详情 API 返回 `403 forbidden`，需要通过 Web 详情页验证该条资料密码后查看正文。
+- 设置访问密码的资料，列表只返回元信息和受保护摘要；普通详情 API 返回 `403 forbidden`。
+- `POST .../unlock` 需要显式提交该条资料访问密码，验证成功后才返回正文。
+- MCP 默认不得调用 unlock；只有用户明确授权并提供该条资料访问密码时才允许调用。
 - `DELETE` 和 `POST .../archive` 业务效果一致：归档资料，保留记录和历史动态，不物理删除。
+
+解锁请求：
+
+```json
+{
+  "access_password": "该条资料的访问密码"
+}
+```
 
 权限：
 

@@ -20,6 +20,7 @@
     <div class="toolbar-actions">
       <button class="btn btn-secondary" type="button" data-modal-open="me-profile-modal">编辑资料</button>
       <button class="btn btn-secondary" type="button" data-modal-open="me-password-modal">修改密码</button>
+      <button class="btn btn-secondary" type="button" data-modal-open="me-api-token-modal">创建访问 Token</button>
       <a class="btn btn-secondary" href="/web/search">全局搜索</a>
       <a class="btn btn-primary" href="/web/tasks">查看任务</a>
     </div>
@@ -79,6 +80,74 @@
         <div class="empty-state">
           <strong>暂无指派给我的工作项</strong>
           <span>后续创建或分配工作项后，会在这里聚合展示。</span>
+        </div>
+        {% endif %}
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Personal Access Token</h2>
+            <p>用于 OpenAPI、MCP 或外部脚本调用。Token 明文只在创建成功后显示一次。</p>
+          </div>
+          <button class="btn btn-sm btn-primary" type="button" data-modal-open="me-api-token-modal">创建 Token</button>
+        </div>
+
+        {% if has_created_api_token %}
+        <div class="inline-result success">
+          <strong>Token 已创建，请立即复制保存</strong>
+          <p>离开当前页面后将无法再次查看明文。</p>
+          <code>{{ created_api_token }}</code>
+        </div>
+        {% endif %}
+
+        {% if has_api_tokens %}
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>名称</th>
+                <th>权限</th>
+                <th>项目范围</th>
+                <th>后缀</th>
+                <th>状态</th>
+                <th>过期时间</th>
+                <th>最近使用</th>
+                <th class="table-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for token in api_tokens %}
+              <tr>
+                <td>
+                  <strong>{{ token.name }}</strong>
+                  <p class="muted-text">创建于 {{ token.created_at }}</p>
+                </td>
+                <td>{{ token.scopes_label }}</td>
+                <td>{{ token.project_scope }}</td>
+                <td><code>...{{ token.token_suffix }}</code></td>
+                <td><span class="status status-{{ token.status_tone }}">{{ token.status }}</span></td>
+                <td>{{ token.expires_at }}</td>
+                <td>{{ token.last_used_at }}</td>
+                <td class="table-actions">
+                  {% if token.is_revoked %}
+                  <span class="muted-text">已撤销</span>
+                  {% else %}
+                  <form method="post" action="/web/me/api-tokens/{{ token.id }}/revoke" data-confirm-submit-form data-confirm-title="撤销访问 Token" data-confirm-message="撤销后依赖该 Token 的 MCP 或脚本会立即失效。" data-confirm-action="撤销">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button class="btn btn-sm btn-danger" type="submit" data-confirm-submit>撤销</button>
+                  </form>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无访问 Token</strong>
+          <span>如果需要让 AI Agent 或脚本访问元策 API，可以创建一个最小权限 Token。</span>
         </div>
         {% endif %}
       </section>
@@ -201,6 +270,49 @@
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
         <button class="btn btn-primary" type="submit">修改密码</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+<aside id="me-api-token-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="me-api-token-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="me-api-token-modal-title">创建访问 Token</h2>
+        <p>建议只勾选 MCP 实际需要的权限。Token 明文只显示一次。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/me/api-tokens">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        名称
+        <input name="name" value="MCP 本地访问" required autofocus>
+      </label>
+      <label>
+        项目范围
+        <input name="project_scope" value="all" placeholder="all 或项目编号，例如 YCE">
+      </label>
+      <label>
+        过期时间
+        <input name="expires_at" type="date">
+      </label>
+      <fieldset class="form-fieldset">
+        <legend>权限范围</legend>
+        <label><input type="checkbox" name="scopes" value="project:read" checked> 项目读取</label>
+        <label><input type="checkbox" name="scopes" value="work_item:read" checked> 工作项读取</label>
+        <label><input type="checkbox" name="scopes" value="comment:write" checked> 评论写入</label>
+        <label><input type="checkbox" name="scopes" value="work_item:write"> 工作项写入 / 指派</label>
+        <label><input type="checkbox" name="scopes" value="resource:read" checked> 资料读取</label>
+        <label><input type="checkbox" name="scopes" value="resource:write"> 资料写入</label>
+        <label><input type="checkbox" name="scopes" value="resource:unlock"> 资料解锁</label>
+        <label><input type="checkbox" name="scopes" value="notification:read" checked> 消息读取</label>
+      </fieldset>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建并显示 Token</button>
       </div>
     </form>
   </section>

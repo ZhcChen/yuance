@@ -142,6 +142,151 @@ async fn project_resource_library_requires_password_for_protected_details() {
         .expect("router should respond");
     assert_eq!(api_detail_response.status(), StatusCode::FORBIDDEN);
 
+    let api_wrong_unlock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/projects/YCE/resources/{resource_id}/unlock"
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"access_password":"wrong-pass"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(api_wrong_unlock_response.status(), StatusCode::FORBIDDEN);
+    let api_wrong_unlock_body = response_body(api_wrong_unlock_response).await;
+    assert!(!api_wrong_unlock_body.contains("client_id=yuance"));
+
+    let token_without_unlock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"资料只读","scopes":["project:read","resource:read"],"project_scope":"all"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(token_without_unlock_response.status(), StatusCode::CREATED);
+    let token_without_unlock_body = response_body(token_without_unlock_response).await;
+    let token_without_unlock: serde_json::Value =
+        serde_json::from_str(&token_without_unlock_body).expect("token response should be json");
+    let token_without_unlock = token_without_unlock["data"]["raw_token"]
+        .as_str()
+        .expect("raw token should exist");
+    let api_scope_unlock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/projects/YCE/resources/{resource_id}/unlock"
+                ))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {token_without_unlock}"),
+                )
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"access_password":"safe-pass"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(api_scope_unlock_response.status(), StatusCode::FORBIDDEN);
+    let api_scope_unlock_body = response_body(api_scope_unlock_response).await;
+    assert!(api_scope_unlock_body.contains("resource:unlock"));
+
+    let ops_scoped_token_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"仅 OPS","scopes":["project:read","resource:read"],"project_scope":"OPS"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(ops_scoped_token_response.status(), StatusCode::CREATED);
+    let ops_scoped_token_body = response_body(ops_scoped_token_response).await;
+    let ops_scoped_token: serde_json::Value =
+        serde_json::from_str(&ops_scoped_token_body).expect("token response should be json");
+    let ops_scoped_token = ops_scoped_token["data"]["raw_token"]
+        .as_str()
+        .expect("raw token should exist");
+    let project_scope_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::AUTHORIZATION, format!("Bearer {ops_scoped_token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(project_scope_response.status(), StatusCode::FORBIDDEN);
+    let project_scope_body = response_body(project_scope_response).await;
+    assert!(project_scope_body.contains("不允许访问该项目"));
+
+    let token_with_unlock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"资料解锁","scopes":["project:read","resource:read","resource:unlock"],"project_scope":"all"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(token_with_unlock_response.status(), StatusCode::CREATED);
+    let token_with_unlock_body = response_body(token_with_unlock_response).await;
+    let token_with_unlock: serde_json::Value =
+        serde_json::from_str(&token_with_unlock_body).expect("token response should be json");
+    let token_with_unlock = token_with_unlock["data"]["raw_token"]
+        .as_str()
+        .expect("raw token should exist");
+    let api_correct_unlock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/projects/YCE/resources/{resource_id}/unlock"
+                ))
+                .header(header::AUTHORIZATION, format!("Bearer {token_with_unlock}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"access_password":"safe-pass"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(api_correct_unlock_response.status(), StatusCode::OK);
+    let api_correct_unlock_body = response_body(api_correct_unlock_response).await;
+    assert!(api_correct_unlock_body.contains("client_id=yuance"));
+
     let secret_search_response = app
         .clone()
         .oneshot(
@@ -226,6 +371,91 @@ async fn project_resource_library_requires_password_for_protected_details() {
     assert_eq!(correct_unlock.status(), StatusCode::OK);
     let unlocked_body = response_body(correct_unlock).await;
     assert!(unlocked_body.contains("client_id=yuance"));
+}
+
+#[tokio::test]
+async fn api_v1_pat_resource_write_scope_required_for_resource_mutations() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let read_token = create_test_api_token(
+        app.clone(),
+        &admin.cookie,
+        r#"{"name":"资料只读","scopes":["project:read","resource:read"],"project_scope":"YCE"}"#,
+    )
+    .await;
+    let write_token = create_test_api_token(
+        app.clone(),
+        &admin.cookie,
+        r#"{"name":"资料写入","scopes":["project:read","resource:read","resource:write"],"project_scope":"YCE"}"#,
+    )
+    .await;
+
+    let read_create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::AUTHORIZATION, format!("Bearer {read_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"title":"只读越权资料","category":"other","body":"<p>no</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_create_response.status(), StatusCode::FORBIDDEN);
+    let read_create_body = response_body(read_create_response).await;
+    assert!(read_create_body.contains("resource:write"));
+
+    let write_create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::AUTHORIZATION, format!("Bearer {write_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"title":"写入资料","category":"other","body":"<p>ok</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let write_create_status = write_create_response.status();
+    let write_create_body = response_body(write_create_response).await;
+    assert_eq!(
+        write_create_status,
+        StatusCode::CREATED,
+        "{write_create_body}"
+    );
+    let created: serde_json::Value =
+        serde_json::from_str(&write_create_body).expect("create response should be json");
+    let resource_id = created["data"]["id"]
+        .as_i64()
+        .expect("resource id should exist");
+
+    let read_patch_response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::AUTHORIZATION, format!("Bearer {read_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"title":"只读不能编辑"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_patch_response.status(), StatusCode::FORBIDDEN);
+    let read_patch_body = response_body(read_patch_response).await;
+    assert!(read_patch_body.contains("resource:write"));
 }
 
 #[tokio::test]
@@ -2063,6 +2293,7 @@ async fn web_current_project_rejects_projects_outside_member_scope() {
     assert_eq!(current.project_key, "YCE");
 
     let forbidden_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -2887,6 +3118,102 @@ async fn api_v1_projects_returns_pagination_metadata_and_status_filter() {
     assert!(body.contains("\"per_page\":1"));
     assert!(body.contains("\"total_items\":1"));
     assert!(body.contains("\"total_pages\":1"));
+}
+
+#[tokio::test]
+async fn api_v1_pat_project_scope_filters_project_and_work_item_lists() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let token = create_test_api_token(
+        app.clone(),
+        &initialized.cookie,
+        r#"{"name":"仅 OPS","scopes":["project:read","work_item:read"],"project_scope":"OPS"}"#,
+    )
+    .await;
+
+    let projects_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(projects_response.status(), StatusCode::OK);
+    let projects_body = response_body(projects_response).await;
+    assert!(projects_body.contains(r#""key":"OPS""#));
+    assert!(!projects_body.contains(r#""key":"YCE""#));
+    assert!(projects_body.contains(r#""total_items":1"#));
+
+    let current_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/current-project")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(current_response.status(), StatusCode::OK);
+    let current_body = response_body(current_response).await;
+    assert!(current_body.contains(r#""data":null"#));
+    assert!(!current_body.contains(r#""key":"YCE""#));
+
+    let work_items_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items?item_type=task")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(work_items_response.status(), StatusCode::OK);
+    let work_items_body = response_body(work_items_response).await;
+    assert!(work_items_body.contains(r#""key":"OPS-TASK-1""#));
+    assert!(!work_items_body.contains(r#""key":"YCE-TASK-2""#));
+
+    let forbidden_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items?item_type=task&project_key=YCE")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+    let forbidden_body = response_body(forbidden_response).await;
+    assert!(forbidden_body.contains("不允许访问该项目"));
+
+    let current_forbidden_response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/current-project")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"project_key":"YCE"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(current_forbidden_response.status(), StatusCode::FORBIDDEN);
+    let current_forbidden_body = response_body(current_forbidden_response).await;
+    assert!(current_forbidden_body.contains("不允许访问该项目"));
 }
 
 #[tokio::test]
@@ -9162,6 +9489,31 @@ async fn response_body(response: axum::response::Response) -> String {
         .to_bytes();
     std::str::from_utf8(&body)
         .expect("body should be utf-8")
+        .to_string()
+}
+
+async fn create_test_api_token(app: axum::Router, cookie: &str, payload: &str) -> String {
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(payload.to_string()))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let status = response.status();
+    let body = response_body(response).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let created: serde_json::Value =
+        serde_json::from_str(&body).expect("token response should be json");
+    created["data"]["raw_token"]
+        .as_str()
+        .expect("raw token should exist")
         .to_string()
 }
 

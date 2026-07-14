@@ -1,0 +1,1738 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "元策 API",
+    "summary": "元策项目、需求、任务、Bug、资料库和消息通知 API。",
+    "description": "元策 API 面向 Web 客户端、程序化集成和本地 MCP server。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。",
+    "version": "1.0.0"
+  },
+  "externalDocs": {
+    "description": "AI MCP 初始化指南",
+    "url": "https://github.com/ZhcChen/yuance/blob/main/docs/mcp/ai-mcp-setup.md"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "当前元策服务"
+    },
+    {
+      "url": "https://yuance.quanxinfu.com",
+      "description": "元策正式环境"
+    }
+  ],
+  "tags": [
+    {
+      "name": "meta",
+      "description": "健康检查与文档元信息"
+    },
+    {
+      "name": "auth",
+      "description": "登录、当前用户与 Personal Access Token"
+    },
+    {
+      "name": "projects",
+      "description": "项目、项目成员和当前项目上下文"
+    },
+    {
+      "name": "work-items",
+      "description": "需求、任务、Bug 与评论"
+    },
+    {
+      "name": "resources",
+      "description": "项目资料库"
+    },
+    {
+      "name": "notifications",
+      "description": "消息通知"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    },
+    {
+      "cookieSession": []
+    }
+  ],
+  "paths": {
+    "/api/openapi.json": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "获取 OpenAPI 契约",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 JSON 文档"
+          }
+        }
+      }
+    },
+    "/api/healthz": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "健康检查",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "服务存活",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/readyz": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "就绪检查",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "服务与数据库就绪"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "登录并建立 Cookie session",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "获取当前用户",
+        "responses": {
+          "200": {
+            "description": "当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUserEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "退出当前 Cookie session",
+        "responses": {
+          "204": {
+            "description": "退出成功"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/me/tokens": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "列出当前用户 PAT",
+        "responses": {
+          "200": {
+            "description": "PAT 元信息列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenListEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "创建当前用户 PAT",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApiTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功，raw_token 只返回一次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenCreatedEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/me/tokens/{token_id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "撤销当前用户 PAT",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TokenId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "撤销后的 token 元信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiTokenEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "列出可见项目",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "项目分页列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectPageEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "创建项目",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateProject"
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/current-project": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "获取当前项目上下文",
+        "responses": {
+          "200": {
+            "description": "当前项目"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "更新当前项目上下文",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "project_key"
+                ],
+                "properties": {
+                  "project_key": {
+                    "type": "string",
+                    "example": "YCE"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "获取项目详情",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "项目详情"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "更新项目",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/UpdateProject"
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/members": {
+      "get": {
+        "tags": [
+          "projects"
+        ],
+        "summary": "列出项目成员",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成员列表"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "列出项目资料",
+        "description": "受保护资料在列表中只返回元信息与受保护摘要，不返回正文。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "integration",
+                "customer",
+                "meeting",
+                "implementation",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "资料列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResourceListEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "创建项目资料",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateProjectResource"
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}": {
+      "get": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "获取项目资料详情",
+        "description": "受保护资料默认不会返回正文。需要用户明确授权并调用 unlock 接口。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "未受保护资料详情"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "更新项目资料",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/UpdateProjectResource"
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "归档项目资料",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "归档成功"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/unlock": {
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "验证访问密码并读取受保护资料",
+        "description": "仅当用户明确提供该条资料访问密码时调用。MCP server 不应缓存或记录 access_password。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "access_password"
+                ],
+                "properties": {
+                  "access_password": {
+                    "type": "string",
+                    "minLength": 4,
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "验证成功，返回资料详情"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/work-items": {
+      "get": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "列出需求、任务或 Bug",
+        "parameters": [
+          {
+            "name": "item_type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requirement",
+                "task",
+                "bug"
+              ]
+            }
+          },
+          {
+            "name": "project_key",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "P0",
+                "P1",
+                "P2",
+                "P3"
+              ]
+            }
+          },
+          {
+            "name": "assignee_username",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "工作项分页列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemPageEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "创建需求、任务或 Bug",
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateWorkItem"
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功"
+          }
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}": {
+      "get": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "获取工作项详情",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ItemKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "工作项详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItemDetailEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "更新工作项",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ItemKey"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/UpdateWorkItem"
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功"
+          }
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/handoff": {
+      "post": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "流转并指派工作项",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ItemKey"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/HandoffWorkItem"
+        },
+        "responses": {
+          "200": {
+            "description": "流转成功"
+          }
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/comments": {
+      "get": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "列出工作项评论",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ItemKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "评论列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentListEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "work-items"
+        ],
+        "summary": "发表工作项评论",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ItemKey"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/CreateComment"
+        },
+        "responses": {
+          "201": {
+            "description": "发表成功"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "获取消息通知",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 5
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "消息列表与未读数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationFeedEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Personal Access Token",
+        "description": "使用个人中心创建的 yuance_pat_* token。"
+      },
+      "cookieSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "yuance_session",
+        "description": "浏览器 Cookie session。写请求还需要 x-yuance-csrf-token。"
+      },
+      "csrfHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-yuance-csrf-token",
+        "description": "Cookie session 写请求需要。Bearer PAT 请求不需要 CSRF。"
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "PerPage": {
+        "name": "per_page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "ProjectKey": {
+        "name": "project_key",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "example": "YCE"
+      },
+      "ItemKey": {
+        "name": "item_key",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        },
+        "example": "YCE-BUG-1"
+      },
+      "ResourceId": {
+        "name": "resource_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "TokenId": {
+        "name": "token_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "错误响应",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "requestBodies": {
+      "CreateProject": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateProjectRequest"
+            }
+          }
+        }
+      },
+      "UpdateProject": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateProjectRequest"
+            }
+          }
+        }
+      },
+      "CreateProjectResource": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateProjectResourceRequest"
+            }
+          }
+        }
+      },
+      "UpdateProjectResource": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateProjectResourceRequest"
+            }
+          }
+        }
+      },
+      "CreateWorkItem": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateWorkItemRequest"
+            }
+          }
+        }
+      },
+      "UpdateWorkItem": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/UpdateWorkItemRequest"
+            }
+          }
+        }
+      },
+      "HandoffWorkItem": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/HandoffWorkItemRequest"
+            }
+          }
+        }
+      },
+      "CreateComment": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/CreateCommentRequest"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": true
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "examples": [
+                  "unauthorized",
+                  "forbidden",
+                  "bad_request"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "HealthEnvelope": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Envelope"
+          }
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        }
+      },
+      "LoginEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "user": {
+                "$ref": "#/components/schemas/AuthUser"
+              },
+              "csrf_token": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "AuthUserEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuthUser"
+          }
+        }
+      },
+      "AuthUser": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "username": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "is_super_admin": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ApiToken": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "project_scope": {
+            "type": "string"
+          },
+          "token_suffix": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string"
+          },
+          "revoked_at": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ApiTokenEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ApiToken"
+          }
+        }
+      },
+      "ApiTokenListEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApiToken"
+            }
+          }
+        }
+      },
+      "ApiTokenCreatedEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "token": {
+                "$ref": "#/components/schemas/ApiToken"
+              },
+              "raw_token": {
+                "type": "string",
+                "description": "只返回一次的 PAT 明文。"
+              }
+            }
+          }
+        }
+      },
+      "CreateApiTokenRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "project:read",
+                "work_item:read",
+                "work_item:write",
+                "comment:write",
+                "resource:read",
+                "resource:write",
+                "resource:unlock",
+                "notification:read"
+              ]
+            }
+          },
+          "project_scope": {
+            "type": "string",
+            "default": "all",
+            "description": "all、单个项目编号，或逗号分隔项目编号，例如 YCE,OPS。仍会叠加用户本身的项目权限。"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "可选 ISO datetime 或日期字符串。"
+          }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          },
+          "work_item_count": {
+            "type": "integer"
+          },
+          "open_work_item_count": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectPageEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              },
+              "pagination": {
+                "$ref": "#/components/schemas/Pagination"
+              }
+            }
+          }
+        }
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateProjectRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "owner_username": {
+            "type": "string"
+          },
+          "start_date": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectResource": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "project_key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "body_format": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "is_protected": {
+            "type": "boolean"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectResourceListEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectResource"
+            }
+          }
+        }
+      },
+      "CreateProjectResourceRequest": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "body_format": {
+            "type": "string",
+            "default": "html"
+          },
+          "access_password": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateProjectResourceRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "body_format": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkItem": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "project_key": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "assignee": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkItemPageEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              },
+              "pagination": {
+                "$ref": "#/components/schemas/Pagination"
+              }
+            }
+          }
+        }
+      },
+      "WorkItemDetailEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkItemDetail"
+          }
+        }
+      },
+      "WorkItemDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/WorkItem"
+          }
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "parent_item_key": {
+            "type": "string"
+          },
+          "parent_title": {
+            "type": "string"
+          },
+          "assignee_username": {
+            "type": "string"
+          },
+          "reporter": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "deleted_at": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateWorkItemRequest": {
+        "type": "object",
+        "required": [
+          "project_key",
+          "item_type",
+          "title"
+        ],
+        "properties": {
+          "project_key": {
+            "type": "string"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": [
+              "requirement",
+              "task",
+              "bug"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          },
+          "parent_item_key": {
+            "type": "string"
+          },
+          "assignee_username": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateWorkItemRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "assignee_username": {
+            "type": "string"
+          },
+          "due_date": {
+            "type": "string"
+          },
+          "parent_item_key": {
+            "type": "string"
+          }
+        }
+      },
+      "HandoffWorkItemRequest": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "assignee_username": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "source_comment_id": {
+            "type": "integer"
+          }
+        }
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "parent_comment_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "parent_author": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "body_format": {
+            "type": "string"
+          },
+          "author": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "is_flow": {
+            "type": "boolean"
+          },
+          "is_draft": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CommentListEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Comment"
+            }
+          }
+        }
+      },
+      "CreateCommentRequest": {
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "body_format": {
+            "type": "string",
+            "default": "html"
+          },
+          "parent_comment_id": {
+            "type": "integer"
+          }
+        }
+      },
+      "NotificationFeedEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Notification"
+                }
+              },
+              "unread_count": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "open_url": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

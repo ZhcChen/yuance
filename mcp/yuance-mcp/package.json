@@ -1,0 +1,21 @@
+{
+  "name": "yuance-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local stdio MCP server for Yuance OpenAPI integration.",
+  "bin": {
+    "yuance-mcp": "./yuance-mcp-server.mjs"
+  },
+  "scripts": {
+    "start": "node ./yuance-mcp-server.mjs",
+    "check": "node --check ./yuance-mcp-server.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

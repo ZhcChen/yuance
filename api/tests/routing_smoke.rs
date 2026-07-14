@@ -100,6 +100,62 @@ async fn readyz_checks_sqlite_connection() {
 }
 
 #[tokio::test]
+async fn openapi_json_is_served_for_api_reference() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/openapi.json")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    let spec: serde_json::Value =
+        serde_json::from_str(&body).expect("openapi document should be valid json");
+    assert_eq!(spec["openapi"], "3.1.0");
+    assert!(body.contains(r#""/api/v1/projects""#));
+    assert!(body.contains(r#""bearerAuth""#));
+    assert!(body.contains(r#""/api/v1/projects/{project_key}/resources/{resource_id}/unlock""#));
+}
+
+#[tokio::test]
+async fn api_docs_page_embeds_scalar_and_mcp_setup_summary() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/api-docs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "text/html; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("Scalar.createApiReference"));
+    assert!(body.contains("url: '/api/openapi.json'"));
+    assert!(body.contains("MCP 初始化指南"));
+    assert!(body.contains("YUANCE_API_TOKEN"));
+}
+
+#[tokio::test]
 async fn static_logo_is_bundled_as_svg() {
     let app = build_router(AppState::for_tests());
 

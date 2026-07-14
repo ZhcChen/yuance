@@ -596,6 +596,191 @@ async fn logout_revokes_session_and_clears_cookies() {
     );
 }
 
+#[tokio::test]
+async fn api_personal_access_tokens_create_list_revoke_and_authenticate() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"MCP 测试","scopes":["project:read"],"project_scope":"all"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let create_body = response_body(create_response).await;
+    let created: serde_json::Value =
+        serde_json::from_str(&create_body).expect("created token response should be json");
+    let raw_token = created["data"]["raw_token"]
+        .as_str()
+        .expect("raw token should be returned once")
+        .to_string();
+    assert!(raw_token.starts_with("yuance_pat_"));
+    assert_eq!(created["data"]["token"]["name"], "MCP 测试");
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = response_body(list_response).await;
+    assert!(list_body.contains("MCP 测试"));
+    assert!(!list_body.contains(&raw_token));
+
+    let projects_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(projects_response.status(), StatusCode::OK);
+
+    let token_id = created["data"]["token"]["id"]
+        .as_i64()
+        .expect("token id should be present");
+    let revoke_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/me/tokens/{token_id}"))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(revoke_response.status(), StatusCode::OK);
+
+    let revoked_projects_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(revoked_projects_response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn api_token_scope_is_enforced_for_bearer_requests() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/me/tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"name":"只读项目","scopes":["project:read"],"project_scope":"all"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::CREATED);
+    let create_body = response_body(create_response).await;
+    let created: serde_json::Value =
+        serde_json::from_str(&create_body).expect("created token response should be json");
+    let raw_token = created["data"]["raw_token"]
+        .as_str()
+        .expect("raw token should be returned once");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let body = response_body(response).await;
+    assert!(body.contains("work_item:read"));
+}
+
+#[tokio::test]
+async fn me_page_creates_api_token_and_renders_plaintext_once() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/me")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(page_body.contains("Personal Access Token"));
+    assert!(page_body.contains("创建访问 Token"));
+
+    let create_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/me/api-tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "name=MCP%20UI&project_scope=all&scopes=project%3Aread&scopes=work_item%3Aread",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_body(create_response).await;
+    assert!(create_body.contains("Token 已创建，请立即复制保存"));
+    assert!(create_body.contains("yuance_pat_"));
+    assert!(create_body.contains("MCP UI"));
+}
+
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     let result = bootstrap::bootstrap_init(
         pool,

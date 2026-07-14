@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "yuance": {
+      "command": "node",
+      "args": [
+        "/Users/your-user/.yuance-mcp/yuance-mcp-server.mjs"
+      ],
+      "env": {
+        "YUANCE_BASE_URL": "https://yuance.quanxinfu.com",
+        "YUANCE_API_TOKEN": "yuance_pat_xxx"
+      }
+    }
+  }
+}
