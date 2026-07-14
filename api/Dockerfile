@@ -17,6 +17,7 @@ COPY api/src api/src
 COPY api/templates api/templates
 COPY api/static api/static
 COPY api/migrations api/migrations
+COPY docs/openapi docs/openapi
 
 RUN cargo build --release -p yuance-api
 
