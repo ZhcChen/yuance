@@ -129,6 +129,20 @@ docs/openapi/yuance.openapi.json
 /web/api-docs
 ```
 
+### 7. 我想给其他项目里的 AI 一个可直接复制的提示词
+
+看：
+
+```text
+docs/mcp/prompts/global-codex-cli-bootstrap-prompt.md
+docs/mcp/prompts/project-yuance-usage-rules-prompt.md
+```
+
+两者分工：
+
+- `global-codex-cli-bootstrap-prompt.md`：给另一台机器上的 Codex CLI 做一次性全局初始化
+- `project-yuance-usage-rules-prompt.md`：给另一个项目里的 AI 注入元策使用规则
+
 ## 文档分工
 
 ### `docs/mcp/README.md`
@@ -167,6 +181,14 @@ MCP 工具开发约束。
 
 MCP 工具变更勾选清单。
 
+### `docs/mcp/prompts/global-codex-cli-bootstrap-prompt.md`
+
+全局 Codex CLI 初始化提示词。
+
+### `docs/mcp/prompts/project-yuance-usage-rules-prompt.md`
+
+项目内元策使用规则提示词。
+
 ### `docs/openapi/yuance.openapi.json`
 
 OpenAPI 契约层。
@@ -181,5 +203,6 @@ OpenAPI 契约层。
 改工具看 mcp/yuance-mcp
 改工具规则看 mcp-development-guidelines
 改工具执行清单看 mcp-tool-change-checklist
+给其他项目 AI 的提示词看 docs/mcp/prompts/*
 查契约看 openapi
 ```
