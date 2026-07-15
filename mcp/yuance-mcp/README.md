@@ -9,7 +9,7 @@
 
 Token 绑定创建它的真实用户，并继承该用户的项目范围、RBAC 和业务权限。Token 名称会作为 AI 助手名称展示，例如“张三 的 AI助手「Codex CLI 助手」”。
 
-AI 通过 MCP 处理工作项时只能提交到“待确认”，不能直接完成、验证或关闭需求、任务和 Bug；最终确认由真实用户完成。
+AI 通过 MCP 处理工作项时，只要 Token scope、项目范围和业务权限允许，就可以按工作项状态机执行流转、指派、评论和资料读取等操作。
 
 ## 本地运行
 
@@ -40,7 +40,7 @@ npm start
 - `yuance_get_work_item`
 - `yuance_list_work_item_comments`
 - `yuance_create_work_item_comment`
-- `yuance_handoff_work_item`：提交待确认，不直接关闭工作项。
+- `yuance_handoff_work_item`：流转 / 指派工作项。
 - `yuance_list_project_resources`
 - `yuance_get_project_resource`
 - `yuance_unlock_project_resource`

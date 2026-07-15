@@ -3,7 +3,7 @@
   "info": {
     "title": "元策 API",
     "summary": "元策项目、需求、任务、Bug、资料库和消息通知 API。",
-    "description": "元策 API 面向 Web 客户端、程序化集成和本地 MCP server。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 对工作项的状态变更只能提交为 pending_confirmation（待确认），最终完成、验证或关闭需由真实用户确认。",
+    "description": "元策 API 面向 Web 客户端、程序化集成和本地 MCP server。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。",
     "version": "1.0.0"
   },
   "externalDocs": {
@@ -35,7 +35,7 @@
     },
     {
       "name": "work-items",
-      "description": "需求、任务、Bug 与评论。Bearer Token / MCP 写入只能提交到 pending_confirmation（待确认），不能直接关闭或完成。"
+      "description": "需求、任务、Bug 与评论。Bearer Token / MCP 在具备对应 scope、项目范围和业务权限时，可按工作项状态机读写。"
     },
     {
       "name": "resources",
@@ -1069,7 +1069,7 @@
       },
       "WorkItemStatus": {
         "type": "string",
-        "description": "工作项状态。Bearer Token / MCP 只能把状态提交为 pending_confirmation；终态确认由用户完成。",
+        "description": "工作项状态。",
         "enum": [
           "open",
           "in_progress",
@@ -1601,7 +1601,7 @@
                 "$ref": "#/components/schemas/WorkItemStatus"
               }
             ],
-            "description": "Cookie session 可按状态机流转；Bearer Token / MCP 只能传 pending_confirmation。"
+            "description": "按工作项状态机流转。"
           },
           "priority": {
             "type": "string"
@@ -1629,7 +1629,7 @@
                 "$ref": "#/components/schemas/WorkItemStatus"
               }
             ],
-            "description": "Cookie session 可按状态机流转；Bearer Token / MCP 只能传 pending_confirmation。"
+            "description": "按工作项状态机流转。"
           },
           "assignee_username": {
             "type": "string"

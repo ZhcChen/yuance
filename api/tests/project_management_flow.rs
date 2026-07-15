@@ -64,7 +64,7 @@ async fn rich_text_comments_are_sanitized_and_rendered_safely() {
 }
 
 #[tokio::test]
-async fn api_token_work_item_changes_are_submitted_for_confirmation() {
+async fn api_token_work_item_changes_follow_requested_statuses() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, admin.user_id)
@@ -90,7 +90,7 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
                 .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(
-                    r#"{"project_key":"YCE","item_type":"bug","title":"AI 新建待确认缺陷","description":"由 AI 助手创建","priority":"P2","assignee_username":"ai_review_delegate"}"#,
+                    r#"{"project_key":"YCE","item_type":"bug","title":"AI 新建缺陷","description":"由 AI 助手创建","priority":"P2","assignee_username":"ai_review_delegate"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -99,7 +99,7 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
     let create_status = create_response.status();
     let create_body = response_body(create_response).await;
     assert_eq!(create_status, StatusCode::CREATED, "{create_body}");
-    assert!(create_body.contains("AI 新建待确认缺陷"));
+    assert!(create_body.contains("AI 新建缺陷"));
     let delegate_notifications = notifications::list_for_user(&pool, delegate.user_id, true, 10)
         .await
         .expect("delegate notifications should load");
@@ -138,25 +138,20 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
     )
     .await
     .expect("delegate handoff should succeed");
-
-    let forbidden_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/v1/work-items/YCE-TASK-2/handoff")
-                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    r#"{"status":"closed","body":"AI 尝试直接关闭"}"#,
-                ))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(forbidden_response.status(), StatusCode::BAD_REQUEST);
-    let forbidden_body = response_body(forbidden_response).await;
-    assert!(forbidden_body.contains("只能将工作项提交为待确认"));
+    projects::handoff_work_item(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        projects::HandoffWorkItemInput {
+            status: "in_progress".to_string(),
+            assignee_username: "ai_review_delegate".to_string(),
+            body: "先交给协作者处理".to_string(),
+            source_comment_id: None,
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("delegate handoff should succeed");
 
     let update_response = app
         .clone()
@@ -166,7 +161,7 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
                 .uri("/api/v1/work-items/YCE-REQ-1")
                 .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"status":"pending_confirmation"}"#))
+                .body(Body::from(r#"{"status":"resolved"}"#))
                 .expect("request should build"),
         )
         .await
@@ -176,8 +171,11 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
     assert_eq!(update_status, StatusCode::OK, "{update_body}");
     let updated_by_patch: serde_json::Value =
         serde_json::from_str(&update_body).expect("update response should be json");
-    assert_eq!(updated_by_patch["data"]["status"], "pending_confirmation");
-    assert_eq!(updated_by_patch["data"]["assignee_username"], "admin");
+    assert_eq!(updated_by_patch["data"]["status"], "resolved");
+    assert_eq!(
+        updated_by_patch["data"]["assignee_username"],
+        "ai_review_delegate"
+    );
 
     let handoff_response = app
         .clone()
@@ -188,7 +186,7 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
                 .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(
-                    r#"{"status":"pending_confirmation","body":"AI 已完成处理，请确认。"}"#,
+                    r#"{"status":"closed","body":"AI 已完成处理，直接关闭。"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -199,8 +197,8 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
     assert_eq!(handoff_status, StatusCode::OK, "{handoff_body}");
     let updated: serde_json::Value =
         serde_json::from_str(&handoff_body).expect("handoff response should be json");
-    assert_eq!(updated["data"]["status"], "pending_confirmation");
-    assert_eq!(updated["data"]["assignee_username"], "admin");
+    assert_eq!(updated["data"]["status"], "closed");
+    assert_eq!(updated["data"]["assignee_username"], "ai_review_delegate");
 
     let comments_response = app
         .clone()
@@ -216,48 +214,37 @@ async fn api_token_work_item_changes_are_submitted_for_confirmation() {
     assert_eq!(comments_response.status(), StatusCode::OK);
     let comments_body = response_body(comments_response).await;
     assert!(comments_body.contains("系统管理员 的 AI助手「Codex CLI 助手」"));
-    assert!(comments_body.contains("待确认"));
+    assert!(comments_body.contains("已关闭"));
 
-    let notifications_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/api/v1/notifications")
-                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
-                .body(Body::empty())
-                .expect("request should build"),
-        )
+    let delegate_notifications = notifications::list_for_user(&pool, delegate.user_id, true, 20)
         .await
-        .expect("router should respond");
-    assert_eq!(notifications_response.status(), StatusCode::OK);
-    let notifications_body = response_body(notifications_response).await;
+        .expect("delegate notifications should load");
     assert!(
-        notifications_body.contains("系统管理员 的 AI助手「Codex CLI 助手」"),
-        "{notifications_body}"
-    );
-    assert!(
-        notifications_body.contains(r#""unread_count":1"#),
-        "{notifications_body}"
+        delegate_notifications.iter().any(|notification| {
+            notification.actor_display_name == "系统管理员 的 AI助手「Codex CLI 助手」"
+                && notification.work_item_key == "YCE-TASK-2"
+        }),
+        "{delegate_notifications:?}"
     );
 
-    let complete_response = app
+    let reopen_response = app
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri("/web/work-items/YCE-TASK-2/status")
                 .header(header::COOKIE, admin.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}&status=done")))
+                .body(Body::from(format!("_csrf={CSRF_TOKEN}&status=in_progress")))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(complete_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(reopen_response.status(), StatusCode::SEE_OTHER);
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
         .await
         .expect("item query should succeed")
         .expect("item should exist");
-    assert_eq!(item.status, "done");
+    assert_eq!(item.status, "in_progress");
 }
 
 #[tokio::test]
