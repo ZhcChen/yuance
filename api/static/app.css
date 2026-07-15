@@ -491,6 +491,53 @@ body {
   padding: 0;
 }
 
+.rich-text-input table,
+.discussion-rich-body table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--panel);
+  box-shadow: 0 8px 22px rgb(22 34 50 / 6%);
+}
+
+.rich-text-input th,
+.rich-text-input td,
+.discussion-rich-body th,
+.discussion-rich-body td {
+  min-width: 88px;
+  padding: 10px 12px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: left;
+  vertical-align: top;
+  background: var(--panel);
+}
+
+.rich-text-input th,
+.discussion-rich-body th {
+  background: var(--table-head);
+  font-weight: 800;
+}
+
+.rich-text-input tr > :last-child,
+.discussion-rich-body tr > :last-child {
+  border-right: 0;
+}
+
+.rich-text-input table tr:last-child > *,
+.discussion-rich-body table tr:last-child > * {
+  border-bottom: 0;
+}
+
 .rich-text-drop-hint {
   padding: 0 14px 12px;
   color: var(--muted);

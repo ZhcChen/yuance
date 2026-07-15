@@ -2388,6 +2388,126 @@
     placeCaretInRichTextNode(trailingParagraph);
   }
 
+  function appendTextWithLineBreaks(target, text) {
+    String(text || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\u00a0/g, " ")
+      .replace(/\n+$/g, "")
+      .split("\n")
+      .forEach(function (line, index) {
+        if (index > 0) {
+          target.appendChild(document.createElement("br"));
+        }
+        if (line) {
+          target.appendChild(document.createTextNode(line));
+        }
+      });
+  }
+
+  function copyRichClipboardCell(targetCell, sourceCell) {
+    if (!targetCell || !sourceCell) {
+      return;
+    }
+    var text = "";
+    if (typeof sourceCell.innerText === "string" && sourceCell.innerText) {
+      text = sourceCell.innerText;
+    } else if (typeof sourceCell.textContent === "string") {
+      text = sourceCell.textContent;
+    }
+    appendTextWithLineBreaks(targetCell, text);
+  }
+
+  function copyRichClipboardSpan(sourceCell, targetCell, attributeName) {
+    var raw = sourceCell && typeof sourceCell.getAttribute === "function"
+      ? sourceCell.getAttribute(attributeName)
+      : "";
+    if (!raw) {
+      return;
+    }
+    var value = Number(raw);
+    if (Number.isFinite(value) && value > 1) {
+      targetCell.setAttribute(attributeName, String(Math.round(value)));
+    }
+  }
+
+  function createRichClipboardRow(sourceRow) {
+    if (!sourceRow || !sourceRow.children) {
+      return null;
+    }
+    var row = document.createElement("tr");
+    Array.from(sourceRow.children).forEach(function (sourceCell) {
+      var tagName = sourceCell.tagName === "TH" ? "th" : sourceCell.tagName === "TD" ? "td" : "";
+      if (!tagName) {
+        return;
+      }
+      var targetCell = document.createElement(tagName);
+      copyRichClipboardSpan(sourceCell, targetCell, "colspan");
+      copyRichClipboardSpan(sourceCell, targetCell, "rowspan");
+      copyRichClipboardCell(targetCell, sourceCell);
+      row.appendChild(targetCell);
+    });
+    return row.children.length ? row : null;
+  }
+
+  function appendRichClipboardRows(targetSection, sourceContainer) {
+    if (!targetSection || !sourceContainer || !sourceContainer.children) {
+      return;
+    }
+    Array.from(sourceContainer.children).forEach(function (sourceRow) {
+      if (sourceRow.tagName !== "TR") {
+        return;
+      }
+      var row = createRichClipboardRow(sourceRow);
+      if (row) {
+        targetSection.appendChild(row);
+      }
+    });
+  }
+
+  function richClipboardTableNodes(html) {
+    if (!html || typeof DOMParser === "undefined") {
+      return [];
+    }
+    var parser = new DOMParser();
+    var parsed = parser.parseFromString(String(html), "text/html");
+    var tables = Array.from(parsed.querySelectorAll ? parsed.querySelectorAll("table") : []);
+    return tables
+      .map(function (sourceTable) {
+        var targetTable = document.createElement("table");
+        Array.from(sourceTable.children || []).forEach(function (child) {
+          if (child.tagName === "THEAD") {
+            var thead = document.createElement("thead");
+            appendRichClipboardRows(thead, child);
+            if (thead.children.length) {
+              targetTable.appendChild(thead);
+            }
+            return;
+          }
+          if (child.tagName === "TBODY" || child.tagName === "TFOOT") {
+            var tbody = document.createElement("tbody");
+            appendRichClipboardRows(tbody, child);
+            if (tbody.children.length) {
+              targetTable.appendChild(tbody);
+            }
+            return;
+          }
+          if (child.tagName === "TR") {
+            var directBody = targetTable.lastElementChild;
+            if (!directBody || directBody.tagName !== "TBODY") {
+              directBody = document.createElement("tbody");
+              targetTable.appendChild(directBody);
+            }
+            var directRow = createRichClipboardRow(child);
+            if (directRow) {
+              directBody.appendChild(directRow);
+            }
+          }
+        });
+        return targetTable.querySelector("tr") ? targetTable : null;
+      })
+      .filter(Boolean);
+  }
+
   function createRichProgress(percent) {
     var ring = document.createElement("span");
     ring.className = "upload-progress-ring rich-attachment-progress";
@@ -2906,7 +3026,7 @@
         }
         node.dataset.downloadUrl = richTextDownloadUrl(editor, node.dataset.attachmentId);
         setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
-        resourceStatus(resourceForm, "文件上传完成，可继续编辑或保存。", "success");
+        resourceStatus(resourceForm, "", "info");
       } catch (error) {
         if (uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
           await deleteRichAttachmentNode(editor, node, { force: true });
@@ -2976,7 +3096,7 @@
       node.dataset.downloadUrl = richTextDownloadUrl(editor, node.dataset.attachmentId);
       setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
       if (form) {
-        discussionStatus(form, "文件上传完成，可继续编辑或发表。", "success");
+        discussionStatus(form, "", "info");
       }
     } catch (error) {
       if (uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
@@ -3124,6 +3244,12 @@
           insertRichFiles(editor, files);
           return;
         }
+        var tableNodes = richClipboardTableNodes(event.clipboardData?.getData("text/html") || "");
+        if (tableNodes.length) {
+          event.preventDefault();
+          insertNodesAtSelection(input, tableNodes);
+          return;
+        }
         var text = event.clipboardData?.getData("text/plain");
         if (text) {
           event.preventDefault();
@@ -3155,29 +3281,37 @@
 
   function directUploadStatus(form, message, tone) {
     var status = form.querySelector("[data-upload-status]");
+    setStatusMessage(status, message, tone);
+  }
+
+  function setStatusMessage(status, message, tone) {
     if (!status) {
       return;
     }
+    if (!("idleText" in status.dataset)) {
+      status.dataset.idleText = status.textContent || "";
+      status.dataset.idleTone = status.dataset.tone || "info";
+      status.dataset.idleHidden = status.hidden ? "true" : "false";
+    }
+    if (!message) {
+      status.textContent = status.dataset.idleText || "";
+      status.dataset.tone = status.dataset.idleTone || "info";
+      status.hidden = status.dataset.idleHidden === "true";
+      return;
+    }
+    status.hidden = false;
     status.textContent = message;
     status.dataset.tone = tone || "info";
   }
 
   function bugReportStatus(form, message, tone) {
     var status = form.querySelector("[data-bug-report-status]");
-    if (!status) {
-      return;
-    }
-    status.textContent = message;
-    status.dataset.tone = tone || "info";
+    setStatusMessage(status, message, tone);
   }
 
   function resourceStatus(form, message, tone) {
     var status = form.querySelector("[data-resource-status]");
-    if (!status) {
-      return;
-    }
-    status.textContent = message;
-    status.dataset.tone = tone || "info";
+    setStatusMessage(status, message, tone);
   }
 
   function setDirectUploadBusy(form, busy) {
@@ -3894,12 +4028,7 @@
 
   function discussionStatus(form, message, tone) {
     var status = form.querySelector("[data-discussion-status]");
-    if (!status) {
-      return;
-    }
-    status.hidden = !message;
-    status.textContent = message || "";
-    status.dataset.tone = tone || "info";
+    setStatusMessage(status, message, tone);
   }
 
   function isDiscussionControlLocked(form, control) {

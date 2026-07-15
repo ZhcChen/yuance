@@ -4590,6 +4590,12 @@ fn looks_like_rich_work_item_description(description: &str) -> bool {
         "<figcaption",
         "<img",
         "<video",
+        "<table",
+        "<thead",
+        "<tbody",
+        "<tr",
+        "<th",
+        "<td",
         "<strong",
         "<em",
         "<a ",
@@ -5573,4 +5579,19 @@ async fn seed_demo_activities(pool: &SqlitePool, owner_user_id: i64) -> AppResul
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::work_item_description_html_for_display;
+
+    #[test]
+    fn work_item_description_treats_table_html_as_rich_text() {
+        let html = "<table><tbody><tr><td>单元格</td></tr></tbody></table>";
+
+        let rendered = work_item_description_html_for_display(html, "YCE-TASK-1");
+
+        assert!(rendered.contains("<table>"));
+        assert!(rendered.contains("<td>单元格</td>"));
+    }
 }
