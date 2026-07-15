@@ -59,6 +59,11 @@ docs/mcp/codex-cli-setup.md
 mcp/yuance-mcp/examples/codex.toml
 ```
 
+Codex CLI 启动 MCP server 时，同样直接读取当前进程环境中的：
+
+- `YUANCE_BASE_URL`
+- `YUANCE_API_TOKEN`
+
 ## 受保护资料规则
 
 如果资料 `is_protected = true`：

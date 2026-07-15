@@ -35,8 +35,8 @@ docs/mcp/prompts/project-yuance-usage-rules-prompt.md
 先把下面提示词里的这几个占位符替换掉：
 
 - `<YUANCE_BASE_URL>`
-- `<YUANCE_PAT_TOKEN>`
-- `<LOCAL_CLONE_DIR>`
+- `<YUANCE_API_TOKEN>`
+- `<LOCAL_CLONE_DIR>`（本地克隆目录，例如 `~/code/yuance`，它不是 MCP 运行时环境变量）
 
 ## 可直接复制的提示词
 
@@ -54,7 +54,7 @@ docs/mcp/prompts/project-yuance-usage-rules-prompt.md
 - 元策仓库地址：https://github.com/ZhcChen/yuance.git
 - 本地克隆目录：<LOCAL_CLONE_DIR>
 - 元策服务地址：<YUANCE_BASE_URL>
-- 元策 PAT：<YUANCE_PAT_TOKEN>
+- 元策 API Token：<YUANCE_API_TOKEN>
 
 执行要求：
 - 只按 Codex CLI 口径处理，不考虑其他 AI 客户端。
@@ -71,10 +71,12 @@ docs/mcp/prompts/project-yuance-usage-rules-prompt.md
   - server 名称：yuance
   - command：node
   - args 指向 ~/.yuance-mcp/yuance-mcp-server.mjs
-  - env 中写入：
+  - 不要把 YUANCE_BASE_URL 和 YUANCE_API_TOKEN 写死到仓库文件或文档里
+  - MCP server 运行时直接读取当前 Codex CLI 进程环境中的：
     - YUANCE_BASE_URL=<YUANCE_BASE_URL>
-    - YUANCE_API_TOKEN=<YUANCE_PAT_TOKEN>
+    - YUANCE_API_TOKEN=<YUANCE_API_TOKEN>
 - 修改 ~/.codex/config.toml 时，必须保留已有内容，不要覆盖别的 MCP server 配置。
+- 如果当前环境里还没有 YUANCE_BASE_URL 或 YUANCE_API_TOKEN，要先明确提示我去本机环境变量里补上，再继续。
 - 不要把 token 写进仓库文件、文档、README、AGENTS.md 或示例文件。
 - 不要输出完整 token 到最终汇报里。
 - 完成所有文件和配置修改后，明确告诉我：

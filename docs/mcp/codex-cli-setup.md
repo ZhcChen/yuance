@@ -129,7 +129,55 @@ Copy-Item -Force "skills\yuance-agent\SKILL.md" "$env:USERPROFILE\.codex\skills\
 - 避免不看上下文就直接流转工作项
 - 遇到受保护资料时要求停下索取密码
 
-## 4. 配置 Codex CLI 的 MCP server
+## 4. 设置元策运行时环境变量
+
+MCP server 运行时直接读取当前 Codex CLI 进程环境里的：
+
+- `YUANCE_BASE_URL`
+- `YUANCE_API_TOKEN`
+
+推荐由用户自己在本机环境变量中维护，不要把真实 token 写进仓库文件、文档、示例文件或项目内的 `AGENTS.md`。
+
+macOS / Linux（当前终端会话）：
+
+```bash
+export YUANCE_BASE_URL="https://yuance.quanxinfu.com"
+export YUANCE_API_TOKEN="yuance_pat_xxx"
+```
+
+如果希望长期生效，可以写进 `~/.zshrc`、`~/.bashrc` 或你自己的 shell 配置文件，然后重新打开终端，再从这个终端启动 Codex CLI。
+
+Windows PowerShell（当前会话）：
+
+```powershell
+$env:YUANCE_BASE_URL = "https://yuance.quanxinfu.com"
+$env:YUANCE_API_TOKEN = "yuance_pat_xxx"
+```
+
+Windows PowerShell（写入当前用户环境变量）：
+
+```powershell
+[Environment]::SetEnvironmentVariable("YUANCE_BASE_URL", "https://yuance.quanxinfu.com", "User")
+[Environment]::SetEnvironmentVariable("YUANCE_API_TOKEN", "yuance_pat_xxx", "User")
+```
+
+设置完成后，建议先在当前终端确认：
+
+macOS / Linux：
+
+```bash
+echo "$YUANCE_BASE_URL"
+echo "$YUANCE_API_TOKEN"
+```
+
+Windows PowerShell：
+
+```powershell
+echo $env:YUANCE_BASE_URL
+echo $env:YUANCE_API_TOKEN
+```
+
+## 5. 配置 Codex CLI 的 MCP server
 
 Codex CLI 使用：
 
@@ -148,10 +196,6 @@ macOS 示例：
 command = "node"
 args = ["/Users/your-user/.yuance-mcp/yuance-mcp-server.mjs"]
 startup_timeout_sec = 60.0
-
-[mcp_servers.yuance.env]
-YUANCE_BASE_URL = "https://yuance.quanxinfu.com"
-YUANCE_API_TOKEN = "yuance_pat_xxx"
 ```
 
 Linux 示例：
@@ -161,10 +205,6 @@ Linux 示例：
 command = "node"
 args = ["/home/your-user/.yuance-mcp/yuance-mcp-server.mjs"]
 startup_timeout_sec = 60.0
-
-[mcp_servers.yuance.env]
-YUANCE_BASE_URL = "https://yuance.quanxinfu.com"
-YUANCE_API_TOKEN = "yuance_pat_xxx"
 ```
 
 Windows 示例：
@@ -174,10 +214,6 @@ Windows 示例：
 command = "node"
 args = ["C:\\Users\\your-user\\.yuance-mcp\\yuance-mcp-server.mjs"]
 startup_timeout_sec = 60.0
-
-[mcp_servers.yuance.env]
-YUANCE_BASE_URL = "https://yuance.quanxinfu.com"
-YUANCE_API_TOKEN = "yuance_pat_xxx"
 ```
 
 仓库里也提供了一个参考模板：
@@ -188,17 +224,19 @@ mcp/yuance-mcp/examples/codex.toml
 
 注意：
 
-- `YUANCE_API_TOKEN` 不要提交到任何仓库。
-- 不要把真实 token 写进项目内的 `AGENTS.md`、文档或示例文件。
+- `~/.codex/config.toml` 这里只负责注册 MCP server，不再写死 token。
+- `YUANCE_BASE_URL` 与 `YUANCE_API_TOKEN` 由启动 Codex CLI 的环境提供。
 - `YUANCE_BASE_URL` 建议指向正式可访问的元策地址。
 
-## 5. 重启 Codex CLI
+## 6. 重启 Codex CLI
 
 修改 `~/.codex/config.toml` 后，重启 Codex CLI，再打开新的会话。
 
 这样新的 MCP server 和 Skill 才会被稳定加载。
 
-## 6. 最小验证
+如果你刚刚调整过环境变量，也要确保 Codex CLI 是从已带这些环境变量的终端里启动的。
+
+## 7. 最小验证
 
 在新的 Codex CLI 会话里，先做最小验证：
 
@@ -220,7 +258,7 @@ mcp/yuance-mcp/examples/codex.toml
 
 如果 Codex CLI 会优先按项目上下文读取，而不是直接写入，说明 Skill 也已经生效。
 
-## 7. 推荐使用顺序
+## 8. 推荐使用顺序
 
 Codex CLI 接入元策后，推荐始终按这个顺序工作：
 
@@ -238,7 +276,7 @@ Codex CLI 接入元策后，推荐始终按这个顺序工作：
 - 流转或指派时用 `yuance_handoff_work_item`
 - 资料受保护时，先停下向用户要密码，再决定是否调用 `yuance_unlock_project_resource`
 
-## 8. 常见问题
+## 9. 常见问题
 
 ### 1) `401 unauthorized`
 
@@ -250,7 +288,7 @@ Codex CLI 接入元策后，推荐始终按这个顺序工作：
 
 优先检查：
 
-- `~/.codex/config.toml`
+- 当前启动 Codex CLI 的终端环境里 `YUANCE_API_TOKEN` 是否存在且值正确
 - 元策个人中心 Token 状态
 
 ### 2) `403 forbidden`
@@ -270,6 +308,7 @@ Codex CLI 接入元策后，推荐始终按这个顺序工作：
 - `npm install` 是否完成
 - `npm run check` 是否通过
 - `~/.codex/config.toml` 的 `[mcp_servers.yuance]` 是否写对
+- 当前启动 Codex CLI 的终端环境里 `YUANCE_BASE_URL` 与 `YUANCE_API_TOKEN` 是否存在
 
 ### 4) Skill 没生效
 
@@ -289,7 +328,7 @@ Codex CLI 接入元策后，推荐始终按这个顺序工作：
 - 默认不返回受保护附件地址
 - 只有用户明确授权并给出该条资料密码，才允许解锁
 
-## 9. 建议同时阅读
+## 10. 建议同时阅读
 
 - `docs/mcp/ai-mcp-setup.md`
 - `docs/mcp/ai-agent-playbook.md`
