@@ -98,6 +98,7 @@ docs/mcp/agent-output-examples.md
 ```text
 mcp/yuance-mcp/README.md
 docs/mcp/mcp-development-guidelines.md
+docs/mcp/mcp-tool-change-checklist.md
 mcp/yuance-mcp/yuance-mcp-server.mjs
 ```
 
@@ -162,6 +163,10 @@ MCP 工具层说明。
 
 MCP 工具开发约束。
 
+### `docs/mcp/mcp-tool-change-checklist.md`
+
+MCP 工具变更勾选清单。
+
 ### `docs/openapi/yuance.openapi.json`
 
 OpenAPI 契约层。
@@ -175,5 +180,6 @@ OpenAPI 契约层。
 看输出样子看 agent-output-examples
 改工具看 mcp/yuance-mcp
 改工具规则看 mcp-development-guidelines
+改工具执行清单看 mcp-tool-change-checklist
 查契约看 openapi
 ```

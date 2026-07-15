@@ -23,6 +23,12 @@ docs/mcp/codex-cli-setup.md
 docs/mcp/README.md
 ```
 
+如果你想直接按勾选项执行，而不是先读整篇说明，再看：
+
+```text
+docs/mcp/mcp-tool-change-checklist.md
+```
+
 ## 1. 适用范围
 
 本约束适用于：
