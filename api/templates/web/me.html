@@ -21,8 +21,6 @@
       <button class="btn btn-secondary" type="button" data-modal-open="me-profile-modal">编辑资料</button>
       <button class="btn btn-secondary" type="button" data-modal-open="me-password-modal">修改密码</button>
       <button class="btn btn-secondary" type="button" data-modal-open="me-api-token-modal" {% if !can_create_api_token %}disabled title="已达到 100 个可用 Token 上限"{% endif %}>创建访问 Token</button>
-      <a class="btn btn-secondary" href="/web/search">全局搜索</a>
-      <a class="btn btn-primary" href="/web/tasks">查看任务</a>
     </div>
   </section>
 
@@ -46,44 +44,6 @@
 
   <section class="detail-grid">
     <div class="detail-main">
-      <section class="panel">
-        <div class="panel-head">
-          <div>
-            <h2>指派给我的工作项</h2>
-            <p>按最近更新排序，优先处理开放状态和高优先级事项。</p>
-          </div>
-          <div class="toolbar-actions">
-            <a class="btn btn-sm btn-secondary" href="/web/requirements">需求</a>
-            <a class="btn btn-sm btn-secondary" href="/web/tasks">任务</a>
-            <a class="btn btn-sm btn-secondary" href="/web/bugs">Bug</a>
-          </div>
-        </div>
-
-        {% if has_assigned_items %}
-        <div class="work-item-list list-page-items">
-          {% for item in assigned_items %}
-          <article class="work-item">
-            <div>
-              <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
-              <code>{{ item.key }}</code>
-              <h3><a href="/web/work-items/{{ item.key }}">{{ item.title }}</a></h3>
-              <p>{{ item.project }} · {{ item.assignee }}</p>
-            </div>
-            <div class="work-meta">
-              <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
-              <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
-            </div>
-          </article>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="empty-state">
-          <strong>暂无指派给我的工作项</strong>
-          <span>后续创建或分配工作项后，会在这里聚合展示。</span>
-        </div>
-        {% endif %}
-      </section>
-
       <section class="panel">
         <div class="panel-head">
           <div>

@@ -637,7 +637,6 @@ struct MeTemplate {
     profile: UserProfileView,
     summary: MySummary,
     projects: Vec<ProjectRow>,
-    assigned_items: Vec<WorkItem>,
     api_tokens: Vec<ApiTokenView>,
     has_api_tokens: bool,
     api_token_active_count: usize,
@@ -646,7 +645,6 @@ struct MeTemplate {
     created_api_token: String,
     has_created_api_token: bool,
     has_projects: bool,
-    has_assigned_items: bool,
 }
 
 #[derive(Template)]
@@ -1613,7 +1611,6 @@ async fn render_me_response(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             has_projects: !projects.is_empty(),
-            has_assigned_items: !assigned_items.is_empty(),
             has_api_tokens: !api_tokens.is_empty(),
             api_token_active_count,
             api_token_limit: api_tokens::MAX_ACTIVE_TOKENS_PER_USER,
@@ -1624,7 +1621,6 @@ async fn render_me_response(
             profile,
             summary,
             projects,
-            assigned_items,
         })?
         .into_response(),
     )
