@@ -1,19 +1,27 @@
 ---
-title: 元策 AI Agent Playbook
+title: 元策 Codex CLI Agent Playbook
 type: guide
 status: active
 date: 2026-07-15
 ---
 
-# 元策 AI Agent Playbook
+# 元策 Codex CLI Agent Playbook
 
-本文档给不一定支持 Skill 机制的 AI 客户端、开发者和集成者使用。目标是把元策的 OpenAPI 和 MCP 工具组织成一套稳定、可复用、可审计的 AI 工作流。
+本文档面向 Codex CLI。
+
+它是 `skills/yuance-agent/SKILL.md` 的人类可读展开版，目标是把元策的 OpenAPI、MCP 和 Skill 组织成一套稳定、可复用、可审计的 Codex CLI 工作流。
+
+如果你当前是在做接入初始化，主入口先看：
+
+```text
+docs/mcp/codex-cli-setup.md
+```
 
 ## 三层职责
 
 - OpenAPI：契约层。说明接口、参数、响应、鉴权和状态枚举。
-- MCP：工具层。把常用 OpenAPI 能力封装为 AI 可直接调用的工具。
-- Skill / Playbook：行为层。说明先查什么、后查什么、什么时候应该停下确认。
+- MCP：工具层。把常用 OpenAPI 能力封装为 Codex CLI 可直接调用的工具。
+- Skill / Playbook：行为层。说明 Codex CLI 先查什么、后查什么、什么时候应该停下确认。
 
 推荐顺序始终是：
 
@@ -236,18 +244,21 @@ date: 2026-07-15
 - 关键参数
 - 结果
 
-## 10. 推荐落地方式
+## 10. Codex CLI 推荐落地方式
 
-如果 AI 客户端支持 Skill：
+当前正式支持的接入口径只有：
 
-- 安装 `skills/yuance-agent/SKILL.md`
-- 同时接入 `mcp/yuance-mcp/`
+- Codex CLI
 
-如果 AI 客户端不支持 Skill：
+推荐落地方式：
 
-- 把本文作为系统提示词、项目说明或本地知识库加载
-- 同时接入 `mcp/yuance-mcp/`
+1. 按 `docs/mcp/codex-cli-setup.md` 完成初始化
+2. 安装 `skills/yuance-agent/SKILL.md`
+3. 接入 `mcp/yuance-mcp/`
+4. 需要确认契约时再看 `docs/openapi/yuance.openapi.json`
 
-完整安装流程见：
+相关文档入口：
 
+- `docs/mcp/codex-cli-setup.md`
 - `docs/mcp/ai-mcp-setup.md`
+- `skills/yuance-agent/SKILL.md`
