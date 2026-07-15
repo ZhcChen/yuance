@@ -28,9 +28,14 @@ docs/mcp/prompts/project-yuance-usage-rules-prompt.md
 
 ## 使用前替换
 
+默认仓库地址已经写成当前项目官方仓库：
+
+- `https://github.com/ZhcChen/yuance.git`
+
+如果你使用的是 fork、镜像仓库或自托管仓库，再替换为你自己的仓库地址。
+
 先把下面提示词里的这几个占位符替换掉：
 
-- `<YUANCE_REPO_URL>`
 - `<YUANCE_BASE_URL>`
 - `<YUANCE_PAT_TOKEN>`
 - `<LOCAL_CLONE_DIR>`
@@ -48,7 +53,7 @@ docs/mcp/prompts/project-yuance-usage-rules-prompt.md
 5. 完成后给出“需要重启 Codex CLI”的明确说明
 
 已知信息：
-- 元策仓库地址：<YUANCE_REPO_URL>
+- 元策仓库地址：https://github.com/ZhcChen/yuance.git
 - 本地克隆目录：<LOCAL_CLONE_DIR>
 - 元策服务地址：<YUANCE_BASE_URL>
 - 元策 PAT：<YUANCE_PAT_TOKEN>
