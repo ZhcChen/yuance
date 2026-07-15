@@ -17,6 +17,7 @@ docs/mcp/README.md
 - `skills/yuance-agent/SKILL.md`：给 Codex CLI 使用
 - `docs/mcp/ai-agent-playbook.md`：作为 Skill 的人类可读补充
 - `docs/mcp/codex-cli-setup.md`：给 Codex CLI 的完整初始化流程
+- `docs/mcp/mcp-development-guidelines.md`：给维护者的 MCP 开发约束
 
 建议理解为三层：
 

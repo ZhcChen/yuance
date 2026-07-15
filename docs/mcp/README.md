@@ -94,6 +94,7 @@ docs/mcp/ai-agent-playbook.md
 
 ```text
 mcp/yuance-mcp/README.md
+docs/mcp/mcp-development-guidelines.md
 mcp/yuance-mcp/yuance-mcp-server.mjs
 ```
 
@@ -150,6 +151,10 @@ Codex CLI 的行为层规则。
 
 MCP 工具层说明。
 
+### `docs/mcp/mcp-development-guidelines.md`
+
+MCP 工具开发约束。
+
 ### `docs/openapi/yuance.openapi.json`
 
 OpenAPI 契约层。
@@ -161,5 +166,6 @@ OpenAPI 契约层。
 理解整体看 ai-mcp-setup
 理解工作流看 SKILL + playbook
 改工具看 mcp/yuance-mcp
+改工具规则看 mcp-development-guidelines
 查契约看 openapi
 ```
