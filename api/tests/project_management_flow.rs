@@ -995,6 +995,72 @@ async fn work_item_detail_uses_initial_rich_comment_when_description_is_plain_su
     assert!(description_section.contains(r#"data-yuance-attachment-kind="image""#));
     assert!(description_section.contains(r#"<figcaption>main-shot.png</figcaption>"#));
     assert!(!description_section.contains(r#"<p>main-shot.png</p>"#));
+    let discussion_section = &body[description_end..];
+    assert!(discussion_section.contains("还没有讨论"));
+    assert!(!discussion_section.contains(&format!(r#"src="{image_url}""#)));
+}
+
+#[tokio::test]
+async fn work_item_detail_hides_primary_post_comment_when_it_is_the_post_body() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let item = projects::create_work_item(
+        &pool,
+        admin.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "正文不应重复显示".to_string(),
+            description: "第一段 正文".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: String::new(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    projects::add_work_item_comment_reply_with_format(
+        &pool,
+        admin.user_id,
+        &item.item_key,
+        r#"<p>第一段 <strong>正文</strong></p>"#,
+        "html",
+        None,
+    )
+    .await
+    .expect("primary post comment should create");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", item.item_key))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let description_start = body
+        .find(r#"<section class="work-item-description""#)
+        .expect("description section should render");
+    let description_end = body[description_start..]
+        .find(r#"<section class="discussion-section""#)
+        .map(|index| description_start + index)
+        .expect("discussion section should follow description");
+    let description_section = &body[description_start..description_end];
+    let discussion_section = &body[description_end..];
+
+    assert!(description_section.contains(r#"<strong>正文</strong>"#));
+    assert!(discussion_section.contains("还没有讨论"));
+    assert!(!discussion_section.contains(r#"<strong>正文</strong>"#));
 }
 
 #[tokio::test]
@@ -2503,7 +2569,7 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("OPS-TASK-1"));
     assert!(bugs_body.contains(r#"data-bug-report-form"#));
     assert!(bugs_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
-    assert!(bugs_body.contains("创建后会自动生成首条图文讨论"));
+    assert!(bugs_body.contains("创建后会直接保存为帖子正文"));
     assert!(!bugs_body.contains(r#"data-bug-report-groups"#));
     assert!(!bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
     assert!(!bugs_body.contains("每组说明会保存为一条评论"));

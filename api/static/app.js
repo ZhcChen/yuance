@@ -2646,7 +2646,7 @@
       if (resourceForm) {
         resourceStatus(resourceForm, "已添加 " + nodes.length + " 个附件，提交后会自动上传到资料正文。", "ready");
       } else if (form) {
-        bugReportStatus(form, "已添加 " + nodes.length + " 个附件，创建后会自动上传到图文说明。", "ready");
+        bugReportStatus(form, "已添加 " + nodes.length + " 个附件，创建后会自动上传到帖子正文。", "ready");
       }
       return;
     }
@@ -3709,7 +3709,7 @@
     var commentId = "";
 
     if (useDraft) {
-      bugReportStatus(form, "正在准备首条图文说明...", "info");
+      bugReportStatus(form, "正在准备帖子正文...", "info");
       commentId = await ensureDiscussionDraft(editor);
       for (var index = 0; index < attachments.length; index += 1) {
         var node = attachments[index];
@@ -3733,7 +3733,7 @@
       return null;
     }
     if (useDraft) {
-      bugReportStatus(form, "正在发布首条图文说明...", "info");
+      bugReportStatus(form, "正在发布帖子正文...", "info");
       return fetchJson(
         "/api/v1/work-items/" +
           encodeURIComponent(itemKey) +
@@ -3748,7 +3748,7 @@
       );
     }
 
-    bugReportStatus(form, "正在保存首条图文说明...", "info");
+    bugReportStatus(form, "正在保存帖子正文...", "info");
     return fetchJson("/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },

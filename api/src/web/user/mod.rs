@@ -7221,7 +7221,7 @@ async fn load_work_item_detail(
             attachments,
         ));
     }
-    promote_initial_rich_comment_to_description(&mut item, &comments);
+    promote_primary_post_to_description(&mut item, &mut comments);
 
     Ok(Some((item, comments)))
 }
@@ -7261,40 +7261,30 @@ async fn load_work_item_detail_for_user(
             attachments,
         ));
     }
-    promote_initial_rich_comment_to_description(&mut item, &comments);
+    promote_primary_post_to_description(&mut item, &mut comments);
 
     Ok(Some((item, comments)))
 }
 
-fn promote_initial_rich_comment_to_description(
+fn promote_primary_post_to_description(
     item: &mut WorkItemDetailView,
-    comments: &[WorkItemComment],
+    comments: &mut Vec<WorkItemComment>,
 ) {
-    if item
-        .description_html
-        .contains("data-yuance-attachment-kind=\"image\"")
-        || item
-            .description_html
-            .contains("data-yuance-attachment-kind=\"video\"")
-        || item.description_html.contains("<img")
-        || item.description_html.contains("<video")
-    {
-        return;
-    }
-
-    let Some(comment) = comments.iter().find(|comment| {
-        !comment.is_flow && comment.parent_comment_id.is_none() && comment.body_format == "html"
+    let Some(index) = comments.iter().position(|comment| {
+        !comment.is_flow
+            && comment.parent_comment_id.is_none()
+            && comment.body_format == "html"
+            && comment.author_username == item.reporter_username
     }) else {
         return;
     };
 
-    if !comment.body_html.contains("data-yuance-attachment-kind")
-        || !work_item_description_matches_comment_summary(&item.description, comment)
-    {
+    if !work_item_description_matches_comment_summary(&item.description, &comments[index]) {
         return;
     }
 
-    item.description_html = comment.body_html.clone();
+    let comment = comments.remove(index);
+    item.description_html = comment.body_html;
 }
 
 fn work_item_description_matches_comment_summary(
