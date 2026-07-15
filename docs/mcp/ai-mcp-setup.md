@@ -9,6 +9,12 @@ date: 2026-07-14
 
 本文档给 AI Agent 和开发者使用。目标是在本机安装一个元策 MCP server，让 AI 能通过元策 OpenAPI 查看项目、需求、任务、Bug、评论、资料库和消息通知。
 
+如果你当前只接入 Codex CLI，优先阅读：
+
+```text
+docs/mcp/codex-cli-setup.md
+```
+
 推荐完整接入方式：
 
 ```text
@@ -152,6 +158,12 @@ docs/mcp/ai-agent-playbook.md    面向不支持 Skill 的客户端
 ```
 
 ## 4. 配置 MCP client
+
+如果当前客户端是 Codex CLI，推荐直接按下面这份文档配置：
+
+```text
+docs/mcp/codex-cli-setup.md
+```
 
 macOS 示例：
 
