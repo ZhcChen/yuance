@@ -1059,6 +1059,53 @@
     });
   }
 
+  function updateTokenProjectScope(scope) {
+    if (!scope) {
+      return;
+    }
+    var all = scope.querySelector("[data-token-project-all]");
+    var options = Array.from(scope.querySelectorAll("[data-token-project-option]"));
+    var summary = scope.querySelector("[data-token-project-summary]");
+    var allSelected = !all || all.checked;
+
+    options.forEach(function (option) {
+      option.disabled = allSelected;
+      if (allSelected) {
+        option.checked = false;
+      }
+      var optionLabel = option.closest(".multi-select-option");
+      if (optionLabel) {
+        optionLabel.classList.toggle("disabled", allSelected);
+      }
+    });
+
+    if (!summary) {
+      return;
+    }
+    if (allSelected) {
+      summary.textContent = "全部项目（包含后续新增）";
+      return;
+    }
+
+    var selected = options.filter(function (option) { return option.checked; });
+    if (selected.length === 0) {
+      summary.textContent = "请选择项目";
+      return;
+    }
+    var labels = selected.map(function (option) {
+      var label = option.closest(".multi-select-option");
+      var strong = label && label.querySelector("strong");
+      return strong ? strong.textContent.trim() : option.value;
+    });
+    summary.textContent = selected.length <= 2
+      ? labels.join("、")
+      : labels.slice(0, 2).join("、") + " 等 " + selected.length + " 个项目";
+  }
+
+  function initTokenProjectScopes(root) {
+    (root || document).querySelectorAll("[data-token-project-scope]").forEach(updateTokenProjectScope);
+  }
+
   function selectControlLabel(select) {
     var label = select.labels && select.labels[0];
     if (!label) {
@@ -5321,6 +5368,7 @@
     initProjectSwitcher(event.target);
     initUserComboboxes(event.target);
     initMemberBatchForms(event.target);
+    initTokenProjectScopes(event.target);
     initSelectControls(event.target);
     initContentTabs(event.target);
     initAttachmentImagePreviews(event.target);
@@ -5443,6 +5491,17 @@
       updateMemberBatchForm(memberBatchForm);
       showToast("请至少选择一个要加入的项目成员。", "error");
       memberBatchForm.querySelector("[data-member-candidate-search]")?.focus({ preventScroll: true });
+    }
+    var tokenProjectScope = event.target.querySelector("[data-token-project-scope]");
+    if (
+      tokenProjectScope &&
+      !tokenProjectScope.querySelector("[data-token-project-all]:checked") &&
+      !tokenProjectScope.querySelector("[data-token-project-option]:checked")
+    ) {
+      event.preventDefault();
+      updateTokenProjectScope(tokenProjectScope);
+      showToast("请选择全部项目，或至少选择一个指定项目。", "error");
+      tokenProjectScope.querySelector("summary")?.focus({ preventScroll: true });
     }
   }, true);
 
@@ -5575,6 +5634,16 @@
     if (checkbox) {
       updateMemberBatchForm(memberBatchFormFor(checkbox));
     }
+
+    var tokenProjectCheckbox = event.target.closest("[data-token-project-all], [data-token-project-option]");
+    if (tokenProjectCheckbox) {
+      var scope = tokenProjectCheckbox.closest("[data-token-project-scope]");
+      var all = scope && scope.querySelector("[data-token-project-all]");
+      if (tokenProjectCheckbox.matches("[data-token-project-option]") && tokenProjectCheckbox.checked && all) {
+        all.checked = false;
+      }
+      updateTokenProjectScope(scope);
+    }
   });
 
   ["input", "change"].forEach(function (eventName) {
@@ -5586,6 +5655,7 @@
   initProjectSwitcher(document);
   initUserComboboxes(document);
   initMemberBatchForms(document);
+  initTokenProjectScopes(document);
   initSelectControls(document);
   if (currentMessageCenter() && window.history && window.history.replaceState) {
     window.history.replaceState({ yuanceMessageCenter: true }, "", window.location.href);

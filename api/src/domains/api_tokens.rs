@@ -11,6 +11,7 @@ use crate::{
 };
 
 const TOKEN_PREFIX: &str = "yuance_pat_";
+pub const MAX_ACTIVE_TOKENS_PER_USER: i64 = 100;
 
 pub const SCOPE_PROJECT_READ: &str = "project:read";
 pub const SCOPE_WORK_ITEM_READ: &str = "work_item:read";
@@ -156,6 +157,22 @@ pub async fn create_token(
         .chars()
         .rev()
         .collect::<String>();
+    let active_token_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM api_tokens
+        WHERE user_id = ?1
+          AND revoked_at = ''
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+    if active_token_count >= MAX_ACTIVE_TOKENS_PER_USER {
+        return Err(AppError::BadRequest(format!(
+            "每个用户最多可同时保留 {MAX_ACTIVE_TOKENS_PER_USER} 个访问 Token，请先撤销不再使用的 Token"
+        )));
+    }
 
     let token_id = sqlx::query_scalar::<_, i64>(
         r#"

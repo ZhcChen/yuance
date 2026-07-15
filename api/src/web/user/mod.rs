@@ -640,6 +640,9 @@ struct MeTemplate {
     assigned_items: Vec<WorkItem>,
     api_tokens: Vec<ApiTokenView>,
     has_api_tokens: bool,
+    api_token_active_count: usize,
+    api_token_limit: i64,
+    can_create_api_token: bool,
     created_api_token: String,
     has_created_api_token: bool,
     has_projects: bool,
@@ -1594,6 +1597,9 @@ async fn render_me_response(
     let summary = my_summary(&projects, &assigned_items);
     let csrf_token = context.csrf_token.clone();
     let has_created_api_token = !created_api_token.is_empty();
+    let api_token_active_count = api_tokens.iter().filter(|token| !token.is_revoked).count();
+    let can_create_api_token =
+        (api_token_active_count as i64) < api_tokens::MAX_ACTIVE_TOKENS_PER_USER;
 
     with_csrf_cookie(
         state,
@@ -1609,6 +1615,9 @@ async fn render_me_response(
             has_projects: !projects.is_empty(),
             has_assigned_items: !assigned_items.is_empty(),
             has_api_tokens: !api_tokens.is_empty(),
+            api_token_active_count,
+            api_token_limit: api_tokens::MAX_ACTIVE_TOKENS_PER_USER,
+            can_create_api_token,
             api_tokens,
             created_api_token,
             has_created_api_token,
@@ -5908,6 +5917,7 @@ fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
     let mut name = String::new();
     let mut scopes = Vec::new();
     let mut project_scope = String::new();
+    let mut project_scope_projects = Vec::new();
     let mut expires_at = String::new();
     for (key, value) in pairs {
         match key.as_str() {
@@ -5915,10 +5925,12 @@ fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
             "name" => name = value,
             "scopes" => scopes.push(value),
             "project_scope" => project_scope = value,
+            "project_scope_projects" => project_scope_projects.push(value),
             "expires_at" => expires_at = value,
             _ => {}
         }
     }
+    let project_scope = api_token_project_scope_from_form(&project_scope, project_scope_projects);
 
     Ok(MeApiTokenCreateForm {
         csrf_token,
@@ -5927,6 +5939,44 @@ fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
         project_scope,
         expires_at,
     })
+}
+
+fn api_token_project_scope_from_form(
+    legacy_project_scope: &str,
+    project_scope_projects: Vec<String>,
+) -> String {
+    if project_scope_projects
+        .iter()
+        .any(|project| project.trim().eq_ignore_ascii_case("all"))
+    {
+        return "all".to_string();
+    }
+
+    let mut selected_projects = Vec::new();
+    for project in project_scope_projects {
+        let project = project.trim();
+        if project.is_empty() {
+            continue;
+        }
+        let project = project.to_ascii_uppercase();
+        if !selected_projects
+            .iter()
+            .any(|existing| existing == &project)
+        {
+            selected_projects.push(project);
+        }
+    }
+
+    if !selected_projects.is_empty() {
+        return selected_projects.join(",");
+    }
+
+    let legacy_project_scope = legacy_project_scope.trim();
+    if legacy_project_scope.is_empty() {
+        "all".to_string()
+    } else {
+        legacy_project_scope.to_string()
+    }
 }
 
 #[derive(Debug)]
@@ -6939,9 +6989,15 @@ fn api_token_view(token: api_tokens::ApiTokenSummary) -> ApiTokenView {
             .collect::<Vec<_>>()
             .join("、"),
         project_scope: if token.project_scope == "all" {
-            "全部可见项目".to_string()
+            "全部项目（含后续新增）".to_string()
         } else {
-            token.project_scope
+            token
+                .project_scope
+                .split(',')
+                .map(str::trim)
+                .filter(|project| !project.is_empty())
+                .collect::<Vec<_>>()
+                .join("、")
         },
         token_suffix: token.token_suffix,
         expires_at: display_optional_timestamp(token.expires_at, "永不过期"),

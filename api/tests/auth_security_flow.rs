@@ -5,7 +5,7 @@ use axum::{
 use http_body_util::BodyExt;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap},
+    domains::{api_tokens, auth, bootstrap, projects},
     platform::{
         config::Settings,
         db,
@@ -741,7 +741,33 @@ async fn api_token_scope_is_enforced_for_bearer_requests() {
 async fn me_page_creates_api_token_and_renders_plaintext_once() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let project_a = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "Alpha 项目".to_string(),
+            description: "用于验证 Token 项目范围多选".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project A should create");
+    let project_b = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "Beta 项目".to_string(),
+            description: "用于验证 Token 项目范围多选".to_string(),
+            status: "not_started".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project B should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let page_response = app
         .clone()
@@ -758,8 +784,14 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
     let page_body = response_body(page_response).await;
     assert!(page_body.contains("Personal Access Token"));
     assert!(page_body.contains("创建访问 Token"));
+    assert!(page_body.contains("可用 Token 0/100"));
+    assert!(page_body.contains(r#"name="project_scope_projects" value="all" checked"#));
+    assert!(page_body.contains("全部项目（包含后续新增）"));
+    assert!(page_body.contains("Alpha 项目"));
+    assert!(page_body.contains("Beta 项目"));
 
     let create_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -767,7 +799,7 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(with_csrf(
-                    "name=MCP%20UI&project_scope=all&scopes=project%3Aread&scopes=work_item%3Aread",
+                    "name=MCP%20UI&project_scope_projects=all&scopes=project%3Aread&scopes=work_item%3Aread",
                 )))
                 .expect("request should build"),
         )
@@ -779,6 +811,98 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
     assert!(create_body.contains("Token 已创建，请立即复制保存"));
     assert!(create_body.contains("yuance_pat_"));
     assert!(create_body.contains("MCP UI"));
+    assert!(create_body.contains("全部项目（含后续新增）"));
+
+    let scoped_body = format!(
+        "name=MCP%20Scoped&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread",
+        project_a.project_key, project_b.project_key
+    );
+    let scoped_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/me/api-tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(&scoped_body)))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(scoped_response.status(), StatusCode::OK);
+    let scoped_page = response_body(scoped_response).await;
+    assert!(scoped_page.contains("MCP Scoped"));
+    assert!(scoped_page.contains(&format!(
+        "{}、{}",
+        project_a.project_key, project_b.project_key
+    )));
+
+    let stored_scope = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT project_scope
+        FROM api_tokens
+        WHERE user_id = ?1
+          AND name = 'MCP Scoped'
+        "#,
+    )
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("scoped token should persist");
+    assert_eq!(
+        stored_scope,
+        format!("{},{}", project_a.project_key, project_b.project_key)
+    );
+}
+
+#[tokio::test]
+async fn api_token_creation_rejects_more_than_100_unrevoked_tokens() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    for index in 0..api_tokens::MAX_ACTIVE_TOKENS_PER_USER {
+        sqlx::query(
+            r#"
+            INSERT INTO api_tokens (
+                user_id,
+                name,
+                token_hash,
+                token_suffix,
+                scopes,
+                project_scope
+            )
+            VALUES (?1, ?2, ?3, ?4, '["project:read"]', 'all')
+            "#,
+        )
+        .bind(initialized.user_id)
+        .bind(format!("Token {index}"))
+        .bind(format!("hash-{index}"))
+        .bind(format!("{index:08}"))
+        .execute(&pool)
+        .await
+        .expect("token fixture should insert");
+    }
+
+    let create_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/me/api-tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "name=Overflow&project_scope_projects=all&scopes=project%3Aread",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(create_response.status(), StatusCode::BAD_REQUEST);
+    let body = response_body(create_response).await;
+    assert!(body.contains("最多可同时保留 100 个访问 Token"));
 }
 
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
@@ -795,11 +919,13 @@ async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     .expect("bootstrap should initialize");
 
     InitializedAdmin {
+        user_id: result.user_id,
         cookie: auth::session_cookie_header(&result.session.raw_token, false),
     }
 }
 
 struct InitializedAdmin {
+    user_id: i64,
     cookie: String,
 }
 

@@ -20,7 +20,7 @@
     <div class="toolbar-actions">
       <button class="btn btn-secondary" type="button" data-modal-open="me-profile-modal">编辑资料</button>
       <button class="btn btn-secondary" type="button" data-modal-open="me-password-modal">修改密码</button>
-      <button class="btn btn-secondary" type="button" data-modal-open="me-api-token-modal">创建访问 Token</button>
+      <button class="btn btn-secondary" type="button" data-modal-open="me-api-token-modal" {% if !can_create_api_token %}disabled title="已达到 100 个可用 Token 上限"{% endif %}>创建访问 Token</button>
       <a class="btn btn-secondary" href="/web/search">全局搜索</a>
       <a class="btn btn-primary" href="/web/tasks">查看任务</a>
     </div>
@@ -90,7 +90,10 @@
             <h2>Personal Access Token</h2>
             <p>用于 OpenAPI、MCP 或外部脚本调用。Token 明文只在创建成功后显示一次。</p>
           </div>
-          <button class="btn btn-sm btn-primary" type="button" data-modal-open="me-api-token-modal">创建 Token</button>
+          <div class="token-panel-actions">
+            <span class="token-quota">可用 Token {{ api_token_active_count }}/{{ api_token_limit }}</span>
+            <button class="btn btn-sm btn-primary" type="button" data-modal-open="me-api-token-modal" {% if !can_create_api_token %}disabled title="已达到 100 个可用 Token 上限"{% endif %}>创建 Token</button>
+          </div>
         </div>
 
         {% if has_created_api_token %}
@@ -291,10 +294,39 @@
         AI 助手名称
         <input name="name" value="MCP 本地访问" required autofocus>
       </label>
-      <label>
-        项目范围
-        <input name="project_scope" value="all" placeholder="all 或项目编号，例如 YCE">
-      </label>
+      <div class="token-project-scope-field">
+        <span class="field-label">项目范围</span>
+        <details class="multi-select-dropdown" data-token-project-scope>
+          <summary>
+            <span data-token-project-summary>全部项目（包含后续新增）</span>
+            <span class="select-control-caret" aria-hidden="true"></span>
+          </summary>
+          <div class="multi-select-panel">
+            <label class="multi-select-option multi-select-option-strong">
+              <input type="checkbox" name="project_scope_projects" value="all" checked data-token-project-all>
+              <span>
+                <strong>全部项目</strong>
+                <small>包含当前可见项目，以及后续新增并对你可见的项目。</small>
+              </span>
+            </label>
+            {% if has_projects %}
+            <div class="multi-select-divider">或选择指定项目</div>
+            {% for project in projects %}
+            <label class="multi-select-option">
+              <input type="checkbox" name="project_scope_projects" value="{{ project.code }}" data-token-project-option>
+              <span>
+                <strong>{{ project.name }}</strong>
+                <small>{{ project.code }} · {{ project.status }} · {{ project.open_work_items }} 个开放项</small>
+              </span>
+            </label>
+            {% endfor %}
+            {% else %}
+            <div class="select-control-empty">当前暂无可见项目；选择“全部项目”后，未来可见项目会自动包含。</div>
+            {% endif %}
+          </div>
+        </details>
+        <em class="field-hint">选择“全部项目”时，后续新增项目也默认可用；选择指定项目时仅限勾选项目。</em>
+      </div>
       <label>
         过期时间
         <input name="expires_at" type="date">
@@ -312,7 +344,7 @@
       </fieldset>
       <div class="modal-actions">
         <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
-        <button class="btn btn-primary" type="submit">创建并显示 Token</button>
+        <button class="btn btn-primary" type="submit" {% if !can_create_api_token %}disabled{% endif %}>创建并显示 Token</button>
       </div>
     </form>
   </section>

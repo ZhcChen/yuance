@@ -6613,6 +6613,159 @@ select option {
   font-size: 12px;
 }
 
+.token-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.token-quota {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.token-project-scope-field {
+  display: grid;
+  gap: 7px;
+}
+
+.field-label {
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.multi-select-dropdown {
+  position: relative;
+  display: block;
+}
+
+.multi-select-dropdown summary {
+  min-height: var(--control-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 11px 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--control-font-size);
+  font-weight: 650;
+  list-style: none;
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+.multi-select-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.multi-select-dropdown summary:hover {
+  border-color: var(--muted);
+}
+
+.multi-select-dropdown summary:focus-visible,
+.multi-select-dropdown[open] summary {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgb(31 95 191 / 13%);
+}
+
+.multi-select-dropdown[open] .select-control-caret {
+  transform: translateY(2px) rotate(225deg);
+}
+
+.multi-select-panel {
+  display: grid;
+  gap: 8px;
+  max-height: min(300px, 46vh);
+  overflow: auto;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 18px 44px rgb(20 35 55 / 14%);
+}
+
+.multi-select-option {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+
+.multi-select-option:hover {
+  background: var(--menu-active);
+}
+
+.multi-select-option.disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.multi-select-option input {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  accent-color: var(--brand);
+}
+
+.multi-select-option span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.multi-select-option strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-select-option small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-select-option-strong {
+  background: var(--brand-soft);
+}
+
+.multi-select-divider {
+  padding: 3px 10px 1px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
 .form-fieldset {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
