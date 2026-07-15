@@ -362,7 +362,9 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("async function submitBugReport"));
     assert!(body.contains("async function publishBugReportRichText"));
     assert!(body.contains("function syncBugReportRichDescription"));
-    assert!(body.contains("editor.dataset.richUploadDeferred === \"true\""));
+    assert!(body.contains("function ensureBugReportItemForRichUpload"));
+    assert!(body.contains("function ensureProjectResourceForRichUpload"));
+    assert!(body.contains("function removeRichAttachmentNode"));
     assert!(body.contains("data-bug-report-form"));
     assert!(body.contains("/comments/"));
     assert!(body.contains("function setDiscussionBusy(form, busy, activeSubmitter)"));

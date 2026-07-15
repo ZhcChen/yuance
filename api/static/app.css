@@ -766,11 +766,8 @@ body {
   text-align: right;
 }
 
-.discussion-rich-body figcaption {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 18px;
+.discussion-rich-body figure[data-yuance-attachment-kind] > figcaption {
+  display: none;
 }
 
 .discussion-rich-body img,

@@ -291,7 +291,7 @@ function bugReportForm(successRedirect) {
     },
   };
   const richEditor = {
-    dataset: { richUploadDeferred: "true" },
+    dataset: {},
     querySelector(selector) {
       if (selector === "[data-rich-text-input]") {
         return richInput;
@@ -790,7 +790,7 @@ const richImageMeta = samePage.hooks.richAttachmentMetadata(richImageAttachment)
 assert.equal(richImageMeta.kind, "image");
 assert.equal(richImageMeta.previewable, true);
 assert.equal(richImageMeta.source, "/web/work-items/YCE-TASK-2/comments/1/attachments/3/download");
-assert.equal(richImageMeta.title, "截图.png");
+assert.equal(richImageMeta.title, "正文图片");
 assert.equal(
   samePage.hooks.absoluteAttachmentUrl("/web/work-items/YCE-TASK-2/comments/1/attachments/2/download"),
   "https://yuance.test/web/work-items/YCE-TASK-2/comments/1/attachments/2/download",

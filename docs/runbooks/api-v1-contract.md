@@ -588,13 +588,14 @@ POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url
 POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url
+DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}
 ```
 
 权限：
 
 - 列表和下载签名：需要 `work_item.view`，并处于项目成员范围内。
 - 登记、上传签名和上传完成：需要 `work_item.view`，并且当前用户具备项目内容写入权限；流程记录评论不能登记附件。
-- 工作项附件和评论附件随协作记录永久保留，不提供删除接口。
+- 删除：仅允许删除草稿评论的附件；用于富文本未发布前的附件清理，同时会尝试删除对象存储中的对应对象。
 
 资料正文附件：
 
@@ -603,11 +604,13 @@ POST /api/v1/projects/{project_key}/resources/{resource_id}/attachments
 GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url
 POST /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded
 GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url
+DELETE /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}
 ```
 
 权限：
 
 - 登记、上传签名和上传完成：需要 `project.view`，并且当前用户具备项目内容写入权限。
+- 删除：用于资料正文编辑阶段移除未保留的附件，同时会尝试删除对象存储中的对应对象。
 - 下载签名：未设置访问密码的资料需要项目成员范围；已设置访问密码的资料不通过 API 生成下载签名，必须先在 Web 详情页验证访问密码，再使用短期受控下载入口。
 
 附件登记请求：

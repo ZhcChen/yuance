@@ -2171,8 +2171,66 @@
     return Boolean(richTextPlainText(editor));
   }
 
-  function richTextUploadDeferred(editor) {
-    return Boolean(editor && editor.dataset.richUploadDeferred === "true");
+  function richAttachmentMediaKind(contentType) {
+    if (isPreviewableImageType(contentType)) {
+      return "image";
+    }
+    if (isPreviewableVideoType(contentType)) {
+      return "video";
+    }
+    return "file";
+  }
+
+  function richAttachmentLabel(kind) {
+    if (kind === "video") {
+      return "正文视频";
+    }
+    if (kind === "image") {
+      return "正文图片";
+    }
+    return "附件";
+  }
+
+  function localRichAttachmentLabel(kind) {
+    if (kind === "video") {
+      return "待上传视频";
+    }
+    if (kind === "image") {
+      return "待上传图片";
+    }
+    return "待上传附件";
+  }
+
+  function fileExtensionFromName(name) {
+    var value = String(name || "").trim();
+    if (!value) {
+      return "";
+    }
+    var dotIndex = value.lastIndexOf(".");
+    if (dotIndex <= 0 || dotIndex >= value.length - 1) {
+      return "";
+    }
+    return value
+      .slice(dotIndex + 1)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "")
+      .slice(0, 12);
+  }
+
+  function richAttachmentUploadFilename(file) {
+    var contentType = file && file.type ? file.type : "";
+    var kind = richAttachmentMediaKind(contentType);
+    var extension = fileExtensionFromName(file && file.name ? file.name : "");
+    if (kind === "image") {
+      return extension ? "image." + extension : "image";
+    }
+    if (kind === "video") {
+      return extension ? "video." + extension : "video";
+    }
+    if (file && file.name) {
+      return file.name;
+    }
+    return extension ? "attachment." + extension : "attachment";
   }
 
   function richTextDownloadUrl(editor, attachmentId) {
@@ -2231,22 +2289,17 @@
       if (isImage) {
         var image = document.createElement("img");
         image.setAttribute("src", downloadUrl);
-        image.alt = filename;
+        image.alt = richAttachmentLabel("image");
         image.setAttribute("loading", "lazy");
         replacement.appendChild(image);
-        var caption = document.createElement("figcaption");
-        caption.textContent = filename;
-        replacement.appendChild(caption);
       } else if (isVideo) {
         var video = document.createElement("video");
         video.setAttribute("src", downloadUrl);
         video.setAttribute("controls", "controls");
         video.setAttribute("preload", "metadata");
         video.setAttribute("playsinline", "playsinline");
+        video.setAttribute("title", richAttachmentLabel("video"));
         replacement.appendChild(video);
-        var videoCaption = document.createElement("figcaption");
-        videoCaption.textContent = filename;
-        replacement.appendChild(videoCaption);
       } else {
         replacement.setAttribute("href", downloadUrl);
         replacement.title = filename;
@@ -2466,8 +2519,9 @@
   }
 
   function createRichAttachmentNode(file) {
-    var isImage = isPreviewableImageType(file.type);
-    var isVideo = isPreviewableVideoType(file.type);
+    var kind = richAttachmentMediaKind(file.type || "");
+    var isImage = kind === "image";
+    var isVideo = kind === "video";
     var node = document.createElement(isImage || isVideo ? "figure" : "span");
     node.className = "rich-attachment " + (isImage || isVideo ? "rich-attachment--media" : "rich-attachment--file");
     node.contentEditable = "false";
@@ -2484,7 +2538,7 @@
       node.dataset.objectUrl = objectUrl;
       if (isImage) {
         var image = document.createElement("img");
-        image.alt = file.name || "本地图片";
+        image.alt = localRichAttachmentLabel("image");
         bindRichAttachmentOrientation(node, image);
         image.src = objectUrl;
         media.appendChild(image);
@@ -2517,7 +2571,7 @@
     remove.type = "button";
     remove.dataset.richAttachmentRemove = "";
     remove.textContent = "×";
-    remove.setAttribute("aria-label", "移除 " + (file.name || "附件"));
+    remove.setAttribute("aria-label", "移除" + localRichAttachmentLabel(kind));
     actions.append(remove);
 
     var overlay = document.createElement("span");
@@ -2544,6 +2598,186 @@
       node.append(media, main, actions, overlay);
     }
     return node;
+  }
+
+  function bugReportRequestPayload(form) {
+    var formData = new FormData(form);
+    return {
+      project_key: formData.get("project_key") || "",
+      item_type: formData.get("item_type") || "bug",
+      title: formData.get("title") || "",
+      description: formData.get("description") || "",
+      priority: formData.get("priority") || "P2",
+      assignee_username: formData.get("assignee_username") || "",
+      due_date: formData.get("due_date") || "",
+      parent_item_key: formData.get("parent_item_key") || "",
+    };
+  }
+
+  function bugReportUpdatePayload(form) {
+    var payload = bugReportRequestPayload(form);
+    return {
+      title: payload.title,
+      description: payload.description,
+      priority: payload.priority,
+      assignee_username: payload.assignee_username,
+      due_date: payload.due_date,
+      parent_item_key: payload.parent_item_key,
+    };
+  }
+
+  function applyBugReportItemContext(form, item) {
+    var itemKey = item && item.key ? String(item.key) : "";
+    if (!form || !itemKey) {
+      return;
+    }
+    form.dataset.bugReportItemKey = itemKey;
+    var editor = richTextEditorForForm(form);
+    if (editor) {
+      editor.dataset.itemKey = itemKey;
+    }
+    applyBugReportPersistedLocks(form);
+  }
+
+  async function ensureBugReportItemForRichUpload(editor) {
+    var form = editor && editor.closest("[data-bug-report-form]");
+    if (!form) {
+      return null;
+    }
+    var existingItemKey = form.dataset.bugReportItemKey || editor.dataset.itemKey || "";
+    if (existingItemKey) {
+      editor.dataset.itemKey = existingItemKey;
+      return { key: existingItemKey };
+    }
+    if (!form.reportValidity()) {
+      throw new Error("请先完善工作项标题后再上传附件。");
+    }
+    if (form.bugReportCreatePromise) {
+      return form.bugReportCreatePromise;
+    }
+    syncBugReportRichDescription(form);
+    bugReportStatus(form, "首次上传前正在创建工作项...", "info");
+    var promise = fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify(bugReportRequestPayload(form)),
+    })
+      .then(function (item) {
+        applyBugReportItemContext(form, item);
+        bugReportStatus(form, "工作项已创建，附件将继续直传。", "success");
+        return item;
+      })
+      .finally(function () {
+        form.bugReportCreatePromise = null;
+      });
+    form.bugReportCreatePromise = promise;
+    return promise;
+  }
+
+  async function ensureBugReportItemSaved(form) {
+    syncBugReportRichDescription(form);
+    var existingItemKey = form.dataset.bugReportItemKey || "";
+    if (!existingItemKey) {
+      if (!form.reportValidity()) {
+        throw new Error("请先完善工作项信息。");
+      }
+      bugReportStatus(form, "正在创建工作项...", "info");
+      var created = await fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify(bugReportRequestPayload(form)),
+      });
+      applyBugReportItemContext(form, created);
+      return created;
+    }
+    bugReportStatus(form, "正在同步工作项信息...", "info");
+    var updated = await fetchJson(
+      "/api/v1/work-items/" + encodeURIComponent(existingItemKey),
+      {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+        },
+        body: JSON.stringify(bugReportUpdatePayload(form)),
+      }
+    );
+    applyBugReportItemContext(form, updated);
+    return updated;
+  }
+
+  function applyResourceContext(form, resourceId, projectKey) {
+    if (!form || !resourceId) {
+      return;
+    }
+    form.dataset.resourceId = String(resourceId);
+    var editor = richTextEditorForForm(form);
+    if (editor) {
+      editor.dataset.resourceId = String(resourceId);
+      editor.dataset.projectKey = projectKey || form.dataset.resourceProjectKey || "";
+    }
+  }
+
+  function lockResourcePasswordField(form) {
+    var field = form && form.querySelector("input[name='access_password']");
+    if (!field) {
+      return;
+    }
+    field.disabled = true;
+    field.dataset.resourcePasswordLocked = "true";
+  }
+
+  async function ensureProjectResourceForRichUpload(editor) {
+    var form = resourceFormForEditor(editor);
+    if (!form) {
+      return null;
+    }
+    var projectKey = form.dataset.resourceProjectKey || editor.dataset.projectKey || "";
+    var existingResourceId = form.dataset.resourceId || editor.dataset.resourceId || "";
+    if (existingResourceId) {
+      applyResourceContext(form, existingResourceId, projectKey);
+      return { id: Number(existingResourceId) };
+    }
+    if (!form.reportValidity()) {
+      throw new Error("请先完善资料标题和访问密码后再上传附件。");
+    }
+    if (form.resourceCreatePromise) {
+      return form.resourceCreatePromise;
+    }
+    resourceStatus(form, "首次上传前正在创建资料...", "info");
+    var formData = new FormData(form);
+    var promise = fetchJson(
+      form.dataset.resourceCreateUrl ||
+        ("/api/v1/projects/" + encodeURIComponent(projectKey) + "/resources"),
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({
+          title: formData.get("title") || "",
+          category: formData.get("category") || "other",
+          body: "",
+          body_format: "html",
+          access_password: formData.get("access_password") || "",
+        }),
+      }
+    )
+      .then(function (created) {
+        applyResourceContext(form, created.id, projectKey);
+        lockResourcePasswordField(form);
+        resourceStatus(form, "资料已创建，附件将继续直传。访问密码已锁定。", "success");
+        return created;
+      })
+      .finally(function () {
+        form.resourceCreatePromise = null;
+      });
+    form.resourceCreatePromise = promise;
+    return promise;
   }
 
   async function ensureDiscussionDraft(editor) {
@@ -2602,16 +2836,23 @@
     var uploadOptions = options || {};
     var form = editor.closest("[data-discussion-form]");
     var resourceForm = resourceFormForEditor(editor);
+    var uploadController = {
+      cancelled: false,
+      abort: null,
+    };
+    node.richUploadController = uploadController;
     if (resourceForm) {
       var projectKey = editor.dataset.projectKey || resourceForm.dataset.resourceProjectKey || "";
       var resourceId = editor.dataset.resourceId || resourceForm.dataset.resourceId || "";
       if (!projectKey || !resourceId) {
-        throw new Error("资料尚未创建，无法上传附件。");
+        var createdResource = await ensureProjectResourceForRichUpload(editor);
+        projectKey = editor.dataset.projectKey || resourceForm.dataset.resourceProjectKey || "";
+        resourceId = createdResource && createdResource.id ? String(createdResource.id) : editor.dataset.resourceId || resourceForm.dataset.resourceId || "";
       }
       try {
-        await uploadAttachmentFile({
+        var resourceResult = await uploadAttachmentFile({
           file: file,
-          filename: file.name || "attachment.bin",
+          filename: richAttachmentUploadFilename(file),
           contentType: file.type || "application/octet-stream",
           byteSize: file.size || 0,
           existingAttachmentId: node.dataset.attachmentId || "",
@@ -2635,6 +2876,12 @@
           onAttachmentReady: function (attachment) {
             node.dataset.attachmentId = String(attachment.id);
           },
+          shouldCancel: function () {
+            return uploadController.cancelled || node.dataset.richDeleteRequested === "true";
+          },
+          attachAbort: function (abort) {
+            uploadController.abort = abort;
+          },
           onStage: function (stage) {
             if (stage === "signing") {
               setRichAttachmentState(node, "uploading", "正在获取上传签名 · " + formatFileSize(file.size), 0);
@@ -2653,10 +2900,18 @@
             );
           },
         });
+        if ((resourceResult && resourceResult.cancelled) || uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
+          await deleteRichAttachmentNode(editor, node, { force: true });
+          return;
+        }
         node.dataset.downloadUrl = richTextDownloadUrl(editor, node.dataset.attachmentId);
         setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
         resourceStatus(resourceForm, "文件上传完成，可继续编辑或保存。", "success");
       } catch (error) {
+        if (uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
+          await deleteRichAttachmentNode(editor, node, { force: true });
+          return;
+        }
         setRichAttachmentState(node, "error", error.message || "上传失败，可重试。", null);
         resourceStatus(resourceForm, error.message || "上传失败，可重试。", "error");
         if (uploadOptions.throwOnError) {
@@ -2667,10 +2922,14 @@
     }
     var itemKey = editor.dataset.itemKey || form?.dataset.itemKey || "";
     try {
+      if (!itemKey && editor.closest("[data-bug-report-form]")) {
+        var createdItem = await ensureBugReportItemForRichUpload(editor);
+        itemKey = createdItem && createdItem.key ? String(createdItem.key) : editor.dataset.itemKey || "";
+      }
       var commentId = await ensureDiscussionDraft(editor);
-      await uploadAttachmentFile({
+      var commentResult = await uploadAttachmentFile({
         file: file,
-        filename: file.name || "attachment.bin",
+        filename: richAttachmentUploadFilename(file),
         contentType: file.type || "application/octet-stream",
         byteSize: file.size || 0,
         existingAttachmentId: node.dataset.attachmentId || "",
@@ -2685,6 +2944,12 @@
         },
         onAttachmentReady: function (attachment) {
           node.dataset.attachmentId = String(attachment.id);
+        },
+        shouldCancel: function () {
+          return uploadController.cancelled || node.dataset.richDeleteRequested === "true";
+        },
+        attachAbort: function (abort) {
+          uploadController.abort = abort;
         },
         onStage: function (stage) {
           if (stage === "signing") {
@@ -2704,12 +2969,20 @@
           );
         },
       });
+      if ((commentResult && commentResult.cancelled) || uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
+        await deleteRichAttachmentNode(editor, node, { force: true });
+        return;
+      }
       node.dataset.downloadUrl = richTextDownloadUrl(editor, node.dataset.attachmentId);
       setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
       if (form) {
         discussionStatus(form, "文件上传完成，可继续编辑或发表。", "success");
       }
     } catch (error) {
+      if (uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
+        await deleteRichAttachmentNode(editor, node, { force: true });
+        return;
+      }
       setRichAttachmentState(node, "error", error.message || "上传失败，可重试。", null);
       if (form) {
         discussionStatus(form, error.message || "上传失败，可重试。", "error");
@@ -2717,6 +2990,96 @@
       if (uploadOptions.throwOnError) {
         throw error;
       }
+    }
+  }
+
+  function richTextDeleteUrl(editor, attachmentId) {
+    var resourceForm = resourceFormForEditor(editor);
+    var projectKey = editor?.dataset.projectKey || resourceForm?.dataset.resourceProjectKey || "";
+    var resourceId = editor?.dataset.resourceId || resourceForm?.dataset.resourceId || "";
+    if (projectKey && resourceId && attachmentId) {
+      return (
+        "/api/v1/projects/" +
+        encodeURIComponent(projectKey) +
+        "/resources/" +
+        encodeURIComponent(String(resourceId)) +
+        "/attachments/" +
+        encodeURIComponent(String(attachmentId))
+      );
+    }
+    var itemKey = editor?.dataset.itemKey || editor?.closest("[data-discussion-form]")?.dataset.itemKey || "";
+    var commentId = editor?.dataset.commentId || editor?.closest("[data-discussion-form]")?.dataset.discussionCommentId || "";
+    if (!itemKey || !commentId || !attachmentId) {
+      return "";
+    }
+    return (
+      "/api/v1/work-items/" +
+      encodeURIComponent(itemKey) +
+      "/comments/" +
+      encodeURIComponent(String(commentId)) +
+      "/attachments/" +
+      encodeURIComponent(String(attachmentId))
+    );
+  }
+
+  function cleanupRichAttachmentNode(node) {
+    if (!node) {
+      return;
+    }
+    if (node.dataset.objectUrl) {
+      URL.revokeObjectURL(node.dataset.objectUrl);
+      delete node.dataset.objectUrl;
+    }
+    node.richFile = null;
+  }
+
+  async function deleteRichAttachmentNode(editor, node, options) {
+    var deleteOptions = options || {};
+    if (!editor || !node) {
+      return;
+    }
+    var attachmentId = node.dataset.attachmentId || "";
+    var deleteUrl = richTextDeleteUrl(editor, attachmentId);
+    if (!attachmentId || !deleteUrl || (node.dataset.richDeleteIssued === "true" && !deleteOptions.force)) {
+      return;
+    }
+    node.dataset.richDeleteIssued = "true";
+    await fetchJson(deleteUrl, {
+      method: "DELETE",
+      headers: { accept: "application/json" },
+    });
+  }
+
+  async function removeRichAttachmentNode(node) {
+    if (!node || node.dataset.richRemoving === "true") {
+      return;
+    }
+    var editor = node.closest("[data-rich-text-editor]");
+    node.dataset.richRemoving = "true";
+    node.dataset.richDeleteRequested = "true";
+    var controller = node.richUploadController;
+    if (controller) {
+      controller.cancelled = true;
+      if (typeof controller.abort === "function") {
+        controller.abort();
+      }
+    }
+    setRichAttachmentState(node, "uploading", "正在移除附件...", null);
+    if (!node.dataset.attachmentId) {
+      cleanupRichAttachmentNode(node);
+      node.remove();
+      return;
+    }
+    try {
+      await deleteRichAttachmentNode(editor, node);
+      cleanupRichAttachmentNode(node);
+      node.remove();
+    } catch (error) {
+      node.dataset.richRemoving = "false";
+      node.dataset.richDeleteRequested = "false";
+      delete node.dataset.richDeleteIssued;
+      setRichAttachmentState(node, "error", error.message || "移除失败，请重试。", null);
+      showToast(error.message || "附件移除失败，请重试。", "error");
     }
   }
 
@@ -2731,19 +3094,6 @@
       return node;
     });
     insertNodesAtSelection(input, nodes);
-    if (richTextUploadDeferred(editor)) {
-      var form = editor.closest("[data-bug-report-form]");
-      var resourceForm = resourceFormForEditor(editor);
-      nodes.forEach(function (node) {
-        setRichAttachmentState(node, "queued", "创建后上传 · " + formatFileSize(node.richFile.size), 0);
-      });
-      if (resourceForm) {
-        resourceStatus(resourceForm, "已添加 " + nodes.length + " 个附件，提交后会自动上传到资料正文。", "ready");
-      } else if (form) {
-        bugReportStatus(form, "已添加 " + nodes.length + " 个附件，创建后会自动上传到帖子正文。", "ready");
-      }
-      return;
-    }
     nodes.forEach(function (node) {
       uploadRichAttachment(editor, node, node.richFile);
     });
@@ -2859,7 +3209,7 @@
       if (control.matches("[data-modal-close]")) {
         return;
       }
-      control.disabled = busy;
+      control.disabled = busy || control.dataset.resourcePasswordLocked === "true";
     });
     form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
       input.setAttribute("contenteditable", busy ? "false" : "true");
@@ -2985,7 +3335,7 @@
     return headers;
   }
 
-  function uploadSignedFile(request, file, contentType, onProgress) {
+  function uploadSignedFile(request, file, contentType, onProgress, attachAbort) {
     return new Promise(function (resolve, reject) {
       if (!request || !request.url) {
         reject(new Error("上传签名缺少目标地址。"));
@@ -3011,6 +3361,11 @@
       } catch (_error) {
         reject(new Error("上传签名请求头无效。"));
         return;
+      }
+      if (typeof attachAbort === "function") {
+        attachAbort(function () {
+          xhr.abort();
+        });
       }
 
       xhr.upload.addEventListener("progress", function (event) {
@@ -3108,6 +3463,9 @@
     var filename = options.filename || file.name || "attachment.bin";
     var contentType = options.contentType || file.type || "application/octet-stream";
     var byteSize = Number(options.byteSize || file.size || 0);
+    var shouldCancel = typeof options.shouldCancel === "function"
+      ? options.shouldCancel
+      : function () { return false; };
     var attachment;
     if (options.existingAttachmentId) {
       attachment = { id: options.existingAttachmentId };
@@ -3132,6 +3490,9 @@
     if (typeof options.onAttachmentReady === "function") {
       options.onAttachmentReady(attachment);
     }
+    if (shouldCancel()) {
+      return { cancelled: true, attachment: attachment };
+    }
 
     if (typeof options.onStage === "function") {
       options.onStage("signing");
@@ -3140,12 +3501,24 @@
       method: "GET",
       headers: { accept: "application/json" },
     });
+    if (shouldCancel()) {
+      return { cancelled: true, attachment: attachment };
+    }
 
     var request = signed.request || {};
     if (typeof options.onStage === "function") {
       options.onStage("uploading");
     }
-    await uploadSignedFile(request, file, contentType, options.onProgress);
+    await uploadSignedFile(
+      request,
+      file,
+      contentType,
+      options.onProgress,
+      options.attachAbort
+    );
+    if (shouldCancel()) {
+      return { cancelled: true, attachment: attachment };
+    }
 
     if (typeof options.onStage === "function") {
       options.onStage("finalizing");
@@ -3156,6 +3529,9 @@
     });
     if (typeof options.onStage === "function") {
       options.onStage("completed");
+    }
+    if (shouldCancel()) {
+      return { cancelled: true, attachment: completed };
     }
     return completed;
   }
@@ -3851,7 +4227,10 @@
   }
 
   function isBugReportControlLocked(form, control) {
-    if (form.dataset.bugReportItemKey && control.matches("[data-bug-report-item-field]")) {
+    if (
+      form.dataset.bugReportItemKey &&
+      control.matches("[data-bug-report-immutable]")
+    ) {
       return true;
     }
     var group = control.closest("[data-bug-report-group][data-bug-report-locked='true']");
@@ -3889,34 +4268,9 @@
     }
     var groups = collectBugReportGroups(form);
     var itemLabel = form.dataset.workItemLabel || "工作项";
-    var formData = new FormData(form);
     setBugReportBusy(form, true);
     try {
-      var item = { key: form.dataset.bugReportItemKey || "" };
-      if (!item.key) {
-        bugReportStatus(form, "正在创建" + itemLabel + "...", "info");
-        item = await fetchJson(form.dataset.bugReportCreateUrl || "/api/v1/work-items", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            accept: "application/json",
-          },
-          body: JSON.stringify({
-            project_key: formData.get("project_key") || "",
-            item_type: formData.get("item_type") || "bug",
-            title: formData.get("title") || "",
-            description: formData.get("description") || "",
-            priority: formData.get("priority") || "P2",
-            assignee_username: formData.get("assignee_username") || "",
-            due_date: formData.get("due_date") || "",
-            parent_item_key: formData.get("parent_item_key") || "",
-          }),
-        });
-        form.dataset.bugReportItemKey = item.key;
-        applyBugReportPersistedLocks(form);
-      } else {
-        bugReportStatus(form, "继续完成已创建" + itemLabel + "的附件上传...", "info");
-      }
+      var item = await ensureBugReportItemSaved(form);
 
       await publishBugReportRichText(form, item);
 
@@ -4039,29 +4393,10 @@
     setResourceBusy(form, true);
     try {
       if (!resourceId) {
-        resourceStatus(form, "正在创建资料...", "info");
-        var created = await fetchJson(
-          form.dataset.resourceCreateUrl ||
-            ("/api/v1/projects/" + encodeURIComponent(projectKey) + "/resources"),
-          {
-            method: "POST",
-            headers: { "content-type": "application/json", accept: "application/json" },
-            body: JSON.stringify({
-              title: formData.get("title") || "",
-              category: formData.get("category") || "other",
-              body: "",
-              body_format: "html",
-              access_password: formData.get("access_password") || "",
-            }),
-          }
-        );
-        resourceId = String(created.id);
-        form.dataset.resourceId = resourceId;
-        editor.dataset.resourceId = resourceId;
-        editor.dataset.projectKey = projectKey;
+        var created = await ensureProjectResourceForRichUpload(editor);
+        resourceId = created && created.id ? String(created.id) : "";
       } else {
-        editor.dataset.resourceId = resourceId;
-        editor.dataset.projectKey = projectKey;
+        applyResourceContext(form, resourceId, projectKey);
       }
 
       var attachments = Array.from(editor.querySelectorAll("[data-rich-attachment]"));
@@ -4799,10 +5134,7 @@
     } else if (media) {
       source = media.currentSrc || media.getAttribute("src") || media.src || "";
       title =
-        attachment.querySelector("figcaption")?.textContent ||
-        media.getAttribute("alt") ||
-        media.getAttribute("title") ||
-        "正文媒体";
+        richAttachmentLabel(kind || (media.tagName === "VIDEO" ? "video" : "image"));
       if (!kind) {
         kind = media.tagName === "VIDEO" ? "video" : "image";
       }
@@ -5430,7 +5762,7 @@
     if (richMedia) {
       event.preventDefault();
       richMedia.dataset.imageSource = richMedia.currentSrc || richMedia.src || "";
-      richMedia.dataset.imageTitle = richMedia.getAttribute("alt") || richMedia.getAttribute("title") || "正文媒体";
+      richMedia.dataset.imageTitle = richAttachmentLabel(richMedia.tagName === "VIDEO" ? "video" : "image");
       if (richMedia.tagName === "VIDEO") {
         richMedia.dataset.mediaKind = "video";
       }
@@ -5525,10 +5857,7 @@
       event.preventDefault();
       var removeNode = richRemove.closest("[data-rich-attachment]");
       if (removeNode) {
-        if (removeNode.dataset.objectUrl) {
-          URL.revokeObjectURL(removeNode.dataset.objectUrl);
-        }
-        removeNode.remove();
+        removeRichAttachmentNode(removeNode);
       }
       return;
     }

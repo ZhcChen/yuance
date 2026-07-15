@@ -2552,9 +2552,10 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains(r#"name="item_type" value="task""#));
     assert!(tasks_body.contains(r#"name="project_key" value="YCE" data-bug-report-item-field"#));
     assert!(tasks_body.contains(r#"data-bug-report-form"#));
-    assert!(tasks_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
+    assert!(tasks_body.contains(r#"data-rich-text-editor data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...""#));
     assert!(tasks_body.contains(r#"data-bug-report-description"#));
     assert!(tasks_body.contains("支持直接粘贴截图、拖拽图片 / 视频 / 文件"));
+    assert!(tasks_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
     assert!(!tasks_body.contains(r#"data-bug-report-groups"#));
     assert!(!tasks_body.contains(r#"type="file" multiple data-bug-report-image"#));
     assert!(tasks_body.contains(r#"data-select-search-placeholder="搜索处理人""#));
@@ -2568,8 +2569,9 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("YCE-REQ-1"));
     assert!(!bugs_body.contains("OPS-TASK-1"));
     assert!(bugs_body.contains(r#"data-bug-report-form"#));
-    assert!(bugs_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
+    assert!(bugs_body.contains(r#"data-rich-text-editor data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...""#));
     assert!(bugs_body.contains("创建后会直接保存为帖子正文"));
+    assert!(bugs_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
     assert!(!bugs_body.contains(r#"data-bug-report-groups"#));
     assert!(!bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
     assert!(!bugs_body.contains("每组说明会保存为一条评论"));
@@ -4537,8 +4539,9 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert!(!page_body.contains(r#"id="project-tab-work""#));
     assert!(page_body.contains("父级需求"));
     assert!(page_body.contains("YCE-REQ-1"));
-    assert!(page_body.contains(r#"data-rich-text-editor data-rich-upload-deferred="true""#));
+    assert!(page_body.contains(r#"data-rich-text-editor data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...""#));
     assert!(page_body.contains(r#"data-bug-report-description"#));
+    assert!(page_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
 
     let create_response = app
         .clone()
@@ -5701,11 +5704,187 @@ async fn api_v1_can_register_comment_attachment() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(delete_response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(delete_response.status(), StatusCode::BAD_REQUEST);
     let preserved = files::get_attachment(&pool, attachment_id)
         .await
         .expect("attachment should remain");
     assert_eq!(preserved.status, "uploaded");
+}
+
+#[tokio::test]
+async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let draft =
+        projects::create_work_item_comment_draft(&pool, initialized.user_id, "YCE-TASK-2", None)
+            .await
+            .expect("draft should create");
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            original_filename: "draft-image.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 1024,
+            created_by_user_id: initialized.user_id,
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("attachment should create");
+    write_test_object(&pool, &attachment)
+        .await
+        .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/{}/comments/{}/attachments/{}",
+                    item.item_key, draft.id, attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert!(
+        response_body(delete_response)
+            .await
+            .contains(r#""status":"deleted""#)
+    );
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("attachment should load")
+            .status,
+        "deleted"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("test object should read")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "资源附件删除".to_string(),
+            category: "other".to_string(),
+            body: String::new(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+        },
+    )
+    .await
+    .expect("resource should create");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "project_resource".to_string(),
+            target_id: resource.id,
+            project_id: Some(project.id),
+            original_filename: "resource-image.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 2048,
+            created_by_user_id: initialized.user_id,
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("attachment should create");
+    write_test_object(&pool, &attachment)
+        .await
+        .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "project_resource", resource.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/projects/YCE/resources/{}/attachments/{}",
+                    resource.id, attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert!(
+        response_body(delete_response)
+            .await
+            .contains(r#""status":"deleted""#)
+    );
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("attachment should load")
+            .status,
+        "deleted"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("test object should read")
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -9148,7 +9327,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
         .expect("router should respond");
     assert_eq!(
         archived_comment_attachment_delete_response.status(),
-        StatusCode::NOT_FOUND
+        StatusCode::BAD_REQUEST
     );
 
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")

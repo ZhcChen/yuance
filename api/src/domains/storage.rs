@@ -809,6 +809,29 @@ pub async fn verify_uploaded_object(
     Ok(())
 }
 
+pub async fn delete_object_if_exists(
+    pool: &SqlitePool,
+    settings: &Settings,
+    object_key: &str,
+) -> AppResult<()> {
+    let object_key = normalize_object_key(object_key)?;
+    let config = active_config(pool)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let operator = build_operator_from_active_config(pool, settings)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+
+    match operator.delete(&object_key).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(AppError::BadRequest(format!(
+            "删除对象存储文件失败：{}",
+            storage_operation_error_message(&config, "删除对象存储文件", &error)
+        ))),
+    }
+}
+
 pub async fn write_test_memory_object(
     pool: &SqlitePool,
     settings: &Settings,
@@ -847,10 +870,15 @@ pub async fn read_test_memory_object(
 
     let object_key = normalize_object_key(object_key)?;
     let operator = build_test_memory_operator(&config)?;
-    let metadata = operator
-        .stat(&object_key)
-        .await
-        .map_err(|error| AppError::BadRequest(format!("读取测试对象存储元数据失败：{error}")))?;
+    let metadata = match operator.stat(&object_key).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(AppError::BadRequest(format!(
+                "读取测试对象存储元数据失败：{error}"
+            )))
+        }
+    };
     let content = operator
         .read(&object_key)
         .await

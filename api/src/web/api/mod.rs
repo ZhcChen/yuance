@@ -1957,6 +1957,51 @@ pub async fn work_item_comment_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn work_item_comment_attachment_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    let (user, item, project, comment) =
+        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_comment_accepts_attachments(&comment)?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if !comment.is_draft {
+        return Err(AppError::BadRequest(
+            "已发布评论附件不能通过此入口删除".to_string(),
+        ));
+    }
+    let existing =
+        files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
+    let attachment = files::archive_attachment(
+        pool,
+        attachment_id,
+        "comment",
+        comment.id,
+        user.id,
+        None,
+        None,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.archive",
+        "comment",
+        &comment_id.to_string(),
+        &format!(r#"{{"work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(attachment_payload(attachment)))
+}
+
 pub async fn create_project_attachment(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -2550,6 +2595,50 @@ pub async fn project_resource_attachment_download_url(
     .await?;
 
     Ok(json(payload))
+}
+
+pub async fn project_resource_attachment_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE).await?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if resource.status == "archived" {
+        return Err(AppError::BadRequest(
+            "已归档资料不能继续删除附件".to_string(),
+        ));
+    }
+    let existing =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
+    let attachment = files::archive_attachment(
+        pool,
+        attachment_id,
+        "project_resource",
+        resource.id,
+        user.id,
+        None,
+        None,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.archive",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"project":"{}","attachment_id":{attachment_id}}}"#, project.project_key),
+    )
+    .await?;
+
+    Ok(json(attachment_payload(attachment)))
 }
 
 pub async fn create_work_item_attachment(

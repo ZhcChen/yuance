@@ -413,6 +413,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::project_resource_attachment_download_url),
         )
         .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}",
+            delete(web::api::project_resource_attachment_delete),
+        )
+        .route(
             "/api/v1/projects/{project_key}/folders",
             get(web::api::list_project_folders).post(web::api::create_project_folder),
         )
@@ -481,6 +485,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url",
             get(web::api::work_item_comment_attachment_download_url),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
+            delete(web::api::work_item_comment_attachment_delete),
         )
         .route(
             "/api/v1/work-items/{item_key}/attachments",
