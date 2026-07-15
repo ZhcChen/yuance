@@ -11,6 +11,12 @@ date: 2026-07-15
 
 它是 `skills/yuance-agent/SKILL.md` 的人类可读展开版，目标是把元策的 OpenAPI、MCP 和 Skill 组织成一套稳定、可复用、可审计的 Codex CLI 工作流。
 
+如果你想先看文档索引，再决定从哪份文档进入，先看：
+
+```text
+docs/mcp/README.md
+```
+
 如果你当前是在做接入初始化，主入口先看：
 
 ```text

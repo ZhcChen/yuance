@@ -9,6 +9,12 @@ date: 2026-07-15
 
 本文档只面向 Codex CLI。
 
+如果你想先看完整文档导航，再回到本文执行，先看：
+
+```text
+docs/mcp/README.md
+```
+
 目标是让接入方机器上的 Codex CLI 同时具备这三层能力：
 
 ```text

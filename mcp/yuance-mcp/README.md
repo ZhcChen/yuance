@@ -2,6 +2,12 @@
 
 这是元策内置的本地 stdio MCP server。它不直连数据库，只通过元策 OpenAPI / `/api/v1` 调用服务。
 
+文档索引先看：
+
+```text
+docs/mcp/README.md
+```
+
 当前推荐接入口径：
 
 - 只支持 Codex CLI
