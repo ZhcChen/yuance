@@ -195,9 +195,11 @@
     <section class="image-viewer-shell" role="dialog" aria-modal="true" aria-labelledby="image-preview-title" tabindex="-1">
       <h2 id="image-preview-title" class="sr-only" data-image-viewer-title>媒体预览</h2>
       <p class="sr-only" data-image-viewer-status aria-live="polite">适屏查看</p>
-      <div class="image-viewer-stage">
-        <img data-image-viewer-image alt="">
-        <video data-image-viewer-video controls playsinline hidden></video>
+      <div class="image-viewer-stage" data-image-viewer-stage>
+        <div class="image-viewer-pan" data-image-viewer-pan>
+          <img data-image-viewer-image alt="">
+          <video data-image-viewer-video controls playsinline hidden></video>
+        </div>
       </div>
       <div class="image-viewer-toolbar" role="toolbar" aria-label="媒体查看控制">
         <button class="image-viewer-control" type="button" data-image-viewer-action="previous" aria-label="查看上一个媒体" title="上一个" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>

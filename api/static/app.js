@@ -21,8 +21,21 @@
     entries: [],
     index: 0,
     scale: 1,
+    defaultScale: 1,
+    minScale: 1,
+    maxScale: 4,
     rotation: 0,
+    translateX: 0,
+    translateY: 0,
+    kind: "image",
+    orientation: "",
     source: "",
+    dragging: false,
+    pointerId: null,
+    pointerStartX: 0,
+    pointerStartY: 0,
+    pointerOriginX: 0,
+    pointerOriginY: 0,
   };
   var activeRichAttachmentMenu = null;
   var AVATAR_COLORS = [
@@ -2373,6 +2386,85 @@
     }
   }
 
+  function clampNumber(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function setStyleProperty(element, name, value) {
+    if (!element || !element.style) {
+      return;
+    }
+    if (typeof element.style.setProperty === "function") {
+      element.style.setProperty(name, value);
+      return;
+    }
+    element.style[name] = value;
+  }
+
+  function mediaOrientation(width, height) {
+    if (!width || !height) {
+      return "";
+    }
+    var ratio = height / width;
+    if (ratio >= 1.15) {
+      return "portrait";
+    }
+    if (ratio <= 0.87) {
+      return "landscape";
+    }
+    return "square";
+  }
+
+  function inlineMediaWidth(orientation, naturalWidth, portraitMax, squareMax) {
+    if (!naturalWidth) {
+      return 0;
+    }
+    if (orientation === "portrait") {
+      return Math.min(naturalWidth, portraitMax);
+    }
+    if (orientation === "square") {
+      return Math.min(naturalWidth, squareMax);
+    }
+    return Math.min(naturalWidth, naturalWidth);
+  }
+
+  function applyRichAttachmentOrientation(node, mediaElement) {
+    if (!node || !mediaElement) {
+      return;
+    }
+    var naturalWidth = mediaElement.naturalWidth || mediaElement.videoWidth || 0;
+    var naturalHeight = mediaElement.naturalHeight || mediaElement.videoHeight || 0;
+    var orientation = mediaOrientation(naturalWidth, naturalHeight);
+    if (!orientation) {
+      return;
+    }
+    node.dataset.richOrientation = orientation;
+    var width = inlineMediaWidth(orientation, naturalWidth, 360, 420);
+    if (width > 0) {
+      setStyleProperty(node, "--rich-attachment-inline-width", width + "px");
+    }
+  }
+
+  function bindRichAttachmentOrientation(node, mediaElement) {
+    if (!node || !mediaElement) {
+      return;
+    }
+    var apply = function () {
+      applyRichAttachmentOrientation(node, mediaElement);
+    };
+    if (mediaElement.tagName === "VIDEO") {
+      mediaElement.addEventListener("loadedmetadata", apply, { once: true });
+      if (mediaElement.readyState >= 1) {
+        apply();
+      }
+      return;
+    }
+    mediaElement.addEventListener("load", apply, { once: true });
+    if (mediaElement.complete && mediaElement.naturalWidth) {
+      apply();
+    }
+  }
+
   function createRichAttachmentNode(file) {
     var isImage = isPreviewableImageType(file.type);
     var isVideo = isPreviewableVideoType(file.type);
@@ -2392,15 +2484,17 @@
       node.dataset.objectUrl = objectUrl;
       if (isImage) {
         var image = document.createElement("img");
-        image.src = objectUrl;
         image.alt = file.name || "本地图片";
+        bindRichAttachmentOrientation(node, image);
+        image.src = objectUrl;
         media.appendChild(image);
       } else {
         var video = document.createElement("video");
-        video.src = objectUrl;
         video.muted = true;
         video.preload = "metadata";
         video.playsInline = true;
+        bindRichAttachmentOrientation(node, video);
+        video.src = objectUrl;
         media.appendChild(video);
       }
     } else {
@@ -4166,6 +4260,56 @@
     scheduleVisibleAttachmentImageChecks();
   }
 
+  function applyDiscussionRichImageOrientation(image) {
+    if (!image) {
+      return;
+    }
+    var orientation = mediaOrientation(image.naturalWidth, image.naturalHeight);
+    if (!orientation) {
+      return;
+    }
+    image.dataset.yuanceOrientation = orientation;
+    var width = inlineMediaWidth(orientation, image.naturalWidth, 420, 520);
+    if (width > 0) {
+      setStyleProperty(image, "--yuance-media-inline-width", width + "px");
+    }
+    var figure = image.closest("figure[data-yuance-attachment-kind='image']");
+    if (figure) {
+      figure.dataset.yuanceOrientation = orientation;
+      if (width > 0) {
+        setStyleProperty(figure, "--yuance-media-inline-width", width + "px");
+      }
+    }
+  }
+
+  function bindDiscussionRichImageOrientation(image) {
+    if (!image || image.dataset.yuanceOrientationBound === "true") {
+      return;
+    }
+    image.dataset.yuanceOrientationBound = "true";
+    var apply = function () {
+      applyDiscussionRichImageOrientation(image);
+    };
+    image.addEventListener("load", apply, { once: true });
+    if (image.complete && image.naturalWidth) {
+      apply();
+    }
+  }
+
+  function initDiscussionRichMedia(root) {
+    var scope = root || document;
+    var images = [];
+    if (scope.matches && scope.matches(".discussion-rich-body img")) {
+      images.push(scope);
+    }
+    if (scope.querySelectorAll) {
+      images = images.concat(Array.from(scope.querySelectorAll(".discussion-rich-body img")));
+    }
+    images.forEach(function (image) {
+      bindDiscussionRichImageOrientation(image);
+    });
+  }
+
   function imageViewerModal() {
     return document.querySelector("[data-image-viewer]");
   }
@@ -4240,13 +4384,292 @@
     return entries.length > 0 ? entries : [preview];
   }
 
-  function applyImageViewerTransform() {
+  function imageViewerStage() {
+    return document.querySelector("[data-image-viewer-stage]");
+  }
+
+  function imageViewerPan() {
+    return document.querySelector("[data-image-viewer-pan]");
+  }
+
+  function imageViewerImage() {
+    return document.querySelector("[data-image-viewer-image]");
+  }
+
+  function normalizeImageViewerScale(value) {
+    return Math.round(value * 100) / 100;
+  }
+
+  function resetImageViewerEntryState(kind) {
+    imageViewerState.dragging = false;
+    imageViewerState.pointerId = null;
+    imageViewerState.scale = 1;
+    imageViewerState.defaultScale = 1;
+    imageViewerState.minScale = 1;
+    imageViewerState.maxScale = 4;
+    imageViewerState.rotation = 0;
+    imageViewerState.translateX = 0;
+    imageViewerState.translateY = 0;
+    imageViewerState.kind = kind || "image";
+    imageViewerState.orientation = "";
+  }
+
+  function imageViewerStageViewport(stage) {
+    if (!stage) {
+      return { width: 0, height: 0 };
+    }
+    var styles = window.getComputedStyle(stage);
+    var paddingLeft = parseFloat(styles.paddingLeft || "0");
+    var paddingRight = parseFloat(styles.paddingRight || "0");
+    var paddingTop = parseFloat(styles.paddingTop || "0");
+    var paddingBottom = parseFloat(styles.paddingBottom || "0");
+    return {
+      width: Math.max(0, stage.clientWidth - paddingLeft - paddingRight),
+      height: Math.max(0, stage.clientHeight - paddingTop - paddingBottom),
+    };
+  }
+
+  function imageViewerCanPan() {
+    return imageViewerState.kind === "image" && (
+      imageViewerState.scale > 1.01 ||
+      imageViewerState.defaultScale > 1.01 ||
+      Math.abs(imageViewerState.rotation % 180) > 0.01
+    );
+  }
+
+  function imageViewerRenderedBounds() {
+    var image = imageViewerImage();
+    var stage = imageViewerStage();
+    if (!image || image.hidden || !stage || !image.offsetWidth || !image.offsetHeight) {
+      return { maxX: 0, maxY: 0 };
+    }
+    var viewport = imageViewerStageViewport(stage);
+    var radians = (Math.abs(imageViewerState.rotation % 360) * Math.PI) / 180;
+    var width = image.offsetWidth * imageViewerState.scale;
+    var height = image.offsetHeight * imageViewerState.scale;
+    var sin = Math.abs(Math.sin(radians));
+    var cos = Math.abs(Math.cos(radians));
+    var rotatedWidth = width * cos + height * sin;
+    var rotatedHeight = width * sin + height * cos;
+    return {
+      maxX: Math.max(0, (rotatedWidth - viewport.width) / 2),
+      maxY: Math.max(0, (rotatedHeight - viewport.height) / 2),
+    };
+  }
+
+  function clampImageViewerTranslation() {
+    var bounds = imageViewerRenderedBounds();
+    imageViewerState.translateX = clampNumber(imageViewerState.translateX, -bounds.maxX, bounds.maxX);
+    imageViewerState.translateY = clampNumber(imageViewerState.translateY, -bounds.maxY, bounds.maxY);
+    if (bounds.maxX === 0) {
+      imageViewerState.translateX = 0;
+    }
+    if (bounds.maxY === 0) {
+      imageViewerState.translateY = 0;
+    }
+  }
+
+  function updateImageViewerStatus() {
     var modal = imageViewerModal();
-    var image = modal && modal.querySelector("[data-image-viewer-image]");
-    if (!image) {
+    var status = modal && modal.querySelector("[data-image-viewer-status]");
+    if (!status) {
       return;
     }
+    var prefix = imageViewerState.entries.length > 1
+      ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 项"
+      : "";
+    if (imageViewerState.kind === "video") {
+      status.textContent = prefix ? prefix + " · 视频预览" : "视频预览";
+      return;
+    }
+    var hint = imageViewerState.orientation === "portrait"
+      ? "竖图已优化放大，可拖动查看细节。"
+      : "滚轮缩放，双击快速放大或重置。";
+    status.textContent = prefix ? prefix + " · " + hint : hint;
+  }
+
+  function applyImageViewerTransform() {
+    var image = imageViewerImage();
+    var pan = imageViewerPan();
+    if (!image || !pan) {
+      return;
+    }
+    clampImageViewerTranslation();
+    pan.style.transform = "translate3d(" + imageViewerState.translateX + "px, " + imageViewerState.translateY + "px, 0)";
+    pan.dataset.draggable = imageViewerCanPan() ? "true" : "false";
+    pan.classList.toggle("dragging", imageViewerState.dragging && imageViewerCanPan());
     image.style.transform = "scale(" + imageViewerState.scale + ") rotate(" + imageViewerState.rotation + "deg)";
+  }
+
+  function preferredImageViewerScale(orientation, viewportWidth, viewportHeight, renderedWidth, renderedHeight) {
+    if (
+      orientation !== "portrait" ||
+      !viewportWidth ||
+      !viewportHeight ||
+      !renderedWidth ||
+      !renderedHeight
+    ) {
+      return 1;
+    }
+    var targetWidth = Math.min(viewportWidth, Math.max(Math.min(viewportWidth * 0.7, 760), 320));
+    var maxHeight = viewportHeight * 1.65;
+    var widthScale = targetWidth / renderedWidth;
+    var heightScale = maxHeight / renderedHeight;
+    return normalizeImageViewerScale(clampNumber(Math.min(widthScale, heightScale, 2.35), 1, 2.35));
+  }
+
+  function syncImageViewerImageLayout(image, forceResetScale) {
+    var modal = imageViewerModal();
+    var stage = imageViewerStage();
+    if (
+      !image ||
+      !stage ||
+      !modal ||
+      image.hidden ||
+      modal.hidden ||
+      imageViewerState.kind !== "image" ||
+      !image.naturalWidth ||
+      !image.naturalHeight
+    ) {
+      return;
+    }
+    if (!image.offsetWidth || !image.offsetHeight) {
+      window.requestAnimationFrame(function () {
+        syncImageViewerImageLayout(image, forceResetScale);
+      });
+      return;
+    }
+    var previousDefault = imageViewerState.defaultScale || 1;
+    var viewport = imageViewerStageViewport(stage);
+    var orientation = mediaOrientation(image.naturalWidth, image.naturalHeight);
+    var nextDefaultScale = preferredImageViewerScale(
+      orientation,
+      viewport.width,
+      viewport.height,
+      image.offsetWidth,
+      image.offsetHeight
+    );
+    imageViewerState.orientation = orientation;
+    imageViewerState.defaultScale = nextDefaultScale;
+    if (forceResetScale || Math.abs(imageViewerState.scale - previousDefault) < 0.01) {
+      imageViewerState.scale = nextDefaultScale;
+      imageViewerState.translateX = 0;
+      imageViewerState.translateY = 0;
+    } else {
+      imageViewerState.scale = clampNumber(imageViewerState.scale, imageViewerState.minScale, imageViewerState.maxScale);
+    }
+    applyImageViewerTransform();
+    updateImageViewerStatus();
+  }
+
+  function refreshImageViewerLayout() {
+    var image = imageViewerImage();
+    if (!image || image.hidden || imageViewerState.kind !== "image") {
+      return;
+    }
+    syncImageViewerImageLayout(image, Math.abs(imageViewerState.scale - imageViewerState.defaultScale) < 0.01);
+  }
+
+  function setImageViewerScale(nextScale) {
+    if (imageViewerState.kind !== "image") {
+      return;
+    }
+    imageViewerState.scale = normalizeImageViewerScale(
+      clampNumber(nextScale, imageViewerState.minScale, imageViewerState.maxScale)
+    );
+    applyImageViewerTransform();
+  }
+
+  function stopImageViewerDrag() {
+    var stage = imageViewerStage();
+    if (stage && imageViewerState.pointerId !== null && typeof stage.releasePointerCapture === "function") {
+      try {
+        stage.releasePointerCapture(imageViewerState.pointerId);
+      } catch (_error) {
+        // Pointer capture may already be released.
+      }
+    }
+    imageViewerState.dragging = false;
+    imageViewerState.pointerId = null;
+    var pan = imageViewerPan();
+    if (pan) {
+      pan.classList.remove("dragging");
+    }
+  }
+
+  function beginImageViewerDrag(event) {
+    if (
+      imageViewerState.kind !== "image" ||
+      !imageViewerCanPan() ||
+      (typeof event.button === "number" && event.button !== 0)
+    ) {
+      return;
+    }
+    var stage = imageViewerStage();
+    if (!stage) {
+      return;
+    }
+    imageViewerState.dragging = true;
+    imageViewerState.pointerId = event.pointerId;
+    imageViewerState.pointerStartX = event.clientX;
+    imageViewerState.pointerStartY = event.clientY;
+    imageViewerState.pointerOriginX = imageViewerState.translateX;
+    imageViewerState.pointerOriginY = imageViewerState.translateY;
+    if (typeof stage.setPointerCapture === "function") {
+      try {
+        stage.setPointerCapture(event.pointerId);
+      } catch (_error) {
+        // Ignore pointer capture failures.
+      }
+    }
+    applyImageViewerTransform();
+    event.preventDefault();
+  }
+
+  function updateImageViewerDrag(event) {
+    if (!imageViewerState.dragging || imageViewerState.pointerId !== event.pointerId) {
+      return;
+    }
+    imageViewerState.translateX = imageViewerState.pointerOriginX + (event.clientX - imageViewerState.pointerStartX);
+    imageViewerState.translateY = imageViewerState.pointerOriginY + (event.clientY - imageViewerState.pointerStartY);
+    applyImageViewerTransform();
+    event.preventDefault();
+  }
+
+  function endImageViewerDrag(event) {
+    if (!imageViewerState.dragging) {
+      return;
+    }
+    if (event && imageViewerState.pointerId !== null && event.pointerId !== imageViewerState.pointerId) {
+      return;
+    }
+    stopImageViewerDrag();
+    applyImageViewerTransform();
+  }
+
+  function handleImageViewerWheel(event) {
+    if (imageViewerState.kind !== "image") {
+      return;
+    }
+    event.preventDefault();
+    setImageViewerScale(imageViewerState.scale + (event.deltaY < 0 ? 0.18 : -0.18));
+  }
+
+  function handleImageViewerDoubleClick(event) {
+    if (imageViewerState.kind !== "image") {
+      return;
+    }
+    event.preventDefault();
+    if (Math.abs(imageViewerState.scale - imageViewerState.defaultScale) < 0.08) {
+      setImageViewerScale(
+        Math.min(
+          imageViewerState.maxScale,
+          normalizeImageViewerScale(Math.max(imageViewerState.defaultScale * 1.45, imageViewerState.defaultScale + 0.9))
+        )
+      );
+      return;
+    }
+    resetImageViewerTransform();
   }
 
   function renderImageViewer() {
@@ -4268,13 +4691,14 @@
     var hasMultiple = imageViewerState.entries.length > 1;
 
     imageViewerState.source = source;
+    imageViewerState.kind = entryKind;
     if (title) {
       title.textContent = entryTitle;
     }
     if (status) {
       status.textContent = hasMultiple
-        ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 项"
-        : "适屏查看";
+        ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 项 · 正在准备媒体"
+        : "正在准备媒体";
     }
     if (caption) {
       caption.textContent = entryTitle;
@@ -4300,11 +4724,8 @@
     if (entryKind === "video") {
       video.src = source;
       video.load();
-      if (status) {
-        status.textContent = hasMultiple
-          ? "第 " + (imageViewerState.index + 1) + " / " + imageViewerState.entries.length + " 项 · 视频"
-          : "视频预览";
-      }
+      applyImageViewerTransform();
+      updateImageViewerStatus();
       return;
     }
 
@@ -4313,6 +4734,7 @@
     image.onload = function () {
       if (imageViewerState.source === source) {
         image.dataset.state = "ready";
+        syncImageViewerImageLayout(image, true);
       }
     };
     image.onerror = function () {
@@ -4335,8 +4757,7 @@
     var sourceModal = trigger && trigger.closest("[data-modal]");
     imageViewerState.entries = entries;
     imageViewerState.index = Math.max(0, Math.min(index, entries.length - 1));
-    imageViewerState.scale = 1;
-    imageViewerState.rotation = 0;
+    resetImageViewerEntryState(imageViewerEntryKind(entries[imageViewerState.index]));
     renderImageViewer();
     if (sourceModal) {
       suspendModalForImageViewer(sourceModal);
@@ -4591,19 +5012,20 @@
     }
     imageViewerState.index =
       (imageViewerState.index + offset + imageViewerState.entries.length) % imageViewerState.entries.length;
-    imageViewerState.scale = 1;
-    imageViewerState.rotation = 0;
+    resetImageViewerEntryState(imageViewerEntryKind(imageViewerState.entries[imageViewerState.index]));
     renderImageViewer();
   }
 
   function changeImageViewerZoom(amount) {
-    imageViewerState.scale = Math.max(0.5, Math.min(4, Math.round((imageViewerState.scale + amount) * 100) / 100));
-    applyImageViewerTransform();
+    setImageViewerScale(imageViewerState.scale + amount);
   }
 
   function resetImageViewerTransform() {
-    imageViewerState.scale = 1;
+    imageViewerState.scale = imageViewerState.defaultScale || 1;
     imageViewerState.rotation = 0;
+    imageViewerState.translateX = 0;
+    imageViewerState.translateY = 0;
+    stopImageViewerDrag();
     applyImageViewerTransform();
   }
 
@@ -4618,6 +5040,7 @@
       changeImageViewerZoom(-0.25);
     } else if (action === "rotate") {
       imageViewerState.rotation = (imageViewerState.rotation + 90) % 360;
+      stopImageViewerDrag();
       applyImageViewerTransform();
     } else if (action === "reset") {
       resetImageViewerTransform();
@@ -4838,6 +5261,7 @@
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
     if (modal.matches("[data-image-viewer]")) {
+      stopImageViewerDrag();
       stopImageViewerMedia(modal);
     }
     modal.modalCloseTimer = window.setTimeout(function () {
@@ -4904,6 +5328,8 @@
   if (window.__YUANCE_ENABLE_TEST_HOOKS__) {
     window.__YUANCE_TEST_HOOKS__ = Object.assign(window.__YUANCE_TEST_HOOKS__ || {}, {
       apiErrorMessage: apiErrorMessage,
+      mediaOrientation: mediaOrientation,
+      preferredImageViewerScale: preferredImageViewerScale,
       filterSelectOptions: filterSelectOptions,
       reloadDiscussionAtComment: reloadDiscussionAtComment,
       richAttachmentMetadata: richAttachmentMetadata,
@@ -5230,6 +5656,20 @@
     openRichAttachmentMenu(attachment, event.clientX, event.clientY);
   });
 
+  var viewerStage = imageViewerStage();
+  if (viewerStage) {
+    viewerStage.addEventListener("pointerdown", beginImageViewerDrag);
+    viewerStage.addEventListener("pointermove", updateImageViewerDrag);
+    viewerStage.addEventListener("pointerup", endImageViewerDrag);
+    viewerStage.addEventListener("pointercancel", endImageViewerDrag);
+    viewerStage.addEventListener("lostpointercapture", endImageViewerDrag);
+    viewerStage.addEventListener("dblclick", handleImageViewerDoubleClick);
+    viewerStage.addEventListener("dragstart", function (event) {
+      event.preventDefault();
+    });
+    viewerStage.addEventListener("wheel", handleImageViewerWheel, { passive: false });
+  }
+
   document.addEventListener("keydown", function (event) {
     var userComboboxInput = event.target.closest("[data-user-combobox-input]");
     if (userComboboxInput) {
@@ -5372,6 +5812,7 @@
     initSelectControls(event.target);
     initContentTabs(event.target);
     initAttachmentImagePreviews(event.target);
+    initDiscussionRichMedia(event.target);
     initRichTextEditors(event.target);
   });
 
@@ -5668,6 +6109,7 @@
   });
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initAttachmentImagePreviews(document);
+  initDiscussionRichMedia(document);
   window.addEventListener("pagehide", function () {
     document.querySelectorAll("[data-file-preview]").forEach(function (preview) {
       if (preview.localObjectUrl) {
@@ -5697,6 +6139,7 @@
     if (activeSelectControl) {
       positionSelectPanel(activeSelectControl);
     }
+    refreshImageViewerLayout();
     scheduleContentTabsSync(false);
   });
 

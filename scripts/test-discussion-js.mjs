@@ -582,8 +582,16 @@ function redirectedHtmlResponse(url) {
 
 const samePage = loadAppWithDom();
 assert.equal(typeof samePage.hooks.apiErrorMessage, "function");
+assert.equal(typeof samePage.hooks.mediaOrientation, "function");
+assert.equal(typeof samePage.hooks.preferredImageViewerScale, "function");
 assert.equal(typeof samePage.hooks.filterSelectOptions, "function");
 assert.equal(typeof samePage.hooks.selectPanelTargetWidth, "function");
+assert.equal(samePage.hooks.mediaOrientation(1080, 1920), "portrait");
+assert.equal(samePage.hooks.mediaOrientation(1920, 1080), "landscape");
+assert.equal(samePage.hooks.mediaOrientation(1200, 1200), "square");
+assert.equal(samePage.hooks.preferredImageViewerScale("portrait", 1200, 820, 450, 800), 1.69);
+assert.equal(samePage.hooks.preferredImageViewerScale("landscape", 1200, 820, 900, 506), 1);
+assert.equal(samePage.hooks.preferredImageViewerScale("portrait", 360, 640, 315, 560), 1.02);
 const shortSelectPanel = {
   querySelectorAll: () => [{ textContent: "待处理", disabled: false }],
   querySelector: () => null,
