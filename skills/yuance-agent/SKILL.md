@@ -15,6 +15,8 @@ description: "Use when the user asks to analyze or operate the Yuance project th
 
 详细规则见 `docs/mcp/ai-agent-playbook.md`。
 
+真实输出样例见 `docs/mcp/agent-output-examples.md`。
+
 ## Preconditions
 
 - `yuance` MCP server 已连接。

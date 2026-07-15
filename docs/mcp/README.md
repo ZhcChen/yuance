@@ -31,8 +31,9 @@ docs/mcp/codex-cli-setup.md
 1. docs/mcp/codex-cli-setup.md
 2. skills/yuance-agent/SKILL.md
 3. docs/mcp/ai-agent-playbook.md
-4. mcp/yuance-mcp/README.md
-5. docs/openapi/yuance.openapi.json
+4. docs/mcp/agent-output-examples.md
+5. mcp/yuance-mcp/README.md
+6. docs/openapi/yuance.openapi.json
 ```
 
 ### 2. 我只想先理解整体结构
@@ -81,12 +82,14 @@ skills/yuance-agent/SKILL.md
 
 ```text
 docs/mcp/ai-agent-playbook.md
+docs/mcp/agent-output-examples.md
 ```
 
 两者关系：
 
 - `SKILL.md`：给 Codex CLI 直接加载
 - `ai-agent-playbook.md`：给人看，解释同一套工作流
+- `agent-output-examples.md`：给人看，展示输出样子
 
 ### 5. 我想改 MCP 工具实现
 
@@ -143,6 +146,10 @@ Codex CLI 初始化主入口。
 
 Codex CLI 工作流说明。
 
+### `docs/mcp/agent-output-examples.md`
+
+Codex CLI 输出样例。
+
 ### `skills/yuance-agent/SKILL.md`
 
 Codex CLI 的行为层规则。
@@ -165,6 +172,7 @@ OpenAPI 契约层。
 接入看 codex-cli-setup
 理解整体看 ai-mcp-setup
 理解工作流看 SKILL + playbook
+看输出样子看 agent-output-examples
 改工具看 mcp/yuance-mcp
 改工具规则看 mcp-development-guidelines
 查契约看 openapi
