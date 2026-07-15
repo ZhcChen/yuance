@@ -9,6 +9,20 @@ date: 2026-07-14
 
 本文档给 AI Agent 和开发者使用。目标是在本机安装一个元策 MCP server，让 AI 能通过元策 OpenAPI 查看项目、需求、任务、Bug、评论、资料库和消息通知。
 
+推荐完整接入方式：
+
+```text
+OpenAPI  = 契约层
+MCP      = 工具层
+Skill    = 行为层
+```
+
+也就是：
+
+- OpenAPI 负责说明接口。
+- MCP 负责执行接口。
+- Skill / Playbook 负责告诉 AI 先读什么、后写什么、什么时候应该停下确认。
+
 ## 设计约定
 
 - MCP server 是本地 Node.js 脚本，不发布 npm。
@@ -104,7 +118,40 @@ npm install
 npm run check
 ```
 
-## 3. 配置 MCP client
+## 3. 安装项目 Skill 与 Playbook（推荐）
+
+如果你的 AI 客户端支持 Skill 机制，建议同时安装本仓库自带的 `yuance-agent`。
+
+macOS / Linux：
+
+```bash
+cd ~/path/to/yuance
+mkdir -p ~/.codex/skills/yuance-agent
+cp skills/yuance-agent/SKILL.md ~/.codex/skills/yuance-agent/SKILL.md
+```
+
+Windows PowerShell：
+
+```powershell
+cd path\to\yuance
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills\yuance-agent"
+Copy-Item -Force "skills\yuance-agent\SKILL.md" "$env:USERPROFILE\.codex\skills\yuance-agent\SKILL.md"
+```
+
+如果当前 AI 客户端不支持 Skill，至少把下面这份文档作为系统提示词、项目说明或本地知识库加载：
+
+```text
+docs/mcp/ai-agent-playbook.md
+```
+
+本仓库里这两份文件分别负责：
+
+```text
+skills/yuance-agent/SKILL.md     面向支持 Skill 的客户端
+docs/mcp/ai-agent-playbook.md    面向不支持 Skill 的客户端
+```
+
+## 4. 配置 MCP client
 
 macOS 示例：
 
@@ -163,7 +210,7 @@ Windows 示例：
 }
 ```
 
-## 4. 验证
+## 5. 验证
 
 配置完成后，让 AI 调用：
 
@@ -183,7 +230,7 @@ yuance_list_projects
 - 检查 Token scope 是否包含当前工具需要的权限。
 - 检查当前用户在元策内是否具备对应项目或工作项权限。
 
-## 5. 受保护资料规则
+## 6. 受保护资料规则
 
 AI Agent 必须遵守：
 
@@ -197,7 +244,7 @@ AI Agent 必须遵守：
 - access_password 只用于本次请求，不缓存，不输出，不写日志。
 ```
 
-## 6. 可用工具
+## 7. 可用工具
 
 ```text
 yuance_list_projects
@@ -213,7 +260,24 @@ yuance_unlock_project_resource
 yuance_list_notifications
 ```
 
-## 7. OpenAPI 文档
+## 8. Skill 与 Playbook 的推荐用法
+
+推荐执行顺序：
+
+```text
+1. 先加载 yuance-agent Skill 或 ai-agent-playbook
+2. 再让 AI 调用元策 MCP 工具
+3. 需要确认字段或响应结构时，再回看 OpenAPI
+```
+
+这样做的好处是：
+
+- AI 不会一上来就盲目全量扫项目
+- AI 知道什么时候先读评论再流转
+- AI 知道受保护资料必须停下要密码
+- AI 知道项目分析、工作项处理、消息通知的推荐调用顺序
+
+## 9. OpenAPI 文档
 
 在线文档入口：
 

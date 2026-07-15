@@ -2,6 +2,17 @@
 
 这是元策内置的本地 stdio MCP server。它不直连数据库，只通过元策 OpenAPI / `/api/v1` 调用服务。
 
+推荐搭配：
+
+- `skills/yuance-agent/SKILL.md`：给支持 Skill 的 AI 客户端使用
+- `docs/mcp/ai-agent-playbook.md`：给不支持 Skill 的 AI 客户端使用
+
+建议理解为三层：
+
+- OpenAPI：契约层
+- MCP：工具层
+- Skill / Playbook：行为层
+
 ## 环境变量
 
 - `YUANCE_BASE_URL`：元策服务地址，例如 `https://yuance.quanxinfu.com`

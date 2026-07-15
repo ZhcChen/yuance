@@ -7,7 +7,7 @@
     "version": "1.0.0"
   },
   "externalDocs": {
-    "description": "AI MCP 初始化指南",
+    "description": "AI 接入指南（MCP + Skill）",
     "url": "https://github.com/ZhcChen/yuance/blob/main/docs/mcp/ai-mcp-setup.md"
   },
   "servers": [
