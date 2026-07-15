@@ -4,11 +4,11 @@
 
 {% block content %}
 <section class="page-stack">
-  <section class="page-hero detail-hero">
-    <div>
+  <section class="page-hero detail-hero profile-hero">
+    <div class="profile-hero-main">
       <p class="eyebrow">个人工作区</p>
       <h1>{{ profile.display_name }}</h1>
-      <p>@{{ profile.username }} · {{ profile.roles }} · {{ profile.contact }}</p>
+      <p>@{{ profile.username }} · {{ profile.roles }}</p>
       <div class="detail-meta">
         <span class="status status-{{ profile.status_tone }}">{{ profile.status }}</span>
         {% if profile.is_super_admin %}
@@ -16,6 +16,20 @@
         {% endif %}
         <span>加入 {{ profile.created_at }}</span>
       </div>
+      <dl class="detail-dl inline profile-hero-details" aria-label="账号资料">
+        <div>
+          <dt>邮箱</dt>
+          <dd>{% if profile.email == "" %}未填写{% else %}{{ profile.email }}{% endif %}</dd>
+        </div>
+        <div>
+          <dt>手机号</dt>
+          <dd>{% if profile.mobile == "" %}未填写{% else %}{{ profile.mobile }}{% endif %}</dd>
+        </div>
+        <div>
+          <dt>最近更新</dt>
+          <dd>{{ profile.updated_at }}</dd>
+        </div>
+      </dl>
     </div>
     <div class="toolbar-actions">
       <button class="btn btn-secondary" type="button" data-modal-open="me-profile-modal">编辑资料</button>
@@ -117,38 +131,6 @@
     </div>
 
     <aside class="detail-side">
-      <section class="panel inspector-panel">
-        <div class="panel-head compact">
-          <h2>账号信息</h2>
-        </div>
-        <dl class="detail-dl">
-          <div>
-            <dt>用户名</dt>
-            <dd>{{ profile.username }}</dd>
-          </div>
-          <div>
-            <dt>角色</dt>
-            <dd>{{ profile.roles }}</dd>
-          </div>
-          <div>
-            <dt>联系方式</dt>
-            <dd>{{ profile.contact }}</dd>
-          </div>
-          <div>
-            <dt>邮箱</dt>
-            <dd>{% if profile.email == "" %}未填写{% else %}{{ profile.email }}{% endif %}</dd>
-          </div>
-          <div>
-            <dt>手机号</dt>
-            <dd>{% if profile.mobile == "" %}未填写{% else %}{{ profile.mobile }}{% endif %}</dd>
-          </div>
-          <div>
-            <dt>最近更新</dt>
-            <dd>{{ profile.updated_at }}</dd>
-          </div>
-        </dl>
-      </section>
-
       <section class="panel inspector-panel">
         <div class="panel-head compact">
           <h2>我的项目</h2>

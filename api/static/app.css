@@ -2357,6 +2357,35 @@ textarea:focus-visible {
   align-items: flex-start;
 }
 
+.profile-hero {
+  gap: 24px;
+}
+
+.profile-hero-main {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: grid;
+  gap: 14px;
+}
+
+.profile-hero-details {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 18px;
+  margin-top: 2px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.profile-hero-details div {
+  padding: 0;
+  border-bottom: 0;
+}
+
+.profile-hero-details dd {
+  color: var(--muted-strong);
+  font-weight: 600;
+}
+
 .detail-meta {
   display: flex;
   align-items: center;
