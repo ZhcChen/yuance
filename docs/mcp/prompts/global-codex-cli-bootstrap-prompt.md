@@ -28,11 +28,9 @@ docs/mcp/prompts/project-yuance-usage-rules-prompt.md
 
 ## 使用前替换
 
-默认仓库地址已经写成当前项目官方仓库：
+仓库地址已经固定为当前项目地址：
 
 - `https://github.com/ZhcChen/yuance.git`
-
-如果你使用的是 fork、镜像仓库或自托管仓库，再替换为你自己的仓库地址。
 
 先把下面提示词里的这几个占位符替换掉：
 
