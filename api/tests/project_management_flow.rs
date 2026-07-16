@@ -2356,7 +2356,7 @@ async fn personal_project_analysis_counts_only_real_terminal_transitions() {
 }
 
 #[tokio::test]
-async fn web_dashboard_project_area_prefers_current_project() {
+async fn web_dashboard_keeps_current_project_switcher_but_lists_all_accessible_projects() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -2388,8 +2388,9 @@ async fn web_dashboard_project_area_prefers_current_project() {
     assert!(!body.contains(r#"<span class="project-switcher-current">YCE · 元策 MVP</span>"#));
     assert!(!body.contains(r#"project-switcher-option-key"#));
     assert!(body.contains("元策 MVP"));
-    assert!(!body.contains("<td><code>CRM</code></td>"));
-    assert!(!body.contains("<td><code>OPS</code></td>"));
+    assert!(body.contains("<td><code>YCE</code></td>"));
+    assert!(body.contains("<td><code>CRM</code></td>"));
+    assert!(body.contains("<td><code>OPS</code></td>"));
     assert!(body.contains("架构计划已确认"));
 }
 
