@@ -2158,7 +2158,7 @@ async fn project_summaries_return_counts_and_stable_order() {
     assert_eq!(yuance.name, "元策 MVP");
     assert_eq!(yuance.owner_display_name, "系统管理员");
     assert_eq!(yuance.work_item_count, 4);
-    assert!(yuance.open_work_item_count >= 2);
+    assert!(yuance.active_work_item_count >= 2);
 }
 
 #[tokio::test]
@@ -3669,6 +3669,8 @@ async fn api_v1_lists_projects_and_work_items_for_authenticated_user() {
 
     assert!(projects_body.contains("\"key\":\"YCE\""));
     assert!(projects_body.contains("\"name\":\"元策 MVP\""));
+    assert!(projects_body.contains("\"active_work_item_count\":"));
+    assert!(!projects_body.contains("\"open_work_item_count\":"));
     assert!(projects_body.contains("\"items\""));
     assert!(projects_body.contains("\"pagination\""));
     assert!(work_items_body.contains("\"key\":\"YCE-BUG-1\""));

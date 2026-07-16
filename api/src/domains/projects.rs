@@ -34,7 +34,7 @@ pub struct ProjectSummary {
     pub status: String,
     pub owner_display_name: String,
     pub work_item_count: i64,
-    pub open_work_item_count: i64,
+    pub active_work_item_count: i64,
     pub updated_at: String,
 }
 
@@ -366,7 +366,7 @@ pub async fn list_project_summaries_paginated(
                  AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
                 THEN 1
                 ELSE 0
-            END), 0) AS open_work_item_count,
+            END), 0) AS active_work_item_count,
             p.updated_at
         FROM projects p
         LEFT JOIN users u ON u.id = p.owner_user_id
@@ -394,7 +394,7 @@ pub async fn list_project_summaries_paginated(
                 status,
                 owner_display_name,
                 work_item_count,
-                open_work_item_count,
+                active_work_item_count,
                 updated_at,
             )| ProjectSummary {
                 id,
@@ -403,7 +403,7 @@ pub async fn list_project_summaries_paginated(
                 status,
                 owner_display_name,
                 work_item_count,
-                open_work_item_count,
+                active_work_item_count,
                 updated_at,
             },
         )
@@ -464,7 +464,7 @@ pub async fn list_project_summaries_for_user_paginated(
                  AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
                 THEN 1
                 ELSE 0
-            END), 0) AS open_work_item_count,
+            END), 0) AS active_work_item_count,
             p.updated_at
         FROM projects p
         JOIN project_members pm ON pm.project_id = p.id
@@ -495,7 +495,7 @@ pub async fn list_project_summaries_for_user_paginated(
                 status,
                 owner_display_name,
                 work_item_count,
-                open_work_item_count,
+                active_work_item_count,
                 updated_at,
             )| ProjectSummary {
                 id,
@@ -504,7 +504,7 @@ pub async fn list_project_summaries_for_user_paginated(
                 status,
                 owner_display_name,
                 work_item_count,
-                open_work_item_count,
+                active_work_item_count,
                 updated_at,
             },
         )

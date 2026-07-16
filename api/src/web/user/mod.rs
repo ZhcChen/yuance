@@ -6090,7 +6090,7 @@ fn project_from_summary_with_pending(
         code: project.project_key,
         name: project.name,
         owner: fallback_text(project.owner_display_name, "未分配"),
-        pending_in_progress_confirmation_count: project.open_work_item_count,
+        pending_in_progress_confirmation_count: project.active_work_item_count,
         total_work_items: project.work_item_count,
         status_code: project.status,
         status: status.to_string(),

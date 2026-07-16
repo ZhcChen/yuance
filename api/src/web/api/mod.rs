@@ -85,7 +85,7 @@ pub struct ProjectPayload {
     pub status: String,
     pub owner: String,
     pub work_item_count: i64,
-    pub open_work_item_count: i64,
+    pub active_work_item_count: i64,
     pub updated_at: String,
 }
 
@@ -3983,7 +3983,7 @@ fn project_payload(project: projects::ProjectSummary) -> ProjectPayload {
         status: project.status,
         owner: project.owner_display_name,
         work_item_count: project.work_item_count,
-        open_work_item_count: project.open_work_item_count,
+        active_work_item_count: project.active_work_item_count,
         updated_at: project.updated_at,
     }
 }

@@ -1283,7 +1283,7 @@
           "work_item_count": {
             "type": "integer"
           },
-          "open_work_item_count": {
+          "active_work_item_count": {
             "type": "integer"
           },
           "updated_at": {
