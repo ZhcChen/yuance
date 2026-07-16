@@ -2844,15 +2844,6 @@
     }
   }
 
-  function lockResourcePasswordField(form) {
-    var field = form && form.querySelector("input[name='access_password']");
-    if (!field) {
-      return;
-    }
-    field.disabled = true;
-    field.dataset.resourcePasswordLocked = "true";
-  }
-
   async function ensureProjectResourceForRichUpload(editor) {
     var form = resourceFormForEditor(editor);
     if (!form) {
@@ -2889,8 +2880,7 @@
     )
       .then(function (created) {
         applyResourceContext(form, created.id, projectKey);
-        lockResourcePasswordField(form);
-        resourceStatus(form, "资料已创建，附件将继续直传。访问密码已锁定。", "success");
+        resourceStatus(form, "资料已预创建，附件将继续直传；访问保护会在最终保存时更新。", "success");
         return created;
       })
       .finally(function () {
@@ -3343,11 +3333,24 @@
       if (control.matches("[data-modal-close]")) {
         return;
       }
-      control.disabled = busy || control.dataset.resourcePasswordLocked === "true";
+      control.disabled = busy;
     });
     form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
       input.setAttribute("contenteditable", busy ? "false" : "true");
     });
+  }
+
+  function resourcePasswordPatchFields(form) {
+    var formData = new FormData(form);
+    var password = String(formData.get("access_password") || "");
+    var action = String(formData.get("access_password_action") || "").trim();
+    if (!action) {
+      action = password.trim() ? "set" : "clear";
+    }
+    return {
+      access_password_action: action,
+      access_password: password,
+    };
   }
 
   function syncDirectUploadMetadata(form, files) {
@@ -4516,7 +4519,6 @@
       return;
     }
 
-    var formData = new FormData(form);
     var projectKey = form.dataset.resourceProjectKey || "";
     var resourceId = form.dataset.resourceId || "";
     setResourceBusy(form, true);
@@ -4553,6 +4555,8 @@
       if (formatInput) {
         formatInput.value = "html";
       }
+      var formData = new FormData(form);
+      var passwordFields = resourcePasswordPatchFields(form);
       resourceStatus(form, "正在保存资料正文...", "info");
       var saved = await fetchJson(
         form.dataset.resourceUpdateUrl ||
@@ -4568,6 +4572,8 @@
             category: formData.get("category") || "other",
             body: body,
             body_format: "html",
+            access_password_action: passwordFields.access_password_action,
+            access_password: passwordFields.access_password,
           }),
         }
       );

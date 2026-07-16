@@ -9,6 +9,7 @@ pub struct Settings {
     pub data_dir: String,
     pub session_secret: String,
     pub session_ttl: String,
+    pub refresh_session_ttl: String,
     pub cache_session_ttl: String,
     pub log_level: String,
     pub env: String,
@@ -31,7 +32,8 @@ impl Settings {
             database_url: env_string("YUANCE_DATABASE_URL", "sqlite://data/yuance.sqlite3"),
             data_dir: env_string("YUANCE_DATA_DIR", "data"),
             session_secret: env_string("YUANCE_SESSION_SECRET", "change-me"),
-            session_ttl: env_string("YUANCE_SESSION_TTL", "12h"),
+            session_ttl: env_string("YUANCE_SESSION_TTL", "2h"),
+            refresh_session_ttl: env_string("YUANCE_REFRESH_SESSION_TTL", "30d"),
             cache_session_ttl: env_string("YUANCE_CACHE_SESSION_TTL", "5m"),
             log_level: env_string("YUANCE_LOG_LEVEL", "info"),
             env: env_string("YUANCE_ENV", "development"),
@@ -54,6 +56,10 @@ impl Settings {
 
     pub fn session_ttl_seconds(&self) -> AppResult<i64> {
         parse_duration_seconds("YUANCE_SESSION_TTL", &self.session_ttl)
+    }
+
+    pub fn refresh_session_ttl_seconds(&self) -> AppResult<i64> {
+        parse_duration_seconds("YUANCE_REFRESH_SESSION_TTL", &self.refresh_session_ttl)
     }
 }
 
@@ -116,6 +122,7 @@ mod tests {
             data_dir: "data".to_string(),
             session_secret: "test-session-secret".to_string(),
             session_ttl: session_ttl.to_string(),
+            refresh_session_ttl: "30d".to_string(),
             cache_session_ttl: "5m".to_string(),
             log_level: "off".to_string(),
             env: "test".to_string(),
@@ -165,6 +172,16 @@ mod tests {
                 .expect_err("invalid ttl should be rejected");
             assert!(error.to_string().contains("YUANCE_SESSION_TTL"));
         }
+    }
+
+    #[test]
+    fn refresh_session_ttl_seconds_uses_separate_setting() {
+        assert_eq!(
+            settings_with_session_ttl("2h")
+                .refresh_session_ttl_seconds()
+                .expect("refresh ttl should parse"),
+            30 * 24 * 60 * 60
+        );
     }
 
     #[test]

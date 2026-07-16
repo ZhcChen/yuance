@@ -305,6 +305,7 @@ pub async fn change_own_password(
     current_password: &str,
     new_password: &str,
     current_raw_session: &str,
+    current_raw_refresh: Option<&str>,
 ) -> AppResult<()> {
     auth::validate_password(new_password)?;
     let password_hash = sqlx::query_scalar::<_, String>(
@@ -320,6 +321,9 @@ pub async fn change_own_password(
 
     let new_password_hash = auth::hash_password(new_password)?;
     let current_token_hash = auth::hash_session_token(current_raw_session);
+    let current_refresh_hash = current_raw_refresh
+        .filter(|token| !token.trim().is_empty())
+        .map(auth::hash_refresh_token);
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
@@ -350,6 +354,39 @@ pub async fn change_own_password(
     .bind(current_token_hash)
     .execute(&mut *tx)
     .await?;
+    if let Some(refresh_hash) = current_refresh_hash {
+        sqlx::query(
+            r#"
+            UPDATE refresh_sessions
+            SET session_status = 'revoked',
+                revoked_at = datetime('now'),
+                revoke_reason = 'self_password_change',
+                updated_at = datetime('now')
+            WHERE user_id = ?1
+              AND session_status = 'active'
+              AND refresh_token_hash <> ?2
+            "#,
+        )
+        .bind(user_id)
+        .bind(refresh_hash)
+        .execute(&mut *tx)
+        .await?;
+    } else {
+        sqlx::query(
+            r#"
+            UPDATE refresh_sessions
+            SET session_status = 'revoked',
+                revoked_at = datetime('now'),
+                revoke_reason = 'self_password_change',
+                updated_at = datetime('now')
+            WHERE user_id = ?1
+              AND session_status = 'active'
+            "#,
+        )
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    }
     tx.commit().await?;
 
     Ok(())
@@ -424,6 +461,20 @@ pub async fn reset_user_password(
     .bind(user_id)
     .execute(&mut *tx)
     .await?;
+    sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET session_status = 'revoked',
+            revoked_at = datetime('now'),
+            revoke_reason = 'password_reset',
+            updated_at = datetime('now')
+        WHERE user_id = ?1
+          AND session_status = 'active'
+        "#,
+    )
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     Ok(())
@@ -432,7 +483,7 @@ pub async fn reset_user_password(
 pub async fn set_user_status(pool: &SqlitePool, username: &str, status: &str) -> AppResult<()> {
     let username = auth::validate_username(username)?;
     let status = validate_user_status(status)?;
-    let (_user_id, is_super_admin) = find_user_id_and_super_admin(pool, &username).await?;
+    let (user_id, is_super_admin) = find_user_id_and_super_admin(pool, &username).await?;
 
     if is_super_admin && status != "active" {
         return Err(AppError::BadRequest(
@@ -440,6 +491,7 @@ pub async fn set_user_status(pool: &SqlitePool, username: &str, status: &str) ->
         ));
     }
 
+    let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
         UPDATE users
@@ -450,8 +502,39 @@ pub async fn set_user_status(pool: &SqlitePool, username: &str, status: &str) ->
     )
     .bind(username)
     .bind(status)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    if status != "active" {
+        sqlx::query(
+            r#"
+            UPDATE sessions
+            SET session_status = 'revoked',
+                revoked_at = datetime('now'),
+                revoke_reason = 'user_status_change',
+                updated_at = datetime('now')
+            WHERE user_id = ?1
+              AND session_status = 'active'
+            "#,
+        )
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            r#"
+            UPDATE refresh_sessions
+            SET session_status = 'revoked',
+                revoked_at = datetime('now'),
+                revoke_reason = 'user_status_change',
+                updated_at = datetime('now')
+            WHERE user_id = ?1
+              AND session_status = 'active'
+            "#,
+        )
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
 
     Ok(())
 }

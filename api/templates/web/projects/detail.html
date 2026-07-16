@@ -461,9 +461,10 @@
             {% endfor %}
           </select>
         </label>
-        <label>
+        <label class="wide-field">
           访问密码
           <input name="access_password" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="可选，不填则不加密" data-resource-field>
+          <em class="field-hint">可先粘贴截图或拖拽附件，稍后继续填写；最终保存时会以当前密码为准。</em>
         </label>
         <input type="hidden" name="body" value="" data-resource-body data-discussion-body>
         <input type="hidden" name="body_format" value="html" data-resource-body-format data-discussion-body-format>

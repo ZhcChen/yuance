@@ -520,6 +520,10 @@ pub struct UpdateProjectResourceRequest {
     body: Option<String>,
     #[serde(default)]
     body_format: Option<String>,
+    #[serde(default)]
+    access_password_action: String,
+    #[serde(default)]
+    access_password: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -798,8 +802,14 @@ pub async fn bootstrap_init(
     )
     .await?;
     let _ = auth::revoke_session(pool, &result.session.raw_token, "session_ttl_reissue").await;
+    let _ =
+        auth::revoke_refresh_session(pool, &result.session.refresh_token, "session_ttl_reissue")
+            .await;
     let ttl_seconds = state.settings.session_ttl_seconds()?;
-    let session = auth::issue_session(pool, result.user_id, ttl_seconds).await?;
+    let refresh_ttl_seconds = state.settings.refresh_session_ttl_seconds()?;
+    let session =
+        auth::issue_session_with_ttls(pool, result.user_id, ttl_seconds, refresh_ttl_seconds)
+            .await?;
     let user = auth::user_from_raw_session(pool, &session.raw_token)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -821,12 +831,18 @@ pub async fn bootstrap_init(
         ttl_seconds,
         state.settings.env == "production",
     );
+    let refresh_cookie = auth::refresh_cookie_header_with_max_age(
+        &session.refresh_token,
+        refresh_ttl_seconds,
+        state.settings.env == "production",
+    );
     let csrf_cookie = csrf::cookie_header(&csrf_token, state.settings.env == "production");
 
     Ok((
         StatusCode::CREATED,
         AppendHeaders([
             (header::SET_COOKIE, session_cookie),
+            (header::SET_COOKIE, refresh_cookie),
             (header::SET_COOKIE, csrf_cookie),
         ]),
         json(LoginPayload {
@@ -844,8 +860,16 @@ pub async fn login(
     let pool = state.pool()?;
     let request_context = audit_context::from_headers(&headers);
     let ttl_seconds = state.settings.session_ttl_seconds()?;
-    let session =
-        match auth::login_with_ttl(pool, &payload.username, &payload.password, ttl_seconds).await {
+    let refresh_ttl_seconds = state.settings.refresh_session_ttl_seconds()?;
+    let session = match auth::login_with_ttls(
+        pool,
+        &payload.username,
+        &payload.password,
+        ttl_seconds,
+        refresh_ttl_seconds,
+    )
+    .await
+    {
             Ok(session) => session,
             Err(error) => {
                 if let Err(audit_error) = audit::record_with_context(
@@ -883,11 +907,17 @@ pub async fn login(
         ttl_seconds,
         state.settings.env == "production",
     );
+    let refresh_cookie = auth::refresh_cookie_header_with_max_age(
+        &session.refresh_token,
+        refresh_ttl_seconds,
+        state.settings.env == "production",
+    );
     let csrf_cookie = csrf::cookie_header(&csrf_token, state.settings.env == "production");
 
     Ok((
         AppendHeaders([
             (header::SET_COOKIE, cookie),
+            (header::SET_COOKIE, refresh_cookie),
             (header::SET_COOKIE, csrf_cookie),
         ]),
         json(LoginPayload {
@@ -921,6 +951,9 @@ pub async fn logout(
     ensure_api_csrf(&headers)?;
     let request_context = audit_context::from_headers(&headers);
     auth::revoke_session(pool, &raw_token, "api_logout").await?;
+    if let Some(raw_refresh) = auth::refresh_cookie(&headers) {
+        auth::revoke_refresh_session(pool, &raw_refresh, "api_logout").await?;
+    }
     audit::record_with_context(
         pool,
         Some(actor_user_id),
@@ -932,9 +965,13 @@ pub async fn logout(
     )
     .await?;
     let clear_cookie = auth::clear_session_cookie_header(state.settings.env == "production");
+    let clear_refresh_cookie = auth::clear_refresh_cookie_header(state.settings.env == "production");
 
     Ok((
-        [(header::SET_COOKIE, clear_cookie)],
+        AppendHeaders([
+            (header::SET_COOKIE, clear_cookie),
+            (header::SET_COOKIE, clear_refresh_cookie),
+        ]),
         json(LogoutPayload { revoked: true }),
     ))
 }
@@ -2341,6 +2378,8 @@ pub async fn update_project_resource(
             body_format: payload
                 .body_format
                 .unwrap_or_else(|| resource.body_format.clone()),
+            access_password_action: payload.access_password_action,
+            access_password: payload.access_password,
         },
     )
     .await?;

@@ -558,6 +558,141 @@ async fn project_resource_library_requires_password_for_protected_details() {
 }
 
 #[tokio::test]
+async fn project_resource_password_can_be_set_kept_and_cleared_after_creation() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"title":"联调资料","category":"other","body":"<p>初始正文</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_status = create_response.status();
+    let create_body = response_body(create_response).await;
+    assert_eq!(create_status, StatusCode::CREATED, "{create_body}");
+    let created: serde_json::Value =
+        serde_json::from_str(&create_body).expect("create response should be json");
+    let resource_id = created["data"]["id"]
+        .as_i64()
+        .expect("resource id should exist");
+
+    let set_password_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>已加密正文</p>","body_format":"html","access_password_action":"set","access_password":"safe-pass"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let set_password_status = set_password_response.status();
+    let set_password_body = response_body(set_password_response).await;
+    assert_eq!(set_password_status, StatusCode::OK, "{set_password_body}");
+    assert!(set_password_body.contains("受保护资料，验证访问密码后查看正文"));
+
+    let stored_after_set = project_resources::get_resource(&pool, resource_id)
+        .await
+        .expect("resource should load")
+        .expect("resource should exist");
+    assert!(stored_after_set.is_protected);
+    assert!(
+        project_resources::verify_resource_password(&pool, resource_id, "safe-pass")
+            .await
+            .expect("password should verify")
+    );
+
+    let keep_password_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>保持加密正文</p>","body_format":"html","access_password_action":"keep"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let keep_password_status = keep_password_response.status();
+    let keep_password_body = response_body(keep_password_response).await;
+    assert_eq!(keep_password_status, StatusCode::OK, "{keep_password_body}");
+    assert!(keep_password_body.contains("受保护资料，验证访问密码后查看正文"));
+    assert!(
+        project_resources::verify_resource_password(&pool, resource_id, "safe-pass")
+            .await
+            .expect("kept password should still verify")
+    );
+
+    let clear_password_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>已取消加密正文</p>","body_format":"html","access_password_action":"clear"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let clear_password_status = clear_password_response.status();
+    let clear_password_body = response_body(clear_password_response).await;
+    assert_eq!(clear_password_status, StatusCode::OK, "{clear_password_body}");
+    assert!(clear_password_body.contains("已取消加密正文"));
+
+    let stored_after_clear = project_resources::get_resource(&pool, resource_id)
+        .await
+        .expect("resource should load")
+        .expect("resource should exist");
+    assert!(!stored_after_clear.is_protected);
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let detail_status = detail_response.status();
+    let detail_body = response_body(detail_response).await;
+    assert_eq!(detail_status, StatusCode::OK, "{detail_body}");
+    assert!(detail_body.contains("已取消加密正文"));
+}
+
+#[tokio::test]
 async fn api_v1_pat_resource_write_scope_required_for_resource_mutations() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
@@ -10333,7 +10468,8 @@ fn test_settings() -> Settings {
         database_url: "sqlite::memory:".to_string(),
         data_dir: "data".to_string(),
         session_secret: "test-session-secret".to_string(),
-        session_ttl: "12h".to_string(),
+        session_ttl: "2h".to_string(),
+        refresh_session_ttl: "30d".to_string(),
         cache_session_ttl: "5m".to_string(),
         log_level: "off".to_string(),
         env: "test".to_string(),

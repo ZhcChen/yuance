@@ -399,6 +399,124 @@ async fn api_auth_login_me_and_logout_flow_uses_json_contract() {
 }
 
 #[tokio::test]
+async fn api_auth_me_refreshes_expired_access_cookie_when_refresh_cookie_is_valid() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"admin","password":"AdminPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(login_response.status(), StatusCode::OK);
+    let set_cookies = set_cookie_values(login_response.headers());
+    let session_cookie = set_cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("yuance_session="))
+        .cloned()
+        .expect("session cookie should be set");
+    let refresh_cookie = set_cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("yuance_refresh="))
+        .cloned()
+        .expect("refresh cookie should be set");
+
+    sqlx::query(
+        r#"
+        UPDATE sessions
+        SET expires_at = datetime('now', '-5 seconds')
+        WHERE user_id = (
+            SELECT id FROM users WHERE username = 'admin'
+        )
+          AND session_status = 'active'
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("sessions should expire");
+
+    let me_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(header::COOKIE, format!("{session_cookie}; {refresh_cookie}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(me_response.status(), StatusCode::OK);
+    let refreshed_cookies = set_cookie_values(me_response.headers());
+    assert!(refreshed_cookies.iter().any(|cookie| {
+        cookie.starts_with("yuance_session=") && cookie != &session_cookie
+    }));
+    assert!(refreshed_cookies.iter().any(|cookie| {
+        cookie.starts_with("yuance_refresh=") && cookie != &refresh_cookie
+    }));
+    let me_body = response_body(me_response).await;
+    assert!(me_body.contains(r#""username":"admin""#));
+}
+
+#[tokio::test]
+async fn authenticated_requests_extend_refresh_cookie_window() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let login_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/auth/login")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"username":"admin","password":"AdminPass2026!"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let set_cookies = set_cookie_values(login_response.headers());
+    let session_cookie = set_cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("yuance_session="))
+        .cloned()
+        .expect("session cookie should be set");
+    let refresh_cookie = set_cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("yuance_refresh="))
+        .cloned()
+        .expect("refresh cookie should be set");
+
+    let me_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(header::COOKIE, format!("{session_cookie}; {refresh_cookie}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(me_response.status(), StatusCode::OK);
+    let refreshed_cookies = set_cookie_values(me_response.headers());
+    assert!(refreshed_cookies.iter().any(|cookie| {
+        cookie.starts_with("yuance_refresh=") && cookie.contains("Max-Age=2592000")
+    }));
+}
+
+#[tokio::test]
 async fn api_auth_login_rejects_invalid_credentials() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
@@ -960,7 +1078,8 @@ fn test_settings() -> Settings {
         database_url: "sqlite::memory:".to_string(),
         data_dir: "data".to_string(),
         session_secret: "test-session-secret".to_string(),
-        session_ttl: "12h".to_string(),
+        session_ttl: "2h".to_string(),
+        refresh_session_ttl: "30d".to_string(),
         cache_session_ttl: "5m".to_string(),
         log_level: "off".to_string(),
         env: "test".to_string(),

@@ -86,7 +86,7 @@
     <div class="modal-head">
       <div>
         <h2 id="project-resource-edit-modal-title">编辑资料</h2>
-        <p>编辑正文时可以继续粘贴截图或拖拽文件；访问密码不在这里修改。</p>
+        <p>编辑正文时可以继续粘贴截图或拖拽文件；访问保护可保持、更新或清除。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -105,6 +105,28 @@
             {% endfor %}
           </select>
         </label>
+        <div class="wide-field">
+          <fieldset class="form-fieldset">
+            <legend>访问保护</legend>
+            <label>
+              <input name="access_password_action" type="radio" value="keep" checked>
+              保持当前状态（{% if resource.is_protected %}当前已加密{% else %}当前未加密{% endif %}）
+            </label>
+            <label>
+              <input name="access_password_action" type="radio" value="set">
+              设置 / 更新访问密码
+            </label>
+            <label>
+              <input name="access_password_action" type="radio" value="clear">
+              清除访问密码
+            </label>
+          </fieldset>
+          <label class="wide-field">
+            访问密码
+            <input name="access_password" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="选择“设置 / 更新访问密码”时填写">
+          </label>
+          <em class="field-hint">保持当前不会改动已有密码；清除后项目成员可直接查看这条资料。</em>
+        </div>
         <input type="hidden" name="body" value="{{ resource.body }}" data-resource-body data-discussion-body>
         <input type="hidden" name="body_format" value="{{ resource.body_format }}" data-resource-body-format data-discussion-body-format>
         <div class="work-item-rich-create resource-rich-create wide-field">

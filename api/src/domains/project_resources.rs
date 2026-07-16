@@ -9,6 +9,9 @@ use crate::{
 
 pub const RESOURCE_BODY_FORMAT_PLAIN: &str = "plain";
 pub const RESOURCE_BODY_FORMAT_HTML: &str = "html";
+pub const RESOURCE_ACCESS_PASSWORD_ACTION_KEEP: &str = "keep";
+pub const RESOURCE_ACCESS_PASSWORD_ACTION_SET: &str = "set";
+pub const RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR: &str = "clear";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectResourceFilter {
@@ -72,6 +75,8 @@ pub struct UpdateProjectResourceInput {
     pub category: String,
     pub body: String,
     pub body_format: String,
+    pub access_password_action: String,
+    pub access_password: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -320,6 +325,24 @@ pub async fn update_resource(
     ensure_resource_accepts_writes(&existing)?;
     let title = validate_name(&input.title, "资料标题", 120)?;
     let category = validate_category(&input.category)?;
+    let access_password_action = normalize_access_password_action(&input.access_password_action)?;
+    let existing_password_hash = resource_access_password_hash(pool, resource_id).await?;
+    let access_password_hash = match access_password_action {
+        RESOURCE_ACCESS_PASSWORD_ACTION_KEEP => existing_password_hash,
+        RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR => String::new(),
+        RESOURCE_ACCESS_PASSWORD_ACTION_SET => {
+            let password = input.access_password.trim();
+            if password.is_empty() {
+                return Err(AppError::BadRequest(
+                    "设置访问密码时必须填写 4-128 位密码".to_string(),
+                ));
+            } else {
+                validate_access_password(password)?;
+                auth::hash_password(password)?
+            }
+        }
+        _ => unreachable!("unsupported access password action"),
+    };
     let prepared = prepare_resource_body(
         pool,
         &existing.project_key,
@@ -337,7 +360,8 @@ pub async fn update_resource(
             category = ?3,
             body = ?4,
             body_format = ?5,
-            updated_by_user_id = ?6,
+            access_password_hash = ?6,
+            updated_by_user_id = ?7,
             updated_at = datetime('now')
         WHERE id = ?1
         "#,
@@ -347,6 +371,7 @@ pub async fn update_resource(
     .bind(category)
     .bind(prepared.body)
     .bind(prepared.body_format)
+    .bind(access_password_hash)
     .bind(actor_user_id)
     .execute(pool)
     .await?;
@@ -413,17 +438,7 @@ pub async fn verify_resource_password(
     resource_id: i64,
     password: &str,
 ) -> AppResult<bool> {
-    let password_hash = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT access_password_hash
-        FROM project_resources
-        WHERE id = ?1
-        "#,
-    )
-    .bind(resource_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))?;
+    let password_hash = resource_access_password_hash(pool, resource_id).await?;
 
     if password_hash.trim().is_empty() {
         return Ok(true);
@@ -688,6 +703,31 @@ fn validate_access_password(password: &str) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+async fn resource_access_password_hash(pool: &SqlitePool, resource_id: i64) -> AppResult<String> {
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT access_password_hash
+        FROM project_resources
+        WHERE id = ?1
+        "#,
+    )
+    .bind(resource_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))
+}
+
+fn normalize_access_password_action(action: &str) -> AppResult<&'static str> {
+    match action.trim() {
+        "" | RESOURCE_ACCESS_PASSWORD_ACTION_KEEP => Ok(RESOURCE_ACCESS_PASSWORD_ACTION_KEEP),
+        RESOURCE_ACCESS_PASSWORD_ACTION_SET => Ok(RESOURCE_ACCESS_PASSWORD_ACTION_SET),
+        RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR => Ok(RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR),
+        _ => Err(AppError::BadRequest(
+            "访问密码操作只能是 keep / set / clear".to_string(),
+        )),
+    }
 }
 
 fn validate_category(category: &str) -> AppResult<&'static str> {

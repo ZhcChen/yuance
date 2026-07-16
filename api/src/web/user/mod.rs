@@ -1287,6 +1287,8 @@ pub struct ProjectResourceForm {
     body_format: String,
     #[serde(default)]
     access_password: String,
+    #[serde(default)]
+    access_password_action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1675,12 +1677,14 @@ pub async fn me_password_update(
     };
     if let Some(pool) = context.pool {
         let raw_session = auth::session_cookie(&headers).ok_or(AppError::Unauthorized)?;
+        let raw_refresh = auth::refresh_cookie(&headers);
         users::change_own_password(
             pool,
             context.user_id,
             &form.current_password,
             &form.new_password,
             &raw_session,
+            raw_refresh.as_deref(),
         )
         .await?;
         audit::record(
@@ -2987,6 +2991,8 @@ pub async fn project_resource_update(
                 category: form.category,
                 body: form.body,
                 body_format: form.body_format,
+                access_password_action: form.access_password_action,
+                access_password: form.access_password,
             },
         )
         .await?;
@@ -3851,11 +3857,12 @@ pub async fn login_submit(
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
     let pool = state.pool()?;
-    let session = match auth::login_with_ttl(
+    let session = match auth::login_with_ttls(
         pool,
         &form.username,
         &form.password,
         state.settings.session_ttl_seconds()?,
+        state.settings.refresh_session_ttl_seconds()?,
     )
     .await
     {
@@ -3906,7 +3913,7 @@ pub async fn login_submit(
         &request_context,
     )
     .await?;
-    redirect_with_session(&state, session.raw_token, is_htmx(&headers))
+    redirect_with_session(&state, session, is_htmx(&headers))
 }
 
 pub async fn bootstrap(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
@@ -3959,9 +3966,17 @@ pub async fn bootstrap_init(
     .await?;
     tracing::info!(user_id = result.user_id, "bootstrap initialized");
     let _ = auth::revoke_session(pool, &result.session.raw_token, "session_ttl_reissue").await;
-    let session =
-        auth::issue_session(pool, result.user_id, state.settings.session_ttl_seconds()?).await?;
-    redirect_with_session(&state, session.raw_token, is_htmx(&headers))
+    let _ =
+        auth::revoke_refresh_session(pool, &result.session.refresh_token, "session_ttl_reissue")
+            .await;
+    let session = auth::issue_session_with_ttls(
+        pool,
+        result.user_id,
+        state.settings.session_ttl_seconds()?,
+        state.settings.refresh_session_ttl_seconds()?,
+    )
+    .await?;
+    redirect_with_session(&state, session, is_htmx(&headers))
 }
 
 pub async fn logout(
@@ -3977,6 +3992,9 @@ pub async fn logout(
             .await?
             .map(|user| user.id);
         auth::revoke_session(pool, &raw_token, "logout").await?;
+        if let Some(raw_refresh) = auth::refresh_cookie(&headers) {
+            auth::revoke_refresh_session(pool, &raw_refresh, "logout").await?;
+        }
         let request_context = audit_context::from_headers(&headers);
         audit::record_with_context(
             pool,
@@ -3995,6 +4013,10 @@ pub async fn logout(
     response.headers_mut().insert(
         header::SET_COOKIE,
         auth::clear_session_cookie_header(secure).parse()?,
+    );
+    response.headers_mut().append(
+        header::SET_COOKIE,
+        auth::clear_refresh_cookie_header(secure).parse()?,
     );
     response.headers_mut().append(
         header::SET_COOKIE,
@@ -5627,10 +5649,19 @@ async fn record_permission_denied(
     .await
 }
 
-fn redirect_with_session(state: &AppState, raw_token: String, htmx: bool) -> AppResult<Response> {
+fn redirect_with_session(
+    state: &AppState,
+    session: auth::IssuedSession,
+    htmx: bool,
+) -> AppResult<Response> {
     let cookie = auth::session_cookie_header_with_max_age(
-        &raw_token,
+        &session.raw_token,
         state.settings.session_ttl_seconds()?,
+        state.settings.env == "production",
+    );
+    let refresh_cookie = auth::refresh_cookie_header_with_max_age(
+        &session.refresh_token,
+        state.settings.refresh_session_ttl_seconds()?,
         state.settings.env == "production",
     );
     let mut response = if htmx {
@@ -5641,6 +5672,9 @@ fn redirect_with_session(state: &AppState, raw_token: String, htmx: bool) -> App
     response
         .headers_mut()
         .insert(header::SET_COOKIE, cookie.parse()?);
+    response
+        .headers_mut()
+        .append(header::SET_COOKIE, refresh_cookie.parse()?);
     if htmx {
         response
             .headers_mut()
@@ -5808,7 +5842,7 @@ fn with_csrf_cookie(
     csrf_token: &str,
     mut response: Response,
 ) -> AppResult<Response> {
-    response.headers_mut().insert(
+    response.headers_mut().append(
         header::SET_COOKIE,
         csrf::cookie_header(csrf_token, state.settings.env == "production").parse()?,
     );

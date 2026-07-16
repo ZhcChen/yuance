@@ -1,7 +1,7 @@
 use axum::{
     Router,
     body::to_bytes,
-    extract::Request,
+    extract::{Request, State},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{platform::config::Settings, web};
+use crate::{domains::auth, platform::config::Settings, web};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -29,7 +29,8 @@ impl AppState {
                 database_url: "sqlite://:memory:".to_string(),
                 data_dir: "data".to_string(),
                 session_secret: "test-session-secret".to_string(),
-                session_ttl: "12h".to_string(),
+                session_ttl: "2h".to_string(),
+                refresh_session_ttl: "30d".to_string(),
                 cache_session_ttl: "5m".to_string(),
                 log_level: "off".to_string(),
                 env: "test".to_string(),
@@ -47,6 +48,7 @@ impl AppState {
 }
 
 pub fn build_router(state: AppState) -> Router {
+    let middleware_state = state.clone();
     Router::new()
         .route("/", get(root))
         .route("/web", get(web::user::dashboard))
@@ -515,7 +517,182 @@ pub fn build_router(state: AppState) -> Router {
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
         .layer(axum::middleware::from_fn(web_error_page_middleware))
+        .layer(axum::middleware::from_fn_with_state(
+            middleware_state,
+            session_refresh_middleware,
+        ))
         .with_state(state)
+}
+
+async fn session_refresh_middleware(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    if !should_try_session_refresh(request.uri().path(), request.headers()) {
+        return next.run(request).await;
+    }
+    let Some(pool) = state.pool.as_ref() else {
+        return next.run(request).await;
+    };
+    let Ok(access_ttl_seconds) = state.settings.session_ttl_seconds() else {
+        return next.run(request).await;
+    };
+    let Ok(refresh_ttl_seconds) = state.settings.refresh_session_ttl_seconds() else {
+        return next.run(request).await;
+    };
+    let secure = state.settings.env == "production";
+    let mut access_cookie_to_set: Option<String> = None;
+    let mut refresh_cookie_to_set: Option<String> = None;
+    let mut clear_access_cookie = false;
+    let mut clear_refresh_cookie = false;
+    let access_cookie = auth::session_cookie(request.headers());
+    let refresh_cookie = auth::refresh_cookie(request.headers());
+    let mut access_valid = false;
+
+    if let Some(raw_access) = access_cookie.as_deref() {
+        match auth::user_from_raw_session(pool, raw_access).await {
+            Ok(Some(_)) => {
+                access_valid = true;
+                let _ = auth::touch_session(pool, raw_access).await;
+            }
+            Ok(None) => {
+                clear_access_cookie = true;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to validate access session");
+            }
+        }
+    }
+
+    if access_valid {
+        if let Some(raw_refresh) = refresh_cookie.as_deref() {
+            match auth::touch_refresh_session(pool, raw_refresh, refresh_ttl_seconds).await {
+                Ok(true) => {
+                    refresh_cookie_to_set = Some(auth::refresh_cookie_header_with_max_age(
+                        raw_refresh,
+                        refresh_ttl_seconds,
+                        secure,
+                    ));
+                }
+                Ok(false) => {
+                    clear_refresh_cookie = true;
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to touch refresh session");
+                }
+            }
+        }
+    } else if let Some(raw_refresh) = refresh_cookie.as_deref() {
+        match auth::refresh_session(pool, raw_refresh, access_ttl_seconds, refresh_ttl_seconds).await
+        {
+            Ok(Some(issued)) => {
+                clear_access_cookie = false;
+                clear_refresh_cookie = false;
+                upsert_request_cookie(
+                    request.headers_mut(),
+                    auth::SESSION_COOKIE_NAME,
+                    &issued.raw_token,
+                );
+                upsert_request_cookie(
+                    request.headers_mut(),
+                    auth::REFRESH_SESSION_COOKIE_NAME,
+                    &issued.refresh_token,
+                );
+                access_cookie_to_set = Some(auth::session_cookie_header_with_max_age(
+                    &issued.raw_token,
+                    access_ttl_seconds,
+                    secure,
+                ));
+                refresh_cookie_to_set = Some(auth::refresh_cookie_header_with_max_age(
+                    &issued.refresh_token,
+                    refresh_ttl_seconds,
+                    secure,
+                ));
+            }
+            Ok(None) => {
+                clear_refresh_cookie = true;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to refresh expired access session");
+            }
+        }
+    }
+
+    let mut response = next.run(request).await;
+    if clear_access_cookie {
+        append_set_cookie(&mut response, &auth::clear_session_cookie_header(secure));
+    }
+    if clear_refresh_cookie {
+        append_set_cookie(&mut response, &auth::clear_refresh_cookie_header(secure));
+    }
+    if let Some(cookie) = access_cookie_to_set {
+        append_set_cookie(&mut response, &cookie);
+    }
+    if let Some(cookie) = refresh_cookie_to_set {
+        append_set_cookie(&mut response, &cookie);
+    }
+    response
+}
+
+fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
+    if headers.contains_key(header::AUTHORIZATION) {
+        return false;
+    }
+    if path.starts_with("/static/") || path == "/favicon.ico" {
+        return false;
+    }
+    !matches!(
+        path,
+        "/web/login"
+            | "/web/bootstrap"
+            | "/web/bootstrap/init"
+            | "/api/openapi.json"
+            | "/api/healthz"
+            | "/api/readyz"
+            | "/api/v1/bootstrap/status"
+            | "/api/v1/auth/login"
+            | "/api/v1/bootstrap/init"
+    )
+}
+
+fn upsert_request_cookie(headers: &mut HeaderMap, cookie_name: &str, cookie_value: &str) {
+    let current = headers
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    let mut pairs = Vec::new();
+    let mut replaced = false;
+    for part in current.split(';').map(str::trim).filter(|part| !part.is_empty()) {
+        let Some((name, value)) = part.split_once('=') else {
+            continue;
+        };
+        if name == cookie_name {
+            if !replaced {
+                pairs.push((cookie_name.to_string(), cookie_value.to_string()));
+                replaced = true;
+            }
+        } else {
+            pairs.push((name.to_string(), value.to_string()));
+        }
+    }
+    if !replaced {
+        pairs.push((cookie_name.to_string(), cookie_value.to_string()));
+    }
+    let merged = pairs
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    if let Ok(value) = merged.parse() {
+        headers.insert(header::COOKIE, value);
+    }
+}
+
+fn append_set_cookie(response: &mut Response, cookie: &str) {
+    if let Ok(value) = cookie.parse() {
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
 }
 
 async fn web_error_page_middleware(request: Request, next: Next) -> Response {

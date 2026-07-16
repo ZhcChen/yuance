@@ -8,7 +8,9 @@ use uuid::Uuid;
 use crate::platform::error::{AppError, AppResult};
 
 pub const SESSION_COOKIE_NAME: &str = "yuance_session";
-pub const DEFAULT_SESSION_TTL_SECONDS: i64 = 12 * 60 * 60;
+pub const REFRESH_SESSION_COOKIE_NAME: &str = "yuance_refresh";
+pub const DEFAULT_SESSION_TTL_SECONDS: i64 = 2 * 60 * 60;
+pub const DEFAULT_REFRESH_SESSION_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
@@ -21,6 +23,7 @@ pub struct AuthUser {
 #[derive(Debug, Clone)]
 pub struct IssuedSession {
     pub raw_token: String,
+    pub refresh_token: String,
 }
 
 pub fn hash_password(password: &str) -> AppResult<String> {
@@ -77,7 +80,14 @@ pub fn validate_password(password: &str) -> AppResult<()> {
 }
 
 pub async fn login(pool: &SqlitePool, username: &str, password: &str) -> AppResult<IssuedSession> {
-    login_with_ttl(pool, username, password, DEFAULT_SESSION_TTL_SECONDS).await
+    login_with_ttls(
+        pool,
+        username,
+        password,
+        DEFAULT_SESSION_TTL_SECONDS,
+        DEFAULT_REFRESH_SESSION_TTL_SECONDS,
+    )
+    .await
 }
 
 pub async fn login_with_ttl(
@@ -85,6 +95,23 @@ pub async fn login_with_ttl(
     username: &str,
     password: &str,
     ttl_seconds: i64,
+) -> AppResult<IssuedSession> {
+    login_with_ttls(
+        pool,
+        username,
+        password,
+        ttl_seconds,
+        DEFAULT_REFRESH_SESSION_TTL_SECONDS,
+    )
+    .await
+}
+
+pub async fn login_with_ttls(
+    pool: &SqlitePool,
+    username: &str,
+    password: &str,
+    ttl_seconds: i64,
+    refresh_ttl_seconds: i64,
 ) -> AppResult<IssuedSession> {
     let username = validate_username(username)?;
 
@@ -104,7 +131,7 @@ pub async fn login_with_ttl(
         return Err(AppError::Unauthorized);
     }
 
-    issue_session(pool, row.0, ttl_seconds).await
+    issue_session_with_ttls(pool, row.0, ttl_seconds, refresh_ttl_seconds).await
 }
 
 pub async fn issue_session(
@@ -112,8 +139,26 @@ pub async fn issue_session(
     user_id: i64,
     ttl_seconds: i64,
 ) -> AppResult<IssuedSession> {
+    issue_session_with_ttls(
+        pool,
+        user_id,
+        ttl_seconds,
+        DEFAULT_REFRESH_SESSION_TTL_SECONDS,
+    )
+    .await
+}
+
+pub async fn issue_session_with_ttls(
+    pool: &SqlitePool,
+    user_id: i64,
+    ttl_seconds: i64,
+    refresh_ttl_seconds: i64,
+) -> AppResult<IssuedSession> {
     let raw_token = Uuid::new_v4().to_string();
+    let refresh_token = Uuid::new_v4().to_string();
     let token_hash = hash_session_token(&raw_token);
+    let refresh_token_hash = hash_refresh_token(&refresh_token);
+    let mut tx = pool.begin().await?;
 
     sqlx::query(
         r#"
@@ -134,10 +179,37 @@ pub async fn issue_session(
     .bind(token_hash)
     .bind(user_id)
     .bind(ttl_seconds)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    Ok(IssuedSession { raw_token })
+    sqlx::query(
+        r#"
+        INSERT INTO refresh_sessions (
+            refresh_token_hash,
+            user_id,
+            session_status,
+            expires_at
+        )
+        VALUES (
+            ?1,
+            ?2,
+            'active',
+            datetime('now', '+' || ?3 || ' seconds')
+        )
+        "#,
+    )
+    .bind(refresh_token_hash)
+    .bind(user_id)
+    .bind(refresh_ttl_seconds)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(IssuedSession {
+        raw_token,
+        refresh_token,
+    })
 }
 
 pub async fn revoke_session(pool: &SqlitePool, raw_token: &str, reason: &str) -> AppResult<()> {
@@ -159,6 +231,179 @@ pub async fn revoke_session(pool: &SqlitePool, raw_token: &str, reason: &str) ->
     .await?;
 
     Ok(())
+}
+
+pub async fn revoke_refresh_session(
+    pool: &SqlitePool,
+    raw_token: &str,
+    reason: &str,
+) -> AppResult<()> {
+    let token_hash = hash_refresh_token(raw_token);
+    sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET session_status = 'revoked',
+            revoked_at = datetime('now'),
+            revoke_reason = ?2,
+            updated_at = datetime('now')
+        WHERE refresh_token_hash = ?1
+          AND session_status = 'active'
+        "#,
+    )
+    .bind(token_hash)
+    .bind(reason.trim())
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn touch_session(pool: &SqlitePool, raw_token: &str) -> AppResult<bool> {
+    let rows = sqlx::query(
+        r#"
+        UPDATE sessions
+        SET last_seen_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE session_token_hash = ?1
+          AND session_status = 'active'
+          AND expires_at > datetime('now')
+        "#,
+    )
+    .bind(hash_session_token(raw_token))
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    Ok(rows > 0)
+}
+
+pub async fn touch_refresh_session(
+    pool: &SqlitePool,
+    raw_token: &str,
+    ttl_seconds: i64,
+) -> AppResult<bool> {
+    let rows = sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET last_seen_at = datetime('now'),
+            expires_at = datetime('now', '+' || ?2 || ' seconds'),
+            updated_at = datetime('now')
+        WHERE refresh_token_hash = ?1
+          AND session_status = 'active'
+          AND expires_at > datetime('now')
+          AND user_id IN (SELECT id FROM users WHERE status = 'active')
+        "#,
+    )
+    .bind(hash_refresh_token(raw_token))
+    .bind(ttl_seconds)
+    .execute(pool)
+    .await?
+    .rows_affected();
+
+    Ok(rows > 0)
+}
+
+pub async fn refresh_session(
+    pool: &SqlitePool,
+    raw_refresh_token: &str,
+    access_ttl_seconds: i64,
+    refresh_ttl_seconds: i64,
+) -> AppResult<Option<IssuedSession>> {
+    let refresh_token_hash = hash_refresh_token(raw_refresh_token);
+    let row = sqlx::query_as::<_, (i64, i64)>(
+        r#"
+        SELECT r.id, r.user_id
+        FROM refresh_sessions r
+        JOIN users u ON u.id = r.user_id
+        WHERE r.refresh_token_hash = ?1
+          AND r.session_status = 'active'
+          AND r.expires_at > datetime('now')
+          AND u.status = 'active'
+        "#,
+    )
+    .bind(&refresh_token_hash)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((refresh_session_id, user_id)) = row else {
+        return Ok(None);
+    };
+
+    let raw_token = Uuid::new_v4().to_string();
+    let next_refresh_token = Uuid::new_v4().to_string();
+    let token_hash = hash_session_token(&raw_token);
+    let next_refresh_token_hash = hash_refresh_token(&next_refresh_token);
+    let mut tx = pool.begin().await?;
+    let revoked = sqlx::query(
+        r#"
+        UPDATE refresh_sessions
+        SET session_status = 'revoked',
+            revoked_at = datetime('now'),
+            revoke_reason = 'rotated',
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND session_status = 'active'
+        "#,
+    )
+    .bind(refresh_session_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if revoked == 0 {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO sessions (
+            session_token_hash,
+            user_id,
+            session_status,
+            expires_at
+        )
+        VALUES (
+            ?1,
+            ?2,
+            'active',
+            datetime('now', '+' || ?3 || ' seconds')
+        )
+        "#,
+    )
+    .bind(token_hash)
+    .bind(user_id)
+    .bind(access_ttl_seconds)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO refresh_sessions (
+            refresh_token_hash,
+            user_id,
+            session_status,
+            expires_at
+        )
+        VALUES (
+            ?1,
+            ?2,
+            'active',
+            datetime('now', '+' || ?3 || ' seconds')
+        )
+        "#,
+    )
+    .bind(next_refresh_token_hash)
+    .bind(user_id)
+    .bind(refresh_ttl_seconds)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(Some(IssuedSession {
+        raw_token,
+        refresh_token: next_refresh_token,
+    }))
 }
 
 pub async fn user_from_headers(
@@ -226,15 +471,48 @@ pub fn clear_session_cookie_header(secure: bool) -> String {
     format!("{SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure}")
 }
 
+pub fn refresh_cookie_header(raw_token: &str, secure: bool) -> String {
+    refresh_cookie_header_with_max_age(raw_token, DEFAULT_REFRESH_SESSION_TTL_SECONDS, secure)
+}
+
+pub fn refresh_cookie_header_with_max_age(
+    raw_token: &str,
+    max_age_seconds: i64,
+    secure: bool,
+) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!(
+        "{REFRESH_SESSION_COOKIE_NAME}={raw_token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age_seconds}{secure}"
+    )
+}
+
+pub fn clear_refresh_cookie_header(secure: bool) -> String {
+    let secure = if secure { "; Secure" } else { "" };
+    format!("{REFRESH_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0{secure}")
+}
+
 pub fn session_cookie(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, SESSION_COOKIE_NAME)
+}
+
+pub fn refresh_cookie(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, REFRESH_SESSION_COOKIE_NAME)
+}
+
+fn cookie_value(headers: &HeaderMap, cookie_name: &str) -> Option<String> {
     let cookie = headers.get(header::COOKIE)?.to_str().ok()?;
     cookie.split(';').find_map(|part| {
         let (name, value) = part.trim().split_once('=')?;
-        (name == SESSION_COOKIE_NAME).then(|| value.to_string())
+        (name == cookie_name).then(|| value.to_string())
     })
 }
 
 pub(crate) fn hash_session_token(raw_token: &str) -> String {
+    let digest = Sha256::digest(raw_token.as_bytes());
+    hex::encode(digest)
+}
+
+pub(crate) fn hash_refresh_token(raw_token: &str) -> String {
     let digest = Sha256::digest(raw_token.as_bytes());
     hex::encode(digest)
 }
