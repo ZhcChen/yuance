@@ -2521,17 +2521,17 @@ textarea:focus-visible {
   overflow: hidden;
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 9px;
   min-height: 116px;
-  padding: 14px 120px 14px 16px;
+  padding: 14px 92px 14px 16px;
   border: 1px solid color-mix(in srgb, var(--metric-line) 55%, var(--line) 45%);
   border-radius: var(--card-radius);
   background:
     linear-gradient(
       90deg,
       var(--panel) 0%,
-      var(--panel) 58%,
-      color-mix(in srgb, var(--metric-soft) 82%, var(--panel)) 100%
+      var(--panel) 64%,
+      color-mix(in srgb, var(--metric-soft) 74%, var(--panel)) 100%
     );
   box-shadow: var(--card-shadow);
   transition: box-shadow var(--motion-base) ease, border-color var(--motion-fast) ease, background var(--motion-fast) ease;
@@ -2555,13 +2555,14 @@ textarea:focus-visible {
 .metric::after {
   content: "";
   position: absolute;
-  top: -18px;
-  right: 24px;
-  width: 120px;
-  height: 120px;
+  top: 50%;
+  right: 10px;
+  width: 76px;
+  height: 76px;
+  transform: translateY(-50%);
   border-radius: 50%;
-  background: radial-gradient(circle at center, color-mix(in srgb, var(--metric-soft) 88%, transparent) 0%, transparent 68%);
-  opacity: 0.9;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--metric-soft) 74%, transparent) 0%, transparent 68%);
+  opacity: 0.72;
   pointer-events: none;
 }
 
@@ -2598,57 +2599,115 @@ textarea:focus-visible {
 }
 
 .metric-ornament {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4 4L19 7.5'/%3E%3C/svg%3E");
   position: absolute;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: 92px;
+  top: 50%;
+  right: 16px;
+  width: 56px;
+  height: 56px;
+  transform: translateY(-50%);
   border: 1px solid color-mix(in srgb, var(--metric-line) 86%, transparent);
-  border-radius: 20px;
+  border-radius: 18px;
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--panel) 62%, white 38%) 0%,
-      color-mix(in srgb, var(--metric-soft) 48%, var(--panel)) 100%
+      color-mix(in srgb, var(--panel) 58%, white 42%) 0%,
+      color-mix(in srgb, var(--metric-soft) 38%, var(--panel)) 100%
     );
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 68%);
   opacity: 1;
   overflow: hidden;
+  color: color-mix(in srgb, var(--metric-accent) 84%, white 16%);
 }
 
 .metric-ornament::before {
   content: "";
   position: absolute;
-  inset: 14px 12px 14px;
-  border-radius: 14px;
+  inset: 9px;
+  border-radius: 12px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 92%, white 8%) 0 100%) left 0 bottom 0 / 10px 28px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 80%, white 20%) 0 100%) left 18px bottom 0 / 10px 54px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 70%, white 30%) 0 100%) left 36px bottom 0 / 10px 38px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 58%, white 42%) 0 100%) left 54px bottom 0 / 10px 64px no-repeat;
-  opacity: 0.95;
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, currentColor 14%, transparent) 0%,
+      color-mix(in srgb, currentColor 6%, transparent) 100%
+    );
+  opacity: 0.9;
 }
 
 .metric-ornament::after {
   content: "";
   position: absolute;
-  inset: 10px;
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at 24% 22%, color-mix(in srgb, var(--metric-accent) 26%, transparent) 0 12px, transparent 13px),
-    linear-gradient(140deg, transparent 0 42%, color-mix(in srgb, var(--metric-accent) 20%, transparent) 43% 48%, transparent 49% 100%),
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 10%, transparent) 0%, transparent 60%);
-  opacity: 0.78;
+  inset: 11px;
+  background: color-mix(in srgb, currentColor 94%, white 6%);
+  -webkit-mask: var(--metric-icon) center / 24px 24px no-repeat;
+  mask: var(--metric-icon) center / 24px 24px no-repeat;
+  opacity: 0.94;
 }
 
 html[data-theme="dark"] .metric-ornament {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--panel) 82%, white 18%) 0%,
-      color-mix(in srgb, var(--metric-soft) 32%, var(--panel)) 100%
+      color-mix(in srgb, var(--panel) 84%, white 16%) 0%,
+      color-mix(in srgb, var(--metric-soft) 26%, var(--panel)) 100%
     );
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
+.metric-icon-grid {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='4' y='4' width='6' height='6' rx='1.5' fill='black'/%3E%3Crect x='14' y='4' width='6' height='6' rx='1.5' fill='black'/%3E%3Crect x='4' y='14' width='6' height='6' rx='1.5' fill='black'/%3E%3Crect x='14' y='14' width='6' height='6' rx='1.5' fill='black'/%3E%3C/svg%3E");
+}
+
+.metric-icon-projects {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5a2.5 2.5 0 0 1 2.5-2.5h4l2 2h6a2.5 2.5 0 0 1 2.5 2.5v6A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5z'/%3E%3Cpath d='M3.5 10.5h17'/%3E%3C/svg%3E");
+}
+
+.metric-icon-tasks {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 7h10M9 12h10M9 17h10'/%3E%3Ccircle cx='5.5' cy='7' r='1.25' fill='black' stroke='none'/%3E%3Ccircle cx='5.5' cy='12' r='1.25' fill='black' stroke='none'/%3E%3Ccircle cx='5.5' cy='17' r='1.25' fill='black' stroke='none'/%3E%3C/svg%3E");
+}
+
+.metric-icon-bug {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 9.5V8a3 3 0 0 1 6 0v1.5'/%3E%3Crect x='8' y='9' width='8' height='10' rx='4'/%3E%3Cpath d='M5 11h3M16 11h3M4.5 15H8M16 15h3.5M9.5 5.5l-1.5-2M14.5 5.5l1.5-2'/%3E%3C/svg%3E");
+}
+
+.metric-icon-check {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4 4L19 7.5'/%3E%3C/svg%3E");
+}
+
+.metric-icon-doc {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M8 4.5h6l4 4v11H8z'/%3E%3Cpath d='M14 4.5v4h4M10 12h6M10 15h6'/%3E%3C/svg%3E");
+}
+
+.metric-icon-users {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='9' cy='9' r='2.75'/%3E%3Cpath d='M4.5 18c.8-2.2 2.8-3.5 4.5-3.5s3.7 1.3 4.5 3.5'/%3E%3Ccircle cx='16.5' cy='10.5' r='2.25'/%3E%3Cpath d='M14.5 18c.4-1.6 1.8-2.7 3.4-2.7 1 0 1.9.4 2.6 1.1'/%3E%3C/svg%3E");
+}
+
+.metric-icon-target {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='6.5'/%3E%3Ccircle cx='12' cy='12' r='2'/%3E%3Cpath d='M12 3.5v2.25M12 18.25v2.25M3.5 12h2.25M18.25 12h2.25'/%3E%3C/svg%3E");
+}
+
+.metric-icon-alert {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5l8.5 8.5-8.5 8.5L3.5 12z'/%3E%3Cpath d='M12 8.5v5'/%3E%3Ccircle cx='12' cy='16.5' r='1' fill='black' stroke='none'/%3E%3C/svg%3E");
+}
+
+.metric-icon-calendar {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='6' width='16' height='14' rx='3'/%3E%3Cpath d='M8 3.5v4M16 3.5v4M4 10h16M8 14h3M13 14h3M8 17h3'/%3E%3C/svg%3E");
+}
+
+.metric-icon-trend {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 18h14'/%3E%3Cpath d='M6 15l4-4 3 2 5-6'/%3E%3Ccircle cx='6' cy='15' r='1' fill='black' stroke='none'/%3E%3Ccircle cx='10' cy='11' r='1' fill='black' stroke='none'/%3E%3Ccircle cx='13' cy='13' r='1' fill='black' stroke='none'/%3E%3Ccircle cx='18' cy='7' r='1' fill='black' stroke='none'/%3E%3C/svg%3E");
+}
+
+.metric-icon-peak {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 18h14'/%3E%3Cpath d='M6 16l3-5 3 4 4-7 2 5'/%3E%3Ccircle cx='16' cy='8' r='1' fill='black' stroke='none'/%3E%3C/svg%3E");
+}
+
+.metric-icon-inbox {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 8.5h15v10h-15z'/%3E%3Cpath d='M4.5 14.5h4l2 2.5h3l2-2.5h4'/%3E%3C/svg%3E");
+}
+
+.metric-icon-pulse {
+  --metric-icon: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 13h4l2.2-4.5 3.2 8 2.2-4H20'/%3E%3C/svg%3E");
 }
 
 .metric strong {

@@ -42,7 +42,7 @@
     <article class="metric metric-info">
       <div class="metric-head">
         <span class="metric-label">参与项目</span>
-        <span class="metric-ornament" aria-hidden="true"></span>
+        <span class="metric-ornament metric-icon-projects" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.project_count }}</strong>
       <span class="metric-hint">当前可见项目</span>
@@ -50,7 +50,7 @@
     <article class="metric metric-warning">
       <div class="metric-head">
         <span class="metric-label">指派给我</span>
-        <span class="metric-ornament" aria-hidden="true"></span>
+        <span class="metric-ornament metric-icon-target" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.assigned_count }}</strong>
       <span class="metric-hint">{{ summary.open_count }} 个开放</span>
@@ -58,7 +58,7 @@
     <article class="metric metric-danger">
       <div class="metric-head">
         <span class="metric-label">高优先级</span>
-        <span class="metric-ornament" aria-hidden="true"></span>
+        <span class="metric-ornament metric-icon-alert" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.high_priority_count }}</strong>
       <span class="metric-hint">紧急 / 高 工作项</span>

@@ -28,6 +28,7 @@ struct Metric {
     value: String,
     hint: String,
     tone: &'static str,
+    icon: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,7 @@ struct PersonalAnalysisMetric {
     value: String,
     hint: String,
     tone: &'static str,
+    icon: &'static str,
 }
 
 #[derive(Debug, Clone)]
@@ -2388,18 +2390,21 @@ pub async fn project_personal_analysis_page(
                 analysis.completed_requirements, analysis.completed_tasks, analysis.completed_bugs
             ),
             tone: "info",
+            icon: "pulse",
         },
         PersonalAnalysisMetric {
             label: "近 30 日",
             value: analysis.completed_last_30_days.to_string(),
             hint: "实际推进至终态".to_string(),
             tone: "ok",
+            icon: "calendar",
         },
         PersonalAnalysisMetric {
             label: "已处理 Bug",
             value: analysis.completed_bugs.to_string(),
             hint: "解决 / 验证 / 关闭".to_string(),
             tone: "danger",
+            icon: "bug",
         },
         PersonalAnalysisMetric {
             label: "当前待处理",
@@ -2410,6 +2415,7 @@ pub async fn project_personal_analysis_page(
                 analysis.pending.requirements, analysis.pending.tasks, analysis.pending.bugs
             ),
             tone: "warning",
+            icon: "inbox",
         },
     ];
     let efficiency_metrics = vec![
@@ -2418,6 +2424,7 @@ pub async fn project_personal_analysis_page(
             value: format!("{:.2}", analysis.daily_average),
             hint: "加入项目后的自然日均值".to_string(),
             tone: "info",
+            icon: "trend",
         },
         PersonalAnalysisMetric {
             label: "单日最大处理",
@@ -2428,12 +2435,14 @@ pub async fn project_personal_analysis_page(
                 analysis.daily_peak_date.clone()
             },
             tone: "warning",
+            icon: "peak",
         },
         PersonalAnalysisMetric {
             label: "月平均处理",
             value: format!("{:.2}", analysis.monthly_average),
             hint: "加入项目后的自然月均值".to_string(),
             tone: "info",
+            icon: "trend",
         },
         PersonalAnalysisMetric {
             label: "单月最大处理",
@@ -2444,6 +2453,7 @@ pub async fn project_personal_analysis_page(
                 analysis.monthly_peak_month.clone()
             },
             tone: "ok",
+            icon: "target",
         },
     ];
     let recent_completions = analysis
@@ -6092,24 +6102,28 @@ fn metrics_from_data(
             value: active_projects.to_string(),
             hint: format!("{on_hold_projects} 个已暂停"),
             tone: "info",
+            icon: "projects",
         },
         Metric {
             label: "待处理任务",
             value: pending_tasks.to_string(),
             hint: "开放状态任务".to_string(),
             tone: "warning",
+            icon: "tasks",
         },
         Metric {
             label: "未解决 Bug",
             value: unresolved_bugs.to_string(),
             hint: format!("{high_priority_bugs} 个紧急/高"),
             tone: "danger",
+            icon: "bug",
         },
         Metric {
             label: "已完成",
             value: completed_items.to_string(),
             hint: "已完成 / 已解决 / 已验证".to_string(),
             tone: "ok",
+            icon: "check",
         },
     ]
 }
@@ -8490,24 +8504,28 @@ fn sample_metrics() -> Vec<Metric> {
             value: "3".to_string(),
             hint: "待启动 / 进行中 / 验收中".to_string(),
             tone: "info",
+            icon: "projects",
         },
         Metric {
             label: "待处理任务",
             value: "2".to_string(),
             hint: "开放状态任务".to_string(),
             tone: "warning",
+            icon: "tasks",
         },
         Metric {
             label: "未解决 Bug",
             value: "1".to_string(),
             hint: "1 个紧急/高".to_string(),
             tone: "danger",
+            icon: "bug",
         },
         Metric {
             label: "已完成",
             value: "2".to_string(),
             hint: "已完成 / 已验证".to_string(),
             tone: "ok",
+            icon: "check",
         },
     ]
 }
