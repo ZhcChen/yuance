@@ -5265,10 +5265,6 @@ async fn render_dashboard(
     state: &AppState,
     context: DashboardRenderContext<'_>,
 ) -> AppResult<Html<String>> {
-    let current_project_key = context
-        .current_project
-        .as_ref()
-        .map(|project| project.key.clone());
     let (metrics, projects, risk_items, activities) = match context.pool {
         Some(pool) => {
             let can_view_projects =
@@ -5285,22 +5281,14 @@ async fn render_dashboard(
             } else {
                 Vec::new()
             };
-            let project_summaries = match current_project_key.as_ref() {
-                Some(project_key) => all_project_summaries
-                    .iter()
-                    .filter(|project| project.project_key == *project_key)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                None => all_project_summaries.clone(),
-            };
             let pending_by_project =
                 projects::list_project_pending_counts_for_user(pool, context.user_id)
                     .await?
                     .into_iter()
                     .map(|counts| (counts.project_id, counts))
                     .collect::<HashMap<_, _>>();
-            let all_work_item_summaries = if can_view_work_items {
-                projects::list_work_item_summaries_for_user(
+            let assigned_pending_counts = if can_view_work_items {
+                projects::count_pending_assigned_work_items(
                     pool,
                     context.user_id,
                     context.can_access_all_projects,
@@ -5308,37 +5296,31 @@ async fn render_dashboard(
                 )
                 .await?
             } else {
+                projects::WorkItemAssignmentCounts::default()
+            };
+            let assigned_work_item_summaries = if can_view_work_items {
+                projects::list_assigned_work_item_summaries(pool, context.user_id, None).await?
+            } else {
                 Vec::new()
             };
-            let work_item_summaries = match current_project_key.as_ref() {
-                Some(project_key) => all_work_item_summaries
-                    .iter()
-                    .filter(|item| item.project_key == *project_key)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-                None => all_work_item_summaries.clone(),
-            };
             let activity_summaries = if can_view_projects {
-                match current_project_key.as_ref() {
-                    Some(project_key) => {
-                        projects::list_project_activities_by_key(pool, project_key, 5).await?
-                    }
-                    None => {
-                        projects::list_recent_activities_for_user(
-                            pool,
-                            context.user_id,
-                            context.can_access_all_projects,
-                            5,
-                        )
-                        .await?
-                    }
-                }
+                projects::list_recent_activities_for_user(
+                    pool,
+                    context.user_id,
+                    context.can_access_all_projects,
+                    5,
+                )
+                .await?
             } else {
                 Vec::new()
             };
             (
-                metrics_from_data(&all_project_summaries, &all_work_item_summaries),
-                project_summaries
+                metrics_from_data(
+                    &all_project_summaries,
+                    &assigned_pending_counts,
+                    &assigned_work_item_summaries,
+                ),
+                all_project_summaries
                     .into_iter()
                     .map(|project| {
                         let pending = pending_by_project
@@ -5348,7 +5330,7 @@ async fn render_dashboard(
                         project_from_summary_with_pending(project, pending)
                     })
                     .collect(),
-                risk_items_from_work_items(&work_item_summaries),
+                risk_items_from_work_items(&assigned_work_item_summaries),
                 activity_summaries
                     .into_iter()
                     .map(activity_from_summary)
@@ -6060,7 +6042,8 @@ fn parse_i64_form_value(form: &[u8], field_name: &str) -> AppResult<Option<i64>>
 
 fn metrics_from_data(
     projects: &[projects::ProjectSummary],
-    work_items: &[projects::WorkItemSummary],
+    assigned_pending: &projects::WorkItemAssignmentCounts,
+    assigned_items: &[projects::WorkItemSummary],
 ) -> Vec<Metric> {
     let active_projects = projects
         .iter()
@@ -6075,25 +6058,13 @@ fn metrics_from_data(
         .iter()
         .filter(|project| project.status == "on_hold")
         .count();
-    let pending_tasks = work_items
-        .iter()
-        .filter(|item| item.item_type == "task" && is_open_status(&item.status))
-        .count();
-    let unresolved_bugs = work_items
-        .iter()
-        .filter(|item| item.item_type == "bug" && is_open_status(&item.status))
-        .count();
-    let high_priority_bugs = work_items
+    let high_priority_assigned_bugs = assigned_items
         .iter()
         .filter(|item| {
             item.item_type == "bug"
                 && is_open_status(&item.status)
                 && is_high_priority_code(&item.priority)
         })
-        .count();
-    let completed_items = work_items
-        .iter()
-        .filter(|item| is_completed_status(&item.status))
         .count();
 
     vec![
@@ -6105,25 +6076,25 @@ fn metrics_from_data(
             icon: "projects",
         },
         Metric {
-            label: "待处理任务",
-            value: pending_tasks.to_string(),
-            hint: "开放状态任务".to_string(),
+            label: "指派需求",
+            value: assigned_pending.requirements.to_string(),
+            hint: "当前指派给我的需求".to_string(),
+            tone: "info",
+            icon: "doc",
+        },
+        Metric {
+            label: "指派任务",
+            value: assigned_pending.tasks.to_string(),
+            hint: "当前指派给我的任务".to_string(),
             tone: "warning",
             icon: "tasks",
         },
         Metric {
-            label: "未解决 Bug",
-            value: unresolved_bugs.to_string(),
-            hint: format!("{high_priority_bugs} 个紧急/高"),
+            label: "指派 Bug",
+            value: assigned_pending.bugs.to_string(),
+            hint: format!("{high_priority_assigned_bugs} 个紧急/高"),
             tone: "danger",
             icon: "bug",
-        },
-        Metric {
-            label: "已完成",
-            value: completed_items.to_string(),
-            hint: "已完成 / 已解决 / 已验证".to_string(),
-            tone: "ok",
-            icon: "check",
         },
     ]
 }
@@ -8183,10 +8154,6 @@ fn is_open_status(status: &str) -> bool {
     )
 }
 
-fn is_completed_status(status: &str) -> bool {
-    matches!(status, "done" | "closed" | "resolved" | "verified")
-}
-
 fn project_status_label(status: &str) -> (&'static str, &'static str) {
     match status {
         "not_started" => ("待启动", "info"),
@@ -8507,25 +8474,25 @@ fn sample_metrics() -> Vec<Metric> {
             icon: "projects",
         },
         Metric {
-            label: "待处理任务",
+            label: "指派需求",
+            value: "4".to_string(),
+            hint: "当前指派给我的需求".to_string(),
+            tone: "info",
+            icon: "doc",
+        },
+        Metric {
+            label: "指派任务",
             value: "2".to_string(),
-            hint: "开放状态任务".to_string(),
+            hint: "当前指派给我的任务".to_string(),
             tone: "warning",
             icon: "tasks",
         },
         Metric {
-            label: "未解决 Bug",
+            label: "指派 Bug",
             value: "1".to_string(),
             hint: "1 个紧急/高".to_string(),
             tone: "danger",
             icon: "bug",
-        },
-        Metric {
-            label: "已完成",
-            value: "2".to_string(),
-            hint: "已完成 / 已验证".to_string(),
-            tone: "ok",
-            icon: "check",
         },
     ]
 }
