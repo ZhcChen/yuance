@@ -5265,7 +5265,7 @@ async fn render_dashboard(
                 rbac::user_has_permission(pool, context.user_id, "project.view").await?;
             let can_view_work_items =
                 rbac::user_has_permission(pool, context.user_id, "work_item.view").await?;
-            let project_summaries = if can_view_projects {
+            let all_project_summaries = if can_view_projects {
                 projects::list_project_summaries_for_user(
                     pool,
                     context.user_id,
@@ -5276,11 +5276,12 @@ async fn render_dashboard(
                 Vec::new()
             };
             let project_summaries = match current_project_key.as_ref() {
-                Some(project_key) => project_summaries
-                    .into_iter()
+                Some(project_key) => all_project_summaries
+                    .iter()
                     .filter(|project| project.project_key == *project_key)
+                    .cloned()
                     .collect::<Vec<_>>(),
-                None => project_summaries,
+                None => all_project_summaries.clone(),
             };
             let pending_by_project =
                 projects::list_project_pending_counts_for_user(pool, context.user_id)
@@ -5288,32 +5289,24 @@ async fn render_dashboard(
                     .into_iter()
                     .map(|counts| (counts.project_id, counts))
                     .collect::<HashMap<_, _>>();
-            let work_item_summaries = if can_view_work_items {
-                match current_project_key.as_ref() {
-                    Some(project_key) => {
-                        projects::list_work_item_summaries_filtered_for_user(
-                            pool,
-                            context.user_id,
-                            context.can_access_all_projects,
-                            projects::WorkItemListFilter {
-                                project_key: project_key.clone(),
-                                ..projects::WorkItemListFilter::default()
-                            },
-                        )
-                        .await?
-                    }
-                    None => {
-                        projects::list_work_item_summaries_for_user(
-                            pool,
-                            context.user_id,
-                            context.can_access_all_projects,
-                            None,
-                        )
-                        .await?
-                    }
-                }
+            let all_work_item_summaries = if can_view_work_items {
+                projects::list_work_item_summaries_for_user(
+                    pool,
+                    context.user_id,
+                    context.can_access_all_projects,
+                    None,
+                )
+                .await?
             } else {
                 Vec::new()
+            };
+            let work_item_summaries = match current_project_key.as_ref() {
+                Some(project_key) => all_work_item_summaries
+                    .iter()
+                    .filter(|item| item.project_key == *project_key)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+                None => all_work_item_summaries.clone(),
             };
             let activity_summaries = if can_view_projects {
                 match current_project_key.as_ref() {
@@ -5334,7 +5327,7 @@ async fn render_dashboard(
                 Vec::new()
             };
             (
-                metrics_from_data(&project_summaries, &work_item_summaries),
+                metrics_from_data(&all_project_summaries, &all_work_item_summaries),
                 project_summaries
                     .into_iter()
                     .map(|project| {

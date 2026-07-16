@@ -2521,14 +2521,18 @@ textarea:focus-visible {
   overflow: hidden;
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 10px;
   min-height: 116px;
-  padding: 14px 16px;
+  padding: 14px 120px 14px 16px;
   border: 1px solid color-mix(in srgb, var(--metric-line) 55%, var(--line) 45%);
   border-radius: var(--card-radius);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 88%, var(--metric-soft)) 0%, var(--panel) 72%),
-    linear-gradient(135deg, color-mix(in srgb, var(--metric-soft) 42%, transparent) 0%, transparent 48%);
+    linear-gradient(
+      90deg,
+      var(--panel) 0%,
+      var(--panel) 58%,
+      color-mix(in srgb, var(--metric-soft) 82%, var(--panel)) 100%
+    );
   box-shadow: var(--card-shadow);
   transition: box-shadow var(--motion-base) ease, border-color var(--motion-fast) ease, background var(--motion-fast) ease;
 }
@@ -2536,22 +2540,28 @@ textarea:focus-visible {
 .metric::before {
   content: "";
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: linear-gradient(180deg, var(--metric-accent) 0%, color-mix(in srgb, var(--metric-accent) 38%, transparent) 100%);
-  opacity: 0.92;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--metric-accent) 62%, transparent) 0%,
+      color-mix(in srgb, var(--metric-accent) 18%, transparent) 56%,
+      transparent 100%
+    );
+  opacity: 0.95;
 }
 
 .metric::after {
   content: "";
   position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 72px;
-  height: 72px;
-  border-radius: 18px;
-  background: radial-gradient(circle at center, color-mix(in srgb, var(--metric-soft) 82%, transparent) 0%, transparent 72%);
-  opacity: 0.7;
+  top: -18px;
+  right: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--metric-soft) 88%, transparent) 0%, transparent 68%);
+  opacity: 0.9;
   pointer-events: none;
 }
 
@@ -2562,10 +2572,8 @@ textarea:focus-visible {
 
 .metric-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 34px;
+  align-items: flex-start;
+  min-height: 0;
 }
 
 .metric-label,
@@ -2574,76 +2582,104 @@ textarea:focus-visible {
 }
 
 .metric-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  width: max-content;
-  max-width: calc(100% - 48px);
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--metric-line) 78%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--metric-soft) 70%, var(--panel));
-  color: var(--metric-accent-strong);
-  font-weight: 700;
+  display: block;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 600;
+  line-height: 18px;
   letter-spacing: 0.01em;
 }
 
 .metric-label::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--metric-accent);
+  display: none;
 }
 
 .metric-ornament {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 92px;
   border: 1px solid color-mix(in srgb, var(--metric-line) 86%, transparent);
-  border-radius: 12px;
+  border-radius: 20px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 88%, white 12%) 0 100%) left 10px bottom 8px / 3px 10px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 80%, white 20%) 0 100%) center bottom 8px / 3px 16px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 72%, white 28%) 0 100%) right 10px bottom 8px / 3px 7px no-repeat,
-    linear-gradient(180deg, color-mix(in srgb, var(--panel) 75%, var(--metric-soft)) 0%, color-mix(in srgb, var(--metric-soft) 40%, transparent) 100%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 65%);
-  opacity: 0.96;
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 62%, white 38%) 0%,
+      color-mix(in srgb, var(--metric-soft) 48%, var(--panel)) 100%
+    );
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 68%);
+  opacity: 1;
+  overflow: hidden;
+}
+
+.metric-ornament::before {
+  content: "";
+  position: absolute;
+  inset: 14px 12px 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 92%, white 8%) 0 100%) left 0 bottom 0 / 10px 28px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 80%, white 20%) 0 100%) left 18px bottom 0 / 10px 54px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 70%, white 30%) 0 100%) left 36px bottom 0 / 10px 38px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 58%, white 42%) 0 100%) left 54px bottom 0 / 10px 64px no-repeat;
+  opacity: 0.95;
+}
+
+.metric-ornament::after {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 24% 22%, color-mix(in srgb, var(--metric-accent) 26%, transparent) 0 12px, transparent 13px),
+    linear-gradient(140deg, transparent 0 42%, color-mix(in srgb, var(--metric-accent) 20%, transparent) 43% 48%, transparent 49% 100%),
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 10%, transparent) 0%, transparent 60%);
+  opacity: 0.78;
 }
 
 html[data-theme="dark"] .metric-ornament {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel) 82%, white 18%) 0%,
+      color-mix(in srgb, var(--metric-soft) 32%, var(--panel)) 100%
+    );
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
 }
 
 .metric strong {
-  color: var(--metric-accent-strong);
-  font-size: clamp(30px, 2vw, 36px);
-  line-height: 1.05;
-  letter-spacing: -0.05em;
+  color: color-mix(in srgb, var(--text) 84%, var(--metric-accent-strong) 16%);
+  font-size: clamp(30px, 2vw, 38px);
+  line-height: 1;
+  letter-spacing: -0.06em;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 
 .metric-hint {
-  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 20px;
+  gap: 7px;
+  min-height: 18px;
   margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--metric-line) 45%, var(--line) 55%);
+  padding-top: 0;
+  border-top: 0;
   color: var(--muted);
-  font-size: 12px;
   font-weight: 600;
+  line-height: 18px;
 }
 
 .metric-hint::before {
   content: "";
-  flex: 0 0 14px;
-  height: 2px;
-  border-radius: 999px;
-  background: var(--metric-accent);
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--metric-accent) 76%, transparent);
 }
 
 .metric-info {
