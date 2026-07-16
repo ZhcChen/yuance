@@ -26,7 +26,6 @@ use crate::{
 struct Metric {
     label: &'static str,
     value: String,
-    hint: String,
     tone: &'static str,
     icon: &'static str,
 }
@@ -51,7 +50,6 @@ struct ProjectRow {
 struct PersonalAnalysisMetric {
     label: &'static str,
     value: String,
-    hint: String,
     tone: &'static str,
     icon: &'static str,
 }
@@ -486,7 +484,6 @@ struct ApiTokenView {
 struct MySummary {
     project_count: usize,
     assigned_count: usize,
-    pending_in_progress_confirmation_count: usize,
     high_priority_count: usize,
 }
 
@@ -2371,24 +2368,18 @@ pub async fn project_personal_analysis_page(
         PersonalAnalysisMetric {
             label: "累计处理",
             value: analysis.completed_total.to_string(),
-            hint: format!(
-                "需求 {} · 任务 {} · Bug {}",
-                analysis.completed_requirements, analysis.completed_tasks, analysis.completed_bugs
-            ),
             tone: "info",
             icon: "pulse",
         },
         PersonalAnalysisMetric {
             label: "近 30 日",
             value: analysis.completed_last_30_days.to_string(),
-            hint: "实际推进至终态".to_string(),
             tone: "ok",
             icon: "calendar",
         },
         PersonalAnalysisMetric {
             label: "已处理 Bug",
             value: analysis.completed_bugs.to_string(),
-            hint: "解决 / 验证 / 关闭".to_string(),
             tone: "danger",
             icon: "bug",
         },
@@ -2396,10 +2387,6 @@ pub async fn project_personal_analysis_page(
             label: "当前待处理",
             value: (analysis.pending.requirements + analysis.pending.tasks + analysis.pending.bugs)
                 .to_string(),
-            hint: format!(
-                "需求 {} · 任务 {} · Bug {}",
-                analysis.pending.requirements, analysis.pending.tasks, analysis.pending.bugs
-            ),
             tone: "warning",
             icon: "inbox",
         },
@@ -2408,36 +2395,24 @@ pub async fn project_personal_analysis_page(
         PersonalAnalysisMetric {
             label: "日平均处理",
             value: format!("{:.2}", analysis.daily_average),
-            hint: "加入项目后的自然日均值".to_string(),
             tone: "info",
             icon: "trend",
         },
         PersonalAnalysisMetric {
             label: "单日最大处理",
             value: analysis.daily_peak.to_string(),
-            hint: if analysis.daily_peak_date.is_empty() {
-                "暂无完成记录".to_string()
-            } else {
-                analysis.daily_peak_date.clone()
-            },
             tone: "warning",
             icon: "peak",
         },
         PersonalAnalysisMetric {
             label: "月平均处理",
             value: format!("{:.2}", analysis.monthly_average),
-            hint: "加入项目后的自然月均值".to_string(),
             tone: "info",
             icon: "trend",
         },
         PersonalAnalysisMetric {
             label: "单月最大处理",
             value: analysis.monthly_peak.to_string(),
-            hint: if analysis.monthly_peak_month.is_empty() {
-                "暂无完成记录".to_string()
-            } else {
-                analysis.monthly_peak_month.clone()
-            },
             tone: "ok",
             icon: "target",
         },
@@ -5284,11 +5259,6 @@ async fn render_dashboard(
             } else {
                 projects::WorkItemAssignmentCounts::default()
             };
-            let assigned_work_item_summaries = if can_view_work_items {
-                projects::list_assigned_work_item_summaries(pool, context.user_id, None).await?
-            } else {
-                Vec::new()
-            };
             let activity_summaries = if can_view_projects {
                 projects::list_recent_activities_for_user(
                     pool,
@@ -5304,7 +5274,6 @@ async fn render_dashboard(
                 metrics_from_data(
                     &all_project_summaries,
                     &assigned_pending_counts,
-                    &assigned_work_item_summaries,
                 ),
                 all_project_summaries
                     .into_iter()
@@ -6021,7 +5990,6 @@ fn parse_i64_form_value(form: &[u8], field_name: &str) -> AppResult<Option<i64>>
 fn metrics_from_data(
     projects: &[projects::ProjectSummary],
     assigned_pending: &projects::WorkItemAssignmentCounts,
-    assigned_items: &[projects::WorkItemSummary],
 ) -> Vec<Metric> {
     let active_projects = projects
         .iter()
@@ -6032,45 +6000,29 @@ fn metrics_from_data(
             )
         })
         .count();
-    let on_hold_projects = projects
-        .iter()
-        .filter(|project| project.status == "on_hold")
-        .count();
-    let high_priority_assigned_bugs = assigned_items
-        .iter()
-        .filter(|item| {
-            item.item_type == "bug"
-                && is_active_work_item_status(&item.status)
-                && is_high_priority_code(&item.priority)
-        })
-        .count();
 
     vec![
         Metric {
             label: "进行中项目",
             value: active_projects.to_string(),
-            hint: format!("{on_hold_projects} 个已暂停"),
             tone: "info",
             icon: "projects",
         },
         Metric {
             label: "指派需求",
             value: assigned_pending.requirements.to_string(),
-            hint: "当前指派给我的需求".to_string(),
             tone: "info",
             icon: "doc",
         },
         Metric {
             label: "指派任务",
             value: assigned_pending.tasks.to_string(),
-            hint: "当前指派给我的任务".to_string(),
             tone: "warning",
             icon: "tasks",
         },
         Metric {
             label: "指派 Bug",
             value: assigned_pending.bugs.to_string(),
-            hint: format!("{high_priority_assigned_bugs} 个紧急/高"),
             tone: "danger",
             icon: "bug",
         },
@@ -6973,10 +6925,6 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
     MySummary {
         project_count: projects.len(),
         assigned_count: assigned_items.len(),
-        pending_in_progress_confirmation_count: assigned_items
-            .iter()
-            .filter(|item| is_active_work_item_status(&item.status_code))
-            .count(),
         high_priority_count: assigned_items
             .iter()
             .filter(|item| {
@@ -8395,28 +8343,24 @@ fn sample_metrics() -> Vec<Metric> {
         Metric {
             label: "进行中项目",
             value: "3".to_string(),
-            hint: "待启动 / 进行中 / 验收中".to_string(),
             tone: "info",
             icon: "projects",
         },
         Metric {
             label: "指派需求",
             value: "4".to_string(),
-            hint: "当前指派给我的需求".to_string(),
             tone: "info",
             icon: "doc",
         },
         Metric {
             label: "指派任务",
             value: "2".to_string(),
-            hint: "当前指派给我的任务".to_string(),
             tone: "warning",
             icon: "tasks",
         },
         Metric {
             label: "指派 Bug",
             value: "1".to_string(),
-            hint: "1 个紧急/高".to_string(),
             tone: "danger",
             icon: "bug",
         },
@@ -8857,9 +8801,6 @@ mod tests {
         let summary = work_item_list_summary_from_items(&items, items.len() as i64);
         assert_eq!(summary.pending_in_progress_confirmation_count, 3);
 
-        let my = my_summary(&[], &items);
-        assert_eq!(my.pending_in_progress_confirmation_count, 3);
-
         let detail = project_detail_summary(&items, &[], &[], &[]);
         assert_eq!(detail.pending_in_progress_confirmation_count, 3);
     }
@@ -8876,7 +8817,6 @@ mod tests {
 
         let summary = my_summary(&[], &items);
         assert_eq!(summary.assigned_count, 5);
-        assert_eq!(summary.pending_in_progress_confirmation_count, 3);
         assert_eq!(summary.high_priority_count, 2);
     }
 }

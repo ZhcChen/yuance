@@ -3444,7 +3444,7 @@ async fn web_me_page_renders_profile_projects_and_assigned_items() {
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("指派给我"));
     assert!(body.contains("高优先级"));
-    assert!(body.contains("紧急 / 高 · 待处理 / 进行中 / 待确认"));
+    assert!(!body.contains("紧急 / 高 · 待处理 / 进行中 / 待确认"));
     assert!(body.contains("Personal Access Token"));
     assert!(body.contains("创建访问 Token"));
     assert!(body.contains("编辑资料"));

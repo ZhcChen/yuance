@@ -2521,8 +2521,8 @@ textarea:focus-visible {
   overflow: hidden;
   display: grid;
   align-content: start;
-  grid-template-rows: auto 1fr auto;
-  gap: 10px;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
   min-height: 116px;
   padding: 15px 72px 15px 16px;
   border: 1px solid color-mix(in srgb, var(--metric-line) 46%, var(--line) 54%);
@@ -2595,8 +2595,7 @@ html[data-theme="dark"] .metric:hover {
   min-height: 36px;
 }
 
-.metric-label,
-.metric-hint {
+.metric-label {
   font-size: 12px;
 }
 
@@ -2724,28 +2723,6 @@ html[data-theme="dark"] .metric-ornament::before {
   letter-spacing: -0.05em;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
-}
-
-.metric-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 20px;
-  margin-top: auto;
-  padding-top: 0;
-  border-top: 0;
-  color: var(--muted);
-  font-weight: 600;
-  line-height: 19px;
-}
-
-.metric-hint::before {
-  content: "";
-  flex: 0 0 5px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--metric-accent) 62%, transparent);
 }
 
 .metric-info {
