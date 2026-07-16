@@ -36,7 +36,7 @@ struct ProjectRow {
     code: String,
     name: String,
     owner: String,
-    open_work_items: i64,
+    pending_in_progress_confirmation_count: i64,
     total_work_items: i64,
     status_code: String,
     status: String,
@@ -92,7 +92,7 @@ struct PersonalProjectAnalysisTemplate {
 struct ProjectListSummary {
     total_projects: usize,
     active_projects: usize,
-    open_work_items: i64,
+    pending_in_progress_confirmation_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -225,7 +225,7 @@ struct ProjectDetailSummary {
     requirements: usize,
     tasks: usize,
     bugs: usize,
-    open_items: usize,
+    pending_in_progress_confirmation_count: usize,
     members: usize,
 }
 
@@ -297,7 +297,7 @@ struct WorkItemComment {
 #[derive(Debug, Clone)]
 struct WorkItemListSummary {
     total_items: i64,
-    open_items: i64,
+    pending_in_progress_confirmation_count: i64,
     high_priority_items: i64,
 }
 
@@ -486,7 +486,7 @@ struct ApiTokenView {
 struct MySummary {
     project_count: usize,
     assigned_count: usize,
-    open_count: usize,
+    pending_in_progress_confirmation_count: usize,
     high_priority_count: usize,
 }
 
@@ -5010,7 +5010,7 @@ async fn work_item_list_page(
             pagination.per_page,
             WorkItemListSummary {
                 total_items: 0,
-                open_items: 0,
+                pending_in_progress_confirmation_count: 0,
                 high_priority_items: 0,
             },
         )
@@ -6090,7 +6090,7 @@ fn project_from_summary_with_pending(
         code: project.project_key,
         name: project.name,
         owner: fallback_text(project.owner_display_name, "未分配"),
-        open_work_items: project.open_work_item_count,
+        pending_in_progress_confirmation_count: project.open_work_item_count,
         total_work_items: project.work_item_count,
         status_code: project.status,
         status: status.to_string(),
@@ -6266,7 +6266,7 @@ fn project_detail_summary(
     bugs: &[WorkItem],
     members: &[ProjectMemberView],
 ) -> ProjectDetailSummary {
-    let open_items = requirements
+    let pending_in_progress_confirmation_count = requirements
         .iter()
         .chain(tasks)
         .chain(bugs)
@@ -6277,7 +6277,7 @@ fn project_detail_summary(
         requirements: requirements.len(),
         tasks: tasks.len(),
         bugs: bugs.len(),
-        open_items,
+        pending_in_progress_confirmation_count,
         members: members.len(),
     }
 }
@@ -6973,7 +6973,7 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
     MySummary {
         project_count: projects.len(),
         assigned_count: assigned_items.len(),
-        open_count: assigned_items
+        pending_in_progress_confirmation_count: assigned_items
             .iter()
             .filter(|item| is_open_status(&item.status_code))
             .count(),
@@ -7303,7 +7303,10 @@ fn project_list_summary(projects: &[ProjectRow]) -> ProjectListSummary {
             .iter()
             .filter(|project| matches!(project.status.as_str(), "待启动" | "进行中" | "验收中"))
             .count(),
-        open_work_items: projects.iter().map(|project| project.open_work_items).sum(),
+        pending_in_progress_confirmation_count: projects
+            .iter()
+            .map(|project| project.pending_in_progress_confirmation_count)
+            .sum(),
     }
 }
 
@@ -7337,7 +7340,7 @@ fn paginate_project_views(
 fn work_item_list_summary_from_stats(stats: projects::WorkItemListStats) -> WorkItemListSummary {
     WorkItemListSummary {
         total_items: stats.total_items,
-        open_items: stats.open_items,
+        pending_in_progress_confirmation_count: stats.open_items,
         high_priority_items: stats.high_priority_items,
     }
 }
@@ -7345,7 +7348,7 @@ fn work_item_list_summary_from_stats(stats: projects::WorkItemListStats) -> Work
 fn work_item_list_summary_from_items(items: &[WorkItem], total_items: i64) -> WorkItemListSummary {
     WorkItemListSummary {
         total_items,
-        open_items: items
+        pending_in_progress_confirmation_count: items
             .iter()
             .filter(|item| is_open_status(&item.status_code))
             .count() as i64,
@@ -8440,7 +8443,7 @@ fn sample_projects() -> Vec<ProjectRow> {
             code: "YCE".to_string(),
             name: "元策 MVP".to_string(),
             owner: "陈".to_string(),
-            open_work_items: 2,
+            pending_in_progress_confirmation_count: 2,
             total_work_items: 4,
             status_code: "in_progress".to_string(),
             status: "进行中".to_string(),
@@ -8454,7 +8457,7 @@ fn sample_projects() -> Vec<ProjectRow> {
             code: "OPS".to_string(),
             name: "交付运维台".to_string(),
             owner: "林".to_string(),
-            open_work_items: 1,
+            pending_in_progress_confirmation_count: 1,
             total_work_items: 1,
             status_code: "not_started".to_string(),
             status: "待启动".to_string(),
@@ -8468,7 +8471,7 @@ fn sample_projects() -> Vec<ProjectRow> {
             code: "CRM".to_string(),
             name: "客户线索同步".to_string(),
             owner: "周".to_string(),
-            open_work_items: 1,
+            pending_in_progress_confirmation_count: 1,
             total_work_items: 1,
             status_code: "on_hold".to_string(),
             status: "已暂停".to_string(),
@@ -8851,13 +8854,13 @@ mod tests {
         ];
 
         let summary = work_item_list_summary_from_items(&items, items.len() as i64);
-        assert_eq!(summary.open_items, 3);
+        assert_eq!(summary.pending_in_progress_confirmation_count, 3);
 
         let my = my_summary(&[], &items);
-        assert_eq!(my.open_count, 3);
+        assert_eq!(my.pending_in_progress_confirmation_count, 3);
 
         let detail = project_detail_summary(&items, &[], &[], &[]);
-        assert_eq!(detail.open_items, 3);
+        assert_eq!(detail.pending_in_progress_confirmation_count, 3);
     }
 
     #[test]
@@ -8872,7 +8875,7 @@ mod tests {
 
         let summary = my_summary(&[], &items);
         assert_eq!(summary.assigned_count, 5);
-        assert_eq!(summary.open_count, 3);
+        assert_eq!(summary.pending_in_progress_confirmation_count, 3);
         assert_eq!(summary.high_priority_count, 2);
     }
 }

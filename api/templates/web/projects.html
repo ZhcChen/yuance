@@ -39,7 +39,7 @@
         <span class="metric-label">待处理 / 进行中 / 待确认</span>
         <span class="metric-ornament metric-icon-tasks" aria-hidden="true"></span>
       </div>
-      <strong>{{ summary.open_work_items }}</strong>
+      <strong>{{ summary.pending_in_progress_confirmation_count }}</strong>
       <span class="metric-hint">需求 / 任务 / Bug 合计</span>
     </article>
   </section>
@@ -75,7 +75,7 @@
         <span class="project-card-meta">项目负责人：{{ project.owner }}</span>
         <span class="project-card-stats">
           <span>
-            <strong>{{ project.open_work_items }}</strong>
+            <strong>{{ project.pending_in_progress_confirmation_count }}</strong>
             <em>待处理 / 进行中 / 待确认</em>
           </span>
           <span>

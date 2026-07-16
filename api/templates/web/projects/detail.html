@@ -58,7 +58,7 @@
         <span class="metric-ornament metric-icon-users" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.members }}</strong>
-      <span class="metric-hint">{{ summary.open_items }} 个待处理 / 进行中 / 待确认项</span>
+      <span class="metric-hint">{{ summary.pending_in_progress_confirmation_count }} 个待处理 / 进行中 / 待确认项</span>
     </article>
   </section>
 
@@ -126,7 +126,7 @@
               </div>
               <div>
                 <dt>待处理 / 进行中 / 待确认</dt>
-                <dd>{{ summary.open_items }}</dd>
+                <dd>{{ summary.pending_in_progress_confirmation_count }}</dd>
               </div>
             </dl>
           </section>
