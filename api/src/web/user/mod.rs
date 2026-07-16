@@ -244,19 +244,6 @@ struct WorkItem {
 }
 
 #[derive(Debug, Clone)]
-struct RiskItem {
-    key: String,
-    title: String,
-    project: String,
-    assignee: String,
-    priority_code: String,
-    priority: String,
-    status: String,
-    status_tone: &'static str,
-    url: String,
-}
-
-#[derive(Debug, Clone)]
 struct WorkItemDetailView {
     id: i64,
     key: String,
@@ -606,8 +593,6 @@ struct DashboardTemplate {
     topbar_project_options: Vec<ProjectOption>,
     metrics: Vec<Metric>,
     projects: Vec<ProjectRow>,
-    risk_items: Vec<RiskItem>,
-    has_risk_items: bool,
     activities: Vec<Activity>,
     can_manage_projects: bool,
     current_username: String,
@@ -5265,7 +5250,7 @@ async fn render_dashboard(
     state: &AppState,
     context: DashboardRenderContext<'_>,
 ) -> AppResult<Html<String>> {
-    let (metrics, projects, risk_items, activities) = match context.pool {
+    let (metrics, projects, activities) = match context.pool {
         Some(pool) => {
             let can_view_projects =
                 rbac::user_has_permission(pool, context.user_id, "project.view").await?;
@@ -5330,19 +5315,13 @@ async fn render_dashboard(
                         project_from_summary_with_pending(project, pending)
                     })
                     .collect(),
-                risk_items_from_work_items(&assigned_work_item_summaries),
                 activity_summaries
                     .into_iter()
                     .map(activity_from_summary)
                     .collect(),
             )
         }
-        None => (
-            sample_metrics(),
-            sample_projects(),
-            risk_items_from_work_items(&sample_domain_work_items(None)),
-            sample_activities(),
-        ),
+        None => (sample_metrics(), sample_projects(), sample_activities()),
     };
     let can_manage_projects = match context.pool {
         Some(pool) => rbac::user_has_permission(pool, context.user_id, "project.manage").await?,
@@ -5359,8 +5338,6 @@ async fn render_dashboard(
         topbar_project_options: context.topbar_project_options,
         metrics,
         projects,
-        has_risk_items: !risk_items.is_empty(),
-        risk_items,
         activities,
         can_manage_projects,
         current_username: context.current_username,
@@ -6323,40 +6300,6 @@ fn work_item_from_summary(item: projects::WorkItemSummary) -> WorkItem {
         priority,
         status: status.to_string(),
         status_tone,
-    }
-}
-
-fn risk_items_from_work_items(items: &[projects::WorkItemSummary]) -> Vec<RiskItem> {
-    let mut risk_items = items
-        .iter()
-        .filter(|item| is_open_status(&item.status) && is_high_priority_code(&item.priority))
-        .cloned()
-        .collect::<Vec<_>>();
-    risk_items.sort_by(|left, right| {
-        priority_rank(&left.priority)
-            .cmp(&priority_rank(&right.priority))
-            .then_with(|| left.updated_at.cmp(&right.updated_at).reverse())
-            .then_with(|| left.item_key.cmp(&right.item_key))
-    });
-    risk_items
-        .into_iter()
-        .take(5)
-        .map(risk_item_from_summary)
-        .collect()
-}
-
-fn risk_item_from_summary(item: projects::WorkItemSummary) -> RiskItem {
-    let (_, status, status_tone) = work_item_labels(&item.item_type, &item.status);
-    RiskItem {
-        key: item.item_key.clone(),
-        title: item.title,
-        project: format!("{} · {}", item.project_key, item.project_name),
-        assignee: fallback_text(item.assignee_display_name, "未分配"),
-        priority_code: item.priority.clone(),
-        priority: priority_label(&item.priority).to_string(),
-        status: status.to_string(),
-        status_tone,
-        url: format!("/web/work-items/{}", item.item_key),
     }
 }
 
@@ -8380,16 +8323,6 @@ fn is_previewable_video_content_type(content_type: &str) -> bool {
         content_type.trim().to_ascii_lowercase().as_str(),
         "video/mp4" | "video/ogg" | "video/quicktime" | "video/webm"
     )
-}
-
-fn priority_rank(priority: &str) -> i32 {
-    match priority {
-        "P0" => 0,
-        "P1" => 1,
-        "P2" => 2,
-        "P3" => 3,
-        _ => 9,
-    }
 }
 
 fn user_contact(email: String, mobile: String) -> String {

@@ -76,37 +76,7 @@
 
   </div>
 
-  <aside class="workspace-side" aria-label="风险与动态">
-    <section class="panel inspector-panel">
-      <div class="panel-head compact">
-        <h2>风险队列</h2>
-        {% if has_risk_items %}
-        <button class="btn btn-sm btn-secondary" type="button" data-drawer-open="risk-drawer">查看</button>
-        {% endif %}
-      </div>
-      {% if has_risk_items %}
-      <ol class="risk-list">
-        {% for risk in risk_items %}
-        <li class="risk-list-item">
-          <a href="{{ risk.url }}">
-            <strong>{{ risk.title }}</strong>
-            <span>{{ risk.project }} · {{ risk.assignee }}</span>
-          </a>
-          <div class="risk-list-meta">
-            <span class="priority" data-priority="{{ risk.priority_code }}">{{ risk.priority }}</span>
-            <span class="status status-{{ risk.status_tone }}">{{ risk.status }}</span>
-          </div>
-        </li>
-        {% endfor %}
-      </ol>
-      {% else %}
-      <div class="empty-state">
-        <strong>暂无高优先级风险</strong>
-        <span>当前指派给你的工作项里，没有紧急/高优先级的开放项。</span>
-      </div>
-      {% endif %}
-    </section>
-
+  <aside class="workspace-side" aria-label="最近动态">
     <section class="panel inspector-panel">
       <div class="panel-head compact">
         <h2>最近动态</h2>
@@ -123,40 +93,6 @@
     </section>
   </aside>
 </section>
-
-<aside id="risk-drawer" class="drawer" aria-hidden="true" aria-label="风险详情">
-  <div class="drawer-backdrop" data-drawer-close></div>
-  <section class="drawer-panel" role="dialog" aria-modal="true" aria-labelledby="risk-drawer-title">
-    <div class="drawer-head">
-      <h2 id="risk-drawer-title">风险详情</h2>
-      <button class="icon-btn" type="button" data-drawer-close aria-label="关闭">×</button>
-    </div>
-    <div class="drawer-body">
-      {% if has_risk_items %}
-      <ol class="risk-list drawer-risk-list">
-        {% for risk in risk_items %}
-        <li class="risk-list-item">
-          <a href="{{ risk.url }}">
-            <code>{{ risk.key }}</code>
-            <strong>{{ risk.title }}</strong>
-            <span>{{ risk.project }} · 处理人 {{ risk.assignee }}</span>
-          </a>
-          <div class="risk-list-meta">
-            <span class="priority" data-priority="{{ risk.priority_code }}">{{ risk.priority }}</span>
-            <span class="status status-{{ risk.status_tone }}">{{ risk.status }}</span>
-          </div>
-        </li>
-        {% endfor %}
-      </ol>
-      {% else %}
-      <div class="empty-state">
-        <strong>暂无风险详情</strong>
-        <span>出现紧急/高优先级开放工作项后会自动进入风险队列。</span>
-      </div>
-      {% endif %}
-    </div>
-  </section>
-</aside>
 
 {% if can_manage_projects %}
 {% include "web/partials/project_create_modal.html" %}
