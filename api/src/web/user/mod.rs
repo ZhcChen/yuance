@@ -239,6 +239,7 @@ struct WorkItem {
     assignee: String,
     priority_code: String,
     priority: String,
+    status_code: String,
     status: String,
     status_tone: &'static str,
 }
@@ -6269,12 +6270,7 @@ fn project_detail_summary(
         .iter()
         .chain(tasks)
         .chain(bugs)
-        .filter(|item| {
-            !matches!(
-                item.status.as_str(),
-                "已完成" | "已解决" | "已验证" | "已关闭"
-            )
-        })
+        .filter(|item| is_open_status(&item.status_code))
         .count();
 
     ProjectDetailSummary {
@@ -6298,6 +6294,7 @@ fn work_item_from_summary(item: projects::WorkItemSummary) -> WorkItem {
         assignee: fallback_text(item.assignee_display_name, "未分配"),
         priority_code: item.priority,
         priority,
+        status_code: item.status,
         status: status.to_string(),
         status_tone,
     }
@@ -6978,12 +6975,7 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
         assigned_count: assigned_items.len(),
         open_count: assigned_items
             .iter()
-            .filter(|item| {
-                !matches!(
-                    item.status.as_str(),
-                    "已完成" | "已解决" | "已验证" | "已关闭"
-                )
-            })
+            .filter(|item| is_open_status(&item.status_code))
             .count(),
         high_priority_count: assigned_items
             .iter()
@@ -7353,12 +7345,7 @@ fn work_item_list_summary_from_items(items: &[WorkItem], total_items: i64) -> Wo
         total_items,
         open_items: items
             .iter()
-            .filter(|item| {
-                !matches!(
-                    item.status.as_str(),
-                    "已完成" | "已解决" | "已验证" | "已关闭"
-                )
-            })
+            .filter(|item| is_open_status(&item.status_code))
             .count() as i64,
         high_priority_items: items
             .iter()
@@ -8792,6 +8779,22 @@ fn sample_activities() -> Vec<Activity> {
 mod tests {
     use super::*;
 
+    fn sample_work_item(status_code: &str, status: &str) -> WorkItem {
+        WorkItem {
+            key: "YCE-TASK-1".to_string(),
+            kind_code: "task".to_string(),
+            kind: "任务".to_string(),
+            title: "示例任务".to_string(),
+            project: "YCE · 元策".to_string(),
+            assignee: "张三".to_string(),
+            priority_code: "P2".to_string(),
+            priority: "中".to_string(),
+            status_code: status_code.to_string(),
+            status: status.to_string(),
+            status_tone: "info",
+        }
+    }
+
     #[test]
     fn flow_comment_display_renames_legacy_assignee_label() {
         assert_eq!(
@@ -8834,5 +8837,24 @@ mod tests {
             "王五 记录了流转"
         );
         assert_eq!(work_item_flow_title("王五", "普通评论", false), "");
+    }
+
+    #[test]
+    fn summaries_exclude_cancelled_items_from_open_counts() {
+        let items = vec![
+            sample_work_item("open", "待处理"),
+            sample_work_item("in_progress", "进行中"),
+            sample_work_item("pending_confirmation", "待确认"),
+            sample_work_item("cancelled", "已取消"),
+        ];
+
+        let summary = work_item_list_summary_from_items(&items, items.len() as i64);
+        assert_eq!(summary.open_items, 3);
+
+        let my = my_summary(&[], &items);
+        assert_eq!(my.open_count, 3);
+
+        let detail = project_detail_summary(&items, &[], &[], &[]);
+        assert_eq!(detail.open_items, 3);
     }
 }
