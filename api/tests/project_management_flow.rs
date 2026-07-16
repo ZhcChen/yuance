@@ -3450,7 +3450,11 @@ async fn web_me_page_renders_profile_projects_and_assigned_items() {
     assert!(body.contains("个人工作区"));
     assert!(body.contains("@admin"));
     assert!(body.contains("元策 MVP"));
-    assert!(body.contains("YCE-TASK-2"));
+    assert!(body.contains("指派给我"));
+    assert!(body.contains("高优先级"));
+    assert!(body.contains("紧急 / 高 开放项"));
+    assert!(body.contains("Personal Access Token"));
+    assert!(body.contains("创建访问 Token"));
     assert!(body.contains("编辑资料"));
     assert!(body.contains("修改密码"));
 }

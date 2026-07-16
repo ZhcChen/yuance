@@ -6979,7 +6979,9 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
             .count(),
         high_priority_count: assigned_items
             .iter()
-            .filter(|item| is_high_priority_code(&item.priority_code))
+            .filter(|item| {
+                is_open_status(&item.status_code) && is_high_priority_code(&item.priority_code)
+            })
             .count(),
     }
 }
@@ -8779,7 +8781,7 @@ fn sample_activities() -> Vec<Activity> {
 mod tests {
     use super::*;
 
-    fn sample_work_item(status_code: &str, status: &str) -> WorkItem {
+    fn sample_work_item(status_code: &str, status: &str, priority_code: &str) -> WorkItem {
         WorkItem {
             key: "YCE-TASK-1".to_string(),
             kind_code: "task".to_string(),
@@ -8787,8 +8789,8 @@ mod tests {
             title: "示例任务".to_string(),
             project: "YCE · 元策".to_string(),
             assignee: "张三".to_string(),
-            priority_code: "P2".to_string(),
-            priority: "中".to_string(),
+            priority_code: priority_code.to_string(),
+            priority: priority_label(priority_code).to_string(),
             status_code: status_code.to_string(),
             status: status.to_string(),
             status_tone: "info",
@@ -8842,10 +8844,10 @@ mod tests {
     #[test]
     fn summaries_exclude_cancelled_items_from_open_counts() {
         let items = vec![
-            sample_work_item("open", "待处理"),
-            sample_work_item("in_progress", "进行中"),
-            sample_work_item("pending_confirmation", "待确认"),
-            sample_work_item("cancelled", "已取消"),
+            sample_work_item("open", "待处理", "P2"),
+            sample_work_item("in_progress", "进行中", "P2"),
+            sample_work_item("pending_confirmation", "待确认", "P2"),
+            sample_work_item("cancelled", "已取消", "P2"),
         ];
 
         let summary = work_item_list_summary_from_items(&items, items.len() as i64);
@@ -8856,5 +8858,21 @@ mod tests {
 
         let detail = project_detail_summary(&items, &[], &[], &[]);
         assert_eq!(detail.open_items, 3);
+    }
+
+    #[test]
+    fn my_summary_only_counts_open_high_priority_items() {
+        let items = vec![
+            sample_work_item("open", "待处理", "P0"),
+            sample_work_item("in_progress", "进行中", "P1"),
+            sample_work_item("done", "已完成", "P0"),
+            sample_work_item("cancelled", "已取消", "P1"),
+            sample_work_item("open", "待处理", "P3"),
+        ];
+
+        let summary = my_summary(&[], &items);
+        assert_eq!(summary.assigned_count, 5);
+        assert_eq!(summary.open_count, 3);
+        assert_eq!(summary.high_priority_count, 2);
     }
 }
