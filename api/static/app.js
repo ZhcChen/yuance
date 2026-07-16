@@ -161,6 +161,20 @@
     }
   }
 
+  function formFieldValue(form, name) {
+    if (!form || !form.elements || !name) {
+      return "";
+    }
+    var field = form.elements.namedItem(name);
+    if (!field) {
+      return "";
+    }
+    if (typeof field.value === "string") {
+      return field.value;
+    }
+    return "";
+  }
+
   function controlText(control) {
     if (!control) {
       return "";
@@ -2721,16 +2735,15 @@
   }
 
   function bugReportRequestPayload(form) {
-    var formData = new FormData(form);
     return {
-      project_key: formData.get("project_key") || "",
-      item_type: formData.get("item_type") || "bug",
-      title: formData.get("title") || "",
-      description: formData.get("description") || "",
-      priority: formData.get("priority") || "P2",
-      assignee_username: formData.get("assignee_username") || "",
-      due_date: formData.get("due_date") || "",
-      parent_item_key: formData.get("parent_item_key") || "",
+      project_key: formFieldValue(form, "project_key"),
+      item_type: formFieldValue(form, "item_type") || "bug",
+      title: formFieldValue(form, "title"),
+      description: formFieldValue(form, "description"),
+      priority: formFieldValue(form, "priority") || "P2",
+      assignee_username: formFieldValue(form, "assignee_username"),
+      due_date: formFieldValue(form, "due_date"),
+      parent_item_key: formFieldValue(form, "parent_item_key"),
     };
   }
 
@@ -3341,9 +3354,8 @@
   }
 
   function resourcePasswordPatchFields(form) {
-    var formData = new FormData(form);
-    var password = String(formData.get("access_password") || "");
-    var action = String(formData.get("access_password_action") || "").trim();
+    var password = String(formFieldValue(form, "access_password") || "");
+    var action = String(formFieldValue(form, "access_password_action") || "").trim();
     if (!action) {
       action = password.trim() ? "set" : "clear";
     }
@@ -4555,7 +4567,6 @@
       if (formatInput) {
         formatInput.value = "html";
       }
-      var formData = new FormData(form);
       var passwordFields = resourcePasswordPatchFields(form);
       resourceStatus(form, "正在保存资料正文...", "info");
       var saved = await fetchJson(
@@ -4568,8 +4579,8 @@
           method: "PATCH",
           headers: { "content-type": "application/json", accept: "application/json" },
           body: JSON.stringify({
-            title: formData.get("title") || "",
-            category: formData.get("category") || "other",
+            title: formFieldValue(form, "title"),
+            category: formFieldValue(form, "category") || "other",
             body: body,
             body_format: "html",
             access_password_action: passwordFields.access_password_action,

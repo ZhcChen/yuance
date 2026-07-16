@@ -305,6 +305,21 @@ function bugReportForm(successRedirect) {
       return [];
     },
   };
+  const elements = {
+    namedItem(name) {
+      if (!Object.prototype.hasOwnProperty.call(formData, name)) {
+        return null;
+      }
+      return {
+        get value() {
+          return formData[name];
+        },
+        set value(value) {
+          formData[name] = String(value);
+        },
+      };
+    },
+  };
 
   return {
     dataset: {
@@ -312,6 +327,7 @@ function bugReportForm(successRedirect) {
       successRedirect,
       workItemLabel: "工作项",
     },
+    elements,
     formData,
     reportValidity() {
       return true;
@@ -830,7 +846,16 @@ assert.equal(
 await projectCreate.hooks.submitBugReport(projectCreateForm);
 assert.equal(projectCreate.fetchCalls.length, 2);
 assert.equal(projectCreate.fetchCalls[0].url, "/api/v1/work-items");
-assert.equal(JSON.parse(projectCreate.fetchCalls[0].options.body).description, "富文本说明");
+assert.deepEqual(JSON.parse(projectCreate.fetchCalls[0].options.body), {
+  project_key: "YCE",
+  item_type: "task",
+  title: "项目内新建任务",
+  description: "富文本说明",
+  priority: "P2",
+  assignee_username: "",
+  due_date: "",
+  parent_item_key: "YCE-REQ-1",
+});
 assert.equal(projectCreate.fetchCalls[1].url, "/api/v1/work-items/YCE-TASK-3/comments");
 assert.deepEqual(JSON.parse(projectCreate.fetchCalls[1].options.body), {
   body: "<p>富文本说明</p>",
