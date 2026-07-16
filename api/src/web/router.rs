@@ -147,6 +147,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::work_item_detail_page),
         )
         .route(
+            "/web/work-items/{item_key}/flow-records",
+            get(web::user::work_item_flow_history_partial),
+        )
+        .route(
             "/web/work-items/{item_key}/status",
             post(web::user::work_item_status_update),
         )

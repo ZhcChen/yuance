@@ -1,0 +1,56 @@
+{% if has_flow_history %}
+<div class="table-wrap">
+  <table class="data-table work-item-flow-table">
+    <thead>
+      <tr>
+        <th scope="col">时间</th>
+        <th scope="col">操作人</th>
+        <th scope="col">状态流转</th>
+        <th scope="col">指派流转</th>
+        <th class="flow-history-note-col" scope="col">处理说明</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for record in flow_history_records %}
+      <tr>
+        <td>{{ record.created_at }}</td>
+        <td>{{ record.actor }}</td>
+        <td><span class="flow-history-transition">{{ record.status_change }}</span></td>
+        <td><span class="flow-history-transition">{{ record.assignee_change }}</span></td>
+        <td class="flow-history-note-cell">{{ record.note }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<nav class="pager table-pager" aria-label="指派记录分页">
+  <div class="pager-meta">
+    <strong>共 {{ flow_history_pagination.total_items }} 条</strong>
+    <span>当前显示 {{ flow_history_pagination.range_start }}-{{ flow_history_pagination.range_end }}</span>
+  </div>
+  <div class="pager-pages">
+    {% if flow_history_pagination.has_previous %}
+    <a class="pager-arrow" href="{{ flow_history_pagination.previous_url }}" hx-get="{{ flow_history_pagination.previous_url }}" hx-target="#work-item-flow-history-content" hx-swap="innerHTML" hx-push-url="false" aria-label="上一页">‹</a>
+    {% else %}
+    <span class="pager-arrow disabled" aria-disabled="true">‹</span>
+    {% endif %}
+    {% for page_item in flow_history_pagination_pages %}
+    <a class="pager-page {% if page_item.current %}active{% endif %}" href="{{ page_item.url }}" {% if page_item.current %}aria-current="page"{% endif %} hx-get="{{ page_item.url }}" hx-target="#work-item-flow-history-content" hx-swap="innerHTML" hx-push-url="false">{{ page_item.page }}</a>
+    {% endfor %}
+    {% if flow_history_pagination.has_next %}
+    <a class="pager-arrow" href="{{ flow_history_pagination.next_url }}" hx-get="{{ flow_history_pagination.next_url }}" hx-target="#work-item-flow-history-content" hx-swap="innerHTML" hx-push-url="false" aria-label="下一页">›</a>
+    {% else %}
+    <span class="pager-arrow disabled" aria-disabled="true">›</span>
+    {% endif %}
+  </div>
+  <form class="pager-controls" method="get" action="/web/work-items/{{ item.key }}/flow-records" data-pagination-form hx-get="/web/work-items/{{ item.key }}/flow-records" hx-target="#work-item-flow-history-content" hx-swap="innerHTML" hx-push-url="false">
+    <label>每页<select name="per_page" data-pagination-size>{% if flow_history_pagination.per_page != 10 && flow_history_pagination.per_page != 20 && flow_history_pagination.per_page != 50 && flow_history_pagination.per_page != 100 %}<option value="{{ flow_history_pagination.per_page }}" selected>当前 {{ flow_history_pagination.per_page }}</option>{% endif %}<option value="10" {% if flow_history_pagination.per_page == 10 %}selected{% endif %}>10</option><option value="20" {% if flow_history_pagination.per_page == 20 %}selected{% endif %}>20</option><option value="50" {% if flow_history_pagination.per_page == 50 %}selected{% endif %}>50</option><option value="100" {% if flow_history_pagination.per_page == 100 %}selected{% endif %}>100</option></select></label>
+    <label>跳至<input name="page" type="number" min="1" max="{{ flow_history_pagination.total_pages }}" value="{{ flow_history_pagination.page }}" inputmode="numeric" aria-label="跳转页码"></label>
+  </form>
+</nav>
+{% else %}
+<div class="empty-state flow-history-empty">
+  <strong>暂无指派记录</strong>
+  <span>后续状态流转、指派变化和处理说明会汇总展示在这里。</span>
+</div>
+{% endif %}

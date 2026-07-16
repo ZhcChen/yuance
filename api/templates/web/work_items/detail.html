@@ -92,10 +92,13 @@
           <span class="section-kicker">当前负责人</span>
           <strong>{{ item.assignee }}</strong>
         </div>
-        {% if can_manage_work_items && !item.is_deleted %}
         <div class="action-panel-buttons">
+          {% if can_manage_work_items && !item.is_deleted %}
           <button class="btn btn-primary" type="button" data-modal-open="work-item-handoff-modal">指派 / 流转</button>
           <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑内容</button>
+          {% endif %}
+          <button class="btn btn-secondary" type="button" data-modal-open="work-item-flow-history-modal">查看指派记录</button>
+          {% if can_manage_work_items && !item.is_deleted %}
           {% if item.status_code == "closed" || item.status_code == "cancelled" %}
           <form method="post" action="/web/work-items/{{ item.key }}/status" data-success-message="{{ item.kind }}已重新打开。">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
@@ -109,8 +112,8 @@
             <button class="btn btn-close-item" type="submit">关闭{{ item.kind }}</button>
           </form>
           {% endif %}
+          {% endif %}
         </div>
-        {% endif %}
         <dl class="action-panel-context">
           <div><dt>报告人</dt><dd>{{ item.reporter }}</dd></div>
           {% if item.has_parent %}<div><dt>父级需求</dt><dd><a href="/web/work-items/{{ item.parent_item_key }}">{{ item.parent_item_key }} · {{ item.parent_title }}</a></dd></div>{% endif %}
@@ -165,4 +168,20 @@
   </section>
 </aside>
 {% endif %}
+
+<aside id="work-item-flow-history-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-flow-history-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="work-item-flow-history-modal-title">指派记录</h2>
+        <p>按表格查看状态流转、指派变化与处理说明；讨论区里的流转记录仍会保留。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <div id="work-item-flow-history-content" class="modal-body">
+      {% include "web/partials/work_item_flow_history.html" %}
+    </div>
+  </section>
+</aside>
 {% endblock %}

@@ -293,6 +293,15 @@ struct WorkItemComment {
 }
 
 #[derive(Debug, Clone)]
+struct WorkItemFlowRecord {
+    actor: String,
+    created_at: String,
+    status_change: String,
+    assignee_change: String,
+    note: String,
+}
+
+#[derive(Debug, Clone)]
 struct WorkItemListSummary {
     total_items: i64,
     pending_in_progress_confirmation_count: i64,
@@ -838,6 +847,10 @@ struct WorkItemDetailTemplate {
     attachments: Vec<AttachmentView>,
     comments: Vec<WorkItemComment>,
     has_comments: bool,
+    flow_history_records: Vec<WorkItemFlowRecord>,
+    has_flow_history: bool,
+    flow_history_pagination: PaginationView,
+    flow_history_pagination_pages: Vec<PaginationPageView>,
     has_attachments: bool,
     can_manage_work_items: bool,
     can_restore_work_items: bool,
@@ -852,6 +865,16 @@ struct WorkItemDetailPartialTemplate {
     comments: Vec<WorkItemComment>,
     has_comments: bool,
     can_manage_work_items: bool,
+}
+
+#[derive(Template)]
+#[template(path = "web/partials/work_item_flow_history.html")]
+struct WorkItemFlowHistoryPartialTemplate {
+    item: WorkItemDetailView,
+    flow_history_records: Vec<WorkItemFlowRecord>,
+    has_flow_history: bool,
+    flow_history_pagination: PaginationView,
+    flow_history_pagination_pages: Vec<PaginationPageView>,
 }
 
 #[derive(Template)]
@@ -1381,6 +1404,14 @@ pub struct WorkItemListQuery {
     project_key: String,
     #[serde(default)]
     assignee_username: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemFlowHistoryQuery {
     #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
@@ -3236,6 +3267,12 @@ pub async fn work_item_detail_page(
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
+    let flow_history_pagination = normalize_web_pagination(None, None)?;
+    let (
+        flow_history_records,
+        flow_history_pagination,
+        flow_history_pagination_pages,
+    ) = load_work_item_flow_history(pool, &item, flow_history_pagination).await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -3259,6 +3296,66 @@ pub async fn work_item_detail_page(
             comments,
             can_manage_work_items,
             can_restore_work_items,
+            has_flow_history: !flow_history_records.is_empty(),
+            flow_history_records,
+            flow_history_pagination,
+            flow_history_pagination_pages,
+        })?
+        .into_response(),
+    )
+}
+
+pub async fn work_item_flow_history_partial(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Query(query): Query<WorkItemFlowHistoryQuery>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        let partial = sample_work_item_detail_partial()?;
+        let pagination = normalize_web_pagination(query.page, query.per_page)?;
+        let (records, pagination, pagination_pages) =
+            sample_work_item_flow_history(&partial.item, pagination);
+        return Ok(
+            response::html(WorkItemFlowHistoryPartialTemplate {
+                item: partial.item,
+                has_flow_history: !records.is_empty(),
+                flow_history_records: records,
+                flow_history_pagination: pagination,
+                flow_history_pagination_pages: pagination_pages,
+            })?
+            .into_response(),
+        );
+    };
+
+    ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+    let Some(item) = projects::get_work_item_detail(pool, &item_key).await? else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+    ensure_project_key_access(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &item.project_key,
+    )
+    .await?;
+
+    let item = work_item_detail_from_domain(item);
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let (records, pagination, pagination_pages) =
+        load_work_item_flow_history(pool, &item, requested_pagination).await?;
+
+    Ok(
+        response::html(WorkItemFlowHistoryPartialTemplate {
+            has_flow_history: !records.is_empty(),
+            item,
+            flow_history_records: records,
+            flow_history_pagination: pagination,
+            flow_history_pagination_pages: pagination_pages,
         })?
         .into_response(),
     )
@@ -6361,6 +6458,24 @@ fn comment_with_attachments(
     comment
 }
 
+fn flow_record_from_summary(comment: projects::WorkItemCommentSummary) -> WorkItemFlowRecord {
+    let body = work_item_comment_body_for_display(&comment.body, comment.is_flow);
+    let flow_change = work_item_flow_change(&body, comment.is_flow);
+    WorkItemFlowRecord {
+        actor: fallback_text(comment.author_display_name, "系统"),
+        created_at: display_timestamp(comment.created_at),
+        status_change: flow_transition_text(
+            &flow_change.previous_status,
+            &flow_change.next_status,
+        ),
+        assignee_change: flow_transition_text(
+            &flow_change.previous_assignee,
+            &flow_change.next_assignee,
+        ),
+        note: fallback_text(flow_change.note, "—"),
+    }
+}
+
 fn work_item_comment_body_for_display(body: &str, is_flow: bool) -> String {
     if !is_flow {
         return body.to_string();
@@ -6394,31 +6509,113 @@ fn work_item_flow_title(author: &str, body: &str, is_flow: bool) -> String {
         return String::new();
     }
 
-    let (system_summary, _) = split_flow_system_summary(body);
-    for part in system_summary.split('；') {
-        let Some(assignee_change) = part
+    let flow_change = work_item_flow_change(body, true);
+    let has_status_change =
+        !flow_change.previous_status.is_empty() && !flow_change.next_status.is_empty();
+    let has_assignee_change =
+        !flow_change.previous_assignee.is_empty() && !flow_change.next_assignee.is_empty();
+
+    if has_status_change && has_assignee_change {
+        return format!(
+            "{author} 将状态从 {} 改为 {}，并指派给 {}",
+            flow_change.previous_status, flow_change.next_status, flow_change.next_assignee
+        );
+    }
+
+    if has_status_change {
+        return format!(
+            "{author} 将状态从 {} 改为 {}",
+            flow_change.previous_status, flow_change.next_status
+        );
+    }
+
+    if has_assignee_change {
+        return format!(
+            "{author} 将工作项由 {} 指派给 {}",
+            flow_change.previous_assignee, flow_change.next_assignee
+        );
+    }
+
+    if !flow_change.next_assignee.is_empty() {
+        return format!("{author} 指派给 {}", flow_change.next_assignee);
+    }
+
+    format!("{author} 记录了流转")
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct WorkItemFlowChange {
+    previous_status: String,
+    next_status: String,
+    previous_assignee: String,
+    next_assignee: String,
+    note: String,
+}
+
+fn work_item_flow_change(body: &str, is_flow: bool) -> WorkItemFlowChange {
+    if !is_flow {
+        return WorkItemFlowChange::default();
+    }
+
+    let normalized_body = work_item_comment_body_for_display(body, true);
+    let (system_summary, note) = split_flow_system_summary(&normalized_body);
+    let mut flow_change = WorkItemFlowChange {
+        note: note.unwrap_or("").trim().to_string(),
+        ..WorkItemFlowChange::default()
+    };
+
+    for part in system_summary.split('；').map(str::trim).filter(|part| !part.is_empty()) {
+        if let Some(value) = part.strip_prefix("状态：") {
+            let (previous_status, next_status) = split_flow_transition(value);
+            flow_change.previous_status = previous_status;
+            flow_change.next_status = next_status;
+            continue;
+        }
+
+        let Some(value) = part
             .strip_prefix("指派：")
             .or_else(|| part.strip_prefix("处理人："))
             .or_else(|| part.strip_prefix("负责人："))
         else {
             continue;
         };
-        if let Some((_, next_assignee)) = assignee_change.split_once('→') {
-            let next_assignee = next_assignee.trim();
-            if !next_assignee.is_empty() {
-                return format!("{author} 指派给 {next_assignee}");
-            }
-        }
+        let (previous_assignee, next_assignee) = split_flow_transition(value);
+        flow_change.previous_assignee = previous_assignee;
+        flow_change.next_assignee = next_assignee;
     }
 
-    if system_summary
-        .split('；')
-        .any(|part| part.starts_with("状态："))
+    if flow_change.note.is_empty()
+        && flow_change.previous_status.is_empty()
+        && flow_change.next_status.is_empty()
+        && flow_change.previous_assignee.is_empty()
+        && flow_change.next_assignee.is_empty()
     {
-        return format!("{author} 更新了状态");
+        flow_change.note = normalized_body.trim().to_string();
     }
 
-    format!("{author} 记录了流转")
+    flow_change
+}
+
+fn split_flow_transition(value: &str) -> (String, String) {
+    value
+        .split_once('→')
+        .map(|(previous, next)| (previous.trim().to_string(), next.trim().to_string()))
+        .unwrap_or_else(|| (String::new(), value.trim().to_string()))
+}
+
+fn flow_transition_text(previous: &str, next: &str) -> String {
+    let previous = previous.trim();
+    let next = next.trim();
+    if previous.is_empty() && next.is_empty() {
+        return "—".to_string();
+    }
+    if previous.is_empty() {
+        return next.to_string();
+    }
+    if next.is_empty() {
+        return previous.to_string();
+    }
+    format!("{previous} → {next}")
 }
 
 fn split_flow_system_summary(body: &str) -> (&str, Option<&str>) {
@@ -7164,6 +7361,33 @@ async fn load_work_item_detail_for_user(
     Ok(Some((item, comments)))
 }
 
+async fn load_work_item_flow_history(
+    pool: &SqlitePool,
+    item: &WorkItemDetailView,
+    pagination: projects::Pagination,
+) -> AppResult<(Vec<WorkItemFlowRecord>, PaginationView, Vec<PaginationPageView>)> {
+    let page = projects::list_work_item_flow_comments_paginated(pool, item.id, pagination).await?;
+    let total_pages = page.total_pages();
+    let pagination_view = work_item_flow_history_pagination_view(
+        &item.key,
+        page.page,
+        page.per_page,
+        page.total_items,
+        total_pages,
+    );
+    let pagination_pages = work_item_flow_history_pagination_pages(
+        &item.key,
+        page.page,
+        page.per_page,
+        total_pages,
+    );
+    Ok((
+        page.items.into_iter().map(flow_record_from_summary).collect(),
+        pagination_view,
+        pagination_pages,
+    ))
+}
+
 fn promote_primary_post_to_description(
     item: &mut WorkItemDetailView,
     comments: &mut Vec<WorkItemComment>,
@@ -7183,6 +7407,30 @@ fn promote_primary_post_to_description(
 
     let comment = comments.remove(index);
     item.description_html = comment.body_html;
+}
+
+fn sample_work_item_flow_history(
+    item: &WorkItemDetailView,
+    pagination: projects::Pagination,
+) -> (Vec<WorkItemFlowRecord>, PaginationView, Vec<PaginationPageView>) {
+    let all_records = sample_work_item_flow_records();
+    let total_items = all_records.len() as i64;
+    let records = paginate_items(all_records, pagination);
+    let total_pages = total_pages(total_items, pagination.per_page);
+    let pagination_view = work_item_flow_history_pagination_view(
+        &item.key,
+        pagination.page,
+        pagination.per_page,
+        total_items,
+        total_pages,
+    );
+    let pagination_pages = work_item_flow_history_pagination_pages(
+        &item.key,
+        pagination.page,
+        pagination.per_page,
+        total_pages,
+    );
+    (records, pagination_view, pagination_pages)
 }
 
 fn work_item_description_matches_comment_summary(
@@ -7930,6 +8178,73 @@ fn work_item_pagination_pages(
         .collect()
 }
 
+fn work_item_flow_history_pagination_view(
+    item_key: &str,
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: work_item_flow_history_page_url(item_key, page - 1, per_page),
+        next_url: work_item_flow_history_page_url(item_key, page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn work_item_flow_history_page_url(item_key: &str, page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        format!("/web/work-items/{item_key}/flow-records")
+    } else {
+        format!("/web/work-items/{item_key}/flow-records?{}", params.join("&"))
+    }
+}
+
+fn work_item_flow_history_pagination_pages(
+    item_key: &str,
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: work_item_flow_history_page_url(item_key, page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
 fn push_query_param(params: &mut Vec<String>, key: &str, value: &str) {
     let value = value.trim();
     if value.is_empty() {
@@ -8619,6 +8934,8 @@ fn render_sample_work_item_detail_page(
 ) -> AppResult<Response> {
     let partial = sample_work_item_detail_partial()?;
     let status_options = work_item_status_options(&partial.item.kind, &partial.item.status_code)?;
+    let (flow_history_records, flow_history_pagination, flow_history_pagination_pages) =
+        sample_work_item_flow_history(&partial.item, normalize_web_pagination(None, None)?);
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
         state,
@@ -8645,6 +8962,10 @@ fn render_sample_work_item_detail_page(
             has_attachments: false,
             attachments: Vec::new(),
             comments: partial.comments,
+            has_flow_history: !flow_history_records.is_empty(),
+            flow_history_records,
+            flow_history_pagination,
+            flow_history_pagination_pages,
             can_manage_work_items: true,
             can_restore_work_items: true,
         })?
@@ -8725,6 +9046,32 @@ fn sample_activities() -> Vec<Activity> {
     ]
 }
 
+fn sample_work_item_flow_records() -> Vec<WorkItemFlowRecord> {
+    vec![
+        WorkItemFlowRecord {
+            actor: "陈".to_string(),
+            created_at: "今天 16:20".to_string(),
+            status_change: "待处理 → 进行中".to_string(),
+            assignee_change: "未分配 → 陈".to_string(),
+            note: "开始处理数据库设计与字段约束。".to_string(),
+        },
+        WorkItemFlowRecord {
+            actor: "陈".to_string(),
+            created_at: "今天 14:10".to_string(),
+            status_change: "—".to_string(),
+            assignee_change: "陈 → 界面验证成员".to_string(),
+            note: "提交首轮页面联调，转给界面验证。".to_string(),
+        },
+        WorkItemFlowRecord {
+            actor: "界面验证成员".to_string(),
+            created_at: "今天 10:05".to_string(),
+            status_change: "进行中 → 待确认".to_string(),
+            assignee_change: "界面验证成员 → 陈".to_string(),
+            note: "已完成视觉确认，请负责人复核。".to_string(),
+        },
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -8772,11 +9119,15 @@ mod tests {
     fn flow_comment_title_highlights_assignment_target() {
         assert_eq!(
             work_item_flow_title("王五", "状态：待处理 → 进行中；指派：张三 → 李四", true),
-            "王五 指派给 李四"
+            "王五 将状态从 待处理 改为 进行中，并指派给 李四"
         );
         assert_eq!(
             work_item_flow_title("王五", "状态：待处理 → 进行中", true),
-            "王五 更新了状态"
+            "王五 将状态从 待处理 改为 进行中"
+        );
+        assert_eq!(
+            work_item_flow_title("王五", "指派：张三 → 李四", true),
+            "王五 将工作项由 张三 指派给 李四"
         );
         assert_eq!(
             work_item_flow_title("王五", "说明：补充进展", true),
@@ -8787,6 +9138,20 @@ mod tests {
             "王五 记录了流转"
         );
         assert_eq!(work_item_flow_title("王五", "普通评论", false), "");
+    }
+
+    #[test]
+    fn flow_change_parser_extracts_status_assignee_and_note() {
+        let change = work_item_flow_change(
+            "状态：待处理 → 待确认；负责人：张三 → 李四；说明：等待复测",
+            true,
+        );
+
+        assert_eq!(change.previous_status, "待处理");
+        assert_eq!(change.next_status, "待确认");
+        assert_eq!(change.previous_assignee, "张三");
+        assert_eq!(change.next_assignee, "李四");
+        assert_eq!(change.note, "等待复测");
     }
 
     #[test]

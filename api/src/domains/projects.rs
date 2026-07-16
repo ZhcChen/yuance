@@ -2511,38 +2511,88 @@ pub async fn list_work_item_comments(
 
     Ok(rows
         .into_iter()
-        .map(
-            |(
-                id,
-                body,
-                body_format,
-                is_draft,
-                author_user_id,
-                author_username,
-                author_display_name,
-                created_at,
-                updated_at,
-                parent_comment_id,
-                parent_author_display_name,
-            )| {
-                let (body, is_flow) = normalize_work_item_comment_body(body);
-                WorkItemCommentSummary {
-                    id,
-                    parent_comment_id,
-                    parent_author_display_name,
-                    body,
-                    body_format,
-                    author_user_id,
-                    author_username,
-                    author_display_name,
-                    created_at,
-                    updated_at,
-                    is_flow,
-                    is_draft: is_draft != 0,
-                }
-            },
-        )
+        .map(work_item_comment_summary_from_row)
         .collect())
+}
+
+pub async fn list_work_item_flow_comments_paginated(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    pagination: Pagination,
+) -> AppResult<Paginated<WorkItemCommentSummary>> {
+    let body_prefix = format!("{WORK_ITEM_FLOW_COMMENT_PREFIX}%");
+    let total_items = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_item_comments c
+        WHERE c.work_item_id = ?1
+          AND c.deleted_at IS NULL
+          AND c.is_draft = 0
+          AND c.body LIKE ?2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(&body_prefix)
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            i64,
+            Option<i64>,
+            String,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            c.id,
+            c.body,
+            c.body_format,
+            c.is_draft,
+            c.author_user_id,
+            COALESCE(u.username, '') AS author_username,
+            COALESCE(NULLIF(c.actor_display_name_snapshot, ''), u.display_name, '') AS author_display_name,
+            c.created_at,
+            c.updated_at,
+            c.parent_comment_id,
+            COALESCE(NULLIF(parent.actor_display_name_snapshot, ''), parent_author.display_name, '') AS parent_author_display_name
+        FROM work_item_comments c
+        LEFT JOIN users u ON u.id = c.author_user_id
+        LEFT JOIN work_item_comments parent ON parent.id = c.parent_comment_id
+        LEFT JOIN users parent_author ON parent_author.id = parent.author_user_id
+        WHERE c.work_item_id = ?1
+          AND c.deleted_at IS NULL
+          AND c.is_draft = 0
+          AND c.body LIKE ?2
+        ORDER BY c.created_at DESC, c.id DESC
+        LIMIT ?3 OFFSET ?4
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(&body_prefix)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(Paginated {
+        items: rows
+            .into_iter()
+            .map(work_item_comment_summary_from_row)
+            .collect(),
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items,
+    })
 }
 
 pub async fn update_work_item_status(
@@ -5078,6 +5128,50 @@ fn format_work_item_flow_summary(
         parts.push("记录了一次处理进展".to_string());
     }
     parts.join("；")
+}
+
+fn work_item_comment_summary_from_row(
+    (
+        id,
+        body,
+        body_format,
+        is_draft,
+        author_user_id,
+        author_username,
+        author_display_name,
+        created_at,
+        updated_at,
+        parent_comment_id,
+        parent_author_display_name,
+    ): (
+        i64,
+        String,
+        String,
+        i64,
+        Option<i64>,
+        String,
+        String,
+        String,
+        String,
+        Option<i64>,
+        String,
+    ),
+) -> WorkItemCommentSummary {
+    let (body, is_flow) = normalize_work_item_comment_body(body);
+    WorkItemCommentSummary {
+        id,
+        parent_comment_id,
+        parent_author_display_name,
+        body,
+        body_format,
+        author_user_id,
+        author_username,
+        author_display_name,
+        created_at,
+        updated_at,
+        is_flow,
+        is_draft: is_draft != 0,
+    }
 }
 
 fn validate_work_item_type(item_type: &str) -> AppResult<&'static str> {

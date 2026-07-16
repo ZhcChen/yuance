@@ -2976,6 +2976,33 @@ html[data-theme="dark"] .metric-ornament::before {
   white-space: normal;
 }
 
+.work-item-flow-table {
+  min-width: 900px;
+}
+
+.work-item-flow-table .flow-history-note-col,
+.work-item-flow-table .flow-history-note-cell {
+  white-space: normal;
+}
+
+.work-item-flow-table .flow-history-note-col {
+  width: 30%;
+}
+
+.flow-history-transition {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.flow-history-note-cell {
+  color: var(--muted-strong);
+  line-height: 20px;
+}
+
+.flow-history-empty {
+  min-height: 220px;
+}
+
 .work-table-key {
   display: inline-flex;
   align-items: center;
