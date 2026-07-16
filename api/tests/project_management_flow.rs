@@ -2272,7 +2272,7 @@ async fn web_dashboard_renders_demo_projects_from_database() {
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("YCE"));
     assert!(body.contains("工作项"));
-    assert!(body.contains("开放 / 共"));
+    assert!(body.contains("待处理 / 进行中 / 待确认 · 共"));
     assert!(body.contains("最近动态"));
     assert!(body.contains("RBAC 采用轻量权限点模型"));
     assert!(!body.contains("风险队列"));
@@ -2537,7 +2537,7 @@ async fn web_projects_renders_demo_projects_from_database() {
     assert!(!body.contains("后续附件"));
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("客户线索同步"));
-    assert!(body.contains("开放工作项"));
+    assert!(body.contains("待处理 / 进行中 / 待确认"));
     assert!(body.contains(r#"class="project-card-grid""#));
     assert!(body.contains(r#"class="project-card" href="/web/projects/YCE""#));
     assert!(body.contains(r#"data-modal-open="project-create-modal""#));
@@ -2758,7 +2758,7 @@ async fn web_work_item_list_can_filter_by_query_status_priority_and_project() {
     let body = response_body(response).await;
 
     assert!(body.contains("筛选"));
-    assert!(body.contains("全部开放项"));
+    assert!(body.contains("待处理 / 进行中 / 待确认"));
     assert!(!body.contains("全部待处理"));
     assert!(body.contains("YCE-TASK-2"));
     assert!(body.contains("设计项目与工作项数据模型"));
@@ -2807,14 +2807,10 @@ async fn web_work_item_list_paginates_current_project_items() {
 
     assert!(first_body.contains("当前显示 1-1"));
     assert!(first_body.contains("共 2 条"));
-    assert!(first_body.contains(
-        r#"<span class="metric-label">开放</span>
-      <strong>1</strong>"#
-    ));
-    assert!(first_body.contains(
-        r#"<span class="metric-label">高优先级</span>
-      <strong>2</strong>"#
-    ));
+    assert!(first_body.contains("待处理 / 进行中 / 待确认"));
+    assert!(first_body.contains("<strong>1</strong>"));
+    assert!(first_body.contains("高优先级"));
+    assert!(first_body.contains("<strong>2</strong>"));
     assert!(first_body.contains("aria-label=\"下一页\""));
     assert!(first_body.contains("<table class=\"data-table work-item-table\">"));
     assert!(first_body.contains("<th class=\"work-table-actions\" scope=\"col\">操作</th>"));
@@ -2830,14 +2826,10 @@ async fn web_work_item_list_paginates_current_project_items() {
 
     assert!(second_body.contains("当前显示 2-2"));
     assert!(second_body.contains("共 2 条"));
-    assert!(second_body.contains(
-        r#"<span class="metric-label">开放</span>
-      <strong>1</strong>"#
-    ));
-    assert!(second_body.contains(
-        r#"<span class="metric-label">高优先级</span>
-      <strong>2</strong>"#
-    ));
+    assert!(second_body.contains("待处理 / 进行中 / 待确认"));
+    assert!(second_body.contains("<strong>1</strong>"));
+    assert!(second_body.contains("高优先级"));
+    assert!(second_body.contains("<strong>2</strong>"));
     assert!(second_body.contains("aria-label=\"上一页\""));
     assert!(second_body.contains("project_key=YCE"));
     assert!(second_body.contains("per_page=1"));
@@ -3452,7 +3444,7 @@ async fn web_me_page_renders_profile_projects_and_assigned_items() {
     assert!(body.contains("元策 MVP"));
     assert!(body.contains("指派给我"));
     assert!(body.contains("高优先级"));
-    assert!(body.contains("紧急 / 高 开放项"));
+    assert!(body.contains("紧急 / 高 · 待处理 / 进行中 / 待确认"));
     assert!(body.contains("Personal Access Token"));
     assert!(body.contains("创建访问 Token"));
     assert!(body.contains("编辑资料"));
@@ -9887,7 +9879,7 @@ async fn project_member_remove_requires_open_work_items_to_be_transferred() {
         projects::CreateWorkItemInput {
             project_key: "YCE".to_string(),
             item_type: "task".to_string(),
-            title: "负责成员开放任务".to_string(),
+            title: "负责成员待处理任务".to_string(),
             description: String::new(),
             priority: "P2".to_string(),
             assignee_username: "assigned_member".to_string(),

@@ -53,7 +53,7 @@
         <span class="metric-ornament metric-icon-target" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.assigned_count }}</strong>
-      <span class="metric-hint">{{ summary.open_count }} 个开放</span>
+      <span class="metric-hint">{{ summary.open_count }} 个待处理 / 进行中 / 待确认项</span>
     </article>
     <article class="metric metric-danger">
       <div class="metric-head">
@@ -61,7 +61,7 @@
         <span class="metric-ornament metric-icon-alert" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.high_priority_count }}</strong>
-      <span class="metric-hint">紧急 / 高 开放项</span>
+      <span class="metric-hint">紧急 / 高 · 待处理 / 进行中 / 待确认</span>
     </article>
   </section>
 
@@ -150,7 +150,7 @@
           <li>
             <span class="activity-dot" aria-hidden="true"></span>
             <strong><a href="/web/projects/{{ project.code }}">{{ project.name }}</a></strong>
-            <span>{{ project.code }} · {{ project.status }} · {{ project.open_work_items }} 个开放</span>
+            <span>{{ project.code }} · {{ project.status }} · {{ project.open_work_items }} 个待处理 / 进行中 / 待确认项</span>
           </li>
           {% endfor %}
         </ol>
@@ -267,7 +267,7 @@
               <input type="checkbox" name="project_scope_projects" value="{{ project.code }}" data-token-project-option>
               <span>
                 <strong>{{ project.name }}</strong>
-                <small>{{ project.code }} · {{ project.status }} · {{ project.open_work_items }} 个开放项</small>
+                <small>{{ project.code }} · {{ project.status }} · {{ project.open_work_items }} 个待处理 / 进行中 / 待确认项</small>
               </span>
             </label>
             {% endfor %}

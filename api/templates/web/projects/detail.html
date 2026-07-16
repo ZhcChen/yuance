@@ -58,7 +58,7 @@
         <span class="metric-ornament metric-icon-users" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.members }}</strong>
-      <span class="metric-hint">{{ summary.open_items }} 个开放工作项</span>
+      <span class="metric-hint">{{ summary.open_items }} 个待处理 / 进行中 / 待确认项</span>
     </article>
   </section>
 
@@ -125,7 +125,7 @@
                 <dd>{{ project.updated_at }}</dd>
               </div>
               <div>
-                <dt>开放工作项</dt>
+                <dt>待处理 / 进行中 / 待确认</dt>
                 <dd>{{ summary.open_items }}</dd>
               </div>
             </dl>

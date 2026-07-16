@@ -22,7 +22,7 @@
       <div class="panel-head">
         <div>
           <h1>项目推进</h1>
-          <p>按最近更新排序，展示你有权限查看的全部项目开放工作项压力。</p>
+          <p>按最近更新排序，展示你有权限查看的全部项目待处理 / 进行中 / 待确认情况。</p>
         </div>
         <div class="toolbar-actions">
           {% if can_manage_projects %}
@@ -54,7 +54,7 @@
               <td>
                 <div class="work-count-cell">
                   <strong>{{ project.open_work_items }}</strong>
-                  <span>开放 / 共 {{ project.total_work_items }}</span>
+                  <span>待处理 / 进行中 / 待确认 · 共 {{ project.total_work_items }}</span>
                 </div>
               </td>
               <td>

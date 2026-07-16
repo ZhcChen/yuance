@@ -15,11 +15,11 @@
     </article>
     <article class="metric metric-warning">
       <div class="metric-head">
-        <span class="metric-label">开放</span>
+        <span class="metric-label">待处理 / 进行中 / 待确认</span>
         <span class="metric-ornament metric-icon-inbox" aria-hidden="true"></span>
       </div>
       <strong>{{ summary.open_items }}</strong>
-      <span class="metric-hint">待处理 / 进行中 / 待确认</span>
+      <span class="metric-hint">这 3 种状态合计</span>
     </article>
     <article class="metric metric-danger">
       <div class="metric-head">
@@ -61,7 +61,7 @@
         状态
         <select name="status">
           <option value="">全部状态</option>
-          <option value="pending" {% if filters.status == "pending" %}selected{% endif %}>全部开放项</option>
+          <option value="pending" {% if filters.status == "pending" %}selected{% endif %}>待处理 / 进行中 / 待确认</option>
           <option value="open" {% if filters.status == "open" %}selected{% endif %}>待处理</option>
           <option value="in_progress" {% if filters.status == "in_progress" %}selected{% endif %}>进行中</option>
           <option value="pending_confirmation" {% if filters.status == "pending_confirmation" %}selected{% endif %}>待确认</option>
