@@ -19,17 +19,26 @@
 
   <section class="metric-grid compact-metrics" aria-label="项目概览">
     <article class="metric metric-info">
-      <span class="metric-label">全部项目</span>
+      <div class="metric-head">
+        <span class="metric-label">全部项目</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.total_projects }}</strong>
       <span class="metric-hint">当前可见项目</span>
     </article>
     <article class="metric metric-ok">
-      <span class="metric-label">进行中</span>
+      <div class="metric-head">
+        <span class="metric-label">进行中</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.active_projects }}</strong>
       <span class="metric-hint">待启动 / 进行中 / 验收中</span>
     </article>
     <article class="metric metric-warning">
-      <span class="metric-label">开放工作项</span>
+      <div class="metric-head">
+        <span class="metric-label">开放工作项</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.open_work_items }}</strong>
       <span class="metric-hint">未关闭需求 / 任务 / Bug</span>
     </article>

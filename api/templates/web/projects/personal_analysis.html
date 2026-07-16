@@ -17,7 +17,10 @@
   <section class="metric-grid" aria-label="个人处理产出">
     {% for metric in output_metrics %}
     <article class="metric metric-{{ metric.tone }}">
-      <span class="metric-label">{{ metric.label }}</span>
+      <div class="metric-head">
+        <span class="metric-label">{{ metric.label }}</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ metric.value }}</strong>
       <span class="metric-hint">{{ metric.hint }}</span>
     </article>
@@ -32,7 +35,10 @@
     <div class="metric-grid compact-metrics">
       {% for metric in efficiency_metrics %}
       <article class="metric metric-{{ metric.tone }}">
-        <span class="metric-label">{{ metric.label }}</span>
+        <div class="metric-head">
+          <span class="metric-label">{{ metric.label }}</span>
+          <span class="metric-ornament" aria-hidden="true"></span>
+        </div>
         <strong>{{ metric.value }}</strong>
         <span class="metric-hint">{{ metric.hint }}</span>
       </article>

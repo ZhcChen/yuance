@@ -40,17 +40,26 @@
 
   <section class="metric-grid compact-metrics" aria-label="我的概览">
     <article class="metric metric-info">
-      <span class="metric-label">参与项目</span>
+      <div class="metric-head">
+        <span class="metric-label">参与项目</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.project_count }}</strong>
       <span class="metric-hint">当前可见项目</span>
     </article>
     <article class="metric metric-warning">
-      <span class="metric-label">指派给我</span>
+      <div class="metric-head">
+        <span class="metric-label">指派给我</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.assigned_count }}</strong>
       <span class="metric-hint">{{ summary.open_count }} 个开放</span>
     </article>
     <article class="metric metric-danger">
-      <span class="metric-label">高优先级</span>
+      <div class="metric-head">
+        <span class="metric-label">高优先级</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.high_priority_count }}</strong>
       <span class="metric-hint">紧急 / 高 工作项</span>
     </article>

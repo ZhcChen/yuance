@@ -29,22 +29,34 @@
 
   <section class="metric-grid detail-metrics" aria-label="项目详情概览">
     <article class="metric metric-info">
-      <span class="metric-label">需求</span>
+      <div class="metric-head">
+        <span class="metric-label">需求</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.requirements }}</strong>
       <span class="metric-hint">项目需求</span>
     </article>
     <article class="metric metric-warning">
-      <span class="metric-label">任务</span>
+      <div class="metric-head">
+        <span class="metric-label">任务</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.tasks }}</strong>
       <span class="metric-hint">执行工作</span>
     </article>
     <article class="metric metric-danger">
-      <span class="metric-label">Bug</span>
+      <div class="metric-head">
+        <span class="metric-label">Bug</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.bugs }}</strong>
       <span class="metric-hint">缺陷跟踪</span>
     </article>
     <article class="metric metric-ok">
-      <span class="metric-label">成员</span>
+      <div class="metric-head">
+        <span class="metric-label">成员</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.members }}</strong>
       <span class="metric-hint">{{ summary.open_items }} 个开放工作项</span>
     </article>

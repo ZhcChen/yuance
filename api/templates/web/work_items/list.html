@@ -6,17 +6,26 @@
 <section class="page-stack">
   <section class="metric-grid compact-metrics" aria-label="工作项概览">
     <article class="metric metric-info">
-      <span class="metric-label">全部</span>
+      <div class="metric-head">
+        <span class="metric-label">全部</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.total_items }}</strong>
       <span class="metric-hint">当前类型工作项</span>
     </article>
     <article class="metric metric-warning">
-      <span class="metric-label">开放</span>
+      <div class="metric-head">
+        <span class="metric-label">开放</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.open_items }}</strong>
       <span class="metric-hint">待处理 / 进行中</span>
     </article>
     <article class="metric metric-danger">
-      <span class="metric-label">高优先级</span>
+      <div class="metric-head">
+        <span class="metric-label">高优先级</span>
+        <span class="metric-ornament" aria-hidden="true"></span>
+      </div>
       <strong>{{ summary.high_priority_items }}</strong>
       <span class="metric-hint">紧急 / 高</span>
     </article>

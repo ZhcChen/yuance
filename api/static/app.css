@@ -2500,7 +2500,7 @@ textarea:focus-visible {
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 14px;
 }
 
 .compact-metrics {
@@ -2512,41 +2512,156 @@ textarea:focus-visible {
 }
 
 .metric {
+  --metric-accent: var(--brand);
+  --metric-accent-strong: var(--brand-strong);
+  --metric-soft: var(--brand-soft);
+  --metric-line: var(--brand-line);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: grid;
-  gap: 6px;
-  padding: 14px;
-  border: 0;
-  border-radius: var(--card-radius);
-  background: var(--panel);
-  box-shadow: var(--card-shadow);
+  align-content: start;
+  gap: 12px;
+  min-height: 132px;
+  padding: 18px 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--metric-line) 82%, transparent);
+  border-radius: calc(var(--card-radius) + 2px);
+  background:
+    radial-gradient(circle at 110% -10%, color-mix(in srgb, var(--metric-soft) 92%, transparent) 0, transparent 38%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 72%, var(--metric-soft)) 0%, var(--panel) 100%);
+  box-shadow: 0 14px 32px rgb(22 34 50 / 8%), 0 2px 8px rgb(22 34 50 / 5%);
+  transition: transform var(--motion-base) ease, box-shadow var(--motion-base) ease, border-color var(--motion-fast) ease;
+}
+
+.metric::before {
+  content: "";
+  position: absolute;
+  right: -26px;
+  bottom: -28px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--metric-soft) 88%, transparent) 0 32%, transparent 72%);
+  opacity: 0.8;
+  z-index: -1;
+}
+
+.metric:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+
+.metric-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .metric-label,
 .metric-hint {
-  color: var(--muted);
   font-size: 12px;
 }
 
+.metric-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: calc(100% - 58px);
+  padding: 6px 12px 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--metric-line) 86%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--metric-soft) 84%, var(--panel));
+  color: var(--metric-accent-strong);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.metric-label::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--metric-accent);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--metric-soft) 92%, transparent);
+}
+
+.metric-ornament {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border: 1px solid color-mix(in srgb, var(--metric-line) 92%, transparent);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 78%), transparent),
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 88%, white 12%) 0 100%) left 13px bottom 11px / 4px 14px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 82%, white 18%) 0 100%) center bottom 11px / 4px 22px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--metric-accent) 74%, white 26%) 0 100%) right 13px bottom 11px / 4px 10px no-repeat,
+    linear-gradient(145deg, color-mix(in srgb, var(--metric-soft) 82%, var(--panel)) 0%, color-mix(in srgb, var(--panel) 94%, transparent) 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 75%);
+}
+
+html[data-theme="dark"] .metric-ornament {
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 8%);
+}
+
 .metric strong {
-  font-size: 28px;
-  line-height: 32px;
-  letter-spacing: -0.04em;
+  color: var(--metric-accent-strong);
+  font-size: clamp(32px, 2.4vw, 40px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
 }
 
-.metric-info strong {
-  color: var(--brand);
+.metric-hint {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 22px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--metric-line) 72%, transparent);
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.metric-warning strong {
-  color: var(--warning);
+.metric-hint::before {
+  content: "";
+  flex: 0 0 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--metric-accent) 0%, color-mix(in srgb, var(--metric-soft) 90%, transparent) 100%);
 }
 
-.metric-danger strong {
-  color: var(--danger);
+.metric-info {
+  --metric-accent: var(--brand);
+  --metric-accent-strong: var(--brand-strong);
+  --metric-soft: var(--brand-soft);
+  --metric-line: var(--brand-line);
 }
 
-.metric-ok strong {
-  color: var(--accent);
+.metric-warning {
+  --metric-accent: var(--warning);
+  --metric-accent-strong: color-mix(in srgb, var(--warning) 84%, var(--text) 16%);
+  --metric-soft: var(--warning-bg);
+  --metric-line: var(--warning-line);
+}
+
+.metric-danger {
+  --metric-accent: var(--danger);
+  --metric-accent-strong: var(--danger);
+  --metric-soft: var(--danger-bg);
+  --metric-line: var(--danger-line);
+}
+
+.metric-ok {
+  --metric-accent: var(--accent);
+  --metric-accent-strong: var(--success-text);
+  --metric-soft: var(--success-bg);
+  --metric-line: var(--success-line);
 }
 
 .panel {
