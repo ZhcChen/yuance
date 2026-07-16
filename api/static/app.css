@@ -2528,10 +2528,9 @@ textarea:focus-visible {
   border-radius: var(--card-radius);
   background:
     linear-gradient(
-      90deg,
+      180deg,
       var(--panel) 0%,
-      var(--panel) 64%,
-      color-mix(in srgb, var(--metric-soft) 74%, var(--panel)) 100%
+      color-mix(in srgb, var(--panel) 94%, var(--metric-soft) 6%) 100%
     );
   box-shadow: var(--card-shadow);
   transition: box-shadow var(--motion-base) ease, border-color var(--motion-fast) ease, background var(--motion-fast) ease;
@@ -2556,13 +2555,13 @@ textarea:focus-visible {
   content: "";
   position: absolute;
   top: 50%;
-  right: 10px;
-  width: 76px;
-  height: 76px;
+  right: 12px;
+  width: 64px;
+  height: 64px;
   transform: translateY(-50%);
   border-radius: 50%;
-  background: radial-gradient(circle at center, color-mix(in srgb, var(--metric-accent) 18%, transparent) 0%, transparent 72%);
-  opacity: 0.9;
+  background: radial-gradient(circle at center, color-mix(in srgb, var(--metric-accent) 10%, transparent) 0%, transparent 70%);
+  opacity: 0.55;
   pointer-events: none;
 }
 
@@ -2603,25 +2602,16 @@ textarea:focus-visible {
   position: absolute;
   top: 50%;
   right: 14px;
-  width: 54px;
-  height: 54px;
+  width: 48px;
+  height: 48px;
   transform: translateY(-50%);
-  border: 1px solid color-mix(in srgb, var(--metric-accent) 40%, white 60%);
-  border-radius: 18px;
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--metric-accent) 62%, white 38%) 0%,
-      color-mix(in srgb, var(--metric-accent) 88%, white 12%) 56%,
-      color-mix(in srgb, var(--metric-accent) 74%, black 26%) 100%
-    );
-  box-shadow:
-    0 14px 28px color-mix(in srgb, var(--metric-accent) 22%, transparent),
-    inset 0 1px 0 rgb(255 255 255 / 36%),
-    inset 0 -10px 16px rgb(0 0 0 / 12%);
+  border: 1px solid color-mix(in srgb, var(--metric-line) 78%, var(--line) 22%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--metric-soft) 72%, var(--panel) 28%);
+  box-shadow: none;
   opacity: 1;
   overflow: hidden;
-  color: rgb(255 255 255 / 0.98);
+  color: color-mix(in srgb, var(--metric-accent) 88%, var(--text) 12%);
 }
 
 .metric-ornament::before {
@@ -2629,37 +2619,28 @@ textarea:focus-visible {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background:
-    radial-gradient(circle at 28% 24%, rgb(255 255 255 / 36%) 0 16%, transparent 17%),
-    linear-gradient(145deg, rgb(255 255 255 / 28%) 0%, transparent 44%),
-    linear-gradient(180deg, transparent 58%, rgb(0 0 0 / 12%) 100%);
-  opacity: 0.98;
+  border: 1px solid rgb(255 255 255 / 38%);
+  opacity: 1;
 }
 
 .metric-ornament::after {
   content: "";
   position: absolute;
-  inset: 12px;
+  inset: 11px;
   background: currentColor;
-  -webkit-mask: var(--metric-icon) center / 22px 22px no-repeat;
-  mask: var(--metric-icon) center / 22px 22px no-repeat;
-  filter: drop-shadow(0 1px 0 rgb(255 255 255 / 12%));
+  -webkit-mask: var(--metric-icon) center / 20px 20px no-repeat;
+  mask: var(--metric-icon) center / 20px 20px no-repeat;
   opacity: 1;
 }
 
 html[data-theme="dark"] .metric-ornament {
-  border-color: color-mix(in srgb, var(--metric-accent) 52%, white 10%);
-  background:
-    linear-gradient(
-      145deg,
-      color-mix(in srgb, var(--metric-accent) 54%, white 14%) 0%,
-      color-mix(in srgb, var(--metric-accent) 82%, black 18%) 58%,
-      color-mix(in srgb, var(--metric-accent) 64%, black 36%) 100%
-    );
-  box-shadow:
-    0 16px 30px color-mix(in srgb, var(--metric-accent) 24%, transparent),
-    inset 0 1px 0 rgb(255 255 255 / 12%),
-    inset 0 -10px 16px rgb(0 0 0 / 24%);
+  border-color: color-mix(in srgb, var(--metric-line) 76%, var(--line) 24%);
+  background: color-mix(in srgb, var(--metric-soft) 48%, var(--panel) 52%);
+  color: color-mix(in srgb, var(--metric-accent) 72%, white 28%);
+}
+
+html[data-theme="dark"] .metric-ornament::before {
+  border-color: rgb(255 255 255 / 8%);
 }
 
 .metric-icon-grid {
