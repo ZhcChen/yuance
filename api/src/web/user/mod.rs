@@ -6040,7 +6040,7 @@ fn metrics_from_data(
         .iter()
         .filter(|item| {
             item.item_type == "bug"
-                && is_open_status(&item.status)
+                && is_active_work_item_status(&item.status)
                 && is_high_priority_code(&item.priority)
         })
         .count();
@@ -6270,7 +6270,7 @@ fn project_detail_summary(
         .iter()
         .chain(tasks)
         .chain(bugs)
-        .filter(|item| is_open_status(&item.status_code))
+        .filter(|item| is_active_work_item_status(&item.status_code))
         .count();
 
     ProjectDetailSummary {
@@ -6975,12 +6975,13 @@ fn my_summary(projects: &[ProjectRow], assigned_items: &[WorkItem]) -> MySummary
         assigned_count: assigned_items.len(),
         pending_in_progress_confirmation_count: assigned_items
             .iter()
-            .filter(|item| is_open_status(&item.status_code))
+            .filter(|item| is_active_work_item_status(&item.status_code))
             .count(),
         high_priority_count: assigned_items
             .iter()
             .filter(|item| {
-                is_open_status(&item.status_code) && is_high_priority_code(&item.priority_code)
+                is_active_work_item_status(&item.status_code)
+                    && is_high_priority_code(&item.priority_code)
             })
             .count(),
     }
@@ -7340,7 +7341,7 @@ fn paginate_project_views(
 fn work_item_list_summary_from_stats(stats: projects::WorkItemListStats) -> WorkItemListSummary {
     WorkItemListSummary {
         total_items: stats.total_items,
-        pending_in_progress_confirmation_count: stats.open_items,
+        pending_in_progress_confirmation_count: stats.active_items,
         high_priority_items: stats.high_priority_items,
     }
 }
@@ -7350,7 +7351,7 @@ fn work_item_list_summary_from_items(items: &[WorkItem], total_items: i64) -> Wo
         total_items,
         pending_in_progress_confirmation_count: items
             .iter()
-            .filter(|item| is_open_status(&item.status_code))
+            .filter(|item| is_active_work_item_status(&item.status_code))
             .count() as i64,
         high_priority_items: items
             .iter()
@@ -8082,7 +8083,7 @@ fn work_item_status_options(
         .collect()
 }
 
-fn is_open_status(status: &str) -> bool {
+fn is_active_work_item_status(status: &str) -> bool {
     !matches!(
         status,
         "done" | "closed" | "resolved" | "verified" | "cancelled"
@@ -8845,7 +8846,7 @@ mod tests {
     }
 
     #[test]
-    fn summaries_exclude_cancelled_items_from_open_counts() {
+    fn summaries_exclude_cancelled_items_from_active_counts() {
         let items = vec![
             sample_work_item("open", "待处理", "P2"),
             sample_work_item("in_progress", "进行中", "P2"),
@@ -8864,7 +8865,7 @@ mod tests {
     }
 
     #[test]
-    fn my_summary_only_counts_open_high_priority_items() {
+    fn my_summary_only_counts_active_high_priority_items() {
         let items = vec![
             sample_work_item("open", "待处理", "P0"),
             sample_work_item("in_progress", "进行中", "P1"),

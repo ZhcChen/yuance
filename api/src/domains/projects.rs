@@ -249,7 +249,7 @@ pub struct WorkItemListFilter {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorkItemListStats {
     pub total_items: i64,
-    pub open_items: i64,
+    pub active_items: i64,
     pub high_priority_items: i64,
 }
 
@@ -1166,11 +1166,11 @@ pub async fn remove_project_member(
             "项目负责人不能从项目成员中移除".to_string(),
         ));
     }
-    let assigned_open_count =
-        count_open_work_items_assigned_to_user(pool, project_id, user_id).await?;
-    if assigned_open_count > 0 {
+    let assigned_active_count =
+        count_active_work_items_assigned_to_user(pool, project_id, user_id).await?;
+    if assigned_active_count > 0 {
         return Err(AppError::BadRequest(format!(
-            "该成员仍负责 {assigned_open_count} 个未关闭工作项，请先转交处理人"
+            "该成员仍负责 {assigned_active_count} 个待处理 / 进行中 / 待确认工作项，请先转交处理人"
         )));
     }
 
@@ -1211,7 +1211,7 @@ pub async fn remove_project_member(
     Ok(())
 }
 
-async fn count_open_work_items_assigned_to_user(
+async fn count_active_work_items_assigned_to_user(
     pool: &SqlitePool,
     project_id: i64,
     user_id: i64,
@@ -1842,7 +1842,7 @@ pub async fn work_item_list_stats_filtered_for_user(
         r#"
         SELECT
             COUNT(*) AS total_items,
-            COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS open_items,
+            COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS active_items,
             COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
@@ -1877,7 +1877,7 @@ pub async fn work_item_list_stats_filtered_for_user(
 
     Ok(WorkItemListStats {
         total_items: row.0,
-        open_items: row.1,
+        active_items: row.1,
         high_priority_items: row.2,
     })
 }
@@ -4306,7 +4306,7 @@ async fn work_item_list_stats_filtered(
         r#"
         SELECT
             COUNT(*) AS total_items,
-            COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS open_items,
+            COALESCE(SUM(CASE WHEN wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled') THEN 1 ELSE 0 END), 0) AS active_items,
             COALESCE(SUM(CASE WHEN wi.priority IN ('P0', 'P1') THEN 1 ELSE 0 END), 0) AS high_priority_items
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
@@ -4338,7 +4338,7 @@ async fn work_item_list_stats_filtered(
 
     Ok(WorkItemListStats {
         total_items: row.0,
-        open_items: row.1,
+        active_items: row.1,
         high_priority_items: row.2,
     })
 }

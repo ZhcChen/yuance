@@ -9859,7 +9859,7 @@ async fn web_project_member_management_grants_and_revokes_project_access() {
 }
 
 #[tokio::test]
-async fn project_member_remove_requires_open_work_items_to_be_transferred() {
+async fn project_member_remove_requires_active_work_items_to_be_transferred() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
