@@ -306,6 +306,7 @@
         </div>
       </div>
       <div class="preview-actions">
+        <a class="preview-link preview-link-secondary" href="{{ source_url }}">{{ source_label }}</a>
         {% if has_previous %}
         <a class="preview-link preview-link-secondary" href="{{ previous_url }}" title="{{ previous_title }}" data-preview-nav="previous">上一份</a>
         {% else %}
@@ -328,6 +329,7 @@
           <strong>当前无法预览</strong>
           <p>{{ error_message }}</p>
           <div class="preview-error-actions">
+            <a class="preview-link preview-link-secondary" href="{{ source_url }}">{{ source_label }}</a>
             {% if has_previous %}
             <a class="preview-link preview-link-secondary" href="{{ previous_url }}" title="{{ previous_title }}" data-preview-nav="previous">上一份</a>
             {% endif %}

@@ -885,6 +885,8 @@ struct WorkItemFlowHistoryPartialTemplate {
 #[template(path = "web/document_preview.html")]
 struct DocumentPreviewTemplate {
     title: String,
+    source_url: String,
+    source_label: String,
     kind_label: String,
     file_type_badge: String,
     meta_text: String,
@@ -2849,6 +2851,8 @@ pub async fn project_attachment_preview(
             pool,
             context.user_id,
             attachment,
+            format!("/web/projects/{project_key}"),
+            "返回项目".to_string(),
             navigation,
             "project",
             &project_key,
@@ -3268,6 +3272,8 @@ pub async fn project_resource_attachment_preview(
             pool,
             context.user_id,
             attachment,
+            format!("/web/projects/{project_key}/resources/{resource_id}{access_suffix}"),
+            "返回资料".to_string(),
             navigation,
             "project_resource",
             &resource.id.to_string(),
@@ -3999,6 +4005,8 @@ pub async fn work_item_attachment_preview(
             pool,
             context.user_id,
             attachment,
+            format!("/web/work-items/{item_key}"),
+            "返回工作项".to_string(),
             navigation,
             "work_item",
             &item_key,
@@ -4158,6 +4166,8 @@ pub async fn work_item_comment_attachment_preview(
             pool,
             context.user_id,
             attachment,
+            format!("/web/work-items/{item_key}#comment-{comment_id}"),
+            "返回评论".to_string(),
             navigation,
             "comment",
             &comment_id.to_string(),
@@ -7346,6 +7356,8 @@ async fn attachment_document_preview_response(
     pool: &SqlitePool,
     actor_user_id: i64,
     attachment: files::FileAttachmentSummary,
+    source_url: String,
+    source_label: String,
     navigation: DocumentPreviewNavigation,
     target_type: &str,
     target_id: &str,
@@ -7363,8 +7375,16 @@ async fn attachment_document_preview_response(
     .await?;
 
     let template =
-        build_document_preview_template(state, pool, attachment, navigation, download_url.to_string())
-            .await?;
+        build_document_preview_template(
+            state,
+            pool,
+            attachment,
+            source_url,
+            source_label,
+            navigation,
+            download_url.to_string(),
+        )
+        .await?;
     Ok(response::html(template)?.into_response())
 }
 
@@ -7372,6 +7392,8 @@ async fn build_document_preview_template(
     state: &AppState,
     pool: &SqlitePool,
     attachment: files::FileAttachmentSummary,
+    source_url: String,
+    source_label: String,
     navigation: DocumentPreviewNavigation,
     download_url: String,
 ) -> AppResult<DocumentPreviewTemplate> {
@@ -7379,6 +7401,8 @@ async fn build_document_preview_template(
     if attachment.status == "deleted" {
         return Ok(document_preview_error_template(
             title,
+            source_url,
+            source_label,
             navigation,
             download_url,
             "附件已归档，不能预览。".to_string(),
@@ -7387,6 +7411,8 @@ async fn build_document_preview_template(
     if attachment.status != "uploaded" {
         return Ok(document_preview_error_template(
             title,
+            source_url,
+            source_label,
             navigation,
             download_url,
             "附件尚未上传完成，请稍后再试。".to_string(),
@@ -7398,6 +7424,8 @@ async fn build_document_preview_template(
     else {
         return Ok(document_preview_error_template(
             title,
+            source_url,
+            source_label,
             navigation,
             download_url,
             "当前文件类型暂不支持文档预览。".to_string(),
@@ -7408,6 +7436,8 @@ async fn build_document_preview_template(
     else {
         return Ok(document_preview_error_template(
             title,
+            source_url,
+            source_label,
             navigation,
             download_url,
             "当前文件类型暂不支持文档预览。".to_string(),
@@ -7416,6 +7446,8 @@ async fn build_document_preview_template(
     let Some(document_server_url) = onlyoffice_document_server_url(&state.settings) else {
         return Ok(document_preview_error_template(
             title,
+            source_url,
+            source_label,
             navigation,
             download_url,
             "文档预览服务尚未配置，请先设置 ONLYOFFICE 文档服务地址。".to_string(),
@@ -7427,6 +7459,8 @@ async fn build_document_preview_template(
     {
         return Ok(document_preview_error_template(
             title,
+            source_url,
+            source_label,
             navigation,
             download_url,
             "当前环境仍在使用测试存储，ONLYOFFICE 无法访问该文件。请切换到对象存储后再预览。".to_string(),
@@ -7454,6 +7488,8 @@ async fn build_document_preview_template(
 
     Ok(DocumentPreviewTemplate {
         title,
+        source_url,
+        source_label,
         kind_label,
         file_type_badge,
         meta_text,
@@ -7491,6 +7527,8 @@ async fn build_document_preview_template(
 
 fn document_preview_error_template(
     title: String,
+    source_url: String,
+    source_label: String,
     navigation: DocumentPreviewNavigation,
     download_url: String,
     error_message: String,
@@ -7504,6 +7542,8 @@ fn document_preview_error_template(
         .to_string();
     DocumentPreviewTemplate {
         title,
+        source_url,
+        source_label,
         kind_label: fallback_kind_label,
         file_type_badge: fallback_file_type,
         meta_text: "当前无法直接加载在线预览，可以刷新后重试或下载原文件。".to_string(),
