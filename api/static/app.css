@@ -1069,7 +1069,7 @@ body {
 
 .discussion-thread {
   display: grid;
-  gap: 0;
+  gap: 16px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1079,13 +1079,19 @@ body {
   display: grid;
   grid-template-columns: var(--discussion-avatar-size) minmax(0, 1fr);
   gap: var(--discussion-column-gap);
-  padding: 20px 0;
-  border-bottom: 1px solid var(--line);
+  align-items: flex-start;
+  padding: 0;
 }
 
 .discussion-post-content {
   width: 100%;
   min-width: 0;
+  display: grid;
+  gap: 0;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--card-shadow);
 }
 
 .discussion-post-head {
@@ -1140,7 +1146,7 @@ body {
 }
 
 .discussion-post-body {
-  margin-top: 9px;
+  margin-top: 10px;
   color: var(--text);
   font-size: 14px;
   line-height: 1.75;
@@ -1152,7 +1158,9 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
 }
 
 .discussion-reply-form {
@@ -1168,6 +1176,10 @@ body {
 
 .discussion-reply-form textarea {
   min-height: 76px;
+}
+
+.discussion-post-content > .discussion-reply-form {
+  margin-top: 14px;
 }
 
 .discussion-replying-to {
@@ -1895,7 +1907,7 @@ textarea:focus-visible {
 .message-empty { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 
 .discussion-post { scroll-margin-top: calc(var(--topbar-height) + 20px); }
-.discussion-post:target { animation: comment-target-highlight 1800ms ease-out; }
+.discussion-post:target .discussion-post-content { animation: comment-target-highlight 1800ms ease-out; }
 @keyframes comment-target-highlight {
   0%, 35% { background: var(--brand-soft); box-shadow: 0 0 0 8px var(--brand-soft); }
   100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
