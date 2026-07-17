@@ -170,7 +170,7 @@ pub async fn create_token(
     .await?;
     if active_token_count >= MAX_ACTIVE_TOKENS_PER_USER {
         return Err(AppError::BadRequest(format!(
-            "每个用户最多可同时保留 {MAX_ACTIVE_TOKENS_PER_USER} 个访问 Token，请先撤销不再使用的 Token"
+            "每个用户最多可同时保留 {MAX_ACTIVE_TOKENS_PER_USER} 个访问 Token，请先删除不再使用的 Token"
         )));
     }
 
@@ -253,6 +253,26 @@ pub async fn revoke_token(
     }
 
     get_token_for_user(pool, user_id, token_id).await
+}
+
+pub async fn delete_token(
+    pool: &SqlitePool,
+    user_id: i64,
+    token_id: i64,
+) -> AppResult<ApiTokenSummary> {
+    let token = get_token_for_user(pool, user_id, token_id).await?;
+    sqlx::query(
+        r#"
+        DELETE FROM api_tokens
+        WHERE id = ?1
+          AND user_id = ?2
+        "#,
+    )
+    .bind(token_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    Ok(token)
 }
 
 pub async fn token_has_scope_for_user(

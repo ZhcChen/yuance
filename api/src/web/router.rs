@@ -57,8 +57,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/me/password", post(web::user::me_password_update))
         .route("/web/me/api-tokens", post(web::user::me_api_token_create))
         .route(
-            "/web/me/api-tokens/{token_id}/revoke",
-            post(web::user::me_api_token_revoke),
+            "/web/me/api-tokens/{token_id}/delete",
+            post(web::user::me_api_token_delete),
         )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
@@ -273,7 +273,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/me/tokens/{token_id}",
-            delete(web::api::revoke_api_token),
+            delete(web::api::delete_api_token),
         )
         .route(
             "/api/v1/bootstrap/init",

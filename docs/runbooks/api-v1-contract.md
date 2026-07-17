@@ -155,7 +155,7 @@ notification:read
 重要语义：
 
 - `GET/POST/DELETE /api/v1/me/tokens*` 只能通过浏览器 Cookie session 使用，不能用 PAT 管理其它 PAT。
-- PAT 过期或撤销后，Bearer 请求返回 `401 unauthorized`。
+- PAT 过期、已删除或已失效后，Bearer 请求返回 `401 unauthorized`。
 - PAT 缺少接口所需 scope 时，返回 `403 forbidden`。
 - `project_scope` 为 `all` 表示允许访问当前用户可见的全部项目；也可以填写单个项目编号或逗号分隔项目编号，例如 `YCE,OPS`。
 - 对列表接口，PAT 会按 `project_scope` 缩小项目和工作项结果集；对单项目接口，越权项目会返回 `403 forbidden`。

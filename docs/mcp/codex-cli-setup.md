@@ -283,7 +283,7 @@ Codex CLI 接入元策后，推荐始终按这个顺序工作：
 说明通常是：
 
 - `YUANCE_API_TOKEN` 复制错了
-- Token 已撤销
+- Token 已删除
 - Token 已过期
 
 优先检查：

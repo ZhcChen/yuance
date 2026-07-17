@@ -119,14 +119,10 @@
                 <td class="token-expires-col">{{ token.expires_at }}</td>
                 <td class="token-last-used-col">{{ token.last_used_at }}</td>
                 <td class="table-actions sticky-col sticky-col-right token-action-col">
-                  {% if token.is_revoked %}
-                  <span class="muted-text">已撤销</span>
-                  {% else %}
-                  <form method="post" action="/web/me/api-tokens/{{ token.id }}/revoke" data-confirm-submit-form data-confirm-title="撤销访问 Token" data-confirm-message="撤销后依赖该 Token 的 MCP 或脚本会立即失效。" data-confirm-action="撤销">
+                  <form method="post" action="/web/me/api-tokens/{{ token.id }}/delete" data-confirm-submit-form data-confirm-title="删除访问 Token" data-confirm-message="删除后不可恢复，依赖该 Token 的 MCP 或脚本会立即失效。" data-confirm-action="删除">
                     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                    <button class="btn btn-sm btn-danger" type="submit" data-confirm-submit>撤销</button>
+                    <button class="btn btn-sm btn-danger" type="submit" data-confirm-submit>删除</button>
                   </form>
-                  {% endif %}
                 </td>
               </tr>
               {% endfor %}

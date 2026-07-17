@@ -1387,7 +1387,7 @@ pub struct MeApiTokenCreateForm {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct MeApiTokenRevokeForm {
+pub struct MeApiTokenDeleteForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
 }
@@ -1756,11 +1756,11 @@ pub async fn me_api_token_create(
     render_me_response(&state, &headers, context, raw_token).await
 }
 
-pub async fn me_api_token_revoke(
+pub async fn me_api_token_delete(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(token_id): Path<i64>,
-    Form(form): Form<MeApiTokenRevokeForm>,
+    Form(form): Form<MeApiTokenDeleteForm>,
 ) -> AppResult<Response> {
     csrf::verify(&headers, &form.csrf_token)?;
     let context = match web_context_or_redirect(&state, &headers).await? {
@@ -1768,11 +1768,11 @@ pub async fn me_api_token_revoke(
         Err(response) => return Ok(response),
     };
     if let Some(pool) = context.pool {
-        let token = api_tokens::revoke_token(pool, context.user_id, token_id).await?;
+        let token = api_tokens::delete_token(pool, context.user_id, token_id).await?;
         audit::record(
             pool,
             Some(context.user_id),
-            "api_token.revoke",
+            "api_token.delete",
             "api_token",
             &token.id.to_string(),
             r#"{"source":"web"}"#,
@@ -8478,6 +8478,7 @@ fn audit_action_label(action: &str) -> &str {
         "role.create" => "创建角色",
         "role.status.update" => "更新角色状态",
         "role.permissions.update" => "更新角色权限",
+        "api_token.delete" => "删除访问 Token",
         _ => action,
     }
 }

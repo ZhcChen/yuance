@@ -239,7 +239,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "撤销当前用户 PAT",
+        "summary": "删除当前用户 PAT",
         "parameters": [
           {
             "$ref": "#/components/parameters/TokenId"
@@ -247,7 +247,7 @@
         ],
         "responses": {
           "200": {
-            "description": "撤销后的 token 元信息",
+            "description": "删除前的 token 元信息",
             "content": {
               "application/json": {
                 "schema": {

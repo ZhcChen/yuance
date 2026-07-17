@@ -3393,7 +3393,7 @@ pub async fn create_api_token(
     ))
 }
 
-pub async fn revoke_api_token(
+pub async fn delete_api_token(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(token_id): Path<i64>,
@@ -3402,11 +3402,11 @@ pub async fn revoke_api_token(
     let user = require_api_user(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    let token = api_tokens::revoke_token(pool, user.id, token_id).await?;
+    let token = api_tokens::delete_token(pool, user.id, token_id).await?;
     audit::record(
         pool,
         Some(user.id),
-        "api_token.revoke",
+        "api_token.delete",
         "api_token",
         &token.id.to_string(),
         "{}",
