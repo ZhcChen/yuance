@@ -2767,6 +2767,10 @@ html[data-theme="dark"] .metric-ornament::before {
   align-items: start;
 }
 
+.me-detail-grid {
+  grid-template-columns: minmax(0, 1fr) 328px;
+}
+
 .detail-main,
 .detail-side {
   min-width: 0;
@@ -7011,6 +7015,127 @@ select option {
 .token-project-scope-field {
   display: grid;
   gap: 7px;
+}
+
+.api-token-panel {
+  overflow: hidden;
+}
+
+.api-token-table-wrap {
+  position: relative;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.api-token-table {
+  min-width: 1180px;
+}
+
+.api-token-table th,
+.api-token-table td {
+  position: relative;
+}
+
+.api-token-table .sticky-col {
+  position: sticky;
+}
+
+.api-token-table .sticky-col-left {
+  left: 0;
+  z-index: 3;
+}
+
+.api-token-table .sticky-col-right {
+  right: 0;
+  z-index: 3;
+}
+
+.api-token-table th.sticky-col-left,
+.api-token-table th.sticky-col-right {
+  z-index: 5;
+  background: var(--table-head);
+}
+
+.api-token-table td.sticky-col-left,
+.api-token-table td.sticky-col-right {
+  background: var(--panel);
+}
+
+.api-token-table tbody tr:hover td.sticky-col-left,
+.api-token-table tbody tr:hover td.sticky-col-right {
+  background: var(--panel-hover);
+}
+
+.api-token-table .sticky-col-left::after,
+.api-token-table .sticky-col-right::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  width: 14px;
+  pointer-events: none;
+}
+
+.api-token-table .sticky-col-left::after {
+  right: -14px;
+  background: linear-gradient(90deg, rgb(18 29 43 / 0.12), rgb(18 29 43 / 0));
+}
+
+.api-token-table .sticky-col-right::before {
+  left: -14px;
+  background: linear-gradient(270deg, rgb(18 29 43 / 0.12), rgb(18 29 43 / 0));
+}
+
+.token-name-col {
+  min-width: 220px;
+}
+
+.token-scope-col {
+  width: 360px;
+  min-width: 360px;
+  max-width: 360px;
+}
+
+.token-project-col {
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
+}
+
+.token-suffix-col {
+  min-width: 116px;
+}
+
+.token-status-col {
+  min-width: 92px;
+}
+
+.token-expires-col,
+.token-last-used-col {
+  min-width: 124px;
+}
+
+.token-action-col {
+  min-width: 96px;
+}
+
+.table-cell-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-suffix-code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef3fa;
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .field-label {

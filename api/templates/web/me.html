@@ -62,9 +62,9 @@
     </article>
   </section>
 
-  <section class="detail-grid">
+  <section class="detail-grid me-detail-grid">
     <div class="detail-main">
-      <section class="panel">
+      <section class="panel api-token-panel">
         <div class="panel-head">
           <div>
             <h2>Personal Access Token</h2>
@@ -85,34 +85,40 @@
         {% endif %}
 
         {% if has_api_tokens %}
-        <div class="table-wrap">
-          <table class="data-table">
+        <div class="table-wrap api-token-table-wrap">
+          <table class="data-table api-token-table">
             <thead>
               <tr>
-                <th>名称</th>
-                <th>权限</th>
-                <th>项目范围</th>
-                <th>后缀</th>
-                <th>状态</th>
-                <th>过期时间</th>
-                <th>最近使用</th>
-                <th class="table-actions">操作</th>
+                <th class="sticky-col sticky-col-left token-name-col">名称</th>
+                <th class="token-scope-col">权限</th>
+                <th class="token-project-col">项目范围</th>
+                <th class="token-suffix-col">后缀</th>
+                <th class="token-status-col">状态</th>
+                <th class="token-expires-col">过期时间</th>
+                <th class="token-last-used-col">最近使用</th>
+                <th class="table-actions sticky-col sticky-col-right token-action-col">操作</th>
               </tr>
             </thead>
             <tbody>
               {% for token in api_tokens %}
               <tr>
-                <td>
+                <td class="sticky-col sticky-col-left token-name-col">
                   <strong>{{ token.name }}</strong>
                   <p class="muted-text">创建于 {{ token.created_at }}</p>
                 </td>
-                <td>{{ token.scopes_label }}</td>
-                <td>{{ token.project_scope }}</td>
-                <td><code>...{{ token.token_suffix }}</code></td>
-                <td><span class="status status-{{ token.status_tone }}">{{ token.status }}</span></td>
-                <td>{{ token.expires_at }}</td>
-                <td>{{ token.last_used_at }}</td>
-                <td class="table-actions">
+                <td class="token-scope-col">
+                  <span class="table-cell-ellipsis" title="{{ token.scopes_label }}">{{ token.scopes_label }}</span>
+                </td>
+                <td class="token-project-col">
+                  <span class="table-cell-ellipsis" title="{{ token.project_scope }}">{{ token.project_scope }}</span>
+                </td>
+                <td class="token-suffix-col">
+                  <code class="token-suffix-code" title="...{{ token.token_suffix }}">...{{ token.token_suffix }}</code>
+                </td>
+                <td class="token-status-col"><span class="status status-{{ token.status_tone }}">{{ token.status }}</span></td>
+                <td class="token-expires-col">{{ token.expires_at }}</td>
+                <td class="token-last-used-col">{{ token.last_used_at }}</td>
+                <td class="table-actions sticky-col sticky-col-right token-action-col">
                   {% if token.is_revoked %}
                   <span class="muted-text">已撤销</span>
                   {% else %}
