@@ -1423,13 +1423,16 @@ body {
   overflow: hidden;
 }
 
-body.modal-open .main {
+body.modal-open .main,
+body.modal-open .auth-shell {
   overflow: hidden;
+  animation: none !important;
+  transform: none !important;
 }
 
 body[data-page-transition] .main,
 body[data-page-transition] .auth-shell {
-  animation: page-enter 170ms ease both;
+  animation: page-enter 170ms ease backwards;
 }
 
 body.page-leaving .main,

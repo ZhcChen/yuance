@@ -277,7 +277,6 @@ struct WorkItemComment {
     id: i64,
     parent_comment_id: Option<i64>,
     parent_author: String,
-    flow_title: String,
     body: String,
     body_format: String,
     body_html: String,
@@ -848,6 +847,7 @@ struct WorkItemDetailTemplate {
     status_options: Vec<WorkItemStatusOption>,
     attachments: Vec<AttachmentView>,
     comments: Vec<WorkItemComment>,
+    discussion_count: usize,
     has_comments: bool,
     flow_history_records: Vec<WorkItemFlowRecord>,
     has_flow_history: bool,
@@ -865,6 +865,7 @@ struct WorkItemDetailPartialTemplate {
     item: WorkItemDetailView,
     status_options: Vec<WorkItemStatusOption>,
     comments: Vec<WorkItemComment>,
+    discussion_count: usize,
     has_comments: bool,
     can_manage_work_items: bool,
 }
@@ -3288,6 +3289,7 @@ pub async fn work_item_detail_page(
         flow_history_pagination,
         flow_history_pagination_pages,
     ) = load_work_item_flow_history(pool, &item, flow_history_pagination).await?;
+    let discussion_count = discussion_comment_count(&comments);
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -3301,7 +3303,8 @@ pub async fn work_item_detail_page(
             system_nav: context.system_nav,
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
-            has_comments: !comments.is_empty(),
+            discussion_count,
+            has_comments: discussion_count > 0,
             item,
             assignee_options,
             parent_options,
@@ -5350,9 +5353,11 @@ pub async fn work_item_detail_partial(
         && projects::ensure_project_accepts_writes(&project.status).is_ok();
 
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
+    let discussion_count = discussion_comment_count(&comments);
     response::html(WorkItemDetailPartialTemplate {
         csrf_token: csrf::ensure_token(&headers),
-        has_comments: !comments.is_empty(),
+        discussion_count,
+        has_comments: discussion_count > 0,
         item,
         status_options,
         comments,
@@ -6469,7 +6474,6 @@ fn comment_from_summary_with_permission(
         id: comment.id,
         parent_comment_id: comment.parent_comment_id,
         parent_author,
-        flow_title: work_item_flow_title(&author, &body, comment.is_flow),
         body,
         body_format: comment.body_format,
         body_html,
@@ -6549,6 +6553,7 @@ fn work_item_comment_body_for_display(body: &str, is_flow: bool) -> String {
     display_body
 }
 
+#[cfg(test)]
 fn work_item_flow_title(author: &str, body: &str, is_flow: bool) -> String {
     if !is_flow {
         return String::new();
@@ -7452,6 +7457,10 @@ fn promote_primary_post_to_description(
 
     let comment = comments.remove(index);
     item.description_html = comment.body_html;
+}
+
+fn discussion_comment_count(comments: &[WorkItemComment]) -> usize {
+    comments.iter().filter(|comment| !comment.is_flow).count()
 }
 
 fn sample_work_item_flow_history(
@@ -8994,6 +9003,7 @@ fn render_sample_work_item_detail_page(
             system_nav: context.system_nav,
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
+            discussion_count: partial.discussion_count,
             has_comments: partial.has_comments,
             item: partial.item,
             assignee_options: vec![ProjectMemberView {
@@ -9056,7 +9066,6 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             id: 1,
             parent_comment_id: None,
             parent_author: String::new(),
-            flow_title: String::new(),
             body: "先统一项目与工作项查询模型，再继续补页面交互。".to_string(),
             body_format: "plain".to_string(),
             body_html: "<p>先统一项目与工作项查询模型，再继续补页面交互。</p>".to_string(),
@@ -9070,6 +9079,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             has_attachments: false,
             can_manage: true,
         }],
+        discussion_count: 1,
         has_comments: true,
         can_manage_work_items: true,
     })
