@@ -96,6 +96,12 @@
       line-height: 18px;
     }
 
+    .preview-position {
+      color: #cbd5e1;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
     .preview-actions {
       display: flex;
       align-items: center;
@@ -133,6 +139,14 @@
 
     .preview-link-secondary:hover {
       background: rgb(148 163 184 / 22%);
+    }
+
+    .preview-link:disabled,
+    .preview-link[aria-disabled="true"] {
+      background: rgb(71 85 105 / 16%);
+      color: #64748b;
+      cursor: not-allowed;
+      transform: none;
     }
 
     .preview-body {
@@ -202,6 +216,24 @@
       text-align: center;
     }
 
+    .preview-error-mark {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 96px;
+      min-height: 96px;
+      margin-bottom: 18px;
+      padding: 0 18px;
+      border-radius: 28px;
+      background: linear-gradient(180deg, rgb(59 130 246 / 12%), rgb(15 23 42 / 10%));
+      color: #1e293b;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      box-shadow: inset 0 0 0 1px rgb(148 163 184 / 18%);
+    }
+
     .preview-error strong {
       display: block;
       margin-bottom: 10px;
@@ -249,6 +281,13 @@
         min-height: 34px;
         padding: 0 12px;
       }
+
+      .preview-error-mark {
+        min-width: 80px;
+        min-height: 80px;
+        border-radius: 24px;
+        font-size: 16px;
+      }
     }
   </style>
 </head>
@@ -261,9 +300,22 @@
           <span>{{ kind_label }}</span>
           <span class="preview-badge">{{ file_type_badge }}</span>
           <span class="preview-note">{{ meta_text }}</span>
+          {% if position_text != "" %}
+          <span class="preview-position">{{ position_text }}</span>
+          {% endif %}
         </div>
       </div>
       <div class="preview-actions">
+        {% if has_previous %}
+        <a class="preview-link preview-link-secondary" href="{{ previous_url }}" title="{{ previous_title }}" data-preview-nav="previous">上一份</a>
+        {% else %}
+        <button class="preview-link preview-link-secondary" type="button" disabled aria-disabled="true">上一份</button>
+        {% endif %}
+        {% if has_next %}
+        <a class="preview-link preview-link-secondary" href="{{ next_url }}" title="{{ next_title }}" data-preview-nav="next">下一份</a>
+        {% else %}
+        <button class="preview-link preview-link-secondary" type="button" disabled aria-disabled="true">下一份</button>
+        {% endif %}
         <button class="preview-link preview-link-secondary" type="button" data-preview-reload>刷新预览</button>
         <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载原文件</a>
       </div>
@@ -272,9 +324,16 @@
       {% if has_error %}
       <section class="preview-error">
         <div>
+          <div class="preview-error-mark" aria-hidden="true">{{ file_type_badge }}</div>
           <strong>当前无法预览</strong>
           <p>{{ error_message }}</p>
           <div class="preview-error-actions">
+            {% if has_previous %}
+            <a class="preview-link preview-link-secondary" href="{{ previous_url }}" title="{{ previous_title }}" data-preview-nav="previous">上一份</a>
+            {% endif %}
+            {% if has_next %}
+            <a class="preview-link preview-link-secondary" href="{{ next_url }}" title="{{ next_title }}" data-preview-nav="next">下一份</a>
+            {% endif %}
             <button class="preview-link preview-link-secondary" type="button" data-preview-reload>刷新预览</button>
             <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载后查看</a>
           </div>
@@ -298,6 +357,22 @@
             button.addEventListener("click", function () {
               window.location.reload();
             });
+          });
+          document.addEventListener("keydown", function (event) {
+            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+              return;
+            }
+            if (event.key === "ArrowLeft") {
+              var previousLink = document.querySelector('[data-preview-nav="previous"]');
+              if (previousLink && previousLink.getAttribute("href")) {
+                window.location.href = previousLink.getAttribute("href");
+              }
+            } else if (event.key === "ArrowRight") {
+              var nextLink = document.querySelector('[data-preview-nav="next"]');
+              if (nextLink && nextLink.getAttribute("href")) {
+                window.location.href = nextLink.getAttribute("href");
+              }
+            }
           });
 
           function setError(message) {

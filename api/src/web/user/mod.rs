@@ -888,11 +888,31 @@ struct DocumentPreviewTemplate {
     kind_label: String,
     file_type_badge: String,
     meta_text: String,
+    position_text: String,
+    has_previous: bool,
+    previous_url: String,
+    previous_title: String,
+    has_next: bool,
+    next_url: String,
+    next_title: String,
     download_url: String,
     has_error: bool,
     error_message: String,
     api_script_url: String,
     config_json: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct DocumentPreviewNavigation {
+    position_text: String,
+    previous: Option<DocumentPreviewNavigationLink>,
+    next: Option<DocumentPreviewNavigationLink>,
+}
+
+#[derive(Debug, Clone)]
+struct DocumentPreviewNavigationLink {
+    title: String,
+    url: String,
 }
 
 #[derive(Template)]
@@ -2818,12 +2838,18 @@ pub async fn project_attachment_preview(
             files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
         let download_url =
             format!("/web/projects/{project_key}/attachments/{attachment_id}/download");
+        let navigation = document_preview_navigation(
+            files::list_attachments(pool, "project", project.id).await?,
+            attachment.id,
+            |sibling_id| format!("/web/projects/{project_key}/attachments/{sibling_id}/preview"),
+        );
 
         return attachment_document_preview_response(
             &state,
             pool,
             context.user_id,
             attachment,
+            navigation,
             "project",
             &project_key,
             format!(
@@ -3216,12 +3242,33 @@ pub async fn project_resource_attachment_preview(
                 download_url.push_str(&access_query);
             }
         }
+        let access_suffix = if !query.access.trim().is_empty() {
+            let encoded = serde_urlencoded::to_string([("access", query.access.as_str())])
+                .unwrap_or_else(|_| String::new());
+            if encoded.is_empty() {
+                String::new()
+            } else {
+                format!("?{encoded}")
+            }
+        } else {
+            String::new()
+        };
+        let navigation = document_preview_navigation(
+            files::list_attachments(pool, "project_resource", resource.id).await?,
+            attachment.id,
+            |sibling_id| {
+                format!(
+                    "/web/projects/{project_key}/resources/{resource_id}/attachments/{sibling_id}/preview{access_suffix}"
+                )
+            },
+        );
 
         return attachment_document_preview_response(
             &state,
             pool,
             context.user_id,
             attachment,
+            navigation,
             "project_resource",
             &resource.id.to_string(),
             format!(
@@ -3941,12 +3988,18 @@ pub async fn work_item_attachment_preview(
             files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
         let download_url =
             format!("/web/work-items/{item_key}/attachments/{attachment_id}/download");
+        let navigation = document_preview_navigation(
+            files::list_attachments(pool, "work_item", item.id).await?,
+            attachment.id,
+            |sibling_id| format!("/web/work-items/{item_key}/attachments/{sibling_id}/preview"),
+        );
 
         return attachment_document_preview_response(
             &state,
             pool,
             context.user_id,
             attachment,
+            navigation,
             "work_item",
             &item_key,
             format!(r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#, item_key),
@@ -4090,12 +4143,22 @@ pub async fn work_item_comment_attachment_preview(
         let download_url = format!(
             "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download"
         );
+        let navigation = document_preview_navigation(
+            files::list_attachments(pool, "comment", comment.id).await?,
+            attachment.id,
+            |sibling_id| {
+                format!(
+                    "/web/work-items/{item_key}/comments/{comment_id}/attachments/{sibling_id}/preview"
+                )
+            },
+        );
 
         return attachment_document_preview_response(
             &state,
             pool,
             context.user_id,
             attachment,
+            navigation,
             "comment",
             &comment_id.to_string(),
             format!(
@@ -7283,6 +7346,7 @@ async fn attachment_document_preview_response(
     pool: &SqlitePool,
     actor_user_id: i64,
     attachment: files::FileAttachmentSummary,
+    navigation: DocumentPreviewNavigation,
     target_type: &str,
     target_id: &str,
     metadata: String,
@@ -7299,7 +7363,8 @@ async fn attachment_document_preview_response(
     .await?;
 
     let template =
-        build_document_preview_template(state, pool, attachment, download_url.to_string()).await?;
+        build_document_preview_template(state, pool, attachment, navigation, download_url.to_string())
+            .await?;
     Ok(response::html(template)?.into_response())
 }
 
@@ -7307,12 +7372,14 @@ async fn build_document_preview_template(
     state: &AppState,
     pool: &SqlitePool,
     attachment: files::FileAttachmentSummary,
+    navigation: DocumentPreviewNavigation,
     download_url: String,
 ) -> AppResult<DocumentPreviewTemplate> {
     let title = attachment.original_filename.clone();
     if attachment.status == "deleted" {
         return Ok(document_preview_error_template(
             title,
+            navigation,
             download_url,
             "附件已归档，不能预览。".to_string(),
         ));
@@ -7320,6 +7387,7 @@ async fn build_document_preview_template(
     if attachment.status != "uploaded" {
         return Ok(document_preview_error_template(
             title,
+            navigation,
             download_url,
             "附件尚未上传完成，请稍后再试。".to_string(),
         ));
@@ -7330,6 +7398,7 @@ async fn build_document_preview_template(
     else {
         return Ok(document_preview_error_template(
             title,
+            navigation,
             download_url,
             "当前文件类型暂不支持文档预览。".to_string(),
         ));
@@ -7339,6 +7408,7 @@ async fn build_document_preview_template(
     else {
         return Ok(document_preview_error_template(
             title,
+            navigation,
             download_url,
             "当前文件类型暂不支持文档预览。".to_string(),
         ));
@@ -7346,6 +7416,7 @@ async fn build_document_preview_template(
     let Some(document_server_url) = onlyoffice_document_server_url(&state.settings) else {
         return Ok(document_preview_error_template(
             title,
+            navigation,
             download_url,
             "文档预览服务尚未配置，请先设置 ONLYOFFICE 文档服务地址。".to_string(),
         ));
@@ -7356,6 +7427,7 @@ async fn build_document_preview_template(
     {
         return Ok(document_preview_error_template(
             title,
+            navigation,
             download_url,
             "当前环境仍在使用测试存储，ONLYOFFICE 无法访问该文件。请切换到对象存储后再预览。".to_string(),
         ));
@@ -7385,6 +7457,29 @@ async fn build_document_preview_template(
         kind_label,
         file_type_badge,
         meta_text,
+        position_text: navigation.position_text,
+        has_previous: navigation.previous.is_some(),
+        previous_url: navigation
+            .previous
+            .as_ref()
+            .map(|link| link.url.clone())
+            .unwrap_or_default(),
+        previous_title: navigation
+            .previous
+            .as_ref()
+            .map(|link| link.title.clone())
+            .unwrap_or_default(),
+        has_next: navigation.next.is_some(),
+        next_url: navigation
+            .next
+            .as_ref()
+            .map(|link| link.url.clone())
+            .unwrap_or_default(),
+        next_title: navigation
+            .next
+            .as_ref()
+            .map(|link| link.title.clone())
+            .unwrap_or_default(),
         download_url,
         has_error: false,
         error_message: String::new(),
@@ -7396,14 +7491,45 @@ async fn build_document_preview_template(
 
 fn document_preview_error_template(
     title: String,
+    navigation: DocumentPreviewNavigation,
     download_url: String,
     error_message: String,
 ) -> DocumentPreviewTemplate {
+    let fallback_file_type = attachment_preview_file_type(&title, "")
+        .unwrap_or("file")
+        .to_ascii_uppercase();
+    let fallback_kind_label = attachment_preview_document_type(&title, "")
+        .map(document_preview_kind_label)
+        .unwrap_or("文档预览")
+        .to_string();
     DocumentPreviewTemplate {
         title,
-        kind_label: "文档预览".to_string(),
-        file_type_badge: "FILE".to_string(),
+        kind_label: fallback_kind_label,
+        file_type_badge: fallback_file_type,
         meta_text: "当前无法直接加载在线预览，可以刷新后重试或下载原文件。".to_string(),
+        position_text: navigation.position_text,
+        has_previous: navigation.previous.is_some(),
+        previous_url: navigation
+            .previous
+            .as_ref()
+            .map(|link| link.url.clone())
+            .unwrap_or_default(),
+        previous_title: navigation
+            .previous
+            .as_ref()
+            .map(|link| link.title.clone())
+            .unwrap_or_default(),
+        has_next: navigation.next.is_some(),
+        next_url: navigation
+            .next
+            .as_ref()
+            .map(|link| link.url.clone())
+            .unwrap_or_default(),
+        next_title: navigation
+            .next
+            .as_ref()
+            .map(|link| link.title.clone())
+            .unwrap_or_default(),
         download_url,
         has_error: true,
         error_message,
@@ -7428,6 +7554,56 @@ fn document_preview_kind_label(document_type: &str) -> &'static str {
         "slide" => "演示",
         "pdf" => "PDF",
         _ => "文档",
+    }
+}
+
+fn document_preview_navigation<F>(
+    attachments: Vec<files::FileAttachmentSummary>,
+    current_attachment_id: i64,
+    url_for_attachment: F,
+) -> DocumentPreviewNavigation
+where
+    F: Fn(i64) -> String,
+{
+    let previewable = attachments
+        .into_iter()
+        .filter(|attachment| {
+            attachment.status == "uploaded"
+                && is_previewable_document_attachment(
+                    &attachment.original_filename,
+                    &attachment.content_type,
+                )
+        })
+        .collect::<Vec<_>>();
+    let total = previewable.len();
+    let Some(current_index) = previewable
+        .iter()
+        .position(|attachment| attachment.id == current_attachment_id)
+    else {
+        return DocumentPreviewNavigation::default();
+    };
+
+    let previous = if current_index > 0 {
+        previewable
+            .get(current_index - 1)
+            .map(|attachment| DocumentPreviewNavigationLink {
+                title: attachment.original_filename.clone(),
+                url: url_for_attachment(attachment.id),
+            })
+    } else {
+        None
+    };
+    let next = previewable
+        .get(current_index + 1)
+        .map(|attachment| DocumentPreviewNavigationLink {
+            title: attachment.original_filename.clone(),
+            url: url_for_attachment(attachment.id),
+        });
+
+    DocumentPreviewNavigation {
+        position_text: format!("第 {} / {} 份可预览附件", current_index + 1, total),
+        previous,
+        next,
     }
 }
 
