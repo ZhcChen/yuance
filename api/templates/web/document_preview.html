@@ -46,6 +46,10 @@
       backdrop-filter: blur(14px);
     }
 
+    .preview-head-main {
+      min-width: 0;
+    }
+
     .preview-head strong {
       display: block;
       min-width: 0;
@@ -63,24 +67,72 @@
       line-height: 18px;
     }
 
+    .preview-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      margin-top: 10px;
+    }
+
+    .preview-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 26px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: rgb(59 130 246 / 18%);
+      color: #dbeafe;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .preview-note {
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
     .preview-link {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       min-height: 38px;
       padding: 0 14px;
+      border: 0;
       border-radius: 999px;
       background: rgb(59 130 246 / 18%);
       color: #bfdbfe;
       font-size: 12px;
       font-weight: 700;
       text-decoration: none;
+      cursor: pointer;
       transition: background 160ms ease, transform 160ms ease;
     }
 
     .preview-link:hover {
       background: rgb(59 130 246 / 28%);
       transform: translateY(-1px);
+    }
+
+    .preview-link-secondary {
+      background: rgb(148 163 184 / 14%);
+      color: #e2e8f0;
+    }
+
+    .preview-link-secondary:hover {
+      background: rgb(148 163 184 / 22%);
     }
 
     .preview-body {
@@ -107,8 +159,11 @@
     .preview-status {
       position: absolute;
       inset: 0;
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
       padding: 24px;
       background:
         linear-gradient(180deg, rgb(248 250 252 / 94%), rgb(241 245 249 / 96%));
@@ -122,6 +177,19 @@
     .preview-root.ready .preview-status {
       opacity: 0;
       pointer-events: none;
+    }
+
+    .preview-spinner {
+      width: 42px;
+      height: 42px;
+      border: 3px solid rgb(148 163 184 / 22%);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: preview-spin 900ms linear infinite;
+    }
+
+    .preview-status-copy {
+      max-width: 360px;
     }
 
     .preview-error {
@@ -149,13 +217,32 @@
       line-height: 24px;
     }
 
+    .preview-error-actions {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    @keyframes preview-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     @media (max-width: 720px) {
       .preview-head {
+        align-items: flex-start;
+        flex-direction: column;
         padding: 14px 16px;
       }
 
       .preview-body {
         padding: 12px;
+      }
+
+      .preview-actions {
+        justify-content: flex-start;
       }
 
       .preview-link {
@@ -168,11 +255,18 @@
 <body>
   <div class="preview-page">
     <header class="preview-head">
-      <div>
+      <div class="preview-head-main">
         <strong title="{{ title }}">{{ title }}</strong>
-        <span>文档预览</span>
+        <div class="preview-meta">
+          <span>{{ kind_label }}</span>
+          <span class="preview-badge">{{ file_type_badge }}</span>
+          <span class="preview-note">{{ meta_text }}</span>
+        </div>
       </div>
-      <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载原文件</a>
+      <div class="preview-actions">
+        <button class="preview-link preview-link-secondary" type="button" data-preview-reload>刷新预览</button>
+        <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载原文件</a>
+      </div>
     </header>
     <main class="preview-body">
       {% if has_error %}
@@ -180,12 +274,18 @@
         <div>
           <strong>当前无法预览</strong>
           <p>{{ error_message }}</p>
-          <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载后查看</a>
+          <div class="preview-error-actions">
+            <button class="preview-link preview-link-secondary" type="button" data-preview-reload>刷新预览</button>
+            <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载后查看</a>
+          </div>
         </div>
       </section>
       {% else %}
       <section id="document-preview-root" class="preview-root" aria-label="文档内容区域">
-        <div id="document-preview-status" class="preview-status">正在加载文档预览，请稍候...</div>
+        <div id="document-preview-status" class="preview-status">
+          <span class="preview-spinner" aria-hidden="true"></span>
+          <div class="preview-status-copy">正在加载文档预览，请稍候...</div>
+        </div>
       </section>
       <script id="document-preview-config" type="application/json">{{ config_json }}</script>
       <script src="{{ api_script_url }}"></script>
@@ -194,13 +294,28 @@
           var root = document.getElementById("document-preview-root");
           var status = document.getElementById("document-preview-status");
           var configNode = document.getElementById("document-preview-config");
+          document.querySelectorAll("[data-preview-reload]").forEach(function (button) {
+            button.addEventListener("click", function () {
+              window.location.reload();
+            });
+          });
 
           function setError(message) {
             if (!root || !status) {
               return;
             }
             root.classList.remove("ready");
-            status.textContent = message;
+            status.replaceChildren();
+            var spinner = document.createElement("span");
+            spinner.className = "preview-spinner";
+            spinner.setAttribute("aria-hidden", "true");
+            spinner.style.animation = "none";
+            spinner.style.borderTopColor = "#f97316";
+            var copy = document.createElement("div");
+            copy.className = "preview-status-copy";
+            copy.textContent = message;
+            status.appendChild(spinner);
+            status.appendChild(copy);
             status.style.opacity = "1";
             status.style.pointerEvents = "auto";
           }

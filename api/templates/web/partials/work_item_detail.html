@@ -98,7 +98,7 @@
               </div>
               {% if attachment.status_code == "uploaded" %}
               {% if attachment.is_previewable_document %}
-              <button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/preview" data-document-preview-title="{{ attachment.filename }}">预览</button>
+              <button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/preview" data-document-preview-title="{{ attachment.filename }}">预览文档</button>
               {% endif %}
               <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载</a>
               {% else %}

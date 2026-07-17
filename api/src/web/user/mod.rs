@@ -885,6 +885,9 @@ struct WorkItemFlowHistoryPartialTemplate {
 #[template(path = "web/document_preview.html")]
 struct DocumentPreviewTemplate {
     title: String,
+    kind_label: String,
+    file_type_badge: String,
+    meta_text: String,
     download_url: String,
     has_error: bool,
     error_message: String,
@@ -7360,6 +7363,9 @@ async fn build_document_preview_template(
 
     let signed = storage::presign_download_url(pool, &state.settings, &attachment.object_key, 3600)
         .await?;
+    let kind_label = document_preview_kind_label(document_type).to_string();
+    let file_type_badge = file_type.to_ascii_uppercase();
+    let meta_text = format!("{kind_label} · {} · 刷新后会重新生成临时访问地址", format_byte_size(attachment.byte_size));
     let config = serde_json::json!({
         "documentType": document_type,
         "document": {
@@ -7376,6 +7382,9 @@ async fn build_document_preview_template(
 
     Ok(DocumentPreviewTemplate {
         title,
+        kind_label,
+        file_type_badge,
+        meta_text,
         download_url,
         has_error: false,
         error_message: String::new(),
@@ -7392,6 +7401,9 @@ fn document_preview_error_template(
 ) -> DocumentPreviewTemplate {
     DocumentPreviewTemplate {
         title,
+        kind_label: "文档预览".to_string(),
+        file_type_badge: "FILE".to_string(),
+        meta_text: "当前无法直接加载在线预览，可以刷新后重试或下载原文件。".to_string(),
         download_url,
         has_error: true,
         error_message,
@@ -7406,6 +7418,16 @@ fn onlyoffice_document_server_url(settings: &crate::platform::config::Settings) 
         None
     } else {
         Some(url.to_string())
+    }
+}
+
+fn document_preview_kind_label(document_type: &str) -> &'static str {
+    match document_type {
+        "word" => "文档",
+        "cell" => "表格",
+        "slide" => "演示",
+        "pdf" => "PDF",
+        _ => "文档",
     }
 }
 

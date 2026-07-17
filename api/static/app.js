@@ -7123,7 +7123,7 @@
       if (!previewUrl) {
         return "";
       }
-      return '<button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="' + escapeHtml(previewUrl) + '" data-document-preview-title="' + escapeHtml(filename || "文件预览") + '">预览文件</button>';
+      return '<button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="' + escapeHtml(previewUrl) + '" data-document-preview-title="' + escapeHtml(filename || "文件预览") + '">预览文档</button>';
     }
 
     function renderFolderContent(payload) {
