@@ -2440,20 +2440,59 @@ textarea:focus-visible {
 }
 
 .profile-hero {
-  padding: 14px 18px;
-  gap: 14px;
+  padding: 16px 18px;
+  gap: 16px;
+  align-items: stretch;
 }
 
 .profile-hero-main {
   min-width: 0;
   display: grid;
   flex: 1 1 auto;
-  gap: 8px;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--brand-line);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top left, var(--brand-soft) 0%, transparent 34%),
+    linear-gradient(135deg, var(--brand-soft) 0%, var(--panel) 56%, var(--panel-soft) 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 24%);
 }
 
 .profile-hero-header {
   display: grid;
+  gap: 8px;
+}
+
+.profile-hero-overview {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.profile-hero-avatar {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 18px;
+  box-shadow: 0 10px 24px rgb(55 107 155 / 16%);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.profile-hero-copy {
+  min-width: 0;
+  display: grid;
   gap: 6px;
+}
+
+.profile-hero-eyebrow {
+  line-height: 16px;
 }
 
 .profile-hero-identity {
@@ -2465,7 +2504,7 @@ textarea:focus-visible {
 
 .profile-hero-identity h1 {
   margin: 0;
-  line-height: 28px;
+  line-height: 30px;
 }
 
 .profile-hero-account {
@@ -2495,39 +2534,41 @@ textarea:focus-visible {
   font-weight: 600;
 }
 
-.profile-hero .detail-meta {
+.profile-hero-meta {
   margin-top: 0;
-  gap: 8px;
+  gap: 8px 10px;
 }
 
 .detail-dl.inline.profile-hero-details {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .detail-dl.inline.profile-hero-details div {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 12px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 62px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--panel-soft);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-soft) 100%);
   border-bottom: 0;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
 }
 
 .profile-hero-details dt {
-  flex: 0 0 auto;
   white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 
 .profile-hero-details dd {
-  flex: 1 1 auto;
   color: var(--muted-strong);
   font-weight: 600;
-  line-height: 18px;
-  font-size: 13px;
+  line-height: 20px;
+  font-size: 15px;
   overflow-wrap: anywhere;
 }
 
@@ -2552,10 +2593,13 @@ textarea:focus-visible {
   flex: 0 0 auto;
   align-self: flex-start;
   justify-content: flex-end;
+  padding-top: 2px;
 }
 
 .profile-hero-actions .btn {
   padding-inline: 12px;
+  border-radius: 12px;
+  box-shadow: 0 6px 14px rgb(22 34 50 / 6%);
 }
 
 .workspace-main,
@@ -8104,6 +8148,7 @@ select option {
     width: 100%;
     flex-wrap: wrap;
     justify-content: flex-start;
+    padding-top: 0;
   }
 
   .profile-hero-header .detail-meta {
@@ -8116,6 +8161,19 @@ select option {
 }
 
 @media (max-width: 900px) {
+  .profile-hero-main {
+    padding: 14px;
+  }
+
+  .profile-hero-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-hero-avatar {
+    width: 52px;
+    height: 52px;
+  }
+
   .profile-hero-identity {
     align-items: flex-start;
   }

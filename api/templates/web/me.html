@@ -7,18 +7,23 @@
   <section class="page-hero detail-hero profile-hero">
     <div class="profile-hero-main">
       <div class="profile-hero-header">
-        <p class="eyebrow">个人工作区</p>
-        <div class="profile-hero-identity">
-          <h1>{{ profile.display_name }}</h1>
-          <span class="profile-hero-account">@{{ profile.username }}</span>
-          <span class="profile-hero-role-badge">{{ profile.roles }}</span>
-        </div>
-        <div class="detail-meta">
-          <span class="status status-{{ profile.status_tone }}">{{ profile.status }}</span>
-          {% if profile.is_super_admin %}
-          <span class="priority">超级管理员</span>
-          {% endif %}
-          <span>加入 {{ profile.created_at }}</span>
+        <div class="profile-hero-overview">
+          <div class="profile-hero-avatar" data-user-avatar data-avatar-name="{{ profile.display_name }}" aria-hidden="true">我</div>
+          <div class="profile-hero-copy">
+            <p class="eyebrow profile-hero-eyebrow">个人工作区</p>
+            <div class="profile-hero-identity">
+              <h1>{{ profile.display_name }}</h1>
+              <span class="profile-hero-account">@{{ profile.username }}</span>
+            </div>
+            <div class="detail-meta profile-hero-meta">
+              <span class="profile-hero-role-badge">{{ profile.roles }}</span>
+              <span class="status status-{{ profile.status_tone }}">{{ profile.status }}</span>
+              {% if profile.is_super_admin %}
+              <span class="priority">超级管理员</span>
+              {% endif %}
+              <span class="profile-hero-meta-text">加入 {{ profile.created_at }}</span>
+            </div>
+          </div>
         </div>
       </div>
       <dl class="detail-dl inline profile-hero-details" aria-label="账号资料">
