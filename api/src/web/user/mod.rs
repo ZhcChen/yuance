@@ -3453,11 +3453,8 @@ pub async fn work_item_detail_page(
             && can_manage_work_items;
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
     let flow_history_pagination = normalize_web_pagination(None, None)?;
-    let (
-        flow_history_records,
-        flow_history_pagination,
-        flow_history_pagination_pages,
-    ) = load_work_item_flow_history(pool, &item, flow_history_pagination).await?;
+    let (flow_history_records, flow_history_pagination, flow_history_pagination_pages) =
+        load_work_item_flow_history(pool, &item, flow_history_pagination).await?;
     let discussion_count = discussion_comment_count(&comments);
 
     let csrf_token = context.csrf_token.clone();
@@ -3507,16 +3504,14 @@ pub async fn work_item_flow_history_partial(
         let pagination = normalize_web_pagination(query.page, query.per_page)?;
         let (records, pagination, pagination_pages) =
             sample_work_item_flow_history(&partial.item, pagination);
-        return Ok(
-            response::html(WorkItemFlowHistoryPartialTemplate {
-                item: partial.item,
-                has_flow_history: !records.is_empty(),
-                flow_history_records: records,
-                flow_history_pagination: pagination,
-                flow_history_pagination_pages: pagination_pages,
-            })?
-            .into_response(),
-        );
+        return Ok(response::html(WorkItemFlowHistoryPartialTemplate {
+            item: partial.item,
+            has_flow_history: !records.is_empty(),
+            flow_history_records: records,
+            flow_history_pagination: pagination,
+            flow_history_pagination_pages: pagination_pages,
+        })?
+        .into_response());
     };
 
     ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
@@ -3536,16 +3531,14 @@ pub async fn work_item_flow_history_partial(
     let (records, pagination, pagination_pages) =
         load_work_item_flow_history(pool, &item, requested_pagination).await?;
 
-    Ok(
-        response::html(WorkItemFlowHistoryPartialTemplate {
-            has_flow_history: !records.is_empty(),
-            item,
-            flow_history_records: records,
-            flow_history_pagination: pagination,
-            flow_history_pagination_pages: pagination_pages,
-        })?
-        .into_response(),
-    )
+    Ok(response::html(WorkItemFlowHistoryPartialTemplate {
+        has_flow_history: !records.is_empty(),
+        item,
+        flow_history_records: records,
+        flow_history_pagination: pagination,
+        flow_history_pagination_pages: pagination_pages,
+    })?
+    .into_response())
 }
 
 pub async fn work_item_status_update(
@@ -4010,7 +4003,10 @@ pub async fn work_item_attachment_preview(
             navigation,
             "work_item",
             &item_key,
-            format!(r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#, item_key),
+            format!(
+                r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#,
+                item_key
+            ),
             &download_url,
         )
         .await;
@@ -5691,10 +5687,7 @@ async fn render_dashboard(
                 Vec::new()
             };
             (
-                metrics_from_data(
-                    &all_project_summaries,
-                    &assigned_pending_counts,
-                ),
+                metrics_from_data(&all_project_summaries, &assigned_pending_counts),
                 all_project_summaries
                     .into_iter()
                     .map(|project| {
@@ -6792,10 +6785,7 @@ fn flow_record_from_summary(comment: projects::WorkItemCommentSummary) -> WorkIt
     WorkItemFlowRecord {
         actor: fallback_text(comment.author_display_name, "系统"),
         created_at: display_timestamp(comment.created_at),
-        status_change: flow_transition_text(
-            &flow_change.previous_status,
-            &flow_change.next_status,
-        ),
+        status_change: flow_transition_text(&flow_change.previous_status, &flow_change.next_status),
         assignee_change: flow_transition_text(
             &flow_change.previous_assignee,
             &flow_change.next_assignee,
@@ -6893,7 +6883,11 @@ fn work_item_flow_change(body: &str, is_flow: bool) -> WorkItemFlowChange {
         ..WorkItemFlowChange::default()
     };
 
-    for part in system_summary.split('；').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in system_summary
+        .split('；')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         if let Some(value) = part.strip_prefix("状态：") {
             let (previous_status, next_status) = split_flow_transition(value);
             flow_change.previous_status = previous_status;
@@ -7374,17 +7368,16 @@ async fn attachment_document_preview_response(
     )
     .await?;
 
-    let template =
-        build_document_preview_template(
-            state,
-            pool,
-            attachment,
-            source_url,
-            source_label,
-            navigation,
-            download_url.to_string(),
-        )
-        .await?;
+    let template = build_document_preview_template(
+        state,
+        pool,
+        attachment,
+        source_url,
+        source_label,
+        navigation,
+        download_url.to_string(),
+    )
+    .await?;
     Ok(response::html(template)?.into_response())
 }
 
@@ -7463,16 +7456,20 @@ async fn build_document_preview_template(
             source_label,
             navigation,
             download_url,
-            "当前环境仍在使用测试存储，ONLYOFFICE 无法访问该文件。请切换到对象存储后再预览。".to_string(),
+            "当前环境仍在使用测试存储，ONLYOFFICE 无法访问该文件。请切换到对象存储后再预览。"
+                .to_string(),
         ));
     }
 
-    let signed = storage::presign_download_url(pool, &state.settings, &attachment.object_key, 3600)
-        .await?;
+    let signed =
+        storage::presign_download_url(pool, &state.settings, &attachment.object_key, 3600).await?;
     let kind_label = document_preview_kind_label(document_type).to_string();
     let file_type_badge = file_type.to_ascii_uppercase();
-    let meta_text = format!("{kind_label} · {} · 刷新后会重新生成临时访问地址", format_byte_size(attachment.byte_size));
-    let config = serde_json::json!({
+    let meta_text = format!(
+        "{kind_label} · {} · 刷新后会重新生成临时访问地址",
+        format_byte_size(attachment.byte_size)
+    );
+    let mut config = serde_json::json!({
         "documentType": document_type,
         "document": {
             "fileType": file_type,
@@ -7485,6 +7482,24 @@ async fn build_document_preview_template(
             "lang": "zh-CN",
         }
     });
+    if let Some(jwt_secret) = onlyoffice_document_server_jwt_secret(&state.settings) {
+        let token = match onlyoffice_document_config_token(&config, &jwt_secret) {
+            Ok(token) => token,
+            Err(_error) => {
+                return Ok(document_preview_error_template(
+                    title,
+                    source_url,
+                    source_label,
+                    navigation,
+                    download_url,
+                    "文档预览访问签名生成失败，请检查 ONLYOFFICE JWT 配置。".to_string(),
+                ));
+            }
+        };
+        if let Some(config_object) = config.as_object_mut() {
+            config_object.insert("token".to_string(), serde_json::Value::String(token));
+        }
+    }
 
     Ok(DocumentPreviewTemplate {
         title,
@@ -7579,12 +7594,37 @@ fn document_preview_error_template(
 }
 
 fn onlyoffice_document_server_url(settings: &crate::platform::config::Settings) -> Option<String> {
-    let url = settings.onlyoffice_document_server_url.trim().trim_end_matches('/');
+    let url = settings
+        .onlyoffice_document_server_url
+        .trim()
+        .trim_end_matches('/');
     if url.is_empty() {
         None
     } else {
         Some(url.to_string())
     }
+}
+
+fn onlyoffice_document_server_jwt_secret(
+    settings: &crate::platform::config::Settings,
+) -> Option<String> {
+    let secret = settings.onlyoffice_jwt_secret.trim();
+    if secret.is_empty() {
+        None
+    } else {
+        Some(secret.to_string())
+    }
+}
+
+fn onlyoffice_document_config_token(
+    config: &serde_json::Value,
+    secret: &str,
+) -> Result<String, jsonwebtoken::errors::Error> {
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::default(),
+        config,
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )
 }
 
 fn document_preview_kind_label(document_type: &str) -> &'static str {
@@ -7990,7 +8030,11 @@ async fn load_work_item_flow_history(
     pool: &SqlitePool,
     item: &WorkItemDetailView,
     pagination: projects::Pagination,
-) -> AppResult<(Vec<WorkItemFlowRecord>, PaginationView, Vec<PaginationPageView>)> {
+) -> AppResult<(
+    Vec<WorkItemFlowRecord>,
+    PaginationView,
+    Vec<PaginationPageView>,
+)> {
     let page = projects::list_work_item_flow_comments_paginated(pool, item.id, pagination).await?;
     let total_pages = page.total_pages();
     let pagination_view = work_item_flow_history_pagination_view(
@@ -8000,14 +8044,13 @@ async fn load_work_item_flow_history(
         page.total_items,
         total_pages,
     );
-    let pagination_pages = work_item_flow_history_pagination_pages(
-        &item.key,
-        page.page,
-        page.per_page,
-        total_pages,
-    );
+    let pagination_pages =
+        work_item_flow_history_pagination_pages(&item.key, page.page, page.per_page, total_pages);
     Ok((
-        page.items.into_iter().map(flow_record_from_summary).collect(),
+        page.items
+            .into_iter()
+            .map(flow_record_from_summary)
+            .collect(),
         pagination_view,
         pagination_pages,
     ))
@@ -8041,7 +8084,11 @@ fn discussion_comment_count(comments: &[WorkItemComment]) -> usize {
 fn sample_work_item_flow_history(
     item: &WorkItemDetailView,
     pagination: projects::Pagination,
-) -> (Vec<WorkItemFlowRecord>, PaginationView, Vec<PaginationPageView>) {
+) -> (
+    Vec<WorkItemFlowRecord>,
+    PaginationView,
+    Vec<PaginationPageView>,
+) {
     let all_records = sample_work_item_flow_records();
     let total_items = all_records.len() as i64;
     let records = paginate_items(all_records, pagination);
@@ -8849,7 +8896,10 @@ fn work_item_flow_history_page_url(item_key: &str, page: i64, per_page: i64) -> 
     if params.is_empty() {
         format!("/web/work-items/{item_key}/flow-records")
     } else {
-        format!("/web/work-items/{item_key}/flow-records?{}", params.join("&"))
+        format!(
+            "/web/work-items/{item_key}/flow-records?{}",
+            params.join("&")
+        )
     }
 }
 
@@ -9873,5 +9923,37 @@ mod tests {
         let summary = my_summary(&[], &items);
         assert_eq!(summary.assigned_count, 5);
         assert_eq!(summary.high_priority_count, 2);
+    }
+
+    #[test]
+    fn onlyoffice_document_config_token_round_trips_payload() {
+        let config = serde_json::json!({
+            "documentType": "word",
+            "document": {
+                "fileType": "docx",
+                "title": "需求说明.docx",
+                "url": "https://oss.example.com/presigned"
+            },
+            "editorConfig": {
+                "mode": "view",
+                "lang": "zh-CN"
+            }
+        });
+
+        let token = onlyoffice_document_config_token(&config, "test-onlyoffice-secret")
+            .expect("token should be generated");
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+        validation.validate_exp = false;
+        validation.required_spec_claims.remove("exp");
+        let payload = jsonwebtoken::decode::<serde_json::Value>(
+            &token,
+            &jsonwebtoken::DecodingKey::from_secret("test-onlyoffice-secret".as_bytes()),
+            &validation,
+        )
+        .expect("token should decode")
+        .claims;
+
+        assert_eq!(payload["document"]["title"].as_str(), Some("需求说明.docx"));
+        assert_eq!(payload["editorConfig"]["mode"].as_str(), Some("view"));
     }
 }

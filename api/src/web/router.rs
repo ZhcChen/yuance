@@ -36,6 +36,7 @@ impl AppState {
                 env: "test".to_string(),
                 security_master_key: "test-master-key".to_string(),
                 onlyoffice_document_server_url: String::new(),
+                onlyoffice_jwt_secret: String::new(),
             },
             pool: None,
         }
@@ -613,7 +614,8 @@ async fn session_refresh_middleware(
             }
         }
     } else if let Some(raw_refresh) = refresh_cookie.as_deref() {
-        match auth::refresh_session(pool, raw_refresh, access_ttl_seconds, refresh_ttl_seconds).await
+        match auth::refresh_session(pool, raw_refresh, access_ttl_seconds, refresh_ttl_seconds)
+            .await
         {
             Ok(Some(issued)) => {
                 clear_access_cookie = false;
@@ -692,7 +694,11 @@ fn upsert_request_cookie(headers: &mut HeaderMap, cookie_name: &str, cookie_valu
         .unwrap_or("");
     let mut pairs = Vec::new();
     let mut replaced = false;
-    for part in current.split(';').map(str::trim).filter(|part| !part.is_empty()) {
+    for part in current
+        .split(';')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         let Some((name, value)) = part.split_once('=') else {
             continue;
         };

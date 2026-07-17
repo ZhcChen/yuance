@@ -589,6 +589,8 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key".to_string(),
+        onlyoffice_document_server_url: String::new(),
+        onlyoffice_jwt_secret: String::new(),
     }
 }
 

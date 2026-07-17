@@ -130,13 +130,39 @@ YUANCE_SECURITY_MASTER_KEY
 
 ```text
 YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL=https://onlyoffice.example.com
+YUANCE_ONLYOFFICE_JWT_SECRET=<与 ONLYOFFICE JWT_SECRET 相同的固定值>
 ```
 
 要求：
 
 - 浏览器可以访问该 ONLYOFFICE 服务地址。
 - ONLYOFFICE 服务本身可以访问元策生成的 OSS 预签名下载地址。
+- ONLYOFFICE Docs 默认开启 JWT 校验；元策需要与文档服务共享同一个 `JWT_SECRET`。如果文档服务显式设置 `JWT_ENABLED=false`，元策侧可留空 `YUANCE_ONLYOFFICE_JWT_SECRET`。
 - 如果当前仍使用测试内存存储，文档预览页会提示不可用；需要先切换到对象存储。
+
+## ONLYOFFICE 部署建议
+
+推荐把 ONLYOFFICE Docs 部署在独立的 amd64 Linux 主机，而不是和 `yuance-api` 共用当前正式机。官方 Docker 安装文档给出的最低要求是：
+
+- CPU：双核 2 GHz 或更高
+- 内存：4 GB 或更多
+- 磁盘：至少 40 GB 可用空间
+- Swap：至少 4 GB
+
+当前元策正式机 `qfy-sc-test` 实测只有约 `1.6 GiB` 内存且 `Swap=0`，不适合直接承载 ONLYOFFICE Docs。
+
+官方 Docker 文档同时说明：
+
+- 从 7.2 开始，如果不显式设置 `JWT_SECRET`，容器会随机生成，重启后可能导致集成失效。
+- `JWT_ENABLED` 默认是 `true`。
+
+因此生产建议是：
+
+1. 在独立主机部署 `onlyoffice/documentserver`。
+2. 显式设置固定 `JWT_SECRET`。
+3. 将 `YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL` 指向该服务公网地址。
+4. 将同一个固定值写入元策正式环境 `YUANCE_ONLYOFFICE_JWT_SECRET`。
+5. 重启元策 `api` 服务后，再从元策页面验证文档预览。
 
 生成随机值：
 

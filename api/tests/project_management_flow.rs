@@ -667,7 +667,11 @@ async fn project_resource_password_can_be_set_kept_and_cleared_after_creation() 
         .expect("router should respond");
     let clear_password_status = clear_password_response.status();
     let clear_password_body = response_body(clear_password_response).await;
-    assert_eq!(clear_password_status, StatusCode::OK, "{clear_password_body}");
+    assert_eq!(
+        clear_password_status,
+        StatusCode::OK,
+        "{clear_password_body}"
+    );
     assert!(clear_password_body.contains("已取消加密正文"));
 
     let stored_after_clear = project_resources::get_resource(&pool, resource_id)
@@ -10471,5 +10475,7 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-2026".to_string(),
+        onlyoffice_document_server_url: String::new(),
+        onlyoffice_jwt_secret: String::new(),
     }
 }
