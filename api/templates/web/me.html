@@ -6,15 +6,31 @@
 <section class="page-stack">
   <section class="page-hero detail-hero profile-hero">
     <div class="profile-hero-main">
-      <p class="eyebrow">个人工作区</p>
-      <h1>{{ profile.display_name }}</h1>
-      <p>@{{ profile.username }} · {{ profile.roles }}</p>
-      <div class="detail-meta">
-        <span class="status status-{{ profile.status_tone }}">{{ profile.status }}</span>
-        {% if profile.is_super_admin %}
-        <span class="priority">超级管理员</span>
-        {% endif %}
-        <span>加入 {{ profile.created_at }}</span>
+      <div class="profile-hero-heading">
+        <div class="profile-hero-title-block">
+          <div class="profile-hero-headline">
+            <p class="eyebrow">个人工作区</p>
+            <div class="profile-hero-name-row">
+              <h1>{{ profile.display_name }}</h1>
+              <span class="profile-hero-account">@{{ profile.username }}</span>
+            </div>
+          </div>
+          <div class="profile-hero-support-row">
+            <p class="profile-hero-role-line">{{ profile.roles }}</p>
+            <div class="detail-meta">
+              <span class="status status-{{ profile.status_tone }}">{{ profile.status }}</span>
+              {% if profile.is_super_admin %}
+              <span class="priority">超级管理员</span>
+              {% endif %}
+              <span>加入 {{ profile.created_at }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="toolbar-actions profile-hero-actions">
+          <button class="btn btn-sm btn-secondary" type="button" data-modal-open="me-profile-modal">编辑资料</button>
+          <button class="btn btn-sm btn-secondary" type="button" data-modal-open="me-password-modal">修改密码</button>
+          <button class="btn btn-sm btn-secondary" type="button" data-modal-open="me-api-token-modal" {% if !can_create_api_token %}disabled title="已达到 100 个可用 Token 上限"{% endif %}>创建访问 Token</button>
+        </div>
       </div>
       <dl class="detail-dl inline profile-hero-details" aria-label="账号资料">
         <div>
@@ -30,11 +46,6 @@
           <dd>{{ profile.updated_at }}</dd>
         </div>
       </dl>
-    </div>
-    <div class="toolbar-actions">
-      <button class="btn btn-secondary" type="button" data-modal-open="me-profile-modal">编辑资料</button>
-      <button class="btn btn-secondary" type="button" data-modal-open="me-password-modal">修改密码</button>
-      <button class="btn btn-secondary" type="button" data-modal-open="me-api-token-modal" {% if !can_create_api_token %}disabled title="已达到 100 个可用 Token 上限"{% endif %}>创建访问 Token</button>
     </div>
   </section>
 
