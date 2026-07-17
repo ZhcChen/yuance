@@ -973,20 +973,20 @@ body {
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
-  flex: 1 1 248px;
-  min-width: min(100%, 230px);
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .discussion-assign-status select {
-  width: clamp(168px, 20vw, 220px);
-  min-width: 168px;
+  width: clamp(140px, 12vw, 168px);
+  min-width: 140px;
   min-height: 34px;
 }
 
 .discussion-assign-status .select-control {
-  width: clamp(168px, 20vw, 220px);
-  min-width: 168px;
-  flex: 1 1 168px;
+  width: clamp(140px, 12vw, 168px);
+  min-width: 140px;
+  flex: 0 0 auto;
 }
 
 .discussion-assign-status .select-control-trigger {
