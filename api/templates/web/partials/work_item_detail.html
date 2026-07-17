@@ -67,10 +67,6 @@
             {% when None %}
             {% endmatch %}
           </div>
-          <div class="discussion-post-time">
-            <span>发表于 {{ comment.created_at }}</span>
-            {% if comment.is_edited %}<span>编辑于 {{ comment.updated_at }}</span>{% endif %}
-          </div>
         </header>
         <article class="discussion-post-content">
           <div class="discussion-post-body discussion-rich-body">{{ comment.body_html|safe }}</div>
@@ -110,13 +106,22 @@
           </div>
           {% endif %}
 
-          {% if can_manage_work_items && !item.is_deleted %}
           <footer class="discussion-post-actions">
-            <button class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle="reply-form-{{ comment.id }}">回复</button>
-            {% if comment.can_manage %}
-            <button class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-{{ comment.id }}">编辑</button>
-            {% endif %}
+            <div class="discussion-post-action-buttons">
+              {% if can_manage_work_items && !item.is_deleted %}
+              <button class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle="reply-form-{{ comment.id }}">回复</button>
+              {% if comment.can_manage %}
+              <button class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-{{ comment.id }}">编辑</button>
+              {% endif %}
+              {% endif %}
+            </div>
+            <div class="discussion-post-time">
+              <span>发表于 {{ comment.created_at }}</span>
+              {% if comment.is_edited %}<span>编辑于 {{ comment.updated_at }}</span>{% endif %}
+            </div>
           </footer>
+
+          {% if can_manage_work_items && !item.is_deleted %}
           <form id="reply-form-{{ comment.id }}" class="discussion-composer discussion-reply-form" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ comment.author_username }}" hidden>
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">

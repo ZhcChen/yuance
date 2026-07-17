@@ -1069,7 +1069,7 @@ body {
 
 .discussion-thread {
   display: grid;
-  gap: 16px;
+  gap: 24px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1087,7 +1087,7 @@ body {
   width: 100%;
   min-width: 0;
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 
 .discussion-post-content {
@@ -1104,7 +1104,6 @@ body {
 .discussion-post-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 14px;
 }
 
@@ -1162,11 +1161,20 @@ body {
 
 .discussion-post-actions {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.discussion-post-action-buttons {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
 .discussion-reply-form {
@@ -1409,6 +1417,15 @@ body {
 
   .discussion-composer-footer .btn-primary {
     margin-left: auto;
+  }
+
+  .discussion-post-actions {
+    align-items: flex-start;
+    flex-direction: column-reverse;
+  }
+
+  .discussion-post-action-buttons {
+    width: 100%;
   }
 
   .discussion-post-time {
