@@ -1076,11 +1076,32 @@ body {
 }
 
 .discussion-post {
+  position: relative;
   display: grid;
   grid-template-columns: var(--discussion-avatar-size) minmax(0, 1fr);
   gap: var(--discussion-column-gap);
   align-items: flex-start;
   padding: 0;
+}
+
+.discussion-post::before {
+  content: "";
+  position: absolute;
+  inset: -10px -12px;
+  border-radius: 24px;
+  background: transparent;
+  box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.discussion-post > * {
+  position: relative;
+  z-index: 1;
+}
+
+.discussion-post.is-target-highlighted::before {
+  animation: discussion-post-target-highlight 1800ms ease-out;
 }
 
 .discussion-post-shell {
@@ -1929,11 +1950,23 @@ textarea:focus-visible {
 .message-open { color: var(--brand); font-size: 12px; font-weight: 700; }
 .message-empty { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
 
-.discussion-post { scroll-margin-top: calc(var(--topbar-height) + 20px); }
-.discussion-post:target .discussion-post-content { animation: comment-target-highlight 1800ms ease-out; }
-@keyframes comment-target-highlight {
-  0%, 35% { background: var(--brand-soft); box-shadow: 0 0 0 8px var(--brand-soft); }
-  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+.discussion-post {
+  scroll-margin-top: calc(var(--topbar-height) + 20px);
+}
+
+@keyframes discussion-post-target-highlight {
+  0%, 34% {
+    opacity: 1;
+    background: color-mix(in srgb, var(--brand-soft) 72%, var(--panel));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--brand) 14%, transparent),
+      0 16px 32px -24px color-mix(in srgb, var(--brand) 38%, transparent);
+  }
+  100% {
+    opacity: 0;
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent;
+  }
 }
 
 .env-badge {

@@ -3760,6 +3760,68 @@
     window.location.assign(targetPath + "#" + targetHash);
   }
 
+  function normalizeDiscussionHash(hash) {
+    if (!hash) {
+      return "";
+    }
+    return hash.charAt(0) === "#" ? hash : "#" + hash;
+  }
+
+  function replaceLocationHash(hash) {
+    var normalizedHash = normalizeDiscussionHash(hash);
+    if (!normalizedHash) {
+      return;
+    }
+    if (window.history && window.history.replaceState) {
+      var nextUrl = new URL(window.location.href);
+      nextUrl.hash = normalizedHash;
+      window.history.replaceState(window.history.state || null, "", nextUrl.pathname + nextUrl.search + nextUrl.hash);
+      return;
+    }
+    window.location.hash = normalizedHash;
+  }
+
+  function clearDiscussionTargetHighlight() {
+    document.querySelectorAll(".discussion-post.is-target-highlighted").forEach(function (post) {
+      if (post.discussionTargetHighlightTimer) {
+        window.clearTimeout(post.discussionTargetHighlightTimer);
+        post.discussionTargetHighlightTimer = null;
+      }
+      post.classList.remove("is-target-highlighted");
+    });
+  }
+
+  function highlightDiscussionPostByHash(hash, options) {
+    var normalizedHash = normalizeDiscussionHash(hash);
+    if (!normalizedHash || !normalizedHash.startsWith("#comment-")) {
+      return false;
+    }
+    var target = document.getElementById(normalizedHash.slice(1));
+    if (!target || !target.classList.contains("discussion-post")) {
+      return false;
+    }
+    var settings = options || {};
+    clearDiscussionTargetHighlight();
+    target.classList.remove("is-target-highlighted");
+    void target.offsetWidth;
+    target.classList.add("is-target-highlighted");
+    if (settings.scroll !== false) {
+      target.scrollIntoView({
+        behavior: prefersReducedMotion() || settings.immediate ? "auto" : "smooth",
+        block: settings.block || "start",
+      });
+    }
+    if (settings.updateHash !== false) {
+      replaceLocationHash(normalizedHash);
+    }
+    var highlightDuration = Math.max(Number(settings.durationMs) || 1800, 600);
+    target.discussionTargetHighlightTimer = window.setTimeout(function () {
+      target.classList.remove("is-target-highlighted");
+      target.discussionTargetHighlightTimer = null;
+    }, highlightDuration);
+    return true;
+  }
+
   function csrfToken() {
     return document
       .querySelector('meta[name="yuance-csrf-token"]')
@@ -6055,6 +6117,15 @@
       return;
     }
 
+    var discussionReplyTarget = event.target.closest(".discussion-reply-target");
+    if (discussionReplyTarget) {
+      var replyHash = discussionReplyTarget.getAttribute("href") || "";
+      if (highlightDiscussionPostByHash(replyHash, { scroll: true, updateHash: true })) {
+        event.preventDefault();
+      }
+      return;
+    }
+
     var link = event.target.closest("a[href]");
     if (link) {
       navigateWithTransition(event, link);
@@ -6775,6 +6846,9 @@
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
   initAttachmentImagePreviews(document);
   initDiscussionRichMedia(document);
+  window.requestAnimationFrame(function () {
+    highlightDiscussionPostByHash(window.location.hash, { scroll: false, updateHash: false, immediate: true });
+  });
   window.addEventListener("pagehide", function () {
     document.querySelectorAll("[data-file-preview]").forEach(function (preview) {
       if (preview.localObjectUrl) {
@@ -6811,6 +6885,10 @@
   window.addEventListener("pageshow", function () {
     clearPageTransitionState();
     scheduleContentTabsSync(false);
+  });
+
+  window.addEventListener("hashchange", function () {
+    highlightDiscussionPostByHash(window.location.hash, { scroll: false, updateHash: false, immediate: true });
   });
 
   window.addEventListener("scroll", function () {
