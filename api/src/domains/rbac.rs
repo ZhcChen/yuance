@@ -35,6 +35,12 @@ const PERMISSIONS: &[(&str, &str, &str, &str)] = &[
         "action",
         "system-storage",
     ),
+    (
+        "system.database_stats.view",
+        "查看数据库统计",
+        "page",
+        "system-database-stats",
+    ),
     ("system.audit.view", "查看审计日志", "page", "system-audit"),
     ("project.view", "查看项目", "page", "projects"),
     ("project.manage", "管理项目", "action", "projects"),

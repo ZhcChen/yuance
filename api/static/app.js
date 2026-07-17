@@ -7,6 +7,7 @@
   var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
   var SEARCH_HISTORY_KEY = "yuance-search-history";
+  var DATABASE_STATS_CACHE_PREFIX = "yuance-system-database-stats:v1:";
   var pendingConfirmForm = null;
   var contentTabNavigationTimer = null;
   var contentTabNavigationControl = null;
@@ -134,6 +135,220 @@
       // The next page can still load when sessionStorage is unavailable.
       return false;
     }
+  }
+
+  function databaseStatsStorageKey(page) {
+    return DATABASE_STATS_CACHE_PREFIX + (page.dataset.cacheKey || "anonymous");
+  }
+
+  function readDatabaseStatsCache(page) {
+    try {
+      var raw = window.localStorage.getItem(databaseStatsStorageKey(page));
+      if (!raw) {
+        return null;
+      }
+      var parsed = JSON.parse(raw);
+      if (!parsed || !Array.isArray(parsed.tables)) {
+        return null;
+      }
+      return parsed;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function writeDatabaseStatsCache(page, snapshot) {
+    try {
+      window.localStorage.setItem(databaseStatsStorageKey(page), JSON.stringify(snapshot));
+    } catch (_error) {
+      // localStorage may be disabled; page rendering still works.
+    }
+  }
+
+  function formatDatabaseStatsTime(value) {
+    if (!value) {
+      return "未知时间";
+    }
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return date.toLocaleString("zh-CN", { hour12: false });
+  }
+
+  function formatDatabaseStatsCount(value) {
+    return Number(value || 0).toLocaleString("zh-CN");
+  }
+
+  function renderDatabaseStatsEmpty(page, title, description) {
+    var wrap = page.querySelector("[data-database-stats-sheet-wrap]");
+    var body = page.querySelector("[data-database-stats-body]");
+    var empty = page.querySelector("[data-database-stats-empty]");
+    var summary = page.querySelector("[data-database-stats-summary]");
+    var cacheState = page.querySelector("[data-database-stats-cache-state]");
+    if (body) {
+      body.replaceChildren();
+    }
+    if (wrap) {
+      wrap.hidden = true;
+    }
+    if (empty) {
+      var strong = empty.querySelector("strong");
+      var span = empty.querySelector("span");
+      if (strong) {
+        strong.textContent = title;
+      }
+      if (span) {
+        span.textContent = description;
+      }
+      empty.hidden = false;
+    }
+    if (summary) {
+      summary.textContent = title;
+    }
+    if (cacheState) {
+      cacheState.textContent = description;
+    }
+  }
+
+  function renderDatabaseStatsSnapshot(page, snapshot, source) {
+    var wrap = page.querySelector("[data-database-stats-sheet-wrap]");
+    var body = page.querySelector("[data-database-stats-body]");
+    var empty = page.querySelector("[data-database-stats-empty]");
+    var summary = page.querySelector("[data-database-stats-summary]");
+    var cacheState = page.querySelector("[data-database-stats-cache-state]");
+    var tables = Array.isArray(snapshot && snapshot.tables) ? snapshot.tables : [];
+    if (!body || !wrap || !empty) {
+      return;
+    }
+    if (!tables.length) {
+      renderDatabaseStatsEmpty(page, "暂无统计结果", "数据库中暂未发现可展示的业务表。");
+      return;
+    }
+
+    var totalRows = tables.reduce(function (sum, table) {
+      return sum + Number(table && table.row_count || 0);
+    }, 0);
+    body.innerHTML = tables.map(function (table) {
+      var columns = Array.isArray(table.columns) ? table.columns : [];
+      var columnHtml = columns.map(function (column) {
+        var flags = [];
+        if (column.primary_key) {
+          flags.push('<span class="database-stats-flag primary">主键</span>');
+        }
+        if (column.required) {
+          flags.push('<span class="database-stats-flag required">必填</span>');
+        } else {
+          flags.push('<span class="database-stats-flag optional">可空</span>');
+        }
+        return (
+          '<li class="database-stats-column-row">'
+            + '<div class="database-stats-column-head">'
+            + '<strong>' + escapeHtml(column.name || "") + '</strong>'
+            + '<code>' + escapeHtml(column.data_type || "TEXT") + '</code>'
+            + '</div>'
+            + '<div class="database-stats-column-meta">'
+            + '<div class="database-stats-column-flags">' + flags.join("") + '</div>'
+            + '<span class="database-stats-default">默认值：'
+            + escapeHtml(String(column.default_value || "—"))
+            + '</span>'
+            + '</div>'
+            + '</li>'
+        );
+      }).join("");
+      return (
+        "<tr>"
+          + '<td class="database-stats-table-name"><strong>' + escapeHtml(table.table_name || "") + '</strong></td>'
+          + '<td class="database-stats-remark">' + escapeHtml(table.remark || "业务表（备注待补充）") + "</td>"
+          + '<td class="database-stats-count-cell">'
+          + '<strong>' + formatDatabaseStatsCount(table.row_count) + "</strong>"
+          + "<span>" + formatDatabaseStatsCount(table.column_count) + " 个字段</span>"
+          + "</td>"
+          + '<td><ul class="database-stats-columns">' + columnHtml + "</ul></td>"
+          + "</tr>"
+      );
+    }).join("");
+
+    wrap.hidden = false;
+    empty.hidden = true;
+    if (summary) {
+      summary.textContent =
+        "共 " + formatDatabaseStatsCount(tables.length) + " 张表，合计 "
+        + formatDatabaseStatsCount(totalRows) + " 行数据";
+    }
+    if (cacheState) {
+      cacheState.textContent =
+        (source === "cache" ? "当前展示浏览器缓存" : "已读取最新数据库快照")
+        + " · 上次刷新 " + formatDatabaseStatsTime(snapshot.refreshed_at);
+    }
+  }
+
+  function setDatabaseStatsRefreshing(page, refreshing) {
+    var button = page.querySelector("[data-database-stats-refresh]");
+    if (!button) {
+      return;
+    }
+    if (!button.dataset.originalLabel) {
+      button.dataset.originalLabel = button.textContent.trim();
+    }
+    button.disabled = refreshing;
+    button.textContent = refreshing ? "刷新中..." : button.dataset.originalLabel;
+    page.setAttribute("aria-busy", refreshing ? "true" : "false");
+  }
+
+  async function refreshDatabaseStats(page) {
+    if (!page || page.dataset.databaseStatsLoading === "true") {
+      return;
+    }
+    var apiUrl = page.dataset.apiUrl || "";
+    if (!apiUrl) {
+      return;
+    }
+    page.dataset.databaseStatsLoading = "true";
+    setDatabaseStatsRefreshing(page, true);
+    try {
+      var snapshot = await fetchJson(apiUrl, { headers: { accept: "application/json" } });
+      writeDatabaseStatsCache(page, snapshot);
+      renderDatabaseStatsSnapshot(page, snapshot, "fresh");
+      showToast("数据库统计已刷新。", "success");
+    } catch (error) {
+      showToast(error.message || "数据库统计刷新失败。", "error");
+      if (!readDatabaseStatsCache(page)) {
+        renderDatabaseStatsEmpty(
+          page,
+          "刷新失败",
+          error.message || "无法读取数据库统计，请稍后重试。"
+        );
+      }
+    } finally {
+      delete page.dataset.databaseStatsLoading;
+      setDatabaseStatsRefreshing(page, false);
+    }
+  }
+
+  function initDatabaseStatsPage(root) {
+    root.querySelectorAll("[data-database-stats-page]").forEach(function (page) {
+      if (page.dataset.databaseStatsBound === "true") {
+        return;
+      }
+      page.dataset.databaseStatsBound = "true";
+      var button = page.querySelector("[data-database-stats-refresh]");
+      if (button) {
+        button.addEventListener("click", function () {
+          refreshDatabaseStats(page);
+        });
+      }
+      var cached = readDatabaseStatsCache(page);
+      if (cached) {
+        renderDatabaseStatsSnapshot(page, cached, "cache");
+      } else {
+        renderDatabaseStatsEmpty(
+          page,
+          "浏览器暂无缓存",
+          "点击右上角“刷新”后，系统会读取最新的数据库统计。"
+        );
+      }
+    });
   }
 
   function showQueuedToast() {
@@ -6280,6 +6495,7 @@
     applyTheme(readThemePreference());
     initUserAvatars(event.target);
     initTopbarSearch(event.target);
+    initDatabaseStatsPage(event.target);
     initProjectSwitcher(event.target);
     initUserComboboxes(event.target);
     initMemberBatchForms(event.target);
@@ -6568,6 +6784,7 @@
 
   initTopbarSearch(document);
   initNotificationFeed(document.querySelector("[data-notification-root]"));
+  initDatabaseStatsPage(document);
   initProjectSwitcher(document);
   initUserComboboxes(document);
   initMemberBatchForms(document);

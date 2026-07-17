@@ -806,6 +806,7 @@ async fn custom_role_can_receive_permissions_and_drive_system_nav() {
     assert!(users_body.contains("/web/system/users"));
     assert!(!users_body.contains("/web/system/roles"));
     assert!(!users_body.contains("/web/system/storage"));
+    assert!(!users_body.contains("/web/system/database-stats"));
 
     let roles_response = app
         .oneshot(
@@ -1091,6 +1092,80 @@ async fn role_status_controls_assigned_permissions() {
         .await
         .expect("router should respond");
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn system_database_stats_page_renders_cache_shell_for_admin() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/database-stats")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("数据库统计"));
+    assert!(body.contains(r#"data-database-stats-page"#));
+    assert!(body.contains(r#"data-api-url="/api/v1/system/database-stats""#));
+    assert!(body.contains("浏览器暂无缓存"));
+    assert!(body.contains(r#"href="/web/system/database-stats""#));
+}
+
+#[tokio::test]
+async fn api_system_database_stats_requires_permission_and_returns_snapshot() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    create_user_with_role(
+        &pool,
+        "stats_member",
+        "统计成员",
+        "StatsPass2026!",
+        "member",
+    )
+    .await;
+    let regular_session = auth::login(&pool, "stats_member", "StatsPass2026!")
+        .await
+        .expect("member should login");
+    let regular_cookie = auth::session_cookie_header(&regular_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let success_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/database-stats")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(success_response.status(), StatusCode::OK);
+    let success_body = response_body(success_response).await;
+    assert!(success_body.contains(r#""table_name":"users""#));
+    assert!(success_body.contains(r#""remark":"用户账号""#));
+    assert!(success_body.contains(r#""table_name":"refresh_sessions""#));
+
+    let forbidden_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/database-stats")
+                .header(header::COOKIE, regular_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

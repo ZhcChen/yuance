@@ -362,6 +362,7 @@ struct SystemNav {
     users: bool,
     roles: bool,
     storage: bool,
+    database_stats: bool,
     audit: bool,
     requirements_badge: String,
     tasks_badge: String,
@@ -377,6 +378,7 @@ impl SystemNav {
             users: true,
             roles: true,
             storage: true,
+            database_stats: true,
             audit: true,
             requirements_badge: String::new(),
             tasks_badge: String::new(),
@@ -923,6 +925,19 @@ struct StorageSettingsTemplate {
     message: String,
     message_tone: &'static str,
     can_manage_storage: bool,
+}
+
+#[derive(Template)]
+#[template(path = "web/system/database_stats.html")]
+struct SystemDatabaseStatsTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    cache_key: String,
 }
 
 #[derive(Template)]
@@ -4177,6 +4192,33 @@ pub async fn system_users_page(
     )
 }
 
+pub async fn system_database_stats_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.database_stats.view").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(SystemDatabaseStatsTemplate {
+            active: "system-database-stats",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            cache_key: context.user_id.to_string(),
+        })?
+        .into_response(),
+    )
+}
+
 pub async fn system_users_create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -5598,6 +5640,8 @@ async fn build_system_nav(
     let users = rbac::user_has_permission(pool, user_id, "system.users.view").await?;
     let roles = rbac::user_has_permission(pool, user_id, "system.roles.view").await?;
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
+    let database_stats =
+        rbac::user_has_permission(pool, user_id, "system.database_stats.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
     let work_item_counts = projects::count_pending_visible_work_items(
         pool,
@@ -5609,11 +5653,12 @@ async fn build_system_nav(
     let unread_notifications = notifications::unread_count(pool, user_id).await?;
 
     Ok(SystemNav {
-        visible: dashboard || users || roles || storage || audit,
+        visible: dashboard || users || roles || storage || database_stats || audit,
         dashboard,
         users,
         roles,
         storage,
+        database_stats,
         audit,
         requirements_badge: topnav_badge(work_item_counts.requirements),
         tasks_badge: topnav_badge(work_item_counts.tasks),

@@ -1,0 +1,48 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}数据库统计 - 元策{% endblock %}
+
+{% block content %}
+<section
+  class="panel database-stats-panel"
+  data-database-stats-page
+  data-api-url="/api/v1/system/database-stats"
+  data-cache-key="{{ cache_key }}"
+>
+  <div class="panel-head">
+    <div>
+      <h1>数据库统计</h1>
+      <p>进入页面时仅展示浏览器缓存；点击刷新后才会重新读取数据库结构与数据量。</p>
+    </div>
+    <div class="toolbar-actions">
+      <button class="btn btn-primary" type="button" data-database-stats-refresh>刷新</button>
+    </div>
+  </div>
+
+  <div class="database-stats-toolbar">
+    <div class="database-stats-summary">
+      <strong data-database-stats-summary>等待刷新</strong>
+      <span data-database-stats-cache-state>浏览器暂无缓存</span>
+    </div>
+  </div>
+
+  <div class="database-stats-sheet-wrap" data-database-stats-sheet-wrap hidden>
+    <table class="database-stats-sheet" aria-label="数据库统计大表">
+      <thead>
+        <tr>
+          <th scope="col">表名</th>
+          <th scope="col">备注</th>
+          <th scope="col">数据量</th>
+          <th scope="col">表设计</th>
+        </tr>
+      </thead>
+      <tbody data-database-stats-body></tbody>
+    </table>
+  </div>
+
+  <div class="empty-state database-stats-empty" data-database-stats-empty>
+    <strong>浏览器暂无缓存</strong>
+    <span>点击右上角“刷新”后，系统会读取最新的表结构、表备注和数据量。</span>
+  </div>
+</section>
+{% endblock %}

@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     domains::{
-        api_tokens, audit, auth, bootstrap, files, notifications, project_resources, projects,
-        rbac, storage, users,
+        api_tokens, audit, auth, bootstrap, database_stats, files, notifications,
+        project_resources, projects, rbac, storage, users,
     },
     platform::{
         crypto,
@@ -372,6 +372,30 @@ pub struct SystemPermissionPayload {
     pub resource_type: String,
     pub resource_key: String,
     pub granted: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DatabaseStatsColumnPayload {
+    pub name: String,
+    pub data_type: String,
+    pub required: bool,
+    pub primary_key: bool,
+    pub default_value: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DatabaseTableStatsPayload {
+    pub table_name: String,
+    pub remark: String,
+    pub row_count: i64,
+    pub column_count: usize,
+    pub columns: Vec<DatabaseStatsColumnPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DatabaseStatsSnapshotPayload {
+    pub refreshed_at: String,
+    pub tables: Vec<DatabaseTableStatsPayload>,
 }
 
 #[derive(Debug, Serialize)]
@@ -3113,6 +3137,18 @@ pub async fn list_system_permissions(
     Ok(json(payload))
 }
 
+pub async fn list_system_database_stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<DatabaseStatsSnapshotPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.database_stats.view").await?;
+    let snapshot = database_stats::build_snapshot(pool).await?;
+
+    Ok(json(database_stats_snapshot_payload(snapshot)))
+}
+
 pub async fn list_system_audit_logs(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4236,6 +4272,35 @@ fn system_permission_payload(permission: rbac::PermissionSummary) -> SystemPermi
         resource_type: permission.resource_type,
         resource_key: permission.resource_key,
         granted: permission.granted,
+    }
+}
+
+fn database_stats_snapshot_payload(
+    snapshot: database_stats::DatabaseStatsSnapshot,
+) -> DatabaseStatsSnapshotPayload {
+    DatabaseStatsSnapshotPayload {
+        refreshed_at: snapshot.refreshed_at,
+        tables: snapshot
+            .tables
+            .into_iter()
+            .map(|table| DatabaseTableStatsPayload {
+                table_name: table.table_name,
+                remark: table.remark,
+                row_count: table.row_count,
+                column_count: table.column_count,
+                columns: table
+                    .columns
+                    .into_iter()
+                    .map(|column| DatabaseStatsColumnPayload {
+                        name: column.name,
+                        data_type: column.data_type,
+                        required: column.required,
+                        primary_key: column.primary_key,
+                        default_value: column.default_value,
+                    })
+                    .collect(),
+            })
+            .collect(),
     }
 }
 

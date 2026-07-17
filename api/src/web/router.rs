@@ -239,6 +239,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::storage_settings).post(web::user::storage_settings_save),
         )
         .route(
+            "/web/system/database-stats",
+            get(web::user::system_database_stats_page),
+        )
+        .route(
             "/web/system/storage/probe",
             axum::routing::post(web::user::storage_settings_probe),
         )
@@ -311,6 +315,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/system/permissions",
             get(web::api::list_system_permissions),
+        )
+        .route(
+            "/api/v1/system/database-stats",
+            get(web::api::list_system_database_stats),
         )
         .route(
             "/api/v1/system/audit",

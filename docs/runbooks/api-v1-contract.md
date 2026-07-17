@@ -693,6 +693,14 @@ PATCH /api/v1/system/roles/{role_code}/permissions
 GET   /api/v1/system/permissions
 ```
 
+数据库统计：
+
+```text
+GET /api/v1/system/database-stats
+```
+
+数据库统计会返回一次性快照，包含所有业务表、表备注、数据量和字段设计；该接口只供系统管理页面在手动点击“刷新”时调用。
+
 审计：
 
 ```text
