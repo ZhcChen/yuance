@@ -5584,39 +5584,20 @@
       .catch(function () {});
   }
 
-  function documentViewerModal() {
-    return document.querySelector("[data-document-viewer]");
-  }
-
-  function stopDocumentViewer(modal) {
-    var frame = modal && modal.querySelector("[data-document-viewer-frame]");
-    var openLink = modal && modal.querySelector("[data-document-viewer-open]");
-    if (frame) {
-      frame.removeAttribute("src");
-      frame.src = "about:blank";
-    }
-    if (openLink) {
-      openLink.setAttribute("href", "#");
-    }
-  }
-
-  function openDocumentViewer(url, title, trigger) {
-    var modal = documentViewerModal();
-    if (!modal || !url) {
+  function openDocumentPreviewWindow(url) {
+    if (!url) {
       showToast("当前文件预览地址不可用。", "error");
       return;
     }
-    var frame = modal.querySelector("[data-document-viewer-frame]");
-    var heading = modal.querySelector("[data-document-viewer-title]");
-    var openLink = modal.querySelector("[data-document-viewer-open]");
-    if (!frame || !heading || !openLink) {
-      showToast("文档预览容器未准备完成。", "error");
-      return;
+    var openedWindow = null;
+    try {
+      openedWindow = window.open(url, "_blank", "noopener");
+    } catch (_error) {
+      openedWindow = null;
     }
-    heading.textContent = title || "文档预览";
-    openLink.href = url;
-    frame.src = url;
-    openModal(modal, trigger);
+    if (!openedWindow) {
+      window.location.href = url;
+    }
   }
 
   function richAttachmentElement(target) {
@@ -5715,7 +5696,7 @@
       return;
     }
     if (meta.previewMode === "document" && meta.documentPreviewUrl) {
-      openDocumentViewer(meta.documentPreviewUrl, meta.title, attachment);
+      openDocumentPreviewWindow(meta.documentPreviewUrl);
       return;
     }
     attachment.dataset.imageSource = meta.source;
@@ -6119,8 +6100,6 @@
     if (modal.matches("[data-image-viewer]")) {
       stopImageViewerDrag();
       stopImageViewerMedia(modal);
-    } else if (modal.matches("[data-document-viewer]")) {
-      stopDocumentViewer(modal);
     }
     modal.modalCloseTimer = window.setTimeout(function () {
       if (!modal.classList.contains("open")) {
@@ -6250,11 +6229,7 @@
     var documentPreviewTrigger = event.target.closest("[data-document-preview-url]");
     if (documentPreviewTrigger) {
       event.preventDefault();
-      openDocumentViewer(
-        documentPreviewTrigger.dataset.documentPreviewUrl || "",
-        documentPreviewTrigger.dataset.documentPreviewTitle || "",
-        documentPreviewTrigger
-      );
+      openDocumentPreviewWindow(documentPreviewTrigger.dataset.documentPreviewUrl || "");
       return;
     }
 
