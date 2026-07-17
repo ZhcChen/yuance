@@ -57,7 +57,7 @@
     {% if !comment.is_flow %}
     <li class="discussion-post" id="comment-{{ comment.id }}">
       <div class="discussion-avatar" data-user-avatar data-avatar-name="{{ comment.author }}" aria-hidden="true">{{ comment.author }}</div>
-      <article class="discussion-post-content">
+      <div class="discussion-post-shell">
         <header class="discussion-post-head">
           <div>
             <strong>{{ comment.author }}</strong>
@@ -72,82 +72,84 @@
             {% if comment.is_edited %}<span>编辑于 {{ comment.updated_at }}</span>{% endif %}
           </div>
         </header>
-        <div class="discussion-post-body discussion-rich-body">{{ comment.body_html|safe }}</div>
+        <article class="discussion-post-content">
+          <div class="discussion-post-body discussion-rich-body">{{ comment.body_html|safe }}</div>
 
-        {% if comment.has_attachments %}
-        <div class="discussion-attachments" aria-label="评论附件">
-          {% for attachment in comment.attachments %}
-          <article class="discussion-attachment">
-            {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
-            <button class="discussion-attachment-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
-              <span class="attachment-image-frame" data-image-preview-frame>
-                <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
-                <span class="attachment-image-state" data-image-preview-status>加载预览</span>
-              </span>
-            </button>
-            {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
-            <button class="discussion-attachment-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览视频 {{ attachment.filename }}">
-              <span class="attachment-image-frame">
-                <video src="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
-                <span class="attachment-video-play" aria-hidden="true">▶</span>
-              </span>
-            </button>
-            {% else %}
-            <span class="discussion-file-type" aria-hidden="true">FILE</span>
-            {% endif %}
-            <div>
-              <strong>{{ attachment.filename }}</strong>
-              <span>{{ attachment.byte_size }} · {{ attachment.created_by }} · {{ attachment.created_at }}</span>
-            </div>
-            {% if attachment.status_code == "uploaded" %}
-            <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载</a>
-            {% else %}
-            <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
-            {% endif %}
-          </article>
-          {% endfor %}
-        </div>
-        {% endif %}
-
-        {% if can_manage_work_items && !item.is_deleted %}
-        <footer class="discussion-post-actions">
-          <button class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle="reply-form-{{ comment.id }}">回复</button>
-          {% if comment.can_manage %}
-          <button class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-{{ comment.id }}">编辑</button>
-          {% endif %}
-        </footer>
-        <form id="reply-form-{{ comment.id }}" class="discussion-composer discussion-reply-form" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ comment.author_username }}" hidden>
-          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-          <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">
-          <input type="hidden" name="body_format" value="html" data-discussion-body-format>
-          <input type="hidden" name="body" value="" data-discussion-body>
-          <div class="discussion-composer-main">
-            <div class="discussion-replying-to">回复 <strong>{{ comment.author }}</strong></div>
-            <div class="rich-text-editor rich-text-editor-compact" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-parent-id="{{ comment.id }}" data-placeholder="写下你的回复，或直接粘贴截图...">
-              <div class="rich-text-toolbar" aria-label="富文本工具栏">
-                <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
-                <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
-                <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
-                <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
-                <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
-                <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
-                <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
+          {% if comment.has_attachments %}
+          <div class="discussion-attachments" aria-label="评论附件">
+            {% for attachment in comment.attachments %}
+            <article class="discussion-attachment">
+              {% if attachment.is_previewable_image && attachment.status_code == "uploaded" %}
+              <button class="discussion-attachment-preview" type="button" data-image-preview data-media-kind="image" data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览图片 {{ attachment.filename }}">
+                <span class="attachment-image-frame" data-image-preview-frame>
+                  <img alt="{{ attachment.filename }}" data-image-preview-image hidden>
+                  <span class="attachment-image-state" data-image-preview-status>加载预览</span>
+                </span>
+              </button>
+              {% else if attachment.is_previewable_video && attachment.status_code == "uploaded" %}
+              <button class="discussion-attachment-preview" type="button" data-media-preview data-media-kind="video" data-image-source="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" data-image-title="{{ attachment.filename }}" data-image-gallery="work-item-media-{{ item.key }}" aria-label="预览视频 {{ attachment.filename }}">
+                <span class="attachment-image-frame">
+                  <video src="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" muted preload="metadata" playsinline></video>
+                  <span class="attachment-video-play" aria-hidden="true">▶</span>
+                </span>
+              </button>
+              {% else %}
+              <span class="discussion-file-type" aria-hidden="true">FILE</span>
+              {% endif %}
+              <div>
+                <strong>{{ attachment.filename }}</strong>
+                <span>{{ attachment.byte_size }} · {{ attachment.created_by }} · {{ attachment.created_at }}</span>
               </div>
-              <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="写下你的回复，或直接粘贴截图..."></div>
-              <div class="rich-text-drop-hint">支持粘贴截图或拖拽文件。</div>
-            </div>
-            <div class="discussion-composer-footer">
-              <span class="discussion-file-hint" data-discussion-file-hint>截图可直接粘贴，文件可拖拽到编辑器内。</span>
-              <button class="btn btn-secondary" type="button" data-discussion-reply-cancel>取消</button>
-              <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
-              <button class="btn btn-secondary" type="submit" data-discussion-submit>回复</button>
-              <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>回复并指派</button>
-            </div>
-            <div class="discussion-upload-status" role="status" aria-live="polite" data-discussion-status hidden></div>
+              {% if attachment.status_code == "uploaded" %}
+              <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载</a>
+              {% else %}
+              <span class="status status-{{ attachment.status_tone }}">{{ attachment.status }}</span>
+              {% endif %}
+            </article>
+            {% endfor %}
           </div>
-        </form>
-        {% endif %}
-      </article>
+          {% endif %}
+
+          {% if can_manage_work_items && !item.is_deleted %}
+          <footer class="discussion-post-actions">
+            <button class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle="reply-form-{{ comment.id }}">回复</button>
+            {% if comment.can_manage %}
+            <button class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-{{ comment.id }}">编辑</button>
+            {% endif %}
+          </footer>
+          <form id="reply-form-{{ comment.id }}" class="discussion-composer discussion-reply-form" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ comment.author_username }}" hidden>
+            <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">
+            <input type="hidden" name="body_format" value="html" data-discussion-body-format>
+            <input type="hidden" name="body" value="" data-discussion-body>
+            <div class="discussion-composer-main">
+              <div class="discussion-replying-to">回复 <strong>{{ comment.author }}</strong></div>
+              <div class="rich-text-editor rich-text-editor-compact" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-parent-id="{{ comment.id }}" data-placeholder="写下你的回复，或直接粘贴截图...">
+                <div class="rich-text-toolbar" aria-label="富文本工具栏">
+                  <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
+                  <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
+                  <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
+                  <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
+                  <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
+                  <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
+                  <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
+                </div>
+                <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="写下你的回复，或直接粘贴截图..."></div>
+                <div class="rich-text-drop-hint">支持粘贴截图或拖拽文件。</div>
+              </div>
+              <div class="discussion-composer-footer">
+                <span class="discussion-file-hint" data-discussion-file-hint>截图可直接粘贴，文件可拖拽到编辑器内。</span>
+                <button class="btn btn-secondary" type="button" data-discussion-reply-cancel>取消</button>
+                <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
+                <button class="btn btn-secondary" type="submit" data-discussion-submit>回复</button>
+                <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>回复并指派</button>
+              </div>
+              <div class="discussion-upload-status" role="status" aria-live="polite" data-discussion-status hidden></div>
+            </div>
+          </form>
+          {% endif %}
+        </article>
+      </div>
     </li>
     {% endif %}
     {% endfor %}
