@@ -2442,21 +2442,19 @@ textarea:focus-visible {
 .profile-hero {
   padding: 16px 18px;
   gap: 16px;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .profile-hero-main {
   min-width: 0;
   display: grid;
   flex: 1 1 auto;
-  gap: 14px;
-  padding: 16px 18px;
-  border: 1px solid var(--brand-line);
-  border-radius: 20px;
-  background:
-    radial-gradient(circle at top left, var(--brand-soft) 0%, transparent 34%),
-    linear-gradient(135deg, var(--brand-soft) 0%, var(--panel) 56%, var(--panel-soft) 100%);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 24%);
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .profile-hero-header {
@@ -2477,9 +2475,8 @@ textarea:focus-visible {
   height: 58px;
   display: grid;
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 28%);
+  border: 0;
   border-radius: 18px;
-  box-shadow: 0 10px 24px rgb(55 107 155 / 16%);
   color: #fff;
   font-size: 20px;
   font-weight: 800;
@@ -2514,7 +2511,7 @@ textarea:focus-visible {
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--panel-soft);
+  background: transparent;
   color: var(--muted-strong);
   font-size: 12px;
   font-weight: 700;
@@ -2528,7 +2525,7 @@ textarea:focus-visible {
   padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--panel-soft);
+  background: transparent;
   color: var(--muted-strong);
   font-size: 12px;
   font-weight: 600;
@@ -2542,19 +2539,21 @@ textarea:focus-visible {
 .detail-dl.inline.profile-hero-details {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .detail-dl.inline.profile-hero-details div {
   display: grid;
   align-content: center;
   gap: 5px;
-  min-height: 62px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-soft) 100%);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   border-bottom: 0;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+  box-shadow: none;
 }
 
 .profile-hero-details dt {
@@ -2599,7 +2598,7 @@ textarea:focus-visible {
 .profile-hero-actions .btn {
   padding-inline: 12px;
   border-radius: 12px;
-  box-shadow: 0 6px 14px rgb(22 34 50 / 6%);
+  box-shadow: none;
 }
 
 .workspace-main,
@@ -8162,7 +8161,7 @@ select option {
 
 @media (max-width: 900px) {
   .profile-hero-main {
-    padding: 14px;
+    padding: 0;
   }
 
   .profile-hero-overview {
