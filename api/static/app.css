@@ -7515,7 +7515,7 @@ select option {
 
 .database-stats-sheet {
   width: 100%;
-  min-width: 1180px;
+  min-width: 760px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -7573,90 +7573,6 @@ select option {
 .database-stats-count-cell span {
   color: var(--muted);
   font-size: 12px;
-}
-
-.database-stats-columns {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.database-stats-column-row {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--panel) 94%, var(--brand-soft) 6%);
-}
-
-.database-stats-column-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.database-stats-column-head strong {
-  color: var(--text);
-  font-size: 13px;
-  line-height: 20px;
-}
-
-.database-stats-column-head code {
-  padding: 3px 8px;
-  border-radius: 999px;
-  color: var(--brand);
-  background: color-mix(in srgb, var(--brand-soft) 70%, transparent);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.database-stats-column-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 12px;
-}
-
-.database-stats-column-flags {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.database-stats-flag {
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.database-stats-flag.primary {
-  color: #1e40af;
-  background: rgba(59, 130, 246, .12);
-}
-
-.database-stats-flag.required {
-  color: #0f766e;
-  background: rgba(16, 185, 129, .14);
-}
-
-.database-stats-flag.optional {
-  color: var(--muted-strong);
-  background: color-mix(in srgb, var(--panel-hover) 92%, transparent);
-}
-
-.database-stats-default {
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 18px;
-  word-break: break-all;
 }
 
 .database-stats-empty {

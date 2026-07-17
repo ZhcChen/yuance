@@ -12,7 +12,7 @@
   <div class="panel-head">
     <div>
       <h1>数据库统计</h1>
-      <p>进入页面时仅展示浏览器缓存；点击刷新后才会重新读取数据库结构与数据量。</p>
+      <p>进入页面时仅展示浏览器缓存；点击刷新后才会重新读取最新表清单、备注与数据量。</p>
     </div>
     <div class="toolbar-actions">
       <button class="btn btn-primary" type="button" data-database-stats-refresh>刷新</button>
@@ -33,7 +33,6 @@
           <th scope="col">表名</th>
           <th scope="col">备注</th>
           <th scope="col">数据量</th>
-          <th scope="col">表设计</th>
         </tr>
       </thead>
       <tbody data-database-stats-body></tbody>
@@ -42,7 +41,7 @@
 
   <div class="empty-state database-stats-empty" data-database-stats-empty>
     <strong>浏览器暂无缓存</strong>
-    <span>点击右上角“刷新”后，系统会读取最新的表结构、表备注和数据量。</span>
+    <span>点击右上角“刷新”后，系统会读取最新的表清单、表备注和数据量。</span>
   </div>
 </section>
 {% endblock %}

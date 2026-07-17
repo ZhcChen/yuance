@@ -230,32 +230,6 @@
       return sum + Number(table && table.row_count || 0);
     }, 0);
     body.innerHTML = tables.map(function (table) {
-      var columns = Array.isArray(table.columns) ? table.columns : [];
-      var columnHtml = columns.map(function (column) {
-        var flags = [];
-        if (column.primary_key) {
-          flags.push('<span class="database-stats-flag primary">主键</span>');
-        }
-        if (column.required) {
-          flags.push('<span class="database-stats-flag required">必填</span>');
-        } else {
-          flags.push('<span class="database-stats-flag optional">可空</span>');
-        }
-        return (
-          '<li class="database-stats-column-row">'
-            + '<div class="database-stats-column-head">'
-            + '<strong>' + escapeHtml(column.name || "") + '</strong>'
-            + '<code>' + escapeHtml(column.data_type || "TEXT") + '</code>'
-            + '</div>'
-            + '<div class="database-stats-column-meta">'
-            + '<div class="database-stats-column-flags">' + flags.join("") + '</div>'
-            + '<span class="database-stats-default">默认值：'
-            + escapeHtml(String(column.default_value || "—"))
-            + '</span>'
-            + '</div>'
-            + '</li>'
-        );
-      }).join("");
       return (
         "<tr>"
           + '<td class="database-stats-table-name"><strong>' + escapeHtml(table.table_name || "") + '</strong></td>'
@@ -264,7 +238,6 @@
           + '<strong>' + formatDatabaseStatsCount(table.row_count) + "</strong>"
           + "<span>" + formatDatabaseStatsCount(table.column_count) + " 个字段</span>"
           + "</td>"
-          + '<td><ul class="database-stats-columns">' + columnHtml + "</ul></td>"
           + "</tr>"
       );
     }).join("");
