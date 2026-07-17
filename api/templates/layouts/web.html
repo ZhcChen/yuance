@@ -214,5 +214,23 @@
       </div>
     </section>
   </aside>
+  <aside id="document-preview-modal" class="modal document-viewer-modal" data-modal data-document-viewer hidden aria-hidden="true">
+    <div class="modal-backdrop document-viewer-backdrop" data-modal-close></div>
+    <section class="document-viewer-shell" role="dialog" aria-modal="true" aria-labelledby="document-preview-title" tabindex="-1">
+      <header class="document-viewer-head">
+        <div>
+          <strong id="document-preview-title" data-document-viewer-title>文档预览</strong>
+          <span>ONLYOFFICE 文档查看</span>
+        </div>
+        <div class="document-viewer-actions">
+          <a class="document-viewer-link" href="#" target="_blank" rel="noopener" data-document-viewer-open>新窗口打开</a>
+          <button class="image-viewer-control document-viewer-close" type="button" data-modal-close aria-label="关闭文档预览" title="关闭"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+        </div>
+      </header>
+      <div class="document-viewer-body">
+        <iframe class="document-viewer-frame" data-document-viewer-frame title="文档预览" loading="lazy"></iframe>
+      </div>
+    </section>
+  </aside>
 </body>
 </html>

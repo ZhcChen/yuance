@@ -40,6 +40,7 @@ API 端口：127.0.0.1:33033
 - `/web`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
+- 如需启用 Office/PDF/TXT 在线预览，需要额外提供 ONLYOFFICE Docs 服务，并配置 `YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL`。
 
 ## 本地构建镜像 tar
 
@@ -124,6 +125,18 @@ mkdir -p data backups
 YUANCE_SESSION_SECRET
 YUANCE_SECURITY_MASTER_KEY
 ```
+
+如需启用文档在线预览，再额外填写：
+
+```text
+YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL=https://onlyoffice.example.com
+```
+
+要求：
+
+- 浏览器可以访问该 ONLYOFFICE 服务地址。
+- ONLYOFFICE 服务本身可以访问元策生成的 OSS 预签名下载地址。
+- 如果当前仍使用测试内存存储，文档预览页会提示不可用；需要先切换到对象存储。
 
 生成随机值：
 

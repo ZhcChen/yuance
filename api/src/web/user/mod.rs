@@ -210,6 +210,7 @@ struct AttachmentView {
     content_type: String,
     is_previewable_image: bool,
     is_previewable_video: bool,
+    is_previewable_document: bool,
     byte_size: String,
     status_code: String,
     status: String,
@@ -878,6 +879,17 @@ struct WorkItemFlowHistoryPartialTemplate {
     has_flow_history: bool,
     flow_history_pagination: PaginationView,
     flow_history_pagination_pages: Vec<PaginationPageView>,
+}
+
+#[derive(Template)]
+#[template(path = "web/document_preview.html")]
+struct DocumentPreviewTemplate {
+    title: String,
+    download_url: String,
+    has_error: bool,
+    error_message: String,
+    api_script_url: String,
+    config_json: String,
 }
 
 #[derive(Template)]
@@ -2784,6 +2796,45 @@ pub async fn project_attachment_download(
     Ok(Redirect::to("/web/projects/YCE").into_response())
 }
 
+pub async fn project_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+        let download_url =
+            format!("/web/projects/{project_key}/attachments/{attachment_id}/download");
+
+        return attachment_document_preview_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+            "project",
+            &project_key,
+            format!(
+                r#"{{"source":"web","project":"{}","attachment_id":{attachment_id}}}"#,
+                project_key
+            ),
+            &download_url,
+        )
+        .await;
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
 pub async fn project_resource_create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3113,6 +3164,68 @@ pub async fn project_resource_attachment_download(
                 r#"{{"source":"web","project":"{}","attachment_id":{attachment_id}}}"#,
                 project.project_key
             ),
+        )
+        .await;
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
+}
+
+pub async fn project_resource_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let resource =
+            project_resources::get_project_resource(pool, project.id, resource_id).await?;
+        if resource.is_protected
+            && !verify_project_resource_access_token(
+                &state,
+                &query.access,
+                context.user_id,
+                resource.id,
+            )?
+        {
+            return Err(AppError::Forbidden("请先验证资料访问密码".to_string()));
+        }
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+                .await?;
+        let mut download_url = format!(
+            "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download"
+        );
+        if !query.access.trim().is_empty() {
+            let access_query = serde_urlencoded::to_string([("access", query.access.as_str())])
+                .unwrap_or_else(|_| String::new());
+            if !access_query.is_empty() {
+                download_url.push('?');
+                download_url.push_str(&access_query);
+            }
+        }
+
+        return attachment_document_preview_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+            "project_resource",
+            &resource.id.to_string(),
+            format!(
+                r#"{{"source":"web","project":"{}","resource_id":{},"attachment_id":{attachment_id}}}"#,
+                project_key, resource.id
+            ),
+            &download_url,
         )
         .await;
     }
@@ -3800,6 +3913,48 @@ pub async fn work_item_attachment_download(
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
 }
 
+pub async fn work_item_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+        let download_url =
+            format!("/web/work-items/{item_key}/attachments/{attachment_id}/download");
+
+        return attachment_document_preview_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+            "work_item",
+            &item_key,
+            format!(r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#, item_key),
+            &download_url,
+        )
+        .await;
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
 pub async fn work_item_comment_attachment_create(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3900,6 +4055,51 @@ pub async fn work_item_comment_attachment_download(
                 r#"{{"source":"web","work_item":"{}","attachment_id":{attachment_id}}}"#,
                 item.key
             ),
+        )
+        .await;
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+pub async fn work_item_comment_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let (item, _project, comment) =
+            load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+        let download_url = format!(
+            "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download"
+        );
+
+        return attachment_document_preview_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+            "comment",
+            &comment_id.to_string(),
+            format!(
+                r#"{{"source":"web","work_item":"{}","comment_id":{},"attachment_id":{attachment_id}}}"#,
+                item.key, comment.id
+            ),
+            &download_url,
         )
         .await;
     }
@@ -6255,12 +6455,15 @@ fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> Attachme
     let (status, status_tone) = attachment_status_label(&attachment.status);
     let is_previewable_image = is_previewable_image_content_type(&attachment.content_type);
     let is_previewable_video = is_previewable_video_content_type(&attachment.content_type);
+    let is_previewable_document =
+        is_previewable_document_attachment(&attachment.original_filename, &attachment.content_type);
     AttachmentView {
         id: attachment.id,
         filename: attachment.original_filename,
         content_type: attachment.content_type,
         is_previewable_image,
         is_previewable_video,
+        is_previewable_document,
         byte_size: format_byte_size(attachment.byte_size),
         status_code: attachment.status,
         status: status.to_string(),
@@ -7069,6 +7272,140 @@ async fn attachment_download_redirect(
             Ok(response)
         }
         DownloadTarget::SignedRedirect { url } => Ok(Redirect::temporary(&url).into_response()),
+    }
+}
+
+async fn attachment_document_preview_response(
+    state: &AppState,
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    attachment: files::FileAttachmentSummary,
+    target_type: &str,
+    target_id: &str,
+    metadata: String,
+    download_url: &str,
+) -> AppResult<Response> {
+    audit::record(
+        pool,
+        Some(actor_user_id),
+        "file.preview",
+        target_type,
+        target_id,
+        &metadata,
+    )
+    .await?;
+
+    let template =
+        build_document_preview_template(state, pool, attachment, download_url.to_string()).await?;
+    Ok(response::html(template)?.into_response())
+}
+
+async fn build_document_preview_template(
+    state: &AppState,
+    pool: &SqlitePool,
+    attachment: files::FileAttachmentSummary,
+    download_url: String,
+) -> AppResult<DocumentPreviewTemplate> {
+    let title = attachment.original_filename.clone();
+    if attachment.status == "deleted" {
+        return Ok(document_preview_error_template(
+            title,
+            download_url,
+            "附件已归档，不能预览。".to_string(),
+        ));
+    }
+    if attachment.status != "uploaded" {
+        return Ok(document_preview_error_template(
+            title,
+            download_url,
+            "附件尚未上传完成，请稍后再试。".to_string(),
+        ));
+    }
+
+    let Some(document_type) =
+        attachment_preview_document_type(&attachment.original_filename, &attachment.content_type)
+    else {
+        return Ok(document_preview_error_template(
+            title,
+            download_url,
+            "当前文件类型暂不支持文档预览。".to_string(),
+        ));
+    };
+    let Some(file_type) =
+        attachment_preview_file_type(&attachment.original_filename, &attachment.content_type)
+    else {
+        return Ok(document_preview_error_template(
+            title,
+            download_url,
+            "当前文件类型暂不支持文档预览。".to_string(),
+        ));
+    };
+    let Some(document_server_url) = onlyoffice_document_server_url(&state.settings) else {
+        return Ok(document_preview_error_template(
+            title,
+            download_url,
+            "文档预览服务尚未配置，请先设置 ONLYOFFICE 文档服务地址。".to_string(),
+        ));
+    };
+    if storage::read_test_memory_object(pool, &state.settings, &attachment.object_key)
+        .await?
+        .is_some()
+    {
+        return Ok(document_preview_error_template(
+            title,
+            download_url,
+            "当前环境仍在使用测试存储，ONLYOFFICE 无法访问该文件。请切换到对象存储后再预览。".to_string(),
+        ));
+    }
+
+    let signed = storage::presign_download_url(pool, &state.settings, &attachment.object_key, 3600)
+        .await?;
+    let config = serde_json::json!({
+        "documentType": document_type,
+        "document": {
+            "fileType": file_type,
+            "key": format!("yuance-attachment-{}-{}", attachment.file_object_id, attachment.id),
+            "title": attachment.original_filename,
+            "url": signed.url,
+        },
+        "editorConfig": {
+            "mode": "view",
+            "lang": "zh-CN",
+        }
+    });
+
+    Ok(DocumentPreviewTemplate {
+        title,
+        download_url,
+        has_error: false,
+        error_message: String::new(),
+        api_script_url: format!("{document_server_url}/web-apps/apps/api/documents/api.js"),
+        config_json: serde_json::to_string(&config)
+            .map_err(|error| AppError::BadRequest(format!("生成文档预览配置失败：{error}")))?,
+    })
+}
+
+fn document_preview_error_template(
+    title: String,
+    download_url: String,
+    error_message: String,
+) -> DocumentPreviewTemplate {
+    DocumentPreviewTemplate {
+        title,
+        download_url,
+        has_error: true,
+        error_message,
+        api_script_url: String::new(),
+        config_json: "{}".to_string(),
+    }
+}
+
+fn onlyoffice_document_server_url(settings: &crate::platform::config::Settings) -> Option<String> {
+    let url = settings.onlyoffice_document_server_url.trim().trim_end_matches('/');
+    if url.is_empty() {
+        None
+    } else {
+        Some(url.to_string())
     }
 }
 
@@ -8634,6 +8971,65 @@ fn is_previewable_video_content_type(content_type: &str) -> bool {
         content_type.trim().to_ascii_lowercase().as_str(),
         "video/mp4" | "video/ogg" | "video/quicktime" | "video/webm"
     )
+}
+
+fn is_previewable_document_attachment(filename: &str, content_type: &str) -> bool {
+    attachment_preview_document_type(filename, content_type).is_some()
+}
+
+fn attachment_preview_document_type(filename: &str, content_type: &str) -> Option<&'static str> {
+    let file_type = attachment_preview_file_type(filename, content_type)?;
+    match file_type {
+        "doc" | "docx" | "odt" | "rtf" | "txt" => Some("word"),
+        "xls" | "xlsx" | "csv" | "ods" => Some("cell"),
+        "ppt" | "pptx" | "odp" => Some("slide"),
+        "pdf" => Some("pdf"),
+        _ => None,
+    }
+}
+
+fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'static str> {
+    match normalized_attachment_extension(filename).as_deref() {
+        Some("doc") => Some("doc"),
+        Some("docx") => Some("docx"),
+        Some("odt") => Some("odt"),
+        Some("rtf") => Some("rtf"),
+        Some("txt") => Some("txt"),
+        Some("xls") => Some("xls"),
+        Some("xlsx") => Some("xlsx"),
+        Some("csv") => Some("csv"),
+        Some("ods") => Some("ods"),
+        Some("ppt") => Some("ppt"),
+        Some("pptx") => Some("pptx"),
+        Some("odp") => Some("odp"),
+        Some("pdf") => Some("pdf"),
+        _ => attachment_preview_file_type_from_content_type(content_type),
+    }
+}
+
+fn normalized_attachment_extension(filename: &str) -> Option<String> {
+    let (_, extension) = filename.trim().rsplit_once('.')?;
+    let extension = extension.trim().to_ascii_lowercase();
+    if extension.is_empty() {
+        None
+    } else {
+        Some(extension)
+    }
+}
+
+fn attachment_preview_file_type_from_content_type(content_type: &str) -> Option<&'static str> {
+    match content_type.trim().to_ascii_lowercase().as_str() {
+        "application/msword" => Some("doc"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
+        "application/vnd.ms-excel" => Some("xls"),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
+        "application/vnd.ms-powerpoint" => Some("ppt"),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => Some("pptx"),
+        "application/pdf" => Some("pdf"),
+        "text/plain" => Some("txt"),
+        "text/csv" => Some("csv"),
+        _ => None,
+    }
 }
 
 fn user_contact(email: String, mobile: String) -> String {

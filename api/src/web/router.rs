@@ -35,6 +35,7 @@ impl AppState {
                 log_level: "off".to_string(),
                 env: "test".to_string(),
                 security_master_key: "test-master-key".to_string(),
+                onlyoffice_document_server_url: String::new(),
             },
             pool: None,
         }
@@ -111,6 +112,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::project_attachment_download),
         )
         .route(
+            "/web/projects/{project_key}/attachments/{attachment_id}/preview",
+            get(web::user::project_attachment_preview),
+        )
+        .route(
             "/web/projects/{project_key}/resources",
             post(web::user::project_resource_create),
         )
@@ -133,6 +138,10 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download",
             get(web::user::project_resource_attachment_download),
+        )
+        .route(
+            "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+            get(web::user::project_resource_attachment_preview),
         )
         .route(
             "/web/projects/{project_key}/my-analysis",
@@ -183,12 +192,20 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::work_item_comment_attachment_download),
         )
         .route(
+            "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview",
+            get(web::user::work_item_comment_attachment_preview),
+        )
+        .route(
             "/web/work-items/{item_key}/attachments",
             post(web::user::work_item_attachment_create),
         )
         .route(
             "/web/work-items/{item_key}/attachments/{attachment_id}/download",
             get(web::user::work_item_attachment_download),
+        )
+        .route(
+            "/web/work-items/{item_key}/attachments/{attachment_id}/preview",
+            get(web::user::work_item_attachment_preview),
         )
         .route(
             "/web/login",

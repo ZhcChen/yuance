@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · 文档预览</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      display: grid;
+      background:
+        radial-gradient(circle at top, rgb(59 130 246 / 16%), transparent 36%),
+        #0f172a;
+    }
+
+    .preview-page {
+      min-height: 100%;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .preview-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 16px 20px;
+      border-bottom: 1px solid rgb(148 163 184 / 18%);
+      background: rgb(15 23 42 / 72%);
+      backdrop-filter: blur(14px);
+    }
+
+    .preview-head strong {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
+      color: #f8fafc;
+      font-size: 14px;
+      line-height: 22px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .preview-head span {
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .preview-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 14px;
+      border-radius: 999px;
+      background: rgb(59 130 246 / 18%);
+      color: #bfdbfe;
+      font-size: 12px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .preview-link:hover {
+      background: rgb(59 130 246 / 28%);
+      transform: translateY(-1px);
+    }
+
+    .preview-body {
+      min-height: 0;
+      position: relative;
+      padding: 18px;
+    }
+
+    .preview-root,
+    .preview-error {
+      width: 100%;
+      height: 100%;
+      min-height: 320px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: 0 22px 54px rgb(15 23 42 / 28%);
+    }
+
+    .preview-root {
+      position: relative;
+    }
+
+    .preview-status {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        linear-gradient(180deg, rgb(248 250 252 / 94%), rgb(241 245 249 / 96%));
+      color: #475569;
+      font-size: 13px;
+      line-height: 22px;
+      text-align: center;
+      transition: opacity 180ms ease;
+    }
+
+    .preview-root.ready .preview-status {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .preview-error {
+      display: grid;
+      place-items: center;
+      padding: 32px;
+      background:
+        linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 98%));
+      color: #0f172a;
+      text-align: center;
+    }
+
+    .preview-error strong {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 20px;
+      line-height: 28px;
+    }
+
+    .preview-error p {
+      max-width: 480px;
+      margin: 0 auto 18px;
+      color: #475569;
+      font-size: 14px;
+      line-height: 24px;
+    }
+
+    @media (max-width: 720px) {
+      .preview-head {
+        padding: 14px 16px;
+      }
+
+      .preview-body {
+        padding: 12px;
+      }
+
+      .preview-link {
+        min-height: 34px;
+        padding: 0 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-page">
+    <header class="preview-head">
+      <div>
+        <strong title="{{ title }}">{{ title }}</strong>
+        <span>文档预览</span>
+      </div>
+      <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载原文件</a>
+    </header>
+    <main class="preview-body">
+      {% if has_error %}
+      <section class="preview-error">
+        <div>
+          <strong>当前无法预览</strong>
+          <p>{{ error_message }}</p>
+          <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载后查看</a>
+        </div>
+      </section>
+      {% else %}
+      <section id="document-preview-root" class="preview-root" aria-label="文档内容区域">
+        <div id="document-preview-status" class="preview-status">正在加载文档预览，请稍候...</div>
+      </section>
+      <script id="document-preview-config" type="application/json">{{ config_json }}</script>
+      <script src="{{ api_script_url }}"></script>
+      <script>
+        (function () {
+          var root = document.getElementById("document-preview-root");
+          var status = document.getElementById("document-preview-status");
+          var configNode = document.getElementById("document-preview-config");
+
+          function setError(message) {
+            if (!root || !status) {
+              return;
+            }
+            root.classList.remove("ready");
+            status.textContent = message;
+            status.style.opacity = "1";
+            status.style.pointerEvents = "auto";
+          }
+
+          function setReady() {
+            if (!root || !status) {
+              return;
+            }
+            root.classList.add("ready");
+          }
+
+          if (!window.DocsAPI || typeof window.DocsAPI.DocEditor !== "function") {
+            setError("ONLYOFFICE 文档脚本加载失败，请检查文档服务配置。");
+            return;
+          }
+
+          try {
+            var config = JSON.parse(configNode ? configNode.textContent || "{}" : "{}");
+            config.events = Object.assign({}, config.events || {}, {
+              onDocumentReady: function () {
+                setReady();
+              },
+              onError: function (event) {
+                var message = event && event.data && event.data.errorDescription
+                  ? event.data.errorDescription
+                  : "文档预览初始化失败，请稍后重试。";
+                setError(message);
+              }
+            });
+            window.docEditor = new window.DocsAPI.DocEditor("document-preview-root", config);
+          } catch (_error) {
+            setError("文档预览初始化失败，请稍后重试。");
+          }
+        })();
+      </script>
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>

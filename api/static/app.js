@@ -1970,6 +1970,83 @@
     ) >= 0;
   }
 
+  function normalizedFileExtension(filename) {
+    var name = String(filename || "").trim();
+    var index = name.lastIndexOf(".");
+    if (index <= 0 || index === name.length - 1) {
+      return "";
+    }
+    return name.slice(index + 1).trim().toLowerCase();
+  }
+
+  function previewableDocumentFileType(filename, contentType) {
+    var extension = normalizedFileExtension(filename);
+    if (
+      [
+        "doc",
+        "docx",
+        "odt",
+        "rtf",
+        "txt",
+        "xls",
+        "xlsx",
+        "csv",
+        "ods",
+        "ppt",
+        "pptx",
+        "odp",
+        "pdf",
+      ].indexOf(extension) >= 0
+    ) {
+      return extension;
+    }
+    switch ((contentType || "").trim().toLowerCase()) {
+      case "application/msword":
+        return "doc";
+      case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return "docx";
+      case "application/vnd.ms-excel":
+        return "xls";
+      case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        return "xlsx";
+      case "application/vnd.ms-powerpoint":
+        return "ppt";
+      case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        return "pptx";
+      case "application/pdf":
+        return "pdf";
+      case "text/plain":
+        return "txt";
+      case "text/csv":
+        return "csv";
+      default:
+        return "";
+    }
+  }
+
+  function isPreviewableDocumentFile(filename, contentType) {
+    return Boolean(previewableDocumentFileType(filename, contentType));
+  }
+
+  function documentPreviewUrlFromSource(source) {
+    if (!source) {
+      return "";
+    }
+    try {
+      var url = new URL(source, window.location.href);
+      if (url.origin !== window.location.origin || !url.pathname.startsWith("/web")) {
+        return "";
+      }
+      if (!url.pathname.endsWith("/download")) {
+        return "";
+      }
+      url.pathname = url.pathname.slice(0, -"/download".length) + "/preview";
+      return url.toString();
+    } catch (_error) {
+      return "";
+    }
+  }
+
   function formatFileSize(byteSize) {
     var value = Number(byteSize || 0);
     if (!Number.isFinite(value) || value <= 0) {
@@ -5507,6 +5584,41 @@
       .catch(function () {});
   }
 
+  function documentViewerModal() {
+    return document.querySelector("[data-document-viewer]");
+  }
+
+  function stopDocumentViewer(modal) {
+    var frame = modal && modal.querySelector("[data-document-viewer-frame]");
+    var openLink = modal && modal.querySelector("[data-document-viewer-open]");
+    if (frame) {
+      frame.removeAttribute("src");
+      frame.src = "about:blank";
+    }
+    if (openLink) {
+      openLink.setAttribute("href", "#");
+    }
+  }
+
+  function openDocumentViewer(url, title, trigger) {
+    var modal = documentViewerModal();
+    if (!modal || !url) {
+      showToast("当前文件预览地址不可用。", "error");
+      return;
+    }
+    var frame = modal.querySelector("[data-document-viewer-frame]");
+    var heading = modal.querySelector("[data-document-viewer-title]");
+    var openLink = modal.querySelector("[data-document-viewer-open]");
+    if (!frame || !heading || !openLink) {
+      showToast("文档预览容器未准备完成。", "error");
+      return;
+    }
+    heading.textContent = title || "文档预览";
+    openLink.href = url;
+    frame.src = url;
+    openModal(modal, trigger);
+  }
+
   function richAttachmentElement(target) {
     if (!target || typeof target.closest !== "function") {
       return null;
@@ -5538,9 +5650,21 @@
     if (!source) {
       return null;
     }
+    var previewMode = "";
+    var documentPreviewUrl = "";
+    if (kind === "image" || kind === "video") {
+      previewMode = "media";
+    } else if (kind === "file") {
+      documentPreviewUrl = documentPreviewUrlFromSource(source);
+      if (documentPreviewUrl && isPreviewableDocumentFile(title, "")) {
+        previewMode = "document";
+      }
+    }
     return {
       kind: kind || "file",
-      previewable: kind === "image" || kind === "video",
+      previewable: previewMode !== "",
+      previewMode: previewMode,
+      documentPreviewUrl: documentPreviewUrl,
       source: source,
       title: String(title || "附件").replace(/\s+/g, " ").trim(),
     };
@@ -5590,6 +5714,10 @@
       showToast("该附件不支持预览。", "error");
       return;
     }
+    if (meta.previewMode === "document" && meta.documentPreviewUrl) {
+      openDocumentViewer(meta.documentPreviewUrl, meta.title, attachment);
+      return;
+    }
     attachment.dataset.imageSource = meta.source;
     attachment.dataset.imageTitle = meta.title;
     attachment.dataset.mediaKind = meta.kind === "video" ? "video" : "image";
@@ -5635,7 +5763,7 @@
     preview.type = "button";
     preview.dataset.richAttachmentMenuAction = "preview";
     preview.setAttribute("role", "menuitem");
-    preview.innerHTML = "<span>预览</span><em>查看图片 / 视频</em>";
+    preview.innerHTML = "<span>预览</span><em>查看图片 / 视频 / 文档</em>";
 
     var download = document.createElement("button");
     download.type = "button";
@@ -5991,6 +6119,8 @@
     if (modal.matches("[data-image-viewer]")) {
       stopImageViewerDrag();
       stopImageViewerMedia(modal);
+    } else if (modal.matches("[data-document-viewer]")) {
+      stopDocumentViewer(modal);
     }
     modal.modalCloseTimer = window.setTimeout(function () {
       if (!modal.classList.contains("open")) {
@@ -6114,6 +6244,17 @@
     if (messageCenterLink && isMessageCenterUrl(messageCenterLink.href) && isPlainWebNavigation(event, messageCenterLink)) {
       event.preventDefault();
       loadMessageCenter(messageCenterLink.href, { history: true });
+      return;
+    }
+
+    var documentPreviewTrigger = event.target.closest("[data-document-preview-url]");
+    if (documentPreviewTrigger) {
+      event.preventDefault();
+      openDocumentViewer(
+        documentPreviewTrigger.dataset.documentPreviewUrl || "",
+        documentPreviewTrigger.dataset.documentPreviewTitle || "",
+        documentPreviewTrigger
+      );
       return;
     }
 
@@ -6999,6 +7140,17 @@
       return "";
     }
 
+    function renderDocumentPreviewAction(source, filename, contentType) {
+      if (!isPreviewableDocumentFile(filename, contentType)) {
+        return "";
+      }
+      var previewUrl = documentPreviewUrlFromSource(source);
+      if (!previewUrl) {
+        return "";
+      }
+      return '<button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="' + escapeHtml(previewUrl) + '" data-document-preview-title="' + escapeHtml(filename || "文件预览") + '">预览文件</button>';
+    }
+
     function renderFolderContent(payload) {
       var folders = Array.isArray(payload && payload.folders) ? payload.folders : [];
       var files = Array.isArray(payload && payload.files) ? payload.files : [];
@@ -7045,6 +7197,11 @@
             html += '</form>';
           }
           if (item.status === "uploaded") {
+            html += renderDocumentPreviewAction(
+              "/web/projects/" + projectPath + "/attachments/" + attachmentPath + "/download",
+              item.filename || "",
+              item.content_type || ""
+            );
             html += '<a class="btn btn-sm btn-secondary" href="/web/projects/' + projectPath + '/attachments/' + attachmentPath + '/download" target="_blank" rel="noopener">下载文件</a>';
           } else {
             html += '<span class="attachment-action-hint">上传完成后可下载</span>';
