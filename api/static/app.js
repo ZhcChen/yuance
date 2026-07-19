@@ -1988,6 +1988,12 @@
         "odt",
         "rtf",
         "txt",
+        "log",
+        "md",
+        "json",
+        "xml",
+        "yaml",
+        "yml",
         "xls",
         "xlsx",
         "csv",
@@ -2017,11 +2023,76 @@
         return "pdf";
       case "text/plain":
         return "txt";
+      case "text/markdown":
+        return "md";
       case "text/csv":
         return "csv";
+      case "application/json":
+        return "json";
+      case "application/xml":
+      case "text/xml":
+        return "xml";
+      case "application/yaml":
+      case "application/x-yaml":
+      case "text/yaml":
+      case "text/x-yaml":
+        return "yaml";
       default:
         return "";
     }
+  }
+
+  function fileVisualKind(filename, contentType) {
+    var extension = previewableDocumentFileType(filename, contentType) || normalizedFileExtension(filename);
+    if (["doc", "docx", "odt", "rtf"].indexOf(extension) >= 0) {
+      return "word";
+    }
+    if (["xls", "xlsx", "csv", "ods"].indexOf(extension) >= 0) {
+      return "sheet";
+    }
+    if (["ppt", "pptx", "odp"].indexOf(extension) >= 0) {
+      return "slide";
+    }
+    if (extension === "pdf") {
+      return "pdf";
+    }
+    if (["txt", "log"].indexOf(extension) >= 0) {
+      return "text";
+    }
+    if (["md", "json", "xml", "yaml", "yml"].indexOf(extension) >= 0) {
+      return "code";
+    }
+    if (["zip", "7z", "rar", "tar", "gz"].indexOf(extension) >= 0) {
+      return "archive";
+    }
+    return "file";
+  }
+
+  function fileVisualBadge(filename, contentType) {
+    var extension = previewableDocumentFileType(filename, contentType) || normalizedFileExtension(filename);
+    if (extension) {
+      return extension.slice(0, 5).toUpperCase();
+    }
+    var kind = fileVisualKind(filename, contentType);
+    if (kind === "word") {
+      return "DOC";
+    }
+    if (kind === "sheet") {
+      return "XLS";
+    }
+    if (kind === "slide") {
+      return "PPT";
+    }
+    if (kind === "pdf") {
+      return "PDF";
+    }
+    if (kind === "code") {
+      return "CODE";
+    }
+    if (kind === "archive") {
+      return "ZIP";
+    }
+    return "FILE";
   }
 
   function isPreviewableDocumentFile(filename, contentType) {
@@ -2582,6 +2653,8 @@
       } else {
         replacement.setAttribute("href", downloadUrl);
         replacement.title = filename;
+        replacement.dataset.yuanceFileKind = fileVisualKind(filename, contentType);
+        replacement.dataset.yuanceFileExt = fileVisualBadge(filename, contentType);
         replacement.textContent = filename;
       }
       node.replaceWith(replacement);
@@ -2921,6 +2994,8 @@
     var kind = richAttachmentMediaKind(file.type || "");
     var isImage = kind === "image";
     var isVideo = kind === "video";
+    var fileKind = isImage || isVideo ? "" : fileVisualKind(file.name || "", file.type || "");
+    var fileBadge = isImage || isVideo ? "" : fileVisualBadge(file.name || "", file.type || "");
     var node = document.createElement(isImage || isVideo ? "figure" : "span");
     node.className = "rich-attachment " + (isImage || isVideo ? "rich-attachment--media" : "rich-attachment--file");
     node.contentEditable = "false";
@@ -2929,6 +3004,10 @@
     node.dataset.align = "left";
     node.dataset.filename = file.name || "未命名文件";
     node.dataset.contentType = file.type || "application/octet-stream";
+    if (fileKind) {
+      node.dataset.fileKind = fileKind;
+      node.dataset.fileExt = fileBadge;
+    }
 
     var media = document.createElement("span");
     media.className = "rich-attachment-media";
@@ -2952,7 +3031,8 @@
       }
     } else {
       media.classList.add("rich-attachment-file-icon");
-      media.textContent = (file.name?.split(".").pop() || "FILE").slice(0, 5).toUpperCase();
+      media.dataset.fileKind = fileKind || "file";
+      media.textContent = fileBadge;
     }
 
     var main = document.createElement("span");
@@ -2961,7 +3041,7 @@
     name.textContent = file.name || "未命名文件";
     var status = document.createElement("span");
     status.dataset.richAttachmentStatus = "";
-    status.textContent = "准备上传 · " + formatFileSize(file.size);
+    status.textContent = (fileBadge ? fileBadge + " · " : "") + "准备上传 · " + formatFileSize(file.size);
     main.append(name, status);
 
     var actions = document.createElement("span");

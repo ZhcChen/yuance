@@ -823,6 +823,8 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
             "data-yuance-align",
+            "data-yuance-file-kind",
+            "data-yuance-file-ext",
         ])
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
@@ -836,6 +838,30 @@ fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> St
         )
         .clean(body)
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resource_body_html_for_display;
+
+    #[test]
+    fn resource_body_preserves_file_card_dataset_attributes() {
+        let html = concat!(
+            "<a data-yuance-attachment-id=\"5\" ",
+            "data-yuance-attachment-kind=\"file\" ",
+            "data-yuance-align=\"left\" ",
+            "data-yuance-file-kind=\"pdf\" ",
+            "data-yuance-file-ext=\"PDF\" ",
+            "href=\"/web/projects/YCE/resources/5/attachments/5/download\" ",
+            "title=\"demo.pdf\">demo.pdf</a>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
+        assert!(rendered.contains("data-yuance-file-kind=\"pdf\""));
+        assert!(rendered.contains("data-yuance-file-ext=\"PDF\""));
+    }
 }
 
 fn ensure_resource_html_media_sources_are_controlled(

@@ -876,7 +876,7 @@ pub async fn read_test_memory_object(
         Err(error) => {
             return Err(AppError::BadRequest(format!(
                 "读取测试对象存储元数据失败：{error}"
-            )))
+            )));
         }
     };
     let content = operator
@@ -889,6 +889,35 @@ pub async fn read_test_memory_object(
         .to_string();
 
     Ok(Some((content_type, content.to_vec())))
+}
+
+pub async fn read_object(
+    pool: &SqlitePool,
+    settings: &Settings,
+    object_key: &str,
+) -> AppResult<(String, Vec<u8>)> {
+    if let Some(result) = read_test_memory_object(pool, settings, object_key).await? {
+        return Ok(result);
+    }
+
+    let object_key = normalize_object_key(object_key)?;
+    let operator = build_operator_from_active_config(pool, settings)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
+    let metadata = operator
+        .stat(&object_key)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取对象存储元数据失败：{error}")))?;
+    let content = operator
+        .read(&object_key)
+        .await
+        .map_err(|error| AppError::BadRequest(format!("读取对象存储文件失败：{error}")))?;
+    let content_type = metadata
+        .content_type()
+        .unwrap_or("application/octet-stream")
+        .to_string();
+
+    Ok((content_type, content.to_vec()))
 }
 
 pub async fn presign_upload_url(

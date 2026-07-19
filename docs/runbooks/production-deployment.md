@@ -40,7 +40,7 @@ API 端口：127.0.0.1:33033
 - `/web`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
-- 如需启用 Office/PDF/TXT 在线预览，需要额外提供 ONLYOFFICE Docs 服务，并配置 `YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL`。
+- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 可直接预览，Office / ODF 文档需要服务器安装 `libreoffice` 或 `soffice`。
 
 ## 本地构建镜像 tar
 
@@ -126,49 +126,26 @@ YUANCE_SESSION_SECRET
 YUANCE_SECURITY_MASTER_KEY
 ```
 
-如需启用文档在线预览，再额外填写：
+如需启用 Office / OpenDocument 离线预览，请确保正式机已安装以下任一命令：
 
-```text
-YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL=https://onlyoffice.example.com
-YUANCE_ONLYOFFICE_JWT_SECRET=<与 ONLYOFFICE JWT_SECRET 相同的固定值>
-```
+- `libreoffice`
+- `soffice`
 
-要求：
-
-- 浏览器可以访问该 ONLYOFFICE 服务地址。
-- ONLYOFFICE 服务本身可以访问元策生成的 OSS 预签名下载地址。
-- ONLYOFFICE Docs 默认开启 JWT 校验；元策需要与文档服务共享同一个 `JWT_SECRET`。如果文档服务显式设置 `JWT_ENABLED=false`，元策侧可留空 `YUANCE_ONLYOFFICE_JWT_SECRET`。
-- 如果当前仍使用测试内存存储，文档预览页会提示不可用；需要先切换到对象存储。
-
-## ONLYOFFICE 部署建议
-
-推荐把 ONLYOFFICE Docs 部署在独立的 amd64 Linux 主机，而不是和 `yuance-api` 共用当前正式机。官方 Docker 安装文档给出的最低要求是：
-
-- CPU：双核 2 GHz 或更高
-- 内存：4 GB 或更多
-- 磁盘：至少 40 GB 可用空间
-- Swap：至少 4 GB
-
-当前元策正式机 `qfy-sc-test` 实测只有约 `1.6 GiB` 内存且 `Swap=0`，不适合直接承载 ONLYOFFICE Docs。
-
-官方 Docker 文档同时说明：
-
-- 从 7.2 开始，如果不显式设置 `JWT_SECRET`，容器会随机生成，重启后可能导致集成失效。
-- `JWT_ENABLED` 默认是 `true`。
-
-因此生产建议是：
-
-1. 在独立主机部署 `onlyoffice/documentserver`。
-2. 显式设置固定 `JWT_SECRET`。
-3. 将 `YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL` 指向该服务公网地址。
-4. 将同一个固定值写入元策正式环境 `YUANCE_ONLYOFFICE_JWT_SECRET`。
-5. 重启元策 `api` 服务后，再从元策页面验证文档预览。
-
-生成随机值：
+验证方式：
 
 ```bash
-openssl rand -base64 48
+libreoffice --version
+# 或
+soffice --version
 ```
+
+说明：
+
+- PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 不依赖 LibreOffice。
+- `doc/docx/odt/rtf/xls/xlsx/ods/ppt/pptx/odp` 会在服务端临时转换为 PDF 后再站内预览。
+- 转换后的 PDF 会缓存到 `data/preview-cache/`，重复预览同一附件不会再次转换。
+- 如果服务器未安装 LibreOffice，相关 Office 文档会在预览页内显示友好错误提示，但原文件下载不受影响。
+- 如果当前仍使用测试内存存储，文档预览页同样可以直接读取对象内容，不再依赖外部文档服务。
 
 正式环境 `.env` 必须保持：
 

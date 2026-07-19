@@ -4588,6 +4588,8 @@ fn sanitize_comment_html(body: &str) -> String {
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
             "data-yuance-align",
+            "data-yuance-file-kind",
+            "data-yuance-file-ext",
         ])
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") | ("source", "src") | ("video", "src")
@@ -4612,6 +4614,8 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
             "data-yuance-attachment-id",
             "data-yuance-attachment-kind",
             "data-yuance-align",
+            "data-yuance-file-kind",
+            "data-yuance-file-ext",
         ])
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
@@ -5687,5 +5691,24 @@ mod tests {
 
         assert!(rendered.contains("<table>"));
         assert!(rendered.contains("<td>单元格</td>"));
+    }
+
+    #[test]
+    fn work_item_description_preserves_file_card_dataset_attributes() {
+        let html = concat!(
+            "<a data-yuance-attachment-id=\"7\" ",
+            "data-yuance-attachment-kind=\"file\" ",
+            "data-yuance-align=\"left\" ",
+            "data-yuance-file-kind=\"text\" ",
+            "data-yuance-file-ext=\"TXT\" ",
+            "href=\"/web/work-items/YCE-TASK-1/attachments/7/download\" ",
+            "title=\"demo.txt\">demo.txt</a>"
+        );
+
+        let rendered = work_item_description_html_for_display(html, "YCE-TASK-1");
+
+        assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
+        assert!(rendered.contains("data-yuance-file-kind=\"text\""));
+        assert!(rendered.contains("data-yuance-file-ext=\"TXT\""));
     }
 }

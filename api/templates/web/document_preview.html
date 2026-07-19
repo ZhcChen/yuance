@@ -16,7 +16,8 @@
       box-sizing: border-box;
     }
 
-    html, body {
+    html,
+    body {
       width: 100%;
       height: 100%;
       margin: 0;
@@ -25,8 +26,8 @@
     body {
       display: grid;
       background:
-        radial-gradient(circle at top, rgb(59 130 246 / 16%), transparent 36%),
-        #0f172a;
+        radial-gradient(circle at top, rgb(37 99 235 / 14%), transparent 34%),
+        linear-gradient(180deg, #0f172a 0%, #111827 100%);
     }
 
     .preview-page {
@@ -39,11 +40,11 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
+      gap: 18px;
       padding: 16px 20px;
-      border-bottom: 1px solid rgb(148 163 184 / 18%);
-      background: rgb(15 23 42 / 72%);
-      backdrop-filter: blur(14px);
+      border-bottom: 1px solid rgb(148 163 184 / 16%);
+      background: rgb(15 23 42 / 76%);
+      backdrop-filter: blur(16px);
     }
 
     .preview-head-main {
@@ -61,18 +62,15 @@
       white-space: nowrap;
     }
 
-    .preview-head span {
-      color: #94a3b8;
-      font-size: 12px;
-      line-height: 18px;
-    }
-
     .preview-meta {
       display: flex;
       align-items: center;
       flex-wrap: wrap;
       gap: 8px 10px;
       margin-top: 10px;
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 18px;
     }
 
     .preview-badge {
@@ -88,18 +86,6 @@
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-    }
-
-    .preview-note {
-      color: #94a3b8;
-      font-size: 12px;
-      line-height: 18px;
-    }
-
-    .preview-position {
-      color: #cbd5e1;
-      font-size: 12px;
-      line-height: 18px;
     }
 
     .preview-actions {
@@ -151,11 +137,10 @@
 
     .preview-body {
       min-height: 0;
-      position: relative;
       padding: 18px;
     }
 
-    .preview-root,
+    .preview-shell,
     .preview-error {
       width: 100%;
       height: 100%;
@@ -166,44 +151,89 @@
       box-shadow: 0 22px 54px rgb(15 23 42 / 28%);
     }
 
-    .preview-root {
-      position: relative;
+    .preview-shell {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
     }
 
-    .preview-status {
-      position: absolute;
-      inset: 0;
+    .preview-panel-head {
       display: flex;
-      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgb(226 232 240 / 88%);
+      background: linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 96%));
+      color: #0f172a;
+    }
+
+    .preview-panel-copy {
+      min-width: 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .preview-panel-copy strong {
+      color: #0f172a;
+      font-size: 13px;
+      line-height: 20px;
+    }
+
+    .preview-panel-copy span {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .preview-panel-tools {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .preview-tool {
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 16px;
+      min-width: 36px;
+      min-height: 36px;
+      padding: 0 12px;
+      border: 1px solid rgb(148 163 184 / 26%);
+      border-radius: 999px;
+      background: #fff;
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+    }
+
+    .preview-tool:hover {
+      border-color: rgb(37 99 235 / 44%);
+      background: rgb(239 246 255 / 88%);
+      transform: translateY(-1px);
+    }
+
+    .preview-panel-body {
+      min-height: 0;
+      background: linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 96%));
+    }
+
+    .preview-panel-body-scroll {
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+    }
+
+    .preview-empty {
+      height: 100%;
+      display: grid;
+      place-items: center;
       padding: 24px;
-      background:
-        linear-gradient(180deg, rgb(248 250 252 / 94%), rgb(241 245 249 / 96%));
       color: #475569;
-      font-size: 13px;
-      line-height: 22px;
       text-align: center;
-      transition: opacity 180ms ease;
-    }
-
-    .preview-root.ready .preview-status {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    .preview-spinner {
-      width: 42px;
-      height: 42px;
-      border: 3px solid rgb(148 163 184 / 22%);
-      border-top-color: #3b82f6;
-      border-radius: 50%;
-      animation: preview-spin 900ms linear infinite;
-    }
-
-    .preview-status-copy {
-      max-width: 360px;
     }
 
     .preview-error {
@@ -238,22 +268,172 @@
       display: block;
       margin-bottom: 10px;
       font-size: 20px;
-      line-height: 28px;
+      line-height: 30px;
     }
 
     .preview-error p {
-      max-width: 480px;
-      margin: 0 auto 18px;
+      margin: 0;
+      max-width: 520px;
       color: #475569;
       font-size: 14px;
-      line-height: 24px;
+      line-height: 22px;
     }
 
     .preview-error-actions {
       display: flex;
+      align-items: center;
       justify-content: center;
       flex-wrap: wrap;
       gap: 10px;
+      margin-top: 22px;
+    }
+
+    .pdf-stage {
+      position: relative;
+      min-height: 100%;
+      padding: 18px;
+      background:
+        radial-gradient(circle at top, rgb(59 130 246 / 7%), transparent 30%),
+        rgb(226 232 240 / 42%);
+    }
+
+    .pdf-status {
+      position: absolute;
+      inset: 18px 18px auto;
+      z-index: 2;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      max-width: calc(100% - 36px);
+      padding: 10px 14px;
+      border: 1px solid rgb(148 163 184 / 22%);
+      border-radius: 999px;
+      background: rgb(15 23 42 / 78%);
+      color: #e2e8f0;
+      font-size: 12px;
+      line-height: 18px;
+      box-shadow: 0 16px 40px rgb(15 23 42 / 18%);
+      backdrop-filter: blur(14px);
+    }
+
+    .pdf-status[hidden] {
+      display: none;
+    }
+
+    .pdf-spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgb(255 255 255 / 18%);
+      border-top-color: #60a5fa;
+      border-radius: 50%;
+      animation: preview-spin 900ms linear infinite;
+      flex: 0 0 auto;
+    }
+
+    .pdf-pages {
+      display: grid;
+      justify-items: center;
+      gap: 16px;
+      padding-top: 42px;
+    }
+
+    .pdf-page {
+      width: min-content;
+      max-width: 100%;
+      padding: 12px;
+      border-radius: 20px;
+      background: rgb(255 255 255 / 78%);
+      box-shadow: 0 20px 40px rgb(15 23 42 / 12%);
+    }
+
+    .pdf-page canvas {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .pdf-page-label {
+      margin-top: 8px;
+      color: #475569;
+      font-size: 12px;
+      line-height: 18px;
+      text-align: center;
+    }
+
+    .text-preview {
+      min-height: 100%;
+      padding: 20px 22px 30px;
+      color: #0f172a;
+    }
+
+    .text-preview pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 22px;
+      color: #0f172a;
+    }
+
+    .csv-preview {
+      min-height: 100%;
+      padding: 0;
+      color: #0f172a;
+    }
+
+    .csv-preview table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      min-width: 720px;
+    }
+
+    .csv-preview thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgb(248 250 252 / 98%);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: left;
+    }
+
+    .csv-preview th,
+    .csv-preview td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgb(226 232 240 / 96%);
+      border-right: 1px solid rgb(226 232 240 / 72%);
+      vertical-align: top;
+      font-size: 12px;
+      line-height: 18px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .csv-preview tr > :first-child {
+      border-left: 1px solid rgb(226 232 240 / 72%);
+    }
+
+    .csv-preview tbody tr:nth-child(even) td {
+      background: rgb(248 250 252 / 58%);
+    }
+
+    .preview-note-banner {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgb(15 23 42 / 6%);
+      color: #475569;
+      font-size: 12px;
+      line-height: 18px;
     }
 
     @keyframes preview-spin {
@@ -262,31 +442,40 @@
       }
     }
 
-    @media (max-width: 720px) {
+    @media (max-width: 960px) {
       .preview-head {
-        align-items: flex-start;
         flex-direction: column;
-        padding: 14px 16px;
-      }
-
-      .preview-body {
-        padding: 12px;
+        align-items: stretch;
       }
 
       .preview-actions {
         justify-content: flex-start;
       }
 
-      .preview-link {
-        min-height: 34px;
-        padding: 0 12px;
+      .preview-body {
+        padding: 14px;
       }
 
-      .preview-error-mark {
-        min-width: 80px;
-        min-height: 80px;
-        border-radius: 24px;
-        font-size: 16px;
+      .preview-panel-head {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .preview-panel-tools {
+        justify-content: flex-start;
+      }
+
+      .pdf-stage {
+        padding: 14px;
+      }
+
+      .pdf-status {
+        inset: 14px 14px auto;
+        max-width: calc(100% - 28px);
+      }
+
+      .pdf-pages {
+        padding-top: 52px;
       }
     }
   </style>
@@ -295,13 +484,13 @@
   <div class="preview-page">
     <header class="preview-head">
       <div class="preview-head-main">
-        <strong title="{{ title }}">{{ title }}</strong>
+        <strong>{{ title }}</strong>
         <div class="preview-meta">
-          <span>{{ kind_label }}</span>
           <span class="preview-badge">{{ file_type_badge }}</span>
-          <span class="preview-note">{{ meta_text }}</span>
-          {% if position_text != "" %}
-          <span class="preview-position">{{ position_text }}</span>
+          <span>{{ kind_label }}</span>
+          <span>{{ meta_text }}</span>
+          {% if !position_text.is_empty() %}
+          <span>{{ position_text }}</span>
           {% endif %}
         </div>
       </div>
@@ -321,6 +510,7 @@
         <a class="preview-link" href="{{ download_url }}" target="_blank" rel="noopener">下载原文件</a>
       </div>
     </header>
+
     <main class="preview-body">
       {% if has_error %}
       <section class="preview-error">
@@ -342,94 +532,249 @@
         </div>
       </section>
       {% else %}
-      <section id="document-preview-root" class="preview-root" aria-label="文档内容区域">
-        <div id="document-preview-status" class="preview-status">
-          <span class="preview-spinner" aria-hidden="true"></span>
-          <div class="preview-status-copy">正在加载文档预览，请稍候...</div>
+      <section class="preview-shell">
+        <div class="preview-panel-head">
+          <div class="preview-panel-copy">
+            <strong>{{ kind_label }}预览</strong>
+            <span>{{ preview_hint }}</span>
+          </div>
+          <div class="preview-panel-tools">
+            {% if has_pdf_preview %}
+            <span class="preview-tool" id="pdf-page-count">载入中</span>
+            <button class="preview-tool" type="button" id="pdf-zoom-out">－</button>
+            <button class="preview-tool" type="button" id="pdf-zoom-reset">适宽</button>
+            <button class="preview-tool" type="button" id="pdf-zoom-in">＋</button>
+            {% endif %}
+            {% if has_text_preview %}
+            <span class="preview-tool">{{ text_preview_line_count }} 行</span>
+            {% endif %}
+            {% if has_csv_preview %}
+            <span class="preview-tool">{{ csv_preview_rows.len() }} 行</span>
+            <span class="preview-tool">{{ csv_preview_headers.len() }} 列</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="preview-panel-body">
+          {% if has_pdf_preview %}
+          <div class="preview-panel-body-scroll" id="pdf-preview-scroll">
+            <div class="pdf-stage" data-pdf-preview data-pdf-url="{{ pdf_preview_url }}">
+              <div class="pdf-status" id="pdf-preview-status">
+                <span class="pdf-spinner" aria-hidden="true"></span>
+                <span id="pdf-preview-status-copy">正在加载 PDF 预览，请稍候...</span>
+              </div>
+              <div class="pdf-pages" id="pdf-preview-pages"></div>
+            </div>
+          </div>
+          {% else if has_text_preview %}
+          <div class="preview-panel-body-scroll">
+            <div class="text-preview">
+              <pre>{{ text_preview_content }}</pre>
+              {% if text_preview_is_truncated %}
+              <div class="preview-note-banner">已截断展示前 {{ text_preview_line_count }} 行，请下载原文件查看完整内容。</div>
+              {% endif %}
+            </div>
+          </div>
+          {% else if has_csv_preview %}
+          <div class="preview-panel-body-scroll">
+            <div class="csv-preview">
+              <table>
+                <thead>
+                  <tr>
+                    {% for header in csv_preview_headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in csv_preview_rows %}
+                  <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% if csv_preview_is_truncated %}
+              <div style="padding: 14px 16px; color: #64748b; font-size: 12px; line-height: 18px;">
+                当前仅展示部分行列，请下载原文件查看完整表格。
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% else %}
+          <div class="preview-empty">
+            <div>
+              <strong>当前文件没有可渲染的离线视图。</strong>
+              <div style="margin-top: 8px;">请下载原文件查看。</div>
+            </div>
+          </div>
+          {% endif %}
         </div>
       </section>
-      <script id="document-preview-config" type="application/json">{{ config_json }}</script>
-      <script src="{{ api_script_url }}"></script>
-      <script>
-        (function () {
-          var root = document.getElementById("document-preview-root");
-          var status = document.getElementById("document-preview-status");
-          var configNode = document.getElementById("document-preview-config");
-          document.querySelectorAll("[data-preview-reload]").forEach(function (button) {
-            button.addEventListener("click", function () {
-              window.location.reload();
-            });
-          });
-          document.addEventListener("keydown", function (event) {
-            if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
-              return;
-            }
-            if (event.key === "ArrowLeft") {
-              var previousLink = document.querySelector('[data-preview-nav="previous"]');
-              if (previousLink && previousLink.getAttribute("href")) {
-                window.location.href = previousLink.getAttribute("href");
-              }
-            } else if (event.key === "ArrowRight") {
-              var nextLink = document.querySelector('[data-preview-nav="next"]');
-              if (nextLink && nextLink.getAttribute("href")) {
-                window.location.href = nextLink.getAttribute("href");
-              }
-            }
-          });
-
-          function setError(message) {
-            if (!root || !status) {
-              return;
-            }
-            root.classList.remove("ready");
-            status.replaceChildren();
-            var spinner = document.createElement("span");
-            spinner.className = "preview-spinner";
-            spinner.setAttribute("aria-hidden", "true");
-            spinner.style.animation = "none";
-            spinner.style.borderTopColor = "#f97316";
-            var copy = document.createElement("div");
-            copy.className = "preview-status-copy";
-            copy.textContent = message;
-            status.appendChild(spinner);
-            status.appendChild(copy);
-            status.style.opacity = "1";
-            status.style.pointerEvents = "auto";
-          }
-
-          function setReady() {
-            if (!root || !status) {
-              return;
-            }
-            root.classList.add("ready");
-          }
-
-          if (!window.DocsAPI || typeof window.DocsAPI.DocEditor !== "function") {
-            setError("ONLYOFFICE 文档脚本加载失败，请检查文档服务配置。");
-            return;
-          }
-
-          try {
-            var config = JSON.parse(configNode ? configNode.textContent || "{}" : "{}");
-            config.events = Object.assign({}, config.events || {}, {
-              onDocumentReady: function () {
-                setReady();
-              },
-              onError: function (event) {
-                var message = event && event.data && event.data.errorDescription
-                  ? event.data.errorDescription
-                  : "文档预览初始化失败，请稍后重试。";
-                setError(message);
-              }
-            });
-            window.docEditor = new window.DocsAPI.DocEditor("document-preview-root", config);
-          } catch (_error) {
-            setError("文档预览初始化失败，请稍后重试。");
-          }
-        })();
-      </script>
       {% endif %}
     </main>
   </div>
+
+  <script>
+    (function () {
+      document.querySelectorAll("[data-preview-reload]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          window.location.reload();
+        });
+      });
+
+      document.addEventListener("keydown", function (event) {
+        if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
+          return;
+        }
+        if (event.key === "ArrowLeft") {
+          var previousLink = document.querySelector('[data-preview-nav="previous"]');
+          if (previousLink && previousLink.getAttribute("href")) {
+            window.location.href = previousLink.getAttribute("href");
+          }
+        } else if (event.key === "ArrowRight") {
+          var nextLink = document.querySelector('[data-preview-nav="next"]');
+          if (nextLink && nextLink.getAttribute("href")) {
+            window.location.href = nextLink.getAttribute("href");
+          }
+        }
+      });
+    })();
+  </script>
+
+  {% if has_pdf_preview %}
+  <script type="module">
+    import * as pdfjsLib from "/static/vendor/pdfjs/build/pdf.min.mjs";
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/build/pdf.worker.min.mjs";
+
+    var stage = document.querySelector("[data-pdf-preview]");
+    var pagesWrap = document.getElementById("pdf-preview-pages");
+    var status = document.getElementById("pdf-preview-status");
+    var statusCopy = document.getElementById("pdf-preview-status-copy");
+    var pageCount = document.getElementById("pdf-page-count");
+    var zoomOut = document.getElementById("pdf-zoom-out");
+    var zoomIn = document.getElementById("pdf-zoom-in");
+    var zoomReset = document.getElementById("pdf-zoom-reset");
+    var zoomFactor = 1;
+    var pdfDocument = null;
+    var renderToken = 0;
+
+    function setStatus(message, visible) {
+      if (statusCopy) {
+        statusCopy.textContent = message;
+      }
+      if (status) {
+        status.hidden = visible === false;
+      }
+    }
+
+    function fitWidthScale(page) {
+      var viewport = page.getViewport({ scale: 1 });
+      var availableWidth = Math.max(320, pagesWrap.clientWidth - 32);
+      return Math.max(0.75, availableWidth / viewport.width);
+    }
+
+    async function renderPdf() {
+      if (!pdfDocument || !pagesWrap) {
+        return;
+      }
+      var currentToken = renderToken + 1;
+      renderToken = currentToken;
+      pagesWrap.replaceChildren();
+      setStatus("正在渲染 PDF 页面，请稍候...", true);
+      for (var pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+        if (currentToken !== renderToken) {
+          return;
+        }
+        var page = await pdfDocument.getPage(pageNumber);
+        var scale = fitWidthScale(page) * zoomFactor;
+        var viewport = page.getViewport({ scale: scale });
+        var outputScale = window.devicePixelRatio || 1;
+        var article = document.createElement("article");
+        article.className = "pdf-page";
+        var canvas = document.createElement("canvas");
+        var context = canvas.getContext("2d");
+        canvas.width = Math.floor(viewport.width * outputScale);
+        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.style.width = Math.floor(viewport.width) + "px";
+        canvas.style.height = Math.floor(viewport.height) + "px";
+        var renderContext = {
+          canvasContext: context,
+          viewport: viewport,
+          transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+        };
+        await page.render(renderContext).promise;
+        var label = document.createElement("div");
+        label.className = "pdf-page-label";
+        label.textContent = "第 " + pageNumber + " / " + pdfDocument.numPages + " 页";
+        article.append(canvas, label);
+        pagesWrap.appendChild(article);
+      }
+      if (pageCount) {
+        pageCount.textContent = pdfDocument.numPages + " 页";
+      }
+      setStatus("", false);
+    }
+
+    async function loadPdf() {
+      if (!stage) {
+        return;
+      }
+      var sourceUrl = stage.dataset.pdfUrl || "";
+      if (!sourceUrl) {
+        setStatus("缺少 PDF 预览地址。", true);
+        return;
+      }
+      try {
+        setStatus("正在加载 PDF 预览，请稍候...", true);
+        var loadingTask = pdfjsLib.getDocument({
+          url: sourceUrl,
+          cMapUrl: "/static/vendor/pdfjs/cmaps/",
+          cMapPacked: true,
+          standardFontDataUrl: "/static/vendor/pdfjs/standard_fonts/",
+        });
+        pdfDocument = await loadingTask.promise;
+        await renderPdf();
+      } catch (error) {
+        var message = error && error.message ? error.message : "PDF 预览加载失败，请刷新后重试。";
+        setStatus(message, true);
+      }
+    }
+
+    if (zoomOut) {
+      zoomOut.addEventListener("click", function () {
+        zoomFactor = Math.max(0.7, zoomFactor - 0.15);
+        renderPdf();
+      });
+    }
+    if (zoomIn) {
+      zoomIn.addEventListener("click", function () {
+        zoomFactor = Math.min(2.4, zoomFactor + 0.15);
+        renderPdf();
+      });
+    }
+    if (zoomReset) {
+      zoomReset.addEventListener("click", function () {
+        zoomFactor = 1;
+        renderPdf();
+      });
+    }
+
+    window.addEventListener("resize", function () {
+      if (!pdfDocument) {
+        return;
+      }
+      window.clearTimeout(window.__yuancePdfResizeTimer);
+      window.__yuancePdfResizeTimer = window.setTimeout(function () {
+        renderPdf();
+      }, 120);
+    });
+
+    loadPdf();
+  </script>
+  {% endif %}
 </body>
 </html>

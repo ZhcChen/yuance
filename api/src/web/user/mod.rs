@@ -1,4 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path as FsPath, PathBuf},
+    process::Command,
+};
 
 use askama::Template;
 use axum::{
@@ -9,6 +14,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -900,8 +906,17 @@ struct DocumentPreviewTemplate {
     download_url: String,
     has_error: bool,
     error_message: String,
-    api_script_url: String,
-    config_json: String,
+    preview_hint: String,
+    has_pdf_preview: bool,
+    pdf_preview_url: String,
+    has_text_preview: bool,
+    text_preview_content: String,
+    text_preview_line_count: usize,
+    text_preview_is_truncated: bool,
+    has_csv_preview: bool,
+    csv_preview_headers: Vec<String>,
+    csv_preview_rows: Vec<Vec<String>>,
+    csv_preview_is_truncated: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -915,6 +930,28 @@ struct DocumentPreviewNavigation {
 struct DocumentPreviewNavigationLink {
     title: String,
     url: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AttachmentPreviewStrategy {
+    Pdf,
+    Text,
+    Csv,
+    OfficePdf,
+}
+
+#[derive(Debug, Clone)]
+struct TextPreviewContent {
+    content: String,
+    line_count: usize,
+    is_truncated: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CsvPreviewTable {
+    headers: Vec<String>,
+    rows: Vec<Vec<String>>,
+    is_truncated: bool,
 }
 
 #[derive(Template)]
@@ -2854,6 +2891,7 @@ pub async fn project_attachment_preview(
             format!("/web/projects/{project_key}"),
             "返回项目".to_string(),
             navigation,
+            &format!("/web/projects/{project_key}/attachments/{attachment_id}/preview/content"),
             "project",
             &project_key,
             format!(
@@ -2863,6 +2901,29 @@ pub async fn project_attachment_preview(
             &download_url,
         )
         .await;
+    }
+
+    Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
+pub async fn project_attachment_preview_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+        return attachment_document_preview_content_response(&state, pool, attachment).await;
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -3275,6 +3336,9 @@ pub async fn project_resource_attachment_preview(
             format!("/web/projects/{project_key}/resources/{resource_id}{access_suffix}"),
             "返回资料".to_string(),
             navigation,
+            &format!(
+                "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content{access_suffix}"
+            ),
             "project_resource",
             &resource.id.to_string(),
             format!(
@@ -3284,6 +3348,43 @@ pub async fn project_resource_attachment_preview(
             &download_url,
         )
         .await;
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
+}
+
+pub async fn project_resource_attachment_preview_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        let resource =
+            project_resources::get_project_resource(pool, project.id, resource_id).await?;
+        if resource.is_protected
+            && !verify_project_resource_access_token(
+                &state,
+                &query.access,
+                context.user_id,
+                resource.id,
+            )?
+        {
+            return Err(AppError::Forbidden("请先验证资料访问密码".to_string()));
+        }
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+                .await?;
+        return attachment_document_preview_content_response(&state, pool, attachment).await;
     }
 
     Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
@@ -4001,6 +4102,7 @@ pub async fn work_item_attachment_preview(
             format!("/web/work-items/{item_key}"),
             "返回工作项".to_string(),
             navigation,
+            &format!("/web/work-items/{item_key}/attachments/{attachment_id}/preview/content"),
             "work_item",
             &item_key,
             format!(
@@ -4010,6 +4112,35 @@ pub async fn work_item_attachment_preview(
             &download_url,
         )
         .await;
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+pub async fn work_item_attachment_preview_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+            return Ok(StatusCode::NOT_FOUND.into_response());
+        };
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+        return attachment_document_preview_content_response(&state, pool, attachment).await;
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -4165,6 +4296,9 @@ pub async fn work_item_comment_attachment_preview(
             format!("/web/work-items/{item_key}#comment-{comment_id}"),
             "返回评论".to_string(),
             navigation,
+            &format!(
+                "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content"
+            ),
             "comment",
             &comment_id.to_string(),
             format!(
@@ -4174,6 +4308,34 @@ pub async fn work_item_comment_attachment_preview(
             &download_url,
         )
         .await;
+    }
+
+    Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+pub async fn work_item_comment_attachment_preview_content(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<Response> {
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let (item, _project, comment) =
+            load_comment_attachment_context(pool, &item_key, comment_id).await?;
+        ensure_project_key_access(
+            pool,
+            context.user_id,
+            context.is_super_admin,
+            &item.project_key,
+        )
+        .await?;
+        let attachment =
+            files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+        return attachment_document_preview_content_response(&state, pool, attachment).await;
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -7353,6 +7515,7 @@ async fn attachment_document_preview_response(
     source_url: String,
     source_label: String,
     navigation: DocumentPreviewNavigation,
+    preview_content_url: &str,
     target_type: &str,
     target_id: &str,
     metadata: String,
@@ -7375,6 +7538,7 @@ async fn attachment_document_preview_response(
         source_url,
         source_label,
         navigation,
+        preview_content_url.to_string(),
         download_url.to_string(),
     )
     .await?;
@@ -7388,6 +7552,7 @@ async fn build_document_preview_template(
     source_url: String,
     source_label: String,
     navigation: DocumentPreviewNavigation,
+    preview_content_url: String,
     download_url: String,
 ) -> AppResult<DocumentPreviewTemplate> {
     let title = attachment.original_filename.clone();
@@ -7412,8 +7577,8 @@ async fn build_document_preview_template(
         ));
     }
 
-    let Some(document_type) =
-        attachment_preview_document_type(&attachment.original_filename, &attachment.content_type)
+    let Some(strategy) =
+        attachment_preview_strategy(&attachment.original_filename, &attachment.content_type)
     else {
         return Ok(document_preview_error_template(
             title,
@@ -7436,72 +7601,14 @@ async fn build_document_preview_template(
             "当前文件类型暂不支持文档预览。".to_string(),
         ));
     };
-    let Some(document_server_url) = onlyoffice_document_server_url(&state.settings) else {
-        return Ok(document_preview_error_template(
-            title,
-            source_url,
-            source_label,
-            navigation,
-            download_url,
-            "文档预览服务尚未配置，请先设置 ONLYOFFICE 文档服务地址。".to_string(),
-        ));
-    };
-    if storage::read_test_memory_object(pool, &state.settings, &attachment.object_key)
-        .await?
-        .is_some()
-    {
-        return Ok(document_preview_error_template(
-            title,
-            source_url,
-            source_label,
-            navigation,
-            download_url,
-            "当前环境仍在使用测试存储，ONLYOFFICE 无法访问该文件。请切换到对象存储后再预览。"
-                .to_string(),
-        ));
-    }
-
-    let signed =
-        storage::presign_download_url(pool, &state.settings, &attachment.object_key, 3600).await?;
-    let kind_label = document_preview_kind_label(document_type).to_string();
+    let kind_label = document_preview_kind_label(strategy).to_string();
     let file_type_badge = file_type.to_ascii_uppercase();
     let meta_text = format!(
-        "{kind_label} · {} · 刷新后会重新生成临时访问地址",
+        "{kind_label} · {} · 站内离线预览",
         format_byte_size(attachment.byte_size)
     );
-    let mut config = serde_json::json!({
-        "documentType": document_type,
-        "document": {
-            "fileType": file_type,
-            "key": format!("yuance-attachment-{}-{}", attachment.file_object_id, attachment.id),
-            "title": attachment.original_filename,
-            "url": signed.url,
-        },
-        "editorConfig": {
-            "mode": "view",
-            "lang": "zh-CN",
-        }
-    });
-    if let Some(jwt_secret) = onlyoffice_document_server_jwt_secret(&state.settings) {
-        let token = match onlyoffice_document_config_token(&config, &jwt_secret) {
-            Ok(token) => token,
-            Err(_error) => {
-                return Ok(document_preview_error_template(
-                    title,
-                    source_url,
-                    source_label,
-                    navigation,
-                    download_url,
-                    "文档预览访问签名生成失败，请检查 ONLYOFFICE JWT 配置。".to_string(),
-                ));
-            }
-        };
-        if let Some(config_object) = config.as_object_mut() {
-            config_object.insert("token".to_string(), serde_json::Value::String(token));
-        }
-    }
-
-    Ok(DocumentPreviewTemplate {
+    let error_navigation = navigation.clone();
+    let mut template = DocumentPreviewTemplate {
         title,
         source_url,
         source_label,
@@ -7534,10 +7641,72 @@ async fn build_document_preview_template(
         download_url,
         has_error: false,
         error_message: String::new(),
-        api_script_url: format!("{document_server_url}/web-apps/apps/api/documents/api.js"),
-        config_json: serde_json::to_string(&config)
-            .map_err(|error| AppError::BadRequest(format!("生成文档预览配置失败：{error}")))?,
-    })
+        preview_hint: preview_hint_for_strategy(strategy, &file_type),
+        has_pdf_preview: false,
+        pdf_preview_url: String::new(),
+        has_text_preview: false,
+        text_preview_content: String::new(),
+        text_preview_line_count: 0,
+        text_preview_is_truncated: false,
+        has_csv_preview: false,
+        csv_preview_headers: Vec::new(),
+        csv_preview_rows: Vec::new(),
+        csv_preview_is_truncated: false,
+    };
+
+    match strategy {
+        AttachmentPreviewStrategy::Pdf => {
+            template.has_pdf_preview = true;
+            template.pdf_preview_url = preview_content_url;
+        }
+        AttachmentPreviewStrategy::OfficePdf => {
+            if let Err(error) = ensure_office_preview_cached_pdf(state, pool, &attachment).await {
+                return Ok(document_preview_error_template(
+                    template.title,
+                    template.source_url,
+                    template.source_label,
+                    error_navigation.clone(),
+                    template.download_url,
+                    error.to_string(),
+                ));
+            }
+            template.has_pdf_preview = true;
+            template.pdf_preview_url = preview_content_url;
+        }
+        AttachmentPreviewStrategy::Text => {
+            let (_content_type, content) =
+                storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+            let text_preview = build_text_preview_content(&content);
+            template.has_text_preview = true;
+            template.text_preview_content = text_preview.content;
+            template.text_preview_line_count = text_preview.line_count;
+            template.text_preview_is_truncated = text_preview.is_truncated;
+        }
+        AttachmentPreviewStrategy::Csv => {
+            let (_content_type, content) =
+                storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+            match build_csv_preview_table(&content) {
+                Ok(table) => {
+                    template.has_csv_preview = true;
+                    template.csv_preview_headers = table.headers;
+                    template.csv_preview_rows = table.rows;
+                    template.csv_preview_is_truncated = table.is_truncated;
+                }
+                Err(error) => {
+                    return Ok(document_preview_error_template(
+                        template.title,
+                        template.source_url,
+                        template.source_label,
+                        error_navigation.clone(),
+                        template.download_url,
+                        error.to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(template)
 }
 
 fn document_preview_error_template(
@@ -7551,7 +7720,7 @@ fn document_preview_error_template(
     let fallback_file_type = attachment_preview_file_type(&title, "")
         .unwrap_or("file")
         .to_ascii_uppercase();
-    let fallback_kind_label = attachment_preview_document_type(&title, "")
+    let fallback_kind_label = attachment_preview_strategy(&title, "")
         .map(document_preview_kind_label)
         .unwrap_or("文档预览")
         .to_string();
@@ -7561,7 +7730,7 @@ fn document_preview_error_template(
         source_label,
         kind_label: fallback_kind_label,
         file_type_badge: fallback_file_type,
-        meta_text: "当前无法直接加载在线预览，可以刷新后重试或下载原文件。".to_string(),
+        meta_text: "当前无法直接加载预览，可以刷新后重试或下载原文件。".to_string(),
         position_text: navigation.position_text,
         has_previous: navigation.previous.is_some(),
         previous_url: navigation
@@ -7588,53 +7757,331 @@ fn document_preview_error_template(
         download_url,
         has_error: true,
         error_message,
-        api_script_url: String::new(),
-        config_json: "{}".to_string(),
+        preview_hint: "当前无法直接加载预览，可以刷新后重试或下载原文件。".to_string(),
+        has_pdf_preview: false,
+        pdf_preview_url: String::new(),
+        has_text_preview: false,
+        text_preview_content: String::new(),
+        text_preview_line_count: 0,
+        text_preview_is_truncated: false,
+        has_csv_preview: false,
+        csv_preview_headers: Vec::new(),
+        csv_preview_rows: Vec::new(),
+        csv_preview_is_truncated: false,
     }
 }
 
-fn onlyoffice_document_server_url(settings: &crate::platform::config::Settings) -> Option<String> {
-    let url = settings
-        .onlyoffice_document_server_url
-        .trim()
-        .trim_end_matches('/');
-    if url.is_empty() {
-        None
+const TEXT_PREVIEW_MAX_BYTES: usize = 2 * 1024 * 1024;
+const CSV_PREVIEW_MAX_BYTES: usize = 2 * 1024 * 1024;
+const CSV_PREVIEW_MAX_ROWS: usize = 200;
+const CSV_PREVIEW_MAX_COLUMNS: usize = 24;
+
+fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy, file_type: &str) -> String {
+    match strategy {
+        AttachmentPreviewStrategy::Pdf => {
+            "原始 PDF 将直接在站内预览，无需外部文档服务。".to_string()
+        }
+        AttachmentPreviewStrategy::Text => "文本内容由应用服务直接读取并渲染。".to_string(),
+        AttachmentPreviewStrategy::Csv => {
+            "CSV 将以表格方式在站内渲染，超大文件会截断展示。".to_string()
+        }
+        AttachmentPreviewStrategy::OfficePdf => format!(
+            "{} 文档会先在服务器本地离线转换为 PDF，再进入站内预览。",
+            file_type.to_ascii_uppercase()
+        ),
+    }
+}
+
+fn document_preview_kind_label(strategy: AttachmentPreviewStrategy) -> &'static str {
+    match strategy {
+        AttachmentPreviewStrategy::Pdf => "PDF",
+        AttachmentPreviewStrategy::Text => "文本",
+        AttachmentPreviewStrategy::Csv => "表格",
+        AttachmentPreviewStrategy::OfficePdf => "文档",
+    }
+}
+
+fn build_text_preview_content(content: &[u8]) -> TextPreviewContent {
+    let is_truncated = content.len() > TEXT_PREVIEW_MAX_BYTES;
+    let preview_bytes = if is_truncated {
+        &content[..TEXT_PREVIEW_MAX_BYTES]
     } else {
-        Some(url.to_string())
+        content
+    };
+    let text = String::from_utf8_lossy(preview_bytes).replace("\r\n", "\n");
+    let line_count = text.lines().count().max(1);
+    TextPreviewContent {
+        content: text,
+        line_count,
+        is_truncated,
     }
 }
 
-fn onlyoffice_document_server_jwt_secret(
+fn build_csv_preview_table(content: &[u8]) -> AppResult<CsvPreviewTable> {
+    if content.len() > CSV_PREVIEW_MAX_BYTES {
+        return Err(AppError::BadRequest(
+            "CSV 文件过大，暂不支持站内表格预览，请下载原文件查看。".to_string(),
+        ));
+    }
+
+    let mut reader = csv::ReaderBuilder::new()
+        .flexible(true)
+        .from_reader(content);
+    let header_record = reader
+        .headers()
+        .map_err(|error| AppError::BadRequest(format!("解析 CSV 表头失败：{error}")))?
+        .clone();
+    let mut is_truncated = false;
+    let mut headers = header_record
+        .iter()
+        .take(CSV_PREVIEW_MAX_COLUMNS)
+        .map(normalize_preview_cell)
+        .collect::<Vec<_>>();
+    if header_record.len() > CSV_PREVIEW_MAX_COLUMNS {
+        headers.push(format!(
+            "… 其余 {} 列",
+            header_record.len() - CSV_PREVIEW_MAX_COLUMNS
+        ));
+        is_truncated = true;
+    }
+
+    let mut rows = Vec::new();
+    for (index, record) in reader.records().enumerate() {
+        if index >= CSV_PREVIEW_MAX_ROWS {
+            is_truncated = true;
+            break;
+        }
+        let record =
+            record.map_err(|error| AppError::BadRequest(format!("解析 CSV 内容失败：{error}")))?;
+        let mut row = record
+            .iter()
+            .take(CSV_PREVIEW_MAX_COLUMNS)
+            .map(normalize_preview_cell)
+            .collect::<Vec<_>>();
+        if record.len() > CSV_PREVIEW_MAX_COLUMNS {
+            row.push(format!(
+                "… 其余 {} 列",
+                record.len() - CSV_PREVIEW_MAX_COLUMNS
+            ));
+            is_truncated = true;
+        }
+        rows.push(row);
+    }
+
+    Ok(CsvPreviewTable {
+        headers,
+        rows,
+        is_truncated,
+    })
+}
+
+fn normalize_preview_cell(value: &str) -> String {
+    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+    let collapsed = normalized
+        .chars()
+        .filter(|character| *character == '\n' || *character == '\t' || !character.is_control())
+        .collect::<String>();
+    let mut output = String::new();
+    for (index, character) in collapsed.chars().enumerate() {
+        if index >= 240 {
+            output.push('…');
+            return output;
+        }
+        output.push(character);
+    }
+    output
+}
+
+async fn attachment_document_preview_content_response(
+    state: &AppState,
+    pool: &SqlitePool,
+    attachment: files::FileAttachmentSummary,
+) -> AppResult<Response> {
+    if attachment.status == "deleted" {
+        return Err(AppError::NotFound("附件已归档，不能预览".to_string()));
+    }
+    if attachment.status != "uploaded" {
+        return Err(AppError::BadRequest(
+            "附件尚未上传完成，请稍后再试".to_string(),
+        ));
+    }
+    let Some(strategy) =
+        attachment_preview_strategy(&attachment.original_filename, &attachment.content_type)
+    else {
+        return Err(AppError::BadRequest(
+            "当前文件类型暂不支持文档预览".to_string(),
+        ));
+    };
+
+    let (content_type, content) = match strategy {
+        AttachmentPreviewStrategy::Pdf => {
+            let (content_type, content) =
+                storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+            (content_type, content)
+        }
+        AttachmentPreviewStrategy::OfficePdf => {
+            let cache_path = ensure_office_preview_cached_pdf(state, pool, &attachment).await?;
+            let content = fs::read(&cache_path)
+                .map_err(|error| AppError::BadRequest(format!("读取离线预览缓存失败：{error}")))?;
+            ("application/pdf".to_string(), content)
+        }
+        AttachmentPreviewStrategy::Text | AttachmentPreviewStrategy::Csv => {
+            return Err(AppError::NotFound("该预览不提供二进制内容入口".to_string()));
+        }
+    };
+
+    let mut response = content.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, content_type.parse()?);
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
+    Ok(response)
+}
+
+async fn ensure_office_preview_cached_pdf(
+    state: &AppState,
+    pool: &SqlitePool,
+    attachment: &files::FileAttachmentSummary,
+) -> AppResult<PathBuf> {
+    let cache_path = office_preview_cache_path(&state.settings, attachment);
+    if cache_path.is_file() {
+        return Ok(cache_path);
+    }
+
+    let (_, content) = storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+    let original_filename = attachment.original_filename.clone();
+    let cache_path_clone = cache_path.clone();
+    tokio::task::spawn_blocking(move || {
+        convert_office_content_to_pdf(&cache_path_clone, &original_filename, &content)
+    })
+    .await
+    .map_err(|error| AppError::BadRequest(format!("等待离线预览转换任务失败：{error}")))??;
+    Ok(cache_path)
+}
+
+fn office_preview_cache_path(
     settings: &crate::platform::config::Settings,
-) -> Option<String> {
-    let secret = settings.onlyoffice_jwt_secret.trim();
-    if secret.is_empty() {
-        None
+    attachment: &files::FileAttachmentSummary,
+) -> PathBuf {
+    let mut hasher = sha2::Sha256::new();
+    sha2::Digest::update(&mut hasher, attachment.object_key.as_bytes());
+    sha2::Digest::update(&mut hasher, attachment.original_filename.as_bytes());
+    sha2::Digest::update(&mut hasher, attachment.content_type.as_bytes());
+    sha2::Digest::update(&mut hasher, attachment.byte_size.to_string().as_bytes());
+    let digest = hex::encode(sha2::Digest::finalize(hasher));
+    preview_cache_root(settings).join(format!("{digest}.pdf"))
+}
+
+fn preview_cache_root(settings: &crate::platform::config::Settings) -> PathBuf {
+    FsPath::new(&settings.data_dir).join("preview-cache")
+}
+
+fn convert_office_content_to_pdf(
+    cache_path: &FsPath,
+    original_filename: &str,
+    content: &[u8],
+) -> AppResult<()> {
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| AppError::BadRequest(format!("创建预览缓存目录失败：{error}")))?;
+    }
+
+    let temp_root = cache_path
+        .parent()
+        .unwrap_or_else(|| FsPath::new("."))
+        .join(format!("tmp-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&temp_root)
+        .map_err(|error| AppError::BadRequest(format!("创建临时转换目录失败：{error}")))?;
+
+    let input_name = sanitized_preview_source_filename(original_filename);
+    let input_path = temp_root.join(&input_name);
+    fs::write(&input_path, content)
+        .map_err(|error| AppError::BadRequest(format!("写入临时预览文件失败：{error}")))?;
+
+    let mut command_errors = Vec::new();
+    let mut converted_pdf_path = None;
+    for binary in ["libreoffice", "soffice"] {
+        match Command::new(binary)
+            .arg("--headless")
+            .arg("--convert-to")
+            .arg("pdf")
+            .arg("--outdir")
+            .arg(&temp_root)
+            .arg(&input_path)
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let output_path = temp_root.join(output_pdf_filename(&input_name));
+                if output_path.is_file() {
+                    converted_pdf_path = Some(output_path);
+                    break;
+                }
+                command_errors.push(format!(
+                    "{binary} 转换命令已成功执行，但未找到导出的 PDF 文件"
+                ));
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let detail = if !stderr.is_empty() {
+                    stderr
+                } else if !stdout.is_empty() {
+                    stdout
+                } else {
+                    format!("退出码 {}", output.status)
+                };
+                command_errors.push(format!("{binary}: {detail}"));
+            }
+            Err(error) => {
+                command_errors.push(format!("{binary}: {error}"));
+            }
+        }
+    }
+
+    let Some(output_path) = converted_pdf_path else {
+        let _ = fs::remove_dir_all(&temp_root);
+        return Err(AppError::BadRequest(format!(
+            "离线文档预览转换失败：服务器未安装 LibreOffice / soffice，或当前文件无法转换为 PDF。{}",
+            command_errors.join("；")
+        )));
+    };
+
+    fs::copy(&output_path, cache_path)
+        .map_err(|error| AppError::BadRequest(format!("写入预览缓存失败：{error}")))?;
+    let _ = fs::remove_dir_all(&temp_root);
+    Ok(())
+}
+
+fn sanitized_preview_source_filename(original_filename: &str) -> String {
+    let filename = original_filename.trim();
+    if filename.is_empty() {
+        return "document".to_string();
+    }
+    let sanitized = filename
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if sanitized.trim_matches('_').is_empty() {
+        "document".to_string()
     } else {
-        Some(secret.to_string())
+        sanitized
     }
 }
 
-fn onlyoffice_document_config_token(
-    config: &serde_json::Value,
-    secret: &str,
-) -> Result<String, jsonwebtoken::errors::Error> {
-    jsonwebtoken::encode(
-        &jsonwebtoken::Header::default(),
-        config,
-        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
-    )
-}
-
-fn document_preview_kind_label(document_type: &str) -> &'static str {
-    match document_type {
-        "word" => "文档",
-        "cell" => "表格",
-        "slide" => "演示",
-        "pdf" => "PDF",
-        _ => "文档",
-    }
+fn output_pdf_filename(input_name: &str) -> String {
+    let path = FsPath::new(input_name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("document");
+    format!("{stem}.pdf")
 }
 
 fn document_preview_navigation<F>(
@@ -9262,16 +9709,23 @@ fn is_previewable_video_content_type(content_type: &str) -> bool {
 }
 
 fn is_previewable_document_attachment(filename: &str, content_type: &str) -> bool {
-    attachment_preview_document_type(filename, content_type).is_some()
+    attachment_preview_strategy(filename, content_type).is_some()
 }
 
-fn attachment_preview_document_type(filename: &str, content_type: &str) -> Option<&'static str> {
+fn attachment_preview_strategy(
+    filename: &str,
+    content_type: &str,
+) -> Option<AttachmentPreviewStrategy> {
     let file_type = attachment_preview_file_type(filename, content_type)?;
     match file_type {
-        "doc" | "docx" | "odt" | "rtf" | "txt" => Some("word"),
-        "xls" | "xlsx" | "csv" | "ods" => Some("cell"),
-        "ppt" | "pptx" | "odp" => Some("slide"),
-        "pdf" => Some("pdf"),
+        "pdf" => Some(AttachmentPreviewStrategy::Pdf),
+        "csv" => Some(AttachmentPreviewStrategy::Csv),
+        "txt" | "log" | "md" | "json" | "xml" | "yaml" | "yml" => {
+            Some(AttachmentPreviewStrategy::Text)
+        }
+        "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "ppt" | "pptx" | "odp" => {
+            Some(AttachmentPreviewStrategy::OfficePdf)
+        }
         _ => None,
     }
 }
@@ -9283,6 +9737,12 @@ fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'
         Some("odt") => Some("odt"),
         Some("rtf") => Some("rtf"),
         Some("txt") => Some("txt"),
+        Some("log") => Some("log"),
+        Some("md") => Some("md"),
+        Some("json") => Some("json"),
+        Some("xml") => Some("xml"),
+        Some("yaml") => Some("yaml"),
+        Some("yml") => Some("yml"),
         Some("xls") => Some("xls"),
         Some("xlsx") => Some("xlsx"),
         Some("csv") => Some("csv"),
@@ -9315,7 +9775,11 @@ fn attachment_preview_file_type_from_content_type(content_type: &str) -> Option<
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" => Some("pptx"),
         "application/pdf" => Some("pdf"),
         "text/plain" => Some("txt"),
+        "text/markdown" => Some("md"),
         "text/csv" => Some("csv"),
+        "application/json" => Some("json"),
+        "application/xml" | "text/xml" => Some("xml"),
+        "application/yaml" | "application/x-yaml" | "text/yaml" | "text/x-yaml" => Some("yaml"),
         _ => None,
     }
 }
@@ -9926,34 +10390,54 @@ mod tests {
     }
 
     #[test]
-    fn onlyoffice_document_config_token_round_trips_payload() {
-        let config = serde_json::json!({
-            "documentType": "word",
-            "document": {
-                "fileType": "docx",
-                "title": "需求说明.docx",
-                "url": "https://oss.example.com/presigned"
-            },
-            "editorConfig": {
-                "mode": "view",
-                "lang": "zh-CN"
-            }
-        });
+    fn attachment_preview_strategy_supports_text_csv_pdf_and_office() {
+        assert_eq!(
+            attachment_preview_strategy("说明.md", "text/markdown"),
+            Some(AttachmentPreviewStrategy::Text)
+        );
+        assert_eq!(
+            attachment_preview_strategy("数据.csv", "text/csv"),
+            Some(AttachmentPreviewStrategy::Csv)
+        );
+        assert_eq!(
+            attachment_preview_strategy("报告.pdf", "application/pdf"),
+            Some(AttachmentPreviewStrategy::Pdf)
+        );
+        assert_eq!(
+            attachment_preview_strategy(
+                "需求说明.docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+            Some(AttachmentPreviewStrategy::OfficePdf)
+        );
+    }
 
-        let token = onlyoffice_document_config_token(&config, "test-onlyoffice-secret")
-            .expect("token should be generated");
-        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
-        validation.validate_exp = false;
-        validation.required_spec_claims.remove("exp");
-        let payload = jsonwebtoken::decode::<serde_json::Value>(
-            &token,
-            &jsonwebtoken::DecodingKey::from_secret("test-onlyoffice-secret".as_bytes()),
-            &validation,
-        )
-        .expect("token should decode")
-        .claims;
+    #[test]
+    fn build_text_preview_content_marks_large_payload_as_truncated() {
+        let oversized = vec![b'a'; TEXT_PREVIEW_MAX_BYTES + 16];
+        let preview = build_text_preview_content(&oversized);
+        assert!(preview.is_truncated);
+        assert_eq!(preview.content.len(), TEXT_PREVIEW_MAX_BYTES);
+        assert_eq!(preview.line_count, 1);
+    }
 
-        assert_eq!(payload["document"]["title"].as_str(), Some("需求说明.docx"));
-        assert_eq!(payload["editorConfig"]["mode"].as_str(), Some("view"));
+    #[test]
+    fn build_csv_preview_table_limits_columns_and_rows() {
+        let csv = "姓名,角色,邮箱,备注,附加\n张三,开发,zhangsan@example.com,第一行,扩展值\n李四,测试,lisi@example.com,第二行,扩展值"
+            .as_bytes()
+            .to_vec();
+        let table = build_csv_preview_table(&csv).expect("csv preview should parse");
+
+        assert_eq!(table.headers.len(), 5);
+        assert_eq!(table.rows.len(), 2);
+        assert_eq!(table.rows[0][0], "张三");
+        assert!(!table.is_truncated);
+    }
+
+    #[test]
+    fn output_pdf_filename_uses_source_stem() {
+        assert_eq!(output_pdf_filename("需求说明.docx"), "需求说明.pdf");
+        assert_eq!(output_pdf_filename("report.final.pptx"), "report.final.pdf");
+        assert_eq!(output_pdf_filename(""), "document.pdf");
     }
 }
