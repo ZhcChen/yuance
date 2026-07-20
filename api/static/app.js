@@ -5684,6 +5684,14 @@
     if (!target || typeof target.closest !== "function") {
       return null;
     }
+    var editorAttachment = target.closest("[data-rich-attachment]");
+    if (
+      editorAttachment &&
+      editorAttachment.dataset.uploadState === "uploaded" &&
+      editorAttachment.dataset.downloadUrl
+    ) {
+      return editorAttachment;
+    }
     return target.closest(".discussion-rich-body [data-yuance-attachment-kind]");
   }
 
@@ -5691,13 +5699,26 @@
     if (!attachment) {
       return null;
     }
+    var isEditorAttachment = attachment.hasAttribute("data-rich-attachment");
     var kind = attachment.dataset.yuanceAttachmentKind || "";
     var media = attachment.matches("img, video")
       ? attachment
       : attachment.querySelector("img, video");
     var source = "";
     var title = "";
-    if (kind === "file" && attachment.matches("a[href]")) {
+    if (isEditorAttachment) {
+      title = attachment.dataset.filename || "附件";
+      source = attachment.dataset.downloadUrl || "";
+      if (!kind) {
+        if (media && media.tagName === "VIDEO") {
+          kind = "video";
+        } else if (media && media.tagName === "IMG") {
+          kind = "image";
+        } else {
+          kind = "file";
+        }
+      }
+    } else if (kind === "file" && attachment.matches("a[href]")) {
       source = attachment.getAttribute("href") || "";
       title = attachment.getAttribute("title") || attachment.textContent || "附件";
     } else if (media) {
