@@ -5769,6 +5769,102 @@
     });
   }
 
+  function blobToImagePng(blob) {
+    if (!blob || !blob.type || !blob.type.toLowerCase().startsWith("image/")) {
+      return Promise.reject(new Error("当前内容不是图片。"));
+    }
+    return new Promise(function (resolve, reject) {
+      var objectUrl = URL.createObjectURL(blob);
+      var image = new Image();
+      image.onload = function () {
+        try {
+          var canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth || image.width || 1;
+          canvas.height = image.naturalHeight || image.height || 1;
+          var context = canvas.getContext("2d");
+          if (!context) {
+            reject(new Error("浏览器不支持图片复制。"));
+            return;
+          }
+          context.drawImage(image, 0, 0);
+          canvas.toBlob(function (pngBlob) {
+            if (pngBlob) {
+              resolve(pngBlob);
+              return;
+            }
+            reject(new Error("图片转换失败。"));
+          }, "image/png");
+        } catch (error) {
+          reject(error);
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      };
+      image.onerror = function () {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error("图片加载失败。"));
+      };
+      image.src = objectUrl;
+    });
+  }
+
+  function writeImageBlobToClipboard(blob) {
+    if (!blob || !blob.type || !blob.type.toLowerCase().startsWith("image/")) {
+      return Promise.reject(new Error("当前内容不是图片。"));
+    }
+    if (
+      !navigator.clipboard ||
+      typeof navigator.clipboard.write !== "function" ||
+      typeof ClipboardItem === "undefined"
+    ) {
+      return Promise.reject(new Error("当前浏览器不支持复制图片。"));
+    }
+    var clipboardWrite = function (targetBlob) {
+      var type = (targetBlob && targetBlob.type) || "image/png";
+      return navigator.clipboard.write([
+        new ClipboardItem(
+          Object.defineProperty({}, type, {
+            value: targetBlob,
+            enumerable: true,
+          })
+        ),
+      ]);
+    };
+    return clipboardWrite(blob).catch(function () {
+      if ((blob.type || "").toLowerCase() === "image/png") {
+        throw new Error("复制图片失败。");
+      }
+      return blobToImagePng(blob).then(function (pngBlob) {
+        return clipboardWrite(pngBlob);
+      });
+    });
+  }
+
+  function fetchRichAttachmentBlob(meta) {
+    if (!meta || !meta.source) {
+      return Promise.reject(new Error("附件地址不可用。"));
+    }
+    return fetch(absoluteAttachmentUrl(meta.source), {
+      credentials: "same-origin",
+      cache: "no-store",
+    }).then(function (response) {
+      if (!response.ok) {
+        throw new Error("附件读取失败。");
+      }
+      return response.blob();
+    });
+  }
+
+  function copyRichAttachmentImageToClipboard(attachment) {
+    var meta = richAttachmentMetadata(attachment);
+    if (!meta || meta.kind !== "image") {
+      return Promise.reject(new Error("当前附件不是图片。"));
+    }
+    return fetchRichAttachmentBlob(meta).then(function (blob) {
+      return writeImageBlobToClipboard(blob);
+    });
+  }
+
   function openRichAttachmentPreview(attachment) {
     var meta = richAttachmentMetadata(attachment);
     if (!meta || !meta.previewable) {
@@ -5818,7 +5914,13 @@
     copy.type = "button";
     copy.dataset.richAttachmentMenuAction = "copy";
     copy.setAttribute("role", "menuitem");
-    copy.innerHTML = "<span>复制</span><em>复制附件链接</em>";
+    copy.innerHTML = "<span>复制链接</span><em>复制附件访问地址</em>";
+
+    var copyImage = document.createElement("button");
+    copyImage.type = "button";
+    copyImage.dataset.richAttachmentMenuAction = "copy-image";
+    copyImage.setAttribute("role", "menuitem");
+    copyImage.innerHTML = "<span>复制图片</span><em>复制图片内容到剪贴板</em>";
 
     var preview = document.createElement("button");
     preview.type = "button";
@@ -5832,7 +5934,7 @@
     download.setAttribute("role", "menuitem");
     download.innerHTML = "<span>下载</span><em>保存到本地</em>";
 
-    menu.append(title, copy, preview, download);
+    menu.append(title, copy, copyImage, preview, download);
     document.body.appendChild(menu);
     activeRichAttachmentMenu = menu;
     return menu;
@@ -5866,10 +5968,14 @@
     }
     var menu = ensureRichAttachmentMenu();
     var title = menu.querySelector("[data-rich-attachment-menu-title]");
+    var copyImage = menu.querySelector("[data-rich-attachment-menu-action='copy-image']");
     var preview = menu.querySelector("[data-rich-attachment-menu-action='preview']");
     menu.richAttachment = attachment;
     if (title) {
       title.textContent = meta.title;
+    }
+    if (copyImage) {
+      copyImage.hidden = meta.kind !== "image";
     }
     if (preview) {
       preview.hidden = !meta.previewable;
@@ -5904,6 +6010,15 @@
         })
         .catch(function () {
           showToast("复制失败，请重试。", "error");
+        });
+    } else if (action === "copy-image") {
+      copyRichAttachmentImageToClipboard(attachment)
+        .then(function () {
+          showToast("图片已复制到剪贴板。", "success");
+        })
+        .catch(function (error) {
+          var message = error && error.message ? error.message : "复制图片失败，请重试。";
+          showToast(message, "error");
         });
     } else if (action === "preview") {
       openRichAttachmentPreview(attachment);
