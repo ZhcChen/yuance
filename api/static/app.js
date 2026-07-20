@@ -1890,6 +1890,71 @@
     clearContentTabNavigation();
   }
 
+  function smartBackStorageKey(link) {
+    if (!link) {
+      return "";
+    }
+    var key = (link.dataset.smartBackKey || "").trim();
+    if (key) {
+      return "yuance:smart-back:" + key;
+    }
+    return "yuance:smart-back:" + window.location.pathname;
+  }
+
+  function isSafeSmartBackUrl(url) {
+    return Boolean(url) && url.origin === window.location.origin && url.pathname.indexOf("/web") === 0;
+  }
+
+  function toSmartBackRelativeUrl(url) {
+    return url.pathname + url.search + url.hash;
+  }
+
+  function rememberSmartBackTarget(link) {
+    if (!link || !window.sessionStorage || !document.referrer) {
+      return;
+    }
+    try {
+      var referrerUrl = new URL(document.referrer, window.location.href);
+      var currentUrl = new URL(window.location.href);
+      if (!isSafeSmartBackUrl(referrerUrl)) {
+        return;
+      }
+      var referrerRelativeUrl = toSmartBackRelativeUrl(referrerUrl);
+      var currentRelativeUrl = toSmartBackRelativeUrl(currentUrl);
+      if (referrerRelativeUrl === currentRelativeUrl) {
+        return;
+      }
+      window.sessionStorage.setItem(smartBackStorageKey(link), referrerRelativeUrl);
+    } catch (_error) {
+      // 忽略非法 referrer，保留兜底回退链接。
+    }
+  }
+
+  function resolveSmartBackTarget(link) {
+    if (!link) {
+      return "";
+    }
+    var fallbackUrl = (link.dataset.fallbackUrl || link.getAttribute("href") || "/web").trim();
+    var currentRelativeUrl = toSmartBackRelativeUrl(new URL(window.location.href));
+    if (window.sessionStorage) {
+      try {
+        var storedTarget = (window.sessionStorage.getItem(smartBackStorageKey(link)) || "").trim();
+        if (storedTarget && storedTarget !== currentRelativeUrl && storedTarget.indexOf("/web") === 0) {
+          return storedTarget;
+        }
+      } catch (_error) {
+        // 忽略 sessionStorage 读取失败，继续走兜底链接。
+      }
+    }
+    return fallbackUrl;
+  }
+
+  function initSmartBackLinks(root) {
+    (root || document).querySelectorAll("[data-smart-back]").forEach(function (link) {
+      rememberSmartBackTarget(link);
+    });
+  }
+
   function activateContentTab(item, animateIndicator) {
     var control = item && item.closest("[data-content-tabs]");
     if (!control) {
@@ -6780,6 +6845,13 @@
       return;
     }
 
+    var smartBackLink = event.target.closest("[data-smart-back]");
+    if (smartBackLink) {
+      event.preventDefault();
+      window.location.assign(resolveSmartBackTarget(smartBackLink));
+      return;
+    }
+
     var modalClose = event.target.closest("[data-modal-close]");
     if (modalClose) {
       event.preventDefault();
@@ -7436,6 +7508,7 @@
   initProjectSwitcher(document);
   initUserComboboxes(document);
   initMemberBatchForms(document);
+  initSmartBackLinks(document);
   initTokenProjectScopes(document);
   initSelectControls(document);
   if (currentMessageCenter() && window.history && window.history.replaceState) {

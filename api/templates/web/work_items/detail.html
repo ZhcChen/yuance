@@ -6,7 +6,7 @@
 <section class="page-stack work-item-page">
   <header class="work-item-hero">
     <div class="detail-sequence-bar">
-      <a class="work-item-back" href="/web/projects/{{ item.project_key }}">← 返回 {{ item.project_name }}</a>
+      <a class="work-item-back" href="/web/projects/{{ item.project_key }}" data-smart-back data-smart-back-key="work-item:{{ item.key }}" data-fallback-url="/web/projects/{{ item.project_key }}">← 返回 {{ item.project_name }}</a>
       {% if has_previous_entry || has_next_entry %}
       <nav class="detail-sequence-nav" aria-label="帖子切换">
         {% if has_previous_entry %}

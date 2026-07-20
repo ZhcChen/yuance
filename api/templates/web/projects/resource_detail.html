@@ -41,7 +41,7 @@
         {% endif %}
       </nav>
       {% endif %}
-      <a class="btn btn-secondary" href="/web/projects/{{ project.code }}?tab=library">返回资料库</a>
+      <a class="btn btn-secondary" href="/web/projects/{{ project.code }}?tab=library" data-smart-back data-smart-back-key="resource:{{ resource.id }}" data-fallback-url="/web/projects/{{ project.code }}?tab=library">返回资料库</a>
       {% if can_manage_resources && is_unlocked %}
       <button class="btn btn-secondary" type="button" data-modal-open="project-resource-edit-modal">编辑资料</button>
       <form class="inline-form" method="post" action="{{ resource.archive_url }}" data-confirm-submit-form data-confirm-title="归档资料" data-confirm-message="确认归档资料「{{ resource.title }}」？归档后不会删除历史内容。" data-confirm-action="归档">
