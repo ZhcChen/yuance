@@ -1,15 +1,18 @@
 use axum::{
     Router,
     body::to_bytes,
-    extract::{Request, State},
+    extract::{Path, Request, State},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
     routing::{delete, get, patch, post, put},
 };
+use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 
 use crate::{domains::auth, platform::config::Settings, web};
+
+static PDFJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/pdfjs");
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -559,6 +562,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/static/app.js", get(static_app_js))
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
+        .route("/static/vendor/pdfjs/{*path}", get(static_pdfjs_asset))
         .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
@@ -1047,6 +1051,37 @@ async fn static_htmx() -> impl IntoResponse {
         )],
         include_str!("../../static/vendor/htmx.min.js"),
     )
+}
+
+async fn static_pdfjs_asset(Path(path): Path<String>) -> Response {
+    let normalized = path.trim_matches('/');
+    if normalized.is_empty()
+        || normalized.starts_with('.')
+        || normalized.contains("../")
+        || normalized.contains("..\\")
+    {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let Some(file) = PDFJS_VENDOR_DIR.get_file(normalized) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let content_type = match normalized.rsplit('.').next().unwrap_or_default() {
+        "mjs" | "js" => "application/javascript; charset=utf-8",
+        "ttf" => "font/ttf",
+        "txt" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    };
+
+    (
+        [
+            (header::CONTENT_TYPE, content_type),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        file.contents(),
+    )
+        .into_response()
 }
 
 async fn openapi_json() -> impl IntoResponse {

@@ -418,6 +418,60 @@ async fn static_htmx_is_bundled() {
 }
 
 #[tokio::test]
+async fn static_pdfjs_module_is_served_for_document_preview() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/pdfjs/build/pdf.min.mjs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("GlobalWorkerOptions"));
+    assert!(body.contains("getDocument"));
+}
+
+#[tokio::test]
+async fn static_pdfjs_cmap_asset_is_served() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/pdfjs/cmaps/78-EUC-H.bcmap")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/octet-stream"
+    );
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect")
+        .to_bytes();
+    assert!(!body.is_empty());
+}
+
+#[tokio::test]
 async fn admin_is_not_a_supported_entry() {
     let app = build_router(AppState::for_tests());
 
