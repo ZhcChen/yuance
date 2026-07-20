@@ -2033,9 +2033,28 @@ pub async fn work_item_comment_attachment_delete(
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
     if !comment.is_draft {
-        return Err(AppError::BadRequest(
-            "已发布评论附件不能通过此入口删除".to_string(),
-        ));
+        let editor_context = headers
+            .get("x-yuance-editor-context")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("");
+        match editor_context {
+            "work-item-primary-post"
+                if work_item_comment_matches_primary_post_summary(&item, &comment) => {}
+            "work-item-comment-edit"
+                if projects::user_can_manage_work_item_comment(
+                    pool,
+                    project.id,
+                    comment.author_user_id,
+                    user.id,
+                    user.is_super_admin,
+                )
+                .await? => {}
+            _ => {
+                return Err(AppError::BadRequest(
+                    "已发布评论附件不能通过此入口删除".to_string(),
+                ));
+            }
+        }
     }
     let existing =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
@@ -3557,6 +3576,39 @@ async fn require_api_comment_context(
     }
 
     Ok((user, item, project, comment))
+}
+
+fn work_item_comment_matches_primary_post_summary(
+    item: &projects::WorkItemDetail,
+    comment: &projects::WorkItemCommentSummary,
+) -> bool {
+    if comment.is_flow
+        || comment.parent_comment_id.is_some()
+        || comment.body_format != "html"
+        || comment.author_username != item.reporter_username
+    {
+        return false;
+    }
+
+    let description = normalized_primary_post_summary(&item.description);
+    if description.is_empty() {
+        return false;
+    }
+    if description == normalized_primary_post_summary("见首条图文说明") {
+        return true;
+    }
+
+    let comment_plain = projects::work_item_comment_plain_text(&comment.body, &comment.body_format);
+    normalized_primary_post_summary(&comment_plain) == description
+}
+
+fn normalized_primary_post_summary(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string()
 }
 
 async fn require_api_project_resource_context(

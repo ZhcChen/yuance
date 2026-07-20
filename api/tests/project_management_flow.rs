@@ -3321,7 +3321,7 @@ async fn work_item_detail_partial_renders_comments() {
 
     assert!(body.contains("详情说明"));
     assert!(body.contains("先统一项目与工作项查询模型"));
-    assert!(body.contains("讨论与流转"));
+    assert!(body.contains("讨论"));
     assert!(body.contains(r#"data-discussion-form"#));
     assert!(body.contains(
         r#"class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle"#
@@ -4880,10 +4880,9 @@ async fn web_work_item_handoff_returns_to_discussion_context() {
         .await
         .expect("router should respond");
     let detail_body = response_body(detail_response).await;
-    assert!(detail_body.contains("系统管理员 指派给 流转目标"));
-    assert!(detail_body.contains("指派："));
+    assert!(detail_body.contains("系统管理员 → 流转目标"));
     assert!(detail_body.contains("流转目标"));
-    assert!(detail_body.contains("说明：请继续处理；处理人：伪造 A → 伪造 B"));
+    assert!(detail_body.contains("请继续处理；处理人：伪造 A → 伪造 B"));
     assert!(!detail_body.contains("指派：伪造 A → 伪造 B"));
 }
 

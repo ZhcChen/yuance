@@ -183,13 +183,13 @@
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/edit" data-success-message="评论已更新。">
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/edit" data-work-item-comment-edit-form data-success-message="评论已更新。">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="body_format" value="html" data-discussion-body-format>
       <input type="hidden" name="body" value="" data-discussion-body>
       <div class="modal-field">
         <span class="field-label">内容</span>
-        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-id="{{ comment.id }}" data-placeholder="编辑发表内容...">
+        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-id="{{ comment.id }}" data-rich-initial-html="{{ comment.body_html }}" data-placeholder="编辑发表内容...">
           <div class="rich-text-toolbar" aria-label="富文本工具栏">
             <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
             <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
@@ -199,7 +199,7 @@
             <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
             <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
           </div>
-          <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="编辑发表内容...">{{ comment.body_html|safe }}</div>
+          <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="编辑发表内容..."></div>
           <div class="rich-text-drop-hint">支持粘贴截图或拖拽文件。</div>
         </div>
       </div>

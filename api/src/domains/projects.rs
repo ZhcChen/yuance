@@ -3602,6 +3602,50 @@ pub async fn update_work_item_comment_with_format(
     body: &str,
     body_format: &str,
 ) -> AppResult<WorkItemCommentSummary> {
+    update_work_item_comment_with_format_internal(
+        pool,
+        actor_user_id,
+        actor_is_super_admin,
+        item_key,
+        comment_id,
+        body,
+        body_format,
+        false,
+    )
+    .await
+}
+
+pub async fn update_work_item_comment_with_format_for_project_editor(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    comment_id: i64,
+    body: &str,
+    body_format: &str,
+) -> AppResult<WorkItemCommentSummary> {
+    update_work_item_comment_with_format_internal(
+        pool,
+        actor_user_id,
+        false,
+        item_key,
+        comment_id,
+        body,
+        body_format,
+        true,
+    )
+    .await
+}
+
+async fn update_work_item_comment_with_format_internal(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    actor_is_super_admin: bool,
+    item_key: &str,
+    comment_id: i64,
+    body: &str,
+    body_format: &str,
+    bypass_manage_permission: bool,
+) -> AppResult<WorkItemCommentSummary> {
     let prepared = prepare_work_item_comment_body(body, body_format)?;
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
@@ -3628,14 +3672,15 @@ pub async fn update_work_item_comment_with_format(
             "草稿评论不能通过编辑入口修改".to_string(),
         ));
     }
-    if !user_can_manage_work_item_comment(
+    if !bypass_manage_permission
+        && !user_can_manage_work_item_comment(
         pool,
         project_id,
         comment.author_user_id,
         actor_user_id,
         actor_is_super_admin,
     )
-    .await?
+        .await?
     {
         return Err(AppError::Forbidden("无权修改该评论".to_string()));
     }

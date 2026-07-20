@@ -258,6 +258,8 @@ struct WorkItemDetailView {
     title: String,
     description: String,
     description_html: String,
+    editor_body_html: String,
+    primary_post_comment_id: Option<i64>,
     project_key: String,
     project_name: String,
     parent_item_key: String,
@@ -1341,6 +1343,12 @@ pub struct WorkItemEditForm {
     csrf_token: String,
     title: String,
     description: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    body_format: String,
+    #[serde(default)]
+    primary_comment_id: Option<i64>,
     status: String,
     priority: String,
     assignee_username: String,
@@ -3791,6 +3799,17 @@ pub async fn work_item_update(
             },
         )
         .await?;
+        if !form.body.trim().is_empty() {
+            save_work_item_primary_post(
+                pool,
+                context.user_id,
+                &item_key,
+                form.primary_comment_id,
+                &form.body,
+                &form.body_format,
+            )
+            .await?;
+        }
         audit::record(
             pool,
             Some(context.user_id),
@@ -3805,6 +3824,55 @@ pub async fn work_item_update(
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
+}
+
+async fn save_work_item_primary_post(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    primary_comment_id: Option<i64>,
+    body: &str,
+    body_format: &str,
+) -> AppResult<projects::WorkItemCommentSummary> {
+    if let Some(comment_id) = primary_comment_id {
+        let item = projects::get_work_item_detail(pool, item_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+        let comment =
+            projects::get_work_item_comment_including_drafts(pool, item.id, comment_id).await?;
+        if comment.is_draft {
+            return projects::publish_work_item_comment_draft(
+                pool,
+                actor_user_id,
+                item_key,
+                comment_id,
+                body,
+                body_format,
+            )
+            .await;
+        }
+
+        return projects::update_work_item_comment_with_format_for_project_editor(
+            pool,
+            actor_user_id,
+            item_key,
+            comment_id,
+            body,
+            body_format,
+        )
+        .await;
+    }
+
+    projects::add_work_item_comment_reply_with_format_and_actor(
+        pool,
+        actor_user_id,
+        item_key,
+        body,
+        body_format,
+        None,
+        "",
+    )
+    .await
 }
 
 pub async fn work_item_restore(
@@ -6845,7 +6913,9 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         kind: kind.to_string(),
         title: item.title,
         description: item.description,
-        description_html,
+        description_html: description_html.clone(),
+        editor_body_html: description_html,
+        primary_post_comment_id: None,
         project_key: item.project_key,
         project_name: item.project_name,
         parent_item_key: item.parent_item_key.clone(),
@@ -8521,7 +8591,9 @@ fn promote_primary_post_to_description(
     }
 
     let comment = comments.remove(index);
-    item.description_html = comment.body_html;
+    item.description_html = comment.body_html.clone();
+    item.editor_body_html = comment.body_html;
+    item.primary_post_comment_id = Some(comment.id);
 }
 
 fn discussion_comment_count(comments: &[WorkItemComment]) -> usize {
@@ -10190,6 +10262,8 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             title: "设计项目与工作项数据模型".to_string(),
             description: "落地项目、成员、需求、任务、Bug、评论和动态表。".to_string(),
             description_html: "<p>落地项目、成员、需求、任务、Bug、评论和动态表。</p>".to_string(),
+            editor_body_html: "<p>落地项目、成员、需求、任务、Bug、评论和动态表。</p>".to_string(),
+            primary_post_comment_id: None,
             project_key: "YCE".to_string(),
             project_name: "元策 MVP".to_string(),
             parent_item_key: "YCE-REQ-1".to_string(),
@@ -10440,4 +10514,5 @@ mod tests {
         assert_eq!(output_pdf_filename("report.final.pptx"), "report.final.pdf");
         assert_eq!(output_pdf_filename(""), "document.pdf");
     }
+
 }

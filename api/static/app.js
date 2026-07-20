@@ -2502,7 +2502,7 @@
     var clone = input.cloneNode(true);
     clone.querySelectorAll("[data-rich-attachment]").forEach(function (node) {
       var replacement = document.createElement("span");
-      replacement.textContent = " " + (node.dataset.filename || "附件") + " ";
+      replacement.textContent = " ";
       node.replaceWith(replacement);
     });
     return String(clone.textContent || "")
@@ -2990,20 +2990,39 @@
     }
   }
 
-  function createRichAttachmentNode(file) {
-    var kind = richAttachmentMediaKind(file.type || "");
+  function buildRichAttachmentNode(options) {
+    var attachmentOptions = options || {};
+    var kind = attachmentOptions.kind || "file";
     var isImage = kind === "image";
     var isVideo = kind === "video";
-    var fileKind = isImage || isVideo ? "" : fileVisualKind(file.name || "", file.type || "");
-    var fileBadge = isImage || isVideo ? "" : fileVisualBadge(file.name || "", file.type || "");
+    var filename = attachmentOptions.filename
+      || (isImage ? richAttachmentLabel("image") : isVideo ? richAttachmentLabel("video") : "附件");
+    var contentType = attachmentOptions.contentType
+      || (isImage ? "image/png" : isVideo ? "video/mp4" : "application/octet-stream");
+    var fileKind = isImage || isVideo
+      ? ""
+      : (attachmentOptions.fileKind || fileVisualKind(filename, contentType));
+    var fileBadge = isImage || isVideo
+      ? ""
+      : (attachmentOptions.fileBadge || fileVisualBadge(filename, contentType));
+    var uploadState = attachmentOptions.uploadState || "uploading";
     var node = document.createElement(isImage || isVideo ? "figure" : "span");
     node.className = "rich-attachment " + (isImage || isVideo ? "rich-attachment--media" : "rich-attachment--file");
     node.contentEditable = "false";
     node.dataset.richAttachment = "";
-    node.dataset.uploadState = "uploading";
-    node.dataset.align = "left";
-    node.dataset.filename = file.name || "未命名文件";
-    node.dataset.contentType = file.type || "application/octet-stream";
+    node.dataset.uploadState = uploadState;
+    node.dataset.align = attachmentOptions.align || "left";
+    node.dataset.filename = filename;
+    node.dataset.contentType = contentType;
+    if (attachmentOptions.attachmentId) {
+      node.dataset.attachmentId = String(attachmentOptions.attachmentId);
+    }
+    if (attachmentOptions.downloadUrl) {
+      node.dataset.downloadUrl = attachmentOptions.downloadUrl;
+    }
+    if (attachmentOptions.objectUrl) {
+      node.dataset.objectUrl = attachmentOptions.objectUrl;
+    }
     if (fileKind) {
       node.dataset.fileKind = fileKind;
       node.dataset.fileExt = fileBadge;
@@ -3012,13 +3031,11 @@
     var media = document.createElement("span");
     media.className = "rich-attachment-media";
     if (isImage || isVideo) {
-      var objectUrl = URL.createObjectURL(file);
-      node.dataset.objectUrl = objectUrl;
       if (isImage) {
         var image = document.createElement("img");
-        image.alt = localRichAttachmentLabel("image");
+        image.alt = attachmentOptions.mediaLabel || localRichAttachmentLabel("image");
         bindRichAttachmentOrientation(node, image);
-        image.src = objectUrl;
+        image.src = attachmentOptions.source || attachmentOptions.downloadUrl || "";
         media.appendChild(image);
       } else {
         var video = document.createElement("video");
@@ -3026,7 +3043,7 @@
         video.preload = "metadata";
         video.playsInline = true;
         bindRichAttachmentOrientation(node, video);
-        video.src = objectUrl;
+        video.src = attachmentOptions.source || attachmentOptions.downloadUrl || "";
         media.appendChild(video);
       }
     } else {
@@ -3038,10 +3055,11 @@
     var main = document.createElement("span");
     main.className = "rich-attachment-main";
     var name = document.createElement("strong");
-    name.textContent = file.name || "未命名文件";
+    name.textContent = filename;
     var status = document.createElement("span");
     status.dataset.richAttachmentStatus = "";
-    status.textContent = (fileBadge ? fileBadge + " · " : "") + "准备上传 · " + formatFileSize(file.size);
+    status.textContent = attachmentOptions.statusText
+      || ((fileBadge ? fileBadge + " · " : "") + "准备上传");
     main.append(name, status);
 
     var actions = document.createElement("span");
@@ -3050,24 +3068,24 @@
     remove.type = "button";
     remove.dataset.richAttachmentRemove = "";
     remove.textContent = "×";
-    remove.setAttribute("aria-label", "移除" + localRichAttachmentLabel(kind));
+    remove.setAttribute("aria-label", "移除" + (attachmentOptions.actionLabel || localRichAttachmentLabel(kind)));
     actions.append(remove);
 
     var overlay = document.createElement("span");
     overlay.className = "rich-attachment-overlay";
     var overlayInner = document.createElement("span");
     overlayInner.className = "rich-attachment-overlay-inner";
-    var progress = createRichProgress(0);
+    var progress = createRichProgress(typeof attachmentOptions.percent === "number" ? attachmentOptions.percent : 0);
     var overlayStatus = document.createElement("span");
     overlayStatus.className = "rich-attachment-overlay-status";
     overlayStatus.dataset.richAttachmentOverlayStatus = "";
-    overlayStatus.textContent = "准备上传";
+    overlayStatus.textContent = attachmentOptions.overlayText || attachmentOptions.statusText || "准备上传";
     var retry = document.createElement("button");
     retry.type = "button";
-    retry.hidden = true;
+    retry.hidden = uploadState !== "error";
     retry.dataset.richAttachmentRetry = "";
     retry.textContent = "重试";
-    retry.setAttribute("aria-label", "重试上传 " + (file.name || "附件"));
+    retry.setAttribute("aria-label", "重试上传 " + filename);
     overlayInner.append(progress, overlayStatus, retry);
     overlay.appendChild(overlayInner);
 
@@ -3076,7 +3094,97 @@
     } else {
       node.append(media, main, actions, overlay);
     }
+
+    setRichAttachmentState(
+      node,
+      uploadState,
+      attachmentOptions.statusText
+        || (uploadState === "uploaded"
+          ? (fileBadge ? fileBadge + " · " : "") + "已附加"
+          : (fileBadge ? fileBadge + " · " : "") + "准备上传"),
+      typeof attachmentOptions.percent === "number"
+        ? attachmentOptions.percent
+        : (uploadState === "uploaded" ? 100 : 0)
+    );
     return node;
+  }
+
+  function createRichAttachmentNode(file) {
+    var kind = richAttachmentMediaKind(file.type || "");
+    var objectUrl = kind === "file" ? "" : URL.createObjectURL(file);
+    var node = buildRichAttachmentNode({
+      kind: kind,
+      filename: file.name || "未命名文件",
+      contentType: file.type || "application/octet-stream",
+      source: objectUrl,
+      objectUrl: objectUrl,
+      uploadState: "uploading",
+      statusText:
+        (kind === "file"
+          ? (fileVisualBadge(file.name || "", file.type || "") + " · ")
+          : "")
+        + "准备上传 · " + formatFileSize(file.size),
+      overlayText: "准备上传",
+      percent: 0,
+    });
+    return node;
+  }
+
+  function hydrateRichTextAttachmentNode(attachment) {
+    if (!attachment) {
+      return null;
+    }
+    var kind = attachment.dataset.yuanceAttachmentKind || "";
+    var media = attachment.matches("img, video")
+      ? attachment
+      : attachment.querySelector("img, video");
+    var source = "";
+    var filename = "";
+    var contentType = "application/octet-stream";
+    if (kind === "file" && attachment.matches("a[href]")) {
+      source = attachment.getAttribute("href") || "";
+      filename = attachment.getAttribute("title") || attachment.textContent || "附件";
+    } else if (media) {
+      source = media.currentSrc || media.getAttribute("src") || media.src || "";
+      if (media.tagName === "VIDEO") {
+        kind = "video";
+        filename = richAttachmentLabel("video");
+        contentType = "video/mp4";
+      } else {
+        kind = "image";
+        filename = richAttachmentLabel("image");
+        contentType = "image/png";
+      }
+    }
+    if (!source || !kind) {
+      return null;
+    }
+    return buildRichAttachmentNode({
+      kind: kind,
+      filename: filename || "附件",
+      contentType: contentType,
+      source: source,
+      downloadUrl: source,
+      attachmentId: attachment.dataset.yuanceAttachmentId || "",
+      align: attachment.dataset.yuanceAlign || "left",
+      uploadState: "uploaded",
+      statusText: "已附加",
+      overlayText: "已附加",
+      percent: 100,
+    });
+  }
+
+  function hydrateStoredRichAttachments(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return;
+    }
+    Array.from(input.querySelectorAll("[data-yuance-attachment-kind]")).forEach(function (attachment) {
+      var node = hydrateRichTextAttachmentNode(attachment);
+      if (node) {
+        attachment.replaceWith(node);
+      }
+    });
   }
 
   function bugReportRequestPayload(form) {
@@ -3275,6 +3383,7 @@
       }
     );
     editor.dataset.commentId = String(comment.id);
+    editor.dataset.commentDraft = "true";
     if (form) {
       form.dataset.discussionCommentId = String(comment.id);
       form.dataset.discussionDraft = "true";
@@ -3501,6 +3610,21 @@
     node.richFile = null;
   }
 
+  function richAttachmentDeleteHeaders(editor) {
+    var headers = { accept: "application/json" };
+    if (!editor) {
+      return headers;
+    }
+    if (editor.closest("[data-work-item-edit-form]")) {
+      headers["x-yuance-editor-context"] = "work-item-primary-post";
+      return headers;
+    }
+    if (editor.closest("[data-work-item-comment-edit-form]")) {
+      headers["x-yuance-editor-context"] = "work-item-comment-edit";
+    }
+    return headers;
+  }
+
   async function deleteRichAttachmentNode(editor, node, options) {
     var deleteOptions = options || {};
     if (!editor || !node) {
@@ -3514,7 +3638,7 @@
     node.dataset.richDeleteIssued = "true";
     await fetchJson(deleteUrl, {
       method: "DELETE",
-      headers: { accept: "application/json" },
+      headers: richAttachmentDeleteHeaders(editor),
     });
   }
 
@@ -3574,6 +3698,11 @@
       if (!input) {
         return;
       }
+      if (editor.dataset.richInitialHtml && !input.dataset.richInitialLoaded) {
+        input.innerHTML = editor.dataset.richInitialHtml;
+        input.dataset.richInitialLoaded = "true";
+      }
+      hydrateStoredRichAttachments(editor);
       editor.addEventListener("click", function (event) {
         if (event.target.closest("[data-rich-command]")) {
           return;
@@ -3662,6 +3791,11 @@
     setStatusMessage(status, message, tone);
   }
 
+  function workItemEditStatus(form, message, tone) {
+    var status = form.querySelector("[data-work-item-edit-status]");
+    setStatusMessage(status, message, tone);
+  }
+
   function setDirectUploadBusy(form, busy) {
     form.dataset.uploadBusy = busy ? "true" : "false";
     form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
@@ -3696,6 +3830,109 @@
     form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
       input.setAttribute("contenteditable", busy ? "false" : "true");
     });
+  }
+
+  function setWorkItemEditBusy(form, busy) {
+    form.dataset.workItemEditBusy = busy ? "true" : "false";
+    form.querySelectorAll("input, select, textarea, button").forEach(function (control) {
+      if (control.matches("[data-modal-close]")) {
+        return;
+      }
+      control.disabled = busy;
+    });
+    form.querySelectorAll("[data-rich-text-input]").forEach(function (input) {
+      input.setAttribute("contenteditable", busy ? "false" : "true");
+    });
+  }
+
+  function syncWorkItemEditDescription(form) {
+    var editor = richTextEditorForForm(form);
+    var description = form.querySelector("[data-work-item-edit-description]");
+    if (!editor || !description) {
+      return;
+    }
+    var plainText = richTextPlainText(editor);
+    if (!plainText && editor.querySelector("[data-rich-attachment]")) {
+      plainText = "见首条图文说明";
+    }
+    description.value = plainText.length > 5000
+      ? plainText.slice(0, 4990) + "..."
+      : plainText;
+  }
+
+  function syncWorkItemEditBody(form) {
+    var editor = richTextEditorForForm(form);
+    var bodyInput = form.querySelector("[data-work-item-edit-body]");
+    var formatInput = form.querySelector("[data-work-item-edit-body-format]");
+    if (!editor || !bodyInput) {
+      return false;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='uploading']")) {
+      workItemEditStatus(form, "文件仍在上传，请等待完成后再保存。", "error");
+      return false;
+    }
+    if (editor.querySelector("[data-rich-attachment][data-upload-state='error']")) {
+      workItemEditStatus(form, "有文件上传失败，请重试或移除失败项后再保存。", "error");
+      return false;
+    }
+    var html = serializeRichTextEditor(editor);
+    if (richTextIsEmptyHtml(html)) {
+      workItemEditStatus(form, "帖子主内容不能为空。", "error");
+      richTextInput(editor)?.focus({ preventScroll: true });
+      return false;
+    }
+    bodyInput.value = html;
+    if (formatInput) {
+      formatInput.value = "html";
+    }
+    syncWorkItemEditDescription(form);
+    return true;
+  }
+
+  async function submitWorkItemEdit(form, submitter) {
+    if (!form || form.dataset.workItemEditBusy === "true" || form.dataset.webFormBusy === "true") {
+      return;
+    }
+    if (!form.reportValidity()) {
+      return;
+    }
+    if (!syncWorkItemEditBody(form)) {
+      return;
+    }
+    var editor = richTextEditorForForm(form);
+    if (!editor) {
+      submitWebForm(form, submitter);
+      return;
+    }
+    var primaryCommentInput = form.querySelector("[data-work-item-primary-comment-id]");
+    var attachments = Array.from(editor.querySelectorAll("[data-rich-attachment]"));
+    setWorkItemEditBusy(form, true);
+    try {
+      for (var index = 0; index < attachments.length; index += 1) {
+        var node = attachments[index];
+        if (node.dataset.uploadState === "uploaded") {
+          continue;
+        }
+        if (!node.richFile) {
+          throw new Error("附件文件已失效，请移除后重新选择。");
+        }
+        workItemEditStatus(form, "正在上传正文附件 " + (index + 1) + "/" + attachments.length + "...", "info");
+        await uploadRichAttachment(editor, node, node.richFile, { throwOnError: true });
+      }
+      if (!syncWorkItemEditBody(form)) {
+        setWorkItemEditBusy(form, false);
+        return;
+      }
+      if (primaryCommentInput) {
+        primaryCommentInput.value = editor.dataset.commentId || form.dataset.primaryCommentId || "";
+      }
+      workItemEditStatus(form, "正在保存工作项...", "info");
+      setWorkItemEditBusy(form, false);
+      await submitWebForm(form, submitter);
+    } catch (error) {
+      workItemEditStatus(form, error.message || "保存失败，请稍后重试。", "error");
+      setWorkItemEditBusy(form, false);
+    }
   }
 
   function resourcePasswordPatchFields(form) {
@@ -5708,7 +5945,12 @@
     var title = "";
     if (isEditorAttachment) {
       title = attachment.dataset.filename || "附件";
-      source = attachment.dataset.downloadUrl || "";
+      source = media
+        ? (media.currentSrc || media.getAttribute("src") || media.src || "")
+        : "";
+      if (!source) {
+        source = attachment.dataset.downloadUrl || "";
+      }
       if (!kind) {
         if (media && media.tagName === "VIDEO") {
           kind = "video";
@@ -7022,6 +7264,13 @@
     if (discussionForm) {
       event.preventDefault();
       submitDiscussion(discussionForm, event.submitter);
+      return;
+    }
+
+    var workItemEditForm = event.target.closest("[data-work-item-edit-form]");
+    if (workItemEditForm) {
+      event.preventDefault();
+      submitWorkItemEdit(workItemEditForm, event.submitter);
       return;
     }
 

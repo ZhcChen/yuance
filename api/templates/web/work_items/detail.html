@@ -136,7 +136,7 @@
       <div><h2 id="work-item-edit-modal-title">编辑{{ item.kind }}</h2><p>更新工作项的核心内容与协作信息。</p></div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
-    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/edit" data-success-message="{{ item.kind }}已保存。">
+    <form class="modal-body modal-form" method="post" action="/web/work-items/{{ item.key }}/edit" data-work-item-edit-form data-primary-comment-id="{% match item.primary_post_comment_id %}{% when Some with (comment_id) %}{{ comment_id }}{% when None %}{% endmatch %}" data-success-message="{{ item.kind }}已保存。">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <div class="field-grid">
         <label class="wide-field">标题<input name="title" value="{{ item.title }}" required autofocus></label>
@@ -145,7 +145,30 @@
         <label>处理人<select name="assignee_username" data-select-searchable data-select-search-placeholder="搜索处理人">{% for member in assignee_options %}<option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>{% endfor %}</select></label>
         <label>截止日期<input name="due_date" type="date" value="{{ item.due_date }}"></label>
         {% if item.kind_code == "task" %}<label>父级需求<select name="parent_item_key" data-select-searchable data-select-search-placeholder="搜索父需求"><option value="">不关联</option>{% for parent in parent_options %}<option value="{{ parent.key }}" {% if parent.key == item.parent_item_key %}selected{% endif %}>{{ parent.key }} · {{ parent.title }}</option>{% endfor %}</select></label>{% endif %}
-        <label class="wide-field">描述<textarea name="description" rows="7">{{ item.description }}</textarea></label>
+        <input type="hidden" name="description" value="{{ item.description }}" data-work-item-edit-description>
+        <input type="hidden" name="body" value="" data-work-item-edit-body>
+        <input type="hidden" name="body_format" value="html" data-work-item-edit-body-format>
+        <input type="hidden" name="primary_comment_id" value="{% match item.primary_post_comment_id %}{% when Some with (comment_id) %}{{ comment_id }}{% when None %}{% endmatch %}" data-work-item-primary-comment-id>
+        <div class="work-item-rich-create wide-field">
+          <div class="work-item-rich-create-head">
+            <strong>主内容</strong>
+            <span>支持富文本、粘贴截图、拖拽图片 / 视频 / 文件。</span>
+          </div>
+          <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-rich-initial-html="{{ item.editor_body_html }}" {% match item.primary_post_comment_id %}{% when Some with (comment_id) %}data-comment-id="{{ comment_id }}"{% when None %}{% endmatch %} data-placeholder="编辑帖子主内容...">
+            <div class="rich-text-toolbar" aria-label="富文本工具栏">
+              <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
+              <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
+              <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
+              <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
+              <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
+              <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
+              <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
+            </div>
+            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="编辑帖子主内容..."></div>
+            <div class="rich-text-drop-hint">新增附件会直接上传，删除附件会同步移除对应存储对象。</div>
+          </div>
+          <div class="upload-status" role="status" aria-live="polite" data-work-item-edit-status>可以继续编辑帖子主内容。</div>
+        </div>
       </div>
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-close>取消</button><button class="btn btn-primary" type="submit">保存修改</button></div>
     </form>
