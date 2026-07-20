@@ -729,6 +729,12 @@ struct ProjectResourceDetailTemplate {
     project: ProjectDetailView,
     resource: ProjectResourceDetailView,
     resource_category_options: Vec<ProjectResourceCategoryOption>,
+    has_previous_entry: bool,
+    previous_entry_url: String,
+    previous_entry_title: String,
+    has_next_entry: bool,
+    next_entry_url: String,
+    next_entry_title: String,
     can_manage_resources: bool,
     is_unlocked: bool,
     unlock_error: String,
@@ -862,6 +868,12 @@ struct WorkItemDetailTemplate {
     has_flow_history: bool,
     flow_history_pagination: PaginationView,
     flow_history_pagination_pages: Vec<PaginationPageView>,
+    has_previous_entry: bool,
+    previous_entry_url: String,
+    previous_entry_title: String,
+    has_next_entry: bool,
+    next_entry_url: String,
+    next_entry_title: String,
     has_attachments: bool,
     can_manage_work_items: bool,
     can_restore_work_items: bool,
@@ -930,6 +942,18 @@ struct DocumentPreviewNavigation {
 
 #[derive(Debug, Clone)]
 struct DocumentPreviewNavigationLink {
+    title: String,
+    url: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct DetailSequenceNavigation {
+    previous: Option<DetailSequenceNavigationLink>,
+    next: Option<DetailSequenceNavigationLink>,
+}
+
+#[derive(Debug, Clone)]
+struct DetailSequenceNavigationLink {
     title: String,
     url: String,
 }
@@ -3020,6 +3044,8 @@ pub async fn project_resource_detail_page(
             && project_accepts_writes
             && resource.status != "archived";
     let is_unlocked = !resource.is_protected;
+    let detail_navigation =
+        load_project_resource_sequence_navigation(pool, project.id, resource.id).await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -3036,6 +3062,28 @@ pub async fn project_resource_detail_page(
             project: project_detail_from_domain(project),
             resource: project_resource_from_detail(resource, None),
             resource_category_options: project_resource_category_options(),
+            has_previous_entry: detail_navigation.previous.is_some(),
+            previous_entry_url: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            previous_entry_title: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
+            has_next_entry: detail_navigation.next.is_some(),
+            next_entry_url: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            next_entry_title: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
             can_manage_resources,
             is_unlocked,
             unlock_error: String::new(),
@@ -3108,6 +3156,8 @@ pub async fn project_resource_unlock(
     } else {
         "访问密码不正确，请重新输入。".to_string()
     };
+    let detail_navigation =
+        load_project_resource_sequence_navigation(pool, project.id, resource.id).await?;
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -3124,6 +3174,28 @@ pub async fn project_resource_unlock(
             project: project_detail_from_domain(project),
             resource: project_resource_from_detail(resource, access_token.as_deref()),
             resource_category_options: project_resource_category_options(),
+            has_previous_entry: detail_navigation.previous.is_some(),
+            previous_entry_url: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            previous_entry_title: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
+            has_next_entry: detail_navigation.next.is_some(),
+            next_entry_url: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            next_entry_title: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
             can_manage_resources,
             is_unlocked: verified,
             unlock_error,
@@ -3564,6 +3636,13 @@ pub async fn work_item_detail_page(
     let flow_history_pagination = normalize_web_pagination(None, None)?;
     let (flow_history_records, flow_history_pagination, flow_history_pagination_pages) =
         load_work_item_flow_history(pool, &item, flow_history_pagination).await?;
+    let detail_navigation = load_work_item_sequence_navigation(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &item,
+    )
+    .await?;
     let discussion_count = discussion_comment_count(&comments);
 
     let csrf_token = context.csrf_token.clone();
@@ -3593,6 +3672,28 @@ pub async fn work_item_detail_page(
             flow_history_records,
             flow_history_pagination,
             flow_history_pagination_pages,
+            has_previous_entry: detail_navigation.previous.is_some(),
+            previous_entry_url: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            previous_entry_title: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
+            has_next_entry: detail_navigation.next.is_some(),
+            next_entry_url: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            next_entry_title: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
         })?
         .into_response(),
     )
@@ -8573,6 +8674,90 @@ async fn load_work_item_flow_history(
     ))
 }
 
+async fn load_work_item_sequence_navigation(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    item: &WorkItemDetailView,
+) -> AppResult<DetailSequenceNavigation> {
+    if item.is_deleted {
+        return Ok(DetailSequenceNavigation::default());
+    }
+
+    let items = projects::list_work_item_summaries_filtered_for_user(
+        pool,
+        user_id,
+        is_super_admin,
+        projects::WorkItemListFilter {
+            item_type: Some(item.kind_code.clone()),
+            project_key: item.project_key.clone(),
+            ..projects::WorkItemListFilter::default()
+        },
+    )
+    .await?;
+    let Some(current_index) = items.iter().position(|entry| entry.item_key == item.key) else {
+        return Ok(DetailSequenceNavigation::default());
+    };
+
+    Ok(DetailSequenceNavigation {
+        previous: if current_index > 0 {
+            items.get(current_index - 1).map(|entry| DetailSequenceNavigationLink {
+                title: format!("{} · {}", entry.item_key, entry.title),
+                url: format!("/web/work-items/{}", entry.item_key),
+            })
+        } else {
+            None
+        },
+        next: items
+            .get(current_index + 1)
+            .map(|entry| DetailSequenceNavigationLink {
+                title: format!("{} · {}", entry.item_key, entry.title),
+                url: format!("/web/work-items/{}", entry.item_key),
+            }),
+    })
+}
+
+async fn load_project_resource_sequence_navigation(
+    pool: &SqlitePool,
+    project_id: i64,
+    current_resource_id: i64,
+) -> AppResult<DetailSequenceNavigation> {
+    let resources = project_resources::list_resources(
+        pool,
+        project_id,
+        project_resources::ProjectResourceFilter::default(),
+    )
+    .await?;
+    let Some(current_index) = resources
+        .iter()
+        .position(|resource| resource.id == current_resource_id)
+    else {
+        return Ok(DetailSequenceNavigation::default());
+    };
+
+    Ok(DetailSequenceNavigation {
+        previous: if current_index > 0 {
+            resources
+                .get(current_index - 1)
+                .map(|resource| DetailSequenceNavigationLink {
+                    title: resource.title.clone(),
+                    url: format!(
+                        "/web/projects/{}/resources/{}",
+                        resource.project_key, resource.id
+                    ),
+                })
+        } else {
+            None
+        },
+        next: resources
+            .get(current_index + 1)
+            .map(|resource| DetailSequenceNavigationLink {
+                title: resource.title.clone(),
+                url: format!("/web/projects/{}/resources/{}", resource.project_key, resource.id),
+            }),
+    })
+}
+
 fn promote_primary_post_to_description(
     item: &mut WorkItemDetailView,
     comments: &mut Vec<WorkItemComment>,
@@ -10242,6 +10427,12 @@ fn render_sample_work_item_detail_page(
             flow_history_records,
             flow_history_pagination,
             flow_history_pagination_pages,
+            has_previous_entry: false,
+            previous_entry_url: String::new(),
+            previous_entry_title: String::new(),
+            has_next_entry: false,
+            next_entry_url: String::new(),
+            next_entry_title: String::new(),
             can_manage_work_items: true,
             can_restore_work_items: true,
         })?

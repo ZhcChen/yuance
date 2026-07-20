@@ -142,6 +142,32 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
+.detail-sequence-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.detail-sequence-bar .work-item-back {
+  margin-bottom: 0;
+}
+
+.detail-sequence-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-sequence-link {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .work-item-back {
   display: inline-flex;
   align-items: center;
@@ -1476,6 +1502,16 @@ body {
 }
 
 @media (max-width: 620px) {
+  .detail-sequence-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .detail-sequence-nav {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .work-item-title-row,
   .content-section-head,
   .discussion-post-head {

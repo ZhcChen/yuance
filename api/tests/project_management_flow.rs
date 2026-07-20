@@ -3502,6 +3502,96 @@ async fn web_work_item_detail_page_renders_full_shell() {
 }
 
 #[tokio::test]
+async fn web_work_item_detail_page_renders_previous_next_navigation() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains(r#"aria-label="帖子切换""#));
+    assert!(body.contains(r#"href="/web/work-items/YCE-TASK-1""#));
+    assert!(body.contains("下一个任务 →"));
+    assert!(body.contains(r#"aria-disabled="true">← 上一个任务"#));
+}
+
+#[tokio::test]
+async fn project_resource_detail_page_renders_previous_next_navigation() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let first = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "资料导航 A".to_string(),
+            category: "other".to_string(),
+            body: "<p>A</p>".to_string(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+        },
+    )
+    .await
+    .expect("first resource should create");
+    let second = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "资料导航 B".to_string(),
+            category: "other".to_string(),
+            body: "<p>B</p>".to_string(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+        },
+    )
+    .await
+    .expect("second resource should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{}", second.id))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains(r#"aria-label="资料切换""#));
+    assert!(body.contains(&format!(r#"href="/web/projects/YCE/resources/{}""#, first.id)));
+    assert!(body.contains("下一个资料 →"));
+    assert!(body.contains(r#"aria-disabled="true">← 上一个资料"#));
+}
+
+#[tokio::test]
 async fn work_items_partial_filters_demo_items_by_type() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

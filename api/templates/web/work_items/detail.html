@@ -5,7 +5,23 @@
 {% block content %}
 <section class="page-stack work-item-page">
   <header class="work-item-hero">
-    <a class="work-item-back" href="/web/projects/{{ item.project_key }}">← 返回 {{ item.project_name }}</a>
+    <div class="detail-sequence-bar">
+      <a class="work-item-back" href="/web/projects/{{ item.project_key }}">← 返回 {{ item.project_name }}</a>
+      {% if has_previous_entry || has_next_entry %}
+      <nav class="detail-sequence-nav" aria-label="帖子切换">
+        {% if has_previous_entry %}
+        <a class="btn btn-secondary detail-sequence-link" href="{{ previous_entry_url }}" title="{{ previous_entry_title }}">← 上一个{{ item.kind }}</a>
+        {% else %}
+        <span class="btn btn-secondary detail-sequence-link disabled" aria-disabled="true">← 上一个{{ item.kind }}</span>
+        {% endif %}
+        {% if has_next_entry %}
+        <a class="btn btn-secondary detail-sequence-link" href="{{ next_entry_url }}" title="{{ next_entry_title }}">下一个{{ item.kind }} →</a>
+        {% else %}
+        <span class="btn btn-secondary detail-sequence-link disabled" aria-disabled="true">下一个{{ item.kind }} →</span>
+        {% endif %}
+      </nav>
+      {% endif %}
+    </div>
     <div class="work-item-title-row">
       <div>
         <div class="work-item-identity">
