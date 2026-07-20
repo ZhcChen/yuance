@@ -3365,12 +3365,22 @@
       editor.dataset.commentId = form.dataset.discussionCommentId;
       return form.dataset.discussionCommentId;
     }
+    if (editor.richDraftPromise) {
+      return editor.richDraftPromise;
+    }
+    if (form && form.richDraftPromise) {
+      return form.richDraftPromise.then(function (commentId) {
+        editor.dataset.commentId = String(commentId);
+        editor.dataset.commentDraft = "true";
+        return String(commentId);
+      });
+    }
     var itemKey = editor.dataset.itemKey || form?.dataset.itemKey || "";
     if (!itemKey) {
       throw new Error("无法识别工作项，请刷新页面后重试。");
     }
     var parentInput = form?.querySelector("input[name='parent_comment_id']");
-    var comment = await fetchJson(
+    var draftPromise = fetchJson(
       "/api/v1/work-items/" + encodeURIComponent(itemKey) + "/comments/draft",
       {
         method: "POST",
@@ -3381,14 +3391,27 @@
           parent_comment_id: parentInput && parentInput.value ? Number(parentInput.value) : null,
         }),
       }
-    );
-    editor.dataset.commentId = String(comment.id);
-    editor.dataset.commentDraft = "true";
+    ).then(function (comment) {
+      editor.dataset.commentId = String(comment.id);
+      editor.dataset.commentDraft = "true";
+      if (form) {
+        form.dataset.discussionCommentId = String(comment.id);
+        form.dataset.discussionDraft = "true";
+      }
+      return String(comment.id);
+    });
+    editor.richDraftPromise = draftPromise;
     if (form) {
-      form.dataset.discussionCommentId = String(comment.id);
-      form.dataset.discussionDraft = "true";
+      form.richDraftPromise = draftPromise;
     }
-    return String(comment.id);
+    return draftPromise.finally(function () {
+      if (editor.richDraftPromise === draftPromise) {
+        editor.richDraftPromise = null;
+      }
+      if (form && form.richDraftPromise === draftPromise) {
+        form.richDraftPromise = null;
+      }
+    });
   }
 
   function setRichAttachmentState(node, state, message, percent) {

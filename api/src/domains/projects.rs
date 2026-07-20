@@ -4599,7 +4599,14 @@ pub fn work_item_description_html_for_display(description: &str, item_key: &str)
 
 pub fn work_item_comment_plain_text(body: &str, body_format: &str) -> String {
     if body_format == COMMENT_BODY_FORMAT_HTML {
-        html_to_plain_text(&sanitize_comment_html(body))
+        let sanitized = sanitize_comment_html(body);
+        let without_attachments = strip_inline_attachment_nodes(&sanitized);
+        let plain_text = html_to_plain_text(&without_attachments);
+        if plain_text.is_empty() {
+            html_to_plain_text(&sanitized)
+        } else {
+            plain_text
+        }
     } else {
         body.trim().to_string()
     }
@@ -4869,6 +4876,54 @@ fn html_to_plain_text(value: &str) -> String {
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+fn strip_inline_attachment_nodes(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    while let Some((start, end)) = next_inline_attachment_range(remaining) {
+        output.push_str(&remaining[..start]);
+        output.push(' ');
+        remaining = &remaining[end..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+fn next_inline_attachment_range(value: &str) -> Option<(usize, usize)> {
+    let figure = rich_attachment_tag_range(value, "figure");
+    let link = rich_attachment_tag_range(value, "a");
+    match (figure, link) {
+        (Some(left), Some(right)) => Some(if left.0 <= right.0 { left } else { right }),
+        (Some(range), None) | (None, Some(range)) => Some(range),
+        (None, None) => None,
+    }
+}
+
+fn rich_attachment_tag_range(value: &str, tag: &str) -> Option<(usize, usize)> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut search_from = 0;
+    while let Some(relative_start) = value[search_from..].find(&open) {
+        let start = search_from + relative_start;
+        let after_start = &value[start..];
+        let Some(relative_tag_end) = after_start.find('>') else {
+            return None;
+        };
+        let tag_end = start + relative_tag_end + 1;
+        let open_tag = &value[start..tag_end];
+        if !open_tag.contains("data-yuance-attachment-kind=") {
+            search_from = tag_end;
+            continue;
+        }
+        let after_tag = &value[tag_end..];
+        let Some(relative_close_start) = after_tag.find(&close) else {
+            return None;
+        };
+        let end = tag_end + relative_close_start + close.len();
+        return Some((start, end));
+    }
+    None
 }
 
 fn decode_basic_html_entities(value: &str) -> String {

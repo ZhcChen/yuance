@@ -1203,6 +1203,139 @@ async fn work_item_detail_hides_primary_post_comment_when_it_is_the_post_body() 
 }
 
 #[tokio::test]
+async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, admin.user_id).await;
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let item = projects::create_work_item(
+        &pool,
+        admin.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "主内容内联文件不应阻止正文提升".to_string(),
+            description: "主内容摘要".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: String::new(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let draft =
+        projects::create_work_item_comment_draft(&pool, admin.user_id, &item.item_key, None)
+            .await
+            .expect("draft should be created");
+    let image_attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: "detail-image.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 128,
+            created_by_user_id: admin.user_id,
+            activity_summary: Some("登记评论图片 detail-image.png".to_string()),
+        },
+    )
+    .await
+    .expect("image attachment should be created");
+    files::mark_attachment_uploaded(&pool, image_attachment.id, "comment", draft.id)
+        .await
+        .expect("image attachment should upload");
+    let file_attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            folder_id: None,
+            original_filename: "detail-note.txt".to_string(),
+            content_type: "text/plain".to_string(),
+            byte_size: 32,
+            created_by_user_id: admin.user_id,
+            activity_summary: Some("登记评论文件 detail-note.txt".to_string()),
+        },
+    )
+    .await
+    .expect("file attachment should be created");
+    files::mark_attachment_uploaded(&pool, file_attachment.id, "comment", draft.id)
+        .await
+        .expect("file attachment should upload");
+    let image_url = format!(
+        "/web/work-items/{}/comments/{}/attachments/{}/download",
+        item.item_key, draft.id, image_attachment.id
+    );
+    let file_url = format!(
+        "/web/work-items/{}/comments/{}/attachments/{}/download",
+        item.item_key, draft.id, file_attachment.id
+    );
+    let body = format!(
+        r#"<p>主内容摘要</p><figure data-yuance-attachment-id="{image_id}" data-yuance-attachment-kind="image" data-yuance-align="left"><img src="{image_url}" alt="正文图片" loading="lazy"></figure><a data-yuance-attachment-id="{file_id}" data-yuance-attachment-kind="file" data-yuance-align="left" href="{file_url}" title="detail-note.txt" data-yuance-file-kind="text" data-yuance-file-ext="TXT">detail-note.txt</a>"#,
+        image_id = image_attachment.id,
+        file_id = file_attachment.id,
+    );
+    projects::publish_work_item_comment_draft(
+        &pool,
+        admin.user_id,
+        &item.item_key,
+        draft.id,
+        &body,
+        "html",
+    )
+    .await
+    .expect("draft should publish");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", item.item_key))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let description_start = body
+        .find(r#"<section class="work-item-description""#)
+        .expect("description section should render");
+    let description_end = body[description_start..]
+        .find(r#"<section class="discussion-section""#)
+        .map(|index| description_start + index)
+        .expect("discussion section should follow description");
+    let description_section = &body[description_start..description_end];
+    let discussion_section = &body[description_end..];
+
+    assert!(description_section.contains(r#"<p>主内容摘要</p>"#));
+    assert!(description_section.contains(&format!(r#"src="{image_url}""#)));
+    assert!(description_section.contains(&format!(r#"href="{file_url}""#)));
+    assert!(description_section.contains(r#"data-yuance-attachment-kind="file""#));
+    assert!(discussion_section.contains("还没有讨论"));
+    assert!(!discussion_section.contains(&format!(r#"src="{image_url}""#)));
+    assert!(!discussion_section.contains(&format!(r#"href="{file_url}""#)));
+}
+
+#[tokio::test]
 async fn rich_text_draft_comments_are_hidden_until_published() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
