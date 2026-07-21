@@ -144,6 +144,15 @@
           </select>
         </label>
         <label>
+          周期
+          <select name="cycle_id" data-bug-report-item-field data-select-searchable data-select-search-placeholder="搜索周期">
+            <option value="">不关联</option>
+            {% for cycle in cycle_options %}
+            <option value="{{ cycle.id }}">{{ cycle.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
           截止日期
           <input name="due_date" type="date" data-bug-report-item-field>
         </label>

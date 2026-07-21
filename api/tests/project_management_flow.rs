@@ -3586,7 +3586,10 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
     let body = response_body(response).await;
 
     assert!(body.contains(r#"aria-label="资料切换""#));
-    assert!(body.contains(&format!(r#"href="/web/projects/YCE/resources/{}""#, first.id)));
+    assert!(body.contains(&format!(
+        r#"href="/web/projects/YCE/resources/{}""#,
+        first.id
+    )));
     assert!(body.contains("下一个资料 →"));
     assert!(body.contains(r#"aria-disabled="true">← 上一个资料"#));
 }
@@ -4898,9 +4901,9 @@ async fn web_project_detail_can_create_work_item_and_return_to_project() {
     assert!(!page_body.contains(r#"id="project-tab-work""#));
     assert!(page_body.contains("父级需求"));
     assert!(page_body.contains("YCE-REQ-1"));
-    assert!(page_body.contains(r#"data-rich-text-editor data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...""#));
+    assert!(page_body.contains(r#"data-rich-text-editor data-placeholder="请输入内容...""#));
     assert!(page_body.contains(r#"data-bug-report-description"#));
-    assert!(page_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
+    assert!(!page_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
 
     let create_response = app
         .clone()
@@ -5673,7 +5676,7 @@ async fn web_work_item_detail_can_register_comment_attachment() {
         .expect("router should respond");
     let body = response_body(detail_response).await;
 
-    assert!(body.contains("截图可直接粘贴"));
+    assert!(body.contains(r#"data-placeholder="请输入内容...""#));
     assert!(body.contains("comment-log.txt"));
     assert!(body.contains(r#"data-rich-text-editor"#));
     assert!(!body.contains(r#"data-discussion-files"#));
@@ -10435,6 +10438,237 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
         .await
         .expect("router should respond");
     assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn project_cycles_can_be_managed_from_web_and_link_work_items() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_cycle_body = serde_urlencoded::to_string([
+        ("_csrf", CSRF_TOKEN),
+        ("name", "2026-07 核心交付"),
+        ("goal", "收敛本轮上线交付与联调回归"),
+        ("description", "覆盖项目详情、周期管理和工作项关联"),
+        ("owner_username", "admin"),
+        ("start_date", "2026-07-01"),
+        ("end_date", "2026-07-31"),
+    ])
+    .expect("cycle form should encode");
+    let create_cycle_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/projects/YCE/cycles")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(create_cycle_body))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_cycle_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        create_cycle_response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("/web/projects/YCE?tab=cycles")
+    );
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let cycle = projects::list_project_cycles(&pool, project.id)
+        .await
+        .expect("cycles should load")
+        .into_iter()
+        .find(|cycle| cycle.name == "2026-07 核心交付")
+        .expect("created cycle should exist");
+    assert_eq!(cycle.start_date, "2026-07-01");
+    assert_eq!(cycle.end_date, "2026-07-31");
+
+    let cycle_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE?tab=cycles")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cycle_page_response.status(), StatusCode::OK);
+    let cycle_page_body = response_body(cycle_page_response).await;
+    assert!(cycle_page_body.contains("项目周期"));
+    assert!(cycle_page_body.contains("2026-07 核心交付"));
+
+    let create_item_body = serde_urlencoded::to_string([
+        ("_csrf", CSRF_TOKEN),
+        ("project_key", "YCE"),
+        ("item_type", "task"),
+        ("title", "周期内联调任务"),
+        ("description", "验证周期和工作项关联"),
+        ("priority", "P2"),
+        ("assignee_username", "admin"),
+        ("cycle_id", &cycle.id.to_string()),
+        ("due_date", "2026-07-25"),
+        ("parent_item_key", ""),
+        ("redirect_to", ""),
+    ])
+    .expect("work item form should encode");
+    let create_item_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(create_item_body))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_item_response.status(), StatusCode::SEE_OTHER);
+    let item_location = create_item_response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("location header should exist")
+        .to_string();
+    let item_key = item_location
+        .rsplit('/')
+        .next()
+        .expect("item key should exist")
+        .to_string();
+
+    let created_item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("item should load")
+        .expect("item should exist");
+    assert_eq!(created_item.cycle_id, Some(cycle.id));
+    assert_eq!(created_item.cycle_name, "2026-07 核心交付");
+
+    let detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{item_key}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains("所属周期"));
+    assert!(detail_body.contains("2026-07 核心交付"));
+
+    let edit_item_body = serde_urlencoded::to_string([
+        ("_csrf", CSRF_TOKEN),
+        ("title", "周期内联调任务"),
+        ("description", "验证周期和工作项关联"),
+        ("status", "open"),
+        ("priority", "P2"),
+        ("assignee_username", "admin"),
+        ("due_date", "2026-07-25"),
+        ("cycle_id", ""),
+        ("parent_item_key", ""),
+    ])
+    .expect("edit form should encode");
+    let edit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-items/{item_key}/edit"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(edit_item_body))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(edit_response.status(), StatusCode::SEE_OTHER);
+
+    let updated_item = projects::get_work_item_detail(&pool, &item_key)
+        .await
+        .expect("updated item should load")
+        .expect("updated item should exist");
+    assert_eq!(updated_item.cycle_id, None);
+    assert!(updated_item.cycle_name.is_empty());
+}
+
+#[tokio::test]
+async fn project_cycles_reject_invalid_ranges_and_cross_project_links() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+
+    let invalid_cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "非法周期".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-31".to_string(),
+            end_date: "2026-07-01".to_string(),
+        },
+    )
+    .await;
+    assert!(invalid_cycle.is_err());
+    assert!(
+        invalid_cycle
+            .expect_err("invalid range should fail")
+            .to_string()
+            .contains("周期结束日期不能早于开始日期")
+    );
+
+    let ops_cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "OPS",
+        projects::CreateProjectCycleInput {
+            name: "OPS 运维窗口".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-15".to_string(),
+        },
+    )
+    .await
+    .expect("ops cycle should create");
+
+    let cross_project_link = projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        Some(ops_cycle.id),
+        "",
+    )
+    .await;
+    assert!(cross_project_link.is_err());
+    assert!(
+        cross_project_link
+            .expect_err("cross project cycle link should fail")
+            .to_string()
+            .contains("周期不存在或不属于当前项目")
+    );
 }
 
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {

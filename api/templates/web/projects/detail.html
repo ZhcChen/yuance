@@ -69,6 +69,9 @@
         <button class="content-tab {% if active_tab == "info" %}active{% endif %}" id="project-tab-info-trigger" type="button" role="tab" aria-selected="{% if active_tab == "info" %}true{% else %}false{% endif %}" aria-controls="project-tab-info" data-content-tab data-tab-target="project-tab-info" data-tab-key="info">
           详情
         </button>
+        <button class="content-tab {% if active_tab == "cycles" %}active{% endif %}" id="project-tab-cycles-trigger" type="button" role="tab" aria-selected="{% if active_tab == "cycles" %}true{% else %}false{% endif %}" aria-controls="project-tab-cycles" data-content-tab data-tab-target="project-tab-cycles" data-tab-key="cycles">
+          周期
+        </button>
         <button class="content-tab {% if active_tab == "members" %}active{% endif %}" id="project-tab-members-trigger" type="button" role="tab" aria-selected="{% if active_tab == "members" %}true{% else %}false{% endif %}" aria-controls="project-tab-members" data-content-tab data-tab-target="project-tab-members" data-tab-key="members">
           成员
         </button>
@@ -136,6 +139,125 @@
             <p>{{ project.description }}</p>
           </section>
         </div>
+      </section>
+
+      <section id="project-tab-cycles" class="project-tab-panel {% if active_tab == "cycles" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-cycles-trigger" data-tab-panel {% if active_tab != "cycles" %}hidden{% endif %}>
+        <section class="project-tab-section">
+          <div class="project-tab-section-head">
+            <div>
+              <h3>项目周期</h3>
+              <p>把控项目阶段时间窗口，工作项可以按需关联到某个周期。</p>
+            </div>
+            {% if can_manage_work_items %}
+            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-cycle-create-modal">新建周期</button>
+            {% endif %}
+          </div>
+          <div class="project-cycle-summary-grid">
+            <article class="project-cycle-summary-card">
+              <span>周期总数</span>
+              <strong>{{ cycle_summary.total }}</strong>
+            </article>
+            <article class="project-cycle-summary-card">
+              <span>当前周期</span>
+              <strong>{{ cycle_summary.current }}</strong>
+            </article>
+            <article class="project-cycle-summary-card">
+              <span>已关闭周期</span>
+              <strong>{{ cycle_summary.closed }}</strong>
+            </article>
+            <article class="project-cycle-summary-card">
+              <span>关联工作项</span>
+              <strong>{{ cycle_summary.linked_items }}</strong>
+            </article>
+            <article class="project-cycle-summary-card">
+              <span>待处理工作项</span>
+              <strong>{{ cycle_summary.pending_items }}</strong>
+            </article>
+          </div>
+
+          {% if cycle_summary.total > 0 %}
+          <div class="table-wrap">
+            <table class="data-table project-cycle-table">
+              <thead>
+                <tr>
+                  <th scope="col">周期</th>
+                  <th scope="col">负责人</th>
+                  <th scope="col">时间段</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">关联工作项</th>
+                  <th scope="col">更新时间</th>
+                  <th class="table-actions" scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cycle in cycles %}
+                <tr id="cycle-{{ cycle.id }}">
+                  <td class="project-cycle-main-cell">
+                    <strong><a href="{{ cycle.anchor_url }}">{{ cycle.name }}</a></strong>
+                    {% if cycle.goal != "" %}
+                    <span>{{ cycle.goal }}</span>
+                    {% else if cycle.description != "" %}
+                    <span>{{ cycle.description }}</span>
+                    {% else %}
+                    <span>未填写周期目标</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if cycle.has_owner %}
+                    <div class="project-cycle-owner">
+                      <strong>{{ cycle.owner }}</strong>
+                      <span>@{{ cycle.owner_username }}</span>
+                    </div>
+                    {% else %}
+                    <span class="work-table-muted">未设置</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="project-cycle-date">
+                      <strong>{{ cycle.start_date }} ~ {{ cycle.end_date }}</strong>
+                      {% if cycle.is_closed %}
+                      <span>关闭于 {{ cycle.closed_at }}</span>
+                      {% else %}
+                      <span>创建于 {{ cycle.created_at }}</span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td><span class="status status-{{ cycle.status_tone }}">{{ cycle.status }}</span></td>
+                  <td>
+                    <div class="project-cycle-counts">
+                      <strong>{{ cycle.total_items }}</strong>
+                      <span>需求 {{ cycle.requirement_count }} / 任务 {{ cycle.task_count }} / Bug {{ cycle.bug_count }}</span>
+                      <span>待处理 {{ cycle.pending_count }}</span>
+                    </div>
+                  </td>
+                  <td class="work-table-muted">{{ cycle.updated_at }}</td>
+                  <td class="table-actions">
+                    {% if can_manage_work_items %}
+                    <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-cycle-edit-modal-{{ cycle.id }}">编辑</button>
+                    {% if !cycle.is_closed %}
+                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/cycles/{{ cycle.id }}/close" data-confirm-submit-form data-confirm-title="关闭周期" data-confirm-message="关闭后仍会保留历史关联和操作记录。" data-confirm-action="关闭周期">
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-secondary" type="submit">关闭</button>
+                    </form>
+                    {% else %}
+                    <span class="attachment-action-hint">已关闭</span>
+                    {% endif %}
+                    {% else %}
+                    <span class="attachment-action-hint">无操作</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state">
+            <strong>暂无周期</strong>
+            <span>先创建一个周期，把项目当前阶段的时间窗口、负责人和目标管理起来。</span>
+          </div>
+          {% endif %}
+        </section>
       </section>
 
       <section id="project-tab-members" class="project-tab-panel {% if active_tab == "members" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-members-trigger" data-tab-panel {% if active_tab != "members" %}hidden{% endif %}>
@@ -353,6 +475,110 @@
 {% endif %}
 
 {% if can_manage_work_items %}
+<aside id="project-cycle-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-cycle-create-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-cycle-create-modal-title">新建周期</h2>
+        <p>周期独立归属于 {{ project.code }}，开始日期和结束日期必填。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/cycles" data-success-message="周期已创建。">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid">
+        <label class="wide-field">
+          周期名称
+          <input name="name" placeholder="例如：2026-07 核心交付" required autofocus>
+        </label>
+        <label>
+          周期负责人
+          <select name="owner_username" data-select-searchable data-select-search-placeholder="搜索周期负责人">
+            <option value="">暂不设置</option>
+            {% for member in members %}
+            <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          开始日期
+          <input name="start_date" type="date" required>
+        </label>
+        <label>
+          结束日期
+          <input name="end_date" type="date" required>
+        </label>
+        <label class="wide-field">
+          周期目标
+          <input name="goal" placeholder="一句话说明这一轮周期的核心目标">
+        </label>
+        <label class="wide-field">
+          周期说明
+          <textarea name="description" rows="4" placeholder="补充时间窗口、交付边界、注意事项等"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建周期</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+{% for cycle in cycles %}
+<aside id="project-cycle-edit-modal-{{ cycle.id }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-cycle-edit-modal-title-{{ cycle.id }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-cycle-edit-modal-title-{{ cycle.id }}">编辑周期</h2>
+        <p>{{ cycle.name }} · {{ cycle.start_date }} ~ {{ cycle.end_date }}</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/cycles/{{ cycle.id }}/edit" data-success-message="周期已保存。">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid">
+        <label class="wide-field">
+          周期名称
+          <input name="name" value="{{ cycle.name }}" required autofocus>
+        </label>
+        <label>
+          周期负责人
+          <select name="owner_username" data-select-searchable data-select-search-placeholder="搜索周期负责人">
+            <option value="">暂不设置</option>
+            {% for member in members %}
+            <option value="{{ member.username }}" {% if member.username == cycle.owner_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          开始日期
+          <input name="start_date" type="date" value="{{ cycle.start_date }}" required>
+        </label>
+        <label>
+          结束日期
+          <input name="end_date" type="date" value="{{ cycle.end_date }}" required>
+        </label>
+        <label class="wide-field">
+          周期目标
+          <input name="goal" value="{{ cycle.goal }}" placeholder="一句话说明这一轮周期的核心目标">
+        </label>
+        <label class="wide-field">
+          周期说明
+          <textarea name="description" rows="4" placeholder="补充时间窗口、交付边界、注意事项等">{{ cycle.description }}</textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">保存周期</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endfor %}
+
 <aside id="project-work-item-create-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="project-work-item-create-modal-title" tabindex="-1">
@@ -383,6 +609,15 @@
             <option value="P1">高</option>
             <option value="P2" selected>中</option>
             <option value="P3">低</option>
+          </select>
+        </label>
+        <label>
+          周期
+          <select name="cycle_id" data-bug-report-item-field data-select-searchable data-select-search-placeholder="搜索周期">
+            <option value="">不关联</option>
+            {% for cycle in cycle_options %}
+            <option value="{{ cycle.id }}">{{ cycle.label }}</option>
+            {% endfor %}
           </select>
         </label>
         <label>

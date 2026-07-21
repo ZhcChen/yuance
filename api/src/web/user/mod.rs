@@ -12,7 +12,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sqlx::SqlitePool;
@@ -134,6 +134,48 @@ struct ProjectMemberView {
     role_code: String,
     role: String,
     joined_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleView {
+    id: i64,
+    name: String,
+    goal: String,
+    description: String,
+    owner_username: String,
+    owner: String,
+    has_owner: bool,
+    start_date: String,
+    end_date: String,
+    closed_at: String,
+    is_closed: bool,
+    status_code: &'static str,
+    status: &'static str,
+    status_tone: &'static str,
+    total_items: i64,
+    requirement_count: i64,
+    task_count: i64,
+    bug_count: i64,
+    pending_count: i64,
+    created_at: String,
+    updated_at: String,
+    anchor_url: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProjectCycleSummaryView {
+    total: usize,
+    closed: usize,
+    current: usize,
+    linked_items: i64,
+    pending_items: i64,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleOptionView {
+    id: i64,
+    id_text: String,
+    label: String,
 }
 
 #[derive(Debug, Clone)]
@@ -265,6 +307,12 @@ struct WorkItemDetailView {
     parent_item_key: String,
     parent_title: String,
     has_parent: bool,
+    cycle_name: String,
+    cycle_start_date: String,
+    cycle_end_date: String,
+    has_cycle: bool,
+    cycle_id_text: String,
+    cycle_url: String,
     assignee_username: String,
     assignee: String,
     reporter_username: String,
@@ -700,6 +748,8 @@ struct ProjectDetailTemplate {
     project: ProjectDetailView,
     summary: ProjectDetailSummary,
     requirements: Vec<WorkItem>,
+    cycles: Vec<ProjectCycleView>,
+    cycle_summary: ProjectCycleSummaryView,
     members: Vec<ProjectMemberView>,
     member_candidates: Vec<ProjectUserOption>,
     resources: Vec<ProjectResourceView>,
@@ -710,6 +760,7 @@ struct ProjectDetailTemplate {
     has_activities: bool,
     has_member_candidates: bool,
     project_item_type_options: Vec<WorkItemTypeOption>,
+    cycle_options: Vec<ProjectCycleOptionView>,
     can_edit_project: bool,
     can_manage_project: bool,
     can_manage_work_items: bool,
@@ -757,6 +808,7 @@ struct WorkItemListTemplate {
     items: Vec<WorkItem>,
     parent_options: Vec<WorkItem>,
     assignee_options: Vec<ProjectMemberView>,
+    cycle_options: Vec<ProjectCycleOptionView>,
     filters: WorkItemListFilterView,
     summary: WorkItemListSummary,
     pagination: PaginationView,
@@ -859,6 +911,7 @@ struct WorkItemDetailTemplate {
     item: WorkItemDetailView,
     assignee_options: Vec<ProjectMemberView>,
     parent_options: Vec<WorkItem>,
+    cycle_options: Vec<ProjectCycleOptionView>,
     status_options: Vec<WorkItemStatusOption>,
     attachments: Vec<AttachmentView>,
     comments: Vec<WorkItemComment>,
@@ -1338,6 +1391,8 @@ pub struct CreateWorkItemForm {
     #[serde(default)]
     due_date: String,
     #[serde(default)]
+    cycle_id: String,
+    #[serde(default)]
     parent_item_key: String,
     #[serde(default)]
     redirect_to: String,
@@ -1379,7 +1434,30 @@ pub struct WorkItemEditForm {
     #[serde(default)]
     due_date: String,
     #[serde(default)]
+    cycle_id: String,
+    #[serde(default)]
     parent_item_key: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProjectCycleForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    name: String,
+    #[serde(default)]
+    goal: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    owner_username: String,
+    start_date: String,
+    end_date: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProjectCycleCloseForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2396,6 +2474,16 @@ pub async fn project_detail_page(
         .into_iter()
         .map(project_member_from_summary)
         .collect::<Vec<_>>();
+    let cycles = projects::list_project_cycles(pool, project.id)
+        .await?
+        .into_iter()
+        .map(|cycle| project_cycle_from_domain(&project.project_key, cycle))
+        .collect::<Vec<_>>();
+    let cycle_summary = project_cycle_summary(&cycles);
+    let cycle_options = cycles
+        .iter()
+        .map(project_cycle_option_from_view)
+        .collect::<Vec<_>>();
     let resource_filters = ProjectResourceFilterView {
         q: query.q.trim().to_string(),
         category: query.category.trim().to_string(),
@@ -2467,6 +2555,8 @@ pub async fn project_detail_page(
             project,
             summary,
             requirements,
+            cycles,
+            cycle_summary,
             members,
             has_member_candidates: !member_candidates.is_empty(),
             member_candidates,
@@ -2476,6 +2566,7 @@ pub async fn project_detail_page(
             resource_category_options: project_resource_category_options(),
             activities,
             project_item_type_options: work_item_type_options(),
+            cycle_options,
             can_edit_project,
             can_manage_project,
             can_manage_work_items,
@@ -2748,6 +2839,139 @@ pub async fn project_member_role_update(
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
+}
+
+pub async fn project_cycle_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Form(form): Form<ProjectCycleForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        let cycle = projects::create_project_cycle(
+            pool,
+            context.user_id,
+            &project_key,
+            projects::CreateProjectCycleInput {
+                name: form.name,
+                goal: form.goal,
+                description: form.description,
+                owner_username: form.owner_username,
+                start_date: form.start_date,
+                end_date: form.end_date,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project.cycle.create",
+            "project_cycle",
+            &cycle.id.to_string(),
+            &format!(r#"{{"project_key":"{}"}}"#, project_key),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&project_cycles_url(&project_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=cycles").into_response())
+}
+
+pub async fn project_cycle_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+    Form(form): Form<ProjectCycleForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        let cycle = projects::update_project_cycle(
+            pool,
+            context.user_id,
+            &project_key,
+            cycle_id,
+            projects::UpdateProjectCycleInput {
+                name: form.name,
+                goal: form.goal,
+                description: form.description,
+                owner_username: form.owner_username,
+                start_date: form.start_date,
+                end_date: form.end_date,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project.cycle.update",
+            "project_cycle",
+            &cycle.id.to_string(),
+            &format!(r#"{{"project_key":"{}"}}"#, project_key),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&project_cycles_url(&project_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=cycles").into_response())
+}
+
+pub async fn project_cycle_close(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+    Form(form): Form<ProjectCycleCloseForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        let cycle =
+            projects::close_project_cycle(pool, context.user_id, &project_key, cycle_id).await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project.cycle.close",
+            "project_cycle",
+            &cycle.id.to_string(),
+            &format!(r#"{{"project_key":"{}"}}"#, project_key),
+        )
+        .await?;
+
+        return Ok(Redirect::to(&project_cycles_url(&project_key)).into_response());
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=cycles").into_response())
 }
 
 pub async fn project_attachment_create(
@@ -3487,6 +3711,7 @@ pub async fn work_items_create(
             .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
         ensure_project_access(pool, &context, project.id).await?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
+        let cycle_id = parse_optional_positive_i64(&form.cycle_id, "周期")?;
         let item = projects::create_work_item(
             pool,
             context.user_id,
@@ -3503,6 +3728,9 @@ pub async fn work_items_create(
             },
         )
         .await?;
+        let item =
+            projects::set_work_item_cycle(pool, context.user_id, &item.item_key, cycle_id, "")
+                .await?;
         audit::record(
             pool,
             Some(context.user_id),
@@ -3599,6 +3827,7 @@ pub async fn work_item_detail_page(
     )
     .await?;
     let assignee_options = load_project_member_options(pool, &item.project_key).await?;
+    let cycle_options = load_project_cycle_options(pool, &item.project_key).await?;
     let parent_options = if item.kind == "任务" {
         projects::list_work_item_summaries_filtered_for_user(
             pool,
@@ -3662,6 +3891,7 @@ pub async fn work_item_detail_page(
             item,
             assignee_options,
             parent_options,
+            cycle_options,
             status_options,
             has_attachments: !attachments.is_empty(),
             attachments,
@@ -3884,6 +4114,7 @@ pub async fn work_item_update(
             .await?
             .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
+        let cycle_id = parse_optional_positive_i64(&form.cycle_id, "周期")?;
         let updated = projects::update_work_item(
             pool,
             context.user_id,
@@ -3900,6 +4131,9 @@ pub async fn work_item_update(
             },
         )
         .await?;
+        let updated =
+            projects::set_work_item_cycle(pool, context.user_id, &updated.item_key, cycle_id, "")
+                .await?;
         if !form.body.trim().is_empty() {
             save_work_item_primary_post(
                 pool,
@@ -5789,31 +6023,34 @@ async fn work_item_list_page(
         total_items,
         total_pages,
     );
-    let (can_manage_work_items, assignee_options) = match (context.pool, current_project.as_ref()) {
-        (Some(pool), Some(project_context)) => {
-            let project = projects::get_project_detail(pool, &project_context.key)
-                .await?
-                .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
-            let project_accepts_writes =
-                projects::ensure_project_accepts_writes(&project.status).is_ok();
-            let can_write = user_can_write_project_content_for_context(pool, &context, project.id)
-                .await?
-                && project_accepts_writes;
-            let members = load_project_member_options(pool, &project_context.key).await?;
-            (can_write, members)
-        }
-        (None, _) => (
-            true,
-            vec![ProjectMemberView {
-                display_name: "陈".to_string(),
-                username: "yuance_admin".to_string(),
-                role_code: "owner".to_string(),
-                role: "项目负责人".to_string(),
-                joined_at: "今天".to_string(),
-            }],
-        ),
-        _ => (false, Vec::new()),
-    };
+    let (can_manage_work_items, assignee_options, cycle_options) =
+        match (context.pool, current_project.as_ref()) {
+            (Some(pool), Some(project_context)) => {
+                let project = projects::get_project_detail(pool, &project_context.key)
+                    .await?
+                    .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+                let project_accepts_writes =
+                    projects::ensure_project_accepts_writes(&project.status).is_ok();
+                let can_write =
+                    user_can_write_project_content_for_context(pool, &context, project.id).await?
+                        && project_accepts_writes;
+                let members = load_project_member_options(pool, &project_context.key).await?;
+                let cycles = load_project_cycle_options(pool, &project_context.key).await?;
+                (can_write, members, cycles)
+            }
+            (None, _) => (
+                true,
+                vec![ProjectMemberView {
+                    display_name: "陈".to_string(),
+                    username: "yuance_admin".to_string(),
+                    role_code: "owner".to_string(),
+                    role: "项目负责人".to_string(),
+                    joined_at: "今天".to_string(),
+                }],
+                sample_project_cycle_options(),
+            ),
+            _ => (false, Vec::new(), Vec::new()),
+        };
     let parent_options = if item_type == Some("task") && !filters.project_key.is_empty() {
         match context.pool {
             Some(pool) => projects::list_work_item_summaries_filtered_for_user(
@@ -5856,6 +6093,7 @@ async fn work_item_list_page(
             items,
             parent_options,
             assignee_options,
+            cycle_options,
             pagination_pages: work_item_pagination_pages(
                 meta.active,
                 &filters,
@@ -6488,6 +6726,10 @@ fn project_info_url(project_key: &str) -> String {
     format!("/web/projects/{project_key}")
 }
 
+fn project_cycles_url(project_key: &str) -> String {
+    format!("/web/projects/{project_key}?tab=cycles")
+}
+
 fn project_members_url(project_key: &str) -> String {
     format!("/web/projects/{project_key}?tab=members")
 }
@@ -6734,6 +6976,22 @@ fn parse_i64_form_value(form: &[u8], field_name: &str) -> AppResult<Option<i64>>
         .transpose()
 }
 
+fn parse_optional_positive_i64(value: &str, field_name: &str) -> AppResult<Option<i64>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let parsed = value
+        .parse::<i64>()
+        .map_err(|_| AppError::BadRequest(format!("{field_name}不能为空且必须是数字")))?;
+    if parsed <= 0 {
+        return Err(AppError::BadRequest(format!(
+            "{field_name}不能为空且必须是数字"
+        )));
+    }
+    Ok(Some(parsed))
+}
+
 fn metrics_from_data(
     projects: &[projects::ProjectSummary],
     assigned_pending: &projects::WorkItemAssignmentCounts,
@@ -6830,6 +7088,83 @@ fn project_detail_from_domain(project: projects::ProjectDetail) -> ProjectDetail
         due_date: project.due_date,
         created_at: display_timestamp(project.created_at),
         updated_at: display_timestamp(project.updated_at),
+    }
+}
+
+fn project_cycle_status_meta(
+    start_date: &str,
+    end_date: &str,
+    closed_at: &str,
+) -> (&'static str, &'static str, &'static str) {
+    if !closed_at.trim().is_empty() {
+        return ("closed", "已关闭", "info");
+    }
+
+    let today = cycle_today_text();
+    if !start_date.trim().is_empty() && today.as_str() < start_date.trim() {
+        return ("not_started", "待开始", "info");
+    }
+    if !end_date.trim().is_empty() && today.as_str() > end_date.trim() {
+        return ("ended", "已结束", "warning");
+    }
+    ("in_progress", "进行中", "ok")
+}
+
+fn project_cycle_from_domain(
+    project_key: &str,
+    cycle: projects::ProjectCycleDetail,
+) -> ProjectCycleView {
+    let (status_code, status, status_tone) =
+        project_cycle_status_meta(&cycle.start_date, &cycle.end_date, &cycle.closed_at);
+    let is_closed = !cycle.closed_at.trim().is_empty();
+    let closed_at = display_optional_timestamp(cycle.closed_at.clone(), "");
+    ProjectCycleView {
+        id: cycle.id,
+        name: cycle.name,
+        goal: cycle.goal,
+        description: cycle.description,
+        owner_username: cycle.owner_username.clone(),
+        owner: fallback_text(cycle.owner_display_name, "未设置"),
+        has_owner: !cycle.owner_username.trim().is_empty(),
+        start_date: cycle.start_date,
+        end_date: cycle.end_date,
+        closed_at,
+        is_closed,
+        status_code,
+        status,
+        status_tone,
+        total_items: cycle.total_items,
+        requirement_count: cycle.requirement_count,
+        task_count: cycle.task_count,
+        bug_count: cycle.bug_count,
+        pending_count: cycle.pending_count,
+        created_at: display_timestamp(cycle.created_at),
+        updated_at: display_timestamp(cycle.updated_at),
+        anchor_url: format!("{}#cycle-{}", project_cycles_url(project_key), cycle.id),
+    }
+}
+
+fn project_cycle_summary(cycles: &[ProjectCycleView]) -> ProjectCycleSummaryView {
+    ProjectCycleSummaryView {
+        total: cycles.len(),
+        closed: cycles.iter().filter(|cycle| cycle.is_closed).count(),
+        current: cycles
+            .iter()
+            .filter(|cycle| cycle.status_code == "in_progress")
+            .count(),
+        linked_items: cycles.iter().map(|cycle| cycle.total_items).sum(),
+        pending_items: cycles.iter().map(|cycle| cycle.pending_count).sum(),
+    }
+}
+
+fn project_cycle_option_from_view(cycle: &ProjectCycleView) -> ProjectCycleOptionView {
+    ProjectCycleOptionView {
+        id: cycle.id,
+        id_text: cycle.id.to_string(),
+        label: format!(
+            "{} · {} · {} ~ {}",
+            cycle.name, cycle.status, cycle.start_date, cycle.end_date
+        ),
     }
 }
 
@@ -7007,6 +7342,10 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
     let priority = priority_label(&item.priority).to_string();
     let description_html =
         projects::work_item_description_html_for_display(&item.description, &item.item_key);
+    let cycle_url = item
+        .cycle_id
+        .map(|cycle_id| format!("{}#cycle-{cycle_id}", project_cycles_url(&item.project_key)))
+        .unwrap_or_default();
     WorkItemDetailView {
         id: item.id,
         key: item.item_key,
@@ -7022,6 +7361,15 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         parent_item_key: item.parent_item_key.clone(),
         parent_title: item.parent_title,
         has_parent: !item.parent_item_key.trim().is_empty(),
+        cycle_name: item.cycle_name,
+        cycle_start_date: item.cycle_start_date,
+        cycle_end_date: item.cycle_end_date,
+        has_cycle: item.cycle_id.is_some(),
+        cycle_id_text: item
+            .cycle_id
+            .map(|cycle_id| cycle_id.to_string())
+            .unwrap_or_default(),
+        cycle_url,
         assignee_username: item.assignee_username,
         assignee: fallback_text(item.assignee_display_name, "未分配"),
         reporter_username: item.reporter_username,
@@ -8701,10 +9049,12 @@ async fn load_work_item_sequence_navigation(
 
     Ok(DetailSequenceNavigation {
         previous: if current_index > 0 {
-            items.get(current_index - 1).map(|entry| DetailSequenceNavigationLink {
-                title: format!("{} · {}", entry.item_key, entry.title),
-                url: format!("/web/work-items/{}", entry.item_key),
-            })
+            items
+                .get(current_index - 1)
+                .map(|entry| DetailSequenceNavigationLink {
+                    title: format!("{} · {}", entry.item_key, entry.title),
+                    url: format!("/web/work-items/{}", entry.item_key),
+                })
         } else {
             None
         },
@@ -8753,7 +9103,10 @@ async fn load_project_resource_sequence_navigation(
             .get(current_index + 1)
             .map(|resource| DetailSequenceNavigationLink {
                 title: resource.title.clone(),
-                url: format!("/web/projects/{}/resources/{}", resource.project_key, resource.id),
+                url: format!(
+                    "/web/projects/{}/resources/{}",
+                    resource.project_key, resource.id
+                ),
             }),
     })
 }
@@ -8850,6 +9203,22 @@ async fn load_project_member_options(
         .await?
         .into_iter()
         .map(project_member_from_summary)
+        .collect())
+}
+
+async fn load_project_cycle_options(
+    pool: &SqlitePool,
+    project_key: &str,
+) -> AppResult<Vec<ProjectCycleOptionView>> {
+    let Some(project) = projects::get_project_detail(pool, project_key).await? else {
+        return Ok(Vec::new());
+    };
+
+    Ok(projects::list_project_cycles(pool, project.id)
+        .await?
+        .into_iter()
+        .map(|cycle| project_cycle_from_domain(project_key, cycle))
+        .map(|cycle| project_cycle_option_from_view(&cycle))
         .collect())
 }
 
@@ -10062,6 +10431,7 @@ fn work_item_active_key(kind: &str) -> &'static str {
 fn project_detail_tab(tab: Option<&str>) -> &'static str {
     match tab.map(str::trim) {
         Some("info") | Some("work") => "info",
+        Some("cycles") | Some("cycle") => "cycles",
         Some("members") => "members",
         Some("library") | Some("resources") => "library",
         Some("files") | Some("attachments") => "info",
@@ -10092,6 +10462,12 @@ fn display_optional_timestamp(value: String, fallback: &str) -> String {
 
 fn chrono_now_text() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
+}
+
+fn cycle_today_text() -> String {
+    (Utc::now() + ChronoDuration::hours(8))
+        .format("%Y-%m-%d")
+        .to_string()
 }
 
 fn format_byte_size(byte_size: i64) -> String {
@@ -10260,6 +10636,66 @@ fn sample_work_items(item_type: Option<&str>) -> Vec<WorkItem> {
         .collect()
 }
 
+fn sample_project_cycles() -> Vec<ProjectCycleView> {
+    vec![
+        ProjectCycleView {
+            id: 1,
+            name: "2026-07 核心交付".to_string(),
+            goal: "收敛项目管理主流程并完成正式环境稳定性验证。".to_string(),
+            description: "覆盖周期内的核心交付、验证和上线回归事项。".to_string(),
+            owner_username: "yuance_admin".to_string(),
+            owner: "陈".to_string(),
+            has_owner: true,
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+            closed_at: String::new(),
+            is_closed: false,
+            status_code: "in_progress",
+            status: "进行中",
+            status_tone: "ok",
+            total_items: 3,
+            requirement_count: 1,
+            task_count: 1,
+            bug_count: 1,
+            pending_count: 2,
+            created_at: "2026-07-01 09:00:00".to_string(),
+            updated_at: "今天 16:20".to_string(),
+            anchor_url: "/web/projects/YCE?tab=cycles#cycle-1".to_string(),
+        },
+        ProjectCycleView {
+            id: 2,
+            name: "2026-06 数据底座".to_string(),
+            goal: "完成初版项目、成员和工作项数据模型。".to_string(),
+            description: "已完成的数据底座周期，保留历史追溯。".to_string(),
+            owner_username: "yuance_admin".to_string(),
+            owner: "陈".to_string(),
+            has_owner: true,
+            start_date: "2026-06-01".to_string(),
+            end_date: "2026-06-30".to_string(),
+            closed_at: "2026-07-02 20:10:00".to_string(),
+            is_closed: true,
+            status_code: "closed",
+            status: "已关闭",
+            status_tone: "info",
+            total_items: 2,
+            requirement_count: 1,
+            task_count: 1,
+            bug_count: 0,
+            pending_count: 0,
+            created_at: "2026-06-01 10:00:00".to_string(),
+            updated_at: "2026-07-02 20:10:00".to_string(),
+            anchor_url: "/web/projects/YCE?tab=cycles#cycle-2".to_string(),
+        },
+    ]
+}
+
+fn sample_project_cycle_options() -> Vec<ProjectCycleOptionView> {
+    sample_project_cycles()
+        .iter()
+        .map(project_cycle_option_from_view)
+        .collect()
+}
+
 fn sample_domain_work_items(item_type: Option<&str>) -> Vec<projects::WorkItemSummary> {
     let items = vec![
         projects::WorkItemSummary {
@@ -10310,6 +10746,9 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
     let requirements = sample_work_items(Some("requirement"));
     let tasks = sample_work_items(Some("task"));
     let bugs = sample_work_items(Some("bug"));
+    let cycles = sample_project_cycles();
+    let cycle_summary = project_cycle_summary(&cycles);
+    let cycle_options = sample_project_cycle_options();
     let members = vec![ProjectMemberView {
         display_name: "陈".to_string(),
         username: "yuance_admin".to_string(),
@@ -10370,6 +10809,8 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             has_activities: !activities.is_empty(),
             summary,
             requirements,
+            cycles,
+            cycle_summary,
             members,
             has_member_candidates: !member_candidates.is_empty(),
             member_candidates,
@@ -10379,6 +10820,7 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             resource_category_options: project_resource_category_options(),
             activities,
             project_item_type_options: work_item_type_options(),
+            cycle_options,
             can_edit_project: true,
             can_manage_project: true,
             can_manage_work_items: true,
@@ -10419,6 +10861,7 @@ fn render_sample_work_item_detail_page(
                 joined_at: "今天".to_string(),
             }],
             parent_options: sample_work_items(Some("requirement")),
+            cycle_options: sample_project_cycle_options(),
             status_options,
             has_attachments: false,
             attachments: Vec::new(),
@@ -10460,6 +10903,12 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             parent_item_key: "YCE-REQ-1".to_string(),
             parent_title: "统一 /web 用户工作台与系统管理入口".to_string(),
             has_parent: true,
+            cycle_name: "2026-07 核心交付".to_string(),
+            cycle_start_date: "2026-07-01".to_string(),
+            cycle_end_date: "2026-07-31".to_string(),
+            has_cycle: true,
+            cycle_id_text: "1".to_string(),
+            cycle_url: "/web/projects/YCE?tab=cycles#cycle-1".to_string(),
             assignee_username: "yuance_admin".to_string(),
             assignee: "陈".to_string(),
             reporter_username: "yuance_admin".to_string(),
@@ -10705,5 +11154,4 @@ mod tests {
         assert_eq!(output_pdf_filename("report.final.pptx"), "report.final.pdf");
         assert_eq!(output_pdf_filename(""), "document.pdf");
     }
-
 }

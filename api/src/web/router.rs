@@ -108,6 +108,18 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::project_member_role_update),
         )
         .route(
+            "/web/projects/{project_key}/cycles",
+            post(web::user::project_cycle_create),
+        )
+        .route(
+            "/web/projects/{project_key}/cycles/{cycle_id}/edit",
+            post(web::user::project_cycle_update),
+        )
+        .route(
+            "/web/projects/{project_key}/cycles/{cycle_id}/close",
+            post(web::user::project_cycle_close),
+        )
+        .route(
             "/web/projects/{project_key}/attachments",
             post(web::user::project_attachment_create),
         )

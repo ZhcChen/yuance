@@ -136,6 +136,7 @@
         <dl class="action-panel-context">
           <div><dt>报告人</dt><dd>{{ item.reporter }}</dd></div>
           {% if item.has_parent %}<div><dt>父级需求</dt><dd><a href="/web/work-items/{{ item.parent_item_key }}">{{ item.parent_item_key }} · {{ item.parent_title }}</a></dd></div>{% endif %}
+          {% if item.has_cycle %}<div><dt>所属周期</dt><dd><a href="{{ item.cycle_url }}">{{ item.cycle_name }} · {{ item.cycle_start_date }} ~ {{ item.cycle_end_date }}</a></dd></div>{% endif %}
           <div><dt>创建时间</dt><dd>{{ item.created_at }}</dd></div>
           <div><dt>截止日期</dt><dd>{% if item.due_date == "" %}未设置{% else %}{{ item.due_date }}{% endif %}</dd></div>
         </dl>
@@ -159,6 +160,7 @@
         <label>状态<select name="status">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
         <label>优先级<select name="priority"><option value="P0" {% if item.priority_code == "P0" %}selected{% endif %}>紧急</option><option value="P1" {% if item.priority_code == "P1" %}selected{% endif %}>高</option><option value="P2" {% if item.priority_code == "P2" %}selected{% endif %}>中</option><option value="P3" {% if item.priority_code == "P3" %}selected{% endif %}>低</option></select></label>
         <label>处理人<select name="assignee_username" data-select-searchable data-select-search-placeholder="搜索处理人">{% for member in assignee_options %}<option value="{{ member.username }}" {% if member.username == item.assignee_username %}selected{% endif %}>{{ member.display_name }} @{{ member.username }}</option>{% endfor %}</select></label>
+        <label>周期<select name="cycle_id" data-select-searchable data-select-search-placeholder="搜索周期"><option value="">不关联</option>{% for cycle in cycle_options %}<option value="{{ cycle.id }}" {% if item.cycle_id_text == cycle.id_text %}selected{% endif %}>{{ cycle.label }}</option>{% endfor %}</select></label>
         <label>截止日期<input name="due_date" type="date" value="{{ item.due_date }}"></label>
         {% if item.kind_code == "task" %}<label>父级需求<select name="parent_item_key" data-select-searchable data-select-search-placeholder="搜索父需求"><option value="">不关联</option>{% for parent in parent_options %}<option value="{{ parent.key }}" {% if parent.key == item.parent_item_key %}selected{% endif %}>{{ parent.key }} · {{ parent.title }}</option>{% endfor %}</select></label>{% endif %}
         <input type="hidden" name="description" value="{{ item.description }}" data-work-item-edit-description>
