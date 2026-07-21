@@ -7519,6 +7519,15 @@ select option {
   font-size: 13px;
 }
 
+.token-created-output {
+  display: grid;
+  gap: 10px;
+}
+
+.token-created-output .btn {
+  justify-self: flex-start;
+}
+
 .muted-text {
   margin: 4px 0 0;
   color: var(--muted);

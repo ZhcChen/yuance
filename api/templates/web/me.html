@@ -90,7 +90,16 @@
         <div class="inline-result success">
           <strong>Token 已创建，请立即复制保存</strong>
           <p>离开当前页面后将无法再次查看明文。</p>
-          <code>{{ created_api_token }}</code>
+          <div class="token-created-output">
+            <code>{{ created_api_token }}</code>
+            <button
+              class="btn btn-sm btn-secondary"
+              type="button"
+              data-copy-text="{{ created_api_token }}"
+              data-copy-idle-label="复制 Token"
+              data-copy-success-label="已复制"
+            >复制 Token</button>
+          </div>
         </div>
         {% endif %}
 
@@ -131,7 +140,7 @@
                 <td class="table-actions sticky-col sticky-col-right token-action-col">
                   <form method="post" action="/web/me/api-tokens/{{ token.id }}/delete" data-confirm-submit-form data-confirm-title="删除访问 Token" data-confirm-message="删除后不可恢复，依赖该 Token 的 MCP 或脚本会立即失效。" data-confirm-action="删除">
                     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                    <button class="btn btn-sm btn-danger" type="submit" data-confirm-submit>删除</button>
+                    <button class="btn btn-sm btn-danger" type="submit">删除</button>
                   </form>
                 </td>
               </tr>

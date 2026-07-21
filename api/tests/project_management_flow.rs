@@ -3754,6 +3754,106 @@ async fn web_me_can_update_profile_and_change_password() {
 }
 
 #[tokio::test]
+async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/me/api-tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=MCP%20Delete&project_scope_projects=all&scopes=project%3Aread",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let create_body = response_body(create_response).await;
+    assert!(create_body.contains("Token 已创建，请立即复制保存"));
+    assert!(create_body.contains("复制 Token"));
+    assert!(create_body.contains(r#"data-copy-idle-label="复制 Token""#));
+    assert!(create_body.contains(r#"data-copy-text="yuance_pat_"#));
+    assert!(create_body.contains(r#"<button class="btn btn-sm btn-danger" type="submit">删除</button>"#));
+    assert!(!create_body.contains(r#"type="submit" data-confirm-submit>删除</button>"#));
+
+    let token_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM api_tokens
+        WHERE user_id = ?1
+          AND name = 'MCP Delete'
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("created token should persist");
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/me/api-tokens/{token_id}/delete"))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        delete_response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("/web/me")
+    );
+
+    let token_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM api_tokens
+        WHERE id = ?1
+        "#,
+    )
+    .bind(token_id)
+    .fetch_one(&pool)
+    .await
+    .expect("token count should load");
+    assert_eq!(token_count, 0);
+
+    let page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/me")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(!page_body.contains("MCP Delete"));
+}
+
+#[tokio::test]
 async fn web_search_finds_visible_projects_and_work_items() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

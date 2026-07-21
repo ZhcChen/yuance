@@ -6217,6 +6217,62 @@
     });
   }
 
+  function resetCopyButtonLabel(button) {
+    if (!button) {
+      return;
+    }
+    var idleLabel = button.dataset.copyIdleLabel || "复制";
+    button.textContent = idleLabel;
+  }
+
+  function markCopyButtonSuccess(button) {
+    if (!button) {
+      return;
+    }
+    if (button.copyResetTimer) {
+      window.clearTimeout(button.copyResetTimer);
+      button.copyResetTimer = null;
+    }
+    button.textContent = button.dataset.copySuccessLabel || "已复制";
+    button.copyResetTimer = window.setTimeout(function () {
+      resetCopyButtonLabel(button);
+      button.copyResetTimer = null;
+    }, 1400);
+  }
+
+  function resolveCopyButtonText(button) {
+    if (!button) {
+      return "";
+    }
+    var directText = (button.dataset.copyText || "").trim();
+    if (directText) {
+      return directText;
+    }
+    var selector = (button.dataset.copyTarget || "").trim();
+    if (!selector) {
+      return "";
+    }
+    var source = document.querySelector(selector);
+    return source ? String(source.textContent || "").trim() : "";
+  }
+
+  function handleCopyButton(button) {
+    var text = resolveCopyButtonText(button);
+    if (!text) {
+      showToast("没有可复制的内容。", "error");
+      return;
+    }
+    copyTextToClipboard(text)
+      .then(function () {
+        markCopyButtonSuccess(button);
+        showToast("内容已复制。", "success");
+      })
+      .catch(function () {
+        resetCopyButtonLabel(button);
+        showToast("复制失败，请重试。", "error");
+      });
+  }
+
   function blobToImagePng(blob) {
     if (!blob || !blob.type || !blob.type.toLowerCase().startsWith("image/")) {
       return Promise.reject(new Error("当前内容不是图片。"));
@@ -6859,6 +6915,13 @@
     if (richFileAttachment) {
       event.preventDefault();
       openRichAttachmentMenuNear(richFileAttachment);
+      return;
+    }
+
+    var copyButton = event.target.closest("[data-copy-text], [data-copy-target]");
+    if (copyButton) {
+      event.preventDefault();
+      handleCopyButton(copyButton);
       return;
     }
 
