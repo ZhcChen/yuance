@@ -10508,7 +10508,10 @@ async fn project_cycles_can_be_managed_from_web_and_link_work_items() {
     assert_eq!(cycle_page_response.status(), StatusCode::OK);
     let cycle_page_body = response_body(cycle_page_response).await;
     assert!(cycle_page_body.contains("项目周期"));
+    assert!(cycle_page_body.contains("列表视图"));
+    assert!(cycle_page_body.contains("路线图视图"));
     assert!(cycle_page_body.contains("2026-07 核心交付"));
+    assert!(!cycle_page_body.contains("周期总数"));
 
     let create_item_body = serde_urlencoded::to_string([
         ("_csrf", CSRF_TOKEN),

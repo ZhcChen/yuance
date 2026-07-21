@@ -3507,31 +3507,28 @@ html[data-theme="dark"] .metric-ornament::before {
   line-height: 24px;
 }
 
-.project-cycle-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+.project-cycle-head-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  padding: 0 16px 16px;
+  flex-wrap: wrap;
 }
 
-.project-cycle-summary-card {
+.project-cycle-view-tabs {
+  flex: 0 0 auto;
+}
+
+.project-cycle-views {
   display: grid;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: var(--panel-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 86%, transparent);
 }
 
-.project-cycle-summary-card span {
-  color: var(--muted);
-  font-size: 12px;
+.project-cycle-view-panel {
+  min-width: 0;
 }
 
-.project-cycle-summary-card strong {
-  color: var(--text);
-  font-size: 22px;
-  line-height: 1.1;
+.project-cycle-empty {
+  min-height: 220px;
 }
 
 .project-cycle-main-cell,
@@ -3569,6 +3566,165 @@ html[data-theme="dark"] .metric-ornament::before {
 
 .project-cycle-table .table-actions {
   white-space: nowrap;
+}
+
+.project-cycle-roadmap {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.project-cycle-roadmap-card {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 14px;
+}
+
+.project-cycle-roadmap-rail {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+
+.project-cycle-roadmap-dot {
+  width: 12px;
+  height: 12px;
+  margin-top: 22px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 5px rgb(72 113 247 / 12%);
+}
+
+.project-cycle-roadmap-line {
+  position: absolute;
+  top: 38px;
+  bottom: -14px;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 90%, transparent);
+}
+
+.project-cycle-roadmap-card[data-cycle-status="ok"] .project-cycle-roadmap-dot {
+  background: var(--success-text);
+  box-shadow: 0 0 0 5px rgb(33 125 84 / 10%);
+}
+
+.project-cycle-roadmap-card[data-cycle-status="warning"] .project-cycle-roadmap-dot {
+  background: var(--warning-text);
+  box-shadow: 0 0 0 5px rgb(194 115 25 / 12%);
+}
+
+.project-cycle-roadmap-card[data-cycle-status="info"] .project-cycle-roadmap-dot {
+  background: var(--brand);
+}
+
+.project-cycle-roadmap-body {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-soft) 100%);
+  box-shadow: 0 14px 32px rgb(15 23 42 / 6%);
+}
+
+.project-cycle-roadmap-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.project-cycle-roadmap-title,
+.project-cycle-roadmap-date,
+.project-cycle-roadmap-progress-head,
+.project-cycle-roadmap-metrics article {
+  display: grid;
+  gap: 4px;
+}
+
+.project-cycle-roadmap-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.project-cycle-roadmap-title-row strong,
+.project-cycle-roadmap-date strong,
+.project-cycle-roadmap-progress-head strong,
+.project-cycle-roadmap-metrics strong {
+  color: var(--text);
+}
+
+.project-cycle-roadmap-title p,
+.project-cycle-roadmap-date span,
+.project-cycle-roadmap-progress-head span,
+.project-cycle-roadmap-metrics span,
+.project-cycle-roadmap-metrics em {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.project-cycle-roadmap-progress {
+  display: grid;
+  gap: 8px;
+}
+
+.project-cycle-roadmap-progress-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.project-cycle-roadmap-progress-fill {
+  display: block;
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  background: var(--brand);
+  transition: width 240ms ease;
+}
+
+.project-cycle-roadmap-progress-fill.status-ok {
+  background: var(--success-text);
+}
+
+.project-cycle-roadmap-progress-fill.status-warning {
+  background: var(--warning-text);
+}
+
+.project-cycle-roadmap-progress-fill.status-info {
+  background: var(--brand);
+}
+
+.project-cycle-roadmap-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.project-cycle-roadmap-metrics article {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 90%, transparent);
+}
+
+.project-cycle-roadmap-metrics em {
+  font-style: normal;
+}
+
+.project-cycle-roadmap-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .resource-library-section {
@@ -8868,7 +9024,17 @@ select option {
     flex-direction: column;
   }
 
-  .project-cycle-summary-grid {
+  .project-cycle-head-actions,
+  .project-cycle-roadmap-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .project-cycle-roadmap {
+    padding: 14px;
+  }
+
+  .project-cycle-roadmap-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

@@ -12,7 +12,7 @@ use axum::{
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use sqlx::SqlitePool;
@@ -149,7 +149,6 @@ struct ProjectCycleView {
     end_date: String,
     closed_at: String,
     is_closed: bool,
-    status_code: &'static str,
     status: &'static str,
     status_tone: &'static str,
     total_items: i64,
@@ -159,16 +158,16 @@ struct ProjectCycleView {
     pending_count: i64,
     created_at: String,
     updated_at: String,
+    duration_label: String,
+    progress_percent: i64,
+    progress_label: String,
+    schedule_hint: String,
     anchor_url: String,
 }
 
 #[derive(Debug, Clone, Default)]
 struct ProjectCycleSummaryView {
     total: usize,
-    closed: usize,
-    current: usize,
-    linked_items: i64,
-    pending_items: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -7114,10 +7113,12 @@ fn project_cycle_from_domain(
     project_key: &str,
     cycle: projects::ProjectCycleDetail,
 ) -> ProjectCycleView {
-    let (status_code, status, status_tone) =
+    let (_status_code, status, status_tone) =
         project_cycle_status_meta(&cycle.start_date, &cycle.end_date, &cycle.closed_at);
     let is_closed = !cycle.closed_at.trim().is_empty();
     let closed_at = display_optional_timestamp(cycle.closed_at.clone(), "");
+    let (duration_label, progress_percent, progress_label, schedule_hint) =
+        project_cycle_roadmap_meta(&cycle.start_date, &cycle.end_date, &closed_at, is_closed);
     ProjectCycleView {
         id: cycle.id,
         name: cycle.name,
@@ -7130,7 +7131,6 @@ fn project_cycle_from_domain(
         end_date: cycle.end_date,
         closed_at,
         is_closed,
-        status_code,
         status,
         status_tone,
         total_items: cycle.total_items,
@@ -7140,6 +7140,10 @@ fn project_cycle_from_domain(
         pending_count: cycle.pending_count,
         created_at: display_timestamp(cycle.created_at),
         updated_at: display_timestamp(cycle.updated_at),
+        duration_label,
+        progress_percent,
+        progress_label,
+        schedule_hint,
         anchor_url: format!("{}#cycle-{}", project_cycles_url(project_key), cycle.id),
     }
 }
@@ -7147,13 +7151,6 @@ fn project_cycle_from_domain(
 fn project_cycle_summary(cycles: &[ProjectCycleView]) -> ProjectCycleSummaryView {
     ProjectCycleSummaryView {
         total: cycles.len(),
-        closed: cycles.iter().filter(|cycle| cycle.is_closed).count(),
-        current: cycles
-            .iter()
-            .filter(|cycle| cycle.status_code == "in_progress")
-            .count(),
-        linked_items: cycles.iter().map(|cycle| cycle.total_items).sum(),
-        pending_items: cycles.iter().map(|cycle| cycle.pending_count).sum(),
     }
 }
 
@@ -10464,10 +10461,112 @@ fn chrono_now_text() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
+fn cycle_today_date() -> NaiveDate {
+    (Utc::now() + ChronoDuration::hours(8)).date_naive()
+}
+
 fn cycle_today_text() -> String {
-    (Utc::now() + ChronoDuration::hours(8))
-        .format("%Y-%m-%d")
-        .to_string()
+    cycle_today_date().format("%Y-%m-%d").to_string()
+}
+
+fn parse_cycle_date(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()
+}
+
+fn project_cycle_roadmap_meta(
+    start_date: &str,
+    end_date: &str,
+    closed_at: &str,
+    is_closed: bool,
+) -> (String, i64, String, String) {
+    let start = parse_cycle_date(start_date);
+    let end = parse_cycle_date(end_date);
+    let Some(start) = start else {
+        return (
+            "时间未设置".to_string(),
+            0,
+            "时间进度 --".to_string(),
+            "开始日期缺失".to_string(),
+        );
+    };
+    let Some(end) = end else {
+        return (
+            "时间未设置".to_string(),
+            0,
+            "时间进度 --".to_string(),
+            "结束日期缺失".to_string(),
+        );
+    };
+    if end < start {
+        return (
+            "时间未设置".to_string(),
+            0,
+            "时间进度 --".to_string(),
+            "时间范围异常".to_string(),
+        );
+    }
+
+    let duration_days = (end - start).num_days() + 1;
+    let duration_label = format!("共 {duration_days} 天");
+    if is_closed {
+        let closed_hint = if closed_at.trim().is_empty() {
+            "已关闭".to_string()
+        } else {
+            format!("已关闭于 {closed_at}")
+        };
+        return (
+            duration_label,
+            100,
+            "时间进度 100%".to_string(),
+            closed_hint,
+        );
+    }
+
+    let today = cycle_today_date();
+    if today < start {
+        let days_until_start = (start - today).num_days();
+        let schedule_hint = if days_until_start <= 0 {
+            "今天开始".to_string()
+        } else {
+            format!("{days_until_start} 天后开始")
+        };
+        return (
+            duration_label,
+            0,
+            "时间进度 0%".to_string(),
+            schedule_hint,
+        );
+    }
+
+    if today > end {
+        let overdue_days = (today - end).num_days();
+        let schedule_hint = if overdue_days <= 0 {
+            "今天到期".to_string()
+        } else {
+            format!("已超计划 {overdue_days} 天")
+        };
+        return (
+            duration_label,
+            100,
+            "时间进度 100%".to_string(),
+            schedule_hint,
+        );
+    }
+
+    let elapsed_days = (today - start).num_days() + 1;
+    let progress_percent = ((elapsed_days * 100) / duration_days).clamp(1, 100);
+    let remaining_days = (end - today).num_days();
+    let schedule_hint = if remaining_days <= 0 {
+        "今天结束".to_string()
+    } else {
+        format!("剩余 {remaining_days} 天")
+    };
+    (
+        duration_label,
+        progress_percent,
+        format!("时间进度 {progress_percent}%"),
+        schedule_hint,
+    )
 }
 
 fn format_byte_size(byte_size: i64) -> String {
@@ -10637,6 +10736,10 @@ fn sample_work_items(item_type: Option<&str>) -> Vec<WorkItem> {
 }
 
 fn sample_project_cycles() -> Vec<ProjectCycleView> {
+    let (active_duration_label, active_progress_percent, active_progress_label, active_schedule_hint) =
+        project_cycle_roadmap_meta("2026-07-01", "2026-07-31", "", false);
+    let (closed_duration_label, closed_progress_percent, closed_progress_label, closed_schedule_hint) =
+        project_cycle_roadmap_meta("2026-06-01", "2026-06-30", "2026-07-02 20:10:00", true);
     vec![
         ProjectCycleView {
             id: 1,
@@ -10650,7 +10753,6 @@ fn sample_project_cycles() -> Vec<ProjectCycleView> {
             end_date: "2026-07-31".to_string(),
             closed_at: String::new(),
             is_closed: false,
-            status_code: "in_progress",
             status: "进行中",
             status_tone: "ok",
             total_items: 3,
@@ -10660,6 +10762,10 @@ fn sample_project_cycles() -> Vec<ProjectCycleView> {
             pending_count: 2,
             created_at: "2026-07-01 09:00:00".to_string(),
             updated_at: "今天 16:20".to_string(),
+            duration_label: active_duration_label,
+            progress_percent: active_progress_percent,
+            progress_label: active_progress_label,
+            schedule_hint: active_schedule_hint,
             anchor_url: "/web/projects/YCE?tab=cycles#cycle-1".to_string(),
         },
         ProjectCycleView {
@@ -10674,7 +10780,6 @@ fn sample_project_cycles() -> Vec<ProjectCycleView> {
             end_date: "2026-06-30".to_string(),
             closed_at: "2026-07-02 20:10:00".to_string(),
             is_closed: true,
-            status_code: "closed",
             status: "已关闭",
             status_tone: "info",
             total_items: 2,
@@ -10684,6 +10789,10 @@ fn sample_project_cycles() -> Vec<ProjectCycleView> {
             pending_count: 0,
             created_at: "2026-06-01 10:00:00".to_string(),
             updated_at: "2026-07-02 20:10:00".to_string(),
+            duration_label: closed_duration_label,
+            progress_percent: closed_progress_percent,
+            progress_label: closed_progress_label,
+            schedule_hint: closed_schedule_hint,
             anchor_url: "/web/projects/YCE?tab=cycles#cycle-2".to_string(),
         },
     ]

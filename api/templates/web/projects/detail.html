@@ -142,121 +142,218 @@
       </section>
 
       <section id="project-tab-cycles" class="project-tab-panel {% if active_tab == "cycles" %}active{% endif %}" role="tabpanel" aria-labelledby="project-tab-cycles-trigger" data-tab-panel {% if active_tab != "cycles" %}hidden{% endif %}>
-        <section class="project-tab-section">
+        <section class="project-tab-section project-cycle-section" data-tabs>
           <div class="project-tab-section-head">
             <div>
               <h3>项目周期</h3>
               <p>把控项目阶段时间窗口，工作项可以按需关联到某个周期。</p>
             </div>
-            {% if can_manage_work_items %}
-            <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-cycle-create-modal">新建周期</button>
-            {% endif %}
+            <div class="project-cycle-head-actions">
+              <div class="content-tabs content-tabs-compact project-cycle-view-tabs" role="tablist" aria-label="周期视图切换" data-content-tabs>
+                <span class="content-tabs-indicator" aria-hidden="true" data-content-tab-indicator></span>
+                <button class="content-tab active" id="project-cycle-view-list-trigger" type="button" role="tab" aria-selected="true" aria-controls="project-cycle-view-list" data-content-tab data-tab-target="project-cycle-view-list">
+                  列表视图
+                </button>
+                <button class="content-tab" id="project-cycle-view-roadmap-trigger" type="button" role="tab" aria-selected="false" aria-controls="project-cycle-view-roadmap" data-content-tab data-tab-target="project-cycle-view-roadmap">
+                  路线图视图
+                </button>
+              </div>
+              {% if can_manage_work_items %}
+              <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-cycle-create-modal">新建周期</button>
+              {% endif %}
+            </div>
           </div>
-          <div class="project-cycle-summary-grid">
-            <article class="project-cycle-summary-card">
-              <span>周期总数</span>
-              <strong>{{ cycle_summary.total }}</strong>
-            </article>
-            <article class="project-cycle-summary-card">
-              <span>当前周期</span>
-              <strong>{{ cycle_summary.current }}</strong>
-            </article>
-            <article class="project-cycle-summary-card">
-              <span>已关闭周期</span>
-              <strong>{{ cycle_summary.closed }}</strong>
-            </article>
-            <article class="project-cycle-summary-card">
-              <span>关联工作项</span>
-              <strong>{{ cycle_summary.linked_items }}</strong>
-            </article>
-            <article class="project-cycle-summary-card">
-              <span>待处理工作项</span>
-              <strong>{{ cycle_summary.pending_items }}</strong>
-            </article>
-          </div>
+          <div class="project-cycle-views">
+            <div id="project-cycle-view-list" class="project-cycle-view-panel active" role="tabpanel" aria-labelledby="project-cycle-view-list-trigger" data-tab-panel>
+              {% if cycle_summary.total > 0 %}
+              <div class="table-wrap">
+                <table class="data-table project-cycle-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">周期</th>
+                      <th scope="col">负责人</th>
+                      <th scope="col">时间段</th>
+                      <th scope="col">状态</th>
+                      <th scope="col">关联工作项</th>
+                      <th scope="col">更新时间</th>
+                      <th class="table-actions" scope="col">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for cycle in cycles %}
+                    <tr id="cycle-{{ cycle.id }}">
+                      <td class="project-cycle-main-cell">
+                        <strong><a href="{{ cycle.anchor_url }}">{{ cycle.name }}</a></strong>
+                        {% if cycle.goal != "" %}
+                        <span>{{ cycle.goal }}</span>
+                        {% else if cycle.description != "" %}
+                        <span>{{ cycle.description }}</span>
+                        {% else %}
+                        <span>未填写周期目标</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if cycle.has_owner %}
+                        <div class="project-cycle-owner">
+                          <strong>{{ cycle.owner }}</strong>
+                          <span>@{{ cycle.owner_username }}</span>
+                        </div>
+                        {% else %}
+                        <span class="work-table-muted">未设置</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div class="project-cycle-date">
+                          <strong>{{ cycle.start_date }} ~ {{ cycle.end_date }}</strong>
+                          {% if cycle.is_closed %}
+                          <span>关闭于 {{ cycle.closed_at }}</span>
+                          {% else %}
+                          <span>创建于 {{ cycle.created_at }}</span>
+                          {% endif %}
+                        </div>
+                      </td>
+                      <td><span class="status status-{{ cycle.status_tone }}">{{ cycle.status }}</span></td>
+                      <td>
+                        <div class="project-cycle-counts">
+                          <strong>{{ cycle.total_items }}</strong>
+                          <span>需求 {{ cycle.requirement_count }} / 任务 {{ cycle.task_count }} / Bug {{ cycle.bug_count }}</span>
+                          <span>待处理 {{ cycle.pending_count }}</span>
+                        </div>
+                      </td>
+                      <td class="work-table-muted">{{ cycle.updated_at }}</td>
+                      <td class="table-actions">
+                        {% if can_manage_work_items %}
+                        <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-cycle-edit-modal-{{ cycle.id }}">编辑</button>
+                        {% if !cycle.is_closed %}
+                        <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/cycles/{{ cycle.id }}/close" data-confirm-submit-form data-confirm-title="关闭周期" data-confirm-message="关闭后仍会保留历史关联和操作记录。" data-confirm-action="关闭周期">
+                          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                          <button class="btn btn-sm btn-secondary" type="submit">关闭</button>
+                        </form>
+                        {% else %}
+                        <span class="attachment-action-hint">已关闭</span>
+                        {% endif %}
+                        {% else %}
+                        <span class="attachment-action-hint">无操作</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% else %}
+              <div class="empty-state project-cycle-empty">
+                <strong>暂无周期</strong>
+                <span>先创建一个周期，用列表方式管理负责人、时间窗口和关联工作项。</span>
+              </div>
+              {% endif %}
+            </div>
 
-          {% if cycle_summary.total > 0 %}
-          <div class="table-wrap">
-            <table class="data-table project-cycle-table">
-              <thead>
-                <tr>
-                  <th scope="col">周期</th>
-                  <th scope="col">负责人</th>
-                  <th scope="col">时间段</th>
-                  <th scope="col">状态</th>
-                  <th scope="col">关联工作项</th>
-                  <th scope="col">更新时间</th>
-                  <th class="table-actions" scope="col">操作</th>
-                </tr>
-              </thead>
-              <tbody>
+            <div id="project-cycle-view-roadmap" class="project-cycle-view-panel" role="tabpanel" aria-labelledby="project-cycle-view-roadmap-trigger" data-tab-panel hidden>
+              {% if cycle_summary.total > 0 %}
+              <div class="project-cycle-roadmap">
                 {% for cycle in cycles %}
-                <tr id="cycle-{{ cycle.id }}">
-                  <td class="project-cycle-main-cell">
-                    <strong><a href="{{ cycle.anchor_url }}">{{ cycle.name }}</a></strong>
-                    {% if cycle.goal != "" %}
-                    <span>{{ cycle.goal }}</span>
-                    {% else if cycle.description != "" %}
-                    <span>{{ cycle.description }}</span>
-                    {% else %}
-                    <span>未填写周期目标</span>
+                <article class="project-cycle-roadmap-card" data-cycle-status="{{ cycle.status_tone }}">
+                  <div class="project-cycle-roadmap-rail" aria-hidden="true">
+                    <span class="project-cycle-roadmap-dot"></span>
+                    {% if !loop.last %}
+                    <span class="project-cycle-roadmap-line"></span>
                     {% endif %}
-                  </td>
-                  <td>
-                    {% if cycle.has_owner %}
-                    <div class="project-cycle-owner">
-                      <strong>{{ cycle.owner }}</strong>
-                      <span>@{{ cycle.owner_username }}</span>
+                  </div>
+                  <div class="project-cycle-roadmap-body">
+                    <div class="project-cycle-roadmap-head">
+                      <div class="project-cycle-roadmap-title">
+                        <div class="project-cycle-roadmap-title-row">
+                          <strong>{{ cycle.name }}</strong>
+                          <span class="status status-{{ cycle.status_tone }}">{{ cycle.status }}</span>
+                        </div>
+                        {% if cycle.goal != "" %}
+                        <p>{{ cycle.goal }}</p>
+                        {% else if cycle.description != "" %}
+                        <p>{{ cycle.description }}</p>
+                        {% else %}
+                        <p>未填写周期目标</p>
+                        {% endif %}
+                      </div>
+                      <div class="project-cycle-roadmap-date">
+                        <strong>{{ cycle.start_date }} ~ {{ cycle.end_date }}</strong>
+                        <span>{{ cycle.duration_label }}</span>
+                      </div>
                     </div>
-                    {% else %}
-                    <span class="work-table-muted">未设置</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <div class="project-cycle-date">
-                      <strong>{{ cycle.start_date }} ~ {{ cycle.end_date }}</strong>
-                      {% if cycle.is_closed %}
-                      <span>关闭于 {{ cycle.closed_at }}</span>
+
+                    <div class="project-cycle-roadmap-progress">
+                      <div class="project-cycle-roadmap-progress-head">
+                        <strong>{{ cycle.progress_label }}</strong>
+                        <span>{{ cycle.schedule_hint }}</span>
+                      </div>
+                      <div class="project-cycle-roadmap-progress-track" aria-hidden="true">
+                        <span class="project-cycle-roadmap-progress-fill status-{{ cycle.status_tone }}" style="width: {{ cycle.progress_percent }}%;"></span>
+                      </div>
+                    </div>
+
+                    <div class="project-cycle-roadmap-metrics">
+                      <article>
+                        <span>负责人</span>
+                        {% if cycle.has_owner %}
+                        <strong>{{ cycle.owner }}</strong>
+                        <em>@{{ cycle.owner_username }}</em>
+                        {% else %}
+                        <strong>未设置</strong>
+                        <em>建议指定推进负责人</em>
+                        {% endif %}
+                      </article>
+                      <article>
+                        <span>工作项</span>
+                        <strong>{{ cycle.total_items }}</strong>
+                        <em>需求 {{ cycle.requirement_count }} / 任务 {{ cycle.task_count }} / Bug {{ cycle.bug_count }}</em>
+                      </article>
+                      <article>
+                        <span>待处理</span>
+                        <strong>{{ cycle.pending_count }}</strong>
+                        {% if cycle.is_closed %}
+                        <em>当前周期已关闭</em>
+                        {% else %}
+                        <em>需要继续推进</em>
+                        {% endif %}
+                      </article>
+                      <article>
+                        <span>最近更新</span>
+                        <strong>{{ cycle.updated_at }}</strong>
+                        {% if cycle.is_closed %}
+                        <em>关闭于 {{ cycle.closed_at }}</em>
+                        {% else %}
+                        <em>创建于 {{ cycle.created_at }}</em>
+                        {% endif %}
+                      </article>
+                    </div>
+
+                    <div class="project-cycle-roadmap-actions">
+                      {% if can_manage_work_items %}
+                      <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-cycle-edit-modal-{{ cycle.id }}">编辑</button>
+                      {% if !cycle.is_closed %}
+                      <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/cycles/{{ cycle.id }}/close" data-confirm-submit-form data-confirm-title="关闭周期" data-confirm-message="关闭后仍会保留历史关联和操作记录。" data-confirm-action="关闭周期">
+                        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                        <button class="btn btn-sm btn-secondary" type="submit">关闭</button>
+                      </form>
                       {% else %}
-                      <span>创建于 {{ cycle.created_at }}</span>
+                      <span class="attachment-action-hint">已关闭</span>
+                      {% endif %}
+                      {% else %}
+                      <span class="attachment-action-hint">无操作</span>
                       {% endif %}
                     </div>
-                  </td>
-                  <td><span class="status status-{{ cycle.status_tone }}">{{ cycle.status }}</span></td>
-                  <td>
-                    <div class="project-cycle-counts">
-                      <strong>{{ cycle.total_items }}</strong>
-                      <span>需求 {{ cycle.requirement_count }} / 任务 {{ cycle.task_count }} / Bug {{ cycle.bug_count }}</span>
-                      <span>待处理 {{ cycle.pending_count }}</span>
-                    </div>
-                  </td>
-                  <td class="work-table-muted">{{ cycle.updated_at }}</td>
-                  <td class="table-actions">
-                    {% if can_manage_work_items %}
-                    <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-cycle-edit-modal-{{ cycle.id }}">编辑</button>
-                    {% if !cycle.is_closed %}
-                    <form class="inline-form" method="post" action="/web/projects/{{ project.code }}/cycles/{{ cycle.id }}/close" data-confirm-submit-form data-confirm-title="关闭周期" data-confirm-message="关闭后仍会保留历史关联和操作记录。" data-confirm-action="关闭周期">
-                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                      <button class="btn btn-sm btn-secondary" type="submit">关闭</button>
-                    </form>
-                    {% else %}
-                    <span class="attachment-action-hint">已关闭</span>
-                    {% endif %}
-                    {% else %}
-                    <span class="attachment-action-hint">无操作</span>
-                    {% endif %}
-                  </td>
-                </tr>
+                  </div>
+                </article>
                 {% endfor %}
-              </tbody>
-            </table>
+              </div>
+              {% else %}
+              <div class="empty-state project-cycle-empty">
+                <strong>暂无周期</strong>
+                <span>先创建一个周期，再用路线图视图查看阶段目标、时间进度和待处理工作项。</span>
+              </div>
+              {% endif %}
+            </div>
           </div>
-          {% else %}
-          <div class="empty-state">
-            <strong>暂无周期</strong>
-            <span>先创建一个周期，把项目当前阶段的时间窗口、负责人和目标管理起来。</span>
-          </div>
-          {% endif %}
         </section>
       </section>
 
