@@ -538,12 +538,20 @@ struct ApiTokenView {
     scopes_label: String,
     project_scope: String,
     token_suffix: String,
+    copy_text: String,
+    can_copy_raw_token: bool,
     expires_at: String,
     last_used_at: String,
     created_at: String,
     status: &'static str,
     status_tone: &'static str,
     is_revoked: bool,
+}
+
+#[derive(Debug, Clone)]
+struct CreatedApiTokenFlash {
+    token_id: i64,
+    raw_token: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1750,15 +1758,20 @@ pub async fn me_page(State(state): State<AppState>, headers: HeaderMap) -> AppRe
         Err(response) => return Ok(response),
     };
 
-    render_me_response(&state, &headers, context, String::new()).await
+    render_me_response(&state, &headers, context, None).await
 }
 
 async fn render_me_response(
     state: &AppState,
     headers: &HeaderMap,
     context: WebContext<'_>,
-    created_api_token: String,
+    created_api_token: Option<CreatedApiTokenFlash>,
 ) -> AppResult<Response> {
+    let created_api_token_id = created_api_token.as_ref().map(|token| token.token_id);
+    let created_api_token_value = created_api_token
+        .as_ref()
+        .map(|token| token.raw_token.clone())
+        .unwrap_or_default();
     let (profile, projects, assigned_items, api_tokens) = match context.pool {
         Some(pool) => {
             let Some(profile) = users::get_user_summary(pool, context.user_id).await? else {
@@ -1791,7 +1804,17 @@ async fn render_me_response(
             let api_tokens = api_tokens::list_tokens(pool, context.user_id)
                 .await?
                 .into_iter()
-                .map(api_token_view)
+                .map(|token| {
+                    let current_token_id = token.id;
+                    api_token_view(
+                        token,
+                        if Some(current_token_id) == created_api_token_id {
+                            Some(created_api_token_value.as_str())
+                        } else {
+                            None
+                        },
+                    )
+                })
                 .collect::<Vec<_>>();
 
             (
@@ -1810,7 +1833,7 @@ async fn render_me_response(
     };
     let summary = my_summary(&projects, &assigned_items);
     let csrf_token = context.csrf_token.clone();
-    let has_created_api_token = !created_api_token.is_empty();
+    let has_created_api_token = !created_api_token_value.is_empty();
     let api_token_active_count = api_tokens.iter().filter(|token| !token.is_revoked).count();
     let can_create_api_token =
         (api_token_active_count as i64) < api_tokens::MAX_ACTIVE_TOKENS_PER_USER;
@@ -1832,7 +1855,7 @@ async fn render_me_response(
             api_token_limit: api_tokens::MAX_ACTIVE_TOKENS_PER_USER,
             can_create_api_token,
             api_tokens,
-            created_api_token,
+            created_api_token: created_api_token_value,
             has_created_api_token,
             profile,
             summary,
@@ -1928,6 +1951,7 @@ pub async fn me_api_token_create(
         Err(response) => return Ok(response),
     };
     let mut raw_token = String::new();
+    let mut created_token_id = None;
     if let Some(pool) = context.pool {
         let created = api_tokens::create_token(
             pool,
@@ -1940,6 +1964,7 @@ pub async fn me_api_token_create(
             },
         )
         .await?;
+        created_token_id = Some(created.token.id);
         audit::record(
             pool,
             Some(context.user_id),
@@ -1952,7 +1977,16 @@ pub async fn me_api_token_create(
         raw_token = created.raw_token;
     }
 
-    render_me_response(&state, &headers, context, raw_token).await
+    render_me_response(
+        &state,
+        &headers,
+        context,
+        created_token_id.map(|token_id| CreatedApiTokenFlash {
+            token_id,
+            raw_token,
+        }),
+    )
+    .await
 }
 
 pub async fn me_api_token_delete(
@@ -8691,7 +8725,7 @@ fn user_profile_from_summary(user: users::UserSummary) -> UserProfileView {
     }
 }
 
-fn api_token_view(token: api_tokens::ApiTokenSummary) -> ApiTokenView {
+fn api_token_view(token: api_tokens::ApiTokenSummary, raw_token: Option<&str>) -> ApiTokenView {
     let is_revoked = !token.revoked_at.trim().is_empty();
     let is_expired = !token.expires_at.trim().is_empty() && token.expires_at < chrono_now_text();
     let (status, status_tone) = if is_revoked {
@@ -8723,6 +8757,8 @@ fn api_token_view(token: api_tokens::ApiTokenSummary) -> ApiTokenView {
                 .join("、")
         },
         token_suffix: token.token_suffix,
+        copy_text: raw_token.unwrap_or_default().to_string(),
+        can_copy_raw_token: raw_token.is_some(),
         expires_at: display_optional_timestamp(token.expires_at, "永不过期"),
         last_used_at: display_optional_timestamp(token.last_used_at, "尚未使用"),
         created_at: display_timestamp(token.created_at),

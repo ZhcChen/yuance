@@ -7681,6 +7681,28 @@ select option {
   font-weight: 700;
 }
 
+.token-suffix-copy {
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1;
+  transition: background-color .18s ease, color .18s ease, transform .18s ease;
+}
+
+.token-suffix-copy:hover {
+  background: #e5eefb;
+  color: var(--brand);
+}
+
+.token-suffix-copy:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, .28);
+  outline-offset: 2px;
+}
+
+.token-suffix-copy:active {
+  transform: translateY(1px);
+}
+
 .field-label {
   color: var(--muted-strong);
   font-size: 13px;

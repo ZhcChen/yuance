@@ -132,7 +132,18 @@
                   <span class="table-cell-ellipsis" title="{{ token.project_scope }}">{{ token.project_scope }}</span>
                 </td>
                 <td class="token-suffix-col">
+                  {% if token.can_copy_raw_token %}
+                  <button
+                    class="token-suffix-code token-suffix-copy"
+                    type="button"
+                    title="点击复制完整 Token"
+                    data-copy-text="{{ token.copy_text }}"
+                    data-copy-idle-label="...{{ token.token_suffix }}"
+                    data-copy-success-label="已复制"
+                  >...{{ token.token_suffix }}</button>
+                  {% else %}
                   <code class="token-suffix-code" title="...{{ token.token_suffix }}">...{{ token.token_suffix }}</code>
+                  {% endif %}
                 </td>
                 <td class="token-status-col"><span class="status status-{{ token.status_tone }}">{{ token.status }}</span></td>
                 <td class="token-expires-col">{{ token.expires_at }}</td>

@@ -3783,6 +3783,7 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
     assert!(create_body.contains("复制 Token"));
     assert!(create_body.contains(r#"data-copy-idle-label="复制 Token""#));
     assert!(create_body.contains(r#"data-copy-text="yuance_pat_"#));
+    assert!(create_body.contains(r#"title="点击复制完整 Token""#));
     assert!(create_body.contains(r#"<button class="btn btn-sm btn-danger" type="submit">删除</button>"#));
     assert!(!create_body.contains(r#"type="submit" data-confirm-submit>删除</button>"#));
 
@@ -3800,6 +3801,19 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
     .fetch_one(&pool)
     .await
     .expect("created token should persist");
+
+    let token_suffix = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT token_suffix
+        FROM api_tokens
+        WHERE id = ?1
+        "#,
+    )
+    .bind(token_id)
+    .fetch_one(&pool)
+    .await
+    .expect("created token suffix should persist");
+    assert!(create_body.contains(&format!(r#"data-copy-idle-label="...{token_suffix}""#)));
 
     let delete_response = app
         .clone()
