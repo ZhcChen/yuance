@@ -271,7 +271,7 @@ viewer
 
 ## 项目资料库
 
-资料库用于保存项目级对接参数、客户资料、会议纪要和实施文档。资料正文为富文本 HTML，
+资料库用于保存项目级开发资料、客户资料、会议纪要和实施文档。资料正文为富文本 HTML，
 正文内附件绑定到 `project_resource` 目标。
 
 ```text
@@ -296,7 +296,7 @@ status=active|archived|all
 
 ```json
 {
-  "title": "正式环境对接参数",
+  "title": "正式环境接口配置",
   "category": "integration",
   "body": "<p>正文</p>",
   "body_format": "html",

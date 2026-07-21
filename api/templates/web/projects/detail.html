@@ -317,7 +317,7 @@
           <div class="project-tab-section-head resource-library-head">
             <div>
               <h3>资料库</h3>
-              <p>保存项目对接参数、客户资料、会议纪要和实施文档。</p>
+              <p>保存项目开发资料、客户资料、会议纪要和实施文档。</p>
             </div>
             {% if can_manage_work_items %}
             <button class="btn btn-sm btn-primary" type="button" data-modal-open="project-resource-create-modal">新建资料</button>
@@ -378,7 +378,7 @@
           {% else %}
           <div class="empty-state resource-empty">
             <strong>暂无资料</strong>
-            <span>可以先新增对接参数、客户资料或会议纪要，资料正文支持粘贴截图和拖拽文件。</span>
+            <span>可以先新增开发资料、客户资料或会议纪要，资料正文支持粘贴截图和拖拽文件。</span>
           </div>
           {% endif %}
         </section>
@@ -692,7 +692,7 @@
       <div class="field-grid">
         <label class="wide-field">
           标题
-          <input name="title" placeholder="例如：正式环境对接参数" required autofocus data-resource-field>
+          <input name="title" placeholder="例如：正式环境接口配置" required autofocus data-resource-field>
         </label>
         <label>
           分类

@@ -501,7 +501,7 @@ pub fn resource_inline_attachment_ids(resource_id: i64, body: &str, body_format:
 
 pub fn category_label(category: &str) -> &'static str {
     match category {
-        "integration" => "对接参数",
+        "integration" => "开发资料",
         "customer" => "客户资料",
         "meeting" => "会议纪要",
         "implementation" => "实施文档",

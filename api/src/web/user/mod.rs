@@ -7276,7 +7276,7 @@ fn project_resource_category_options() -> Vec<ProjectResourceCategoryOption> {
     vec![
         ProjectResourceCategoryOption {
             value: "integration",
-            label: "对接参数",
+            label: "开发资料",
         },
         ProjectResourceCategoryOption {
             value: "customer",
@@ -10763,9 +10763,9 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
     }];
     let resources = vec![ProjectResourceView {
         id: 1,
-        title: "上游对接参数".to_string(),
+        title: "上游接口配置".to_string(),
         category_code: "integration".to_string(),
-        category: "对接参数".to_string(),
+        category: "开发资料".to_string(),
         summary: "保存测试环境、正式环境和回调说明。".to_string(),
         status_code: "active".to_string(),
         status: "可用".to_string(),

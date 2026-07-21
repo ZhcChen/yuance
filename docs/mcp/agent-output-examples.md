@@ -139,7 +139,7 @@ docs/mcp/ai-agent-playbook.md
 已确认信息：
 - project_key：YCE
 - resource_id：27
-- 资料标题：正式环境对接参数
+- 资料标题：正式环境接口配置
 
 缺失信息：
 - 该条资料的访问密码

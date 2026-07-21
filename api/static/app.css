@@ -5267,6 +5267,7 @@ code {
 .modal-form {
   display: grid;
   gap: 14px;
+  padding-bottom: 0;
 }
 
 .generated-code-note {
@@ -5754,15 +5755,25 @@ code {
 }
 
 .modal-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
-  padding-top: 2px;
+  margin: 4px -18px 0;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 -12px 28px rgb(15 23 42 / 8%);
 }
 
 .modal-confirm .modal-actions {
+  position: static;
+  margin: 0;
   padding: 14px 18px 16px;
+  box-shadow: none;
 }
 
 .icon-btn {
