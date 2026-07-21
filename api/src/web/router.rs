@@ -10,7 +10,11 @@ use axum::{
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 
-use crate::{domains::auth, platform::config::Settings, web};
+use crate::{
+    domains::auth,
+    platform::{config::Settings, security::csrf},
+    web,
+};
 
 static PDFJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/pdfjs");
 
@@ -307,6 +311,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
         .route("/api/v1/auth/login", post(web::api::login))
         .route("/api/v1/auth/me", get(web::api::me))
+        .route("/api/v1/auth/csrf", get(web::auth_api::csrf_token))
         .route("/api/v1/auth/logout", post(web::api::logout))
         .route(
             "/api/v1/me/tokens",
@@ -594,16 +599,20 @@ async fn session_refresh_middleware(
     let secure = state.settings.env == "production";
     let mut access_cookie_to_set: Option<String> = None;
     let mut refresh_cookie_to_set: Option<String> = None;
+    let mut csrf_cookie_to_set: Option<String> = None;
+    let mut csrf_token_to_publish: Option<String> = None;
     let mut clear_access_cookie = false;
     let mut clear_refresh_cookie = false;
     let access_cookie = auth::session_cookie(request.headers());
     let refresh_cookie = auth::refresh_cookie(request.headers());
     let mut access_valid = false;
+    let mut session_authenticated = false;
 
     if let Some(raw_access) = access_cookie.as_deref() {
         match auth::user_from_raw_session(pool, raw_access).await {
             Ok(Some(_)) => {
                 access_valid = true;
+                session_authenticated = true;
                 let _ = auth::touch_session(pool, raw_access).await;
             }
             Ok(None) => {
@@ -640,6 +649,7 @@ async fn session_refresh_middleware(
             Ok(Some(issued)) => {
                 clear_access_cookie = false;
                 clear_refresh_cookie = false;
+                session_authenticated = true;
                 upsert_request_cookie(
                     request.headers_mut(),
                     auth::SESSION_COOKIE_NAME,
@@ -670,6 +680,16 @@ async fn session_refresh_middleware(
         }
     }
 
+    if session_authenticated {
+        let csrf_token = csrf::token_from_headers(request.headers()).unwrap_or_else(|| {
+            let token = csrf::generate_token();
+            upsert_request_cookie(request.headers_mut(), csrf::CSRF_COOKIE_NAME, &token);
+            token
+        });
+        csrf_cookie_to_set = Some(csrf::cookie_header(&csrf_token, secure));
+        csrf_token_to_publish = Some(csrf_token);
+    }
+
     let mut response = next.run(request).await;
     if clear_access_cookie {
         append_set_cookie(&mut response, &auth::clear_session_cookie_header(secure));
@@ -682,6 +702,16 @@ async fn session_refresh_middleware(
     }
     if let Some(cookie) = refresh_cookie_to_set {
         append_set_cookie(&mut response, &cookie);
+    }
+    if let Some(cookie) = csrf_cookie_to_set {
+        append_set_cookie(&mut response, &cookie);
+    }
+    if let Some(token) = csrf_token_to_publish {
+        append_header(
+            &mut response,
+            header::HeaderName::from_static(csrf::CSRF_HEADER_NAME),
+            &token,
+        );
     }
     response
 }
@@ -747,6 +777,12 @@ fn upsert_request_cookie(headers: &mut HeaderMap, cookie_name: &str, cookie_valu
 fn append_set_cookie(response: &mut Response, cookie: &str) {
     if let Ok(value) = cookie.parse() {
         response.headers_mut().append(header::SET_COOKIE, value);
+    }
+}
+
+fn append_header(response: &mut Response, name: header::HeaderName, value: &str) {
+    if let Ok(parsed) = value.parse() {
+        response.headers_mut().insert(name, parsed);
     }
 }
 

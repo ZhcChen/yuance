@@ -18,6 +18,7 @@
   var selectMeasureCanvas = null;
   var imagePreviewObserver = null;
   var imagePreviewFallbackTimer = null;
+  var csrfRefreshPromise = null;
   var imageViewerState = {
     entries: [],
     index: 0,
@@ -575,6 +576,7 @@
         headers: { accept: "text/html" },
         credentials: "same-origin",
       });
+      syncCsrfTokenFromResponse(response);
       if (response.status === 401) {
         redirectToLogin();
         return true;
@@ -624,48 +626,56 @@
     var successMessage = webFormSuccessMessage(form, submitter);
     setWebFormBusy(form, true, submitter);
     try {
-      var response = await fetch(form.action || "/web/messages/read-all", {
-        method: (form.method || "POST").toUpperCase(),
-        headers: {
-          accept: "text/html, application/json",
-          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-          "x-yuance-web-form": "fetch",
-        },
-        body: webFormBody(form, submitter),
-        credentials: "same-origin",
-      });
-      var contentType = response.headers.get("content-type") || "";
-      var isJson = contentType.includes("application/json");
-      var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
-      var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
-      if (response.status === 401 || payload?.error?.code === "unauthorized") {
-        redirectToLogin();
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(payload, webFormResultFromHtml(html)?.message || "操作失败，请稍后重试。"));
-      }
-      var redirectedMessagePage = response.url && isMessageCenterUrl(response.url);
-      var keepCurrentMessageUrl = currentMessageCenter()
-        && form.matches
-        && form.matches("[data-notification-read-all]");
-      if (keepCurrentMessageUrl) {
-        await loadMessageCenter(window.location.href, { history: false });
-      } else if (currentMessageCenter() && redirectedMessagePage && html) {
-        replaceMessageCenterFromHtml(html);
-        if (window.history && window.history.replaceState) {
-          window.history.replaceState({ yuanceMessageCenter: true }, "", response.url);
-        }
-      } else if (currentMessageCenter()) {
-        await loadMessageCenter(window.location.href, { history: false });
-      }
-      await refreshNotificationFeed(form.closest("[data-notification-root]"));
-      showToast(successMessage, "success");
+      await submitMessageReadAllRequest(form, submitter, successMessage, false);
       setWebFormBusy(form, false, submitter);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "操作失败，请稍后重试。", "error");
       setWebFormBusy(form, false, submitter);
     }
+  }
+
+  async function submitMessageReadAllRequest(form, submitter, successMessage, hasRetriedCsrf) {
+    var response = await fetch(form.action || "/web/messages/read-all", {
+      method: (form.method || "POST").toUpperCase(),
+      headers: {
+        accept: "text/html, application/json",
+        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "x-yuance-web-form": "fetch",
+      },
+      body: webFormBody(form, submitter),
+      credentials: "same-origin",
+    });
+    var contentType = response.headers.get("content-type") || "";
+    var isJson = contentType.includes("application/json");
+    var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
+    var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
+    syncCsrfTokenFromResponse(response, payload);
+    if (response.status === 401 || payload?.error?.code === "unauthorized") {
+      redirectToLogin();
+      return;
+    }
+    if (!response.ok) {
+      if (!hasRetriedCsrf && isCsrfErrorPayload(payload) && await refreshCsrfToken()) {
+        return submitMessageReadAllRequest(form, submitter, successMessage, true);
+      }
+      throw new Error(apiErrorMessage(payload, webFormResultFromHtml(html)?.message || "操作失败，请稍后重试。"));
+    }
+    var redirectedMessagePage = response.url && isMessageCenterUrl(response.url);
+    var keepCurrentMessageUrl = currentMessageCenter()
+      && form.matches
+      && form.matches("[data-notification-read-all]");
+    if (keepCurrentMessageUrl) {
+      await loadMessageCenter(window.location.href, { history: false });
+    } else if (currentMessageCenter() && redirectedMessagePage && html) {
+      replaceMessageCenterFromHtml(html);
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({ yuanceMessageCenter: true }, "", response.url);
+      }
+    } else if (currentMessageCenter()) {
+      await loadMessageCenter(window.location.href, { history: false });
+    }
+    await refreshNotificationFeed(form.closest("[data-notification-root]"));
+    showToast(successMessage, "success");
   }
 
   function setWebFormBusy(form, busy, submitter) {
@@ -807,46 +817,54 @@
         }, 300);
         return;
       }
-      var response = await fetch(form.action || window.location.href, {
-        method: (form.method || "POST").toUpperCase(),
-        headers: {
-          accept: "text/html, application/json",
-          "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
-          "x-yuance-web-form": "fetch",
-        },
-        body: webFormBody(form, submitter),
-        credentials: "same-origin",
-      });
-      var contentType = response.headers.get("content-type") || "";
-      var isJson = contentType.includes("application/json");
-      var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
-      var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
-      var htmlResult = webFormResultFromHtml(html);
-      if (response.status === 401 || payload?.error?.code === "unauthorized") {
-        redirectToLogin();
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(apiErrorMessage(payload, htmlResult?.message || "操作失败，请稍后重试。"));
-      }
-      if (response.redirected && response.url) {
-        if (isSuccessWebRedirect(response.url)) {
-          queueSuccessBeforeNavigation(successMessage);
-        }
-        window.location.assign(response.url);
-        return;
-      }
-      if (html) {
-        queueToast(
-          htmlResult?.message || successMessage,
-          htmlResult?.tone || "success"
-        );
-      }
-      window.location.reload();
+      await submitWebFormRequest(form, submitter, successMessage, false);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "操作失败，请稍后重试。", "error");
       setWebFormBusy(form, false, submitter);
     }
+  }
+
+  async function submitWebFormRequest(form, submitter, successMessage, hasRetriedCsrf) {
+    var response = await fetch(form.action || window.location.href, {
+      method: (form.method || "POST").toUpperCase(),
+      headers: {
+        accept: "text/html, application/json",
+        "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+        "x-yuance-web-form": "fetch",
+      },
+      body: webFormBody(form, submitter),
+      credentials: "same-origin",
+    });
+    var contentType = response.headers.get("content-type") || "";
+    var isJson = contentType.includes("application/json");
+    var payload = isJson ? await response.json().catch(function () { return {}; }) : null;
+    var html = !isJson ? await response.text().catch(function () { return ""; }) : "";
+    var htmlResult = webFormResultFromHtml(html);
+    syncCsrfTokenFromResponse(response, payload);
+    if (response.status === 401 || payload?.error?.code === "unauthorized") {
+      redirectToLogin();
+      return;
+    }
+    if (!response.ok) {
+      if (!hasRetriedCsrf && isCsrfErrorPayload(payload) && await refreshCsrfToken()) {
+        return submitWebFormRequest(form, submitter, successMessage, true);
+      }
+      throw new Error(apiErrorMessage(payload, htmlResult?.message || "操作失败，请稍后重试。"));
+    }
+    if (response.redirected && response.url) {
+      if (isSuccessWebRedirect(response.url)) {
+        queueSuccessBeforeNavigation(successMessage);
+      }
+      window.location.assign(response.url);
+      return;
+    }
+    if (html) {
+      queueToast(
+        htmlResult?.message || successMessage,
+        htmlResult?.tone || "success"
+      );
+    }
+    window.location.reload();
   }
 
   function avatarInitial(name) {
@@ -4310,6 +4328,86 @@
       ?.getAttribute("content") || "";
   }
 
+  function isValidCsrfToken(token) {
+    return typeof token === "string" && /^[0-9a-f]{64}$/i.test(token);
+  }
+
+  function syncCsrfToken(token) {
+    if (!isValidCsrfToken(token)) {
+      return false;
+    }
+    document
+      .querySelectorAll('meta[name="yuance-csrf-token"]')
+      .forEach(function (meta) {
+        meta.setAttribute("content", token);
+      });
+    document
+      .querySelectorAll('input[name="_csrf"]')
+      .forEach(function (input) {
+        input.value = token;
+      });
+    return true;
+  }
+
+  function syncCsrfTokenFromResponse(response, payload) {
+    if (!response) {
+      return "";
+    }
+    var headerToken = response.headers.get("x-yuance-csrf-token") || "";
+    if (syncCsrfToken(headerToken)) {
+      return headerToken;
+    }
+    var payloadToken = payload && payload.data && payload.data.csrf_token;
+    if (syncCsrfToken(payloadToken)) {
+      return payloadToken;
+    }
+    return "";
+  }
+
+  function isCsrfErrorMessage(message) {
+    return typeof message === "string"
+      && (
+        message.indexOf("CSRF token 缺失或已失效") !== -1
+        || message.indexOf("CSRF token 校验失败") !== -1
+      );
+  }
+
+  function isCsrfErrorPayload(payload) {
+    return isCsrfErrorMessage(firstApiErrorMessage(payload));
+  }
+
+  async function refreshCsrfToken() {
+    if (csrfRefreshPromise) {
+      return csrfRefreshPromise;
+    }
+    csrfRefreshPromise = (async function () {
+      try {
+        var response = await fetch("/api/v1/auth/csrf", {
+          method: "GET",
+          headers: { accept: "application/json" },
+          credentials: "same-origin",
+        });
+        var payload = await response.json().catch(function () {
+          return {};
+        });
+        var refreshedToken = syncCsrfTokenFromResponse(response, payload);
+        if (response.status === 401 || (payload && payload.error && payload.error.code === "unauthorized")) {
+          redirectToLogin();
+          return false;
+        }
+        if (!response.ok) {
+          return false;
+        }
+        return !!refreshedToken;
+      } catch (_error) {
+        return false;
+      } finally {
+        csrfRefreshPromise = null;
+      }
+    })();
+    return csrfRefreshPromise;
+  }
+
   function redirectToLogin() {
     if (window.location.pathname === "/web/login") {
       return;
@@ -4321,19 +4419,27 @@
     var requestOptions = options || {};
     var method = (requestOptions.method || "GET").toUpperCase();
     var headers = new Headers(requestOptions.headers || {});
+    var allowCsrfRetry = requestOptions.skipCsrfRetry !== true;
     var token = csrfToken();
     if (token && method !== "GET" && method !== "HEAD") {
       headers.set("x-yuance-csrf-token", token);
     }
-    var response = await fetch(url, Object.assign({}, requestOptions, { headers: headers }));
+    var response = await fetch(url, Object.assign({}, requestOptions, {
+      credentials: requestOptions.credentials || "same-origin",
+      headers: headers,
+    }));
     var payload = await response.json().catch(function () {
       return {};
     });
+    syncCsrfTokenFromResponse(response, payload);
     if (response.status === 401 || (payload && payload.error && payload.error.code === "unauthorized")) {
       redirectToLogin();
       throw new Error("登录已失效，正在跳转登录页面。");
     }
     if (!response.ok) {
+      if (allowCsrfRetry && isCsrfErrorPayload(payload) && await refreshCsrfToken()) {
+        return fetchJson(url, Object.assign({}, requestOptions, { skipCsrfRetry: true }));
+      }
       throw new Error(apiErrorMessage(payload, "请求失败：" + response.status));
     }
     return payload.data;
