@@ -339,8 +339,9 @@
     }
 
     .pdf-page {
-      width: min-content;
-      max-width: 100%;
+      width: fit-content;
+      max-width: none;
+      margin: 0 auto;
       padding: 12px;
       border-radius: 20px;
       background: rgb(255 255 255 / 78%);
@@ -349,8 +350,7 @@
 
     .pdf-page canvas {
       display: block;
-      max-width: 100%;
-      height: auto;
+      max-width: none;
       border-radius: 14px;
       background: #fff;
     }
@@ -652,6 +652,7 @@
 
     var stage = document.querySelector("[data-pdf-preview]");
     var pagesWrap = document.getElementById("pdf-preview-pages");
+    var scrollWrap = document.getElementById("pdf-preview-scroll");
     var status = document.getElementById("pdf-preview-status");
     var statusCopy = document.getElementById("pdf-preview-status-copy");
     var pageCount = document.getElementById("pdf-page-count");
@@ -673,7 +674,15 @@
 
     function fitWidthScale(page) {
       var viewport = page.getViewport({ scale: 1 });
-      var availableWidth = Math.max(320, pagesWrap.clientWidth - 32);
+      var containerWidth = 0;
+      if (scrollWrap) {
+        containerWidth = scrollWrap.clientWidth;
+      } else if (stage) {
+        containerWidth = stage.clientWidth;
+      } else if (pagesWrap) {
+        containerWidth = pagesWrap.clientWidth;
+      }
+      var availableWidth = Math.max(240, containerWidth - 72);
       return Math.max(0.75, availableWidth / viewport.width);
     }
 
