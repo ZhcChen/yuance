@@ -27,7 +27,7 @@
     <div class="discussion-composer-avatar" data-user-avatar data-avatar-name="我" aria-hidden="true">我</div>
     <div class="discussion-composer-main">
       <label class="sr-only" for="discussion-body-main">发表内容</label>
-      <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-placeholder="记录进展、提出问题或直接粘贴截图...">
+      <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-placeholder="请输入内容...">
         <div class="rich-text-toolbar" aria-label="富文本工具栏">
           <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
           <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
@@ -37,11 +37,9 @@
           <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
           <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
         </div>
-        <div id="discussion-body-main" class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="记录进展、提出问题或直接粘贴截图..."></div>
-        <div class="rich-text-drop-hint">支持直接粘贴截图，或把图片 / 文件拖到这里上传。</div>
+        <div id="discussion-body-main" class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
       </div>
       <div class="discussion-composer-footer">
-        <span class="discussion-file-hint" data-discussion-file-hint>截图可直接粘贴，文件可拖拽到编辑器内。</span>
         <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
         <button class="btn btn-secondary" type="submit" data-discussion-submit>发表</button>
         <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>发表并指派</button>
@@ -132,7 +130,7 @@
             <input type="hidden" name="body" value="" data-discussion-body>
             <div class="discussion-composer-main">
               <div class="discussion-replying-to">回复 <strong>{{ comment.author }}</strong></div>
-              <div class="rich-text-editor rich-text-editor-compact" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-parent-id="{{ comment.id }}" data-placeholder="写下你的回复，或直接粘贴截图...">
+              <div class="rich-text-editor rich-text-editor-compact" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-parent-id="{{ comment.id }}" data-placeholder="请输入内容...">
                 <div class="rich-text-toolbar" aria-label="富文本工具栏">
                   <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
                   <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
@@ -142,11 +140,9 @@
                   <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
                   <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
                 </div>
-                <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="写下你的回复，或直接粘贴截图..."></div>
-                <div class="rich-text-drop-hint">支持粘贴截图或拖拽文件。</div>
+                <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
               </div>
               <div class="discussion-composer-footer">
-                <span class="discussion-file-hint" data-discussion-file-hint>截图可直接粘贴，文件可拖拽到编辑器内。</span>
                 <button class="btn btn-secondary" type="button" data-discussion-reply-cancel>取消</button>
                 <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
                 <button class="btn btn-secondary" type="submit" data-discussion-submit>回复</button>
@@ -189,7 +185,7 @@
       <input type="hidden" name="body" value="" data-discussion-body>
       <div class="modal-field">
         <span class="field-label">内容</span>
-        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-id="{{ comment.id }}" data-rich-initial-html="{{ comment.body_html }}" data-placeholder="编辑发表内容...">
+        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-id="{{ comment.id }}" data-rich-initial-html="{{ comment.body_html }}" data-placeholder="请输入内容...">
           <div class="rich-text-toolbar" aria-label="富文本工具栏">
             <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
             <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
@@ -199,8 +195,7 @@
             <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
             <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
           </div>
-          <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="编辑发表内容..."></div>
-          <div class="rich-text-drop-hint">支持粘贴截图或拖拽文件。</div>
+          <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
         </div>
       </div>
       <p class="form-note">编辑后会保留原发表时间，并显示本次编辑时间。</p>

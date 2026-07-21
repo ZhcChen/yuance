@@ -146,9 +146,8 @@
         <div class="work-item-rich-create resource-rich-create wide-field">
           <div class="work-item-rich-create-head">
             <strong>资料正文</strong>
-            <span>支持富文本、粘贴截图、拖拽图片 / 视频 / 文件。</span>
           </div>
-          <div class="rich-text-editor" data-rich-text-editor data-resource-rich-editor data-resource-id="{{ resource.id }}" data-rich-initial-html="{{ resource.editor_body_html }}" data-placeholder="填写资料正文，也可以直接粘贴截图或拖拽文件...">
+          <div class="rich-text-editor" data-rich-text-editor data-resource-rich-editor data-resource-id="{{ resource.id }}" data-rich-initial-html="{{ resource.editor_body_html }}" data-placeholder="请输入内容...">
             <div class="rich-text-toolbar" aria-label="富文本工具栏">
               <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
               <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
@@ -158,10 +157,9 @@
               <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
               <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
             </div>
-            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="填写资料正文，也可以直接粘贴截图或拖拽文件..."></div>
-            <div class="rich-text-drop-hint">新增附件会直接上传并写入资料正文，提交后保存最新正文。</div>
+            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
           </div>
-          <div class="upload-status" role="status" aria-live="polite" data-resource-status data-discussion-status>可以继续编辑资料正文。</div>
+          <div class="upload-status" role="status" aria-live="polite" data-resource-status data-discussion-status hidden></div>
         </div>
       </div>
       <div class="modal-actions">

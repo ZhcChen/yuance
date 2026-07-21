@@ -3336,7 +3336,7 @@
     })
       .then(function (item) {
         applyBugReportItemContext(form, item);
-        bugReportStatus(form, "工作项已创建，附件将继续直传。", "success");
+        bugReportStatus(form, "", "info");
         return item;
       })
       .finally(function () {
@@ -3428,7 +3428,7 @@
     )
       .then(function (created) {
         applyResourceContext(form, created.id, projectKey);
-        resourceStatus(form, "资料已预创建，附件将继续直传；访问保护会在最终保存时更新。", "success");
+        resourceStatus(form, "", "info");
         return created;
       })
       .finally(function () {
@@ -4839,13 +4839,11 @@
       }
       return;
     }
-    var label = group.querySelector("[data-bug-report-image-name], [data-discussion-file-hint]");
+    var label = group.querySelector("[data-bug-report-image-name]");
     if (label) {
       label.textContent = group.bugReportFiles.length
         ? "已选择 " + group.bugReportFiles.length + " 个附件，可继续添加。"
-        : group.matches("[data-discussion-form]")
-          ? "支持多个文件，图片和视频可预览"
-          : "可一次选择多个文件，单个文件不超过 100 MB。";
+        : "可一次选择多个文件，单个文件不超过 100 MB。";
     }
   }
 
@@ -4931,12 +4929,6 @@
     form.bugReportFiles = files;
     input.value = "";
     renderComposerFiles(form);
-    var hint = form.querySelector("[data-discussion-file-hint]");
-    if (hint) {
-      hint.textContent = files.length
-        ? "已选择 " + files.length + " 个附件，可继续添加"
-        : "支持多个文件，图片和视频可预览";
-    }
     if (files.length) {
       setUploadTransfer(form, 0, "附件等待上传", "发表内容后开始上传 " + files.length + " 个文件。", "ready");
     } else {
@@ -5099,7 +5091,7 @@
       if (files.length) {
         setUploadTransfer(form, 100, "附件上传完成", files.length + " 个文件已全部保存。", "success");
       }
-      discussionStatus(form, "发表成功，正在定位讨论...", "success");
+      discussionStatus(form, "", "info");
       queueSuccessBeforeNavigation("内容已发表。");
       window.setTimeout(function () {
         reloadDiscussionAtComment(itemKey, commentId);
@@ -5335,7 +5327,7 @@
         }
       }
 
-      bugReportStatus(form, itemLabel + "创建完成，正在打开结果页。", "success");
+      bugReportStatus(form, "", "info");
       queueSuccessBeforeNavigation(itemLabel + "创建完成。");
       window.setTimeout(function () {
         window.location.href = bugReportSuccessUrl(form, item);
@@ -5425,7 +5417,7 @@
           }),
         }
       );
-      resourceStatus(form, "资料已保存。", "success");
+      resourceStatus(form, "", "info");
       queueSuccessBeforeNavigation("资料已保存。");
       var redirectTemplate =
         form.dataset.successRedirectTemplate ||

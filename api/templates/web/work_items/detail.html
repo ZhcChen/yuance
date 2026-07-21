@@ -168,9 +168,8 @@
         <div class="work-item-rich-create wide-field">
           <div class="work-item-rich-create-head">
             <strong>主内容</strong>
-            <span>支持富文本、粘贴截图、拖拽图片 / 视频 / 文件。</span>
           </div>
-          <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-rich-initial-html="{{ item.editor_body_html }}" {% match item.primary_post_comment_id %}{% when Some with (comment_id) %}data-comment-id="{{ comment_id }}"{% when None %}{% endmatch %} data-placeholder="编辑帖子主内容...">
+          <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-rich-initial-html="{{ item.editor_body_html }}" {% match item.primary_post_comment_id %}{% when Some with (comment_id) %}data-comment-id="{{ comment_id }}"{% when None %}{% endmatch %} data-placeholder="请输入内容...">
             <div class="rich-text-toolbar" aria-label="富文本工具栏">
               <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
               <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
@@ -180,10 +179,9 @@
               <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
               <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
             </div>
-            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="编辑帖子主内容..."></div>
-            <div class="rich-text-drop-hint">新增附件会直接上传，删除附件会同步移除对应存储对象。</div>
+            <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
           </div>
-          <div class="upload-status" role="status" aria-live="polite" data-work-item-edit-status>可以继续编辑帖子主内容。</div>
+          <div class="upload-status" role="status" aria-live="polite" data-work-item-edit-status hidden></div>
         </div>
       </div>
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-close>取消</button><button class="btn btn-primary" type="submit">保存修改</button></div>
