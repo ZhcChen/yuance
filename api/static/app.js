@@ -3411,7 +3411,6 @@
       return form.resourceCreatePromise;
     }
     resourceStatus(form, "首次上传前正在创建资料...", "info");
-    var formData = new FormData(form);
     var promise = fetchJson(
       form.dataset.resourceCreateUrl ||
         ("/api/v1/projects/" + encodeURIComponent(projectKey) + "/resources"),
@@ -3419,11 +3418,11 @@
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
-          title: formData.get("title") || "",
-          category: formData.get("category") || "other",
+          title: formFieldValue(form, "title"),
+          category: formFieldValue(form, "category") || "other",
           body: "",
           body_format: "html",
-          access_password: formData.get("access_password") || "",
+          access_password: formFieldValue(form, "access_password"),
         }),
       }
     )
