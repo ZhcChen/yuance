@@ -97,7 +97,6 @@
         </div>
         {% if has_previous_entry || has_next_entry %}
         <div class="action-panel-sequence">
-          <span class="section-kicker">帖子切换</span>
           <nav class="action-panel-sequence-nav" aria-label="帖子切换">
             {% if has_previous_entry %}
             <a class="btn btn-secondary detail-sequence-link" href="{{ previous_entry_url }}" title="{{ previous_entry_title }}">← 上一个{{ item.kind }}</a>
