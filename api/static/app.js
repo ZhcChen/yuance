@@ -6542,8 +6542,19 @@
     if (!button) {
       return;
     }
+    var labelTargetSelector = (button.dataset.copyLabelTarget || "").trim();
+    var metaTargetSelector = (button.dataset.copyMetaTarget || "").trim();
+    var labelTarget = labelTargetSelector ? button.querySelector(labelTargetSelector) : null;
+    var metaTarget = metaTargetSelector ? button.querySelector(metaTargetSelector) : null;
     var idleLabel = button.dataset.copyIdleLabel || "复制";
-    button.textContent = idleLabel;
+    if (labelTarget) {
+      labelTarget.textContent = idleLabel;
+    } else {
+      button.textContent = idleLabel;
+    }
+    if (metaTarget) {
+      metaTarget.textContent = button.dataset.copyMetaIdleLabel || "";
+    }
   }
 
   function markCopyButtonSuccess(button) {
@@ -6554,7 +6565,19 @@
       window.clearTimeout(button.copyResetTimer);
       button.copyResetTimer = null;
     }
-    button.textContent = button.dataset.copySuccessLabel || "已复制";
+    var labelTargetSelector = (button.dataset.copyLabelTarget || "").trim();
+    var metaTargetSelector = (button.dataset.copyMetaTarget || "").trim();
+    var labelTarget = labelTargetSelector ? button.querySelector(labelTargetSelector) : null;
+    var metaTarget = metaTargetSelector ? button.querySelector(metaTargetSelector) : null;
+    var successLabel = button.dataset.copySuccessLabel || button.dataset.copyIdleLabel || "已复制";
+    if (labelTarget) {
+      labelTarget.textContent = successLabel;
+    } else {
+      button.textContent = successLabel;
+    }
+    if (metaTarget) {
+      metaTarget.textContent = button.dataset.copyMetaSuccessLabel || "";
+    }
     button.copyResetTimer = window.setTimeout(function () {
       resetCopyButtonLabel(button);
       button.copyResetTimer = null;

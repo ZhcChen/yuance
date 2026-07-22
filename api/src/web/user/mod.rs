@@ -702,8 +702,6 @@ struct MeTemplate {
     api_token_active_count: usize,
     api_token_limit: i64,
     can_create_api_token: bool,
-    created_api_token: String,
-    has_created_api_token: bool,
     has_projects: bool,
 }
 
@@ -1839,7 +1837,6 @@ async fn render_me_response(
     };
     let summary = my_summary(&projects, &assigned_items);
     let csrf_token = context.csrf_token.clone();
-    let has_created_api_token = !created_api_token_value.is_empty();
     let api_token_active_count = api_tokens.iter().filter(|token| !token.is_revoked).count();
     let can_create_api_token =
         (api_token_active_count as i64) < api_tokens::MAX_ACTIVE_TOKENS_PER_USER;
@@ -1861,8 +1858,6 @@ async fn render_me_response(
             api_token_limit: api_tokens::MAX_ACTIVE_TOKENS_PER_USER,
             can_create_api_token,
             api_tokens,
-            created_api_token: created_api_token_value,
-            has_created_api_token,
             profile,
             summary,
             projects,
