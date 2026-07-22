@@ -3459,6 +3459,8 @@ async fn work_item_detail_partial_renders_comments() {
     assert!(body.contains("详情说明"));
     assert!(body.contains("发布人"));
     assert!(body.contains(r#"class="work-item-publisher""#));
+    assert!(body.contains(r#"class="work-item-publisher-name""#));
+    assert!(body.contains(r#"class="section-kicker work-item-publisher-role">发布人</span>"#));
     assert!(body.contains("先统一项目与工作项查询模型"));
     assert!(body.contains("讨论"));
     assert!(body.contains(r#"data-discussion-form"#));
