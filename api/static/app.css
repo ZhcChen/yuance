@@ -5226,6 +5226,52 @@ code {
   grid-template-rows: auto auto;
 }
 
+.app-update-modal .modal-panel {
+  width: min(460px, 100%);
+}
+
+.app-update-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.app-update-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.app-update-meta {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 16px;
+}
+
+.app-update-meta-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.app-update-meta-item span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.app-update-meta-item strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+
 .image-viewer-modal {
   z-index: 80;
   padding: 0;

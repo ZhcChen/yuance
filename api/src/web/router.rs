@@ -575,6 +575,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
             get(web::api::work_item_attachment_download_url),
         )
+        .route("/version.json", get(version_manifest))
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
@@ -732,7 +733,7 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
     if headers.contains_key(header::AUTHORIZATION) {
         return false;
     }
-    if path.starts_with("/static/") || path == "/favicon.ico" {
+    if path.starts_with("/static/") || path == "/favicon.ico" || path == "/version.json" {
         return false;
     }
     !matches!(
@@ -1062,19 +1063,51 @@ async fn root() -> Redirect {
 
 async fn static_app_css() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        [
+            (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store, max-age=0, must-revalidate"),
+        ],
         include_str!("../../static/app.css"),
     )
 }
 
 async fn static_app_js() -> impl IntoResponse {
+    let bootstrap = format!(
+        "window.__YUANCE_APP_RELEASE_VERSION__ = {};\nwindow.__YUANCE_APP_UPDATE_MANIFEST_URL__ = \"/version.json\";\n",
+        serde_json::to_string(&app_release_version()).unwrap_or_else(|_| "\"\"".to_string()),
+    );
     (
-        [(
-            header::CONTENT_TYPE,
-            "application/javascript; charset=utf-8",
-        )],
-        include_str!("../../static/app.js"),
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (header::CACHE_CONTROL, "no-store, max-age=0, must-revalidate"),
+        ],
+        format!("{bootstrap}{}", include_str!("../../static/app.js")),
     )
+}
+
+async fn version_manifest() -> impl IntoResponse {
+    let body = serde_json::json!({
+        "version": app_release_version(),
+    })
+    .to_string();
+    (
+        [
+            (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-store, max-age=0, must-revalidate"),
+        ],
+        body,
+    )
+}
+
+fn app_release_version() -> String {
+    std::env::var("YUANCE_RELEASE_VERSION")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string())
 }
 
 async fn static_yuance_logo() -> impl IntoResponse {

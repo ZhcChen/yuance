@@ -4,6 +4,8 @@
   var CONTENT_TAB_SLIDE_MS = 360;
   var MODAL_TRANSITION_MS = 240;
   var TOAST_DURATION_MS = 4200;
+  var APP_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+  var APP_UPDATE_MANIFEST_URL = "/version.json";
   var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
   var SEARCH_HISTORY_KEY = "yuance-search-history";
@@ -19,6 +21,10 @@
   var imagePreviewObserver = null;
   var imagePreviewFallbackTimer = null;
   var csrfRefreshPromise = null;
+  var deferredAppUpdateVersion = "";
+  var pendingAppUpdateVersion = "";
+  var appUpdateCheckBusy = false;
+  var appUpdateIntervalId = null;
   var imageViewerState = {
     entries: [],
     index: 0,
@@ -85,6 +91,178 @@
     var nextTheme = (document.documentElement.dataset.theme || readThemePreference()) === "dark" ? "light" : "dark";
     writeThemePreference(nextTheme);
     applyTheme(nextTheme);
+  }
+
+  function currentReleaseVersion() {
+    var value = typeof window.__YUANCE_APP_RELEASE_VERSION__ === "string"
+      ? window.__YUANCE_APP_RELEASE_VERSION__
+      : "";
+    return value.trim();
+  }
+
+  function appUpdateManifestUrl() {
+    var value = typeof window.__YUANCE_APP_UPDATE_MANIFEST_URL__ === "string"
+      ? window.__YUANCE_APP_UPDATE_MANIFEST_URL__
+      : APP_UPDATE_MANIFEST_URL;
+    return value || APP_UPDATE_MANIFEST_URL;
+  }
+
+  function releaseVersionFromPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+      return "";
+    }
+    var version = payload.version;
+    return typeof version === "string" ? version.trim() : "";
+  }
+
+  function isReleaseUpdate(currentVersion, nextVersion) {
+    return Boolean(
+      currentVersion &&
+      nextVersion &&
+      String(currentVersion).trim() !== "" &&
+      String(nextVersion).trim() !== "" &&
+      String(currentVersion).trim() !== String(nextVersion).trim()
+    );
+  }
+
+  function fetchReleaseVersionManifest() {
+    return fetch(appUpdateManifestUrl(), {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { accept: "application/json" },
+    })
+      .then(function (response) {
+        if (!response.ok) {
+          return "";
+        }
+        return response.json().catch(function () {
+          return {};
+        }).then(releaseVersionFromPayload);
+      })
+      .catch(function () {
+        return "";
+      });
+  }
+
+  function appUpdateModal() {
+    return document.querySelector("[data-app-update-modal]");
+  }
+
+  function rememberDeferredAppUpdate(version) {
+    var nextVersion = String(version || "").trim();
+    if (!nextVersion) {
+      return;
+    }
+    deferredAppUpdateVersion = nextVersion;
+    if (pendingAppUpdateVersion === nextVersion) {
+      pendingAppUpdateVersion = "";
+    }
+  }
+
+  function syncAppUpdateModal(version) {
+    var modal = appUpdateModal();
+    if (!modal) {
+      return null;
+    }
+    var currentValue = currentReleaseVersion() || "--";
+    var nextValue = String(version || "").trim() || "--";
+    modal.dataset.appUpdateVersion = nextValue === "--" ? "" : nextValue;
+    var current = modal.querySelector("[data-app-update-current]");
+    var next = modal.querySelector("[data-app-update-next]");
+    if (current) {
+      current.textContent = currentValue;
+    }
+    if (next) {
+      next.textContent = nextValue;
+    }
+    return modal;
+  }
+
+  function openAppUpdateModal(version) {
+    var modal = syncAppUpdateModal(version);
+    if (!modal) {
+      return;
+    }
+    var active = activeModal();
+    if (active && active !== modal) {
+      pendingAppUpdateVersion = String(version || "").trim();
+      return;
+    }
+    openModal(modal, document.activeElement || document.body);
+  }
+
+  function closeAppUpdateModal() {
+    var modal = appUpdateModal();
+    if (!modal) {
+      return;
+    }
+    rememberDeferredAppUpdate(modal.dataset.appUpdateVersion || "");
+    closeModal(modal, true);
+  }
+
+  function flushPendingAppUpdatePrompt() {
+    if (!pendingAppUpdateVersion || deferredAppUpdateVersion === pendingAppUpdateVersion) {
+      return;
+    }
+    if (activeModal()) {
+      return;
+    }
+    var nextVersion = pendingAppUpdateVersion;
+    pendingAppUpdateVersion = "";
+    openAppUpdateModal(nextVersion);
+  }
+
+  function checkForAppUpdate() {
+    var currentVersion = currentReleaseVersion();
+    if (!currentVersion || appUpdateCheckBusy) {
+      return Promise.resolve("");
+    }
+    appUpdateCheckBusy = true;
+    return fetchReleaseVersionManifest()
+      .then(function (nextVersion) {
+        if (!isReleaseUpdate(currentVersion, nextVersion)) {
+          return nextVersion;
+        }
+        if (deferredAppUpdateVersion === nextVersion) {
+          return nextVersion;
+        }
+        openAppUpdateModal(nextVersion);
+        return nextVersion;
+      })
+      .catch(function () {
+        return "";
+      })
+      .finally(function () {
+        appUpdateCheckBusy = false;
+      });
+  }
+
+  function initAppUpdatePrompt() {
+    if (document.body && document.body.dataset.appUpdateBound === "true") {
+      return;
+    }
+    if (document.body) {
+      document.body.dataset.appUpdateBound = "true";
+    }
+    if (!currentReleaseVersion() || !appUpdateModal()) {
+      return;
+    }
+    window.addEventListener("focus", function () {
+      checkForAppUpdate();
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible" || typeof document.visibilityState === "undefined") {
+        checkForAppUpdate();
+      }
+    });
+    if (!appUpdateIntervalId && typeof window.setInterval === "function") {
+      appUpdateIntervalId = window.setInterval(function () {
+        checkForAppUpdate();
+      }, APP_UPDATE_CHECK_INTERVAL_MS);
+    }
+    window.setTimeout(function () {
+      checkForAppUpdate();
+    }, 0);
   }
 
   function showToast(message, tone) {
@@ -6783,6 +6961,10 @@
     if (!modal || modal.hidden) {
       return;
     }
+    var isAppUpdateModal = modal.matches("[data-app-update-modal]");
+    if (isAppUpdateModal) {
+      rememberDeferredAppUpdate(modal.dataset.appUpdateVersion || "");
+    }
     if (modal.modalCloseTimer) {
       window.clearTimeout(modal.modalCloseTimer);
     }
@@ -6810,6 +6992,7 @@
       }
       if (!document.querySelector("[data-modal].open")) {
         document.body.classList.remove("modal-open");
+        flushPendingAppUpdatePrompt();
       }
       if (restoreFocus && modal.lastModalTrigger && document.contains(modal.lastModalTrigger)) {
         modal.lastModalTrigger.focus({ preventScroll: true });
@@ -6864,6 +7047,10 @@
   if (window.__YUANCE_ENABLE_TEST_HOOKS__) {
     window.__YUANCE_TEST_HOOKS__ = Object.assign(window.__YUANCE_TEST_HOOKS__ || {}, {
       apiErrorMessage: apiErrorMessage,
+      checkForAppUpdate: checkForAppUpdate,
+      currentReleaseVersion: currentReleaseVersion,
+      fetchReleaseVersionManifest: fetchReleaseVersionManifest,
+      isReleaseUpdate: isReleaseUpdate,
       mediaOrientation: mediaOrientation,
       preferredImageViewerScale: preferredImageViewerScale,
       filterSelectOptions: filterSelectOptions,
@@ -7009,6 +7196,20 @@
     if (smartBackLink) {
       event.preventDefault();
       window.location.assign(resolveSmartBackTarget(smartBackLink));
+      return;
+    }
+
+    var appUpdateRefresh = event.target.closest("[data-app-update-refresh]");
+    if (appUpdateRefresh) {
+      event.preventDefault();
+      window.location.reload();
+      return;
+    }
+
+    var appUpdateLater = event.target.closest("[data-app-update-later]");
+    if (appUpdateLater) {
+      event.preventDefault();
+      closeAppUpdateModal();
       return;
     }
 
@@ -8052,4 +8253,5 @@
     initFileManager(document);
     initFolderSelects(projectKey);
   }
+  initAppUpdatePrompt();
 })();

@@ -2,6 +2,7 @@
 
 ARG RUST_IMAGE=rust:1.94-bookworm
 ARG DEBIAN_IMAGE=debian:bookworm-slim
+ARG YUANCE_BUILD_RELEASE_VERSION=dev
 
 FROM ${RUST_IMAGE} AS builder
 
@@ -25,6 +26,8 @@ FROM ${DEBIAN_IMAGE}
 
 WORKDIR /app
 
+ARG YUANCE_BUILD_RELEASE_VERSION
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata wget libsqlite3-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -33,7 +36,8 @@ COPY --from=builder /src/target/release/yuance-api /app/yuance-api
 
 ENV YUANCE_HTTP_ADDR=0.0.0.0:33033 \
     YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3 \
-    YUANCE_DATA_DIR=/data
+    YUANCE_DATA_DIR=/data \
+    YUANCE_RELEASE_VERSION=${YUANCE_BUILD_RELEASE_VERSION}
 
 EXPOSE 33033
 

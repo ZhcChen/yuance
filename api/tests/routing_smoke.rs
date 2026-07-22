@@ -242,6 +242,10 @@ async fn static_app_css_is_bundled() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "text/css; charset=utf-8"
     );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store, max-age=0, must-revalidate"
+    );
 
     let body = response_body(response).await;
     assert!(body.contains("data-theme"));
@@ -299,6 +303,10 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "application/javascript; charset=utf-8"
     );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store, max-age=0, must-revalidate"
+    );
 
     let body = response
         .into_body()
@@ -311,7 +319,15 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("response.status === 401"));
     assert!(body.contains("payload.error.code === \"unauthorized\""));
     assert!(body.contains("window.location.href = \"/web/login\""));
+    assert!(body.contains("window.__YUANCE_APP_RELEASE_VERSION__ ="));
+    assert!(body.contains("window.__YUANCE_APP_UPDATE_MANIFEST_URL__ = \"/version.json\""));
     assert!(body.contains("function toggleTheme()"));
+    assert!(body.contains("function currentReleaseVersion()"));
+    assert!(body.contains("function fetchReleaseVersionManifest()"));
+    assert!(body.contains("function checkForAppUpdate()"));
+    assert!(body.contains("function initAppUpdatePrompt()"));
+    assert!(body.contains("data-app-update-modal"));
+    assert!(body.contains("window.location.reload()"));
     assert!(body.contains("data-theme-toggle"));
     assert!(body.contains("function notificationText(value, fallback)"));
     assert!(body.contains("function notificationMetaText(item)"));
@@ -390,6 +406,39 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("USERNAME_INPUT_SELECTOR"));
     assert!(body.contains("function normalizeUsernameInput"));
     assert!(body.contains("compactUsernameValue(original)"));
+}
+
+#[tokio::test]
+async fn version_manifest_returns_current_release_and_disables_cache() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/version.json")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json; charset=utf-8"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store, max-age=0, must-revalidate"
+    );
+
+    let body = response_body(response).await;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&body).expect("version manifest should be valid json");
+    let version = manifest["version"]
+        .as_str()
+        .expect("version manifest should expose string version");
+    assert!(!version.trim().is_empty());
 }
 
 #[tokio::test]
@@ -536,6 +585,9 @@ async fn web_renders_dashboard_shell() {
     assert!(body.contains("我的待处理"));
     assert!(body.contains("/my-analysis"));
     assert!(body.contains("/web/system/storage"));
+    assert!(body.contains(r#"id="app-update-modal""#));
+    assert!(body.contains(r#"data-app-update-modal"#));
+    assert!(body.contains(r#"data-app-update-refresh"#));
     assert!(body.contains(r#"id="confirm-action-modal""#));
     assert!(body.contains(r#"data-confirm-modal"#));
     assert!(body.contains(r#"class="account-menu-action" type="submit">退出登录</button>"#));

@@ -68,6 +68,7 @@ GET  /api/v1/bootstrap/status
 POST /api/v1/bootstrap/init
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
+GET  /api/v1/auth/csrf
 POST /api/v1/auth/logout
 GET  /api/v1/me/tokens
 POST /api/v1/me/tokens
@@ -95,6 +96,8 @@ DELETE /api/v1/me/tokens/{token_id}
 ```
 
 登录成功返回当前用户和 CSRF token，并设置 session cookie。
+
+`GET /api/v1/auth/csrf` 可在现有登录态下显式获取最新 CSRF token，适用于长会话页面刷新写操作前的 token 同步。
 
 ## Personal Access Token
 
