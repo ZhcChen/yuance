@@ -626,6 +626,93 @@ body {
   border-bottom: 0;
 }
 
+.rich-text-input h1,
+.rich-text-input h2,
+.rich-text-input h3,
+.rich-text-input h4,
+.rich-text-input h5,
+.rich-text-input h6,
+.discussion-rich-body h1,
+.discussion-rich-body h2,
+.discussion-rich-body h3,
+.discussion-rich-body h4,
+.discussion-rich-body h5,
+.discussion-rich-body h6 {
+  margin: 14px 0 8px;
+  color: var(--text);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.rich-text-input h1,
+.discussion-rich-body h1 {
+  font-size: 24px;
+}
+
+.rich-text-input h2,
+.discussion-rich-body h2 {
+  font-size: 20px;
+}
+
+.rich-text-input h3,
+.discussion-rich-body h3 {
+  font-size: 18px;
+}
+
+.rich-text-input h4,
+.rich-text-input h5,
+.rich-text-input h6,
+.discussion-rich-body h4,
+.discussion-rich-body h5,
+.discussion-rich-body h6 {
+  font-size: 16px;
+}
+
+.rich-text-input blockquote,
+.discussion-rich-body blockquote {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--brand-line);
+  border-radius: 0 12px 12px 0;
+  background: var(--panel-soft);
+  color: var(--muted-strong);
+}
+
+.rich-text-input hr,
+.discussion-rich-body hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.rich-text-input pre,
+.discussion-rich-body pre {
+  margin: 12px 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 8px 22px rgb(22 34 50 / 6%);
+}
+
+.rich-text-input pre code,
+.discussion-rich-body pre code {
+  display: block;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--code-text);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.rich-text-input :not(pre) > code,
+.discussion-rich-body :not(pre) > code {
+  white-space: break-spaces;
+}
+
 .rich-text-drop-hint {
   padding: 0 14px 12px;
   color: var(--muted);

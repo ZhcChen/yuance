@@ -5225,7 +5225,23 @@ pub fn work_item_comment_inline_attachment_ids(
 
 fn sanitize_comment_html(body: &str) -> String {
     ammonia::Builder::default()
-        .add_tags(&["figure", "figcaption", "img", "video"])
+        .add_tags(&[
+            "blockquote",
+            "code",
+            "del",
+            "figure",
+            "figcaption",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "hr",
+            "img",
+            "pre",
+            "video",
+        ])
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
@@ -5251,7 +5267,23 @@ fn sanitize_comment_html(body: &str) -> String {
 fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
     let item_key = item_key.to_string();
     ammonia::Builder::default()
-        .add_tags(&["figure", "figcaption", "img", "video"])
+        .add_tags(&[
+            "blockquote",
+            "code",
+            "del",
+            "figure",
+            "figcaption",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "hr",
+            "img",
+            "pre",
+            "video",
+        ])
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
@@ -5280,11 +5312,22 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
 fn looks_like_rich_work_item_description(description: &str) -> bool {
     let lower = description.trim().to_ascii_lowercase();
     [
+        "<blockquote",
+        "<code",
+        "<del",
         "<p",
         "<br",
+        "<h1",
+        "<h2",
+        "<h3",
+        "<h4",
+        "<h5",
+        "<h6",
+        "<hr",
         "<ul",
         "<ol",
         "<li",
+        "<pre",
         "<figure",
         "<figcaption",
         "<img",
@@ -6402,7 +6445,7 @@ async fn seed_demo_activities(pool: &SqlitePool, owner_user_id: i64) -> AppResul
 
 #[cfg(test)]
 mod tests {
-    use super::work_item_description_html_for_display;
+    use super::{work_item_comment_body_html_for_display, work_item_description_html_for_display};
 
     #[test]
     fn work_item_description_treats_table_html_as_rich_text() {
@@ -6431,5 +6474,39 @@ mod tests {
         assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
         assert!(rendered.contains("data-yuance-file-kind=\"text\""));
         assert!(rendered.contains("data-yuance-file-ext=\"TXT\""));
+    }
+
+    #[test]
+    fn work_item_comment_preserves_markdown_html_blocks_and_strips_unsafe_links() {
+        let html = concat!(
+            "<h2>接口说明</h2>",
+            "<blockquote>需要先创建测试数据</blockquote>",
+            "<pre><code>curl https://example.com</code></pre>",
+            "<hr>",
+            "<p><a href=\"javascript:alert(1)\">bad</a></p>"
+        );
+
+        let rendered = work_item_comment_body_html_for_display(html, "html", false);
+
+        assert!(rendered.contains("<h2>接口说明</h2>"));
+        assert!(rendered.contains("<blockquote>需要先创建测试数据</blockquote>"));
+        assert!(rendered.contains("<pre><code>curl https://example.com</code></pre>"));
+        assert!(rendered.contains("<hr"));
+        assert!(!rendered.contains("javascript:"));
+    }
+
+    #[test]
+    fn work_item_description_preserves_markdown_html_blocks() {
+        let html = concat!(
+            "<h3>排查步骤</h3>",
+            "<pre><code>pnpm install</code></pre>",
+            "<blockquote>先切到测试项目</blockquote>"
+        );
+
+        let rendered = work_item_description_html_for_display(html, "YCE-TASK-1");
+
+        assert!(rendered.contains("<h3>排查步骤</h3>"));
+        assert!(rendered.contains("<pre><code>pnpm install</code></pre>"));
+        assert!(rendered.contains("<blockquote>先切到测试项目</blockquote>"));
     }
 }

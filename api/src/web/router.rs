@@ -580,6 +580,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/static/app.js", get(static_app_js))
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
+        .route("/static/vendor/marked/marked.umd.js", get(static_marked))
+        .route("/static/vendor/dompurify/purify.min.js", get(static_dompurify))
         .route("/static/vendor/pdfjs/{*path}", get(static_pdfjs_asset))
         .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
@@ -1140,6 +1142,26 @@ async fn static_htmx() -> impl IntoResponse {
             "application/javascript; charset=utf-8",
         )],
         include_str!("../../static/vendor/htmx.min.js"),
+    )
+}
+
+async fn static_marked() -> impl IntoResponse {
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
+        include_str!("../../static/vendor/marked/marked.umd.js"),
+    )
+}
+
+async fn static_dompurify() -> impl IntoResponse {
+    (
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
+        include_str!("../../static/vendor/dompurify/purify.min.js"),
     )
 }
 

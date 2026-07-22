@@ -749,15 +749,7 @@
             <strong>说明内容</strong>
           </div>
           <div class="rich-text-editor" data-rich-text-editor data-placeholder="请输入内容...">
-            <div class="rich-text-toolbar" aria-label="富文本工具栏">
-              <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
-              <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
-              <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
-              <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
-              <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
-              <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
-              <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
-            </div>
+            {% include "web/partials/rich_text_toolbar.html" %}
             <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
           </div>
           <div class="upload-status" role="status" aria-live="polite" data-bug-report-status hidden></div>
@@ -811,15 +803,7 @@
             <strong>资料正文</strong>
           </div>
           <div class="rich-text-editor" data-rich-text-editor data-resource-rich-editor data-placeholder="请输入内容...">
-            <div class="rich-text-toolbar" aria-label="富文本工具栏">
-              <button type="button" data-rich-command="bold" aria-label="加粗"><strong>B</strong></button>
-              <button type="button" data-rich-command="italic" aria-label="斜体"><em>I</em></button>
-              <button type="button" data-rich-command="insertUnorderedList" aria-label="无序列表">•</button>
-              <button type="button" data-rich-command="createLink" aria-label="插入链接">链接</button>
-              <button type="button" data-rich-command="justifyLeft" aria-label="左对齐">左</button>
-              <button type="button" data-rich-command="justifyCenter" aria-label="居中对齐">中</button>
-              <button type="button" data-rich-command="justifyRight" aria-label="右对齐">右</button>
-            </div>
+            {% include "web/partials/rich_text_toolbar.html" %}
             <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
           </div>
           <div class="upload-status" role="status" aria-live="polite" data-resource-status data-discussion-status hidden></div>

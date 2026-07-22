@@ -815,7 +815,23 @@ async fn record_project_activity(
 fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> String {
     let project_key = project_key.to_string();
     ammonia::Builder::default()
-        .add_tags(&["figure", "figcaption", "img", "video"])
+        .add_tags(&[
+            "blockquote",
+            "code",
+            "del",
+            "figure",
+            "figcaption",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "hr",
+            "img",
+            "pre",
+            "video",
+        ])
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
         .add_tag_attributes("video", &["src", "controls", "preload", "playsinline"])
         .add_tag_attributes("a", &["href", "title"])
@@ -861,6 +877,25 @@ mod tests {
         assert!(rendered.contains("data-yuance-attachment-kind=\"file\""));
         assert!(rendered.contains("data-yuance-file-kind=\"pdf\""));
         assert!(rendered.contains("data-yuance-file-ext=\"PDF\""));
+    }
+
+    #[test]
+    fn resource_body_preserves_markdown_html_blocks_and_strips_unsafe_links() {
+        let html = concat!(
+            "<h2>联调说明</h2>",
+            "<blockquote>请先核对环境变量</blockquote>",
+            "<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>",
+            "<hr>",
+            "<p><a href=\"javascript:alert(1)\">bad</a></p>"
+        );
+
+        let rendered = resource_body_html_for_display(html, "html");
+
+        assert!(rendered.contains("<h2>联调说明</h2>"));
+        assert!(rendered.contains("<blockquote>请先核对环境变量</blockquote>"));
+        assert!(rendered.contains("<pre><code>YUANCE_BASE_URL=https://demo.test</code></pre>"));
+        assert!(rendered.contains("<hr"));
+        assert!(!rendered.contains("javascript:"));
     }
 }
 

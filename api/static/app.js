@@ -2683,6 +2683,256 @@
     return editor ? editor.closest("[data-resource-form]") : null;
   }
 
+  var RICH_MARKDOWN_ALLOWED_TAGS = [
+    "a",
+    "blockquote",
+    "br",
+    "code",
+    "del",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "strong",
+    "table",
+    "tbody",
+    "td",
+    "th",
+    "thead",
+    "tr",
+    "ul",
+  ];
+  var RICH_MARKDOWN_ALLOWED_ATTR = ["colspan", "href", "rowspan", "title"];
+
+  function richMarkdownLibrary() {
+    return window.marked && typeof window.marked.parse === "function"
+      ? window.marked
+      : null;
+  }
+
+  function richHtmlSanitizer() {
+    return window.DOMPurify && typeof window.DOMPurify.sanitize === "function"
+      ? window.DOMPurify
+      : null;
+  }
+
+  function richMarkdownText(value) {
+    return String(value || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function richTextSelectedText(editor) {
+    var input = richTextInput(editor);
+    var selection = window.getSelection && window.getSelection();
+    if (
+      !input ||
+      !selection ||
+      selection.rangeCount === 0 ||
+      selection.isCollapsed ||
+      !input.contains(selection.anchorNode) ||
+      !input.contains(selection.focusNode)
+    ) {
+      return "";
+    }
+    return richMarkdownText(selection.toString());
+  }
+
+  function richTextMarkdownSource(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return "";
+    }
+    var clone = input.cloneNode(true);
+    clone.querySelectorAll("[data-rich-attachment]").forEach(function (node) {
+      var spacer = document.createTextNode("\n");
+      node.replaceWith(spacer);
+    });
+    var text = typeof clone.innerText === "string"
+      ? clone.innerText
+      : clone.textContent || "";
+    return richMarkdownText(text);
+  }
+
+  function richTextLooksLikeMarkdown(text) {
+    var value = richMarkdownText(text);
+    if (!value) {
+      return false;
+    }
+    if (/```[\s\S]+```/.test(value) || /~~~[\s\S]+~~~/.test(value)) {
+      return true;
+    }
+    if (/^\s{0,3}(#{1,6}\s+\S|>\s+\S|[-*+]\s+\S|\d+\.\s+\S)/m.test(value)) {
+      return true;
+    }
+    if (/^\s{0,3}((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/m.test(value)) {
+      return true;
+    }
+    if (/\[[^\]]+\]\([^)]+\)/.test(value) || /!\[[^\]]*\]\([^)]+\)/.test(value)) {
+      return true;
+    }
+    if (/^\|.+\|\s*$/m.test(value) && /^\|?[\-: ]+\|[\-|: ]+\|?$/m.test(value)) {
+      return true;
+    }
+    if (/`[^`\n]+`/.test(value) && value.indexOf("\n") >= 0) {
+      return true;
+    }
+    if (
+      (/\*\*[^*]+\*\*/.test(value) ||
+        /__[^_]+__/.test(value) ||
+        /\*[^*\n]+\*/.test(value) ||
+        /_[^_\n]+_/.test(value)) &&
+      value.indexOf("\n") >= 0
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  function richTextEditorIsPlainMarkdownCandidate(editor) {
+    var input = richTextInput(editor);
+    if (!input || input.querySelector("[data-rich-attachment]")) {
+      return false;
+    }
+    return !Array.from(input.querySelectorAll("*")).some(function (node) {
+      return !node.matches("br, div, p");
+    });
+  }
+
+  function richMarkdownToHtml(markdown) {
+    var parser = richMarkdownLibrary();
+    if (!parser) {
+      throw new Error("Markdown 解析器未就绪，请刷新页面后重试。");
+    }
+    var sanitizer = richHtmlSanitizer();
+    var html = String(
+      parser.parse(richMarkdownText(markdown), {
+        breaks: true,
+        gfm: true,
+      }) || ""
+    ).trim();
+    if (!html) {
+      return "";
+    }
+    if (!sanitizer) {
+      return html;
+    }
+    return sanitizer
+      .sanitize(html, {
+        ALLOWED_ATTR: RICH_MARKDOWN_ALLOWED_ATTR,
+        ALLOWED_TAGS: RICH_MARKDOWN_ALLOWED_TAGS,
+      })
+      .trim();
+  }
+
+  function richHtmlNodes(html) {
+    if (!html) {
+      return [];
+    }
+    var template = document.createElement("template");
+    template.innerHTML = html;
+    return Array.from(template.content.childNodes).filter(function (node) {
+      return node.nodeType !== Node.TEXT_NODE || String(node.textContent || "").trim();
+    });
+  }
+
+  function replaceRichTextHtml(editor, html) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return false;
+    }
+    input.innerHTML = html;
+    placeCaretAtEnd(input);
+    return true;
+  }
+
+  function insertRichHtmlAtSelection(editor, html, options) {
+    var input = richTextInput(editor);
+    var nodes = richHtmlNodes(html);
+    if (!input || !nodes.length) {
+      return false;
+    }
+    insertNodesAtSelection(input, nodes, options);
+    return true;
+  }
+
+  function autoConvertRichTextMarkdown(editor) {
+    if (!richTextEditorIsPlainMarkdownCandidate(editor)) {
+      return true;
+    }
+    var markdown = richTextMarkdownSource(editor);
+    if (!richTextLooksLikeMarkdown(markdown)) {
+      return true;
+    }
+    replaceRichTextHtml(editor, richMarkdownToHtml(markdown));
+    return true;
+  }
+
+  function convertSelectedMarkdown(editor) {
+    var markdown = richTextSelectedText(editor);
+    if (!markdown) {
+      return false;
+    }
+    document.execCommand("delete", false, null);
+    return insertRichHtmlAtSelection(editor, richMarkdownToHtml(markdown), {
+      afterCurrentBlock: false,
+    });
+  }
+
+  function convertEditorMarkdown(editor, options) {
+    var convertOptions = options || {};
+    if (!convertOptions.skipSelection && convertSelectedMarkdown(editor)) {
+      return true;
+    }
+    if (!richTextEditorIsPlainMarkdownCandidate(editor)) {
+      if (!convertOptions.silent) {
+        showToast("当前内容已包含附件或富文本结构，请选中要转换的 Markdown 文本。", "error");
+      }
+      return false;
+    }
+    var markdown = richTextMarkdownSource(editor);
+    if (!markdown) {
+      return true;
+    }
+    if (!convertOptions.force && !richTextLooksLikeMarkdown(markdown)) {
+      if (!convertOptions.silent) {
+        showToast("当前内容未识别到明显的 Markdown 语法。", "info");
+      }
+      return false;
+    }
+    replaceRichTextHtml(editor, richMarkdownToHtml(markdown));
+    return true;
+  }
+
+  function insertCodeBlock(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return;
+    }
+    input.focus({ preventScroll: true });
+    var selectedText = richTextSelectedText(editor);
+    if (selectedText) {
+      document.execCommand("delete", false, null);
+    }
+    var pre = document.createElement("pre");
+    var code = document.createElement("code");
+    code.textContent = selectedText.replace(/\r\n/g, "\n");
+    pre.appendChild(code);
+    insertNodesAtSelection(input, [pre], {
+      caretNode: selectedText ? null : code,
+    });
+  }
+
   function richTextCommand(command, editor) {
     var input = richTextInput(editor);
     if (!input) {
@@ -2693,6 +2943,18 @@
       return;
     }
     input.focus({ preventScroll: true });
+    if (command === "insertCodeBlock") {
+      insertCodeBlock(editor);
+      return;
+    }
+    if (command === "convertMarkdown") {
+      try {
+        convertEditorMarkdown(editor, { force: true });
+      } catch (error) {
+        showToast(error.message || "Markdown 转换失败，请重试。", "error");
+      }
+      return;
+    }
     if (command === "createLink") {
       var url = window.prompt("输入链接地址");
       if (!url) {
@@ -2943,6 +3205,12 @@
       discussionStatus(form, "有文件上传失败，请重试或移除失败项后再提交。", "error");
       return false;
     }
+    try {
+      autoConvertRichTextMarkdown(editor);
+    } catch (error) {
+      discussionStatus(form, error.message || "Markdown 转换失败，请刷新页面后重试。", "error");
+      return false;
+    }
     var html = serializeRichTextEditor(editor);
     if (richTextIsEmptyHtml(html)) {
       discussionStatus(form, "评论内容不能为空。", "error");
@@ -2974,33 +3242,64 @@
     selection.addRange(range);
   }
 
-  function insertNodesAtSelection(input, nodes) {
+  function placeCaretAtEnd(node) {
+    var selection = window.getSelection && window.getSelection();
+    if (!selection || !node) {
+      return;
+    }
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function insertNodesAtSelection(input, nodes, options) {
+    var insertOptions = options || {};
     input.focus({ preventScroll: true });
-    var trailingParagraph = richTextCaretParagraph();
+    var trailingParagraph = insertOptions.trailingParagraph === false
+      ? null
+      : richTextCaretParagraph();
     var fragment = document.createDocumentFragment();
     nodes.forEach(function (node) {
       fragment.appendChild(node);
     });
-    fragment.appendChild(trailingParagraph);
+    if (trailingParagraph) {
+      fragment.appendChild(trailingParagraph);
+    }
     var selection = window.getSelection && window.getSelection();
     if (!selection || selection.rangeCount === 0 || !input.contains(selection.anchorNode)) {
       input.appendChild(fragment);
-      placeCaretInRichTextNode(trailingParagraph);
+      if (insertOptions.caretNode) {
+        placeCaretInRichTextNode(insertOptions.caretNode);
+      } else if (trailingParagraph) {
+        placeCaretInRichTextNode(trailingParagraph);
+      } else {
+        placeCaretAtEnd(input);
+      }
       return;
     }
     var range = selection.getRangeAt(0);
-    var startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
-      ? range.startContainer
-      : range.startContainer.parentElement;
-    var block = startElement && startElement.closest("p, div, li");
-    if (block && block !== input && input.contains(block)) {
-      range = document.createRange();
-      range.setStartAfter(block);
-      range.collapse(true);
+    if (insertOptions.afterCurrentBlock !== false) {
+      var startElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? range.startContainer
+        : range.startContainer.parentElement;
+      var block = startElement && startElement.closest("p, div, li");
+      if (block && block !== input && input.contains(block)) {
+        range = document.createRange();
+        range.setStartAfter(block);
+        range.collapse(true);
+      }
     }
     range.deleteContents();
     range.insertNode(fragment);
-    placeCaretInRichTextNode(trailingParagraph);
+    if (insertOptions.caretNode) {
+      placeCaretInRichTextNode(insertOptions.caretNode);
+    } else if (trailingParagraph) {
+      placeCaretInRichTextNode(trailingParagraph);
+    } else {
+      placeCaretAtEnd(input);
+    }
   }
 
   function appendTextWithLineBreaks(target, text) {
@@ -4015,6 +4314,15 @@
         var text = event.clipboardData?.getData("text/plain");
         if (text) {
           event.preventDefault();
+          if (richTextLooksLikeMarkdown(text)) {
+            try {
+              if (insertRichHtmlAtSelection(editor, richMarkdownToHtml(text), { afterCurrentBlock: false })) {
+                return;
+              }
+            } catch (error) {
+              showToast(error.message || "Markdown 粘贴转换失败，请重试。", "error");
+            }
+          }
           document.execCommand("insertText", false, text);
         }
       });
@@ -4158,6 +4466,12 @@
     }
     if (editor.querySelector("[data-rich-attachment][data-upload-state='error']")) {
       workItemEditStatus(form, "有文件上传失败，请重试或移除失败项后再保存。", "error");
+      return false;
+    }
+    try {
+      autoConvertRichTextMarkdown(editor);
+    } catch (error) {
+      workItemEditStatus(form, error.message || "Markdown 转换失败，请刷新页面后重试。", "error");
       return false;
     }
     var html = serializeRichTextEditor(editor);
@@ -5351,6 +5665,13 @@
       }
     }
 
+    try {
+      autoConvertRichTextMarkdown(editor);
+    } catch (error) {
+      bugReportStatus(form, error.message || "Markdown 转换失败，请刷新页面后重试。", "error");
+      throw error;
+    }
+
     var body = serializeRichTextEditor(editor);
     if (richTextIsEmptyHtml(body)) {
       return null;
@@ -5562,6 +5883,13 @@
         }
         resourceStatus(form, "正在上传资料附件 " + (index + 1) + "/" + attachments.length + "...", "info");
         await uploadRichAttachment(editor, node, node.richFile, { throwOnError: true });
+      }
+
+      try {
+        autoConvertRichTextMarkdown(editor);
+      } catch (error) {
+        resourceStatus(form, error.message || "Markdown 转换失败，请刷新页面后重试。", "error");
+        throw error;
       }
 
       var body = serializeRichTextEditor(editor);
