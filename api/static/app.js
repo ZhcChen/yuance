@@ -6055,13 +6055,15 @@
     image.style.transform = "scale(" + imageViewerState.scale + ") rotate(" + imageViewerState.rotation + "deg)";
   }
 
-  function preferredImageViewerFitScreenScale(viewportWidth, viewportHeight, renderedWidth, renderedHeight) {
-    if (!viewportWidth || !viewportHeight || !renderedWidth || !renderedHeight) {
-      return 1;
+  function imageViewerFitDimensions(viewportWidth, viewportHeight, naturalWidth, naturalHeight) {
+    if (!viewportWidth || !viewportHeight || !naturalWidth || !naturalHeight) {
+      return { width: 0, height: 0 };
     }
-    var widthScale = viewportWidth / renderedWidth;
-    var heightScale = viewportHeight / renderedHeight;
-    return normalizeImageViewerScale(clampNumber(Math.min(widthScale, heightScale, 1), 0.1, 1));
+    var scale = Math.min(viewportWidth / naturalWidth, viewportHeight / naturalHeight, 1);
+    return {
+      width: Math.max(1, Math.round(naturalWidth * scale)),
+      height: Math.max(1, Math.round(naturalHeight * scale)),
+    };
   }
 
   function preferredImageViewerFitWidthScale(orientation, viewportWidth, renderedWidth) {
@@ -6097,9 +6099,11 @@
   function syncImageViewerImageLayout(image, forceResetScale) {
     var modal = imageViewerModal();
     var stage = imageViewerStage();
+    var pan = imageViewerPan();
     if (
       !image ||
       !stage ||
+      !pan ||
       !modal ||
       image.hidden ||
       modal.hidden ||
@@ -6118,19 +6122,28 @@
     var previousMode = imageViewerState.viewMode || "fit-screen";
     var viewport = imageViewerStageViewport(stage);
     var orientation = mediaOrientation(image.naturalWidth, image.naturalHeight);
-    var nextFitScreenScale = preferredImageViewerFitScreenScale(
+    var fitScreen = imageViewerFitDimensions(
       viewport.width,
       viewport.height,
-      image.offsetWidth,
-      image.offsetHeight
+      image.naturalWidth,
+      image.naturalHeight
     );
+    if (!fitScreen.width || !fitScreen.height) {
+      return;
+    }
+    pan.style.width = fitScreen.width + "px";
+    pan.style.height = fitScreen.height + "px";
+    image.style.width = fitScreen.width + "px";
+    image.style.height = fitScreen.height + "px";
+    image.style.maxWidth = "none";
+    image.style.maxHeight = "none";
     var nextFitWidthScale = preferredImageViewerFitWidthScale(
       orientation,
       viewport.width,
-      image.offsetWidth
+      fitScreen.width
     );
     imageViewerState.orientation = orientation;
-    imageViewerState.defaultScale = nextFitScreenScale;
+    imageViewerState.defaultScale = 1;
     imageViewerState.fitWidthScale = nextFitWidthScale;
     imageViewerState.minScale = imageViewerState.defaultScale;
     imageViewerState.maxScale = normalizeImageViewerScale(
@@ -6285,6 +6298,7 @@
     var caption = modal.querySelector("[data-image-viewer-caption]");
     var previous = modal.querySelector("[data-image-viewer-action='previous']");
     var next = modal.querySelector("[data-image-viewer-action='next']");
+    var pan = modal.querySelector("[data-image-viewer-pan]");
     var source = imageViewerEntrySource(entry);
     var entryTitle = imageViewerEntryTitle(entry);
     var entryKind = imageViewerEntryKind(entry);
@@ -6320,6 +6334,14 @@
     video.pause();
     video.removeAttribute("src");
     video.load();
+    if (pan) {
+      pan.style.removeProperty("width");
+      pan.style.removeProperty("height");
+    }
+    image.style.removeProperty("width");
+    image.style.removeProperty("height");
+    image.style.removeProperty("max-width");
+    image.style.removeProperty("max-height");
     video.hidden = entryKind !== "video";
     image.hidden = entryKind !== "image";
     if (entryKind === "video") {
