@@ -6519,7 +6519,7 @@ async fn build_system_nav(
     let database_stats =
         rbac::user_has_permission(pool, user_id, "system.database_stats.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
-    let work_item_counts = projects::count_pending_visible_work_items(
+    let work_item_counts = projects::count_pending_assigned_work_items(
         pool,
         user_id,
         can_access_all_projects,

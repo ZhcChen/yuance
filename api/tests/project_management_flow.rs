@@ -2197,8 +2197,8 @@ async fn web_topnav_work_item_badges_follow_current_project() {
     assert_eq!(yce_response.status(), StatusCode::OK);
     let yce_body = response_body(yce_response).await;
     assert!(yce_body.contains(r#"name="project_key" value="YCE""#));
-    assert!(yce_body.contains(r#"aria-label="待处理需求 1">1</span>"#));
-    assert!(yce_body.contains(r#"aria-label="待处理任务 3">3</span>"#));
+    assert!(!yce_body.contains(r#"aria-label="待处理需求 1">1</span>"#));
+    assert!(yce_body.contains(r#"aria-label="待处理任务 2">2</span>"#));
     assert!(!yce_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
 
     let switch_response = app
@@ -2235,9 +2235,9 @@ async fn web_topnav_work_item_badges_follow_current_project() {
     assert_eq!(ops_response.status(), StatusCode::OK);
     let ops_body = response_body(ops_response).await;
     assert!(ops_body.contains(r#"name="project_key" value="OPS""#));
-    assert!(ops_body.contains(r#"aria-label="待处理任务 1">1</span>"#));
     assert!(ops_body.contains(r#"aria-label="待处理 Bug 1">1</span>"#));
-    assert!(!ops_body.contains(r#"aria-label="待处理任务 3">3</span>"#));
+    assert!(!ops_body.contains(r#"aria-label="待处理任务 1">1</span>"#));
+    assert!(!ops_body.contains(r#"aria-label="待处理任务 2">2</span>"#));
 }
 
 #[tokio::test]
