@@ -30,6 +30,7 @@
     index: 0,
     scale: 1,
     defaultScale: 1,
+    fitWidthScale: 1,
     minScale: 1,
     maxScale: 4,
     rotation: 0,
@@ -37,6 +38,7 @@
     translateY: 0,
     kind: "image",
     orientation: "",
+    viewMode: "fit-screen",
     source: "",
     dragging: false,
     pointerId: null,
@@ -3328,7 +3330,7 @@
     var remove = document.createElement("button");
     remove.type = "button";
     remove.dataset.richAttachmentRemove = "";
-    remove.textContent = "×";
+    remove.innerHTML = "<svg aria-hidden=\"true\" viewBox=\"0 0 24 24\"><path d=\"M18 6 6 18M6 6l12 12\"/></svg>";
     remove.setAttribute("aria-label", "移除" + (attachmentOptions.actionLabel || localRichAttachmentLabel(kind)));
     actions.append(remove);
 
@@ -5893,6 +5895,7 @@
     imageViewerState.pointerId = null;
     imageViewerState.scale = 1;
     imageViewerState.defaultScale = 1;
+    imageViewerState.fitWidthScale = 1;
     imageViewerState.minScale = 1;
     imageViewerState.maxScale = 4;
     imageViewerState.rotation = 0;
@@ -5900,6 +5903,7 @@
     imageViewerState.translateY = 0;
     imageViewerState.kind = kind || "image";
     imageViewerState.orientation = "";
+    imageViewerState.viewMode = "fit-screen";
   }
 
   function imageViewerStageViewport(stage) {
@@ -5915,6 +5919,56 @@
       width: Math.max(0, stage.clientWidth - paddingLeft - paddingRight),
       height: Math.max(0, stage.clientHeight - paddingTop - paddingBottom),
     };
+  }
+
+  function imageViewerHasFitWidthMode() {
+    return imageViewerState.kind === "image"
+      && imageViewerState.fitWidthScale > imageViewerState.defaultScale + 0.05;
+  }
+
+  function resolveImageViewerViewMode(scale) {
+    if (Math.abs(scale - imageViewerState.defaultScale) < 0.04) {
+      return "fit-screen";
+    }
+    if (imageViewerHasFitWidthMode() && Math.abs(scale - imageViewerState.fitWidthScale) < 0.08) {
+      return "fit-width";
+    }
+    return "manual";
+  }
+
+  function updateImageViewerToolbar() {
+    var modal = imageViewerModal();
+    if (!modal) {
+      return;
+    }
+    var fitToggle = modal.querySelector("[data-image-viewer-action='fit-toggle']");
+    var zoomOut = modal.querySelector("[data-image-viewer-action='zoom-out']");
+    var zoomIn = modal.querySelector("[data-image-viewer-action='zoom-in']");
+    if (fitToggle) {
+      var showFitToggle = imageViewerHasFitWidthMode();
+      fitToggle.hidden = imageViewerState.kind !== "image" || !showFitToggle;
+      if (showFitToggle) {
+        var toggleToFitWidth = imageViewerState.viewMode === "fit-screen";
+        var label = toggleToFitWidth ? "适宽" : "适屏";
+        fitToggle.dataset.mode = toggleToFitWidth ? "fit-width" : "fit-screen";
+        fitToggle.setAttribute("aria-label", toggleToFitWidth ? "切换到适宽查看" : "切换到适屏查看");
+        fitToggle.title = toggleToFitWidth ? "适宽查看" : "适屏查看";
+        var text = fitToggle.querySelector("span");
+        if (text) {
+          text.textContent = label;
+        } else {
+          fitToggle.textContent = label;
+        }
+      }
+    }
+    if (zoomOut) {
+      zoomOut.disabled = imageViewerState.kind !== "image"
+        || imageViewerState.scale <= imageViewerState.minScale + 0.01;
+    }
+    if (zoomIn) {
+      zoomIn.disabled = imageViewerState.kind !== "image"
+        || imageViewerState.scale >= imageViewerState.maxScale - 0.01;
+    }
   }
 
   function imageViewerCanPan() {
@@ -5970,9 +6024,18 @@
       status.textContent = prefix ? prefix + " · 视频预览" : "视频预览";
       return;
     }
-    var hint = imageViewerState.orientation === "portrait"
-      ? "竖图已优化放大，可拖动查看细节。"
-      : "滚轮缩放，双击快速放大或重置。";
+    var hint = "适屏查看，可滚轮缩放与双击放大。";
+    if (imageViewerHasFitWidthMode()) {
+      if (imageViewerState.viewMode === "fit-width") {
+        hint = "适宽查看，可拖动浏览长图细节。";
+      } else if (imageViewerState.viewMode === "manual") {
+        hint = "已自由缩放，可切回适屏查看全图。";
+      } else {
+        hint = "适屏查看，双击或点击适宽查看细节。";
+      }
+    } else if (imageViewerState.viewMode === "manual") {
+      hint = "已自由缩放，双击返回适屏。";
+    }
     status.textContent = prefix ? prefix + " · " + hint : hint;
   }
 
@@ -5989,21 +6052,34 @@
     image.style.transform = "scale(" + imageViewerState.scale + ") rotate(" + imageViewerState.rotation + "deg)";
   }
 
-  function preferredImageViewerScale(orientation, viewportWidth, viewportHeight, renderedWidth, renderedHeight) {
+  function preferredImageViewerFitWidthScale(orientation, viewportWidth, renderedWidth) {
     if (
       orientation !== "portrait" ||
       !viewportWidth ||
-      !viewportHeight ||
-      !renderedWidth ||
-      !renderedHeight
+      !renderedWidth
     ) {
       return 1;
     }
-    var targetWidth = Math.min(viewportWidth, Math.max(Math.min(viewportWidth * 0.7, 760), 320));
-    var maxHeight = viewportHeight * 1.65;
-    var widthScale = targetWidth / renderedWidth;
-    var heightScale = maxHeight / renderedHeight;
-    return normalizeImageViewerScale(clampNumber(Math.min(widthScale, heightScale, 2.35), 1, 2.35));
+    var targetWidth = viewportWidth * 0.98;
+    return normalizeImageViewerScale(clampNumber(targetWidth / renderedWidth, 1, 4));
+  }
+
+  function setImageViewerPreset(mode) {
+    if (imageViewerState.kind !== "image") {
+      return;
+    }
+    imageViewerState.viewMode = mode === "fit-width" && imageViewerHasFitWidthMode()
+      ? "fit-width"
+      : "fit-screen";
+    imageViewerState.scale = imageViewerState.viewMode === "fit-width"
+      ? imageViewerState.fitWidthScale
+      : imageViewerState.defaultScale;
+    imageViewerState.translateX = 0;
+    imageViewerState.translateY = 0;
+    stopImageViewerDrag();
+    applyImageViewerTransform();
+    updateImageViewerStatus();
+    updateImageViewerToolbar();
   }
 
   function syncImageViewerImageLayout(image, forceResetScale) {
@@ -6027,27 +6103,38 @@
       });
       return;
     }
-    var previousDefault = imageViewerState.defaultScale || 1;
+    var previousMode = imageViewerState.viewMode || "fit-screen";
     var viewport = imageViewerStageViewport(stage);
     var orientation = mediaOrientation(image.naturalWidth, image.naturalHeight);
-    var nextDefaultScale = preferredImageViewerScale(
+    var nextFitWidthScale = preferredImageViewerFitWidthScale(
       orientation,
       viewport.width,
-      viewport.height,
-      image.offsetWidth,
-      image.offsetHeight
+      image.offsetWidth
     );
     imageViewerState.orientation = orientation;
-    imageViewerState.defaultScale = nextDefaultScale;
-    if (forceResetScale || Math.abs(imageViewerState.scale - previousDefault) < 0.01) {
-      imageViewerState.scale = nextDefaultScale;
+    imageViewerState.defaultScale = 1;
+    imageViewerState.fitWidthScale = nextFitWidthScale;
+    imageViewerState.minScale = imageViewerState.defaultScale;
+    imageViewerState.maxScale = normalizeImageViewerScale(
+      clampNumber(Math.max(4, nextFitWidthScale + 2), 4, 6)
+    );
+    if (forceResetScale || previousMode === "fit-screen") {
+      imageViewerState.scale = imageViewerState.defaultScale;
+      imageViewerState.viewMode = "fit-screen";
+      imageViewerState.translateX = 0;
+      imageViewerState.translateY = 0;
+    } else if (previousMode === "fit-width" && imageViewerHasFitWidthMode()) {
+      imageViewerState.scale = imageViewerState.fitWidthScale;
+      imageViewerState.viewMode = "fit-width";
       imageViewerState.translateX = 0;
       imageViewerState.translateY = 0;
     } else {
       imageViewerState.scale = clampNumber(imageViewerState.scale, imageViewerState.minScale, imageViewerState.maxScale);
+      imageViewerState.viewMode = resolveImageViewerViewMode(imageViewerState.scale);
     }
     applyImageViewerTransform();
     updateImageViewerStatus();
+    updateImageViewerToolbar();
   }
 
   function refreshImageViewerLayout() {
@@ -6065,7 +6152,10 @@
     imageViewerState.scale = normalizeImageViewerScale(
       clampNumber(nextScale, imageViewerState.minScale, imageViewerState.maxScale)
     );
+    imageViewerState.viewMode = resolveImageViewerViewMode(imageViewerState.scale);
     applyImageViewerTransform();
+    updateImageViewerStatus();
+    updateImageViewerToolbar();
   }
 
   function stopImageViewerDrag() {
@@ -6148,6 +6238,10 @@
       return;
     }
     event.preventDefault();
+    if (imageViewerHasFitWidthMode()) {
+      setImageViewerPreset(imageViewerState.viewMode === "fit-screen" ? "fit-width" : "fit-screen");
+      return;
+    }
     if (Math.abs(imageViewerState.scale - imageViewerState.defaultScale) < 0.08) {
       setImageViewerScale(
         Math.min(
@@ -6200,6 +6294,7 @@
     modal.querySelectorAll("[data-image-viewer-image-action]").forEach(function (control) {
       control.hidden = entryKind !== "image";
     });
+    updateImageViewerToolbar();
     if (!image || !video) {
       return;
     }
@@ -6214,6 +6309,7 @@
       video.load();
       applyImageViewerTransform();
       updateImageViewerStatus();
+      updateImageViewerToolbar();
       return;
     }
 
@@ -6235,6 +6331,7 @@
     };
     image.src = refreshedImageSource(source);
     applyImageViewerTransform();
+    updateImageViewerToolbar();
   }
 
   function openImageViewer(entries, index, trigger) {
@@ -6739,8 +6836,11 @@
     imageViewerState.rotation = 0;
     imageViewerState.translateX = 0;
     imageViewerState.translateY = 0;
+    imageViewerState.viewMode = "fit-screen";
     stopImageViewerDrag();
     applyImageViewerTransform();
+    updateImageViewerStatus();
+    updateImageViewerToolbar();
   }
 
   function handleImageViewerAction(action) {
@@ -6752,6 +6852,8 @@
       changeImageViewerZoom(0.25);
     } else if (action === "zoom-out") {
       changeImageViewerZoom(-0.25);
+    } else if (action === "fit-toggle") {
+      setImageViewerPreset(imageViewerState.viewMode === "fit-screen" ? "fit-width" : "fit-screen");
     } else if (action === "rotate") {
       imageViewerState.rotation = (imageViewerState.rotation + 90) % 360;
       stopImageViewerDrag();

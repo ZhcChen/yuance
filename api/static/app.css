@@ -805,9 +805,21 @@ body {
   cursor: pointer;
   font-size: 12px;
   font-weight: 900;
-  line-height: 1;
+  line-height: 0;
   box-shadow: 0 6px 14px rgb(15 23 42 / 18%);
   transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+.rich-attachment-actions button svg {
+  width: 12px;
+  height: 12px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 
 .rich-attachment-actions button:hover {
@@ -5467,6 +5479,12 @@ code {
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
 }
 
+.image-viewer-control:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .image-viewer-control svg {
   width: 19px;
   height: 19px;
@@ -5479,11 +5497,34 @@ code {
   pointer-events: none;
 }
 
+.image-viewer-mode-toggle {
+  width: auto;
+  min-width: 58px;
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.image-viewer-mode-toggle span {
+  display: block;
+  transform: translateY(-0.5px);
+}
+
 .image-viewer-control:hover,
 .image-viewer-control:focus-visible {
   border-color: rgb(255 255 255 / 58%);
   background: rgb(36 44 56 / 92%);
   transform: translateY(-2px);
+}
+
+.image-viewer-control:disabled:hover,
+.image-viewer-control:disabled:focus-visible {
+  border-color: rgb(255 255 255 / 24%);
+  background: rgb(20 25 33 / 72%);
+  transform: none;
 }
 
 .image-viewer-close {
@@ -9236,6 +9277,14 @@ select option {
     height: clamp(34px, 10vw, 42px);
     flex-basis: clamp(34px, 10vw, 42px);
     font-size: 22px;
+  }
+
+  .image-viewer-mode-toggle {
+    width: auto;
+    min-width: 54px;
+    flex-basis: auto;
+    padding: 0 12px;
+    font-size: 12px;
   }
 }
 
