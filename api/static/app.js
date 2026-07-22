@@ -5972,11 +5972,14 @@
   }
 
   function imageViewerCanPan() {
-    return imageViewerState.kind === "image" && (
-      imageViewerState.scale > 1.01 ||
-      imageViewerState.defaultScale > 1.01 ||
-      Math.abs(imageViewerState.rotation % 180) > 0.01
-    );
+    if (imageViewerState.kind !== "image") {
+      return false;
+    }
+    if (Math.abs(imageViewerState.rotation % 180) > 0.01) {
+      return true;
+    }
+    var bounds = imageViewerRenderedBounds();
+    return bounds.maxX > 0.5 || bounds.maxY > 0.5;
   }
 
   function imageViewerRenderedBounds() {
@@ -6052,6 +6055,15 @@
     image.style.transform = "scale(" + imageViewerState.scale + ") rotate(" + imageViewerState.rotation + "deg)";
   }
 
+  function preferredImageViewerFitScreenScale(viewportWidth, viewportHeight, renderedWidth, renderedHeight) {
+    if (!viewportWidth || !viewportHeight || !renderedWidth || !renderedHeight) {
+      return 1;
+    }
+    var widthScale = viewportWidth / renderedWidth;
+    var heightScale = viewportHeight / renderedHeight;
+    return normalizeImageViewerScale(clampNumber(Math.min(widthScale, heightScale, 1), 0.1, 1));
+  }
+
   function preferredImageViewerFitWidthScale(orientation, viewportWidth, renderedWidth) {
     if (
       orientation !== "portrait" ||
@@ -6106,13 +6118,19 @@
     var previousMode = imageViewerState.viewMode || "fit-screen";
     var viewport = imageViewerStageViewport(stage);
     var orientation = mediaOrientation(image.naturalWidth, image.naturalHeight);
+    var nextFitScreenScale = preferredImageViewerFitScreenScale(
+      viewport.width,
+      viewport.height,
+      image.offsetWidth,
+      image.offsetHeight
+    );
     var nextFitWidthScale = preferredImageViewerFitWidthScale(
       orientation,
       viewport.width,
       image.offsetWidth
     );
     imageViewerState.orientation = orientation;
-    imageViewerState.defaultScale = 1;
+    imageViewerState.defaultScale = nextFitScreenScale;
     imageViewerState.fitWidthScale = nextFitWidthScale;
     imageViewerState.minScale = imageViewerState.defaultScale;
     imageViewerState.maxScale = normalizeImageViewerScale(
