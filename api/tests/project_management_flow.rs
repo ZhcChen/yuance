@@ -2824,9 +2824,7 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains(r#"name="project_key" value="YCE" data-bug-report-item-field"#));
     assert!(tasks_body.contains(r#"data-bug-report-form"#));
     assert!(tasks_body.contains(r#"data-rich-text-editor data-placeholder="请输入内容...""#));
-    assert!(tasks_body.contains(
-        r#"data-rich-text-input data-placeholder="请输入内容...""#
-    ));
+    assert!(tasks_body.contains(r#"data-rich-text-input data-placeholder="请输入内容...""#));
     assert!(tasks_body.contains(r#"data-bug-report-description"#));
     assert!(tasks_body.contains(r#"data-bug-report-status hidden"#));
     assert!(!tasks_body.contains(r#"data-bug-report-groups"#));
@@ -2843,9 +2841,7 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("OPS-TASK-1"));
     assert!(bugs_body.contains(r#"data-bug-report-form"#));
     assert!(bugs_body.contains(r#"data-rich-text-editor data-placeholder="请输入内容...""#));
-    assert!(bugs_body.contains(
-        r#"data-rich-text-input data-placeholder="请输入内容...""#
-    ));
+    assert!(bugs_body.contains(r#"data-rich-text-input data-placeholder="请输入内容...""#));
     assert!(bugs_body.contains(r#"data-bug-report-status hidden"#));
     assert!(!bugs_body.contains(r#"data-bug-report-groups"#));
     assert!(!bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
@@ -3825,7 +3821,35 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
     .fetch_one(&pool)
     .await
     .expect("created token suffix should persist");
+    let token_ciphertext = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT token_ciphertext
+        FROM api_tokens
+        WHERE id = ?1
+        "#,
+    )
+    .bind(token_id)
+    .fetch_one(&pool)
+    .await
+    .expect("created token ciphertext should persist");
+    assert!(!token_ciphertext.trim().is_empty());
     assert!(create_body.contains(&format!(r#"data-copy-idle-label="...{token_suffix}""#)));
+
+    let second_page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/me")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(second_page_response.status(), StatusCode::OK);
+    let second_page_body = response_body(second_page_response).await;
+    assert!(second_page_body.contains(&format!(r#"data-copy-idle-label="...{token_suffix}""#)));
+    assert!(second_page_body.contains(r#"data-copy-text="yuance_pat_"#));
 
     let delete_response = app
         .clone()

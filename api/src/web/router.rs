@@ -41,7 +41,7 @@ impl AppState {
                 cache_session_ttl: "5m".to_string(),
                 log_level: "off".to_string(),
                 env: "test".to_string(),
-                security_master_key: "test-master-key".to_string(),
+                security_master_key: "test-master-key-that-is-long-enough".to_string(),
                 onlyoffice_document_server_url: String::new(),
                 onlyoffice_jwt_secret: String::new(),
             },
@@ -1065,7 +1065,10 @@ async fn static_app_css() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/css; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-store, max-age=0, must-revalidate"),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
         ],
         include_str!("../../static/app.css"),
     )
@@ -1082,7 +1085,10 @@ async fn static_app_js() -> impl IntoResponse {
                 header::CONTENT_TYPE,
                 "application/javascript; charset=utf-8",
             ),
-            (header::CACHE_CONTROL, "no-store, max-age=0, must-revalidate"),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
         ],
         format!("{bootstrap}{}", include_str!("../../static/app.js")),
     )
@@ -1096,7 +1102,10 @@ async fn version_manifest() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "application/json; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-store, max-age=0, must-revalidate"),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
         ],
         body,
     )

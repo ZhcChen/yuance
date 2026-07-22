@@ -1804,21 +1804,24 @@ async fn render_me_response(
                 } else {
                     Vec::new()
                 };
-            let api_tokens = api_tokens::list_tokens(pool, context.user_id)
-                .await?
-                .into_iter()
-                .map(|token| {
-                    let current_token_id = token.id;
-                    api_token_view(
-                        token,
-                        if Some(current_token_id) == created_api_token_id {
-                            Some(created_api_token_value.as_str())
-                        } else {
-                            None
-                        },
-                    )
-                })
-                .collect::<Vec<_>>();
+            let api_tokens = api_tokens::list_tokens_with_raw(
+                pool,
+                context.user_id,
+                &state.settings.security_master_key,
+            )
+            .await?
+            .into_iter()
+            .map(|token| {
+                let current_token_id = token.token.id;
+                api_token_view(
+                    token.token,
+                    token.raw_token.as_deref().or_else(|| {
+                        (Some(current_token_id) == created_api_token_id)
+                            .then_some(created_api_token_value.as_str())
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
 
             (
                 user_profile_from_summary(profile),
@@ -1958,6 +1961,7 @@ pub async fn me_api_token_create(
     if let Some(pool) = context.pool {
         let created = api_tokens::create_token(
             pool,
+            &state.settings.security_master_key,
             context.user_id,
             api_tokens::CreateApiTokenInput {
                 name: form.name,

@@ -506,7 +506,7 @@ fn test_settings() -> Settings {
         cache_session_ttl: "5m".to_string(),
         log_level: "off".to_string(),
         env: "test".to_string(),
-        security_master_key: "test-master-key".to_string(),
+        security_master_key: "test-master-key-that-is-long-enough".to_string(),
         onlyoffice_document_server_url: String::new(),
         onlyoffice_jwt_secret: String::new(),
     }

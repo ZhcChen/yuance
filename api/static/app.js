@@ -6502,13 +6502,7 @@
     }
   }
 
-  function copyTextToClipboard(text) {
-    if (!text) {
-      return Promise.reject(new Error("没有可复制的内容。"));
-    }
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-      return navigator.clipboard.writeText(text);
-    }
+  function copyTextToClipboardFallback(text) {
     return new Promise(function (resolve, reject) {
       var textarea = document.createElement("textarea");
       textarea.value = text;
@@ -6530,6 +6524,18 @@
         textarea.remove();
       }
     });
+  }
+
+  function copyTextToClipboard(text) {
+    if (!text) {
+      return Promise.reject(new Error("没有可复制的内容。"));
+    }
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      return navigator.clipboard.writeText(text).catch(function () {
+        return copyTextToClipboardFallback(text);
+      });
+    }
+    return copyTextToClipboardFallback(text);
   }
 
   function resetCopyButtonLabel(button) {
@@ -6574,17 +6580,20 @@
   function handleCopyButton(button) {
     var text = resolveCopyButtonText(button);
     if (!text) {
-      showToast("没有可复制的内容。", "error");
+      showToast(
+        button.dataset.copyUnavailableMessage || "没有可复制的内容。",
+        button.dataset.copyUnavailableTone || "warning"
+      );
       return;
     }
     copyTextToClipboard(text)
       .then(function () {
         markCopyButtonSuccess(button);
-        showToast("内容已复制。", "success");
+        showToast(button.dataset.copyToastSuccess || "内容已复制。", "success");
       })
       .catch(function () {
         resetCopyButtonLabel(button);
-        showToast("复制失败，请重试。", "error");
+        showToast(button.dataset.copyToastError || "复制失败，请重试。", "error");
       });
   }
 

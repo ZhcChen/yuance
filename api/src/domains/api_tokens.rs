@@ -7,7 +7,10 @@ use sqlx::SqlitePool;
 
 use crate::{
     domains::auth::AuthUser,
-    platform::error::{AppError, AppResult},
+    platform::{
+        crypto,
+        error::{AppError, AppResult},
+    },
 };
 
 const TOKEN_PREFIX: &str = "yuance_pat_";
@@ -51,6 +54,12 @@ pub struct ApiTokenSummary {
 pub struct CreatedApiToken {
     pub token: ApiTokenSummary,
     pub raw_token: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ApiTokenPlaintextSummary {
+    pub token: ApiTokenSummary,
+    pub raw_token: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +148,7 @@ pub async fn authenticated_token_from_bearer_token(
 
 pub async fn create_token(
     pool: &SqlitePool,
+    master_key: &str,
     user_id: i64,
     input: CreateApiTokenInput,
 ) -> AppResult<CreatedApiToken> {
@@ -157,6 +167,11 @@ pub async fn create_token(
         .chars()
         .rev()
         .collect::<String>();
+    let token_ciphertext = crypto::encrypt_secret(
+        master_key,
+        &raw_token,
+        token_secret_aad(&token_hash).as_bytes(),
+    )?;
     let active_token_count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*)
@@ -181,11 +196,12 @@ pub async fn create_token(
             name,
             token_hash,
             token_suffix,
+            token_ciphertext,
             scopes,
             project_scope,
             expires_at
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
         RETURNING id
         "#,
     )
@@ -193,6 +209,7 @@ pub async fn create_token(
     .bind(name)
     .bind(token_hash)
     .bind(token_suffix)
+    .bind(token_ciphertext)
     .bind(scopes_json)
     .bind(project_scope)
     .bind(expires_at)
@@ -209,9 +226,11 @@ pub async fn list_tokens(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<ApiTo
         SELECT
             id,
             name,
+            token_hash,
             scopes,
             project_scope,
             token_suffix,
+            token_ciphertext,
             expires_at,
             revoked_at,
             last_used_at,
@@ -227,6 +246,46 @@ pub async fn list_tokens(pool: &SqlitePool, user_id: i64) -> AppResult<Vec<ApiTo
     .await?;
 
     Ok(rows.into_iter().map(token_from_row).collect())
+}
+
+pub async fn list_tokens_with_raw(
+    pool: &SqlitePool,
+    user_id: i64,
+    master_key: &str,
+) -> AppResult<Vec<ApiTokenPlaintextSummary>> {
+    let rows = sqlx::query_as::<_, TokenRow>(
+        r#"
+        SELECT
+            id,
+            name,
+            token_hash,
+            scopes,
+            project_scope,
+            token_suffix,
+            token_ciphertext,
+            expires_at,
+            revoked_at,
+            last_used_at,
+            created_at,
+            updated_at
+        FROM api_tokens
+        WHERE user_id = ?1
+        ORDER BY id DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            let raw_token = raw_token_from_row(&row, master_key)?;
+            Ok(ApiTokenPlaintextSummary {
+                token: token_from_row(row),
+                raw_token,
+            })
+        })
+        .collect()
 }
 
 pub async fn revoke_token(
@@ -393,9 +452,11 @@ async fn get_token_for_user(
         SELECT
             id,
             name,
+            token_hash,
             scopes,
             project_scope,
             token_suffix,
+            token_ciphertext,
             expires_at,
             revoked_at,
             last_used_at,
@@ -419,9 +480,11 @@ async fn get_token_for_user(
 struct TokenRow {
     id: i64,
     name: String,
+    token_hash: String,
     scopes: String,
     project_scope: String,
     token_suffix: String,
+    token_ciphertext: String,
     expires_at: String,
     revoked_at: String,
     last_used_at: String,
@@ -444,6 +507,20 @@ fn token_from_row(row: TokenRow) -> ApiTokenSummary {
     }
 }
 
+fn raw_token_from_row(row: &TokenRow, master_key: &str) -> AppResult<Option<String>> {
+    let ciphertext = row.token_ciphertext.trim();
+    if ciphertext.is_empty() {
+        return Ok(None);
+    }
+
+    crypto::decrypt_secret(
+        master_key,
+        ciphertext,
+        token_secret_aad(&row.token_hash).as_bytes(),
+    )
+    .map(Some)
+}
+
 fn generate_token() -> String {
     let mut bytes = [0_u8; 32];
     OsRng.fill_bytes(&mut bytes);
@@ -453,6 +530,10 @@ fn generate_token() -> String {
 fn hash_token(raw_token: &str) -> String {
     let digest = Sha256::digest(raw_token.as_bytes());
     hex::encode(digest)
+}
+
+fn token_secret_aad(token_hash: &str) -> String {
+    format!("api-token:{token_hash}")
 }
 
 fn validate_name(name: &str) -> AppResult<String> {

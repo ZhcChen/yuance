@@ -3424,6 +3424,7 @@ pub async fn create_api_token(
     let pool = state.pool()?;
     let created = api_tokens::create_token(
         pool,
+        &state.settings.security_master_key,
         user.id,
         api_tokens::CreateApiTokenInput {
             name: payload.name,
