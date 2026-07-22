@@ -894,24 +894,24 @@ pub async fn login(
     )
     .await
     {
-            Ok(session) => session,
-            Err(error) => {
-                if let Err(audit_error) = audit::record_with_context(
-                    pool,
-                    None,
-                    "auth.login.failed",
-                    "user",
-                    &payload.username,
-                    r#"{"source":"api"}"#,
-                    &request_context,
-                )
-                .await
-                {
-                    tracing::warn!(%audit_error, "failed to record api login failure audit");
-                }
-                return Err(error);
+        Ok(session) => session,
+        Err(error) => {
+            if let Err(audit_error) = audit::record_with_context(
+                pool,
+                None,
+                "auth.login.failed",
+                "user",
+                &payload.username,
+                r#"{"source":"api"}"#,
+                &request_context,
+            )
+            .await
+            {
+                tracing::warn!(%audit_error, "failed to record api login failure audit");
             }
-        };
+            return Err(error);
+        }
+    };
     let user = auth::user_from_raw_session(pool, &session.raw_token)
         .await?
         .ok_or(AppError::Unauthorized)?;
@@ -989,7 +989,8 @@ pub async fn logout(
     )
     .await?;
     let clear_cookie = auth::clear_session_cookie_header(state.settings.env == "production");
-    let clear_refresh_cookie = auth::clear_refresh_cookie_header(state.settings.env == "production");
+    let clear_refresh_cookie =
+        auth::clear_refresh_cookie_header(state.settings.env == "production");
 
     Ok((
         AppendHeaders([
@@ -2716,7 +2717,10 @@ pub async fn project_resource_attachment_delete(
         "file.archive",
         "project_resource",
         &resource.id.to_string(),
-        &format!(r#"{{"project":"{}","attachment_id":{attachment_id}}}"#, project.project_key),
+        &format!(
+            r#"{{"project":"{}","attachment_id":{attachment_id}}}"#,
+            project.project_key
+        ),
     )
     .await?;
 

@@ -449,7 +449,10 @@ async fn api_auth_me_refreshes_expired_access_cookie_when_refresh_cookie_is_vali
         .oneshot(
             Request::builder()
                 .uri("/api/v1/auth/me")
-                .header(header::COOKIE, format!("{session_cookie}; {refresh_cookie}"))
+                .header(
+                    header::COOKIE,
+                    format!("{session_cookie}; {refresh_cookie}"),
+                )
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -457,12 +460,16 @@ async fn api_auth_me_refreshes_expired_access_cookie_when_refresh_cookie_is_vali
         .expect("router should respond");
     assert_eq!(me_response.status(), StatusCode::OK);
     let refreshed_cookies = set_cookie_values(me_response.headers());
-    assert!(refreshed_cookies.iter().any(|cookie| {
-        cookie.starts_with("yuance_session=") && cookie != &session_cookie
-    }));
-    assert!(refreshed_cookies.iter().any(|cookie| {
-        cookie.starts_with("yuance_refresh=") && cookie != &refresh_cookie
-    }));
+    assert!(
+        refreshed_cookies
+            .iter()
+            .any(|cookie| { cookie.starts_with("yuance_session=") && cookie != &session_cookie })
+    );
+    assert!(
+        refreshed_cookies
+            .iter()
+            .any(|cookie| { cookie.starts_with("yuance_refresh=") && cookie != &refresh_cookie })
+    );
     let me_body = response_body(me_response).await;
     assert!(me_body.contains(r#""username":"admin""#));
 }
@@ -503,7 +510,10 @@ async fn authenticated_requests_extend_refresh_cookie_window() {
         .oneshot(
             Request::builder()
                 .uri("/api/v1/auth/me")
-                .header(header::COOKIE, format!("{session_cookie}; {refresh_cookie}"))
+                .header(
+                    header::COOKIE,
+                    format!("{session_cookie}; {refresh_cookie}"),
+                )
                 .body(Body::empty())
                 .expect("request should build"),
         )
