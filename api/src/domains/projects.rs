@@ -132,6 +132,7 @@ pub struct WorkItemDetail {
     pub cycle_end_date: String,
     pub assignee_username: String,
     pub assignee_display_name: String,
+    pub reporter_user_id: Option<i64>,
     pub reporter_username: String,
     pub reporter_display_name: String,
     pub due_date: String,
@@ -1872,21 +1873,17 @@ pub async fn user_can_write_project_content(
 
 pub async fn user_can_manage_work_item_comment(
     pool: &SqlitePool,
-    project_id: i64,
+    _project_id: i64,
     comment_author_user_id: Option<i64>,
     user_id: i64,
-    is_super_admin: bool,
+    _is_super_admin: bool,
 ) -> AppResult<bool> {
-    if is_super_admin || comment_author_user_id == Some(user_id) {
-        return Ok(true);
-    }
+    let _ = pool;
+    Ok(comment_author_user_id == Some(user_id))
+}
 
-    Ok(matches!(
-        project_member_role(pool, project_id, user_id)
-            .await?
-            .as_deref(),
-        Some("owner" | "maintainer")
-    ))
+pub fn user_can_edit_work_item_post(reporter_user_id: Option<i64>, user_id: i64) -> bool {
+    reporter_user_id == Some(user_id)
 }
 
 async fn get_project_member(
@@ -2884,6 +2881,7 @@ pub async fn get_work_item_detail(
             COALESCE(cycle.end_date, '') AS cycle_end_date,
             COALESCE(assignee.username, '') AS assignee_username,
             COALESCE(assignee.display_name, '') AS assignee_display_name,
+            wi.reporter_user_id AS reporter_user_id,
             COALESCE(reporter.username, '') AS reporter_username,
             COALESCE(reporter.display_name, '') AS reporter_display_name,
             COALESCE(wi.due_date, '') AS due_date,
@@ -2921,6 +2919,7 @@ pub async fn get_work_item_detail(
         cycle_end_date: row.get("cycle_end_date"),
         assignee_username: row.get("assignee_username"),
         assignee_display_name: row.get("assignee_display_name"),
+        reporter_user_id: row.get("reporter_user_id"),
         reporter_username: row.get("reporter_username"),
         reporter_display_name: row.get("reporter_display_name"),
         due_date: row.get("due_date"),
@@ -3378,22 +3377,33 @@ pub async fn update_work_item(
     let actor_display_name_snapshot =
         normalize_actor_display_name_snapshot(&input.actor_display_name_snapshot);
 
-    let Some((work_item_id, project_id, project_status, item_type, current_status)) =
-        sqlx::query_as::<_, (i64, i64, String, String, String)>(
-            r#"
-        SELECT wi.id, wi.project_id, p.status, wi.item_type, wi.status
+    let Some((
+        work_item_id,
+        project_id,
+        project_status,
+        item_type,
+        current_status,
+        reporter_user_id,
+    )) = sqlx::query_as::<_, (i64, i64, String, String, String, Option<i64>)>(
+        r#"
+        SELECT wi.id, wi.project_id, p.status, wi.item_type, wi.status, wi.reporter_user_id
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
         WHERE wi.item_key = ?1
           AND wi.deleted_at IS NULL
         "#,
-        )
-        .bind(item_key)
-        .fetch_optional(pool)
-        .await?
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
     else {
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
+    if !user_can_edit_work_item_post(reporter_user_id, actor_user_id) {
+        return Err(AppError::Forbidden(
+            "只有发布人本人可以编辑该工作项。".to_string(),
+        ));
+    }
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
     let parent_work_item_id =

@@ -114,7 +114,9 @@
         <div class="action-panel-buttons">
           {% if can_manage_work_items && !item.is_deleted %}
           <button class="btn btn-primary" type="button" data-modal-open="work-item-handoff-modal">指派 / 流转</button>
+          {% if can_edit_primary_post %}
           <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑内容</button>
+          {% endif %}
           {% endif %}
           <button class="btn btn-secondary" type="button" data-modal-open="work-item-flow-history-modal">查看指派记录</button>
           {% if can_manage_work_items && !item.is_deleted %}
@@ -145,7 +147,7 @@
   </div>
 </section>
 
-{% if can_manage_work_items && !item.is_deleted %}
+{% if can_edit_primary_post && !item.is_deleted %}
 <aside id="work-item-edit-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-edit-modal-title" tabindex="-1">

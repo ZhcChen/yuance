@@ -1,8 +1,12 @@
 <section class="work-item-description" aria-labelledby="work-item-description-title">
-  <div class="content-section-head">
-    <div>
-      <span class="section-kicker">工作项内容</span>
-      <h2 id="work-item-description-title">详情说明</h2>
+  <h2 id="work-item-description-title" class="sr-only">详情说明</h2>
+  <div class="content-section-head work-item-description-head">
+    <div class="work-item-publisher">
+      <div class="discussion-avatar work-item-publisher-avatar" data-user-avatar data-avatar-name="{{ item.primary_post_author }}" aria-hidden="true">{{ item.primary_post_author }}</div>
+      <div class="work-item-publisher-meta">
+        <span class="section-kicker">发布人</span>
+        <strong class="work-item-publisher-name">{{ item.primary_post_author }}</strong>
+      </div>
     </div>
     <span class="content-updated">更新于 {{ item.updated_at }}</span>
   </div>

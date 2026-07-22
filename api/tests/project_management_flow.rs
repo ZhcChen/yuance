@@ -2823,10 +2823,12 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(tasks_body.contains(r#"name="item_type" value="task""#));
     assert!(tasks_body.contains(r#"name="project_key" value="YCE" data-bug-report-item-field"#));
     assert!(tasks_body.contains(r#"data-bug-report-form"#));
-    assert!(tasks_body.contains(r#"data-rich-text-editor data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...""#));
+    assert!(tasks_body.contains(r#"data-rich-text-editor data-placeholder="请输入内容...""#));
+    assert!(tasks_body.contains(
+        r#"data-rich-text-input data-placeholder="请输入内容...""#
+    ));
     assert!(tasks_body.contains(r#"data-bug-report-description"#));
-    assert!(tasks_body.contains("支持直接粘贴截图、拖拽图片 / 视频 / 文件"));
-    assert!(tasks_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
+    assert!(tasks_body.contains(r#"data-bug-report-status hidden"#));
     assert!(!tasks_body.contains(r#"data-bug-report-groups"#));
     assert!(!tasks_body.contains(r#"type="file" multiple data-bug-report-image"#));
     assert!(tasks_body.contains(r#"data-select-search-placeholder="搜索处理人""#));
@@ -2840,9 +2842,11 @@ async fn web_work_item_list_pages_filter_by_type() {
     assert!(!bugs_body.contains("YCE-REQ-1"));
     assert!(!bugs_body.contains("OPS-TASK-1"));
     assert!(bugs_body.contains(r#"data-bug-report-form"#));
-    assert!(bugs_body.contains(r#"data-rich-text-editor data-placeholder="补充背景、验收口径、复现步骤或处理说明，也可以直接粘贴截图...""#));
-    assert!(bugs_body.contains("创建后会直接保存为帖子正文"));
-    assert!(bugs_body.contains("首次上传会先创建工作项，再写入帖子正文草稿"));
+    assert!(bugs_body.contains(r#"data-rich-text-editor data-placeholder="请输入内容...""#));
+    assert!(bugs_body.contains(
+        r#"data-rich-text-input data-placeholder="请输入内容...""#
+    ));
+    assert!(bugs_body.contains(r#"data-bug-report-status hidden"#));
     assert!(!bugs_body.contains(r#"data-bug-report-groups"#));
     assert!(!bugs_body.contains(r#"type="file" multiple data-bug-report-image"#));
     assert!(!bugs_body.contains("每组说明会保存为一条评论"));
@@ -3453,6 +3457,8 @@ async fn work_item_detail_partial_renders_comments() {
     let body = response_body(response).await;
 
     assert!(body.contains("详情说明"));
+    assert!(body.contains("发布人"));
+    assert!(body.contains(r#"class="work-item-publisher""#));
     assert!(body.contains("先统一项目与工作项查询模型"));
     assert!(body.contains("讨论"));
     assert!(body.contains(r#"data-discussion-form"#));
@@ -3490,6 +3496,7 @@ async fn web_work_item_detail_page_renders_full_shell() {
 
     assert!(body.contains("元策工作台"));
     assert!(body.contains("YCE-TASK-2"));
+    assert!(body.contains("发布人"));
     assert!(body.contains("指派 / 流转"));
     assert!(body.contains(r#"data-modal-open="work-item-edit-modal""#));
     assert!(body.contains(r#"id="work-item-edit-modal""#));
@@ -3784,7 +3791,10 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
     assert!(create_body.contains(r#"data-copy-idle-label="复制 Token""#));
     assert!(create_body.contains(r#"data-copy-text="yuance_pat_"#));
     assert!(create_body.contains(r#"title="点击复制完整 Token""#));
-    assert!(create_body.contains(r#"<button class="btn btn-sm btn-danger" type="submit">删除</button>"#));
+    assert!(
+        create_body
+            .contains(r#"<button class="btn btn-sm btn-danger" type="submit">删除</button>"#)
+    );
     assert!(!create_body.contains(r#"type="submit" data-confirm-submit>删除</button>"#));
 
     let token_id = sqlx::query_scalar::<_, i64>(
@@ -5370,6 +5380,11 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
             .await
             .expect("comment should create")
             .id;
+    let foreign_comment_id =
+        projects::add_work_item_comment(&pool, member.user_id, "YCE-TASK-2", "foreign comment")
+            .await
+            .expect("member comment should create")
+            .id;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let member_edit_response = app
@@ -5441,19 +5456,36 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(maintainer_edit_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        maintainer_edit_response
-            .headers()
-            .get(header::LOCATION)
-            .unwrap(),
-        format!("/web/work-items/YCE-TASK-2#comment-{comment_id}").as_str()
-    );
+    assert_eq!(maintainer_edit_response.status(), StatusCode::FORBIDDEN);
 
-    let edited_by_maintainer = projects::get_work_item_comment(&pool, item.id, comment_id)
+    let unchanged_after_maintainer = projects::get_work_item_comment(&pool, item.id, comment_id)
         .await
         .expect("comment should load");
-    assert_eq!(edited_by_maintainer.body, "维护者已编辑评论");
+    assert_eq!(unchanged_after_maintainer.body, "待编辑评论");
+
+    let admin_foreign_edit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/comments/{foreign_comment_id}/edit"
+                ))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&body=admin+cannot+edit+others",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(admin_foreign_edit_response.status(), StatusCode::FORBIDDEN);
+    let unchanged_foreign_comment =
+        projects::get_work_item_comment(&pool, item.id, foreign_comment_id)
+            .await
+            .expect("foreign comment should load");
+    assert_eq!(unchanged_foreign_comment.body, "foreign comment");
 
     let edit_response = app
         .clone()
@@ -5497,6 +5529,9 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
     assert!(detail_body.contains("编辑发表内容"));
     assert!(detail_body.contains(r#"data-success-message="评论已更新。""#));
     assert!(!detail_body.contains("删除评论"));
+    assert!(!detail_body.contains(&format!(
+        "work-item-comment-edit-modal-{foreign_comment_id}"
+    )));
 
     let delete_response = app
         .oneshot(
@@ -5576,6 +5611,82 @@ async fn web_work_item_detail_can_edit_core_fields_and_assignee() {
             .iter()
             .any(|activity| activity.summary == "更新工作项 YCE-TASK-2")
     );
+}
+
+#[tokio::test]
+async fn web_work_item_primary_post_only_author_can_edit() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let member = create_regular_user(&pool, "post_author", "主帖作者").await;
+    create_regular_user(&pool, "post_editor", "编辑成员").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "post_author", "member")
+        .await
+        .expect("author should be added");
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "post_editor", "member")
+        .await
+        .expect("editor should be added");
+    let created = projects::create_work_item(
+        &pool,
+        member.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "成员发布的工作项".to_string(),
+            description: "只有发布人本人可以修改".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: "post_editor".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", created.item_key))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(!detail_body.contains(r#"data-modal-open="work-item-edit-modal""#));
+    assert!(!detail_body.contains(r#"id="work-item-edit-modal""#));
+    assert!(detail_body.contains("发布人"));
+    assert!(detail_body.contains("主帖作者"));
+
+    let edit_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-items/{}/edit", created.item_key))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&title=Admin+Edited&description=forbidden&status=in_progress&priority=P1&assignee_username=post_editor&due_date=&parent_item_key=",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(edit_response.status(), StatusCode::FORBIDDEN);
+
+    let reloaded = projects::get_work_item_detail(&pool, &created.item_key)
+        .await
+        .expect("work item should reload")
+        .expect("work item should exist");
+    assert_eq!(reloaded.title, "成员发布的工作项");
+    assert_eq!(reloaded.description, "只有发布人本人可以修改");
 }
 
 #[tokio::test]
@@ -8963,6 +9074,11 @@ async fn api_v1_work_item_comment_allows_edit_but_not_delete() {
             .await
             .expect("comment should create")
             .id;
+    let foreign_comment_id =
+        projects::add_work_item_comment(&pool, member.user_id, "YCE-TASK-2", "api foreign comment")
+            .await
+            .expect("member comment should create")
+            .id;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let create_flow_prefix_response = app
@@ -9077,7 +9193,25 @@ async fn api_v1_work_item_comment_allows_edit_but_not_delete() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(maintainer_response.status(), StatusCode::OK);
+    assert_eq!(maintainer_response.status(), StatusCode::FORBIDDEN);
+
+    let admin_foreign_edit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{foreign_comment_id}"
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"admin cannot edit others"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(admin_foreign_edit_response.status(), StatusCode::FORBIDDEN);
 
     let edit_response = app
         .clone()
@@ -9120,9 +9254,85 @@ async fn api_v1_work_item_comment_allows_edit_but_not_delete() {
     let comments = projects::list_work_item_comments(&pool, item.id)
         .await
         .expect("comments should load");
+    let unchanged_foreign_comment =
+        projects::get_work_item_comment(&pool, item.id, foreign_comment_id)
+            .await
+            .expect("foreign comment should load");
 
     assert_eq!(delete_status, StatusCode::METHOD_NOT_ALLOWED);
     assert!(comments.iter().any(|comment| comment.id == comment_id));
+    assert_eq!(unchanged_foreign_comment.body, "api foreign comment");
+}
+
+#[tokio::test]
+async fn api_v1_work_item_update_forbids_non_author_even_super_admin() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let member = create_regular_user(&pool, "api_post_author", "API 主帖作者").await;
+    create_regular_user(&pool, "api_post_editor", "API 编辑成员").await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "api_post_author",
+        "member",
+    )
+    .await
+    .expect("author should be added");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "api_post_editor",
+        "member",
+    )
+    .await
+    .expect("editor should be added");
+    let created = projects::create_work_item(
+        &pool,
+        member.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "API 成员主帖".to_string(),
+            description: "超管不能编辑别人主帖".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: "api_post_editor".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/work-items/{}", created.item_key))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"title":"API Admin Edited","description":"should stay unchanged"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let reloaded = projects::get_work_item_detail(&pool, &created.item_key)
+        .await
+        .expect("work item should reload")
+        .expect("work item should exist");
+    assert_eq!(reloaded.title, "API 成员主帖");
+    assert_eq!(reloaded.description, "超管不能编辑别人主帖");
 }
 
 #[tokio::test]

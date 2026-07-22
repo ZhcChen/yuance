@@ -314,8 +314,10 @@ struct WorkItemDetailView {
     cycle_url: String,
     assignee_username: String,
     assignee: String,
+    reporter_user_id: Option<i64>,
     reporter_username: String,
     reporter: String,
+    primary_post_author: String,
     priority_code: String,
     priority: String,
     status_code: String,
@@ -936,6 +938,7 @@ struct WorkItemDetailTemplate {
     next_entry_title: String,
     has_attachments: bool,
     can_manage_work_items: bool,
+    can_edit_primary_post: bool,
     can_restore_work_items: bool,
 }
 
@@ -3891,6 +3894,8 @@ pub async fn work_item_detail_page(
     let can_manage_work_items =
         user_can_write_project_content_for_context(pool, &context, project.id).await?
             && project_accepts_writes;
+    let can_edit_primary_post =
+        can_manage_work_items && can_edit_work_item_primary_post(&item, context.user_id);
     let can_restore_work_items =
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
@@ -3930,6 +3935,7 @@ pub async fn work_item_detail_page(
             attachments,
             comments,
             can_manage_work_items,
+            can_edit_primary_post,
             can_restore_work_items,
             has_flow_history: !flow_history_records.is_empty(),
             flow_history_records,
@@ -4220,9 +4226,10 @@ async fn save_work_item_primary_post(
             .await;
         }
 
-        return projects::update_work_item_comment_with_format_for_project_editor(
+        return projects::update_work_item_comment_with_format(
             pool,
             actor_user_id,
+            false,
             item_key,
             comment_id,
             body,
@@ -6225,7 +6232,6 @@ pub async fn work_item_detail_partial(
     )
     .await?
         && projects::ensure_project_accepts_writes(&project.status).is_ok();
-
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
     let discussion_count = discussion_comment_count(&comments);
     response::html(WorkItemDetailPartialTemplate {
@@ -7373,6 +7379,8 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
     let priority = priority_label(&item.priority).to_string();
     let description_html =
         projects::work_item_description_html_for_display(&item.description, &item.item_key);
+    let reporter = fallback_text(item.reporter_display_name.clone(), "未分配");
+    let primary_post_author = fallback_text(item.reporter_display_name.clone(), "系统");
     let cycle_url = item
         .cycle_id
         .map(|cycle_id| format!("{}#cycle-{cycle_id}", project_cycles_url(&item.project_key)))
@@ -7403,8 +7411,10 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         cycle_url,
         assignee_username: item.assignee_username,
         assignee: fallback_text(item.assignee_display_name, "未分配"),
+        reporter_user_id: item.reporter_user_id,
         reporter_username: item.reporter_username,
-        reporter: fallback_text(item.reporter_display_name, "未分配"),
+        reporter,
+        primary_post_author,
         priority_code: item.priority,
         priority,
         status_code: item.status,
@@ -7416,6 +7426,10 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         deleted_at: display_timestamp(item.deleted_at.clone()),
         is_deleted: !item.deleted_at.trim().is_empty(),
     }
+}
+
+fn can_edit_work_item_primary_post(item: &WorkItemDetailView, user_id: i64) -> bool {
+    projects::user_can_edit_work_item_post(item.reporter_user_id, user_id)
 }
 
 fn comment_from_summary(comment: projects::WorkItemCommentSummary) -> WorkItemComment {
@@ -8989,7 +9003,7 @@ async fn load_work_item_detail_for_user(
     pool: &SqlitePool,
     item_key: &str,
     user_id: i64,
-    can_access_all_projects: bool,
+    _can_access_all_projects: bool,
 ) -> AppResult<Option<(WorkItemDetailView, Vec<WorkItemComment>)>> {
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
@@ -9000,20 +9014,14 @@ async fn load_work_item_detail_for_user(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     let mut comments = Vec::new();
     for comment in projects::list_work_item_comments(pool, item.id).await? {
-        let can_manage = if can_access_all_projects
-            && rbac::user_has_permission(pool, user_id, "work_item.manage").await?
-        {
-            true
-        } else {
-            projects::user_can_manage_work_item_comment(
-                pool,
-                project.id,
-                comment.author_user_id,
-                user_id,
-                false,
-            )
-            .await?
-        };
+        let can_manage = projects::user_can_manage_work_item_comment(
+            pool,
+            project.id,
+            comment.author_user_id,
+            user_id,
+            false,
+        )
+        .await?;
         let attachments = files::list_attachments(pool, "comment", comment.id).await?;
         comments.push(comment_with_attachments(
             comment_from_summary_with_permission(comment, can_manage),
@@ -10566,12 +10574,7 @@ fn project_cycle_roadmap_meta(
         } else {
             format!("{days_until_start} 天后开始")
         };
-        return (
-            duration_label,
-            0,
-            "时间进度 0%".to_string(),
-            schedule_hint,
-        );
+        return (duration_label, 0, "时间进度 0%".to_string(), schedule_hint);
     }
 
     if today > end {
@@ -10772,10 +10775,18 @@ fn sample_work_items(item_type: Option<&str>) -> Vec<WorkItem> {
 }
 
 fn sample_project_cycles() -> Vec<ProjectCycleView> {
-    let (active_duration_label, active_progress_percent, active_progress_label, active_schedule_hint) =
-        project_cycle_roadmap_meta("2026-07-01", "2026-07-31", "", false);
-    let (closed_duration_label, closed_progress_percent, closed_progress_label, closed_schedule_hint) =
-        project_cycle_roadmap_meta("2026-06-01", "2026-06-30", "2026-07-02 20:10:00", true);
+    let (
+        active_duration_label,
+        active_progress_percent,
+        active_progress_label,
+        active_schedule_hint,
+    ) = project_cycle_roadmap_meta("2026-07-01", "2026-07-31", "", false);
+    let (
+        closed_duration_label,
+        closed_progress_percent,
+        closed_progress_label,
+        closed_schedule_hint,
+    ) = project_cycle_roadmap_meta("2026-06-01", "2026-06-30", "2026-07-02 20:10:00", true);
     vec![
         ProjectCycleView {
             id: 1,
@@ -11022,6 +11033,7 @@ fn render_sample_work_item_detail_page(
             next_entry_url: String::new(),
             next_entry_title: String::new(),
             can_manage_work_items: true,
+            can_edit_primary_post: true,
             can_restore_work_items: true,
         })?
         .into_response(),
@@ -11056,8 +11068,10 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
             cycle_url: "/web/projects/YCE?tab=cycles#cycle-1".to_string(),
             assignee_username: "yuance_admin".to_string(),
             assignee: "陈".to_string(),
+            reporter_user_id: Some(1),
             reporter_username: "yuance_admin".to_string(),
             reporter: "陈".to_string(),
+            primary_post_author: "陈".to_string(),
             priority_code: "P0".to_string(),
             priority: "紧急".to_string(),
             status_code: "in_progress".to_string(),

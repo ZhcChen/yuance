@@ -343,6 +343,31 @@ body {
   margin-bottom: 14px;
 }
 
+.work-item-description-head {
+  align-items: center;
+}
+
+.work-item-publisher {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.work-item-publisher-avatar {
+  flex: 0 0 auto;
+}
+
+.work-item-publisher-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.work-item-publisher-name {
+  font-size: 18px;
+  line-height: 1.4;
+  font-weight: 800;
+}
+
 .content-section-head > div {
   display: grid;
   gap: 3px;
