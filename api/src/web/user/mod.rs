@@ -3121,6 +3121,7 @@ pub async fn project_attachment_create(
                 content_type: form.content_type,
                 byte_size: form.byte_size,
                 created_by_user_id: context.user_id,
+                created_by_display_name_snapshot: context.current_user.clone(),
                 activity_summary: Some(activity_summary),
             },
         )
@@ -3169,6 +3170,7 @@ pub async fn project_attachment_delete(
             "project",
             project.id,
             context.user_id,
+            &context.current_user,
             Some(project.id),
             Some(&activity_summary),
         )
@@ -3325,6 +3327,7 @@ pub async fn project_resource_create(
                 body: form.body,
                 body_format: form.body_format,
                 access_password: form.access_password,
+                actor_display_name_snapshot: context.current_user.clone(),
             },
         )
         .await?;
@@ -3579,6 +3582,7 @@ pub async fn project_resource_update(
                 body_format: form.body_format,
                 access_password_action: form.access_password_action,
                 access_password: form.access_password,
+                actor_display_name_snapshot: context.current_user.clone(),
             },
         )
         .await?;
@@ -3619,9 +3623,14 @@ pub async fn project_resource_archive(
         ensure_project_access(pool, &context, project.id).await?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
         projects::ensure_project_accepts_writes(&project.status)?;
-        let resource =
-            project_resources::archive_resource(pool, context.user_id, project.id, resource_id)
-                .await?;
+        let resource = project_resources::archive_resource(
+            pool,
+            context.user_id,
+            project.id,
+            resource_id,
+            &context.current_user,
+        )
+        .await?;
         audit::record(
             pool,
             Some(context.user_id),
@@ -3843,13 +3852,18 @@ pub async fn work_items_create(
                 assignee_username: form.assignee_username,
                 due_date: form.due_date,
                 parent_item_key: form.parent_item_key,
-                actor_display_name_snapshot: String::new(),
+                actor_display_name_snapshot: context.current_user.clone(),
             },
         )
         .await?;
-        let item =
-            projects::set_work_item_cycle(pool, context.user_id, &item.item_key, cycle_id, "")
-                .await?;
+        let item = projects::set_work_item_cycle(
+            pool,
+            context.user_id,
+            &item.item_key,
+            cycle_id,
+            &context.current_user,
+        )
+        .await?;
         audit::record(
             pool,
             Some(context.user_id),
@@ -4186,7 +4200,7 @@ pub async fn work_item_handoff(
                 assignee_username: form.assignee_username,
                 body: form.body,
                 source_comment_id: None,
-                actor_display_name_snapshot: String::new(),
+                actor_display_name_snapshot: context.current_user.clone(),
             },
         )
         .await?;
@@ -4249,13 +4263,18 @@ pub async fn work_item_update(
                 assignee_username: form.assignee_username,
                 due_date: form.due_date,
                 parent_item_key: form.parent_item_key,
-                actor_display_name_snapshot: String::new(),
+                actor_display_name_snapshot: context.current_user.clone(),
             },
         )
         .await?;
-        let updated =
-            projects::set_work_item_cycle(pool, context.user_id, &updated.item_key, cycle_id, "")
-                .await?;
+        let updated = projects::set_work_item_cycle(
+            pool,
+            context.user_id,
+            &updated.item_key,
+            cycle_id,
+            &context.current_user,
+        )
+        .await?;
         if !form.body.trim().is_empty() {
             save_work_item_primary_post(
                 pool,
@@ -4264,6 +4283,7 @@ pub async fn work_item_update(
                 form.primary_comment_id,
                 &form.body,
                 &form.body_format,
+                &context.current_user,
             )
             .await?;
         }
@@ -4290,6 +4310,7 @@ async fn save_work_item_primary_post(
     primary_comment_id: Option<i64>,
     body: &str,
     body_format: &str,
+    actor_display_name_snapshot: &str,
 ) -> AppResult<projects::WorkItemCommentSummary> {
     if let Some(comment_id) = primary_comment_id {
         let item = projects::get_work_item_detail(pool, item_key)
@@ -4305,6 +4326,7 @@ async fn save_work_item_primary_post(
                 comment_id,
                 body,
                 body_format,
+                actor_display_name_snapshot,
             )
             .await;
         }
@@ -4328,7 +4350,7 @@ async fn save_work_item_primary_post(
         body,
         body_format,
         None,
-        "",
+        actor_display_name_snapshot,
     )
     .await
 }
@@ -4530,6 +4552,7 @@ pub async fn work_item_attachment_create(
                 content_type: form.content_type,
                 byte_size: form.byte_size,
                 created_by_user_id: context.user_id,
+                created_by_display_name_snapshot: context.current_user.clone(),
                 activity_summary: Some(activity_summary),
             },
         )
@@ -4715,6 +4738,7 @@ pub async fn work_item_comment_attachment_create(
                 content_type: form.content_type,
                 byte_size: form.byte_size,
                 created_by_user_id: context.user_id,
+                created_by_display_name_snapshot: context.current_user.clone(),
                 activity_summary: Some(activity_summary),
             },
         )

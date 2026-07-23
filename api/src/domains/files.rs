@@ -71,6 +71,7 @@ pub struct CreateFolderInput {
     pub name: String,
     pub description: Option<String>,
     pub created_by_user_id: i64,
+    pub created_by_display_name_snapshot: String,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +147,7 @@ pub struct CreateAttachmentInput {
     pub content_type: String,
     pub byte_size: i64,
     pub created_by_user_id: i64,
+    pub created_by_display_name_snapshot: String,
     pub activity_summary: Option<String>,
 }
 
@@ -213,6 +215,8 @@ pub async fn create_attachment(
         .as_deref()
         .map(validate_activity_summary)
         .transpose()?;
+    let created_by_display_name_snapshot =
+        normalize_display_name_snapshot(&input.created_by_display_name_snapshot);
     validate_byte_size(input.byte_size)?;
     if let Some(folder_id) = input.folder_id {
         let folder = get_folder(pool, folder_id).await?;
@@ -262,9 +266,10 @@ pub async fn create_attachment(
             file_object_id,
             target_type,
             target_id,
-            created_by_user_id
+            created_by_user_id,
+            created_by_display_name_snapshot
         )
-        VALUES (?1, ?2, ?3, ?4)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         RETURNING id
         "#,
     )
@@ -272,6 +277,7 @@ pub async fn create_attachment(
     .bind(target_type)
     .bind(input.target_id)
     .bind(input.created_by_user_id)
+    .bind(&created_by_display_name_snapshot)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -281,17 +287,19 @@ pub async fn create_attachment(
             INSERT INTO project_activities (
                 project_id,
                 actor_user_id,
+                actor_display_name_snapshot,
                 action,
                 target_type,
                 target_id,
                 summary,
                 metadata
             )
-            VALUES (?1, ?2, 'file.attached', ?3, ?4, ?5, ?6)
+            VALUES (?1, ?2, ?3, 'file.attached', ?4, ?5, ?6, ?7)
             "#,
         )
         .bind(project_id)
         .bind(input.created_by_user_id)
+        .bind(&created_by_display_name_snapshot)
         .bind(target_type)
         .bind(input.target_id.to_string())
         .bind(summary)
@@ -327,7 +335,7 @@ pub async fn list_attachments(
             fo.content_type,
             fo.byte_size,
             fo.status,
-            COALESCE(u.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(fa.created_by_display_name_snapshot, ''), u.display_name, '') AS created_by_display_name,
             fa.created_at
         FROM file_attachments fa
         JOIN file_objects fo ON fo.id = fa.file_object_id
@@ -476,7 +484,7 @@ pub async fn get_project_attachment_for_file_object(
             fo.content_type,
             fo.byte_size,
             fo.status,
-            COALESCE(u.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(fa.created_by_display_name_snapshot, ''), u.display_name, '') AS created_by_display_name,
             fa.created_at
         FROM file_attachments fa
         JOIN file_objects fo ON fo.id = fa.file_object_id
@@ -562,6 +570,7 @@ pub async fn archive_attachment(
     target_type: &str,
     target_id: i64,
     actor_user_id: i64,
+    actor_display_name_snapshot: &str,
     project_id: Option<i64>,
     activity_summary: Option<&str>,
 ) -> AppResult<FileAttachmentSummary> {
@@ -574,6 +583,7 @@ pub async fn archive_attachment(
     let activity_summary = activity_summary
         .map(validate_activity_summary)
         .transpose()?;
+    let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
 
     let mut tx = pool.begin().await?;
     sqlx::query(
@@ -595,17 +605,19 @@ pub async fn archive_attachment(
             INSERT INTO project_activities (
                 project_id,
                 actor_user_id,
+                actor_display_name_snapshot,
                 action,
                 target_type,
                 target_id,
                 summary,
                 metadata
             )
-            VALUES (?1, ?2, 'file.archived', ?3, ?4, ?5, ?6)
+            VALUES (?1, ?2, ?3, 'file.archived', ?4, ?5, ?6, ?7)
             "#,
         )
         .bind(project_id)
         .bind(actor_user_id)
+        .bind(&actor_display_name_snapshot)
         .bind(target_type)
         .bind(target_id.to_string())
         .bind(summary)
@@ -756,7 +768,7 @@ fn attachment_query() -> sqlx::QueryBuilder<sqlx::Sqlite> {
             fo.content_type,
             fo.byte_size,
             fo.status,
-            COALESCE(u.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(fa.created_by_display_name_snapshot, ''), u.display_name, '') AS created_by_display_name,
             fa.created_at
         FROM file_attachments fa
         JOIN file_objects fo ON fo.id = fa.file_object_id
@@ -789,6 +801,10 @@ fn attachment_from_row(row: AttachmentRow) -> FileAttachmentSummary {
         created_by_display_name,
         created_at,
     }
+}
+
+fn normalize_display_name_snapshot(display_name: &str) -> String {
+    display_name.trim().to_string()
 }
 
 pub fn generate_object_key(original_filename: &str) -> String {
@@ -932,6 +948,8 @@ fn folder_from_row(row: FolderRow) -> FileFolder {
 pub async fn create_folder(pool: &SqlitePool, input: CreateFolderInput) -> AppResult<FileFolder> {
     let name = validate_folder_name(&input.name)?;
     let description = input.description.unwrap_or_default().trim().to_string();
+    let created_by_display_name_snapshot =
+        normalize_display_name_snapshot(&input.created_by_display_name_snapshot);
 
     if let Some(parent_id) = input.parent_id {
         if parent_id <= 0 {
@@ -951,9 +969,10 @@ pub async fn create_folder(pool: &SqlitePool, input: CreateFolderInput) -> AppRe
             project_id,
             name,
             description,
-            created_by_user_id
+            created_by_user_id,
+            created_by_display_name_snapshot
         )
-        VALUES (?1, ?2, ?3, ?4, ?5)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
         RETURNING id
         "#,
     )
@@ -962,6 +981,7 @@ pub async fn create_folder(pool: &SqlitePool, input: CreateFolderInput) -> AppRe
     .bind(&name)
     .bind(&description)
     .bind(input.created_by_user_id)
+    .bind(&created_by_display_name_snapshot)
     .fetch_one(pool)
     .await?;
 
@@ -988,7 +1008,7 @@ pub async fn get_folder_optional(pool: &SqlitePool, id: i64) -> AppResult<Option
             ff.name,
             ff.description,
             ff.status,
-            COALESCE(u.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(ff.created_by_display_name_snapshot, ''), u.display_name, '') AS created_by_display_name,
             ff.created_at,
             ff.updated_at
         FROM file_folders ff
@@ -1141,7 +1161,7 @@ pub async fn list_folders(
             ff.name,
             ff.description,
             ff.status,
-            COALESCE(u.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(ff.created_by_display_name_snapshot, ''), u.display_name, '') AS created_by_display_name,
             ff.created_at,
             ff.updated_at
         FROM file_folders ff
@@ -1239,7 +1259,7 @@ pub async fn get_folder_content(
             fo.content_type,
             fo.byte_size,
             fo.status,
-            COALESCE(u.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(fa.created_by_display_name_snapshot, ''), u.display_name, '') AS created_by_display_name,
             fa.created_at
         FROM file_attachments fa
         JOIN file_objects fo ON fo.id = fa.file_object_id

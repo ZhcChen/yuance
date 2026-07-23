@@ -67,6 +67,7 @@ pub struct CreateProjectResourceInput {
     pub body: String,
     pub body_format: String,
     pub access_password: String,
+    pub actor_display_name_snapshot: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +78,7 @@ pub struct UpdateProjectResourceInput {
     pub body_format: String,
     pub access_password_action: String,
     pub access_password: String,
+    pub actor_display_name_snapshot: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,9 +136,9 @@ pub async fn list_resources(
             pr.body_format,
             pr.status,
             CASE WHEN pr.access_password_hash <> '' THEN '1' ELSE '0' END AS is_protected,
-            COALESCE(created_user.display_name, '') AS created_by_display_name,
-            COALESCE(updated_user.display_name, '') AS updated_by_display_name,
-            COALESCE(archived_user.display_name, '') AS archived_by_display_name,
+            COALESCE(NULLIF(pr.created_by_display_name_snapshot, ''), created_user.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(pr.updated_by_display_name_snapshot, ''), updated_user.display_name, '') AS updated_by_display_name,
+            COALESCE(NULLIF(pr.archived_by_display_name_snapshot, ''), archived_user.display_name, '') AS archived_by_display_name,
             COALESCE(pr.archived_at, '') AS archived_at,
             pr.created_at,
             pr.updated_at,
@@ -191,9 +193,9 @@ pub async fn get_resource(
             pr.body_format,
             pr.status,
             CASE WHEN pr.access_password_hash <> '' THEN '1' ELSE '0' END AS is_protected,
-            COALESCE(created_user.display_name, '') AS created_by_display_name,
-            COALESCE(updated_user.display_name, '') AS updated_by_display_name,
-            COALESCE(archived_user.display_name, '') AS archived_by_display_name,
+            COALESCE(NULLIF(pr.created_by_display_name_snapshot, ''), created_user.display_name, '') AS created_by_display_name,
+            COALESCE(NULLIF(pr.updated_by_display_name_snapshot, ''), updated_user.display_name, '') AS updated_by_display_name,
+            COALESCE(NULLIF(pr.archived_by_display_name_snapshot, ''), archived_user.display_name, '') AS archived_by_display_name,
             COALESCE(pr.archived_at, '') AS archived_at,
             pr.created_at,
             pr.updated_at,
@@ -244,6 +246,8 @@ pub async fn create_resource(
         validate_access_password(&input.access_password)?;
         auth::hash_password(&input.access_password)?
     };
+    let actor_display_name_snapshot =
+        normalize_display_name_snapshot(&input.actor_display_name_snapshot);
 
     let created = sqlx::query_as::<_, (i64,)>(
         r#"
@@ -255,9 +259,11 @@ pub async fn create_resource(
             body_format,
             access_password_hash,
             created_by_user_id,
-            updated_by_user_id
+            created_by_display_name_snapshot,
+            updated_by_user_id,
+            updated_by_display_name_snapshot
         )
-        VALUES (?1, ?2, ?3, '', 'html', ?4, ?5, ?5)
+        VALUES (?1, ?2, ?3, '', 'html', ?4, ?5, ?6, ?5, ?6)
         RETURNING id
         "#,
     )
@@ -266,6 +272,7 @@ pub async fn create_resource(
     .bind(category)
     .bind(access_password_hash)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .fetch_one(pool)
     .await?;
 
@@ -285,6 +292,7 @@ pub async fn create_resource(
             SET body = ?2,
                 body_format = ?3,
                 updated_by_user_id = ?4,
+                updated_by_display_name_snapshot = ?5,
                 updated_at = datetime('now')
             WHERE id = ?1
             "#,
@@ -293,6 +301,7 @@ pub async fn create_resource(
         .bind(prepared.body)
         .bind(prepared.body_format)
         .bind(actor_user_id)
+        .bind(&actor_display_name_snapshot)
         .execute(pool)
         .await?;
     }
@@ -301,6 +310,7 @@ pub async fn create_resource(
         pool,
         input.project_id,
         actor_user_id,
+        &actor_display_name_snapshot,
         "project_resource.create",
         "project_resource",
         &created.0.to_string(),
@@ -352,6 +362,8 @@ pub async fn update_resource(
         false,
     )
     .await?;
+    let actor_display_name_snapshot =
+        normalize_display_name_snapshot(&input.actor_display_name_snapshot);
 
     sqlx::query(
         r#"
@@ -362,6 +374,7 @@ pub async fn update_resource(
             body_format = ?5,
             access_password_hash = ?6,
             updated_by_user_id = ?7,
+            updated_by_display_name_snapshot = ?8,
             updated_at = datetime('now')
         WHERE id = ?1
         "#,
@@ -373,6 +386,7 @@ pub async fn update_resource(
     .bind(prepared.body_format)
     .bind(access_password_hash)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .execute(pool)
     .await?;
 
@@ -380,6 +394,7 @@ pub async fn update_resource(
         pool,
         existing.project_id,
         actor_user_id,
+        &actor_display_name_snapshot,
         "project_resource.update",
         "project_resource",
         &resource_id.to_string(),
@@ -397,23 +412,28 @@ pub async fn archive_resource(
     actor_user_id: i64,
     project_id: i64,
     resource_id: i64,
+    actor_display_name_snapshot: &str,
 ) -> AppResult<ProjectResourceDetail> {
     let existing = get_project_resource(pool, project_id, resource_id).await?;
     ensure_resource_accepts_writes(&existing)?;
+    let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
 
     sqlx::query(
         r#"
         UPDATE project_resources
         SET status = 'archived',
             archived_by_user_id = ?2,
+            archived_by_display_name_snapshot = ?3,
             archived_at = datetime('now'),
             updated_by_user_id = ?2,
+            updated_by_display_name_snapshot = ?3,
             updated_at = datetime('now')
         WHERE id = ?1
         "#,
     )
     .bind(resource_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .execute(pool)
     .await?;
 
@@ -421,6 +441,7 @@ pub async fn archive_resource(
         pool,
         project_id,
         actor_user_id,
+        &actor_display_name_snapshot,
         "project_resource.archive",
         "project_resource",
         &resource_id.to_string(),
@@ -782,26 +803,30 @@ async fn record_project_activity(
     pool: &SqlitePool,
     project_id: i64,
     actor_user_id: i64,
+    actor_display_name_snapshot: &str,
     action: &str,
     target_type: &str,
     target_id: &str,
     summary: &str,
 ) -> AppResult<()> {
+    let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
     sqlx::query(
         r#"
         INSERT INTO project_activities (
             project_id,
             actor_user_id,
+            actor_display_name_snapshot,
             action,
             target_type,
             target_id,
             summary
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(action)
     .bind(target_type)
     .bind(target_id)
@@ -810,6 +835,10 @@ async fn record_project_activity(
     .await?;
 
     Ok(())
+}
+
+fn normalize_display_name_snapshot(display_name: &str) -> String {
+    display_name.trim().to_string()
 }
 
 fn sanitize_resource_html(body: &str, project_key: &str, resource_id: i64) -> String {

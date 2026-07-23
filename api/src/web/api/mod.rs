@@ -1990,7 +1990,8 @@ pub async fn create_work_item_comment_draft(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -2009,6 +2010,7 @@ pub async fn create_work_item_comment_draft(
         user.id,
         &item_key,
         payload.parent_comment_id,
+        &principal.actor_display_name_snapshot(),
     )
     .await?;
 
@@ -2021,7 +2023,8 @@ pub async fn publish_work_item_comment_draft(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -2042,6 +2045,7 @@ pub async fn publish_work_item_comment_draft(
         comment_id,
         &payload.body,
         &payload.body_format,
+        &principal.actor_display_name_snapshot(),
     )
     .await?;
     audit::record(
@@ -2123,6 +2127,7 @@ pub async fn create_work_item_comment_attachment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, item, project, comment) =
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2152,6 +2157,7 @@ pub async fn create_work_item_comment_attachment(
             content_type: payload.content_type,
             byte_size: payload.byte_size,
             created_by_user_id: user.id,
+            created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary,
         },
     )
@@ -2299,6 +2305,7 @@ pub async fn work_item_comment_attachment_delete(
     headers: HeaderMap,
     Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, item, project, comment) =
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2341,6 +2348,7 @@ pub async fn work_item_comment_attachment_delete(
         "comment",
         comment.id,
         user.id,
+        &principal.actor_display_name_snapshot(),
         None,
         None,
     )
@@ -2364,7 +2372,8 @@ pub async fn create_project_attachment(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
@@ -2390,6 +2399,7 @@ pub async fn create_project_attachment(
             content_type: payload.content_type,
             byte_size: payload.byte_size,
             created_by_user_id: user.id,
+            created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: Some(activity_summary),
         },
     )
@@ -2544,7 +2554,8 @@ pub async fn project_attachment_delete(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
@@ -2560,6 +2571,7 @@ pub async fn project_attachment_delete(
         "project",
         project.id,
         user.id,
+        &principal.actor_display_name_snapshot(),
         Some(project.id),
         Some("归档项目附件"),
     )
@@ -2614,7 +2626,8 @@ pub async fn create_project_resource(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateProjectResourceRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -2635,6 +2648,7 @@ pub async fn create_project_resource(
             body: payload.body,
             body_format: payload.body_format,
             access_password: payload.access_password,
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
     .await?;
@@ -2677,6 +2691,7 @@ pub async fn update_project_resource(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<UpdateProjectResourceRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2699,6 +2714,7 @@ pub async fn update_project_resource(
                 .unwrap_or_else(|| resource.body_format.clone()),
             access_password_action: payload.access_password_action,
             access_password: payload.access_password,
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
     .await?;
@@ -2720,6 +2736,7 @@ pub async fn archive_project_resource(
     headers: HeaderMap,
     Path((project_key, resource_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2727,8 +2744,14 @@ pub async fn archive_project_resource(
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
     projects::ensure_project_accepts_writes(&project.status)?;
-    let archived =
-        project_resources::archive_resource(pool, user.id, project.id, resource.id).await?;
+    let archived = project_resources::archive_resource(
+        pool,
+        user.id,
+        project.id,
+        resource.id,
+        &principal.actor_display_name_snapshot(),
+    )
+    .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -2784,6 +2807,7 @@ pub async fn create_project_resource_attachment(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2811,6 +2835,7 @@ pub async fn create_project_resource_attachment(
             content_type: payload.content_type,
             byte_size: payload.byte_size,
             created_by_user_id: user.id,
+            created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: None,
         },
     )
@@ -2960,6 +2985,7 @@ pub async fn project_resource_attachment_delete(
     headers: HeaderMap,
     Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -2982,6 +3008,7 @@ pub async fn project_resource_attachment_delete(
         "project_resource",
         resource.id,
         user.id,
+        &principal.actor_display_name_snapshot(),
         None,
         None,
     )
@@ -3008,6 +3035,7 @@ pub async fn create_work_item_attachment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
+    let principal = require_api_principal(&state, &headers).await?;
     let (user, item, project) = require_api_work_item_context(&state, &headers, &item_key).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3031,6 +3059,7 @@ pub async fn create_work_item_attachment(
             content_type: payload.content_type,
             byte_size: payload.byte_size,
             created_by_user_id: user.id,
+            created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: Some(activity_summary),
         },
     )
@@ -4713,7 +4742,8 @@ pub async fn create_project_folder(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateFolderRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
@@ -4731,6 +4761,7 @@ pub async fn create_project_folder(
             name: payload.name,
             description: Some(payload.description),
             created_by_user_id: user.id,
+            created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
     .await?;

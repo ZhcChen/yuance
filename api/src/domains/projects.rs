@@ -2833,10 +2833,11 @@ pub async fn create_work_item(
             priority,
             assignee_user_id,
             reporter_user_id,
+            reporter_display_name_snapshot,
             parent_work_item_id,
             due_date
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, NULLIF(?10, ''))
+        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, ?10, NULLIF(?11, ''))
         RETURNING id
         "#,
     )
@@ -2848,6 +2849,7 @@ pub async fn create_work_item(
     .bind(priority)
     .bind(assignee_user_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(parent_work_item_id)
     .bind(&due_date)
     .fetch_one(&mut *tx)
@@ -2924,7 +2926,7 @@ pub async fn get_work_item_detail(
             COALESCE(assignee.display_name, '') AS assignee_display_name,
             wi.reporter_user_id AS reporter_user_id,
             COALESCE(reporter.username, '') AS reporter_username,
-            COALESCE(reporter.display_name, '') AS reporter_display_name,
+            COALESCE(NULLIF(wi.reporter_display_name_snapshot, ''), reporter.display_name, '') AS reporter_display_name,
             COALESCE(wi.due_date, '') AS due_date,
             wi.created_at,
             wi.updated_at,
@@ -3990,7 +3992,10 @@ pub async fn create_work_item_comment_draft(
     actor_user_id: i64,
     item_key: &str,
     parent_comment_id: Option<i64>,
+    actor_display_name_snapshot: &str,
 ) -> AppResult<WorkItemCommentSummary> {
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_status)) = sqlx::query_as::<_, (i64, String)>(
         r#"
         SELECT wi.id, p.status
@@ -4019,17 +4024,19 @@ pub async fn create_work_item_comment_draft(
         INSERT INTO work_item_comments (
             work_item_id,
             author_user_id,
+            actor_display_name_snapshot,
             body,
             body_format,
             parent_comment_id,
             is_draft
         )
-        VALUES (?1, ?2, '', 'html', ?3, 1)
+        VALUES (?1, ?2, ?3, '', 'html', ?4, 1)
         RETURNING id
         "#,
     )
     .bind(work_item_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(parent_comment_id)
     .fetch_one(pool)
     .await?;
@@ -4044,8 +4051,11 @@ pub async fn publish_work_item_comment_draft(
     comment_id: i64,
     body: &str,
     body_format: &str,
+    actor_display_name_snapshot: &str,
 ) -> AppResult<WorkItemCommentSummary> {
     let prepared = prepare_work_item_comment_body(body, body_format)?;
+    let actor_display_name_snapshot =
+        normalize_actor_display_name_snapshot(actor_display_name_snapshot);
     let Some((work_item_id, project_id, project_status)) = sqlx::query_as::<_, (i64, i64, String)>(
         r#"
         SELECT wi.id, wi.project_id, p.status
@@ -4089,6 +4099,7 @@ pub async fn publish_work_item_comment_draft(
         UPDATE work_item_comments
         SET body = ?3,
             body_format = ?4,
+            actor_display_name_snapshot = ?5,
             is_draft = 0,
             created_at = datetime('now'),
             updated_at = datetime('now')
@@ -4102,6 +4113,7 @@ pub async fn publish_work_item_comment_draft(
     .bind(work_item_id)
     .bind(&prepared.body)
     .bind(&prepared.body_format)
+    .bind(&actor_display_name_snapshot)
     .execute(&mut *tx)
     .await?
     .rows_affected();
@@ -4126,7 +4138,7 @@ pub async fn publish_work_item_comment_draft(
             CreateNotification {
                 recipient_user_id,
                 actor_user_id,
-                actor_display_name_snapshot: "",
+                actor_display_name_snapshot: &actor_display_name_snapshot,
                 kind: "comment_replied",
                 work_item_id,
                 comment_id: Some(comment_id),
@@ -4142,16 +4154,18 @@ pub async fn publish_work_item_comment_draft(
         INSERT INTO project_activities (
             project_id,
             actor_user_id,
+            actor_display_name_snapshot,
             action,
             target_type,
             target_id,
             summary
         )
-        VALUES (?1, ?2, 'work_item.commented', 'work_item', ?3, ?4)
+        VALUES (?1, ?2, ?3, 'work_item.commented', 'work_item', ?4, ?5)
         "#,
     )
     .bind(project_id)
     .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
     .bind(item_key)
     .bind(format!("评论工作项 {item_key}"))
     .execute(&mut *tx)

@@ -248,6 +248,160 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
 }
 
 #[tokio::test]
+async fn api_token_visible_authors_use_token_name_across_work_items_resources_and_files() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, admin.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let token_name = "Codex CLI 助手（系统管理员）";
+    let raw_token = create_test_api_token(
+        app.clone(),
+        &admin.cookie,
+        r#"{"name":"Codex CLI 助手","scopes":["project:read","work_item:read","work_item:write","comment:write","resource:read","resource:write"],"project_scope":"YCE"}"#,
+    )
+    .await;
+
+    let create_item_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"task","title":"Token 作者显示任务","description":"检查帖子作者展示","priority":"P2"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_item_status = create_item_response.status();
+    let create_item_body = response_body(create_item_response).await;
+    assert_eq!(create_item_status, StatusCode::CREATED, "{create_item_body}");
+    let create_item_json: serde_json::Value =
+        serde_json::from_str(&create_item_body).expect("work item json should parse");
+    assert_eq!(create_item_json["data"]["reporter"], token_name);
+    let item_key = create_item_json["data"]["key"]
+        .as_str()
+        .expect("work item key should exist")
+        .to_string();
+
+    let work_item_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{item_key}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(work_item_page.status(), StatusCode::OK);
+    let work_item_page_body = response_body(work_item_page).await;
+    assert!(
+        work_item_page_body.contains(token_name),
+        "{work_item_page_body}"
+    );
+
+    let create_resource_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    r#"{"title":"Token 资料作者显示","category":"integration","body":"<p>检查资料作者展示</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_resource_status = create_resource_response.status();
+    let create_resource_body = response_body(create_resource_response).await;
+    assert_eq!(
+        create_resource_status,
+        StatusCode::CREATED,
+        "{create_resource_body}"
+    );
+    let create_resource_json: serde_json::Value =
+        serde_json::from_str(&create_resource_body).expect("resource json should parse");
+    assert_eq!(create_resource_json["data"]["created_by"], token_name);
+    let resource_id = create_resource_json["data"]["id"]
+        .as_i64()
+        .expect("resource id should exist");
+
+    let resource_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{resource_id}"))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(resource_page.status(), StatusCode::OK);
+    let resource_page_body = response_body(resource_page).await;
+    assert!(resource_page_body.contains(token_name), "{resource_page_body}");
+
+    let create_folder_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/folders")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"name":"Token 文件夹","description":"作者显示"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_folder_status = create_folder_response.status();
+    let create_folder_body = response_body(create_folder_response).await;
+    assert_eq!(create_folder_status, StatusCode::CREATED, "{create_folder_body}");
+    let create_folder_json: serde_json::Value =
+        serde_json::from_str(&create_folder_body).expect("folder json should parse");
+    assert_eq!(create_folder_json["data"]["created_by"], token_name);
+    let folder_id = create_folder_json["data"]["id"]
+        .as_i64()
+        .expect("folder id should exist");
+
+    let create_attachment_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/attachments")
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(format!(
+                    r#"{{"original_filename":"token-proof.pdf","content_type":"application/pdf","byte_size":2048,"folder_id":{folder_id}}}"#
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let create_attachment_status = create_attachment_response.status();
+    let create_attachment_body = response_body(create_attachment_response).await;
+    assert_eq!(
+        create_attachment_status,
+        StatusCode::CREATED,
+        "{create_attachment_body}"
+    );
+    let create_attachment_json: serde_json::Value =
+        serde_json::from_str(&create_attachment_body).expect("attachment json should parse");
+    assert_eq!(create_attachment_json["data"]["created_by"], token_name);
+}
+
+#[tokio::test]
 async fn project_resource_library_requires_password_for_protected_details() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
@@ -842,7 +996,7 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
         .expect("storage config should load")
         .expect("storage config should exist");
 
-    let draft = projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None)
+    let draft = projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None, "")
         .await
         .expect("draft should be created");
     let attachment = files::create_attachment(
@@ -857,6 +1011,7 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
             content_type: "text/plain".to_string(),
             byte_size: 42,
             created_by_user_id: admin.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论附件 rich-doc.txt".to_string()),
         },
     )
@@ -881,6 +1036,7 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
         draft.id,
         &body,
         "html",
+        "",
     )
     .await
     .expect("draft should publish with controlled file link");
@@ -893,7 +1049,7 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
     assert!(published.body.contains(r#"data-yuance-align="center""#));
 
     let rejected_draft =
-        projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None)
+        projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None, "")
             .await
             .expect("draft should be created");
     let rejected = projects::publish_work_item_comment_draft(
@@ -903,6 +1059,7 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
         rejected_draft.id,
         r#"<p>伪装附件</p><a href="https://tracker.example.invalid/file.txt" data-yuance-attachment-kind="file">bad.txt</a>"#,
         "html",
+        "",
     )
     .await;
     assert!(rejected.is_err());
@@ -967,6 +1124,7 @@ async fn work_item_detail_renders_rich_description_media_safely() {
             content_type: "image/png".to_string(),
             byte_size: 128,
             created_by_user_id: admin.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项详情图片 detail-shot.png".to_string()),
         },
     )
@@ -1067,7 +1225,7 @@ async fn work_item_detail_uses_initial_rich_comment_when_description_is_plain_su
         .expect("storage config should load")
         .expect("storage config should exist");
     let draft =
-        projects::create_work_item_comment_draft(&pool, admin.user_id, &item.item_key, None)
+        projects::create_work_item_comment_draft(&pool, admin.user_id, &item.item_key, None, "")
             .await
             .expect("draft should be created");
     let attachment = files::create_attachment(
@@ -1082,6 +1240,7 @@ async fn work_item_detail_uses_initial_rich_comment_when_description_is_plain_su
             content_type: "image/png".to_string(),
             byte_size: 128,
             created_by_user_id: admin.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论附件 main-shot.png".to_string()),
         },
     )
@@ -1105,6 +1264,7 @@ async fn work_item_detail_uses_initial_rich_comment_when_description_is_plain_su
         draft.id,
         &body,
         "html",
+        "",
     )
     .await
     .expect("draft should publish");
@@ -1236,7 +1396,7 @@ async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
         .expect("storage config should load")
         .expect("storage config should exist");
     let draft =
-        projects::create_work_item_comment_draft(&pool, admin.user_id, &item.item_key, None)
+        projects::create_work_item_comment_draft(&pool, admin.user_id, &item.item_key, None, "")
             .await
             .expect("draft should be created");
     let image_attachment = files::create_attachment(
@@ -1251,6 +1411,7 @@ async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
             content_type: "image/png".to_string(),
             byte_size: 128,
             created_by_user_id: admin.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论图片 detail-image.png".to_string()),
         },
     )
@@ -1271,6 +1432,7 @@ async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
             content_type: "text/plain".to_string(),
             byte_size: 32,
             created_by_user_id: admin.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论文件 detail-note.txt".to_string()),
         },
     )
@@ -1299,6 +1461,7 @@ async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
         draft.id,
         &body,
         "html",
+        "",
     )
     .await
     .expect("draft should publish");
@@ -3593,6 +3756,7 @@ async fn web_current_project_redirects_resource_detail_to_selected_project_libra
             body: "<p>用于验证切换项目后的资料详情跳转。</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
+        actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -4081,6 +4245,7 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
             body: "<p>A</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
+        actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -4095,6 +4260,7 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
             body: "<p>B</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
+        actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -4480,6 +4646,7 @@ async fn web_search_finds_visible_project_resources() {
             body: "yuance-search-demo".to_string(),
             body_format: project_resources::RESOURCE_BODY_FORMAT_PLAIN.to_string(),
             access_password: String::new(),
+        actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -6549,6 +6716,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "image/png".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 roadmap.png".to_string()),
         },
     )
@@ -6570,6 +6738,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "image/png".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 failure.png".to_string()),
         },
     )
@@ -6591,6 +6760,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "image/jpeg".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论附件 stacktrace.jpeg".to_string()),
         },
     )
@@ -6612,6 +6782,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "image/svg+xml".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 diagram.svg".to_string()),
         },
     )
@@ -6633,6 +6804,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "application/pdf".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 report.pdf".to_string()),
         },
     )
@@ -6654,6 +6826,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "image/png".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 deleted-preview.png".to_string()),
         },
     )
@@ -6668,6 +6841,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
         "work_item",
         item.id,
         initialized.user_id,
+        "",
         Some(project.id),
         Some("归档工作项附件 deleted-preview.png"),
     )
@@ -6686,6 +6860,7 @@ async fn web_detail_renders_uploaded_raster_attachments_as_image_previews() {
             content_type: "image/png".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 pending.png".to_string()),
         },
     )
@@ -6907,7 +7082,7 @@ async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
         .expect("demo seed should apply");
     seed_memory_storage_config(&pool, initialized.user_id).await;
     let draft =
-        projects::create_work_item_comment_draft(&pool, initialized.user_id, "YCE-TASK-2", None)
+        projects::create_work_item_comment_draft(&pool, initialized.user_id, "YCE-TASK-2", None, "")
             .await
             .expect("draft should create");
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
@@ -6934,6 +7109,7 @@ async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
             content_type: "image/png".to_string(),
             byte_size: 1024,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: None,
         },
     )
@@ -7005,6 +7181,7 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
             body: String::new(),
             body_format: "html".to_string(),
             access_password: String::new(),
+        actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -7025,6 +7202,7 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
             content_type: "image/png".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: None,
         },
     )
@@ -7102,6 +7280,7 @@ async fn api_v1_project_attachment_subflows_require_rbac_permissions() {
             content_type: "application/pdf".to_string(),
             byte_size: 128,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 rbac-project.pdf".to_string()),
         },
     )
@@ -7264,6 +7443,7 @@ async fn api_v1_attachment_download_urls_write_audit_logs() {
             content_type: "application/pdf".to_string(),
             byte_size: 128,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 api-project-download.pdf".to_string()),
         },
     )
@@ -7281,6 +7461,7 @@ async fn api_v1_attachment_download_urls_write_audit_logs() {
             content_type: "image/png".to_string(),
             byte_size: 256,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 api-work-download.png".to_string()),
         },
     )
@@ -7298,6 +7479,7 @@ async fn api_v1_attachment_download_urls_write_audit_logs() {
             content_type: "text/plain".to_string(),
             byte_size: 64,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论附件 api-comment-download.txt".to_string()),
         },
     )
@@ -7531,6 +7713,7 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 api-roadmap.pdf".to_string()),
         },
     )
@@ -7730,6 +7913,7 @@ async fn api_test_storage_upload_grant_is_bound_to_issuing_user() {
             content_type: "image/png".to_string(),
             byte_size: 1,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 bound-grant.png".to_string()),
         },
     )
@@ -7805,6 +7989,7 @@ async fn api_v1_attachment_upload_url_returns_signed_put_request() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 signed-upload.pdf".to_string()),
         },
     )
@@ -7863,6 +8048,7 @@ async fn api_v1_attachment_mark_uploaded_requires_existing_object() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 missing-object.pdf".to_string()),
         },
     )
@@ -7923,6 +8109,7 @@ async fn api_v1_attachment_mark_uploaded_rejects_size_mismatch() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 wrong-size.pdf".to_string()),
         },
     )
@@ -7992,6 +8179,7 @@ async fn api_v1_attachment_mark_uploaded_rejects_content_type_mismatch() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 wrong-content-type.pdf".to_string()),
         },
     )
@@ -8278,6 +8466,7 @@ async fn api_v1_project_file_folders_manage_upload_and_move_scope() {
             name: "OPS 文件".to_string(),
             description: None,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -8390,6 +8579,7 @@ async fn web_project_attachment_download_redirects_to_signed_object_url() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 download-me.pdf".to_string()),
         },
     )
@@ -8485,6 +8675,7 @@ async fn web_project_attachment_archive_marks_file_archived_and_records_activity
             content_type: "application/pdf".to_string(),
             byte_size: 1024,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 delete-me.pdf".to_string()),
         },
     )
@@ -8592,6 +8783,7 @@ async fn api_v1_project_attachment_archive_blocks_later_signed_urls() {
             content_type: "application/pdf".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 api-delete.pdf".to_string()),
         },
     )
@@ -8691,6 +8883,7 @@ async fn api_v1_work_item_attachment_lifecycle_respects_project_scope() {
             content_type: "image/png".to_string(),
             byte_size: 4096,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 api-screenshot.png".to_string()),
         },
     )
@@ -8774,6 +8967,7 @@ async fn web_work_item_attachment_download_redirects_to_signed_object_url() {
             content_type: "image/png".to_string(),
             byte_size: 4096,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 download-screenshot.png".to_string()),
         },
     )
@@ -8856,6 +9050,7 @@ async fn web_work_item_attachment_download_serves_test_memory_object() {
             content_type: "image/png".to_string(),
             byte_size: 13,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 memory-preview.png".to_string()),
         },
     )
@@ -8886,6 +9081,7 @@ async fn web_work_item_attachment_download_serves_test_memory_object() {
             content_type: "text/html".to_string(),
             byte_size: 32,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 unsafe.html".to_string()),
         },
     )
@@ -9003,6 +9199,7 @@ async fn web_work_item_attachment_download_rejects_archived_attachment() {
             content_type: "image/png".to_string(),
             byte_size: 4096,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 deleted-screenshot.png".to_string()),
         },
     )
@@ -9017,6 +9214,7 @@ async fn web_work_item_attachment_download_rejects_archived_attachment() {
         "work_item",
         item.id,
         initialized.user_id,
+        "",
         Some(project.id),
         Some("归档工作项附件"),
     )
@@ -9079,6 +9277,7 @@ async fn api_v1_work_item_attachment_delete_route_is_unavailable() {
             content_type: "image/png".to_string(),
             byte_size: 4096,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 delete-work-item.png".to_string()),
         },
     )
@@ -10180,6 +10379,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
             content_type: "application/pdf".to_string(),
             byte_size: 1024,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 on-hold-project.pdf".to_string()),
         },
     )
@@ -10197,6 +10397,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
             content_type: "application/pdf".to_string(),
             byte_size: 1024,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 archived-project.pdf".to_string()),
         },
     )
@@ -10214,6 +10415,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
             content_type: "image/png".to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 archived-work-item.png".to_string()),
         },
     )
@@ -10231,6 +10433,7 @@ async fn project_status_blocks_writes_on_blocked_project_statuses() {
             content_type: "text/plain".to_string(),
             byte_size: 512,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论附件 archived-comment.txt".to_string()),
         },
     )
@@ -11232,6 +11435,7 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
             content_type: "application/pdf".to_string(),
             byte_size: 128,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记项目附件 api-project-list.pdf".to_string()),
         },
     )
@@ -11249,6 +11453,7 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
             content_type: "text/plain".to_string(),
             byte_size: 64,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记工作项附件 api-work-item-list.txt".to_string()),
         },
     )
@@ -11266,6 +11471,7 @@ async fn api_v1_lists_members_comments_and_attachments_for_visible_scope() {
             content_type: "application/json".to_string(),
             byte_size: 32,
             created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
             activity_summary: Some("登记评论附件 api-comment-list.json".to_string()),
         },
     )
