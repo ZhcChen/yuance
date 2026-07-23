@@ -4140,10 +4140,6 @@ html[data-theme="dark"] .metric-ornament::before {
   line-height: 26px;
 }
 
-.resource-rich-create .rich-text-editor {
-  min-height: 280px;
-}
-
 @keyframes project-tab-in {
   from {
     opacity: 0;
@@ -5418,6 +5414,11 @@ code {
   width: min(760px, 100%);
 }
 
+.modal-panel.modal-work-form {
+  width: min(1040px, calc(100vw - 40px));
+  max-height: min(860px, calc(100vh - 36px));
+}
+
 .modal-panel.modal-confirm {
   width: min(440px, 100%);
   grid-template-rows: auto auto;
@@ -6057,6 +6058,16 @@ code {
 .work-item-rich-create {
   display: grid;
   gap: 10px;
+}
+
+.work-item-rich-create .rich-text-editor {
+  min-height: 320px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.work-item-rich-create .rich-text-input {
+  min-height: 248px;
 }
 
 .work-item-rich-create-head {
@@ -9466,7 +9477,8 @@ select option {
   }
 
   .modal-panel,
-  .modal-panel.modal-wide {
+  .modal-panel.modal-wide,
+  .modal-panel.modal-work-form {
     width: 100%;
     max-height: calc(100dvh - 24px);
   }

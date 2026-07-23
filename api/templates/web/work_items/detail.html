@@ -150,7 +150,7 @@
 {% if can_edit_primary_post && !item.is_deleted %}
 <aside id="work-item-edit-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
-  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-edit-modal-title" tabindex="-1">
+  <section class="modal-panel modal-wide modal-work-form" role="dialog" aria-modal="true" aria-labelledby="work-item-edit-modal-title" tabindex="-1">
     <div class="modal-head">
       <div><h2 id="work-item-edit-modal-title">编辑{{ item.kind }}</h2><p>更新工作项的核心内容与协作信息。</p></div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
