@@ -9,16 +9,25 @@ use crate::{
 pub const MAX_ATTACHMENT_BYTE_SIZE: i64 = 100 * 1024 * 1024;
 const ALLOWED_CONTENT_TYPE_PREFIXES: &[&str] = &["image/", "text/", "video/"];
 const ALLOWED_CONTENT_TYPES: &[&str] = &[
+    "application/gzip",
     "application/json",
     "application/msword",
     "application/octet-stream",
     "application/pdf",
+    "application/vnd.android.package-archive",
+    "application/vnd.debian.binary-package",
     "application/vnd.ms-excel",
     "application/vnd.ms-powerpoint",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/x-apple-diskimage",
     "application/x-7z-compressed",
+    "application/x-gzip",
+    "application/x-itunes-ipa",
+    "application/x-msdownload",
+    "application/x-rpm",
+    "application/x-tar",
     "application/zip",
 ];
 

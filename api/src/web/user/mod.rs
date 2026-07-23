@@ -21,7 +21,7 @@ use crate::{
     domains::{
         api_tokens, audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        files, notifications, project_resources, projects, rbac, storage, users,
+        files, notifications, project_resources, projects, rbac, storage, system_releases, users,
     },
     platform::error::{AppError, AppResult},
     platform::{crypto, security::csrf},
@@ -421,6 +421,7 @@ struct SystemNav {
     users: bool,
     roles: bool,
     storage: bool,
+    releases: bool,
     database_stats: bool,
     audit: bool,
     requirements_badge: String,
@@ -437,6 +438,7 @@ impl SystemNav {
             users: true,
             roles: true,
             storage: true,
+            releases: true,
             database_stats: true,
             audit: true,
             requirements_badge: String::new(),
@@ -656,6 +658,54 @@ struct StorageBucketCheckView {
     status: String,
     status_tone: &'static str,
     message: String,
+}
+
+#[derive(Debug, Clone)]
+struct SystemReleaseSettingsView {
+    retention_count: i64,
+    updated_by: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct SystemReleaseAssetView {
+    id: i64,
+    platform: String,
+    filename: String,
+    content_type: String,
+    byte_size: String,
+    status: String,
+    status_tone: &'static str,
+    created_at: String,
+    download_url: String,
+}
+
+#[derive(Debug, Clone)]
+struct SystemReleaseRow {
+    id: i64,
+    version_name: String,
+    title: String,
+    notes: String,
+    status_code: String,
+    status: String,
+    status_tone: &'static str,
+    published_at: String,
+    created_by: String,
+    updated_by: String,
+    created_at: String,
+    updated_at: String,
+    asset_count: i64,
+    platform_count: i64,
+    assets: Vec<SystemReleaseAssetView>,
+    has_assets: bool,
+}
+
+#[derive(Debug, Clone)]
+struct SystemReleasesPageView {
+    releases: Vec<SystemReleaseRow>,
+    has_releases: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
 }
 
 #[derive(Template)]
@@ -1110,6 +1160,26 @@ struct StorageSettingsTemplate {
 }
 
 #[derive(Template)]
+#[template(path = "web/system/releases.html")]
+struct SystemReleasesTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    settings: SystemReleaseSettingsView,
+    releases: Vec<SystemReleaseRow>,
+    has_releases: bool,
+    pagination: PaginationView,
+    pagination_pages: Vec<PaginationPageView>,
+    message: String,
+    message_tone: &'static str,
+    can_manage_releases: bool,
+}
+
+#[derive(Template)]
 #[template(path = "web/system/database_stats.html")]
 struct SystemDatabaseStatsTemplate {
     active: &'static str,
@@ -1353,6 +1423,57 @@ pub struct StorageInitializeForm {
 pub struct StorageRollbackForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemReleasesQuery {
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSystemReleaseForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    version_name: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemReleaseForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    version_name: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    publish: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemReleaseSettingsForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    retention_count: i64,
     #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
@@ -5121,6 +5242,236 @@ pub async fn system_dashboard(
     )
 }
 
+pub async fn system_releases_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemReleasesQuery>,
+) -> AppResult<Response> {
+    let context = match system_context_or_redirect(&state, &headers, "system.releases.view").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let page_view = system_releases_page_for_view(state.pool()?, requested_pagination).await?;
+    let settings_view = system_release_settings_view_from_domain(
+        system_releases::get_settings(state.pool()?).await?,
+    );
+    let can_manage_releases =
+        rbac::user_has_permission(state.pool()?, context.user_id, "system.releases.manage").await?;
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(SystemReleasesTemplate {
+            active: "system-releases",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            settings: settings_view,
+            releases: page_view.releases,
+            has_releases: page_view.has_releases,
+            pagination: page_view.pagination,
+            pagination_pages: page_view.pagination_pages,
+            message: String::new(),
+            message_tone: "info",
+            can_manage_releases,
+        })?
+        .into_response(),
+    )
+}
+
+pub async fn system_releases_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<CreateSystemReleaseForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.releases.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
+    let created = system_releases::create_release(
+        state.pool()?,
+        context.user_id,
+        system_releases::CreateSystemReleaseInput {
+            version_name: form.version_name,
+            title: form.title,
+            notes: form.notes,
+        },
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        state.pool()?,
+        Some(context.user_id),
+        "system.release.create",
+        "system_release",
+        &created.release.id.to_string(),
+        &format!(
+            r#"{{"version_name":"{}","status":"{}"}}"#,
+            created.release.version_name.replace('"', "\\\""),
+            created.release.status
+        ),
+        &request_context,
+    )
+    .await?;
+    render_system_releases_template(
+        &state,
+        context,
+        requested_pagination,
+        "版本草稿已创建，可继续上传各平台安装包。".to_string(),
+        "success",
+    )
+    .await
+}
+
+pub async fn system_releases_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Form(form): Form<UpdateSystemReleaseForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.releases.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
+    let updated = system_releases::update_release(
+        state.pool()?,
+        &state.settings,
+        context.user_id,
+        release_id,
+        system_releases::UpdateSystemReleaseInput {
+            version_name: form.version_name,
+            title: form.title,
+            notes: form.notes,
+            publish: form.publish == "on",
+        },
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        state.pool()?,
+        Some(context.user_id),
+        if form.publish == "on" {
+            "system.release.publish"
+        } else {
+            "system.release.update"
+        },
+        "system_release",
+        &updated.release.id.to_string(),
+        &format!(
+            r#"{{"version_name":"{}","status":"{}","asset_count":{}}}"#,
+            updated.release.version_name.replace('"', "\\\""),
+            updated.release.status,
+            updated.release.asset_count
+        ),
+        &request_context,
+    )
+    .await?;
+    render_system_releases_template(
+        &state,
+        context,
+        requested_pagination,
+        if form.publish == "on" {
+            "版本已发布，并已按保留策略自动清理旧版本。".to_string()
+        } else {
+            "版本信息已更新。".to_string()
+        },
+        "success",
+    )
+    .await
+}
+
+pub async fn system_releases_settings_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<UpdateSystemReleaseSettingsForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.releases.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    let requested_pagination = normalize_web_pagination(form.page, form.per_page)?;
+    let updated = system_releases::update_settings(
+        state.pool()?,
+        &state.settings,
+        context.user_id,
+        form.retention_count,
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        state.pool()?,
+        Some(context.user_id),
+        "system.release.settings.update",
+        "system_release_settings",
+        "1",
+        &format!(r#"{{"retention_count":{}}}"#, updated.retention_count),
+        &request_context,
+    )
+    .await?;
+    render_system_releases_template(
+        &state,
+        context,
+        requested_pagination,
+        format!("版本保留数已更新为 {}。", updated.retention_count),
+        "success",
+    )
+    .await
+}
+
+pub async fn system_release_asset_download(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+) -> AppResult<Response> {
+    let context = match system_context_or_redirect(&state, &headers, "system.releases.view").await?
+    {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let asset = system_releases::get_release_asset(state.pool()?, release_id, asset_id).await?;
+    let request = storage::presign_download_url(
+        state.pool()?,
+        &state.settings,
+        &asset.object_key,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+    )
+    .await?;
+    if !request.headers.is_empty() {
+        return Err(AppError::BadRequest(
+            "当前版本包下载签名包含额外请求头，暂不支持浏览器直接跳转".to_string(),
+        ));
+    }
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        state.pool()?,
+        Some(context.user_id),
+        "system.release.asset.download",
+        "system_release",
+        &release_id.to_string(),
+        &format!(
+            r#"{{"asset_id":{},"filename":"{}"}}"#,
+            asset_id,
+            asset.original_filename.replace('"', "\\\"")
+        ),
+        &request_context,
+    )
+    .await?;
+    Ok(Redirect::temporary(&request.url).into_response())
+}
+
 pub async fn system_users_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -6649,6 +7000,7 @@ async fn build_system_nav(
     let users = rbac::user_has_permission(pool, user_id, "system.users.view").await?;
     let roles = rbac::user_has_permission(pool, user_id, "system.roles.view").await?;
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
+    let releases = rbac::user_has_permission(pool, user_id, "system.releases.view").await?;
     let database_stats =
         rbac::user_has_permission(pool, user_id, "system.database_stats.view").await?;
     let audit = rbac::user_has_permission(pool, user_id, "system.audit.view").await?;
@@ -6662,11 +7014,12 @@ async fn build_system_nav(
     let unread_notifications = notifications::unread_count(pool, user_id).await?;
 
     Ok(SystemNav {
-        visible: dashboard || users || roles || storage || database_stats || audit,
+        visible: dashboard || users || roles || storage || releases || database_stats || audit,
         dashboard,
         users,
         roles,
         storage,
+        releases,
         database_stats,
         audit,
         requirements_badge: topnav_badge(work_item_counts.requirements),
@@ -8122,6 +8475,81 @@ async fn storage_versions_page_for_view(
     })
 }
 
+async fn system_releases_page_for_view(
+    pool: &SqlitePool,
+    requested_pagination: projects::Pagination,
+) -> AppResult<SystemReleasesPageView> {
+    let total_items = system_releases::count_releases(pool).await?;
+    let total_pages = total_pages(total_items, requested_pagination.per_page);
+    let page_number = requested_pagination.page.min(total_pages);
+    let page = system_releases::list_releases_page(
+        pool,
+        projects::Pagination {
+            page: page_number,
+            per_page: requested_pagination.per_page,
+        },
+    )
+    .await?;
+    let total_pages = page.total_pages();
+    let mut releases = Vec::with_capacity(page.items.len());
+    for release in page.items {
+        let assets = system_releases::list_release_assets(pool, release.id).await?;
+        releases.push(system_release_row_from_domain(release, assets));
+    }
+    let pagination =
+        system_releases_pagination_view(page.page, page.per_page, page.total_items, total_pages);
+    let pagination_pages = system_releases_pagination_pages(
+        pagination.page,
+        pagination.per_page,
+        pagination.total_pages,
+    );
+
+    Ok(SystemReleasesPageView {
+        has_releases: total_items > 0,
+        releases,
+        pagination,
+        pagination_pages,
+    })
+}
+
+async fn render_system_releases_template(
+    state: &AppState,
+    context: SystemContext,
+    requested_pagination: projects::Pagination,
+    message: String,
+    message_tone: &'static str,
+) -> AppResult<Response> {
+    let page_view = system_releases_page_for_view(state.pool()?, requested_pagination).await?;
+    let settings_view = system_release_settings_view_from_domain(
+        system_releases::get_settings(state.pool()?).await?,
+    );
+    let can_manage_releases =
+        rbac::user_has_permission(state.pool()?, context.user_id, "system.releases.manage").await?;
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        state,
+        &csrf_token,
+        response::html(SystemReleasesTemplate {
+            active: "system-releases",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            settings: settings_view,
+            releases: page_view.releases,
+            has_releases: page_view.has_releases,
+            pagination: page_view.pagination,
+            pagination_pages: page_view.pagination_pages,
+            message,
+            message_tone,
+            can_manage_releases,
+        })?
+        .into_response(),
+    )
+}
+
 async fn storage_bucket_inspection_for_page(
     pool: &SqlitePool,
     state: &AppState,
@@ -8218,6 +8646,69 @@ fn storage_config_version_view_from_domain(
         created_by: fallback_text(version.created_by, "系统"),
         created_at: display_timestamp(version.created_at),
         is_current_active: version.current_status == "active",
+    }
+}
+
+fn system_release_settings_view_from_domain(
+    settings: system_releases::SystemReleaseSettings,
+) -> SystemReleaseSettingsView {
+    SystemReleaseSettingsView {
+        retention_count: settings.retention_count,
+        updated_by: fallback_text(settings.updated_by_display_name, "系统"),
+        updated_at: display_timestamp(settings.updated_at),
+    }
+}
+
+fn system_release_row_from_domain(
+    release: system_releases::SystemReleaseVersionSummary,
+    assets: Vec<system_releases::SystemReleaseAssetSummary>,
+) -> SystemReleaseRow {
+    let (status, status_tone) = system_release_status_label(&release.status);
+    let assets = assets
+        .into_iter()
+        .map(system_release_asset_view_from_domain)
+        .collect::<Vec<_>>();
+    SystemReleaseRow {
+        id: release.id,
+        version_name: release.version_name,
+        title: fallback_text(release.title, "未填写标题"),
+        notes: release.notes,
+        status_code: release.status.clone(),
+        status: status.to_string(),
+        status_tone,
+        published_at: if release.published_at.trim().is_empty() {
+            "未发布".to_string()
+        } else {
+            display_timestamp(release.published_at)
+        },
+        created_by: fallback_text(release.created_by_display_name, "系统"),
+        updated_by: fallback_text(release.updated_by_display_name, "系统"),
+        created_at: display_timestamp(release.created_at),
+        updated_at: display_timestamp(release.updated_at),
+        asset_count: release.asset_count,
+        platform_count: release.platform_count,
+        has_assets: !assets.is_empty(),
+        assets,
+    }
+}
+
+fn system_release_asset_view_from_domain(
+    asset: system_releases::SystemReleaseAssetSummary,
+) -> SystemReleaseAssetView {
+    let (status, status_tone) = attachment_status_label(&asset.status);
+    SystemReleaseAssetView {
+        id: asset.id,
+        platform: system_release_platform_label(&asset.platform).to_string(),
+        filename: asset.original_filename,
+        content_type: asset.content_type,
+        byte_size: display_byte_size(asset.byte_size),
+        status: status.to_string(),
+        status_tone,
+        created_at: display_timestamp(asset.created_at),
+        download_url: format!(
+            "/web/system/releases/{}/assets/{}/download",
+            asset.release_id, asset.id
+        ),
     }
 }
 
@@ -9882,6 +10373,71 @@ fn storage_versions_pagination_pages(
         .collect()
 }
 
+fn system_releases_pagination_view(
+    page: i64,
+    per_page: i64,
+    total_items: i64,
+    total_pages: i64,
+) -> PaginationView {
+    let has_previous = page > 1;
+    let has_next = page < total_pages;
+    let range_start = if total_items == 0 {
+        0
+    } else {
+        (page - 1) * per_page + 1
+    };
+    let range_end = (page * per_page).min(total_items);
+
+    PaginationView {
+        page,
+        per_page,
+        total_items,
+        total_pages,
+        has_previous,
+        has_next,
+        previous_url: system_releases_page_url(page - 1, per_page),
+        next_url: system_releases_page_url(page + 1, per_page),
+        range_start,
+        range_end,
+    }
+}
+
+fn system_releases_page_url(page: i64, per_page: i64) -> String {
+    let mut params = Vec::new();
+    if page > 1 {
+        params.push(format!("page={page}"));
+    }
+    if per_page != 10 {
+        params.push(format!("per_page={per_page}"));
+    }
+
+    if params.is_empty() {
+        "/web/system/releases".to_string()
+    } else {
+        format!("/web/system/releases?{}", params.join("&"))
+    }
+}
+
+fn system_releases_pagination_pages(
+    current_page: i64,
+    per_page: i64,
+    total_pages: i64,
+) -> Vec<PaginationPageView> {
+    let window_size = 7;
+    let half_window = window_size / 2;
+    let mut start = (current_page - half_window).max(1);
+    let end = (start + window_size - 1).min(total_pages);
+    start = (end - window_size + 1).max(1);
+
+    (start..=end)
+        .map(|page| PaginationPageView {
+            page,
+            url: system_releases_page_url(page, per_page),
+            current: page == current_page,
+        })
+        .collect()
+}
+
 fn role_workbench_pagination_view(
     selected_role_code: &str,
     page: i64,
@@ -10653,6 +11209,25 @@ fn attachment_status_label(status: &str) -> (&'static str, &'static str) {
     }
 }
 
+fn system_release_status_label(status: &str) -> (&'static str, &'static str) {
+    match status {
+        "draft" => ("草稿", "warning"),
+        "published" => ("已发布", "ok"),
+        _ => ("未知", "info"),
+    }
+}
+
+fn system_release_platform_label(platform: &str) -> &'static str {
+    match platform {
+        "windows" => "Windows",
+        "macos" => "macOS",
+        "linux" => "Linux",
+        "android" => "Android",
+        "ios" => "iOS",
+        _ => "未知平台",
+    }
+}
+
 fn is_previewable_image_content_type(content_type: &str) -> bool {
     matches!(
         content_type.trim().to_ascii_lowercase().as_str(),
@@ -10779,6 +11354,19 @@ fn fallback_text(value: String, fallback: &str) -> String {
     } else {
         value
     }
+}
+
+fn display_byte_size(value: i64) -> String {
+    if value < 1024 {
+        return format!("{value} B");
+    }
+    if value < 1024 * 1024 {
+        return format!("{:.1} KB", value as f64 / 1024.0);
+    }
+    if value < 1024 * 1024 * 1024 {
+        return format!("{:.1} MB", value as f64 / 1024.0 / 1024.0);
+    }
+    format!("{:.1} GB", value as f64 / 1024.0 / 1024.0 / 1024.0)
 }
 
 fn display_timestamp(value: String) -> String {

@@ -8701,6 +8701,133 @@ select option {
   margin-top: 16px;
 }
 
+.system-release-page {
+  gap: 16px;
+}
+
+.system-release-settings-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 0 16px 16px;
+}
+
+.system-release-settings-form label {
+  min-width: 220px;
+  flex: 1 1 220px;
+}
+
+.system-release-notes {
+  max-width: 520px;
+  white-space: normal;
+  color: var(--muted-strong);
+  line-height: 1.65;
+}
+
+.system-release-asset-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.system-release-upload-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  overflow: hidden;
+}
+
+.system-release-upload {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.system-release-upload-fields {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.system-release-upload-hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.system-release-upload-list {
+  display: grid;
+  gap: 10px;
+}
+
+.system-release-upload-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.system-release-upload-item[data-tone="success"] {
+  border-color: var(--success-line);
+  background: color-mix(in srgb, var(--panel) 92%, var(--success-bg) 8%);
+}
+
+.system-release-upload-item[data-tone="error"] {
+  border-color: var(--danger-line);
+  background: color-mix(in srgb, var(--panel) 92%, var(--danger-bg) 8%);
+}
+
+.system-release-upload-progress {
+  width: 44px;
+  height: 44px;
+}
+
+.system-release-upload-item-body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.system-release-upload-item-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-release-upload-item-meta,
+.system-release-upload-item-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.system-release-upload-item-status {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.system-release-asset-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+
+.compact-empty-state {
+  margin: 0 16px 16px;
+}
+
 .storage-bucket-panel {
   margin-top: 16px;
   overflow: hidden;

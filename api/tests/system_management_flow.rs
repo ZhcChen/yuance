@@ -3,9 +3,10 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
+use serde_json::Value;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, rbac},
+    domains::{auth, bootstrap, rbac, storage},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -1359,6 +1360,225 @@ async fn api_system_role_permissions_flow_matches_permission_tree_model() {
     assert_eq!(system_role_response.status(), StatusCode::BAD_REQUEST);
 }
 
+#[tokio::test]
+async fn system_releases_page_renders_for_admin() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/releases")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("版本管理"));
+    assert!(body.contains("保留策略"));
+    assert!(body.contains(r#"data-modal-open="system-release-create-modal""#));
+    assert!(body.contains(r#"action="/web/system/releases/settings""#));
+    assert!(body.contains("暂无版本记录"));
+}
+
+#[tokio::test]
+async fn api_system_release_flow_supports_publish_and_retention_prune() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let first_release =
+        create_system_release_api(&app, &admin_cookie, "v1.0.0", "首发版本", "首发说明").await;
+    let first_release_id = json_i64(&first_release, &["data", "release", "id"]);
+    let first_version = json_string(&first_release, &["data", "release", "version_name"]);
+    assert_eq!(first_version, "v1.0.0");
+
+    let first_asset = create_system_release_asset_api(
+        &app,
+        &admin_cookie,
+        first_release_id,
+        "windows",
+        "yuance-setup-v1.0.0.exe",
+        "application/octet-stream",
+        7,
+    )
+    .await;
+    let first_asset_id = json_i64(&first_asset, &["data", "id"]);
+    let first_object_key = json_string(&first_asset, &["data", "object_key"]);
+
+    let first_upload = get_system_release_asset_upload_url_api(
+        &app,
+        &admin_cookie,
+        first_release_id,
+        first_asset_id,
+    )
+    .await;
+    let first_upload_url = json_string(&first_upload, &["data", "request", "url"]);
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &first_upload_url,
+        b"first-v",
+        "application/octet-stream",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(&app, &admin_cookie, first_release_id, first_asset_id)
+        .await;
+
+    let first_published = update_system_release_api(
+        &app,
+        &admin_cookie,
+        first_release_id,
+        "v1.0.0",
+        "首发版本",
+        "首发说明",
+        true,
+    )
+    .await;
+    assert_eq!(
+        json_string(&first_published, &["data", "release", "status"]),
+        "published"
+    );
+
+    let settings_updated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/system/releases/settings")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"retention_count":1}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(settings_updated.status(), StatusCode::OK);
+    assert_eq!(
+        json_i64(
+            &response_json(settings_updated).await,
+            &["data", "retention_count"]
+        ),
+        1
+    );
+
+    let second_release =
+        create_system_release_api(&app, &admin_cookie, "v1.1.0", "二次发布", "第二个版本").await;
+    let second_release_id = json_i64(&second_release, &["data", "release", "id"]);
+
+    let second_asset = create_system_release_asset_api(
+        &app,
+        &admin_cookie,
+        second_release_id,
+        "android",
+        "yuance-app-v1.1.0.apk",
+        "application/vnd.android.package-archive",
+        8,
+    )
+    .await;
+    let second_asset_id = json_i64(&second_asset, &["data", "id"]);
+
+    let second_upload = get_system_release_asset_upload_url_api(
+        &app,
+        &admin_cookie,
+        second_release_id,
+        second_asset_id,
+    )
+    .await;
+    let second_upload_url = json_string(&second_upload, &["data", "request", "url"]);
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &second_upload_url,
+        b"second-v",
+        "application/vnd.android.package-archive",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(&app, &admin_cookie, second_release_id, second_asset_id)
+        .await;
+
+    let second_published = update_system_release_api(
+        &app,
+        &admin_cookie,
+        second_release_id,
+        "v1.1.0",
+        "二次发布",
+        "第二个版本",
+        true,
+    )
+    .await;
+    assert_eq!(
+        json_string(&second_published, &["data", "release", "status"]),
+        "published"
+    );
+
+    let first_get = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/system/releases/{first_release_id}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(first_get.status(), StatusCode::NOT_FOUND);
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/releases")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_json = response_json(list_response).await;
+    assert_eq!(
+        json_i64(&list_json, &["data", "pagination", "total_items"]),
+        1
+    );
+    assert_eq!(
+        json_string(&list_json, &["data", "items", "0", "version_name"]),
+        "v1.1.0"
+    );
+
+    let pruned_object =
+        storage::read_test_memory_object(&pool, &test_settings(), &first_object_key)
+            .await
+            .expect("pruned object lookup should succeed");
+    assert!(pruned_object.is_none());
+
+    let release_count =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_release_versions")
+            .fetch_one(&pool)
+            .await
+            .expect("release count should load");
+    let asset_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_release_assets")
+        .fetch_one(&pool)
+        .await
+        .expect("asset count should load");
+    let file_object_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM file_objects")
+        .fetch_one(&pool)
+        .await
+        .expect("file object count should load");
+    assert_eq!(release_count, 1);
+    assert_eq!(asset_count, 1);
+    assert_eq!(file_object_count, 1);
+}
+
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     let result = bootstrap::bootstrap_init(
         pool,
@@ -1373,12 +1593,190 @@ async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     .expect("bootstrap should initialize");
 
     InitializedAdmin {
+        user_id: result.user_id,
         cookie: auth::session_cookie_header(&result.session.raw_token, false),
     }
 }
 
 struct InitializedAdmin {
+    user_id: i64,
     cookie: String,
+}
+
+async fn create_system_release_api(
+    app: &axum::Router,
+    admin_cookie: &str,
+    version_name: &str,
+    title: &str,
+    notes: &str,
+) -> Value {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/releases")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    serde_json::json!({
+                        "version_name": version_name,
+                        "title": title,
+                        "notes": notes
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    response_json(response).await
+}
+
+async fn update_system_release_api(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    version_name: &str,
+    title: &str,
+    notes: &str,
+    publish: bool,
+) -> Value {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/system/releases/{release_id}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    serde_json::json!({
+                        "version_name": version_name,
+                        "title": title,
+                        "notes": notes,
+                        "publish": publish
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await
+}
+
+async fn create_system_release_asset_api(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    platform: &str,
+    filename: &str,
+    content_type: &str,
+    byte_size: i64,
+) -> Value {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/system/releases/{release_id}/assets"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    serde_json::json!({
+                        "platform": platform,
+                        "original_filename": filename,
+                        "content_type": content_type,
+                        "byte_size": byte_size
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let status = response.status();
+    let body = response_body(response).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    serde_json::from_str(&body).expect("body should be valid json")
+}
+
+async fn get_system_release_asset_upload_url_api(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    asset_id: i64,
+) -> Value {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url"
+                ))
+                .header(header::COOKIE, admin_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await
+}
+
+async fn mark_system_release_asset_uploaded_api(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    asset_id: i64,
+) -> Value {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded"
+                ))
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    response_json(response).await
+}
+
+async fn upload_test_storage_object(
+    app: &axum::Router,
+    admin_cookie: &str,
+    upload_url: &str,
+    body: &[u8],
+    content_type: &str,
+) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(upload_url)
+                .header(header::COOKIE, admin_cookie)
+                .header(header::CONTENT_TYPE, content_type)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(body.to_vec()))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
 }
 
 async fn create_user_with_role(
@@ -1446,6 +1844,10 @@ async fn response_body(response: axum::response::Response) -> String {
         .to_string()
 }
 
+async fn response_json(response: axum::response::Response) -> Value {
+    serde_json::from_str(&response_body(response).await).expect("body should be valid json")
+}
+
 fn html_fragment<'a>(body: &'a str, marker: &str, closing: &str) -> &'a str {
     let start = body.find(marker).expect("fragment marker should exist");
     let tail = &body[start..];
@@ -1467,6 +1869,24 @@ async fn test_pool() -> sqlx::SqlitePool {
         .await
         .expect("migrations should run");
     pool
+}
+
+async fn seed_memory_storage_config(pool: &sqlx::SqlitePool, actor_user_id: i64) {
+    storage::save_config(
+        pool,
+        &test_settings(),
+        actor_user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+            region: "test".to_string(),
+            bucket: "yuance-files".to_string(),
+            access_key_id: "AKIAUNIT5SECRETID".to_string(),
+            access_key_secret: "Unit5SecretValue2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .expect("memory storage config should save");
 }
 
 fn test_settings() -> Settings {
@@ -1494,4 +1914,27 @@ fn with_csrf_cookie(session_cookie: &str) -> String {
 
 fn with_csrf(body: &str) -> String {
     format!("{body}&_csrf={CSRF_TOKEN}")
+}
+
+fn json_path<'a>(value: &'a Value, path: &[&str]) -> &'a Value {
+    path.iter().fold(value, |current, key| {
+        if let Ok(index) = key.parse::<usize>() {
+            current.get(index).expect("json index should exist")
+        } else {
+            current.get(*key).expect("json key should exist")
+        }
+    })
+}
+
+fn json_string(value: &Value, path: &[&str]) -> String {
+    json_path(value, path)
+        .as_str()
+        .expect("json string should exist")
+        .to_string()
+}
+
+fn json_i64(value: &Value, path: &[&str]) -> i64 {
+    json_path(value, path)
+        .as_i64()
+        .expect("json number should exist")
 }

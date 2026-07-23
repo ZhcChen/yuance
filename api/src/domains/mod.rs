@@ -9,4 +9,5 @@ pub mod project_resources;
 pub mod projects;
 pub mod rbac;
 pub mod storage;
+pub mod system_releases;
 pub mod users;

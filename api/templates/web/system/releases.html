@@ -1,0 +1,382 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}版本管理 - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack system-release-page">
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">系统管理</p>
+      <h1>版本管理</h1>
+      <p>维护桌面端与移动端发布版本，安装包统一走当前已激活的对象存储。</p>
+    </div>
+    {% if can_manage_releases %}
+    <div class="toolbar-actions">
+      <button class="btn btn-primary" type="button" data-modal-open="system-release-create-modal">新建版本</button>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="storage-layout">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>保留策略</h2>
+          <p>仅对已发布版本生效。超过保留数的旧版本会自动删除数据库记录和 OSS 对象。</p>
+        </div>
+      </div>
+      {% if message != "" %}
+      <div class="inline-result storage-message storage-message-{{ message_tone }}">{{ message }}</div>
+      {% endif %}
+      <dl class="config-summary-grid storage-meta">
+        <div class="config-summary-item">
+          <dt>当前保留数</dt>
+          <dd>{{ settings.retention_count }}</dd>
+        </div>
+        <div class="config-summary-item">
+          <dt>最近更新人</dt>
+          <dd>{{ settings.updated_by }}</dd>
+        </div>
+        <div class="config-summary-item">
+          <dt>更新时间</dt>
+          <dd>{{ settings.updated_at }}</dd>
+        </div>
+      </dl>
+      {% if can_manage_releases %}
+      <form class="system-release-settings-form" method="post" action="/web/system/releases/settings">
+        <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="page" value="{{ pagination.page }}">
+        <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
+        <label>
+          <span>保留最近已发布版本数</span>
+          <input name="retention_count" type="number" min="1" max="50" value="{{ settings.retention_count }}" required>
+        </label>
+        <button class="btn btn-secondary" type="submit">更新保留策略</button>
+      </form>
+      {% endif %}
+    </section>
+
+    <aside class="panel storage-side">
+      <h2>发布约束</h2>
+      <ul class="check-list">
+        <li>新建版本默认是草稿，上传至少一个安装包后才能发布。</li>
+        <li>一个版本可以包含多个平台产物：Windows、macOS、Linux、Android、iOS。</li>
+        <li>安装包通过服务端临时签名地址上传，不在页面暴露长期 OSS 凭证。</li>
+      </ul>
+    </aside>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div>
+        <h2>版本列表</h2>
+        <p>已发布版本优先展示，其余按最近更新时间倒序排列。</p>
+      </div>
+    </div>
+
+    {% if has_releases %}
+    <div class="table-wrap">
+      <table class="compact-table">
+        <thead>
+          <tr>
+            <th>版本</th>
+            <th>标题 / 说明</th>
+            <th>状态</th>
+            <th>平台</th>
+            <th>资产</th>
+            <th>发布 / 更新</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for release in releases %}
+          <tr class="system-release-row">
+            <td>
+              <strong>{{ release.version_name }}</strong>
+              <div class="muted-line">创建于 {{ release.created_at }}</div>
+            </td>
+            <td>
+              <strong>{{ release.title }}</strong>
+              {% if release.notes != "" %}
+              <div class="system-release-notes">{{ release.notes }}</div>
+              {% else %}
+              <div class="muted-line">暂无版本说明</div>
+              {% endif %}
+            </td>
+            <td>
+              <span class="status status-{{ release.status_tone }}">{{ release.status }}</span>
+              <div class="muted-line">{{ release.published_at }}</div>
+            </td>
+            <td>{{ release.platform_count }} 个平台</td>
+            <td>
+              <strong>{{ release.asset_count }} 个文件</strong>
+              {% if release.has_assets %}
+              <div class="system-release-asset-chips">
+                {% for asset in release.assets %}
+                <span class="status status-{{ asset.status_tone }}">{{ asset.platform }}</span>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="muted-line">暂无安装包</div>
+              {% endif %}
+            </td>
+            <td>
+              <div class="muted-line">创建：{{ release.created_by }}</div>
+              <div class="muted-line">更新：{{ release.updated_by }} · {{ release.updated_at }}</div>
+            </td>
+            <td>
+              <div class="row-actions">
+                {% if can_manage_releases %}
+                <button class="btn btn-sm btn-secondary" type="button" data-modal-open="system-release-edit-modal-{{ release.id }}">编辑</button>
+                {% endif %}
+                {% if release.has_assets %}
+                <button class="btn btn-sm btn-secondary" type="button" data-modal-open="system-release-assets-modal-{{ release.id }}">查看安装包</button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <nav class="pager table-pager" aria-label="版本列表分页">
+      <div class="pager-meta">
+        <strong>共 {{ pagination.total_items }} 个版本</strong>
+        <span>当前显示 {{ pagination.range_start }}-{{ pagination.range_end }}</span>
+      </div>
+      {% include "web/partials/pagination_pages.html" %}
+      <form class="pager-controls" method="get" data-pagination-form>
+        {% include "web/partials/pagination_size_jump.html" %}
+      </form>
+    </nav>
+    {% else %}
+    <div class="empty-state">
+      <strong>暂无版本记录</strong>
+      <span>先创建一个草稿版本，再上传各平台安装包并发布。</span>
+    </div>
+    {% endif %}
+  </section>
+</section>
+
+{% if can_manage_releases %}
+<aside id="system-release-create-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="system-release-create-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="system-release-create-title">新建版本草稿</h2>
+        <p>创建后即可继续在编辑弹窗中上传平台安装包。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/releases">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="page" value="{{ pagination.page }}">
+      <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
+      <div class="field-grid one-column">
+        <label>
+          <span>版本号</span>
+          <input name="version_name" required placeholder="v1.0.0" autofocus>
+        </label>
+        <label>
+          <span>版本标题</span>
+          <input name="title" placeholder="首个私有化桌面端版本">
+        </label>
+        <label>
+          <span>版本说明</span>
+          <textarea name="notes" rows="8" placeholder="可填写更新内容、兼容说明、发布注意事项。"></textarea>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">创建草稿</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+{% for release in releases %}
+<aside id="system-release-edit-modal-{{ release.id }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="system-release-edit-title-{{ release.id }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="system-release-edit-title-{{ release.id }}">编辑版本 {{ release.version_name }}</h2>
+        <p>可继续补充安装包；只有草稿版本会在首次发布时触发自动裁剪旧版本。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/releases/{{ release.id }}/edit">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="page" value="{{ pagination.page }}">
+      <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
+      <div class="field-grid one-column">
+        <label>
+          <span>版本号</span>
+          <input name="version_name" value="{{ release.version_name }}" required autofocus>
+        </label>
+        <label>
+          <span>版本标题</span>
+          <input name="title" value="{{ release.title }}">
+        </label>
+        <label>
+          <span>版本说明</span>
+          <textarea name="notes" rows="8">{{ release.notes }}</textarea>
+        </label>
+      </div>
+
+      <section class="system-release-upload-panel">
+        <div class="panel-head compact">
+          <div>
+            <h2>平台安装包</h2>
+            <p>创建资产占位后会直接上传到对象存储，并在页面显示实时进度。</p>
+          </div>
+        </div>
+        <div
+          class="system-release-upload"
+          data-system-release-upload
+          data-release-id="{{ release.id }}"
+          data-page-url="/web/system/releases?page={{ pagination.page }}&per_page={{ pagination.per_page }}"
+        >
+          <div class="system-release-upload-fields">
+            <label>
+              <span>平台</span>
+              <select data-release-platform data-select-searchable data-select-search-placeholder="搜索平台">
+                <option value="windows">Windows</option>
+                <option value="macos">macOS</option>
+                <option value="linux">Linux</option>
+                <option value="android">Android</option>
+                <option value="ios">iOS</option>
+              </select>
+            </label>
+            <label class="wide-field">
+              <span>选择文件</span>
+              <input type="file" data-release-files multiple>
+            </label>
+            <button class="btn btn-secondary" type="button" data-release-upload-submit>上传安装包</button>
+          </div>
+          <div class="system-release-upload-hint">支持同一平台上传多个文件，例如安装包、压缩包或符号文件。</div>
+          <div class="system-release-upload-list" data-release-upload-list></div>
+        </div>
+
+        {% if release.has_assets %}
+        <div class="table-wrap">
+          <table class="compact-table system-release-asset-table">
+            <thead>
+              <tr>
+                <th>平台</th>
+                <th>文件</th>
+                <th>状态</th>
+                <th>大小</th>
+                <th>时间</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for asset in release.assets %}
+              <tr>
+                <td>{{ asset.platform }}</td>
+                <td>
+                  <strong>{{ asset.filename }}</strong>
+                  <div class="muted-line">{{ asset.content_type }}</div>
+                </td>
+                <td><span class="status status-{{ asset.status_tone }}">{{ asset.status }}</span></td>
+                <td>{{ asset.byte_size }}</td>
+                <td>{{ asset.created_at }}</td>
+                <td>
+                  <div class="row-actions">
+                    {% if asset.status == "已上传" %}
+                    <a class="btn btn-sm btn-secondary" href="{{ asset.download_url }}" target="_blank" rel="noopener">下载</a>
+                    {% endif %}
+                    <button
+                      class="btn btn-sm btn-danger"
+                      type="button"
+                      data-system-release-asset-delete
+                      data-release-id="{{ release.id }}"
+                      data-asset-id="{{ asset.id }}"
+                      data-filename="{{ asset.filename }}"
+                      data-return-url="/web/system/releases?page={{ pagination.page }}&per_page={{ pagination.per_page }}"
+                    >删除文件</button>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state compact-empty-state">
+          <strong>当前版本还没有安装包</strong>
+          <span>上传后才能发布该版本。</span>
+        </div>
+        {% endif %}
+      </section>
+
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        {% if release.status_code == "draft" %}
+        <button class="btn btn-secondary" type="submit">保存草稿</button>
+        <button class="btn btn-primary" type="submit" name="publish" value="on">保存并发布</button>
+        {% else %}
+        <span class="status status-ok">该版本已发布</span>
+        <button class="btn btn-primary" type="submit">更新版本</button>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+</aside>
+
+{% if release.has_assets %}
+<aside id="system-release-assets-modal-{{ release.id }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="system-release-assets-title-{{ release.id }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="system-release-assets-title-{{ release.id }}">版本 {{ release.version_name }} 安装包</h2>
+        <p>{{ release.title }}</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="table-wrap">
+        <table class="compact-table system-release-asset-table">
+          <thead>
+            <tr>
+              <th>平台</th>
+              <th>文件</th>
+              <th>状态</th>
+              <th>大小</th>
+              <th>时间</th>
+              <th>下载</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for asset in release.assets %}
+            <tr>
+              <td>{{ asset.platform }}</td>
+              <td>
+                <strong>{{ asset.filename }}</strong>
+                <div class="muted-line">{{ asset.content_type }}</div>
+              </td>
+              <td><span class="status status-{{ asset.status_tone }}">{{ asset.status }}</span></td>
+              <td>{{ asset.byte_size }}</td>
+              <td>{{ asset.created_at }}</td>
+              <td>
+                {% if asset.status == "已上传" %}
+                <a class="btn btn-sm btn-secondary" href="{{ asset.download_url }}" target="_blank" rel="noopener">下载</a>
+                {% else %}
+                <span class="muted-line">待上传</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</aside>
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endblock %}

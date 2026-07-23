@@ -296,6 +296,22 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::storage_settings).post(web::user::storage_settings_save),
         )
         .route(
+            "/web/system/releases",
+            get(web::user::system_releases_page).post(web::user::system_releases_create),
+        )
+        .route(
+            "/web/system/releases/settings",
+            post(web::user::system_releases_settings_update),
+        )
+        .route(
+            "/web/system/releases/{release_id}/edit",
+            post(web::user::system_releases_update),
+        )
+        .route(
+            "/web/system/releases/{release_id}/assets/{asset_id}/download",
+            get(web::user::system_release_asset_download),
+        )
+        .route(
             "/web/system/database-stats",
             get(web::user::system_database_stats_page),
         )
@@ -381,6 +397,35 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/system/audit",
             get(web::api::list_system_audit_logs),
+        )
+        .route(
+            "/api/v1/system/releases/settings",
+            get(web::api::get_system_release_settings)
+                .patch(web::api::update_system_release_settings),
+        )
+        .route(
+            "/api/v1/system/releases",
+            get(web::api::list_system_releases).post(web::api::create_system_release),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}",
+            get(web::api::get_system_release).patch(web::api::update_system_release),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}/assets",
+            post(web::api::create_system_release_asset),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url",
+            get(web::api::system_release_asset_upload_url),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded",
+            post(web::api::system_release_asset_mark_uploaded),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}/assets/{asset_id}",
+            delete(web::api::delete_system_release_asset),
         )
         .route(
             "/api/v1/storage/config",

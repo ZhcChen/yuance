@@ -15,7 +15,7 @@ use std::convert::Infallible;
 use crate::{
     domains::{
         api_tokens, audit, auth, bootstrap, database_stats, files, notifications,
-        project_resources, projects, rbac, storage, users,
+        project_resources, projects, rbac, storage, system_releases, users,
     },
     platform::{
         crypto,
@@ -684,6 +684,49 @@ pub struct StorageConfigVersionPayload {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseSettingsPayload {
+    pub retention_count: i64,
+    pub updated_by: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseAssetPayload {
+    pub id: i64,
+    pub release_id: i64,
+    pub file_object_id: i64,
+    pub platform: String,
+    pub object_key: String,
+    pub filename: String,
+    pub content_type: String,
+    pub byte_size: i64,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleasePayload {
+    pub id: i64,
+    pub version_name: String,
+    pub title: String,
+    pub notes: String,
+    pub status: String,
+    pub published_at: String,
+    pub created_by: String,
+    pub updated_by: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub asset_count: i64,
+    pub platform_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseDetailPayload {
+    pub release: SystemReleasePayload,
+    pub assets: Vec<SystemReleaseAssetPayload>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct TestStorageUploadQuery {
     object_key: String,
@@ -963,6 +1006,14 @@ pub struct SignedUrlQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SystemReleaseListQuery {
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateSystemUserRequest {
     username: String,
     display_name: String,
@@ -1018,6 +1069,39 @@ pub struct SaveStorageConfigRequest {
     access_key_secret: String,
     #[serde(default = "default_activate_storage_config")]
     activate: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSystemReleaseRequest {
+    version_name: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    notes: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemReleaseRequest {
+    version_name: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    notes: String,
+    #[serde(default)]
+    publish: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemReleaseSettingsRequest {
+    retention_count: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSystemReleaseAssetRequest {
+    platform: String,
+    original_filename: String,
+    content_type: String,
+    byte_size: i64,
 }
 
 pub async fn healthz() -> axum::Json<ApiEnvelope<HealthPayload<'static>>> {
@@ -3511,6 +3595,276 @@ pub async fn list_system_audit_logs(
     }))
 }
 
+pub async fn get_system_release_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseSettingsPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    let settings = system_releases::get_settings(pool).await?;
+    Ok(json(system_release_settings_payload(settings)))
+}
+
+pub async fn update_system_release_settings(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateSystemReleaseSettingsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseSettingsPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let updated =
+        system_releases::update_settings(pool, &state.settings, user.id, payload.retention_count)
+            .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(user.id),
+        "system.release.settings.update",
+        "system_release_settings",
+        "1",
+        &format!(
+            r#"{{"source":"api","retention_count":{}}}"#,
+            updated.retention_count
+        ),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_settings_payload(updated)))
+}
+
+pub async fn list_system_releases(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemReleaseListQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<SystemReleasePayload>>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    let pagination = normalize_api_pagination(query.page, query.per_page)?;
+    let page = system_releases::list_releases_page(pool, pagination).await?;
+    let total_pages = page.total_pages();
+    Ok(json(PaginatedPayload {
+        items: page.items.into_iter().map(system_release_payload).collect(),
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+    }))
+}
+
+pub async fn create_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateSystemReleaseRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let created = system_releases::create_release(
+        pool,
+        user.id,
+        system_releases::CreateSystemReleaseInput {
+            version_name: payload.version_name,
+            title: payload.title,
+            notes: payload.notes,
+        },
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(user.id),
+        "system.release.create",
+        "system_release",
+        &created.release.id.to_string(),
+        &format!(
+            r#"{{"source":"api","version_name":"{}","status":"{}"}}"#,
+            created.release.version_name.replace('"', "\\\""),
+            created.release.status
+        ),
+        &request_context,
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        json(system_release_detail_payload(created)),
+    ))
+}
+
+pub async fn get_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    let detail = system_releases::get_release_detail(pool, release_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("版本不存在".to_string()))?;
+    Ok(json(system_release_detail_payload(detail)))
+}
+
+pub async fn update_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Json(payload): Json<UpdateSystemReleaseRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let updated = system_releases::update_release(
+        pool,
+        &state.settings,
+        user.id,
+        release_id,
+        system_releases::UpdateSystemReleaseInput {
+            version_name: payload.version_name,
+            title: payload.title,
+            notes: payload.notes,
+            publish: payload.publish,
+        },
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(user.id),
+        if payload.publish {
+            "system.release.publish"
+        } else {
+            "system.release.update"
+        },
+        "system_release",
+        &updated.release.id.to_string(),
+        &format!(
+            r#"{{"source":"api","version_name":"{}","status":"{}","asset_count":{}}}"#,
+            updated.release.version_name.replace('"', "\\\""),
+            updated.release.status,
+            updated.release.asset_count
+        ),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(updated)))
+}
+
+pub async fn create_system_release_asset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Json(payload): Json<CreateSystemReleaseAssetRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let asset = system_releases::create_release_asset(
+        pool,
+        release_id,
+        system_releases::CreateSystemReleaseAssetInput {
+            platform: payload.platform,
+            original_filename: payload.original_filename,
+            content_type: payload.content_type,
+            byte_size: payload.byte_size,
+            created_by_user_id: user.id,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        json(system_release_asset_payload(asset)),
+    ))
+}
+
+pub async fn system_release_asset_upload_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
+    let expires_in_seconds =
+        normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
+    let mut request = storage::presign_upload_url(
+        pool,
+        &state.settings,
+        &asset.object_key,
+        &asset.content_type,
+        expires_in_seconds,
+    )
+    .await?;
+    bind_test_storage_upload_grant(
+        &state,
+        &asset.object_key,
+        user.id,
+        expires_in_seconds,
+        &mut request,
+    )?;
+    Ok(json(AttachmentSignedUrlPayload {
+        attachment: AttachmentPayload {
+            id: asset.id,
+            file_object_id: asset.file_object_id,
+            object_key: asset.object_key,
+            filename: asset.original_filename,
+            content_type: asset.content_type,
+            byte_size: asset.byte_size,
+            status: asset.status,
+            created_by: String::new(),
+            created_at: asset.created_at,
+        },
+        request,
+        expires_in_seconds,
+    }))
+}
+
+pub async fn system_release_asset_mark_uploaded(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseAssetPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
+    storage::verify_uploaded_object(
+        pool,
+        &state.settings,
+        &asset.object_key,
+        asset.byte_size,
+        &asset.content_type,
+    )
+    .await?;
+    let asset = system_releases::mark_release_asset_uploaded(pool, release_id, asset_id).await?;
+    Ok(json(system_release_asset_payload(asset)))
+}
+
+pub async fn delete_system_release_asset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseAssetPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    let deleted =
+        system_releases::delete_release_asset(pool, &state.settings, release_id, asset_id).await?;
+    Ok(json(system_release_asset_payload(deleted)))
+}
+
 pub async fn get_storage_config(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4709,6 +5063,65 @@ fn storage_config_version_payload(
         current_status: version.current_status,
         created_by: version.created_by,
         created_at: version.created_at,
+    }
+}
+
+fn system_release_settings_payload(
+    settings: system_releases::SystemReleaseSettings,
+) -> SystemReleaseSettingsPayload {
+    SystemReleaseSettingsPayload {
+        retention_count: settings.retention_count,
+        updated_by: settings.updated_by_display_name,
+        updated_at: settings.updated_at,
+    }
+}
+
+fn system_release_asset_payload(
+    asset: system_releases::SystemReleaseAssetSummary,
+) -> SystemReleaseAssetPayload {
+    SystemReleaseAssetPayload {
+        id: asset.id,
+        release_id: asset.release_id,
+        file_object_id: asset.file_object_id,
+        platform: asset.platform,
+        object_key: asset.object_key,
+        filename: asset.original_filename,
+        content_type: asset.content_type,
+        byte_size: asset.byte_size,
+        status: asset.status,
+        created_at: asset.created_at,
+    }
+}
+
+fn system_release_payload(
+    release: system_releases::SystemReleaseVersionSummary,
+) -> SystemReleasePayload {
+    SystemReleasePayload {
+        id: release.id,
+        version_name: release.version_name,
+        title: release.title,
+        notes: release.notes,
+        status: release.status,
+        published_at: release.published_at,
+        created_by: release.created_by_display_name,
+        updated_by: release.updated_by_display_name,
+        created_at: release.created_at,
+        updated_at: release.updated_at,
+        asset_count: release.asset_count,
+        platform_count: release.platform_count,
+    }
+}
+
+fn system_release_detail_payload(
+    detail: system_releases::SystemReleaseDetail,
+) -> SystemReleaseDetailPayload {
+    SystemReleaseDetailPayload {
+        release: system_release_payload(detail.release),
+        assets: detail
+            .assets
+            .into_iter()
+            .map(system_release_asset_payload)
+            .collect(),
     }
 }
 

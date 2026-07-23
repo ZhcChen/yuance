@@ -5703,6 +5703,275 @@
     return completed;
   }
 
+  function systemReleasePlatformLabel(platform) {
+    switch (String(platform || "").trim()) {
+      case "windows":
+        return "Windows";
+      case "macos":
+        return "macOS";
+      case "linux":
+        return "Linux";
+      case "android":
+        return "Android";
+      case "ios":
+        return "iOS";
+      default:
+        return "未知平台";
+    }
+  }
+
+  function createSystemReleaseUploadItem(file, platform) {
+    var item = document.createElement("article");
+    item.className = "system-release-upload-item";
+
+    var progress = createRichProgress(0);
+    progress.classList.add("system-release-upload-progress");
+
+    var body = document.createElement("div");
+    body.className = "system-release-upload-item-body";
+
+    var title = document.createElement("strong");
+    title.className = "system-release-upload-item-title";
+    title.textContent = file.name || "未命名文件";
+
+    var meta = document.createElement("div");
+    meta.className = "system-release-upload-item-meta";
+    meta.textContent = systemReleasePlatformLabel(platform) + " · " + formatFileSize(file.size || 0);
+
+    var status = document.createElement("div");
+    status.className = "system-release-upload-item-status";
+    status.textContent = "准备上传";
+
+    var desc = document.createElement("div");
+    desc.className = "system-release-upload-item-desc";
+    desc.textContent = "等待开始。";
+
+    body.append(title, meta, status, desc);
+    item.append(progress, body);
+    item.progressRing = progress;
+    item.statusNode = status;
+    item.descNode = desc;
+    return item;
+  }
+
+  function updateSystemReleaseUploadItem(item, options) {
+    if (!item) {
+      return;
+    }
+    var settings = options || {};
+    if (item.progressRing) {
+      updateRichProgress(item.progressRing, settings.percent);
+    }
+    item.dataset.tone = settings.tone || "info";
+    if (item.statusNode && typeof settings.status === "string") {
+      item.statusNode.textContent = settings.status;
+    }
+    if (item.descNode && typeof settings.description === "string") {
+      item.descNode.textContent = settings.description;
+    }
+  }
+
+  async function uploadSystemReleaseFile(root, file, platform) {
+    var releaseId = String(root.dataset.releaseId || "").trim();
+    if (!releaseId) {
+      throw new Error("缺少版本 ID，无法上传安装包。");
+    }
+    var list = root.querySelector("[data-release-upload-list]");
+    if (!list) {
+      throw new Error("缺少上传列表容器。");
+    }
+
+    var item = createSystemReleaseUploadItem(file, platform);
+    list.prepend(item);
+    updateSystemReleaseUploadItem(item, {
+      percent: 0,
+      tone: "info",
+      status: "创建资产",
+      description: "正在生成版本文件记录。",
+    });
+
+    var asset = await fetchJson("/api/v1/system/releases/" + encodeURIComponent(releaseId) + "/assets", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        platform: platform,
+        original_filename: file.name || "package.bin",
+        content_type: file.type || "application/octet-stream",
+        byte_size: Number(file.size || 0),
+      }),
+    });
+
+    updateSystemReleaseUploadItem(item, {
+      tone: "info",
+      status: "获取签名",
+      description: "正在申请对象存储上传地址。",
+    });
+
+    var signed = await fetchJson(
+      "/api/v1/system/releases/" +
+        encodeURIComponent(releaseId) +
+        "/assets/" +
+        encodeURIComponent(String(asset.id)) +
+        "/upload-url",
+      {
+        method: "GET",
+        headers: { accept: "application/json" },
+      }
+    );
+
+    updateSystemReleaseUploadItem(item, {
+      percent: 0,
+      tone: "info",
+      status: "上传中",
+      description: "正在上传到对象存储。",
+    });
+
+    await uploadSignedFile(
+      signed.request || {},
+      file,
+      file.type || asset.content_type || "application/octet-stream",
+      function (percent) {
+        updateSystemReleaseUploadItem(item, {
+          percent: percent,
+          tone: "info",
+          status: "上传中",
+          description: "正在上传到对象存储。",
+        });
+      }
+    );
+
+    updateSystemReleaseUploadItem(item, {
+      percent: 100,
+      tone: "info",
+      status: "确认完成",
+      description: "正在校验文件并更新版本资产状态。",
+    });
+
+    await fetchJson(
+      "/api/v1/system/releases/" +
+        encodeURIComponent(releaseId) +
+        "/assets/" +
+        encodeURIComponent(String(asset.id)) +
+        "/uploaded",
+      {
+        method: "POST",
+        headers: { accept: "application/json" },
+      }
+    );
+
+    updateSystemReleaseUploadItem(item, {
+      percent: 100,
+      tone: "success",
+      status: "已上传",
+      description: "上传完成，正在准备刷新列表。",
+    });
+    return asset;
+  }
+
+  async function handleSystemReleaseUpload(button) {
+    var root = button && button.closest("[data-system-release-upload]");
+    if (!root || root.dataset.uploadBusy === "true") {
+      return;
+    }
+    var platformSelect = root.querySelector("[data-release-platform]");
+    var fileInput = root.querySelector("[data-release-files]");
+    var files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
+    if (!platformSelect) {
+      showToast("缺少平台选择控件。", "error");
+      return;
+    }
+    if (files.length === 0) {
+      showToast("请先选择要上传的安装包文件。", "error");
+      return;
+    }
+
+    root.dataset.uploadBusy = "true";
+    button.disabled = true;
+    platformSelect.disabled = true;
+    if (fileInput) {
+      fileInput.disabled = true;
+    }
+
+    var completed = 0;
+    var failed = 0;
+    var platform = platformSelect.value || "windows";
+    for (var index = 0; index < files.length; index += 1) {
+      try {
+        await uploadSystemReleaseFile(root, files[index], platform);
+        completed += 1;
+      } catch (error) {
+        failed += 1;
+        showToast(error.message || "版本安装包上传失败。", "error");
+      }
+    }
+
+    delete root.dataset.uploadBusy;
+    button.disabled = false;
+    platformSelect.disabled = false;
+    if (fileInput) {
+      fileInput.disabled = false;
+    }
+
+    var returnUrl = root.dataset.pageUrl || window.location.pathname + window.location.search;
+    if (completed > 0) {
+      if (fileInput) {
+        fileInput.value = "";
+      }
+      showToast(
+        failed > 0
+          ? "已完成 " + completed + " 个文件上传，另有 " + failed + " 个失败，页面即将刷新。"
+          : "安装包上传完成，页面即将刷新。",
+        failed > 0 ? "error" : "success"
+      );
+      window.setTimeout(function () {
+        window.location.assign(returnUrl);
+      }, failed > 0 ? 900 : 520);
+      return;
+    }
+
+    if (failed > 0) {
+      showToast("安装包上传失败，请检查后重试。", "error");
+    }
+  }
+
+  async function handleSystemReleaseAssetDelete(button) {
+    var releaseId = String(button && button.dataset.releaseId || "").trim();
+    var assetId = String(button && button.dataset.assetId || "").trim();
+    var filename = String(button && button.dataset.filename || "该文件").trim() || "该文件";
+    var returnUrl = String(button && button.dataset.returnUrl || "").trim()
+      || (window.location.pathname + window.location.search);
+    if (!releaseId || !assetId) {
+      showToast("缺少版本资产信息，无法删除。", "error");
+      return;
+    }
+    if (!window.confirm("确认删除版本文件 “" + filename + "”？对应 OSS 对象也会一并清理。")) {
+      return;
+    }
+    button.disabled = true;
+    try {
+      await fetchJson(
+        "/api/v1/system/releases/" +
+          encodeURIComponent(releaseId) +
+          "/assets/" +
+          encodeURIComponent(assetId),
+        {
+          method: "DELETE",
+          headers: { accept: "application/json" },
+        }
+      );
+      showToast("版本文件已删除。", "success");
+      window.setTimeout(function () {
+        window.location.assign(returnUrl);
+      }, 240);
+    } catch (error) {
+      button.disabled = false;
+      showToast(error.message || "版本文件删除失败。", "error");
+    }
+  }
+
   async function submitDirectUpload(form) {
     if (form.dataset.uploadBusy === "true") {
       return;
@@ -9503,6 +9772,19 @@
         actionInput.dataset.action = "/api/v1/file-objects/" + fileObjectId + "/folder";
       }
       openModal(modal, fileMoveBtn);
+    }
+
+    var systemReleaseUploadButton = event.target.closest("[data-release-upload-submit]");
+    if (systemReleaseUploadButton) {
+      event.preventDefault();
+      handleSystemReleaseUpload(systemReleaseUploadButton);
+      return;
+    }
+
+    var systemReleaseAssetDeleteButton = event.target.closest("[data-system-release-asset-delete]");
+    if (systemReleaseAssetDeleteButton) {
+      event.preventDefault();
+      handleSystemReleaseAssetDelete(systemReleaseAssetDeleteButton);
     }
   });
 

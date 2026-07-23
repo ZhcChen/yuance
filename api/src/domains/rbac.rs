@@ -36,6 +36,18 @@ const PERMISSIONS: &[(&str, &str, &str, &str)] = &[
         "system-storage",
     ),
     (
+        "system.releases.view",
+        "查看版本管理",
+        "page",
+        "system-releases",
+    ),
+    (
+        "system.releases.manage",
+        "管理版本管理",
+        "action",
+        "system-releases",
+    ),
+    (
         "system.database_stats.view",
         "查看数据库统计",
         "page",

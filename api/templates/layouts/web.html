@@ -51,7 +51,7 @@
         </a>
         {% if system_nav.visible %}
         <div class="topnav-group" data-dropdown-root>
-          <button class="topnav-item topnav-trigger {% if active == "system" %}active{% endif %}{% if active == "system-users" %}active{% endif %}{% if active == "system-roles" %}active{% endif %}{% if active == "system-storage" %}active{% endif %}{% if active == "system-database-stats" %}active{% endif %}{% if active == "system-audit" %}active{% endif %}" type="button" data-dropdown-trigger aria-expanded="false">
+          <button class="topnav-item topnav-trigger {% if active == "system" %}active{% endif %}{% if active == "system-users" %}active{% endif %}{% if active == "system-roles" %}active{% endif %}{% if active == "system-storage" %}active{% endif %}{% if active == "system-releases" %}active{% endif %}{% if active == "system-database-stats" %}active{% endif %}{% if active == "system-audit" %}active{% endif %}" type="button" data-dropdown-trigger aria-expanded="false">
             <span>系统管理</span>
             <span class="account-caret" aria-hidden="true"></span>
           </button>
@@ -67,6 +67,9 @@
             {% endif %}
             {% if system_nav.storage %}
             <a class="{% if active == "system-storage" %}active{% endif %}" href="/web/system/storage">对象存储</a>
+            {% endif %}
+            {% if system_nav.releases %}
+            <a class="{% if active == "system-releases" %}active{% endif %}" href="/web/system/releases">版本管理</a>
             {% endif %}
             {% if system_nav.database_stats %}
             <a class="{% if active == "system-database-stats" %}active{% endif %}" href="/web/system/database-stats">数据库统计</a>
