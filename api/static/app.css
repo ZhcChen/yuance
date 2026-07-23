@@ -1440,6 +1440,14 @@ body {
   animation: discussion-post-target-highlight 1800ms ease-out;
 }
 
+.discussion-post.is-realtime-highlighted::before {
+  animation: discussion-post-realtime-highlight 2800ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.discussion-post.is-realtime-highlighted .discussion-post-content {
+  animation: discussion-post-content-realtime-highlight 2800ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .discussion-post-shell {
   width: 100%;
   min-width: 0;
@@ -2312,6 +2320,52 @@ textarea:focus-visible {
     opacity: 0;
     background: transparent;
     box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes discussion-post-realtime-highlight {
+  0% {
+    opacity: 0;
+    background: color-mix(in srgb, var(--brand) 8%, transparent);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  12% {
+    opacity: 1;
+    background: color-mix(in srgb, var(--brand-soft) 92%, var(--panel));
+    box-shadow: 0 24px 46px -28px color-mix(in srgb, var(--brand) 26%, transparent);
+  }
+  58% {
+    opacity: 1;
+    background: color-mix(in srgb, var(--brand-soft) 74%, var(--panel));
+    box-shadow: 0 20px 40px -30px color-mix(in srgb, var(--brand) 18%, transparent);
+  }
+  100% {
+    opacity: 0;
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes discussion-post-content-realtime-highlight {
+  0% {
+    background: color-mix(in srgb, var(--brand-soft) 54%, var(--panel));
+    box-shadow: 0 0 0 1px transparent, 0 18px 36px -28px color-mix(in srgb, var(--brand) 18%, transparent);
+    transform: translateY(6px) scale(0.992);
+  }
+  14% {
+    background: color-mix(in srgb, var(--brand-soft) 76%, var(--panel));
+    box-shadow: 0 0 0 1px transparent, 0 22px 44px -28px color-mix(in srgb, var(--brand) 24%, transparent);
+    transform: translateY(0) scale(1);
+  }
+  58% {
+    background: color-mix(in srgb, var(--brand-soft) 48%, var(--panel));
+    box-shadow: 0 0 0 1px transparent, 0 18px 38px -30px color-mix(in srgb, var(--brand) 14%, transparent);
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    background: var(--panel);
+    box-shadow: var(--card-shadow);
+    transform: translateY(0) scale(1);
   }
 }
 

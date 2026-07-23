@@ -1033,6 +1033,18 @@
     return root ? root.querySelector("[data-discussion-list-region]") : null;
   }
 
+  function discussionCommentIds(root) {
+    var region = discussionListRegion(root);
+    if (!region) {
+      return [];
+    }
+    return Array.from(region.querySelectorAll(".discussion-post[id^='comment-']"))
+      .map(function (post) {
+        return post.id.replace(/^comment-/, "").trim();
+      })
+      .filter(Boolean);
+  }
+
   function discussionModalsRegion() {
     return document.querySelector("[data-discussion-modals]");
   }
@@ -1083,6 +1095,7 @@
     }
     workItemDiscussionRefreshPromise = (async function () {
       try {
+        var previousCommentIds = discussionCommentIds(root);
         var response = await fetch(workItemDetailPartialUrl(itemKey), {
           headers: { accept: "text/html" },
           credentials: "same-origin",
@@ -1123,6 +1136,9 @@
         initDiscussionRichMedia(document);
         initRichTextEditors(document);
         workItemDiscussionPendingRefresh = false;
+        if (!settings.targetHash) {
+          highlightRealtimeDiscussionInsertions(previousCommentIds, currentWorkItemDiscussionRoot());
+        }
         var targetHash = settings.targetHash || workItemDiscussionPendingHash || "";
         workItemDiscussionPendingHash = "";
         if (targetHash) {
@@ -1151,6 +1167,18 @@
       }
     })();
     return workItemDiscussionRefreshPromise;
+  }
+
+  function highlightRealtimeDiscussionInsertions(previousCommentIds, root) {
+    var previousIds = new Set(Array.isArray(previousCommentIds) ? previousCommentIds : []);
+    if (!previousIds.size) {
+      return;
+    }
+    discussionCommentIds(root).forEach(function (commentId) {
+      if (!previousIds.has(commentId)) {
+        highlightRealtimeDiscussionPostById(commentId);
+      }
+    });
   }
 
   function flushPendingWorkItemDiscussionRefresh() {
@@ -5361,6 +5389,31 @@
       }
       post.classList.remove("is-target-highlighted");
     });
+  }
+
+  function highlightRealtimeDiscussionPostById(commentId, options) {
+    var normalizedCommentId = String(commentId || "").trim();
+    if (!normalizedCommentId) {
+      return false;
+    }
+    var target = document.getElementById("comment-" + normalizedCommentId);
+    if (!target || !target.classList.contains("discussion-post")) {
+      return false;
+    }
+    var settings = options || {};
+    if (target.discussionRealtimeHighlightTimer) {
+      window.clearTimeout(target.discussionRealtimeHighlightTimer);
+      target.discussionRealtimeHighlightTimer = null;
+    }
+    target.classList.remove("is-realtime-highlighted");
+    void target.offsetWidth;
+    target.classList.add("is-realtime-highlighted");
+    var highlightDuration = Math.max(Number(settings.durationMs) || 2800, 900);
+    target.discussionRealtimeHighlightTimer = window.setTimeout(function () {
+      target.classList.remove("is-realtime-highlighted");
+      target.discussionRealtimeHighlightTimer = null;
+    }, highlightDuration);
+    return true;
   }
 
   function highlightDiscussionPostByHash(hash, options) {
