@@ -447,6 +447,20 @@ body {
   line-height: 18px;
 }
 
+.discussion-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  transform-origin: center;
+  transition: color 180ms ease;
+}
+
+.discussion-count.is-realtime-pulsed {
+  animation: discussion-count-realtime-pulse 1450ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .discussion-heading-meta {
   display: grid;
   justify-items: end;
@@ -1441,11 +1455,11 @@ body {
 }
 
 .discussion-post.is-realtime-highlighted::before {
-  animation: discussion-post-realtime-highlight 2800ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: discussion-post-realtime-highlight 2400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .discussion-post.is-realtime-highlighted .discussion-post-content {
-  animation: discussion-post-content-realtime-highlight 2800ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: discussion-post-content-realtime-highlight 2400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .discussion-post-shell {
@@ -2326,18 +2340,18 @@ textarea:focus-visible {
 @keyframes discussion-post-realtime-highlight {
   0% {
     opacity: 0;
-    background: color-mix(in srgb, var(--brand) 8%, transparent);
+    background: color-mix(in srgb, var(--brand) 6%, transparent);
     box-shadow: 0 0 0 0 transparent;
   }
-  12% {
+  10% {
     opacity: 1;
-    background: color-mix(in srgb, var(--brand-soft) 92%, var(--panel));
-    box-shadow: 0 24px 46px -28px color-mix(in srgb, var(--brand) 26%, transparent);
+    background: color-mix(in srgb, var(--brand-soft) 82%, var(--panel));
+    box-shadow: 0 18px 34px -28px color-mix(in srgb, var(--brand) 20%, transparent);
   }
-  58% {
+  52% {
     opacity: 1;
-    background: color-mix(in srgb, var(--brand-soft) 74%, var(--panel));
-    box-shadow: 0 20px 40px -30px color-mix(in srgb, var(--brand) 18%, transparent);
+    background: color-mix(in srgb, var(--brand-soft) 60%, var(--panel));
+    box-shadow: 0 14px 28px -26px color-mix(in srgb, var(--brand) 12%, transparent);
   }
   100% {
     opacity: 0;
@@ -2348,23 +2362,50 @@ textarea:focus-visible {
 
 @keyframes discussion-post-content-realtime-highlight {
   0% {
-    background: color-mix(in srgb, var(--brand-soft) 54%, var(--panel));
-    box-shadow: 0 0 0 1px transparent, 0 18px 36px -28px color-mix(in srgb, var(--brand) 18%, transparent);
-    transform: translateY(6px) scale(0.992);
+    background: color-mix(in srgb, var(--brand-soft) 40%, var(--panel));
+    box-shadow: 0 0 0 1px transparent, 0 12px 24px -24px color-mix(in srgb, var(--brand) 14%, transparent);
+    transform: translateY(4px) scale(0.994);
   }
-  14% {
-    background: color-mix(in srgb, var(--brand-soft) 76%, var(--panel));
-    box-shadow: 0 0 0 1px transparent, 0 22px 44px -28px color-mix(in srgb, var(--brand) 24%, transparent);
+  12% {
+    background: color-mix(in srgb, var(--brand-soft) 58%, var(--panel));
+    box-shadow: 0 0 0 1px transparent, 0 16px 30px -24px color-mix(in srgb, var(--brand) 18%, transparent);
     transform: translateY(0) scale(1);
   }
-  58% {
-    background: color-mix(in srgb, var(--brand-soft) 48%, var(--panel));
-    box-shadow: 0 0 0 1px transparent, 0 18px 38px -30px color-mix(in srgb, var(--brand) 14%, transparent);
+  52% {
+    background: color-mix(in srgb, var(--brand-soft) 34%, var(--panel));
+    box-shadow: 0 0 0 1px transparent, 0 10px 20px -22px color-mix(in srgb, var(--brand) 10%, transparent);
     transform: translateY(0) scale(1);
   }
   100% {
     background: var(--panel);
     box-shadow: var(--card-shadow);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes discussion-count-realtime-pulse {
+  0% {
+    color: var(--muted);
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+    transform: translateY(0) scale(1);
+  }
+  18% {
+    color: var(--brand-strong);
+    background: color-mix(in srgb, var(--brand-soft) 64%, var(--panel));
+    box-shadow: 0 10px 20px -18px color-mix(in srgb, var(--brand) 16%, transparent);
+    transform: translateY(-1px) scale(1.04);
+  }
+  58% {
+    color: var(--brand);
+    background: color-mix(in srgb, var(--brand-soft) 38%, var(--panel));
+    box-shadow: 0 8px 16px -18px color-mix(in srgb, var(--brand) 10%, transparent);
+    transform: translateY(0) scale(1.015);
+  }
+  100% {
+    color: var(--muted);
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
     transform: translateY(0) scale(1);
   }
 }

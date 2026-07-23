@@ -1033,6 +1033,12 @@
     return root ? root.querySelector("[data-discussion-list-region]") : null;
   }
 
+  function discussionCountValue(node) {
+    var text = node ? String(node.textContent || "") : "";
+    var matched = text.match(/\d+/);
+    return matched ? Number(matched[0]) || 0 : 0;
+  }
+
   function discussionCommentIds(root) {
     var region = discussionListRegion(root);
     if (!region) {
@@ -1096,6 +1102,8 @@
     workItemDiscussionRefreshPromise = (async function () {
       try {
         var previousCommentIds = discussionCommentIds(root);
+        var previousCountNode = root.querySelector("[data-discussion-count]");
+        var previousCount = discussionCountValue(previousCountNode);
         var response = await fetch(workItemDetailPartialUrl(itemKey), {
           headers: { accept: "text/html" },
           credentials: "same-origin",
@@ -1115,6 +1123,7 @@
         }
         var currentCount = root.querySelector("[data-discussion-count]");
         var nextCount = nextRoot.querySelector("[data-discussion-count]");
+        var nextCountValue = discussionCountValue(nextCount);
         if (currentCount && nextCount) {
           currentCount.replaceWith(nextCount);
         }
@@ -1136,6 +1145,9 @@
         initDiscussionRichMedia(document);
         initRichTextEditors(document);
         workItemDiscussionPendingRefresh = false;
+        if (!settings.targetHash && nextCountValue > previousCount) {
+          pulseDiscussionCount(currentWorkItemDiscussionRoot());
+        }
         if (!settings.targetHash) {
           highlightRealtimeDiscussionInsertions(previousCommentIds, currentWorkItemDiscussionRoot());
         }
@@ -1179,6 +1191,25 @@
         highlightRealtimeDiscussionPostById(commentId);
       }
     });
+  }
+
+  function pulseDiscussionCount(root) {
+    var node = root ? root.querySelector("[data-discussion-count]") : null;
+    if (!node) {
+      return false;
+    }
+    if (node.discussionCountPulseTimer) {
+      window.clearTimeout(node.discussionCountPulseTimer);
+      node.discussionCountPulseTimer = null;
+    }
+    node.classList.remove("is-realtime-pulsed");
+    void node.offsetWidth;
+    node.classList.add("is-realtime-pulsed");
+    node.discussionCountPulseTimer = window.setTimeout(function () {
+      node.classList.remove("is-realtime-pulsed");
+      node.discussionCountPulseTimer = null;
+    }, 1450);
+    return true;
   }
 
   function flushPendingWorkItemDiscussionRefresh() {
