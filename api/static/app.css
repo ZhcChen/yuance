@@ -2777,7 +2777,8 @@ textarea:focus-visible {
 
 @supports (overflow: overlay) {
   .main,
-  .auth-body {
+  .auth-body,
+  .modal-body {
     overflow-y: overlay;
   }
 }
@@ -5415,7 +5416,7 @@ code {
 }
 
 .modal-panel.modal-work-form {
-  width: min(1040px, calc(100vw - 40px));
+  width: min(85vw, calc(100vw - 40px));
   max-height: min(860px, calc(100vh - 36px));
 }
 
@@ -5747,6 +5748,30 @@ code {
   gap: 14px;
   overflow: auto;
   padding: 16px 18px 18px;
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 58%, transparent);
+  background-clip: padding-box;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted-strong) 74%, transparent);
+  background-clip: padding-box;
 }
 
 .modal-form {
