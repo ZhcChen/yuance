@@ -15,7 +15,7 @@ use std::convert::Infallible;
 use crate::{
     domains::{
         api_tokens, audit, auth, bootstrap, database_stats, files, notifications,
-        project_resources, projects, rbac, storage, system_releases, users,
+        project_resources, projects, rbac, storage, system_api_tokens, system_releases, users,
     },
     platform::{
         crypto,
@@ -771,6 +771,21 @@ fn principal_realtime_display_name(principal: &ApiPrincipal) -> String {
         return principal.user.display_name.trim().to_string();
     }
     principal.user.username.trim().to_string()
+}
+
+#[derive(Debug, Clone)]
+enum SystemReleaseApiPrincipal {
+    Session(auth::AuthUser),
+    Token(system_api_tokens::AuthenticatedSystemApiToken),
+}
+
+impl SystemReleaseApiPrincipal {
+    fn actor_user_id(&self) -> i64 {
+        match self {
+            Self::Session(user) => user.id,
+            Self::Token(token) => token.owner_user_id,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -3640,9 +3655,10 @@ pub async fn list_system_releases(
     headers: HeaderMap,
     Query(query): Query<SystemReleaseListQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<SystemReleasePayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.view")
+        .await?;
     let pagination = normalize_api_pagination(query.page, query.per_page)?;
     let page = system_releases::list_releases_page(pool, pagination).await?;
     let total_pages = page.total_pages();
@@ -3662,13 +3678,14 @@ pub async fn create_system_release(
     headers: HeaderMap,
     Json(payload): Json<CreateSystemReleaseRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
     let created = system_releases::create_release(
         pool,
-        user.id,
+        principal.actor_user_id(),
         system_releases::CreateSystemReleaseInput {
             version_name: payload.version_name,
             title: payload.title,
@@ -3679,12 +3696,13 @@ pub async fn create_system_release(
     let request_context = audit_context::from_headers(&headers);
     audit::record_with_context(
         pool,
-        Some(user.id),
+        Some(principal.actor_user_id()),
         "system.release.create",
         "system_release",
         &created.release.id.to_string(),
         &format!(
-            r#"{{"source":"api","version_name":"{}","status":"{}"}}"#,
+            r#"{{{},"version_name":"{}","status":"{}"}}"#,
+            system_release_audit_source(&principal),
             created.release.version_name.replace('"', "\\\""),
             created.release.status
         ),
@@ -3702,9 +3720,10 @@ pub async fn get_system_release(
     headers: HeaderMap,
     Path(release_id): Path<i64>,
 ) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.view")
+        .await?;
     let detail = system_releases::get_release_detail(pool, release_id)
         .await?
         .ok_or_else(|| AppError::NotFound("版本不存在".to_string()))?;
@@ -3717,14 +3736,15 @@ pub async fn update_system_release(
     Path(release_id): Path<i64>,
     Json(payload): Json<UpdateSystemReleaseRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
     let updated = system_releases::update_release(
         pool,
         &state.settings,
-        user.id,
+        principal.actor_user_id(),
         release_id,
         system_releases::UpdateSystemReleaseInput {
             version_name: payload.version_name,
@@ -3737,7 +3757,7 @@ pub async fn update_system_release(
     let request_context = audit_context::from_headers(&headers);
     audit::record_with_context(
         pool,
-        Some(user.id),
+        Some(principal.actor_user_id()),
         if payload.publish {
             "system.release.publish"
         } else {
@@ -3746,7 +3766,8 @@ pub async fn update_system_release(
         "system_release",
         &updated.release.id.to_string(),
         &format!(
-            r#"{{"source":"api","version_name":"{}","status":"{}","asset_count":{}}}"#,
+            r#"{{{},"version_name":"{}","status":"{}","asset_count":{}}}"#,
+            system_release_audit_source(&principal),
             updated.release.version_name.replace('"', "\\\""),
             updated.release.status,
             updated.release.asset_count
@@ -3763,10 +3784,11 @@ pub async fn create_system_release_asset(
     Path(release_id): Path<i64>,
     Json(payload): Json<CreateSystemReleaseAssetRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
     let asset = system_releases::create_release_asset(
         pool,
         release_id,
@@ -3775,7 +3797,7 @@ pub async fn create_system_release_asset(
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
-            created_by_user_id: user.id,
+            created_by_user_id: principal.actor_user_id(),
         },
     )
     .await?;
@@ -3791,9 +3813,10 @@ pub async fn system_release_asset_upload_url(
     Path((release_id, asset_id)): Path<(i64, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
     let expires_in_seconds =
         normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
@@ -3808,7 +3831,7 @@ pub async fn system_release_asset_upload_url(
     bind_test_storage_upload_grant(
         &state,
         &asset.object_key,
-        user.id,
+        principal.actor_user_id(),
         expires_in_seconds,
         &mut request,
     )?;
@@ -3834,10 +3857,11 @@ pub async fn system_release_asset_mark_uploaded(
     headers: HeaderMap,
     Path((release_id, asset_id)): Path<(i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseAssetPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
     storage::verify_uploaded_object(
         pool,
@@ -3856,10 +3880,11 @@ pub async fn delete_system_release_asset(
     headers: HeaderMap,
     Path((release_id, asset_id)): Path<(i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseAssetPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_system_release_api_principal(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    ensure_api_permission(pool, &headers, user.id, "system.releases.manage").await?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
     let deleted =
         system_releases::delete_release_asset(pool, &state.settings, release_id, asset_id).await?;
     Ok(json(system_release_asset_payload(deleted)))
@@ -4036,9 +4061,9 @@ pub async fn test_storage_upload(
     Query(query): Query<TestStorageUploadQuery>,
     body: Bytes,
 ) -> AppResult<StatusCode> {
-    let user = require_api_user(&state, &headers).await?;
+    let user_id = require_test_storage_upload_actor_user_id(&state, &headers).await?;
     ensure_api_csrf(&headers)?;
-    verify_test_storage_upload_grant(&state, &query, user.id)?;
+    verify_test_storage_upload_grant(&state, &query, user_id)?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -4174,6 +4199,87 @@ async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResu
         user,
         token_actor: None,
     })
+}
+
+async fn require_system_release_api_principal(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> AppResult<SystemReleaseApiPrincipal> {
+    let pool = state.pool()?;
+    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+        if !system_api_tokens::is_system_token(&raw_token) {
+            return Err(AppError::Forbidden(
+                "系统版本管理接口仅支持系统访问 Token 或浏览器登录会话".to_string(),
+            ));
+        }
+        let authenticated =
+            system_api_tokens::authenticated_token_from_bearer_token(pool, &raw_token)
+                .await?
+                .ok_or(AppError::Unauthorized)?;
+        return Ok(SystemReleaseApiPrincipal::Token(authenticated));
+    }
+
+    let user = auth::user_from_headers(pool, headers)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    Ok(SystemReleaseApiPrincipal::Session(user))
+}
+
+async fn require_test_storage_upload_actor_user_id(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> AppResult<i64> {
+    let pool = state.pool()?;
+    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+        if let Some(authenticated) =
+            system_api_tokens::authenticated_token_from_bearer_token(pool, &raw_token).await?
+        {
+            return Ok(authenticated.owner_user_id);
+        }
+    }
+    Ok(require_api_user(state, headers).await?.id)
+}
+
+async fn ensure_system_release_api_permission(
+    pool: &sqlx::SqlitePool,
+    headers: &HeaderMap,
+    principal: &SystemReleaseApiPrincipal,
+    permission_key: &str,
+) -> AppResult<()> {
+    match principal {
+        SystemReleaseApiPrincipal::Session(user) => {
+            ensure_api_permission(pool, headers, user.id, permission_key).await
+        }
+        SystemReleaseApiPrincipal::Token(token) => {
+            let required_scope = match permission_key {
+                "system.releases.view" => system_api_tokens::SCOPE_SYSTEM_RELEASE_READ,
+                "system.releases.manage" => system_api_tokens::SCOPE_SYSTEM_RELEASE_WRITE,
+                _ => {
+                    return Err(AppError::Forbidden(
+                        "当前系统访问 Token 不支持该系统接口".to_string(),
+                    ));
+                }
+            };
+            if token.scopes.iter().any(|scope| scope == required_scope) {
+                Ok(())
+            } else {
+                Err(AppError::Forbidden(format!(
+                    "系统访问 Token 缺少 scope：{required_scope}"
+                )))
+            }
+        }
+    }
+}
+
+fn system_release_audit_source(principal: &SystemReleaseApiPrincipal) -> String {
+    match principal {
+        SystemReleaseApiPrincipal::Session(_) => r#""source":"api""#.to_string(),
+        SystemReleaseApiPrincipal::Token(token) => format!(
+            r#""source":"api-system-token","token_id":{},"token_name":"{}""#,
+            token.token_id,
+            token.token_name.replace('"', "\\\"")
+        ),
+    }
 }
 
 fn api_token_actor_display_name(user: &auth::AuthUser, token_name: &str) -> String {

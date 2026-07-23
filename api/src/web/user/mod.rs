@@ -21,7 +21,8 @@ use crate::{
     domains::{
         api_tokens, audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        files, notifications, project_resources, projects, rbac, storage, system_releases, users,
+        files, notifications, project_resources, projects, rbac, storage, system_api_tokens,
+        system_releases, users,
     },
     platform::error::{AppError, AppResult},
     platform::{crypto, security::csrf},
@@ -421,6 +422,7 @@ struct SystemNav {
     users: bool,
     roles: bool,
     storage: bool,
+    openapi: bool,
     releases: bool,
     database_stats: bool,
     audit: bool,
@@ -438,6 +440,7 @@ impl SystemNav {
             users: true,
             roles: true,
             storage: true,
+            openapi: true,
             releases: true,
             database_stats: true,
             audit: true,
@@ -569,6 +572,29 @@ struct ApiTokenProjectOptionView {
     code: String,
     name: String,
     helper: String,
+    selected: bool,
+}
+
+#[derive(Debug, Clone)]
+struct SystemApiTokenView {
+    id: i64,
+    name: String,
+    scopes_label: String,
+    scope_options: Vec<SystemApiTokenScopeOptionView>,
+    token_suffix: String,
+    copy_text: String,
+    can_copy_raw_token: bool,
+    created_by: String,
+    updated_by: String,
+    last_used_at: String,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone)]
+struct SystemApiTokenScopeOptionView {
+    key: &'static str,
+    label: &'static str,
     selected: bool,
 }
 
@@ -706,6 +732,15 @@ struct SystemReleasesPageView {
     has_releases: bool,
     pagination: PaginationView,
     pagination_pages: Vec<PaginationPageView>,
+}
+
+#[derive(Debug, Clone)]
+struct SystemOpenApiPageView {
+    tokens: Vec<SystemApiTokenView>,
+    has_tokens: bool,
+    token_active_count: usize,
+    token_limit: i64,
+    can_create_token: bool,
 }
 
 #[derive(Template)]
@@ -1177,6 +1212,24 @@ struct SystemReleasesTemplate {
     message: String,
     message_tone: &'static str,
     can_manage_releases: bool,
+}
+
+#[derive(Template)]
+#[template(path = "web/system/openapi.html")]
+struct SystemOpenApiTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    tokens: Vec<SystemApiTokenView>,
+    has_tokens: bool,
+    token_active_count: usize,
+    token_limit: i64,
+    can_create_token: bool,
+    can_manage_tokens: bool,
 }
 
 #[derive(Template)]
@@ -1750,6 +1803,30 @@ pub struct MeApiTokenUpdateForm {
     scopes: Vec<String>,
     #[serde(default)]
     project_scope: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemApiTokenCreateForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemApiTokenUpdateForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemApiTokenDeleteForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5242,6 +5319,118 @@ pub async fn system_dashboard(
     )
 }
 
+pub async fn system_openapi_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<Response> {
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.api_tokens.view").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    render_system_openapi_template(&state, context).await
+}
+
+pub async fn system_api_token_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_system_api_token_create_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.api_tokens.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    if let Some(pool) = state.pool.as_ref() {
+        let created = system_api_tokens::create_token(
+            pool,
+            &state.settings.security_master_key,
+            context.user_id,
+            system_api_tokens::CreateSystemApiTokenInput {
+                name: form.name,
+                scopes: form.scopes,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "system.api_token.create",
+            "system_api_token",
+            &created.token.id.to_string(),
+            r#"{"source":"web"}"#,
+        )
+        .await?;
+    }
+    Ok(Redirect::to("/web/system/openapi").into_response())
+}
+
+pub async fn system_api_token_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_system_api_token_update_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.api_tokens.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    if let Some(pool) = state.pool.as_ref() {
+        let updated = system_api_tokens::update_token(
+            pool,
+            context.user_id,
+            token_id,
+            system_api_tokens::UpdateSystemApiTokenInput {
+                name: form.name,
+                scopes: form.scopes,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "system.api_token.update",
+            "system_api_token",
+            &updated.id.to_string(),
+            r#"{"source":"web"}"#,
+        )
+        .await?;
+    }
+    Ok(Redirect::to("/web/system/openapi").into_response())
+}
+
+pub async fn system_api_token_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    Form(form): Form<SystemApiTokenDeleteForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context =
+        match system_context_or_redirect(&state, &headers, "system.api_tokens.manage").await? {
+            Ok(context) => context,
+            Err(response) => return Ok(response),
+        };
+    if let Some(pool) = state.pool.as_ref() {
+        let token = system_api_tokens::delete_token(pool, token_id).await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "system.api_token.delete",
+            "system_api_token",
+            &token.id.to_string(),
+            r#"{"source":"web"}"#,
+        )
+        .await?;
+    }
+    Ok(Redirect::to("/web/system/openapi").into_response())
+}
+
 pub async fn system_releases_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -7000,6 +7189,7 @@ async fn build_system_nav(
     let users = rbac::user_has_permission(pool, user_id, "system.users.view").await?;
     let roles = rbac::user_has_permission(pool, user_id, "system.roles.view").await?;
     let storage = rbac::user_has_permission(pool, user_id, "system.storage.view").await?;
+    let openapi = rbac::user_has_permission(pool, user_id, "system.api_tokens.view").await?;
     let releases = rbac::user_has_permission(pool, user_id, "system.releases.view").await?;
     let database_stats =
         rbac::user_has_permission(pool, user_id, "system.database_stats.view").await?;
@@ -7014,11 +7204,19 @@ async fn build_system_nav(
     let unread_notifications = notifications::unread_count(pool, user_id).await?;
 
     Ok(SystemNav {
-        visible: dashboard || users || roles || storage || releases || database_stats || audit,
+        visible: dashboard
+            || users
+            || roles
+            || storage
+            || openapi
+            || releases
+            || database_stats
+            || audit,
         dashboard,
         users,
         roles,
         storage,
+        openapi,
         releases,
         database_stats,
         audit,
@@ -7498,6 +7696,40 @@ fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
 fn parse_api_token_update_form(form: &[u8]) -> AppResult<MeApiTokenUpdateForm> {
     let (parsed, _expires_at) = parse_api_token_form(form)?;
     Ok(parsed)
+}
+
+fn parse_system_api_token_form(form: &[u8]) -> AppResult<SystemApiTokenUpdateForm> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("系统访问 Token 表单解析失败：{error}")))?;
+    let mut csrf_token = String::new();
+    let mut name = String::new();
+    let mut scopes = Vec::new();
+    for (key, value) in pairs {
+        match key.as_str() {
+            csrf::CSRF_FIELD_NAME => csrf_token = value,
+            "name" => name = value,
+            "scopes" => scopes.push(value),
+            _ => {}
+        }
+    }
+    Ok(SystemApiTokenUpdateForm {
+        csrf_token,
+        name,
+        scopes,
+    })
+}
+
+fn parse_system_api_token_create_form(form: &[u8]) -> AppResult<SystemApiTokenCreateForm> {
+    let parsed = parse_system_api_token_form(form)?;
+    Ok(SystemApiTokenCreateForm {
+        csrf_token: parsed.csrf_token,
+        name: parsed.name,
+        scopes: parsed.scopes,
+    })
+}
+
+fn parse_system_api_token_update_form(form: &[u8]) -> AppResult<SystemApiTokenUpdateForm> {
+    parse_system_api_token_form(form)
 }
 
 fn api_token_project_scope_from_form(
@@ -8475,6 +8707,44 @@ async fn storage_versions_page_for_view(
     })
 }
 
+async fn system_openapi_page_for_view(
+    pool: &SqlitePool,
+    master_key: &str,
+    include_raw_tokens: bool,
+) -> AppResult<SystemOpenApiPageView> {
+    let tokens = if include_raw_tokens {
+        system_api_tokens::list_tokens_with_raw(pool, master_key)
+            .await?
+            .into_iter()
+            .map(system_api_token_view_from_domain)
+            .collect::<Vec<_>>()
+    } else {
+        system_api_tokens::list_tokens(pool)
+            .await?
+            .into_iter()
+            .map(|token| {
+                system_api_token_view_from_domain(
+                    system_api_tokens::SystemApiTokenPlaintextSummary {
+                        token,
+                        raw_token: None,
+                    },
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let token_active_count = tokens.len();
+    let can_create_token =
+        (token_active_count as i64) < system_api_tokens::MAX_ACTIVE_SYSTEM_TOKENS;
+
+    Ok(SystemOpenApiPageView {
+        has_tokens: !tokens.is_empty(),
+        tokens,
+        token_active_count,
+        token_limit: system_api_tokens::MAX_ACTIVE_SYSTEM_TOKENS,
+        can_create_token,
+    })
+}
+
 async fn system_releases_page_for_view(
     pool: &SqlitePool,
     requested_pagination: projects::Pagination,
@@ -8510,6 +8780,39 @@ async fn system_releases_page_for_view(
         pagination,
         pagination_pages,
     })
+}
+
+async fn render_system_openapi_template(
+    state: &AppState,
+    context: SystemContext,
+) -> AppResult<Response> {
+    let pool = state.pool()?;
+    let can_manage_tokens =
+        rbac::user_has_permission(pool, context.user_id, "system.api_tokens.manage").await?;
+    let page_view =
+        system_openapi_page_for_view(pool, &state.settings.security_master_key, can_manage_tokens)
+            .await?;
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        state,
+        &csrf_token,
+        response::html(SystemOpenApiTemplate {
+            active: "system-openapi",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            tokens: page_view.tokens,
+            has_tokens: page_view.has_tokens,
+            token_active_count: page_view.token_active_count,
+            token_limit: page_view.token_limit,
+            can_create_token: page_view.can_create_token,
+            can_manage_tokens,
+        })?
+        .into_response(),
+    )
 }
 
 async fn render_system_releases_template(
@@ -9571,6 +9874,57 @@ fn api_token_scope_label(scope: &str) -> &'static str {
         api_tokens::SCOPE_RESOURCE_WRITE => "资料写入",
         api_tokens::SCOPE_RESOURCE_UNLOCK => "资料解锁",
         api_tokens::SCOPE_NOTIFICATION_READ => "消息读取",
+        _ => "未知权限",
+    }
+}
+
+fn system_api_token_view_from_domain(
+    token: system_api_tokens::SystemApiTokenPlaintextSummary,
+) -> SystemApiTokenView {
+    let raw_token = token.raw_token;
+    let can_copy_raw_token = raw_token.is_some();
+    let token = token.token;
+    SystemApiTokenView {
+        id: token.id,
+        name: token.name,
+        scopes_label: token
+            .scopes
+            .iter()
+            .map(|scope| system_api_token_scope_label(scope))
+            .collect::<Vec<_>>()
+            .join("、"),
+        scope_options: system_api_token_scope_options(&token.scopes),
+        token_suffix: token.token_suffix,
+        copy_text: raw_token.unwrap_or_default(),
+        can_copy_raw_token,
+        created_by: fallback_text(token.created_by_display_name, "系统"),
+        updated_by: fallback_text(token.updated_by_display_name, "系统"),
+        last_used_at: display_optional_timestamp(token.last_used_at, "尚未使用"),
+        created_at: display_timestamp(token.created_at),
+        updated_at: display_timestamp(token.updated_at),
+    }
+}
+
+fn system_api_token_scope_options(
+    selected_scopes: &[String],
+) -> Vec<SystemApiTokenScopeOptionView> {
+    [
+        system_api_tokens::SCOPE_SYSTEM_RELEASE_READ,
+        system_api_tokens::SCOPE_SYSTEM_RELEASE_WRITE,
+    ]
+    .into_iter()
+    .map(|scope| SystemApiTokenScopeOptionView {
+        key: scope,
+        label: system_api_token_scope_label(scope),
+        selected: selected_scopes.iter().any(|selected| selected == scope),
+    })
+    .collect()
+}
+
+fn system_api_token_scope_label(scope: &str) -> &'static str {
+    match scope {
+        system_api_tokens::SCOPE_SYSTEM_RELEASE_READ => "版本读取",
+        system_api_tokens::SCOPE_SYSTEM_RELEASE_WRITE => "版本写入 / 发布 / 资产上传",
         _ => "未知权限",
     }
 }

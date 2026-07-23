@@ -1,0 +1,791 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "元策系统 API",
+    "summary": "元策系统版本管理 OpenAPI。",
+    "description": "该契约独立于普通业务 OpenAPI，主要面向版本管理自动化场景。调用时使用系统管理页创建的 system token，通过 Authorization: Bearer <token> 访问。当前只开放版本列表、详情、创建、编辑、发布和版本资产上传链路；版本保留策略等系统设置不在此文档中暴露。",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "当前元策服务"
+    },
+    {
+      "url": "https://yuance.quanxinfu.com",
+      "description": "元策正式环境"
+    }
+  ],
+  "tags": [
+    {
+      "name": "meta",
+      "description": "system OpenAPI 元信息"
+    },
+    {
+      "name": "releases",
+      "description": "系统版本管理"
+    }
+  ],
+  "security": [
+    {
+      "systemBearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/system/openapi.json": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "获取 system OpenAPI 契约",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 JSON 文档"
+          }
+        }
+      }
+    },
+    "/api/v1/system/releases": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "分页获取版本列表",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Page"
+          },
+          {
+            "$ref": "#/components/parameters/PerPage"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "版本列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemReleasePageEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "创建版本草稿",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSystemReleaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemReleaseDetailEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/releases/{release_id}": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "获取版本详情",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReleaseId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "版本详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemReleaseDetailEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "更新版本信息或发布版本",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReleaseId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSystemReleaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemReleaseDetailEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/releases/{release_id}/assets": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "创建版本资产占位",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReleaseId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSystemReleaseAssetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemReleaseAssetEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url": {
+      "get": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "获取版本资产上传签名地址",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReleaseId"
+          },
+          {
+            "$ref": "#/components/parameters/AssetId"
+          },
+          {
+            "name": "expires_in_seconds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 3600,
+              "default": 600
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "上传签名地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded": {
+      "post": {
+        "tags": [
+          "releases"
+        ],
+        "summary": "确认版本资产已上传",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ReleaseId"
+          },
+          {
+            "$ref": "#/components/parameters/AssetId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "确认成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemReleaseAssetEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "systemBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "OpaqueToken",
+        "description": "在系统管理页创建的独立 system token。"
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 1
+        }
+      },
+      "PerPage": {
+        "name": "per_page",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 10
+        }
+      },
+      "ReleaseId": {
+        "name": "release_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "AssetId": {
+        "name": "asset_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "统一错误响应",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorObject"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "ErrorObject": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total_items": {
+            "type": "integer"
+          },
+          "total_pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "per_page",
+          "total_items",
+          "total_pages"
+        ]
+      },
+      "SystemRelease": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "version_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published"
+            ]
+          },
+          "published_at": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "updated_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "asset_count": {
+            "type": "integer"
+          },
+          "platform_count": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version_name",
+          "title",
+          "notes",
+          "status",
+          "published_at",
+          "created_by",
+          "updated_by",
+          "created_at",
+          "updated_at",
+          "asset_count",
+          "platform_count"
+        ]
+      },
+      "SystemReleaseAsset": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "release_id": {
+            "type": "integer"
+          },
+          "file_object_id": {
+            "type": "integer"
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "macos",
+              "linux",
+              "android",
+              "ios"
+            ]
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "filename": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "release_id",
+          "file_object_id",
+          "platform",
+          "object_key",
+          "filename",
+          "content_type",
+          "byte_size",
+          "status",
+          "created_at"
+        ]
+      },
+      "SystemReleaseDetail": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "$ref": "#/components/schemas/SystemRelease"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SystemReleaseAsset"
+            }
+          }
+        },
+        "required": [
+          "release",
+          "assets"
+        ]
+      },
+      "AttachmentSignedRequest": {
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentSignedRequestHeader"
+            }
+          }
+        },
+        "required": [
+          "method",
+          "url",
+          "headers"
+        ]
+      },
+      "AttachmentSignedRequestHeader": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ]
+      },
+      "AttachmentSignedUrlPayload": {
+        "type": "object",
+        "properties": {
+          "attachment": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer"
+              },
+              "file_object_id": {
+                "type": "integer"
+              },
+              "object_key": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "byte_size": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string"
+              },
+              "created_by": {
+                "type": "string"
+              },
+              "created_at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "file_object_id",
+              "object_key",
+              "filename",
+              "content_type",
+              "byte_size",
+              "status",
+              "created_by",
+              "created_at"
+            ]
+          },
+          "request": {
+            "$ref": "#/components/schemas/AttachmentSignedRequest"
+          },
+          "expires_in_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "attachment",
+          "request",
+          "expires_in_seconds"
+        ]
+      },
+      "CreateSystemReleaseRequest": {
+        "type": "object",
+        "properties": {
+          "version_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_name"
+        ]
+      },
+      "UpdateSystemReleaseRequest": {
+        "type": "object",
+        "properties": {
+          "version_name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "publish": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "version_name"
+        ]
+      },
+      "CreateSystemReleaseAssetRequest": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "windows",
+              "macos",
+              "linux",
+              "android",
+              "ios"
+            ]
+          },
+          "original_filename": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "byte_size": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "platform",
+          "original_filename",
+          "content_type",
+          "byte_size"
+        ]
+      },
+      "SystemReleasePageEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/SystemRelease"
+                }
+              },
+              "pagination": {
+                "$ref": "#/components/schemas/Pagination"
+              }
+            },
+            "required": [
+              "items",
+              "pagination"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SystemReleaseDetailEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SystemReleaseDetail"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SystemReleaseAssetEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SystemReleaseAsset"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AttachmentSignedUrlEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AttachmentSignedUrlPayload"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      }
+    }
+  }
+}

@@ -296,6 +296,18 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::storage_settings).post(web::user::storage_settings_save),
         )
         .route(
+            "/web/system/openapi",
+            get(web::user::system_openapi_page).post(web::user::system_api_token_create),
+        )
+        .route(
+            "/web/system/openapi/tokens/{token_id}/edit",
+            post(web::user::system_api_token_update),
+        )
+        .route(
+            "/web/system/openapi/tokens/{token_id}/delete",
+            post(web::user::system_api_token_delete),
+        )
+        .route(
             "/web/system/releases",
             get(web::user::system_releases_page).post(web::user::system_releases_create),
         )
@@ -337,7 +349,9 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::work_item_detail_partial),
         )
         .route("/web/api-docs", get(api_docs))
+        .route("/web/system/api-docs", get(system_api_docs))
         .route("/api/openapi.json", get(openapi_json))
+        .route("/api/system/openapi.json", get(system_openapi_json))
         .route("/api/healthz", get(web::api::healthz))
         .route("/api/readyz", get(web::api::readyz))
         .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
@@ -803,6 +817,7 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
             | "/web/bootstrap"
             | "/web/bootstrap/init"
             | "/api/openapi.json"
+            | "/api/system/openapi.json"
             | "/api/healthz"
             | "/api/readyz"
             | "/api/v1/bootstrap/status"
@@ -1262,6 +1277,13 @@ async fn openapi_json() -> impl IntoResponse {
     )
 }
 
+async fn system_openapi_json() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        include_str!("../../../docs/openapi/yuance-system.openapi.json"),
+    )
+}
+
 async fn api_docs() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
@@ -1431,6 +1453,182 @@ async fn api_docs() -> impl IntoResponse {
       metaData: {
         title: '元策 API',
         description: 'OpenAPI 与 MCP for AI Agents'
+      }
+    });
+  </script>
+</body>
+</html>"#,
+    )
+}
+
+async fn system_api_docs() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系统 OpenAPI - 元策</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fc;
+      --card: rgba(255, 255, 255, .94);
+      --text: #172033;
+      --muted: #667085;
+      --border: rgba(102, 112, 133, .18);
+      --primary: #2f6adf;
+      --primary-soft: rgba(47, 106, 223, .10);
+      --shadow: 0 22px 70px rgba(20, 33, 61, .12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(47, 106, 223, .14), transparent 30%),
+        radial-gradient(circle at 90% 0%, rgba(239, 68, 68, .08), transparent 22%),
+        var(--bg);
+    }
+    .hero {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 32px 22px 20px;
+    }
+    .hero-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+      gap: 22px;
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      margin: 0 0 12px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      color: var(--primary);
+      background: var(--primary-soft);
+      font-size: 13px;
+      font-weight: 800;
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1.08;
+      letter-spacing: -.04em;
+    }
+    p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.75;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .btn {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 16px;
+      border-radius: 999px;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .btn-primary {
+      color: #fff;
+      background: var(--primary);
+      box-shadow: 0 12px 30px rgba(47, 106, 223, .22);
+    }
+    .btn-secondary {
+      color: #344054;
+      background: #eef2f8;
+    }
+    .tips {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .tip {
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: rgba(248, 250, 252, .82);
+    }
+    .tip strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      color: #2458c7;
+      background: var(--primary-soft);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: .92em;
+    }
+    #app {
+      min-height: 72vh;
+      margin-top: 10px;
+      background: #fff;
+    }
+    @media (max-width: 860px) {
+      .hero-card { grid-template-columns: 1fr; padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <section class="hero">
+    <div class="hero-card">
+      <div>
+        <p class="eyebrow">System OpenAPI</p>
+        <h1>元策系统版本管理 API</h1>
+        <p>这里提供独立于普通业务 OpenAPI 的系统版本管理契约。该文档面向 GitHub Actions、发布脚本和系统级自动化；调用时使用系统管理页创建的 system token，通过 <code>Authorization: Bearer &lt;token&gt;</code> 访问。</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="/api/system/openapi.json">下载 System OpenAPI JSON</a>
+          <a class="btn btn-secondary" href="/web/system/openapi">进入系统 Token 管理</a>
+        </div>
+      </div>
+      <div class="tips" aria-label="system token 使用说明">
+        <div class="tip">
+          <strong>1. 先在系统管理中创建 Token</strong>
+          <p>选择最小 scope。第一阶段仅开放版本读取与版本写入两类权限。</p>
+        </div>
+        <div class="tip">
+          <strong>2. 上传资产使用两段式流程</strong>
+          <p>先创建版本资产占位，再申请 <code>upload-url</code>，最后回调 <code>uploaded</code> 确认。</p>
+        </div>
+        <div class="tip">
+          <strong>3. 保留策略不在 system OpenAPI 中开放</strong>
+          <p>版本保留数仍只允许管理员网页登录后在系统页面调整。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/api/system/openapi.json',
+      layout: 'modern',
+      theme: 'default',
+      hideDownloadButton: false,
+      metaData: {
+        title: '元策系统 API',
+        description: 'System OpenAPI for Releases'
       }
     });
   </script>

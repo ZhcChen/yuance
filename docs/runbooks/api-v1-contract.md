@@ -170,6 +170,8 @@ notification:read
 ```text
 GET   /api/v1/current-project
 PATCH /api/v1/current-project
+GET   /api/v1/topbar/status
+GET   /api/v1/topbar/events
 ```
 
 `PATCH /api/v1/current-project` 请求：
@@ -187,6 +189,8 @@ PATCH /api/v1/current-project
 - `GET /api/v1/work-items` 未显式传 `project_key` 时，会默认使用当前项目。
 - 如果用户没有当前项目，则返回空列表，不返回跨项目混合结果。
 - 程序化调用方如果需要特定项目列表，应显式传 `project_key`。
+- `GET /api/v1/topbar/status` 返回顶部需求 / 任务 / Bug、当前项目和消息角标的当前快照。
+- `GET /api/v1/topbar/events` 返回 SSE 事件流，用于顶部角标、消息数和项目切换相关的实时推送。
 
 ## 项目
 
@@ -350,6 +354,8 @@ GET    /api/v1/work-items
 POST   /api/v1/work-items
 GET    /api/v1/work-items/{item_key}
 PATCH  /api/v1/work-items/{item_key}
+GET    /api/v1/work-items/{item_key}/events
+GET    /api/v1/work-items/{item_key}/typing
 POST   /api/v1/work-items/{item_key}/restore
 POST   /api/v1/work-items/{item_key}/handoff
 ```
@@ -410,6 +416,8 @@ per_page=20
 
 - `assignee_username` 为空时保持当前处理人；非空时必须是当前项目启用成员。
 - 每次推进会在评论区生成一条流程记录，流程记录不能编辑、删除或添加附件。
+- `GET /api/v1/work-items/{item_key}/events` 返回工作项详情页的实时事件流。
+- `GET /api/v1/work-items/{item_key}/typing` 返回当前正在输入评论的成员快照。
 - 顶部需求、任务、Bug 角标按当前处理人和未完成状态实时计算；完成、关闭或改派后原处理人角标消失。
 
 权限：
@@ -721,6 +729,29 @@ page=1
 per_page=20
 ```
 
+系统版本管理：
+
+```text
+GET    /api/v1/system/releases/settings
+PATCH  /api/v1/system/releases/settings
+GET    /api/v1/system/releases
+POST   /api/v1/system/releases
+GET    /api/v1/system/releases/{release_id}
+PATCH  /api/v1/system/releases/{release_id}
+POST   /api/v1/system/releases/{release_id}/assets
+GET    /api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url
+POST   /api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded
+DELETE /api/v1/system/releases/{release_id}/assets/{asset_id}
+```
+
+重要语义：
+
+- `GET/PATCH /api/v1/system/releases/settings` 仅供网页登录态管理员调整“保留最近 N 个已发布版本”的策略。
+- `POST /api/v1/system/releases` 创建草稿版本；`PATCH /api/v1/system/releases/{release_id}` 可更新说明或通过 `publish=true` 发布版本。
+- 发布时会按当前保留策略自动清理超限旧版本，并同步删除关联 OSS 对象与数据库记录。
+- 版本资产上传采用三段式：`POST /assets` 创建占位、`GET /upload-url` 获取签名、`POST /uploaded` 确认对象已上传。
+- `DELETE /api/v1/system/releases/{release_id}/assets/{asset_id}` 仅删除单个版本资产，不删除版本本身。
+
 对象存储：
 
 ```text
@@ -772,6 +803,11 @@ system.roles.view
 system.roles.manage
 system.storage.view
 system.storage.manage
+system.api_tokens.view
+system.api_tokens.manage
+system.releases.view
+system.releases.manage
+system.database_stats.view
 system.audit.view
 project.view
 project.manage

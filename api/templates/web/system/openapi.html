@@ -1,0 +1,223 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}系统 OpenAPI - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack">
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">系统管理</p>
+      <h1>系统 OpenAPI</h1>
+      <p>独立于普通业务 OpenAPI，当前用于版本管理自动化接入。适合 GitHub Actions、发布脚本和系统级集成。</p>
+    </div>
+    {% if can_manage_tokens %}
+    <div class="toolbar-actions">
+      <button class="btn btn-primary" type="button" data-modal-open="system-api-token-modal" {% if !can_create_token %}disabled title="已达到 100 个系统 Token 上限"{% endif %}>创建系统 Token</button>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="storage-layout">
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2>文档与接入</h2>
+          <p>system token 使用 Bearer 认证；第一阶段仅开放版本读取与版本写入能力。</p>
+        </div>
+      </div>
+      <div class="detail-actions">
+        <a class="btn btn-secondary" href="/api/system/openapi.json" target="_blank" rel="noreferrer">下载 OpenAPI JSON</a>
+        <a class="btn btn-secondary" href="/web/system/api-docs" target="_blank" rel="noreferrer">打开在线文档</a>
+      </div>
+      <div class="detail-list">
+        <div class="detail-list-item">
+          <strong>认证方式</strong>
+          <span><code>Authorization: Bearer &lt;system_token&gt;</code></span>
+        </div>
+        <div class="detail-list-item">
+          <strong>当前开放</strong>
+          <span>版本列表、详情、创建、编辑、发布、资产上传签名、上传确认。</span>
+        </div>
+        <div class="detail-list-item">
+          <strong>未开放</strong>
+          <span>版本保留策略、对象存储设置、用户/角色/审计等其它系统接口。</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel storage-side">
+      <h2>接入提示</h2>
+      <ul class="check-list">
+        <li>优先为自动化任务创建最小权限 token。</li>
+        <li>版本资产上传采用：创建资产 → 获取上传地址 → 上传文件 → 确认已上传。</li>
+        <li>{% if can_manage_tokens %}列表中的 token 可再次复制；删除后立即失效。{% else %}你当前只有查看权限，无法复制或修改 token。{% endif %}</li>
+      </ul>
+    </aside>
+  </section>
+
+  <section class="panel api-token-panel">
+    <div class="panel-head">
+      <div>
+        <h2>System Access Token</h2>
+        <p>用于 system OpenAPI 的独立访问凭证，和普通用户 PAT 分离。</p>
+      </div>
+      <div class="token-panel-actions">
+        <span class="token-quota">有效 Token {{ token_active_count }}/{{ token_limit }}</span>
+        {% if can_manage_tokens %}
+        <button class="btn btn-sm btn-primary" type="button" data-modal-open="system-api-token-modal" {% if !can_create_token %}disabled title="已达到 100 个系统 Token 上限"{% endif %}>创建 Token</button>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if has_tokens %}
+    <div class="table-wrap api-token-table-wrap">
+      <table class="data-table api-token-table">
+        <thead>
+          <tr>
+            <th class="sticky-col sticky-col-left token-name-col">名称</th>
+            <th class="token-scope-col">权限</th>
+            <th class="token-suffix-col">Token</th>
+            <th class="token-last-used-col">最近使用</th>
+            <th>创建 / 更新</th>
+            {% if can_manage_tokens %}
+            <th class="table-actions sticky-col sticky-col-right token-action-col">操作</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for token in tokens %}
+          <tr>
+            <td class="sticky-col sticky-col-left token-name-col">
+              <strong>{{ token.name }}</strong>
+              <p class="muted-text">创建于 {{ token.created_at }}</p>
+            </td>
+            <td class="token-scope-col">
+              <span class="table-cell-ellipsis" title="{{ token.scopes_label }}">{{ token.scopes_label }}</span>
+            </td>
+            <td class="token-suffix-col">
+              {% if token.can_copy_raw_token %}
+              <button
+                class="token-suffix-copy"
+                type="button"
+                title="点击复制完整 Token"
+                data-copy-text="{{ token.copy_text }}"
+                data-copy-idle-label="...{{ token.token_suffix }}"
+                data-copy-success-label="...{{ token.token_suffix }}"
+                data-copy-meta-idle-label="点击复制"
+                data-copy-meta-success-label="已复制"
+                data-copy-label-target="[data-copy-primary]"
+                data-copy-meta-target="[data-copy-secondary]"
+                data-copy-toast-success="系统 Token 已复制。"
+              >
+                <span class="token-suffix-primary" data-copy-primary>...{{ token.token_suffix }}</span>
+                <span class="token-suffix-secondary" data-copy-secondary>点击复制</span>
+              </button>
+              {% else %}
+              <button
+                class="token-suffix-copy token-suffix-copy-unavailable"
+                type="button"
+                title="你当前没有复制该 Token 的权限"
+                data-copy-idle-label="...{{ token.token_suffix }}"
+                data-copy-meta-idle-label="不可复制"
+                data-copy-label-target="[data-copy-primary]"
+                data-copy-meta-target="[data-copy-secondary]"
+                data-copy-unavailable-message="你当前没有复制该系统 Token 的权限。"
+              >
+                <span class="token-suffix-primary" data-copy-primary>...{{ token.token_suffix }}</span>
+                <span class="token-suffix-secondary" data-copy-secondary>不可复制</span>
+              </button>
+              {% endif %}
+            </td>
+            <td class="token-last-used-col">{{ token.last_used_at }}</td>
+            <td>
+              <div class="muted-line">创建：{{ token.created_by }} · {{ token.created_at }}</div>
+              <div class="muted-line">更新：{{ token.updated_by }} · {{ token.updated_at }}</div>
+            </td>
+            {% if can_manage_tokens %}
+            <td class="table-actions sticky-col sticky-col-right token-action-col">
+              <div class="token-row-actions">
+                <button class="btn btn-sm btn-secondary" type="button" data-modal-open="system-api-token-edit-modal-{{ token.id }}">编辑</button>
+                <form method="post" action="/web/system/openapi/tokens/{{ token.id }}/delete" data-confirm-submit-form data-confirm-title="删除系统访问 Token" data-confirm-message="删除后不可恢复，依赖该 Token 的发布脚本会立即失效。" data-confirm-action="删除">
+                  <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                  <button class="btn btn-sm btn-danger" type="submit">删除</button>
+                </form>
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <strong>暂无系统访问 Token</strong>
+      <span>如需让自动化流程访问版本管理接口，请先创建一个 system token。</span>
+    </div>
+    {% endif %}
+  </section>
+</section>
+
+{% if can_manage_tokens %}
+<aside id="system-api-token-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="system-api-token-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="system-api-token-modal-title">创建系统访问 Token</h2>
+        <p>建议按自动化任务拆分 token，仅开放需要的系统版本管理权限。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/openapi">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        Token 名称
+        <input name="name" value="Release Automation" required autofocus>
+      </label>
+      <fieldset class="form-fieldset">
+        <legend>权限范围</legend>
+        <label><input type="checkbox" name="scopes" value="system_release:read" checked> 版本读取</label>
+        <label><input type="checkbox" name="scopes" value="system_release:write"> 版本写入 / 发布 / 资产上传</label>
+      </fieldset>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit" {% if !can_create_token %}disabled{% endif %}>创建 Token</button>
+      </div>
+    </form>
+  </section>
+</aside>
+
+{% for token in tokens %}
+<aside id="system-api-token-edit-modal-{{ token.id }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="system-api-token-edit-modal-title-{{ token.id }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="system-api-token-edit-modal-title-{{ token.id }}">编辑系统访问 Token</h2>
+        <p>可修改 token 名称和权限范围；Token 明文本身不会变化。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/openapi/tokens/{{ token.id }}/edit">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        Token 名称
+        <input name="name" value="{{ token.name }}" required autofocus>
+      </label>
+      <fieldset class="form-fieldset">
+        <legend>权限范围</legend>
+        {% for scope in token.scope_options %}
+        <label><input type="checkbox" name="scopes" value="{{ scope.key }}" {% if scope.selected %}checked{% endif %}> {{ scope.label }}</label>
+        {% endfor %}
+      </fieldset>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">保存修改</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endfor %}
+{% endif %}
+{% endblock %}

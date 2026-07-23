@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, rbac, storage},
+    domains::{auth, bootstrap, rbac, storage, system_api_tokens},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -1387,6 +1387,296 @@ async fn system_releases_page_renders_for_admin() {
 }
 
 #[tokio::test]
+async fn system_openapi_page_renders_and_supports_token_crud() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let page_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/openapi")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(page_body.contains("系统 OpenAPI"));
+    assert!(page_body.contains("/api/system/openapi.json"));
+    assert!(page_body.contains("/web/system/api-docs"));
+    assert!(page_body.contains(r#"data-modal-open="system-api-token-modal""#));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/openapi")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "name=CI%20Release&scopes=system_release%3Aread&scopes=system_release%3Awrite",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        create_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/openapi"
+    );
+
+    let created_token_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM system_api_tokens WHERE name = 'CI Release'")
+            .fetch_one(&pool)
+            .await
+            .expect("system token should exist");
+
+    let created_page = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/openapi")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(created_page.status(), StatusCode::OK);
+    let created_body = response_body(created_page).await;
+    assert!(created_body.contains("CI Release"));
+    assert!(created_body.contains("系统 Token 已复制。"));
+    assert!(created_body.contains("版本写入 / 发布 / 资产上传"));
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/system/openapi/tokens/{created_token_id}/delete"
+                ))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        delete_response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/openapi"
+    );
+
+    let remaining_tokens = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_api_tokens")
+        .fetch_one(&pool)
+        .await
+        .expect("system token count should load");
+    assert_eq!(remaining_tokens, 0);
+}
+
+#[tokio::test]
+async fn system_token_can_manage_release_api_without_csrf() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let settings = test_settings();
+    let created = system_api_tokens::create_token(
+        &pool,
+        &settings.security_master_key,
+        initialized.user_id,
+        system_api_tokens::CreateSystemApiTokenInput {
+            name: "Release Robot".to_string(),
+            scopes: vec![
+                system_api_tokens::SCOPE_SYSTEM_RELEASE_READ.to_string(),
+                system_api_tokens::SCOPE_SYSTEM_RELEASE_WRITE.to_string(),
+            ],
+        },
+    )
+    .await
+    .expect("system token should create");
+    let app = build_router(AppState::new(settings.clone(), Some(pool.clone())));
+
+    let release_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/releases")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "version_name": "v2.0.0",
+                        "title": "系统 Token 发布",
+                        "notes": "通过 system token 创建"
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(release_response.status(), StatusCode::CREATED);
+    let release_json = response_json(release_response).await;
+    let release_id = json_i64(&release_json, &["data", "release", "id"]);
+
+    let asset_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/system/releases/{release_id}/assets"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "platform": "linux",
+                        "original_filename": "yuance-linux-v2.0.0.tar.gz",
+                        "content_type": "application/gzip",
+                        "byte_size": 10
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(asset_response.status(), StatusCode::CREATED);
+    let asset_json = response_json(asset_response).await;
+    let asset_id = json_i64(&asset_json, &["data", "id"]);
+
+    let upload_url_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url"
+                ))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(upload_url_response.status(), StatusCode::OK);
+    let upload_url_json = response_json(upload_url_response).await;
+    let upload_url = json_string(&upload_url_json, &["data", "request", "url"]);
+
+    upload_test_storage_object_with_bearer(
+        &app,
+        &created.raw_token,
+        &upload_url,
+        b"release-v2",
+        "application/gzip",
+    )
+    .await;
+
+    let mark_uploaded_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded"
+                ))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(mark_uploaded_response.status(), StatusCode::OK);
+
+    let publish_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/system/releases/{release_id}"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "version_name": "v2.0.0",
+                        "title": "系统 Token 发布",
+                        "notes": "通过 system token 创建",
+                        "publish": true
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(publish_response.status(), StatusCode::OK);
+    let publish_json = response_json(publish_response).await;
+    assert_eq!(
+        json_string(&publish_json, &["data", "release", "status"]),
+        "published"
+    );
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/releases")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_json = response_json(list_response).await;
+    assert_eq!(
+        json_string(&list_json, &["data", "items", "0", "version_name"]),
+        "v2.0.0"
+    );
+
+    let settings_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/releases/settings")
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", created.raw_token),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(settings_response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn api_system_release_flow_supports_publish_and_retention_prune() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -1771,6 +2061,29 @@ async fn upload_test_storage_object(
                 .header(header::COOKIE, admin_cookie)
                 .header(header::CONTENT_TYPE, content_type)
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(body.to_vec()))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+}
+
+async fn upload_test_storage_object_with_bearer(
+    app: &axum::Router,
+    raw_token: &str,
+    upload_url: &str,
+    body: &[u8],
+    content_type: &str,
+) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri(upload_url)
+                .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
+                .header(header::CONTENT_TYPE, content_type)
                 .body(Body::from(body.to_vec()))
                 .expect("request should build"),
         )

@@ -36,6 +36,18 @@ const PERMISSIONS: &[(&str, &str, &str, &str)] = &[
         "system-storage",
     ),
     (
+        "system.api_tokens.view",
+        "查看系统 OpenAPI",
+        "page",
+        "system-openapi",
+    ),
+    (
+        "system.api_tokens.manage",
+        "管理系统 OpenAPI Token",
+        "action",
+        "system-openapi",
+    ),
+    (
         "system.releases.view",
         "查看版本管理",
         "page",

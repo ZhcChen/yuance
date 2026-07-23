@@ -5408,7 +5408,9 @@
       }).then(function (refreshed) {
         if (!refreshed) {
           window.location.assign(targetPath + targetHash);
+          return refreshed;
         }
+        window.location.hash = targetHash;
         return refreshed;
       });
     }
