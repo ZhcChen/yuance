@@ -414,6 +414,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/current-project",
             get(web::api::get_current_project).patch(web::api::update_current_project),
         )
+        .route("/api/v1/topbar/status", get(web::api::get_topbar_status))
         .route(
             "/api/v1/projects/{project_key}",
             get(web::api::get_project).patch(web::api::update_project),

@@ -191,6 +191,12 @@ pub struct ProjectPendingCounts {
     pub bugs: i64,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProjectAssignedPendingCount {
+    pub project_key: String,
+    pub total: i64,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PersonalProjectAnalysis {
     pub joined_at: String,
@@ -2452,6 +2458,36 @@ pub async fn count_pending_assigned_work_items(
         }
     }
     Ok(counts)
+}
+
+pub async fn count_pending_assigned_work_items_by_project(
+    pool: &SqlitePool,
+    user_id: i64,
+    can_access_all_projects: bool,
+) -> AppResult<Vec<ProjectAssignedPendingCount>> {
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT p.project_key, COUNT(*)
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        LEFT JOIN project_members pm ON pm.project_id = wi.project_id
+            AND pm.user_id = ?1
+        WHERE wi.assignee_user_id = ?1
+          AND (?2 = 1 OR pm.user_id IS NOT NULL)
+          AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')
+          AND wi.deleted_at IS NULL
+        GROUP BY p.project_key
+        "#,
+    )
+    .bind(user_id)
+    .bind(if can_access_all_projects { 1 } else { 0 })
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(project_key, total)| ProjectAssignedPendingCount { project_key, total })
+        .collect())
 }
 
 pub async fn count_pending_visible_work_items(

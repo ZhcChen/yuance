@@ -5,6 +5,7 @@
   var MODAL_TRANSITION_MS = 240;
   var TOAST_DURATION_MS = 4200;
   var APP_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+  var TOPBAR_STATUS_REFRESH_INTERVAL_MS = 30 * 1000;
   var APP_UPDATE_MANIFEST_URL = "/version.json";
   var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
@@ -25,6 +26,7 @@
   var pendingAppUpdateVersion = "";
   var appUpdateCheckBusy = false;
   var appUpdateIntervalId = null;
+  var topbarStatusIntervalId = null;
   var imageViewerState = {
     entries: [],
     index: 0,
@@ -620,30 +622,122 @@
       + notificationText(item.created_at, "未知时间");
   }
 
-  function renderNotificationFeed(root, feed) {
+  function topbarBadgeLabel(count) {
+    var value = Number(count || 0);
+    if (!Number.isFinite(value) || value <= 0) {
+      return "";
+    }
+    return value > 99 ? "99" : String(Math.floor(value));
+  }
+
+  function syncCountBadge(badge, count, ariaLabel) {
+    if (!badge) {
+      return;
+    }
+    var label = topbarBadgeLabel(count);
+    badge.hidden = label === "";
+    badge.textContent = label;
+    badge.setAttribute("aria-hidden", label === "" ? "true" : "false");
+    if (label && ariaLabel) {
+      badge.setAttribute("aria-label", ariaLabel + " " + label);
+    } else {
+      badge.removeAttribute("aria-label");
+    }
+  }
+
+  function syncNotificationBadge(root, unreadCount) {
+    if (!root) {
+      return;
+    }
     var trigger = root.querySelector("[data-dropdown-trigger]");
     var badge = root.querySelector("[data-notification-badge]");
+    var unread = Number(unreadCount || 0);
+    var label = topbarBadgeLabel(unread);
+    if (trigger) {
+      trigger.setAttribute(
+        "aria-label",
+        unread ? "打开消息通知，" + unread + " 条未读" : "打开消息通知，暂无未读"
+      );
+    }
+    syncCountBadge(badge, unread, "未读消息");
+  }
+
+  function syncProjectSwitcherBadge(badge, count, ariaLabel) {
+    syncCountBadge(badge, count, ariaLabel);
+  }
+
+  function renderProjectSwitcherBadges(projectBadges) {
+    var countsByProject = Object.create(null);
+    (Array.isArray(projectBadges) ? projectBadges : []).forEach(function (item) {
+      var key = item && typeof item.project_key === "string"
+        ? item.project_key.trim().toUpperCase()
+        : "";
+      if (!key) {
+        return;
+      }
+      countsByProject[key] = Number(item.pending_count || 0);
+    });
+
+    document.querySelectorAll("[data-project-switcher]").forEach(function (switcher) {
+      switcher.querySelectorAll("[data-project-option]").forEach(function (option) {
+        var projectKey = String(option.getAttribute("data-project-key") || "").trim().toUpperCase();
+        var pendingCount = countsByProject[projectKey] || 0;
+        option.dataset.projectPendingCount = String(pendingCount);
+        syncProjectSwitcherBadge(
+          option.querySelector("[data-project-option-badge]"),
+          pendingCount,
+          "待处理"
+        );
+      });
+
+      var hiddenProjectInput = switcher.querySelector("input[name='project_key']");
+      var currentKey = String(hiddenProjectInput && hiddenProjectInput.value || "")
+        .trim()
+        .toUpperCase();
+      if (!currentKey) {
+        var activeOption = switcher.querySelector("[data-project-option].active");
+        currentKey = String(activeOption && activeOption.getAttribute("data-project-key") || "")
+          .trim()
+          .toUpperCase();
+      }
+      syncProjectSwitcherBadge(
+        switcher.querySelector("[data-current-project-badge]"),
+        countsByProject[currentKey] || 0,
+        "当前项目待处理"
+      );
+    });
+  }
+
+  function renderTopbarStatus(status) {
+    var payload = status && typeof status === "object" ? status : {};
+    syncCountBadge(
+      document.querySelector('[data-topbar-badge="requirements"]'),
+      payload.requirements_count,
+      "待处理需求"
+    );
+    syncCountBadge(
+      document.querySelector('[data-topbar-badge="tasks"]'),
+      payload.tasks_count,
+      "待处理任务"
+    );
+    syncCountBadge(
+      document.querySelector('[data-topbar-badge="bugs"]'),
+      payload.bugs_count,
+      "待处理 Bug"
+    );
+    syncNotificationBadge(
+      document.querySelector("[data-notification-root]"),
+      payload.notifications_count
+    );
+    renderProjectSwitcherBadges(payload.project_badges);
+  }
+
+  function renderNotificationFeed(root, feed) {
     var summary = root.querySelector("[data-notification-summary]");
     var list = root.querySelector("[data-notification-list]");
     var readAllButton = root.querySelector("[data-notification-read-all] button[type='submit']");
     var unreadCount = Number(feed && feed.unread_count || 0);
-    var unreadLabel = unreadCount > 99 ? "99" : String(unreadCount);
-    if (trigger) {
-      trigger.setAttribute(
-        "aria-label",
-        unreadCount ? "打开消息通知，" + unreadCount + " 条未读" : "打开消息通知，暂无未读"
-      );
-    }
-    if (badge) {
-      badge.hidden = unreadCount === 0;
-      badge.textContent = unreadLabel;
-      badge.setAttribute("aria-hidden", unreadCount === 0 ? "true" : "false");
-      if (unreadCount) {
-        badge.setAttribute("aria-label", "未读消息 " + unreadLabel);
-      } else {
-        badge.removeAttribute("aria-label");
-      }
-    }
+    syncNotificationBadge(root, unreadCount);
     if (summary) {
       summary.textContent = unreadCount ? unreadCount + " 条未读" : "暂无未读";
     }
@@ -791,9 +885,35 @@
 
   async function refreshNotificationFeed(root) {
     var notificationRoot = root || document.querySelector("[data-notification-root]");
-    if (notificationRoot) {
-      await initNotificationFeed(notificationRoot);
+    await Promise.all([
+      notificationRoot ? initNotificationFeed(notificationRoot) : Promise.resolve(),
+      refreshTopbarStatus(),
+    ]);
+  }
+
+  async function refreshTopbarStatus() {
+    if (!isWebPage()) {
+      return;
     }
+    try {
+      var status = await fetchJson("/api/v1/topbar/status", {
+        headers: { accept: "application/json" },
+      });
+      renderTopbarStatus(status);
+    } catch (_error) {
+      // 顶部角标后台刷新失败时保持现状，避免频繁打断操作。
+    }
+  }
+
+  function startTopbarStatusRefresh() {
+    if (!isWebPage()) {
+      return;
+    }
+    refreshTopbarStatus();
+    if (topbarStatusIntervalId) {
+      window.clearInterval(topbarStatusIntervalId);
+    }
+    topbarStatusIntervalId = window.setInterval(refreshTopbarStatus, TOPBAR_STATUS_REFRESH_INTERVAL_MS);
   }
 
   async function submitMessageReadAll(form, submitter) {
@@ -8367,6 +8487,7 @@
 
   initTopbarSearch(document);
   initNotificationFeed(document.querySelector("[data-notification-root]"));
+  startTopbarStatusRefresh();
   initDatabaseStatsPage(document);
   initProjectSwitcher(document);
   initUserComboboxes(document);
@@ -8381,6 +8502,11 @@
     clearPageTransitionState();
     if (currentMessageCenter() && isMessageCenterUrl(window.location.href)) {
       loadMessageCenter(window.location.href, { history: false });
+    }
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") {
+      refreshTopbarStatus();
     }
   });
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);

@@ -39,15 +39,15 @@
         <a class="topnav-item {% if active == "projects" %}active{% endif %}" href="{% match current_project %}{% when Some with (project) %}/web/projects/{{ project.key }}{% when None %}/web/projects{% endmatch %}">项目</a>
         <a class="topnav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">
           <span>需求</span>
-          {% if system_nav.requirements_badge != "" %}<span class="topnav-badge" aria-label="待处理需求 {{ system_nav.requirements_badge }}">{{ system_nav.requirements_badge }}</span>{% endif %}
+          <span class="topnav-badge" data-topbar-badge="requirements" {% if system_nav.requirements_badge == "" %}hidden aria-hidden="true"{% else %}aria-label="待处理需求 {{ system_nav.requirements_badge }}"{% endif %}>{{ system_nav.requirements_badge }}</span>
         </a>
         <a class="topnav-item {% if active == "tasks" %}active{% endif %}" href="/web/tasks">
           <span>任务</span>
-          {% if system_nav.tasks_badge != "" %}<span class="topnav-badge" aria-label="待处理任务 {{ system_nav.tasks_badge }}">{{ system_nav.tasks_badge }}</span>{% endif %}
+          <span class="topnav-badge" data-topbar-badge="tasks" {% if system_nav.tasks_badge == "" %}hidden aria-hidden="true"{% else %}aria-label="待处理任务 {{ system_nav.tasks_badge }}"{% endif %}>{{ system_nav.tasks_badge }}</span>
         </a>
         <a class="topnav-item {% if active == "bugs" %}active{% endif %}" href="/web/bugs">
           <span>Bug</span>
-          {% if system_nav.bugs_badge != "" %}<span class="topnav-badge" aria-label="待处理 Bug {{ system_nav.bugs_badge }}">{{ system_nav.bugs_badge }}</span>{% endif %}
+          <span class="topnav-badge" data-topbar-badge="bugs" {% if system_nav.bugs_badge == "" %}hidden aria-hidden="true"{% else %}aria-label="待处理 Bug {{ system_nav.bugs_badge }}"{% endif %}>{{ system_nav.bugs_badge }}</span>
         </a>
         {% if system_nav.visible %}
         <div class="topnav-group" data-dropdown-root>
@@ -86,12 +86,16 @@
           <input type="hidden" name="project_key" value="{% match current_project %}{% when Some with (project) %}{{ project.key }}{% when None %}{% endmatch %}">
           <button class="project-switcher-trigger" type="button" data-dropdown-trigger aria-expanded="false" {% if topbar_project_options.len() == 0 %}disabled{% endif %}>
             <span class="project-switcher-kicker">当前项目</span>
+            <span class="project-switcher-current-row">
             {% match current_project %}
             {% when None %}
             <span class="project-switcher-current">请选择项目</span>
+            <span class="project-switcher-badge project-switcher-trigger-badge" data-current-project-badge hidden aria-hidden="true"></span>
             {% when Some with (project) %}
             <span class="project-switcher-current">{{ project.name }}</span>
+            <span class="project-switcher-badge project-switcher-trigger-badge" data-current-project-badge {% if project.assigned_pending_count <= 0 %}hidden aria-hidden="true"{% else %}aria-label="当前项目待处理 {{ project.assigned_pending_count }}"{% endif %}>{% if project.assigned_pending_count > 99 %}99{% else %}{{ project.assigned_pending_count }}{% endif %}</span>
             {% endmatch %}
+            </span>
             <span class="account-caret" aria-hidden="true"></span>
           </button>
           <div class="project-switcher-panel" data-dropdown-menu hidden>
@@ -102,8 +106,9 @@
             </div>
             <div class="project-switcher-options" aria-label="可选项目">
             {% for project in topbar_project_options %}
-              <button class="project-switcher-option {% match current_project %}{% when Some with (current) %}{% if current.key == project.key %}active{% endif %}{% when None %}{% endmatch %}" type="button" data-project-option data-project-key="{{ project.key }}" data-project-name="{{ project.name }}">
+              <button class="project-switcher-option {% match current_project %}{% when Some with (current) %}{% if current.key == project.key %}active{% endif %}{% when None %}{% endmatch %}" type="button" data-project-option data-project-key="{{ project.key }}" data-project-name="{{ project.name }}" data-project-pending-count="{{ project.assigned_pending_count }}">
                 <span class="project-switcher-option-name">{{ project.name }}</span>
+                <span class="project-switcher-badge" data-project-option-badge {% if project.assigned_pending_count <= 0 %}hidden aria-hidden="true"{% else %}aria-label="待处理 {{ project.assigned_pending_count }}"{% endif %}>{% if project.assigned_pending_count > 99 %}99{% else %}{{ project.assigned_pending_count }}{% endif %}</span>
               </button>
             {% endfor %}
               <div class="project-switcher-empty" data-project-empty hidden>没有匹配项目</div>

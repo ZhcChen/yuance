@@ -2241,6 +2241,298 @@ async fn web_topnav_work_item_badges_follow_current_project() {
 }
 
 #[tokio::test]
+async fn web_project_switcher_shows_assigned_pending_badges_for_current_user() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let assignee = create_regular_user(&pool, "switcher_badge_owner", "项目切换角标负责人").await;
+    projects::add_project_member(
+        &pool,
+        admin.user_id,
+        "YCE",
+        "switcher_badge_owner",
+        "member",
+    )
+    .await
+    .expect("assignee should join YCE");
+    projects::add_project_member(
+        &pool,
+        admin.user_id,
+        "OPS",
+        "switcher_badge_owner",
+        "member",
+    )
+    .await
+    .expect("assignee should join OPS");
+    let yce_project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .expect("YCE project should exist");
+    let ops_project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'OPS'")
+            .fetch_one(&pool)
+            .await
+            .expect("OPS project should exist");
+
+    for index in 1..=2 {
+        sqlx::query(
+            r#"
+            INSERT INTO work_items (
+                project_id,
+                item_key,
+                item_type,
+                title,
+                description,
+                status,
+                priority,
+                assignee_user_id,
+                reporter_user_id
+            )
+            VALUES (?1, ?2, 'task', ?3, '用于验证项目切换角标。', 'open', 'P2', ?4, ?5)
+            "#,
+        )
+        .bind(yce_project_id)
+        .bind(format!("YCE-SWITCHER-BADGE-TASK-{index}"))
+        .bind(format!("YCE 项目切换角标任务 {index}"))
+        .bind(assignee.user_id)
+        .bind(admin.user_id)
+        .execute(&pool)
+        .await
+        .expect("YCE work item should insert");
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO work_items (
+            project_id,
+            item_key,
+            item_type,
+            title,
+            description,
+            status,
+            priority,
+            assignee_user_id,
+            reporter_user_id
+        )
+        VALUES (?1, 'OPS-SWITCHER-BADGE-BUG-1', 'bug', 'OPS 项目切换角标 Bug', '用于验证项目切换角标。', 'open', 'P1', ?2, ?3)
+        "#,
+    )
+    .bind(ops_project_id)
+    .bind(assignee.user_id)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .expect("OPS work item should insert");
+
+    projects::set_current_project_for_user(&pool, assignee.user_id, false, "YCE")
+        .await
+        .expect("assignee should select YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, assignee.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains(r#"data-current-project-badge aria-label="当前项目待处理 2">2</span>"#));
+    assert!(body.contains(
+        r#"data-project-key="YCE" data-project-name="元策 MVP" data-project-pending-count="2""#
+    ));
+    assert!(body.contains(
+        r#"data-project-key="OPS" data-project-name="交付运维台" data-project-pending-count="1""#
+    ));
+}
+
+#[tokio::test]
+async fn api_v1_topbar_status_returns_current_project_counts_and_project_badges() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let assignee = create_regular_user(&pool, "topbar_status_owner", "顶部状态负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "topbar_status_owner", "member")
+        .await
+        .expect("assignee should join YCE");
+    projects::add_project_member(&pool, admin.user_id, "OPS", "topbar_status_owner", "member")
+        .await
+        .expect("assignee should join OPS");
+    let yce_project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .expect("YCE project should exist");
+    let ops_project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'OPS'")
+            .fetch_one(&pool)
+            .await
+            .expect("OPS project should exist");
+    let yce_task_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO work_items (
+            project_id,
+            item_key,
+            item_type,
+            title,
+            description,
+            status,
+            priority,
+            assignee_user_id,
+            reporter_user_id
+        )
+        VALUES (?1, 'YCE-TOPBAR-STATUS-TASK-1', 'task', 'YCE 顶部状态任务 1', '用于验证顶部状态接口。', 'open', 'P2', ?2, ?3)
+        RETURNING id
+        "#,
+    )
+    .bind(yce_project_id)
+    .bind(assignee.user_id)
+    .bind(admin.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("YCE task should insert");
+
+    sqlx::query(
+        r#"
+        INSERT INTO work_items (
+            project_id,
+            item_key,
+            item_type,
+            title,
+            description,
+            status,
+            priority,
+            assignee_user_id,
+            reporter_user_id
+        )
+        VALUES (?1, 'YCE-TOPBAR-STATUS-TASK-2', 'task', 'YCE 顶部状态任务 2', '用于验证顶部状态接口。', 'open', 'P2', ?2, ?3)
+        "#,
+    )
+    .bind(yce_project_id)
+    .bind(assignee.user_id)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .expect("second YCE task should insert");
+
+    sqlx::query(
+        r#"
+        INSERT INTO work_items (
+            project_id,
+            item_key,
+            item_type,
+            title,
+            description,
+            status,
+            priority,
+            assignee_user_id,
+            reporter_user_id
+        )
+        VALUES (?1, 'OPS-TOPBAR-STATUS-BUG-1', 'bug', 'OPS 顶部状态 Bug', '用于验证顶部状态接口。', 'open', 'P1', ?2, ?3)
+        "#,
+    )
+    .bind(ops_project_id)
+    .bind(assignee.user_id)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .expect("OPS bug should insert");
+
+    sqlx::query(
+        r#"
+        INSERT INTO notifications (
+            recipient_user_id,
+            actor_user_id,
+            actor_display_name_snapshot,
+            kind,
+            work_item_id,
+            comment_id,
+            title,
+            body
+        )
+        VALUES (?1, ?2, '系统管理员', 'work_item_assigned', ?3, NULL, '新的指派', '请尽快处理')
+        "#,
+    )
+    .bind(assignee.user_id)
+    .bind(admin.user_id)
+    .bind(yce_task_id)
+    .execute(&pool)
+    .await
+    .expect("notification should insert");
+
+    projects::set_current_project_for_user(&pool, assignee.user_id, false, "YCE")
+        .await
+        .expect("assignee should select YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/topbar/status")
+                .header(header::COOKIE, assignee.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).expect("topbar status should be json");
+    let data = payload
+        .get("data")
+        .expect("response should contain data object");
+    assert_eq!(
+        data.get("requirements_count")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+    assert_eq!(
+        data.get("tasks_count").and_then(|value| value.as_i64()),
+        Some(2)
+    );
+    assert_eq!(
+        data.get("bugs_count").and_then(|value| value.as_i64()),
+        Some(0)
+    );
+    assert_eq!(
+        data.get("notifications_count")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+
+    let project_badges = data
+        .get("project_badges")
+        .and_then(|value| value.as_array())
+        .expect("project_badges should be array");
+    assert!(project_badges.iter().any(|project| {
+        project.get("project_key").and_then(|value| value.as_str()) == Some("YCE")
+            && project
+                .get("pending_count")
+                .and_then(|value| value.as_i64())
+                == Some(2)
+    }));
+    assert!(project_badges.iter().any(|project| {
+        project.get("project_key").and_then(|value| value.as_str()) == Some("OPS")
+            && project
+                .get("pending_count")
+                .and_then(|value| value.as_i64())
+                == Some(1)
+    }));
+}
+
+#[tokio::test]
 async fn demo_seed_idempotently_creates_projects_and_work_items() {
     let pool = test_pool().await;
     let owner_user_id = bootstrap_admin(&pool).await;

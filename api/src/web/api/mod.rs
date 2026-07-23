@@ -237,6 +237,21 @@ pub struct NotificationFeedPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TopbarProjectBadgePayload {
+    pub project_key: String,
+    pub pending_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TopbarStatusPayload {
+    pub requirements_count: i64,
+    pub tasks_count: i64,
+    pub bugs_count: i64,
+    pub notifications_count: i64,
+    pub project_badges: Vec<TopbarProjectBadgePayload>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ApiTokenPayload {
     pub id: i64,
     pub name: String,
@@ -294,6 +309,73 @@ pub async fn list_notifications(
     Ok(json(NotificationFeedPayload {
         items,
         unread_count,
+    }))
+}
+
+pub async fn get_topbar_status(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<TopbarStatusPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
+    let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
+    let can_view_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
+    let can_view_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
+
+    let current_project_key = if can_view_projects || can_view_work_items {
+        projects::get_or_select_current_project_for_user(pool, user.id, can_access_all_projects)
+            .await?
+            .filter(|project| {
+                project_key_in_token_scope(&token_project_scope, &project.project_key)
+            })
+            .map(|project| project.project_key)
+    } else {
+        None
+    };
+
+    let work_item_counts = if can_view_work_items {
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+        projects::count_pending_assigned_work_items(
+            pool,
+            user.id,
+            can_access_all_projects,
+            current_project_key.as_deref(),
+        )
+        .await?
+    } else {
+        projects::WorkItemAssignmentCounts::default()
+    };
+
+    let project_badges = if can_view_projects || can_view_work_items {
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_PROJECT_READ).await?;
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+        projects::count_pending_assigned_work_items_by_project(
+            pool,
+            user.id,
+            can_access_all_projects,
+        )
+        .await?
+        .into_iter()
+        .filter(|project| project_key_in_token_scope(&token_project_scope, &project.project_key))
+        .map(|project| TopbarProjectBadgePayload {
+            project_key: project.project_key,
+            pending_count: project.total,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
+
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    let notifications_count = notifications::unread_count(pool, user.id).await?;
+
+    Ok(json(TopbarStatusPayload {
+        requirements_count: work_item_counts.requirements,
+        tasks_count: work_item_counts.tasks,
+        bugs_count: work_item_counts.bugs,
+        notifications_count,
+        project_badges,
     }))
 }
 

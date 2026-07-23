@@ -103,12 +103,14 @@ struct ProjectListSummary {
 struct ProjectOption {
     key: String,
     name: String,
+    assigned_pending_count: i64,
 }
 
 #[derive(Debug, Clone)]
 struct CurrentProjectView {
     key: String,
     name: String,
+    assigned_pending_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -2482,7 +2484,14 @@ pub async fn project_detail_page(
         &project_key,
     )
     .await?;
-    context.current_project = Some(current_project_from_domain(selected_project));
+    let assigned_pending_count = project_option_pending_count(
+        &context.topbar_project_options,
+        &selected_project.project_key,
+    );
+    context.current_project = Some(current_project_from_domain(
+        selected_project,
+        assigned_pending_count,
+    ));
     refresh_context_system_nav(pool, &mut context).await?;
 
     let all_items = projects::list_project_work_items(pool, project.id, None).await?;
@@ -2635,7 +2644,12 @@ pub async fn project_personal_analysis_page(
         &project_key,
     )
     .await?;
-    context.current_project = Some(current_project_from_domain(selected));
+    let assigned_pending_count =
+        project_option_pending_count(&context.topbar_project_options, &selected.project_key);
+    context.current_project = Some(current_project_from_domain(
+        selected,
+        assigned_pending_count,
+    ));
     refresh_context_system_nav(pool, &mut context).await?;
 
     let username = sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = ?1")
@@ -3294,7 +3308,14 @@ pub async fn project_resource_detail_page(
         &project_key,
     )
     .await?;
-    context.current_project = Some(current_project_from_domain(selected_project));
+    let assigned_pending_count = project_option_pending_count(
+        &context.topbar_project_options,
+        &selected_project.project_key,
+    );
+    context.current_project = Some(current_project_from_domain(
+        selected_project,
+        assigned_pending_count,
+    ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
     let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
@@ -3377,7 +3398,14 @@ pub async fn project_resource_unlock(
         &project_key,
     )
     .await?;
-    context.current_project = Some(current_project_from_domain(selected_project));
+    let assigned_pending_count = project_option_pending_count(
+        &context.topbar_project_options,
+        &selected_project.project_key,
+    );
+    context.current_project = Some(current_project_from_domain(
+        selected_project,
+        assigned_pending_count,
+    ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
     let verified =
@@ -5970,7 +5998,12 @@ async fn work_item_list_page(
             &requested_project_key,
         )
         .await?;
-        context.current_project = Some(current_project_from_domain(selected));
+        let assigned_pending_count =
+            project_option_pending_count(&context.topbar_project_options, &selected.project_key);
+        context.current_project = Some(current_project_from_domain(
+            selected,
+            assigned_pending_count,
+        ));
         refresh_context_system_nav(pool, &mut context).await?;
     }
     let current_project = context.current_project.clone();
@@ -6480,16 +6513,38 @@ async fn build_project_context(
         return Ok((None, Vec::new()));
     }
 
+    let assigned_counts = projects::count_pending_assigned_work_items_by_project(
+        pool,
+        user_id,
+        can_access_all_projects,
+    )
+    .await?
+    .into_iter()
+    .map(|count| (count.project_key, count.total))
+    .collect::<HashMap<_, _>>();
     let project_options =
         projects::list_project_summaries_for_user(pool, user_id, can_access_all_projects)
             .await?
             .into_iter()
-            .map(project_option_from_summary)
+            .map(|project| {
+                let assigned_pending_count = assigned_counts
+                    .get(&project.project_key)
+                    .copied()
+                    .unwrap_or_default();
+                project_option_from_summary(project, assigned_pending_count)
+            })
             .collect::<Vec<_>>();
     let current_project =
         projects::get_or_select_current_project_for_user(pool, user_id, can_access_all_projects)
             .await?
-            .map(current_project_from_domain);
+            .map(|project| {
+                let assigned_pending_count = project_options
+                    .iter()
+                    .find(|option| option.key == project.project_key)
+                    .map(|option| option.assigned_pending_count)
+                    .unwrap_or_default();
+                current_project_from_domain(project, assigned_pending_count)
+            });
 
     Ok((current_project, project_options))
 }
@@ -7097,18 +7152,34 @@ fn project_from_summary_with_pending(
     }
 }
 
-fn project_option_from_summary(project: projects::ProjectSummary) -> ProjectOption {
+fn project_option_from_summary(
+    project: projects::ProjectSummary,
+    assigned_pending_count: i64,
+) -> ProjectOption {
     ProjectOption {
         key: project.project_key,
         name: project.name,
+        assigned_pending_count,
     }
 }
 
-fn current_project_from_domain(project: projects::CurrentProject) -> CurrentProjectView {
+fn current_project_from_domain(
+    project: projects::CurrentProject,
+    assigned_pending_count: i64,
+) -> CurrentProjectView {
     CurrentProjectView {
         key: project.project_key,
         name: project.name,
+        assigned_pending_count,
     }
+}
+
+fn project_option_pending_count(project_options: &[ProjectOption], project_key: &str) -> i64 {
+    project_options
+        .iter()
+        .find(|option| option.key.eq_ignore_ascii_case(project_key))
+        .map(|option| option.assigned_pending_count)
+        .unwrap_or_default()
 }
 
 fn project_detail_from_domain(project: projects::ProjectDetail) -> ProjectDetailView {
@@ -10723,6 +10794,7 @@ fn sample_project_options() -> Vec<ProjectOption> {
         .map(|project| ProjectOption {
             key: project.code,
             name: project.name,
+            assigned_pending_count: 0,
         })
         .collect()
 }
