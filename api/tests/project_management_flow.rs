@@ -107,8 +107,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
     assert!(
         delegate_notifications
             .iter()
-            .any(|notification| notification.actor_display_name
-                == "系统管理员 的 AI助手「Codex CLI 助手」"),
+            .any(|notification| notification.actor_display_name == "Codex CLI 助手（系统管理员）"),
         "{delegate_notifications:?}"
     );
     let yce_project = projects::get_project_detail(&pool, "YCE")
@@ -122,7 +121,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
         activities
             .iter()
             .any(|activity| activity.summary.contains("创建工作项")
-                && activity.actor_display_name == "系统管理员 的 AI助手「Codex CLI 助手」"),
+                && activity.actor_display_name == "Codex CLI 助手（系统管理员）"),
         "{activities:?}"
     );
     projects::handoff_work_item(
@@ -214,7 +213,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
         .expect("router should respond");
     assert_eq!(comments_response.status(), StatusCode::OK);
     let comments_body = response_body(comments_response).await;
-    assert!(comments_body.contains("系统管理员 的 AI助手「Codex CLI 助手」"));
+    assert!(comments_body.contains("Codex CLI 助手（系统管理员）"));
     assert!(comments_body.contains("已关闭"));
 
     let delegate_notifications = notifications::list_for_user(&pool, delegate.user_id, true, 20)
@@ -222,7 +221,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
         .expect("delegate notifications should load");
     assert!(
         delegate_notifications.iter().any(|notification| {
-            notification.actor_display_name == "系统管理员 的 AI助手「Codex CLI 助手」"
+            notification.actor_display_name == "Codex CLI 助手（系统管理员）"
                 && notification.work_item_key == "YCE-TASK-2"
         }),
         "{delegate_notifications:?}"
@@ -4310,14 +4309,17 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
         .expect("router should respond");
     assert_eq!(create_response.status(), StatusCode::OK);
     let create_body = response_body(create_response).await;
-    assert!(create_body.contains("Token 已创建，请立即复制保存"));
-    assert!(create_body.contains("复制 Token"));
-    assert!(create_body.contains(r#"data-copy-idle-label="复制 Token""#));
+    assert!(create_body.contains("点击复制"));
     assert!(create_body.contains(r#"data-copy-text="yuance_pat_"#));
     assert!(create_body.contains(r#"title="点击复制完整 Token""#));
     assert!(
         create_body
             .contains(r#"<button class="btn btn-sm btn-danger" type="submit">删除</button>"#)
+    );
+    assert!(
+        create_body
+            .contains(r#"<button class="btn btn-sm btn-secondary" type="button">编辑</button>"#)
+            || create_body.contains(r#"data-modal-open="me-api-token-edit-modal-"#)
     );
     assert!(!create_body.contains(r#"type="submit" data-confirm-submit>删除</button>"#));
 

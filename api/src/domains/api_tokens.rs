@@ -77,6 +77,13 @@ pub struct CreateApiTokenInput {
     pub expires_at: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct UpdateApiTokenInput {
+    pub name: String,
+    pub scopes: Vec<String>,
+    pub project_scope: String,
+}
+
 pub fn bearer_token(headers: &HeaderMap) -> Option<String> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?.trim();
     let token = value
@@ -302,6 +309,43 @@ pub async fn revoke_token(
           AND user_id = ?2
         "#,
     )
+    .bind(token_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("访问 Token 不存在".to_string()));
+    }
+
+    get_token_for_user(pool, user_id, token_id).await
+}
+
+pub async fn update_token(
+    pool: &SqlitePool,
+    user_id: i64,
+    token_id: i64,
+    input: UpdateApiTokenInput,
+) -> AppResult<ApiTokenSummary> {
+    let name = validate_name(&input.name)?;
+    let scopes = normalize_scopes(input.scopes)?;
+    let scopes_json = serde_json::to_string(&scopes).unwrap_or_else(|_| "[]".to_string());
+    let project_scope = normalize_project_scope(&input.project_scope)?;
+
+    let result = sqlx::query(
+        r#"
+        UPDATE api_tokens
+        SET name = ?1,
+            scopes = ?2,
+            project_scope = ?3,
+            updated_at = datetime('now')
+        WHERE id = ?4
+          AND user_id = ?5
+        "#,
+    )
+    .bind(name)
+    .bind(scopes_json)
+    .bind(project_scope)
     .bind(token_id)
     .bind(user_id)
     .execute(pool)

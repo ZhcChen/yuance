@@ -66,6 +66,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/me/password", post(web::user::me_password_update))
         .route("/web/me/api-tokens", post(web::user::me_api_token_create))
         .route(
+            "/web/me/api-tokens/{token_id}/edit",
+            post(web::user::me_api_token_update),
+        )
+        .route(
             "/web/me/api-tokens/{token_id}/delete",
             post(web::user::me_api_token_delete),
         )

@@ -936,9 +936,10 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
 
     assert_eq!(create_response.status(), StatusCode::OK);
     let create_body = response_body(create_response).await;
-    assert!(create_body.contains("Token 已创建，请立即复制保存"));
+    assert!(create_body.contains("点击复制"));
     assert!(create_body.contains("yuance_pat_"));
     assert!(create_body.contains("MCP UI"));
+    assert!(create_body.contains("Token 名称（归属人）"));
     assert!(create_body.contains("全部项目（含后续新增）"));
 
     let scoped_body = format!(
@@ -982,6 +983,146 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
         stored_scope,
         format!("{},{}", project_a.project_key, project_b.project_key)
     );
+}
+
+#[tokio::test]
+async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let project_a = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "Alpha 项目".to_string(),
+            description: "第一个项目".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project a should create");
+    let project_b = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "Beta 项目".to_string(),
+            description: "第二个项目".to_string(),
+            status: "acceptance".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project b should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/me/api-tokens")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(&format!(
+                    "name=MCP%20Editable&project_scope_projects={}&scopes=project%3Aread&scopes=resource%3Aread&expires_at=2026-12-31",
+                    project_a.project_key
+                ))))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::OK);
+
+    let token_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT id
+        FROM api_tokens
+        WHERE user_id = ?1
+          AND name = 'MCP Editable'
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
+    )
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("token should exist");
+
+    let update_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/me/api-tokens/{token_id}/edit"))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(&format!(
+                    "name=MCP%20Updated&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread&scopes=work_item%3Awrite&scopes=notification%3Aread",
+                    project_a.project_key, project_b.project_key
+                ))))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(update_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        update_response.headers().get(header::LOCATION).unwrap(),
+        "/web/me"
+    );
+
+    let stored = sqlx::query_as::<_, (String, String, String)>(
+        r#"
+        SELECT name, scopes, project_scope
+        FROM api_tokens
+        WHERE id = ?1
+        "#,
+    )
+    .bind(token_id)
+    .fetch_one(&pool)
+    .await
+    .expect("updated token should load");
+    assert_eq!(stored.0, "MCP Updated");
+    assert_eq!(
+        stored.2,
+        format!("{},{}", project_a.project_key, project_b.project_key)
+    );
+    assert!(stored.1.contains("project:read"));
+    assert!(stored.1.contains("work_item:write"));
+    assert!(stored.1.contains("notification:read"));
+    assert!(!stored.1.contains("resource:read"));
+
+    let expires_at = sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT expires_at
+        FROM api_tokens
+        WHERE id = ?1
+        "#,
+    )
+    .bind(token_id)
+    .fetch_one(&pool)
+    .await
+    .expect("expires_at should remain");
+    assert_eq!(expires_at, "2026-12-31");
+
+    let page_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/me")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(page_response.status(), StatusCode::OK);
+    let page_body = response_body(page_response).await;
+    assert!(page_body.contains("编辑访问 Token"));
+    assert!(page_body.contains("MCP Updated"));
+    assert!(page_body.contains("工作项写入"));
+    assert!(page_body.contains("消息读取"));
+    assert!(page_body.contains(&format!(r#"action="/web/me/api-tokens/{token_id}/edit""#)));
 }
 
 #[tokio::test]

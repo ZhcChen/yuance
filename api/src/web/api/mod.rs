@@ -3799,7 +3799,7 @@ fn api_token_actor_display_name(user: &auth::AuthUser, token_name: &str) -> Stri
     } else {
         user.display_name.trim()
     };
-    format!("{} 的 AI助手「{}」", owner, token_name.trim())
+    format!("{}（{}）", token_name.trim(), owner)
 }
 
 async fn api_user_can_access_all_projects(

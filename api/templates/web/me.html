@@ -152,10 +152,13 @@
                 <td class="token-expires-col">{{ token.expires_at }}</td>
                 <td class="token-last-used-col">{{ token.last_used_at }}</td>
                 <td class="table-actions sticky-col sticky-col-right token-action-col">
-                  <form method="post" action="/web/me/api-tokens/{{ token.id }}/delete" data-confirm-submit-form data-confirm-title="删除访问 Token" data-confirm-message="删除后不可恢复，依赖该 Token 的 MCP 或脚本会立即失效。" data-confirm-action="删除">
-                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-                    <button class="btn btn-sm btn-danger" type="submit">删除</button>
-                  </form>
+                  <div class="token-row-actions">
+                    <button class="btn btn-sm btn-secondary" type="button" data-modal-open="me-api-token-edit-modal-{{ token.id }}">编辑</button>
+                    <form method="post" action="/web/me/api-tokens/{{ token.id }}/delete" data-confirm-submit-form data-confirm-title="删除访问 Token" data-confirm-message="删除后不可恢复，依赖该 Token 的 MCP 或脚本会立即失效。" data-confirm-action="删除">
+                      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                      <button class="btn btn-sm btn-danger" type="submit">删除</button>
+                    </form>
+                  </div>
                 </td>
               </tr>
               {% endfor %}
@@ -267,7 +270,7 @@
     <div class="modal-head">
       <div>
         <h2 id="me-api-token-modal-title">创建访问 Token</h2>
-        <p>建议只勾选 MCP 实际需要的权限。Token 名称会作为 AI 助手名称展示，创建后可在列表中再次复制。</p>
+        <p>建议只勾选 MCP 实际需要的权限。帖子作者会显示为“Token 名称（归属人）”，创建后可在列表中再次复制。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>
@@ -332,4 +335,69 @@
     </form>
   </section>
 </aside>
+
+{% for token in api_tokens %}
+<aside id="me-api-token-edit-modal-{{ token.id }}" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="me-api-token-edit-modal-title-{{ token.id }}" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="me-api-token-edit-modal-title-{{ token.id }}">编辑访问 Token</h2>
+        <p>可修改名称、权限范围和项目范围；Token 后缀、过期时间和历史使用记录不可编辑。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/me/api-tokens/{{ token.id }}/edit">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <label>
+        AI 助手名称
+        <input name="name" value="{{ token.name }}" required autofocus>
+      </label>
+      <div class="token-project-scope-field">
+        <span class="field-label">项目范围</span>
+        <details class="multi-select-dropdown" data-token-project-scope>
+          <summary>
+            <span data-token-project-summary>{{ token.project_scope }}</span>
+            <span class="select-control-caret" aria-hidden="true"></span>
+          </summary>
+          <div class="multi-select-panel">
+            <label class="multi-select-option multi-select-option-strong">
+              <input type="checkbox" name="project_scope_projects" value="all" {% if token.is_all_projects %}checked{% endif %} data-token-project-all>
+              <span>
+                <strong>全部项目</strong>
+                <small>包含当前可见项目，以及后续新增并对你可见的项目。</small>
+              </span>
+            </label>
+            {% if has_projects %}
+            <div class="multi-select-divider">或选择指定项目</div>
+            {% for project in token.project_options %}
+            <label class="multi-select-option">
+              <input type="checkbox" name="project_scope_projects" value="{{ project.code }}" {% if project.selected %}checked{% endif %} data-token-project-option>
+              <span>
+                <strong>{{ project.name }}</strong>
+                <small>{{ project.helper }}</small>
+              </span>
+            </label>
+            {% endfor %}
+            {% else %}
+            <div class="select-control-empty">当前暂无可见项目；选择“全部项目”后，未来可见项目会自动包含。</div>
+            {% endif %}
+          </div>
+        </details>
+        <em class="field-hint">选择“全部项目”时，后续新增项目也默认可用；选择指定项目时仅限勾选项目。</em>
+      </div>
+      <fieldset class="form-fieldset">
+        <legend>权限范围</legend>
+        {% for scope in token.scope_options %}
+        <label><input type="checkbox" name="scopes" value="{{ scope.key }}" {% if scope.selected %}checked{% endif %}> {{ scope.label }}</label>
+        {% endfor %}
+      </fieldset>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">保存修改</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endfor %}
 {% endblock %}

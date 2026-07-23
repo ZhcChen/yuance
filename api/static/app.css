@@ -8187,7 +8187,18 @@ select option {
 }
 
 .token-action-col {
-  min-width: 96px;
+  min-width: 152px;
+}
+
+.token-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.token-row-actions form {
+  margin: 0;
 }
 
 .table-cell-ellipsis {

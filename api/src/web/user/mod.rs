@@ -541,6 +541,9 @@ struct ApiTokenView {
     name: String,
     scopes_label: String,
     project_scope: String,
+    is_all_projects: bool,
+    scope_options: Vec<ApiTokenScopeOptionView>,
+    project_options: Vec<ApiTokenProjectOptionView>,
     token_suffix: String,
     copy_text: String,
     can_copy_raw_token: bool,
@@ -550,6 +553,21 @@ struct ApiTokenView {
     status: &'static str,
     status_tone: &'static str,
     is_revoked: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ApiTokenScopeOptionView {
+    key: &'static str,
+    label: &'static str,
+    selected: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ApiTokenProjectOptionView {
+    code: String,
+    name: String,
+    helper: String,
+    selected: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1603,6 +1621,17 @@ pub struct MeApiTokenDeleteForm {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MeApiTokenUpdateForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    project_scope: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct WorkItemListQuery {
     #[serde(default)]
     q: String,
@@ -1819,6 +1848,7 @@ async fn render_me_response(
                         (Some(current_token_id) == created_api_token_id)
                             .then_some(created_api_token_value.as_str())
                     }),
+                    &projects,
                 )
             })
             .collect::<Vec<_>>();
@@ -1991,6 +2021,44 @@ pub async fn me_api_token_create(
         }),
     )
     .await
+}
+
+pub async fn me_api_token_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_api_token_update_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        let updated = api_tokens::update_token(
+            pool,
+            context.user_id,
+            token_id,
+            api_tokens::UpdateApiTokenInput {
+                name: form.name,
+                scopes: form.scopes,
+                project_scope: form.project_scope,
+            },
+        )
+        .await?;
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "api_token.update",
+            "api_token",
+            &updated.id.to_string(),
+            r#"{"source":"web"}"#,
+        )
+        .await?;
+    }
+
+    Ok(Redirect::to("/web/me").into_response())
 }
 
 pub async fn me_api_token_delete(
@@ -7006,7 +7074,7 @@ fn parse_permission_keys_form(form: &[u8]) -> AppResult<Vec<String>> {
         .collect())
 }
 
-fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
+fn parse_api_token_form(form: &[u8]) -> AppResult<(MeApiTokenUpdateForm, String)> {
     let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
         .map_err(|error| AppError::BadRequest(format!("访问 Token 表单解析失败：{error}")))?;
     let mut csrf_token = String::new();
@@ -7028,13 +7096,31 @@ fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
     }
     let project_scope = api_token_project_scope_from_form(&project_scope, project_scope_projects);
 
+    Ok((
+        MeApiTokenUpdateForm {
+            csrf_token,
+            name,
+            scopes,
+            project_scope,
+        },
+        expires_at,
+    ))
+}
+
+fn parse_api_token_create_form(form: &[u8]) -> AppResult<MeApiTokenCreateForm> {
+    let (parsed, expires_at) = parse_api_token_form(form)?;
     Ok(MeApiTokenCreateForm {
-        csrf_token,
-        name,
-        scopes,
-        project_scope,
+        csrf_token: parsed.csrf_token,
+        name: parsed.name,
+        scopes: parsed.scopes,
+        project_scope: parsed.project_scope,
         expires_at,
     })
+}
+
+fn parse_api_token_update_form(form: &[u8]) -> AppResult<MeApiTokenUpdateForm> {
+    let (parsed, _expires_at) = parse_api_token_form(form)?;
+    Ok(parsed)
 }
 
 fn api_token_project_scope_from_form(
@@ -8861,7 +8947,11 @@ fn user_profile_from_summary(user: users::UserSummary) -> UserProfileView {
     }
 }
 
-fn api_token_view(token: api_tokens::ApiTokenSummary, raw_token: Option<&str>) -> ApiTokenView {
+fn api_token_view(
+    token: api_tokens::ApiTokenSummary,
+    raw_token: Option<&str>,
+    projects: &[ProjectRow],
+) -> ApiTokenView {
     let is_revoked = !token.revoked_at.trim().is_empty();
     let is_expired = !token.expires_at.trim().is_empty() && token.expires_at < chrono_now_text();
     let (status, status_tone) = if is_revoked {
@@ -8871,6 +8961,8 @@ fn api_token_view(token: api_tokens::ApiTokenSummary, raw_token: Option<&str>) -
     } else {
         ("可用", "success")
     };
+    let selected_project_keys = api_token_project_scope_keys(&token.project_scope);
+    let is_all_projects = token.project_scope == "all";
 
     ApiTokenView {
         id: token.id,
@@ -8881,17 +8973,10 @@ fn api_token_view(token: api_tokens::ApiTokenSummary, raw_token: Option<&str>) -
             .map(|scope| api_token_scope_label(scope))
             .collect::<Vec<_>>()
             .join("、"),
-        project_scope: if token.project_scope == "all" {
-            "全部项目（含后续新增）".to_string()
-        } else {
-            token
-                .project_scope
-                .split(',')
-                .map(str::trim)
-                .filter(|project| !project.is_empty())
-                .collect::<Vec<_>>()
-                .join("、")
-        },
+        project_scope: api_token_project_scope_label(&token.project_scope),
+        is_all_projects,
+        scope_options: api_token_scope_options(&token.scopes),
+        project_options: api_token_project_options(projects, &selected_project_keys),
         token_suffix: token.token_suffix,
         copy_text: raw_token.unwrap_or_default().to_string(),
         can_copy_raw_token: raw_token.is_some(),
@@ -8902,6 +8987,63 @@ fn api_token_view(token: api_tokens::ApiTokenSummary, raw_token: Option<&str>) -
         status_tone,
         is_revoked,
     }
+}
+
+fn api_token_project_scope_label(project_scope: &str) -> String {
+    if project_scope == "all" {
+        "全部项目（含后续新增）".to_string()
+    } else {
+        api_token_project_scope_keys(project_scope).join("、")
+    }
+}
+
+fn api_token_project_scope_keys(project_scope: &str) -> Vec<String> {
+    project_scope
+        .split(',')
+        .map(str::trim)
+        .filter(|project| !project.is_empty())
+        .map(str::to_ascii_uppercase)
+        .collect()
+}
+
+fn api_token_scope_options(selected_scopes: &[String]) -> Vec<ApiTokenScopeOptionView> {
+    [
+        api_tokens::SCOPE_PROJECT_READ,
+        api_tokens::SCOPE_WORK_ITEM_READ,
+        api_tokens::SCOPE_COMMENT_WRITE,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+        api_tokens::SCOPE_RESOURCE_READ,
+        api_tokens::SCOPE_RESOURCE_WRITE,
+        api_tokens::SCOPE_RESOURCE_UNLOCK,
+        api_tokens::SCOPE_NOTIFICATION_READ,
+    ]
+    .into_iter()
+    .map(|scope| ApiTokenScopeOptionView {
+        key: scope,
+        label: api_token_scope_label(scope),
+        selected: selected_scopes.iter().any(|selected| selected == scope),
+    })
+    .collect()
+}
+
+fn api_token_project_options(
+    projects: &[ProjectRow],
+    selected_project_keys: &[String],
+) -> Vec<ApiTokenProjectOptionView> {
+    projects
+        .iter()
+        .map(|project| ApiTokenProjectOptionView {
+            code: project.code.clone(),
+            name: project.name.clone(),
+            helper: format!(
+                "{} · {} · {} 个待处理 / 进行中 / 待确认项",
+                project.code, project.status, project.pending_in_progress_confirmation_count
+            ),
+            selected: selected_project_keys
+                .iter()
+                .any(|selected| selected.eq_ignore_ascii_case(project.code.as_str())),
+        })
+        .collect()
 }
 
 fn api_token_scope_label(scope: &str) -> &'static str {
@@ -10393,6 +10535,8 @@ fn audit_action_label(action: &str) -> &str {
         "role.create" => "创建角色",
         "role.status.update" => "更新角色状态",
         "role.permissions.update" => "更新角色权限",
+        "api_token.create" => "创建访问 Token",
+        "api_token.update" => "更新访问 Token",
         "api_token.delete" => "删除访问 Token",
         _ => action,
     }
