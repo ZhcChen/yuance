@@ -28,6 +28,7 @@
   var appUpdateIntervalId = null;
   var topbarStatusIntervalId = null;
   var topbarEventSource = null;
+  var topbarRealtimeConnectedOnce = false;
   var topbarStatusRefreshPromise = null;
   var topbarStatusRefreshQueued = false;
   var workItemDiscussionEventSource = null;
@@ -116,6 +117,13 @@
       ? window.__YUANCE_APP_RELEASE_VERSION__
       : "";
     return value.trim();
+  }
+
+  function isWebPage() {
+    var pathname = window.location && typeof window.location.pathname === "string"
+      ? window.location.pathname
+      : "";
+    return pathname === "/web" || pathname.indexOf("/web/") === 0;
   }
 
   function appUpdateManifestUrl() {
@@ -1012,6 +1020,12 @@
       topbarEventSource = null;
     }
     var source = new window.EventSource("/api/v1/topbar/events", { withCredentials: true });
+    source.onopen = function () {
+      if (topbarRealtimeConnectedOnce) {
+        checkForAppUpdate();
+      }
+      topbarRealtimeConnectedOnce = true;
+    };
     source.addEventListener("topbar", function () {
       handleTopbarRealtimeEvent();
     });
@@ -8271,8 +8285,11 @@
       currentReleaseVersion: currentReleaseVersion,
       fetchReleaseVersionManifest: fetchReleaseVersionManifest,
       isReleaseUpdate: isReleaseUpdate,
+      promptAppUpdateIfNeeded: promptAppUpdateIfNeeded,
+      openAppUpdateModal: openAppUpdateModal,
+      startTopbarRealtime: startTopbarRealtime,
       mediaOrientation: mediaOrientation,
-      preferredImageViewerScale: preferredImageViewerScale,
+      preferredImageViewerFitWidthScale: preferredImageViewerFitWidthScale,
       filterSelectOptions: filterSelectOptions,
       reloadDiscussionAtComment: reloadDiscussionAtComment,
       richAttachmentMetadata: richAttachmentMetadata,
