@@ -80,7 +80,7 @@
       </nav>
 
       <div class="topbar-meta" aria-label="顶部操作">
-        <form class="project-switcher" action="/web/current-project" method="post" aria-label="当前项目" data-dropdown-root data-project-switcher>
+        <form class="project-switcher" action="/web/current-project" method="post" aria-label="当前项目" data-dropdown-root data-project-switcher data-skip-success-toast>
           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
           <input type="hidden" name="return_to" value="">
           <input type="hidden" name="project_key" value="{% match current_project %}{% when Some with (project) %}{{ project.key }}{% when None %}{% endmatch %}">

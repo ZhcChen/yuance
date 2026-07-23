@@ -596,6 +596,10 @@
     );
   }
 
+  function shouldSkipSuccessToast(form) {
+    return Boolean(form && typeof form.hasAttribute === "function" && form.hasAttribute("data-skip-success-toast"));
+  }
+
   function isSuccessWebRedirect(url) {
     try {
       var target = new URL(url, window.location.href);
@@ -1241,7 +1245,7 @@
       throw new Error(apiErrorMessage(payload, htmlResult?.message || "操作失败，请稍后重试。"));
     }
     if (response.redirected && response.url) {
-      if (isSuccessWebRedirect(response.url)) {
+      if (isSuccessWebRedirect(response.url) && !shouldSkipSuccessToast(form)) {
         queueSuccessBeforeNavigation(successMessage);
       }
       window.location.assign(response.url);

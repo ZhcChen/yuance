@@ -2442,7 +2442,8 @@ pub async fn current_project_update(
     };
 
     let mut selected_project_key = form.project_key.trim().to_ascii_uppercase();
-    if let Some(pool) = context.pool {
+    let pool = context.pool;
+    if let Some(pool) = pool {
         ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
         let selected = projects::set_current_project_for_user(
             pool,
@@ -2454,7 +2455,7 @@ pub async fn current_project_update(
         selected_project_key = selected.project_key;
     }
 
-    let return_to = project_switch_return_to(&form.return_to, &selected_project_key);
+    let return_to = project_switch_return_to(pool, &form.return_to, &selected_project_key).await?;
     Ok(Redirect::to(&return_to).into_response())
 }
 
@@ -6723,16 +6724,31 @@ fn safe_web_return_to(value: &str) -> &str {
     }
 }
 
-fn project_switch_return_to(value: &str, project_key: &str) -> String {
+async fn project_switch_return_to(
+    pool: Option<&SqlitePool>,
+    value: &str,
+    project_key: &str,
+) -> AppResult<String> {
     let safe_return_to = safe_web_return_to(value);
     let project_key = project_key.trim().to_ascii_uppercase();
     if project_key.is_empty() {
-        return safe_return_to.to_string();
+        return Ok(safe_return_to.to_string());
     }
 
-    rewrite_project_scoped_path(safe_return_to, &project_key)
+    if let Some(rewritten) =
+        rewrite_work_item_detail_return_to(pool, safe_return_to, &project_key).await?
+    {
+        return Ok(rewritten);
+    }
+
+    if let Some(rewritten) = rewrite_project_resource_detail_return_to(safe_return_to, &project_key)
+    {
+        return Ok(rewritten);
+    }
+
+    Ok(rewrite_project_scoped_path(safe_return_to, &project_key)
         .or_else(|| rewrite_work_item_list_project_query(safe_return_to, &project_key))
-        .unwrap_or_else(|| safe_return_to.to_string())
+        .unwrap_or_else(|| safe_return_to.to_string()))
 }
 
 fn split_url_fragment(value: &str) -> (&str, Option<&str>) {
@@ -6741,13 +6757,71 @@ fn split_url_fragment(value: &str) -> (&str, Option<&str>) {
         .map_or((value, None), |(base, fragment)| (base, Some(fragment)))
 }
 
+fn split_url_path_and_query(value: &str) -> (&str, Option<&str>) {
+    value
+        .split_once('?')
+        .map_or((value, None), |(path, query)| (path, Some(query)))
+}
+
+async fn rewrite_work_item_detail_return_to(
+    pool: Option<&SqlitePool>,
+    value: &str,
+    project_key: &str,
+) -> AppResult<Option<String>> {
+    let (without_fragment, _) = split_url_fragment(value);
+    let (path, _) = split_url_path_and_query(without_fragment);
+    let Some(item_key) = path.strip_prefix("/web/work-items/") else {
+        return Ok(None);
+    };
+    if item_key.is_empty() || item_key.contains('/') {
+        return Ok(None);
+    }
+
+    let item_type = if let Some(pool) = pool {
+        projects::get_work_item_detail(pool, item_key)
+            .await?
+            .map(|item| item.item_type)
+    } else {
+        None
+    };
+    let list_path = work_item_list_path_for_key(item_type.as_deref(), item_key);
+    Ok(Some(format!("{list_path}?project_key={project_key}")))
+}
+
+fn rewrite_project_resource_detail_return_to(value: &str, project_key: &str) -> Option<String> {
+    let (without_fragment, _) = split_url_fragment(value);
+    let (path, _) = split_url_path_and_query(without_fragment);
+    let rest = path.strip_prefix("/web/projects/")?;
+    let (_, suffix) = rest.split_once('/')?;
+    if !suffix.starts_with("resources/") {
+        return None;
+    }
+
+    Some(project_library_url(project_key))
+}
+
+fn work_item_list_path_for_key(item_type: Option<&str>, item_key: &str) -> &'static str {
+    match item_type.or_else(|| infer_work_item_type_from_key(item_key)) {
+        Some("requirement") => "/web/requirements",
+        Some("bug") => "/web/bugs",
+        _ => "/web/tasks",
+    }
+}
+
+fn infer_work_item_type_from_key(item_key: &str) -> Option<&'static str> {
+    let mut segments = item_key.split('-');
+    let _project_key = segments.next()?;
+    match segments.next()? {
+        "REQ" => Some("requirement"),
+        "BUG" => Some("bug"),
+        "TASK" => Some("task"),
+        _ => None,
+    }
+}
+
 fn rewrite_project_scoped_path(value: &str, project_key: &str) -> Option<String> {
     let (without_fragment, fragment) = split_url_fragment(value);
-    let (path, query) = without_fragment
-        .split_once('?')
-        .map_or((without_fragment, None), |(path, query)| {
-            (path, Some(query))
-        });
+    let (path, query) = split_url_path_and_query(without_fragment);
     let rest = path.strip_prefix("/web/projects/")?;
     if rest.is_empty() {
         return None;
@@ -6768,9 +6842,8 @@ fn rewrite_project_scoped_path(value: &str, project_key: &str) -> Option<String>
 
 fn rewrite_work_item_list_project_query(value: &str, project_key: &str) -> Option<String> {
     let (without_fragment, fragment) = split_url_fragment(value);
-    let (path, query) = without_fragment
-        .split_once('?')
-        .map_or((without_fragment, ""), |(path, query)| (path, query));
+    let (path, query) = split_url_path_and_query(without_fragment);
+    let query = query.unwrap_or("");
     if !matches!(path, "/web/requirements" | "/web/tasks" | "/web/bugs") {
         return None;
     }

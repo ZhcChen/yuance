@@ -2851,6 +2851,7 @@ async fn web_dashboard_keeps_current_project_switcher_but_lists_all_accessible_p
     let body = response_body(response).await;
 
     assert!(body.contains(r#"data-project-switcher"#));
+    assert!(body.contains(r#"data-skip-success-toast"#));
     assert!(body.contains(r#"name="project_key" value="YCE""#));
     assert!(body.contains(r#"class="project-switcher-option active""#));
     assert!(body.contains(r#"<span class="project-switcher-current">元策 MVP</span>"#));
@@ -3432,6 +3433,97 @@ async fn web_current_project_rewrites_work_item_list_project_query() {
         response.headers().get(header::LOCATION).unwrap(),
         "/web/tasks?project_key=OPS&status=pending&per_page=20"
     );
+}
+
+#[tokio::test]
+async fn web_current_project_redirects_work_item_detail_to_selected_project_list() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/current-project")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fwork-items%2FYCE-TASK-2%23comment-1",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/tasks?project_key=OPS"
+    );
+    let current = projects::get_current_project_for_user(&pool, initialized.user_id, true)
+        .await
+        .expect("current project should load")
+        .expect("current project should exist");
+    assert_eq!(current.project_key, "OPS");
+}
+
+#[tokio::test]
+async fn web_current_project_redirects_resource_detail_to_selected_project_library() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let yce_project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: yce_project.id,
+            title: "切项目资料回退".to_string(),
+            category: "integration".to_string(),
+            body: "<p>用于验证切换项目后的资料详情跳转。</p>".to_string(),
+            body_format: "html".to_string(),
+            access_password: String::new(),
+        },
+    )
+    .await
+    .expect("resource should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/current-project")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fprojects%2FYCE%2Fresources%2F{}",
+                    resource.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/OPS?tab=library"
+    );
+    let current = projects::get_current_project_for_user(&pool, initialized.user_id, true)
+        .await
+        .expect("current project should load")
+        .expect("current project should exist");
+    assert_eq!(current.project_key, "OPS");
 }
 
 #[tokio::test]
