@@ -5,7 +5,10 @@ use std::borrow::Cow;
 
 use crate::{
     domains::notifications::{self, CreateNotification},
-    platform::error::{AppError, AppResult},
+    platform::{
+        error::{AppError, AppResult},
+        realtime,
+    },
 };
 
 const PROJECT_KEY_GENERATE_MAX_ATTEMPTS: usize = 5;
@@ -669,6 +672,7 @@ pub async fn set_current_project_for_user(
     .bind(project.id)
     .execute(pool)
     .await?;
+    realtime::publish_topbar_refresh_for_user(user_id);
 
     Ok(CurrentProject {
         id: project.id,
@@ -2887,6 +2891,7 @@ pub async fn create_work_item(
     .await?;
 
     tx.commit().await?;
+    realtime::publish_topbar_refresh_for_user(assignee_user_id);
 
     get_work_item_detail(pool, &item_key)
         .await?
@@ -3105,14 +3110,21 @@ pub async fn update_work_item_status(
     status: &str,
 ) -> AppResult<WorkItemDetail> {
     let status = validate_work_item_status(status)?;
-    let Some((work_item_id, project_id, project_status, current_status, assignee_display_name)) =
-        sqlx::query_as::<_, (i64, i64, String, String, String)>(
-            r#"
+    let Some((
+        work_item_id,
+        project_id,
+        project_status,
+        current_status,
+        assignee_user_id,
+        assignee_display_name,
+    )) = sqlx::query_as::<_, (i64, i64, String, String, Option<i64>, String)>(
+        r#"
             SELECT
                 wi.id,
                 wi.project_id,
                 p.status,
                 wi.status,
+                wi.assignee_user_id,
                 COALESCE(assignee.display_name, '') AS assignee_display_name
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
@@ -3120,10 +3132,10 @@ pub async fn update_work_item_status(
             WHERE wi.item_key = ?1
               AND wi.deleted_at IS NULL
             "#,
-        )
-        .bind(item_key)
-        .fetch_optional(pool)
-        .await?
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
     else {
         return Err(AppError::NotFound("工作项不存在".to_string()));
     };
@@ -3195,6 +3207,9 @@ pub async fn update_work_item_status(
     .await?;
 
     tx.commit().await?;
+    if let Some(assignee_user_id) = assignee_user_id {
+        realtime::publish_topbar_refresh_for_user(assignee_user_id);
+    }
 
     get_work_item_detail(pool, item_key)
         .await?
@@ -3391,6 +3406,11 @@ pub async fn handoff_work_item(
     .await?;
 
     tx.commit().await?;
+    realtime::publish_topbar_refresh_for_users(
+        [current_assignee_user_id, next_assignee_user_id]
+            .into_iter()
+            .flatten(),
+    );
 
     get_work_item_detail(pool, item_key)
         .await?
@@ -3419,10 +3439,18 @@ pub async fn update_work_item(
         project_status,
         item_type,
         current_status,
+        current_assignee_user_id,
         reporter_user_id,
-    )) = sqlx::query_as::<_, (i64, i64, String, String, String, Option<i64>)>(
+    )) = sqlx::query_as::<_, (i64, i64, String, String, String, Option<i64>, Option<i64>)>(
         r#"
-        SELECT wi.id, wi.project_id, p.status, wi.item_type, wi.status, wi.reporter_user_id
+        SELECT
+            wi.id,
+            wi.project_id,
+            p.status,
+            wi.item_type,
+            wi.status,
+            wi.assignee_user_id,
+            wi.reporter_user_id
         FROM work_items wi
         JOIN projects p ON p.id = wi.project_id
         WHERE wi.item_key = ?1
@@ -3508,6 +3536,11 @@ pub async fn update_work_item(
     .await?;
 
     tx.commit().await?;
+    realtime::publish_topbar_refresh_for_users(
+        [current_assignee_user_id, assignee_user_id]
+            .into_iter()
+            .flatten(),
+    );
 
     get_work_item_detail(pool, item_key)
         .await?
@@ -3635,14 +3668,15 @@ pub async fn archive_work_item(
     actor_user_id: i64,
     item_key: &str,
 ) -> AppResult<WorkItemDetail> {
-    let Some((work_item_id, project_id, project_status, deleted_at)) =
-        sqlx::query_as::<_, (i64, i64, String, String)>(
+    let Some((work_item_id, project_id, project_status, deleted_at, assignee_user_id)) =
+        sqlx::query_as::<_, (i64, i64, String, String, Option<i64>)>(
             r#"
             SELECT
                 wi.id,
                 wi.project_id,
                 p.status,
-                COALESCE(wi.deleted_at, '') AS deleted_at
+                COALESCE(wi.deleted_at, '') AS deleted_at,
+                wi.assignee_user_id
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
             WHERE wi.item_key = ?1
@@ -3697,6 +3731,9 @@ pub async fn archive_work_item(
     .await?;
 
     tx.commit().await?;
+    if let Some(assignee_user_id) = assignee_user_id {
+        realtime::publish_topbar_refresh_for_user(assignee_user_id);
+    }
 
     get_work_item_detail(pool, item_key)
         .await?
@@ -3708,14 +3745,15 @@ pub async fn restore_work_item(
     actor_user_id: i64,
     item_key: &str,
 ) -> AppResult<WorkItemDetail> {
-    let Some((work_item_id, project_id, project_status, deleted_at)) =
-        sqlx::query_as::<_, (i64, i64, String, String)>(
+    let Some((work_item_id, project_id, project_status, deleted_at, assignee_user_id)) =
+        sqlx::query_as::<_, (i64, i64, String, String, Option<i64>)>(
             r#"
             SELECT
                 wi.id,
                 wi.project_id,
                 p.status,
-                COALESCE(wi.deleted_at, '') AS deleted_at
+                COALESCE(wi.deleted_at, '') AS deleted_at,
+                wi.assignee_user_id
             FROM work_items wi
             JOIN projects p ON p.id = wi.project_id
             WHERE wi.item_key = ?1
@@ -3769,6 +3807,9 @@ pub async fn restore_work_item(
     .await?;
 
     tx.commit().await?;
+    if let Some(assignee_user_id) = assignee_user_id {
+        realtime::publish_topbar_refresh_for_user(assignee_user_id);
+    }
 
     get_work_item_detail(pool, item_key)
         .await?
@@ -3936,6 +3977,9 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
     .await?;
 
     tx.commit().await?;
+    if let Some(recipient_user_id) = reply_recipient {
+        realtime::publish_topbar_refresh_for_user(recipient_user_id);
+    }
 
     get_work_item_comment(pool, work_item_id, comment_id).await
 }
@@ -4113,6 +4157,9 @@ pub async fn publish_work_item_comment_draft(
     .await?;
 
     tx.commit().await?;
+    if let Some(recipient_user_id) = reply_recipient {
+        realtime::publish_topbar_refresh_for_user(recipient_user_id);
+    }
 
     get_work_item_comment(pool, work_item_id, comment_id).await
 }

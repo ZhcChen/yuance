@@ -2511,6 +2511,19 @@ async fn api_v1_topbar_status_returns_current_project_counts_and_project_badges(
             .and_then(|value| value.as_i64()),
         Some(1)
     );
+    let current_project = data
+        .get("current_project")
+        .expect("current_project should exist");
+    assert_eq!(
+        current_project.get("key").and_then(|value| value.as_str()),
+        Some("YCE")
+    );
+    assert_eq!(
+        current_project
+            .get("pending_count")
+            .and_then(|value| value.as_i64()),
+        Some(2)
+    );
 
     let project_badges = data
         .get("project_badges")
@@ -2530,6 +2543,33 @@ async fn api_v1_topbar_status_returns_current_project_counts_and_project_badges(
                 .and_then(|value| value.as_i64())
                 == Some(1)
     }));
+}
+
+#[tokio::test]
+async fn api_v1_topbar_events_returns_sse_stream_for_authenticated_user() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/topbar/events")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
 }
 
 #[tokio::test]

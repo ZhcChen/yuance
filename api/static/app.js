@@ -5,7 +5,7 @@
   var MODAL_TRANSITION_MS = 240;
   var TOAST_DURATION_MS = 4200;
   var APP_UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-  var TOPBAR_STATUS_REFRESH_INTERVAL_MS = 30 * 1000;
+  var TOPBAR_STATUS_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
   var APP_UPDATE_MANIFEST_URL = "/version.json";
   var TOAST_STORAGE_KEY = "yuance-pending-toast";
   var THEME_STORAGE_KEY = "yuance-theme";
@@ -27,6 +27,9 @@
   var appUpdateCheckBusy = false;
   var appUpdateIntervalId = null;
   var topbarStatusIntervalId = null;
+  var topbarEventSource = null;
+  var topbarStatusRefreshPromise = null;
+  var topbarStatusRefreshQueued = false;
   var imageViewerState = {
     entries: [],
     index: 0,
@@ -666,6 +669,11 @@
     syncCountBadge(badge, count, ariaLabel);
   }
 
+  function currentProjectDetailUrl(projectKey) {
+    var key = typeof projectKey === "string" ? projectKey.trim() : "";
+    return key ? "/web/projects/" + encodeURIComponent(key) : "/web/projects";
+  }
+
   function renderProjectSwitcherBadges(projectBadges) {
     var countsByProject = Object.create(null);
     (Array.isArray(projectBadges) ? projectBadges : []).forEach(function (item) {
@@ -708,6 +716,41 @@
     });
   }
 
+  function renderCurrentProjectStatus(currentProject) {
+    var current = currentProject && typeof currentProject === "object" ? currentProject : null;
+    var currentKey = current && typeof current.key === "string"
+      ? current.key.trim().toUpperCase()
+      : "";
+    var currentName = current && typeof current.name === "string"
+      ? current.name.trim()
+      : "";
+    var pendingCount = current ? Number(current.pending_count || 0) : 0;
+
+    document.querySelectorAll("[data-topbar-project-link]").forEach(function (link) {
+      link.href = currentProjectDetailUrl(currentKey);
+    });
+
+    document.querySelectorAll("[data-project-switcher]").forEach(function (switcher) {
+      var hiddenProjectInput = switcher.querySelector("input[name='project_key']");
+      if (hiddenProjectInput) {
+        hiddenProjectInput.value = currentKey;
+      }
+      var currentNameNode = switcher.querySelector(".project-switcher-current");
+      if (currentNameNode) {
+        currentNameNode.textContent = currentName || "请选择项目";
+      }
+      switcher.querySelectorAll("[data-project-option]").forEach(function (option) {
+        var optionKey = String(option.getAttribute("data-project-key") || "").trim().toUpperCase();
+        option.classList.toggle("active", currentKey !== "" && optionKey === currentKey);
+      });
+      syncProjectSwitcherBadge(
+        switcher.querySelector("[data-current-project-badge]"),
+        pendingCount,
+        "当前项目待处理"
+      );
+    });
+  }
+
   function renderTopbarStatus(status) {
     var payload = status && typeof status === "object" ? status : {};
     syncCountBadge(
@@ -730,6 +773,7 @@
       payload.notifications_count
     );
     renderProjectSwitcherBadges(payload.project_badges);
+    renderCurrentProjectStatus(payload.current_project);
   }
 
   function renderNotificationFeed(root, feed) {
@@ -895,14 +939,58 @@
     if (!isWebPage()) {
       return;
     }
-    try {
-      var status = await fetchJson("/api/v1/topbar/status", {
-        headers: { accept: "application/json" },
-      });
-      renderTopbarStatus(status);
-    } catch (_error) {
-      // 顶部角标后台刷新失败时保持现状，避免频繁打断操作。
+    if (topbarStatusRefreshPromise) {
+      topbarStatusRefreshQueued = true;
+      return topbarStatusRefreshPromise;
     }
+    topbarStatusRefreshPromise = (async function () {
+      try {
+        var status = await fetchJson("/api/v1/topbar/status", {
+          headers: { accept: "application/json" },
+        });
+        renderTopbarStatus(status);
+      } catch (_error) {
+        // 顶部角标后台刷新失败时保持现状，避免频繁打断操作。
+      } finally {
+        topbarStatusRefreshPromise = null;
+        if (topbarStatusRefreshQueued) {
+          topbarStatusRefreshQueued = false;
+          refreshTopbarStatus();
+        }
+      }
+    })();
+    return topbarStatusRefreshPromise;
+  }
+
+  function notificationDropdownIsOpen() {
+    var root = document.querySelector("[data-notification-root]");
+    return Boolean(root && root.dataset.dropdownOpen === "true");
+  }
+
+  async function handleTopbarRealtimeEvent() {
+    if (notificationDropdownIsOpen()) {
+      await refreshNotificationFeed(document.querySelector("[data-notification-root]"));
+      return;
+    }
+    await refreshTopbarStatus();
+  }
+
+  function startTopbarRealtime() {
+    if (!isWebPage() || typeof window.EventSource !== "function") {
+      return;
+    }
+    if (topbarEventSource) {
+      topbarEventSource.close();
+      topbarEventSource = null;
+    }
+    var source = new window.EventSource("/api/v1/topbar/events", { withCredentials: true });
+    source.addEventListener("topbar", function () {
+      handleTopbarRealtimeEvent();
+    });
+    source.onerror = function () {
+      // 断线后 EventSource 会自动重连，这里保留静默兜底。
+    };
+    topbarEventSource = source;
   }
 
   function startTopbarStatusRefresh() {
@@ -910,6 +998,7 @@
       return;
     }
     refreshTopbarStatus();
+    startTopbarRealtime();
     if (topbarStatusIntervalId) {
       window.clearInterval(topbarStatusIntervalId);
     }
@@ -8516,6 +8605,10 @@
     highlightDiscussionPostByHash(window.location.hash, { scroll: false, updateHash: false, immediate: true });
   });
   window.addEventListener("pagehide", function () {
+    if (topbarEventSource) {
+      topbarEventSource.close();
+      topbarEventSource = null;
+    }
     document.querySelectorAll("[data-file-preview]").forEach(function (preview) {
       if (preview.localObjectUrl) {
         URL.revokeObjectURL(preview.localObjectUrl);

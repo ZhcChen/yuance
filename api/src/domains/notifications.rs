@@ -1,6 +1,9 @@
 use sqlx::{Sqlite, SqlitePool, Transaction};
 
-use crate::platform::error::{AppError, AppResult};
+use crate::platform::{
+    error::{AppError, AppResult},
+    realtime,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NotificationSummary {
@@ -289,6 +292,7 @@ pub async fn mark_read(
     .bind(user_id)
     .fetch_one(pool)
     .await?;
+    realtime::publish_topbar_refresh_for_user(user_id);
     Ok(NotificationSummary {
         id: row.0,
         kind: row.1,
@@ -303,11 +307,15 @@ pub async fn mark_read(
 }
 
 pub async fn mark_all_read(pool: &SqlitePool, user_id: i64) -> AppResult<u64> {
-    Ok(sqlx::query(
+    let affected = sqlx::query(
         "UPDATE notifications SET read_at = datetime('now') WHERE recipient_user_id = ?1 AND read_at IS NULL",
     )
     .bind(user_id)
     .execute(pool)
     .await?
-    .rows_affected())
+    .rows_affected();
+    if affected > 0 {
+        realtime::publish_topbar_refresh_for_user(user_id);
+    }
+    Ok(affected)
 }

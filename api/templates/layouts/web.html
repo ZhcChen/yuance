@@ -36,7 +36,7 @@
 
       <nav class="topnav" aria-label="主导航">
         <a class="topnav-item {% if active == "dashboard" %}active{% endif %}" href="/web">工作台</a>
-        <a class="topnav-item {% if active == "projects" %}active{% endif %}" href="{% match current_project %}{% when Some with (project) %}/web/projects/{{ project.key }}{% when None %}/web/projects{% endmatch %}">项目</a>
+        <a class="topnav-item {% if active == "projects" %}active{% endif %}" data-topbar-project-link href="{% match current_project %}{% when Some with (project) %}/web/projects/{{ project.key }}{% when None %}/web/projects{% endmatch %}">项目</a>
         <a class="topnav-item {% if active == "requirements" %}active{% endif %}" href="/web/requirements">
           <span>需求</span>
           <span class="topnav-badge" data-topbar-badge="requirements" {% if system_nav.requirements_badge == "" %}hidden aria-hidden="true"{% else %}aria-label="待处理需求 {{ system_nav.requirements_badge }}"{% endif %}>{{ system_nav.requirements_badge }}</span>

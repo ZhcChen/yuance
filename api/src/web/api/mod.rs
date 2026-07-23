@@ -3,10 +3,14 @@ use axum::{
     body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode, header},
-    response::{AppendHeaders, IntoResponse},
+    response::{
+        AppendHeaders, IntoResponse,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::convert::Infallible;
 
 use crate::{
     domains::{
@@ -16,6 +20,7 @@ use crate::{
     platform::{
         crypto,
         error::{AppError, AppResult},
+        realtime,
         security::csrf,
     },
     web::{
@@ -243,12 +248,20 @@ pub struct TopbarProjectBadgePayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TopbarCurrentProjectPayload {
+    pub key: String,
+    pub name: String,
+    pub pending_count: i64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct TopbarStatusPayload {
     pub requirements_count: i64,
     pub tasks_count: i64,
     pub bugs_count: i64,
     pub notifications_count: i64,
     pub project_badges: Vec<TopbarProjectBadgePayload>,
+    pub current_project: Option<TopbarCurrentProjectPayload>,
 }
 
 #[derive(Debug, Serialize)]
@@ -323,16 +336,18 @@ pub async fn get_topbar_status(
     let can_view_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
     let can_view_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
 
-    let current_project_key = if can_view_projects || can_view_work_items {
+    let current_project = if can_view_projects || can_view_work_items {
         projects::get_or_select_current_project_for_user(pool, user.id, can_access_all_projects)
             .await?
             .filter(|project| {
                 project_key_in_token_scope(&token_project_scope, &project.project_key)
             })
-            .map(|project| project.project_key)
     } else {
         None
     };
+    let current_project_key = current_project
+        .as_ref()
+        .map(|project| project.project_key.as_str());
 
     let work_item_counts = if can_view_work_items {
         ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
@@ -340,7 +355,7 @@ pub async fn get_topbar_status(
             pool,
             user.id,
             can_access_all_projects,
-            current_project_key.as_deref(),
+            current_project_key,
         )
         .await?
     } else {
@@ -369,6 +384,18 @@ pub async fn get_topbar_status(
 
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     let notifications_count = notifications::unread_count(pool, user.id).await?;
+    let current_project = current_project.map(|project| {
+        let pending_count = project_badges
+            .iter()
+            .find(|badge| badge.project_key.eq_ignore_ascii_case(&project.project_key))
+            .map(|badge| badge.pending_count)
+            .unwrap_or_default();
+        TopbarCurrentProjectPayload {
+            key: project.project_key,
+            name: project.name,
+            pending_count,
+        }
+    });
 
     Ok(json(TopbarStatusPayload {
         requirements_count: work_item_counts.requirements,
@@ -376,7 +403,39 @@ pub async fn get_topbar_status(
         bugs_count: work_item_counts.bugs,
         notifications_count,
         project_badges,
+        current_project,
     }))
+}
+
+pub async fn topbar_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let user_id = user.id;
+    let mut receiver = realtime::subscribe_user_realtime();
+    let stream = async_stream::stream! {
+        yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("connected"));
+        loop {
+            match receiver.recv().await {
+                Ok(message) => {
+                    if message.kind == "topbar" && message.user_ids.iter().any(|target_id| *target_id == user_id) {
+                        yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("refresh"));
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("refresh"));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(std::time::Duration::from_secs(20))
+            .text("keep-alive"),
+    ))
 }
 
 #[derive(Debug, Serialize)]
