@@ -108,6 +108,8 @@ html[data-theme="dark"] {
   --shadow: 0 18px 48px rgb(0 0 0 / 36%);
   --card-shadow: 0 14px 34px rgb(0 0 0 / 24%), 0 2px 8px rgb(0 0 0 / 18%);
   --card-shadow-hover: 0 18px 42px rgb(0 0 0 / 32%), 0 4px 12px rgb(0 0 0 / 22%);
+  --scrollbar-size: 12px;
+  --scrollbar-thumb-border: 2px;
 }
 
 * {
@@ -124,14 +126,14 @@ html[data-theme="dark"] {
 
 .main,
 .auth-body {
-  scrollbar-width: thin;
+  scrollbar-width: auto;
   -ms-overflow-style: auto;
 }
 
 .main::-webkit-scrollbar,
 .auth-body::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
   display: block;
 }
 
@@ -142,7 +144,7 @@ html[data-theme="dark"] {
 
 .main::-webkit-scrollbar-thumb,
 .auth-body::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
+  border: var(--scrollbar-thumb-border) solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 58%, transparent);
   background-clip: padding-box;
@@ -5781,13 +5783,13 @@ code {
   gap: 14px;
   overflow: auto;
   padding: 16px 18px 18px;
-  scrollbar-width: thin;
+  scrollbar-width: auto;
   -ms-overflow-style: auto;
 }
 
 .modal-body::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
   display: block;
 }
 
@@ -5796,7 +5798,7 @@ code {
 }
 
 .modal-body::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
+  border: var(--scrollbar-thumb-border) solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--muted) 58%, transparent);
   background-clip: padding-box;
