@@ -238,13 +238,7 @@
     appUpdateCheckBusy = true;
     return fetchReleaseVersionManifest()
       .then(function (nextVersion) {
-        if (!isReleaseUpdate(currentVersion, nextVersion)) {
-          return nextVersion;
-        }
-        if (deferredAppUpdateVersion === nextVersion) {
-          return nextVersion;
-        }
-        openAppUpdateModal(nextVersion);
+        promptAppUpdateIfNeeded(currentVersion, nextVersion);
         return nextVersion;
       })
       .catch(function () {
@@ -253,6 +247,25 @@
       .finally(function () {
         appUpdateCheckBusy = false;
       });
+  }
+
+  function promptAppUpdateIfNeeded(currentVersion, nextVersion) {
+    if (!isReleaseUpdate(currentVersion, nextVersion)) {
+      return false;
+    }
+    if (deferredAppUpdateVersion === nextVersion) {
+      return false;
+    }
+    openAppUpdateModal(nextVersion);
+    return true;
+  }
+
+  function handleRealtimeReleaseVersion(nextVersion) {
+    var currentVersion = currentReleaseVersion();
+    if (!currentVersion) {
+      return;
+    }
+    promptAppUpdateIfNeeded(currentVersion, String(nextVersion || "").trim());
   }
 
   function initAppUpdatePrompt() {
@@ -1001,6 +1014,9 @@
     var source = new window.EventSource("/api/v1/topbar/events", { withCredentials: true });
     source.addEventListener("topbar", function () {
       handleTopbarRealtimeEvent();
+    });
+    source.addEventListener("release-version", function (event) {
+      handleRealtimeReleaseVersion(event && typeof event.data === "string" ? event.data : "");
     });
     source.onerror = function () {
       // 断线后 EventSource 会自动重连，这里保留静默兜底。

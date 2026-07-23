@@ -1123,7 +1123,7 @@ async fn version_manifest() -> impl IntoResponse {
     )
 }
 
-fn app_release_version() -> String {
+pub(crate) fn app_release_version() -> String {
     std::env::var("YUANCE_RELEASE_VERSION")
         .ok()
         .map(|value| value.trim().to_string())

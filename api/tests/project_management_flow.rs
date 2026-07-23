@@ -3,6 +3,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
+use std::str;
 use tower::ServiceExt;
 use yuance_api::{
     domains::{
@@ -2570,6 +2571,23 @@ async fn api_v1_topbar_events_returns_sse_stream_for_authenticated_user() {
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream")
     );
+
+    let mut body = response.into_body();
+    let mut payload = String::new();
+    for _ in 0..3 {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(1), body.frame())
+            .await
+            .expect("sse frame should arrive")
+            .expect("stream should stay open")
+            .expect("frame should be ok");
+        if let Some(data) = frame.data_ref() {
+            payload.push_str(str::from_utf8(data).expect("sse chunk should be utf-8"));
+        }
+        if payload.contains("event: release-version") && payload.contains("event: topbar") {
+            break;
+        }
+    }
+    assert!(payload.contains("event: release-version"));
 }
 
 #[tokio::test]

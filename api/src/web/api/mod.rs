@@ -26,7 +26,7 @@ use crate::{
     web::{
         audit_context,
         response::{ApiEnvelope, json},
-        router::AppState,
+        router::{AppState, app_release_version},
     },
 };
 
@@ -424,8 +424,12 @@ pub async fn topbar_events(
 ) -> AppResult<impl IntoResponse> {
     let user = require_api_user(&state, &headers).await?;
     let user_id = user.id;
+    let release_version = app_release_version();
     let mut receiver = realtime::subscribe_user_realtime();
     let stream = async_stream::stream! {
+        yield Result::<Event, Infallible>::Ok(
+            Event::default().event("release-version").data(release_version.clone())
+        );
         yield Result::<Event, Infallible>::Ok(Event::default().event("topbar").data("connected"));
         loop {
             match receiver.recv().await {
