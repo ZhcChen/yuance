@@ -7,7 +7,7 @@
   <section class="page-hero">
     <div>
       <p class="eyebrow">全局搜索</p>
-      <h1>搜索项目、需求、任务和 Bug</h1>
+      <h1>搜索项目、需求、任务、Bug 和资料库</h1>
       <p>搜索结果遵循项目成员数据范围；系统管理员可查看全部项目协作数据。</p>
     </div>
     <div class="toolbar-actions">
@@ -19,7 +19,7 @@
     <form class="search-form" action="/web/search" method="get" role="search">
       <label for="search-page-input">
         关键词
-        <input id="search-page-input" name="q" type="search" value="{{ query }}" placeholder="输入项目编号、标题或描述">
+        <input id="search-page-input" name="q" type="search" value="{{ query }}" placeholder="输入项目编号、工作项编号、资料标题或描述">
       </label>
       {% if pagination.per_page != 10 %}<input type="hidden" name="per_page" value="{{ pagination.per_page }}">{% endif %}
       <button class="btn btn-primary" type="submit">搜索</button>
@@ -67,10 +67,10 @@
     <div class="empty-state">
       {% if has_query %}
       <strong>没有找到结果</strong>
-      <span>可以换一个项目编号、工作项编号或标题关键词。</span>
+      <span>可以换一个项目编号、工作项编号、资料标题或正文关键词。</span>
       {% else %}
       <strong>等待搜索</strong>
-      <span>例如搜索 YCE、对象存储、Bug 或工作项编号。</span>
+      <span>例如搜索 YCE、对象存储、资料库、Bug 或工作项编号。</span>
       {% endif %}
     </div>
     {% endif %}

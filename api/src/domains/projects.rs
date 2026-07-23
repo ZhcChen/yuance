@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
 use rand_core::{OsRng, RngCore};
-use sqlx::{Row, SqlitePool, sqlite::SqliteRow};
+use sqlx::{AssertSqlSafe, Row, SqlitePool, sqlite::SqliteRow};
 use std::borrow::Cow;
 
 use crate::{
@@ -4583,6 +4583,9 @@ pub async fn search_visible(
     let like = format!("%{query}%");
     let project_limit = limit.max(1);
     let work_item_limit = limit.max(1);
+    let resource_limit = limit.max(1);
+    let resource_search_match = resource_search_match_sql();
+    let resource_search_context = resource_search_context_sql();
 
     let project_hits = if is_super_admin {
         sqlx::query_as::<_, (String, String, String, String, String, String)>(
@@ -4694,9 +4697,63 @@ pub async fn search_visible(
         .await?
     };
 
+    let resource_hits = if is_super_admin {
+        let query_sql = format!(
+            r#"
+            SELECT
+                'resource' AS hit_type,
+                p.project_key || '-RES-' || pr.id AS hit_key,
+                pr.title,
+                {resource_search_context} AS context,
+                '/web/projects/' || p.project_key || '/resources/' || pr.id AS url,
+                pr.updated_at
+            FROM project_resources pr
+            JOIN projects p ON p.id = pr.project_id
+            WHERE {resource_search_match}
+            ORDER BY pr.updated_at DESC, pr.id DESC
+            LIMIT ?2
+            "#
+        );
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(AssertSqlSafe(
+            query_sql,
+        ))
+        .bind(&like)
+        .bind(resource_limit)
+        .fetch_all(pool)
+        .await?
+    } else {
+        let query_sql = format!(
+            r#"
+            SELECT
+                'resource' AS hit_type,
+                p.project_key || '-RES-' || pr.id AS hit_key,
+                pr.title,
+                {resource_search_context} AS context,
+                '/web/projects/' || p.project_key || '/resources/' || pr.id AS url,
+                pr.updated_at
+            FROM project_resources pr
+            JOIN projects p ON p.id = pr.project_id
+            JOIN project_members pm ON pm.project_id = p.id
+                AND pm.user_id = ?2
+            WHERE {resource_search_match}
+            ORDER BY pr.updated_at DESC, pr.id DESC
+            LIMIT ?3
+            "#
+        );
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(AssertSqlSafe(
+            query_sql,
+        ))
+        .bind(&like)
+        .bind(user_id)
+        .bind(resource_limit)
+        .fetch_all(pool)
+        .await?
+    };
+
     let mut hits = project_hits
         .into_iter()
         .chain(work_item_hits.into_iter())
+        .chain(resource_hits.into_iter())
         .map(
             |(hit_type, key, title, context, url, updated_at)| SearchHit {
                 hit_type,
@@ -4735,8 +4792,10 @@ pub async fn search_visible_paginated(
     }
 
     let like = format!("%{query}%");
+    let resource_search_match = resource_search_match_sql();
+    let resource_search_context = resource_search_context_sql();
     let total_items = if is_super_admin {
-        let (total_items,) = sqlx::query_as::<_, (i64,)>(
+        let query_sql = format!(
             r#"
             SELECT COUNT(*)
             FROM (
@@ -4761,17 +4820,24 @@ pub async fn search_visible_paginated(
                     OR p.name LIKE ?1
                   )
                   AND wi.deleted_at IS NULL
+                UNION ALL
+                SELECT pr.id AS sort_id
+                FROM project_resources pr
+                JOIN projects p ON p.id = pr.project_id
+                WHERE ?2
+                  AND {resource_search_match}
             ) hits
             "#,
-        )
-        .bind(&like)
-        .bind(include_projects)
-        .bind(include_work_items)
-        .fetch_one(pool)
-        .await?;
+        );
+        let (total_items,) = sqlx::query_as::<_, (i64,)>(AssertSqlSafe(query_sql))
+            .bind(&like)
+            .bind(include_projects)
+            .bind(include_work_items)
+            .fetch_one(pool)
+            .await?;
         total_items
     } else {
-        let (total_items,) = sqlx::query_as::<_, (i64,)>(
+        let query_sql = format!(
             r#"
             SELECT COUNT(*)
             FROM (
@@ -4800,20 +4866,29 @@ pub async fn search_visible_paginated(
                     OR p.name LIKE ?1
                   )
                   AND wi.deleted_at IS NULL
+                UNION ALL
+                SELECT pr.id AS sort_id
+                FROM project_resources pr
+                JOIN projects p ON p.id = pr.project_id
+                JOIN project_members pm ON pm.project_id = p.id
+                    AND pm.user_id = ?2
+                WHERE ?3
+                  AND {resource_search_match}
             ) hits
             "#,
-        )
-        .bind(&like)
-        .bind(user_id)
-        .bind(include_projects)
-        .bind(include_work_items)
-        .fetch_one(pool)
-        .await?;
+        );
+        let (total_items,) = sqlx::query_as::<_, (i64,)>(AssertSqlSafe(query_sql))
+            .bind(&like)
+            .bind(user_id)
+            .bind(include_projects)
+            .bind(include_work_items)
+            .fetch_one(pool)
+            .await?;
         total_items
     };
 
     let rows = if is_super_admin {
-        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+        let query_sql = format!(
             r#"
             SELECT hit_type, hit_key, title, context, url, updated_at
             FROM (
@@ -4850,11 +4925,26 @@ pub async fn search_visible_paginated(
                     OR p.name LIKE ?1
                   )
                   AND wi.deleted_at IS NULL
+                UNION ALL
+                SELECT
+                    'resource' AS hit_type,
+                    p.project_key || '-RES-' || pr.id AS hit_key,
+                    pr.title,
+                    {resource_search_context} AS context,
+                    '/web/projects/' || p.project_key || '/resources/' || pr.id AS url,
+                    pr.updated_at
+                FROM project_resources pr
+                JOIN projects p ON p.id = pr.project_id
+                WHERE ?2
+                  AND {resource_search_match}
             ) hits
             ORDER BY updated_at DESC, hit_key DESC
             LIMIT ?4 OFFSET ?5
             "#,
-        )
+        );
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(AssertSqlSafe(
+            query_sql,
+        ))
         .bind(&like)
         .bind(include_projects)
         .bind(include_work_items)
@@ -4863,7 +4953,7 @@ pub async fn search_visible_paginated(
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as::<_, (String, String, String, String, String, String)>(
+        let query_sql = format!(
             r#"
             SELECT hit_type, hit_key, title, context, url, updated_at
             FROM (
@@ -4904,11 +4994,28 @@ pub async fn search_visible_paginated(
                     OR p.name LIKE ?1
                   )
                   AND wi.deleted_at IS NULL
+                UNION ALL
+                SELECT
+                    'resource' AS hit_type,
+                    p.project_key || '-RES-' || pr.id AS hit_key,
+                    pr.title,
+                    {resource_search_context} AS context,
+                    '/web/projects/' || p.project_key || '/resources/' || pr.id AS url,
+                    pr.updated_at
+                FROM project_resources pr
+                JOIN projects p ON p.id = pr.project_id
+                JOIN project_members pm ON pm.project_id = p.id
+                    AND pm.user_id = ?2
+                WHERE ?3
+                  AND {resource_search_match}
             ) hits
             ORDER BY updated_at DESC, hit_key DESC
             LIMIT ?5 OFFSET ?6
             "#,
-        )
+        );
+        sqlx::query_as::<_, (String, String, String, String, String, String)>(AssertSqlSafe(
+            query_sql,
+        ))
         .bind(&like)
         .bind(user_id)
         .bind(include_projects)
@@ -4939,6 +5046,49 @@ pub async fn search_visible_paginated(
         per_page: pagination.per_page,
         total_items,
     })
+}
+
+fn resource_search_category_sql() -> &'static str {
+    r#"
+    CASE pr.category
+        WHEN 'integration' THEN '开发资料'
+        WHEN 'customer' THEN '客户资料'
+        WHEN 'meeting' THEN '会议纪要'
+        WHEN 'implementation' THEN '实施文档'
+        ELSE '其他'
+    END
+    "#
+}
+
+fn resource_search_match_sql() -> String {
+    format!(
+        r#"
+        (
+            p.project_key LIKE ?1
+            OR p.name LIKE ?1
+            OR (p.project_key || '-RES-' || pr.id) LIKE ?1
+            OR pr.title LIKE ?1
+            OR ({}) LIKE ?1
+            OR (pr.access_password_hash = '' AND pr.body LIKE ?1)
+        )
+        "#,
+        resource_search_category_sql()
+    )
+}
+
+fn resource_search_context_sql() -> String {
+    format!(
+        r#"
+        p.project_key
+        || ' · '
+        || p.name
+        || ' · '
+        || ({})
+        || CASE WHEN pr.status = 'archived' THEN ' · 已归档' ELSE '' END
+        || CASE WHEN pr.access_password_hash <> '' THEN ' · 受保护资料' ELSE '' END
+        "#,
+        resource_search_category_sql()
+    )
 }
 
 fn normalize_project_filter(filter: ProjectListFilter) -> AppResult<NormalizedProjectFilter> {

@@ -4458,6 +4458,53 @@ async fn web_search_finds_visible_projects_and_work_items() {
 }
 
 #[tokio::test]
+async fn web_search_finds_visible_project_resources() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project lookup should succeed")
+        .expect("YCE should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        initialized.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "支付上游联调参数".to_string(),
+            category: "integration".to_string(),
+            body: "yuance-search-demo".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_PLAIN.to_string(),
+            access_password: String::new(),
+        },
+    )
+    .await
+    .expect("resource should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/search?q=yuance-search-demo")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+
+    assert!(body.contains("资料库"));
+    assert!(body.contains("支付上游联调参数"));
+    assert!(body.contains(&format!("/web/projects/YCE/resources/{}", resource.id)));
+    assert!(body.contains(&format!("YCE-RES-{}", resource.id)));
+}
+
+#[tokio::test]
 async fn web_search_paginates_results_with_shared_controls() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

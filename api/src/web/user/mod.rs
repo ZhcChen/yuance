@@ -5988,8 +5988,7 @@ async fn work_item_list_page(
         .await?;
         let topbar_pending_count =
             total_project_option_pending_count(&context.topbar_project_options);
-        context.current_project =
-            Some(current_project_from_domain(selected, topbar_pending_count));
+        context.current_project = Some(current_project_from_domain(selected, topbar_pending_count));
         refresh_context_system_nav(pool, &mut context).await?;
     }
     let current_project = context.current_project.clone();
@@ -10405,6 +10404,7 @@ fn search_hit_type_label(hit_type: &str) -> &'static str {
         "requirement" => "需求",
         "task" => "任务",
         "bug" => "Bug",
+        "resource" => "资料库",
         _ => "结果",
     }
 }
@@ -10415,6 +10415,7 @@ fn search_hit_type_code(hit_type: &str) -> &'static str {
         "requirement" => "requirement",
         "task" => "task",
         "bug" => "bug",
+        "resource" => "resource",
         _ => "result",
     }
 }
@@ -10887,6 +10888,34 @@ fn sample_search_results(query: &str) -> Vec<SearchResult> {
                     url: format!("/web/work-items/{}", item.key),
                     updated_at: "示例数据".to_string(),
                 }),
+        )
+        .chain(
+            [
+                SearchResult {
+                    kind_code: "resource".to_string(),
+                    kind: "资料库".to_string(),
+                    key: "YCE-RES-1".to_string(),
+                    title: "上游接口配置".to_string(),
+                    context: "YCE · 元策 MVP · 开发资料 · 受保护资料".to_string(),
+                    url: "/web/projects/YCE/resources/1".to_string(),
+                    updated_at: "示例数据".to_string(),
+                },
+                SearchResult {
+                    kind_code: "resource".to_string(),
+                    kind: "资料库".to_string(),
+                    key: "OPS-RES-2".to_string(),
+                    title: "客户交付参数清单".to_string(),
+                    context: "OPS · 支付清结算 · 客户资料".to_string(),
+                    url: "/web/projects/OPS/resources/2".to_string(),
+                    updated_at: "示例数据".to_string(),
+                },
+            ]
+            .into_iter()
+            .filter(|item| {
+                item.key.contains(query)
+                    || item.title.contains(query)
+                    || item.context.contains(query)
+            }),
         )
         .collect()
 }
