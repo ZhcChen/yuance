@@ -122,6 +122,38 @@ html[data-theme="dark"] {
   display: none;
 }
 
+.main,
+.auth-body {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+.main::-webkit-scrollbar,
+.auth-body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+
+.main::-webkit-scrollbar-track,
+.auth-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main::-webkit-scrollbar-thumb,
+.auth-body::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 58%, transparent);
+  background-clip: padding-box;
+}
+
+.main::-webkit-scrollbar-thumb:hover,
+.auth-body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted-strong) 74%, transparent);
+  background-clip: padding-box;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -2741,6 +2773,13 @@ textarea:focus-visible {
   height: 100%;
   overflow: auto;
   padding: 18px;
+}
+
+@supports (overflow: overlay) {
+  .main,
+  .auth-body {
+    overflow-y: overlay;
+  }
 }
 
 .workspace-grid {
