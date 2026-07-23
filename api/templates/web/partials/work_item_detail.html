@@ -13,13 +13,16 @@
   <div class="work-item-description-body discussion-rich-body">{{ item.description_html|safe }}</div>
 </section>
 
-<section class="discussion-section" aria-labelledby="discussion-title">
+<section class="discussion-section" aria-labelledby="discussion-title" data-work-item-discussion data-item-key="{{ item.key }}">
   <div class="content-section-head discussion-heading">
     <div class="content-section-copy">
       <span class="section-kicker">协作记录</span>
       <h2 id="discussion-title">讨论</h2>
     </div>
-    <span class="discussion-count">{{ discussion_count }} 条讨论</span>
+    <div class="discussion-heading-meta">
+      <span class="discussion-count" data-discussion-count>{{ discussion_count }} 条讨论</span>
+      <span class="discussion-typing" data-discussion-typing hidden></span>
+    </div>
   </div>
 
   {% if can_manage_work_items && !item.is_deleted %}
@@ -45,6 +48,7 @@
   </form>
   {% endif %}
 
+  <div data-discussion-list-region>
   {% if has_comments %}
   <ol class="discussion-thread">
     {% for comment in comments %}
@@ -152,8 +156,10 @@
     <span>发表第一条内容，后续协作记录会完整保留在这里。</span>
   </div>
   {% endif %}
+  </div>
 </section>
 
+<div data-discussion-modals>
 {% if can_manage_work_items && !item.is_deleted %}
 {% for comment in comments %}
 {% if comment.can_manage && !comment.is_flow %}
@@ -189,3 +195,4 @@
 {% endif %}
 {% endfor %}
 {% endif %}
+</div>

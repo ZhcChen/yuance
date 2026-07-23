@@ -224,6 +224,17 @@ pub struct CommentPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkItemTypingUserPayload {
+    pub user_id: i64,
+    pub display_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemTypingSnapshotPayload {
+    pub users: Vec<WorkItemTypingUserPayload>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct NotificationPayload {
     pub id: i64,
     pub kind: String,
@@ -438,6 +449,107 @@ pub async fn topbar_events(
     ))
 }
 
+pub async fn work_item_events(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    let (user, _item, _project) =
+        require_api_work_item_context(&state, &headers, &item_key).await?;
+    let mut receiver = realtime::subscribe_work_item_realtime();
+    let snapshot = work_item_typing_snapshot_payload(realtime::work_item_typing_snapshot_for_user(
+        &item_key, user.id,
+    ));
+    let snapshot_json =
+        serde_json::to_string(&snapshot).unwrap_or_else(|_| r#"{"users":[]}"#.to_string());
+    let event_item_key = item_key.clone();
+    let user_id = user.id;
+    let stream = async_stream::stream! {
+        yield Result::<Event, Infallible>::Ok(
+            Event::default().event("typing").data(snapshot_json.clone())
+        );
+        loop {
+            match receiver.recv().await {
+                Ok(message) => {
+                    if message.item_key != event_item_key {
+                        continue;
+                    }
+                    if message.kind == "discussion-refresh" {
+                        yield Result::<Event, Infallible>::Ok(
+                            Event::default().event("discussion-refresh").data("refresh")
+                        );
+                        continue;
+                    }
+                    if message.kind == "typing" {
+                        let snapshot = work_item_typing_snapshot_payload(
+                            realtime::work_item_typing_snapshot_for_user(&event_item_key, user_id),
+                        );
+                        let payload = serde_json::to_string(&snapshot)
+                            .unwrap_or_else(|_| r#"{"users":[]}"#.to_string());
+                        yield Result::<Event, Infallible>::Ok(
+                            Event::default().event("typing").data(payload)
+                        );
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                    yield Result::<Event, Infallible>::Ok(
+                        Event::default().event("discussion-refresh").data("refresh")
+                    );
+                    let snapshot = work_item_typing_snapshot_payload(
+                        realtime::work_item_typing_snapshot_for_user(&event_item_key, user_id),
+                    );
+                    let payload = serde_json::to_string(&snapshot)
+                        .unwrap_or_else(|_| r#"{"users":[]}"#.to_string());
+                    yield Result::<Event, Infallible>::Ok(
+                        Event::default().event("typing").data(payload)
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+
+    Ok(Sse::new(stream).keep_alive(
+        KeepAlive::new()
+            .interval(std::time::Duration::from_secs(20))
+            .text("keep-alive"),
+    ))
+}
+
+pub async fn update_work_item_typing(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Json(payload): Json<WorkItemTypingRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+
+    realtime::update_work_item_typing_presence(
+        &item_key,
+        &payload.client_id,
+        user.id,
+        &principal_realtime_display_name(&principal),
+        payload.active,
+    );
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Debug, Serialize)]
 pub struct ProjectMemberPayload {
     pub user_id: i64,
@@ -603,6 +715,17 @@ impl ApiPrincipal {
     }
 }
 
+fn principal_realtime_display_name(principal: &ApiPrincipal) -> String {
+    let token_actor = principal.actor_display_name_snapshot();
+    if !token_actor.trim().is_empty() {
+        return token_actor;
+    }
+    if !principal.user.display_name.trim().is_empty() {
+        return principal.user.display_name.trim().to_string();
+    }
+    principal.user.username.trim().to_string()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct WorkItemQuery {
     #[serde(default)]
@@ -754,6 +877,13 @@ pub struct CreateCommentRequest {
     body_format: String,
     #[serde(default)]
     parent_comment_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemTypingRequest {
+    client_id: String,
+    #[serde(default = "default_true")]
+    active: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4386,6 +4516,20 @@ fn comment_payload(comment: projects::WorkItemCommentSummary) -> CommentPayload 
     }
 }
 
+fn work_item_typing_snapshot_payload(
+    users: Vec<realtime::WorkItemTypingUser>,
+) -> WorkItemTypingSnapshotPayload {
+    WorkItemTypingSnapshotPayload {
+        users: users
+            .into_iter()
+            .map(|user| WorkItemTypingUserPayload {
+                user_id: user.user_id,
+                display_name: user.display_name,
+            })
+            .collect(),
+    }
+}
+
 fn notification_payload(notification: notifications::NotificationSummary) -> NotificationPayload {
     NotificationPayload {
         id: notification.id,
@@ -4537,6 +4681,10 @@ fn storage_config_version_payload(
 
 fn default_project_status() -> String {
     "not_started".to_string()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_priority() -> String {

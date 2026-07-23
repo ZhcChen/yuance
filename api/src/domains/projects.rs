@@ -3980,6 +3980,7 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
     if let Some(recipient_user_id) = reply_recipient {
         realtime::publish_topbar_refresh_for_user(recipient_user_id);
     }
+    realtime::publish_work_item_discussion_refresh(item_key);
 
     get_work_item_comment(pool, work_item_id, comment_id).await
 }
@@ -4160,6 +4161,7 @@ pub async fn publish_work_item_comment_draft(
     if let Some(recipient_user_id) = reply_recipient {
         realtime::publish_topbar_refresh_for_user(recipient_user_id);
     }
+    realtime::publish_work_item_discussion_refresh(item_key);
 
     get_work_item_comment(pool, work_item_id, comment_id).await
 }
@@ -4420,6 +4422,7 @@ async fn update_work_item_comment_with_format_internal(
     .await?;
 
     tx.commit().await?;
+    realtime::publish_work_item_discussion_refresh(item_key);
 
     get_work_item_comment(pool, work_item_id, comment_id).await
 }

@@ -524,6 +524,14 @@ pub fn build_router(state: AppState) -> Router {
             post(web::api::handoff_work_item),
         )
         .route(
+            "/api/v1/work-items/{item_key}/events",
+            get(web::api::work_item_events),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/typing",
+            post(web::api::update_work_item_typing),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/comments",
             get(web::api::list_work_item_comments).post(web::api::create_work_item_comment),
         )

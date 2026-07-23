@@ -447,6 +447,37 @@ body {
   line-height: 18px;
 }
 
+.discussion-heading-meta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.discussion-typing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.discussion-typing::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 16%, transparent);
+  animation: discussion-typing-pulse 1600ms ease-in-out infinite;
+}
+
+.discussion-typing[hidden] {
+  display: none;
+}
+
 .work-item-description-body {
   min-height: 100px;
   padding: 18px 20px;
@@ -1561,6 +1592,18 @@ body {
 .discussion-flow-event > div > span {
   color: var(--muted);
   font-size: 11px;
+}
+
+@keyframes discussion-typing-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .flow-event-body {

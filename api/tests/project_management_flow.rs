@@ -8,7 +8,7 @@ use yuance_api::{
     domains::{
         auth, bootstrap, files, notifications, project_resources, projects, rbac, storage, users,
     },
-    platform::{config::Settings, db},
+    platform::{config::Settings, db, realtime},
     web::router::{AppState, build_router},
 };
 
@@ -2569,6 +2569,90 @@ async fn api_v1_topbar_events_returns_sse_stream_for_authenticated_user() {
             .get(header::CONTENT_TYPE)
             .and_then(|value| value.to_str().ok()),
         Some("text/event-stream")
+    );
+}
+
+#[tokio::test]
+async fn api_v1_work_item_events_returns_sse_stream_for_authenticated_user() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items/YCE-TASK-2/events")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("text/event-stream")
+    );
+}
+
+#[tokio::test]
+async fn api_v1_work_item_typing_updates_ephemeral_presence() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let active_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/typing")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"client_id":"browser-tab-1","active":true}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(active_response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        realtime::work_item_typing_snapshot_for_user("YCE-TASK-2", 0),
+        vec![realtime::WorkItemTypingUser {
+            user_id: admin.user_id,
+            display_name: "系统管理员".to_string(),
+        }]
+    );
+
+    let inactive_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/YCE-TASK-2/typing")
+                .header(header::COOKIE, admin.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"client_id":"browser-tab-1","active":false}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(inactive_response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        realtime::work_item_typing_snapshot_for_user("YCE-TASK-2", 0).is_empty(),
+        "typing presence should clear after inactive update"
     );
 }
 
