@@ -712,17 +712,23 @@
 
   function renderProjectSwitcherBadges(projectBadges) {
     var countsByProject = Object.create(null);
+    var totalPendingCount = 0;
     (Array.isArray(projectBadges) ? projectBadges : []).forEach(function (item) {
       var key = item && typeof item.project_key === "string"
         ? item.project_key.trim().toUpperCase()
         : "";
+      var pendingCount = Number(item && item.pending_count || 0);
+      if (pendingCount > 0) {
+        totalPendingCount += pendingCount;
+      }
       if (!key) {
         return;
       }
-      countsByProject[key] = Number(item.pending_count || 0);
+      countsByProject[key] = pendingCount;
     });
 
     document.querySelectorAll("[data-project-switcher]").forEach(function (switcher) {
+      switcher.dataset.totalPendingCount = String(totalPendingCount);
       switcher.querySelectorAll("[data-project-option]").forEach(function (option) {
         var projectKey = String(option.getAttribute("data-project-key") || "").trim().toUpperCase();
         var pendingCount = countsByProject[projectKey] || 0;
@@ -734,20 +740,10 @@
         );
       });
 
-      var hiddenProjectInput = switcher.querySelector("input[name='project_key']");
-      var currentKey = String(hiddenProjectInput && hiddenProjectInput.value || "")
-        .trim()
-        .toUpperCase();
-      if (!currentKey) {
-        var activeOption = switcher.querySelector("[data-project-option].active");
-        currentKey = String(activeOption && activeOption.getAttribute("data-project-key") || "")
-          .trim()
-          .toUpperCase();
-      }
       syncProjectSwitcherBadge(
         switcher.querySelector("[data-current-project-badge]"),
-        countsByProject[currentKey] || 0,
-        "当前项目待处理"
+        totalPendingCount,
+        "全部项目待处理"
       );
     });
   }
@@ -760,8 +756,6 @@
     var currentName = current && typeof current.name === "string"
       ? current.name.trim()
       : "";
-    var pendingCount = current ? Number(current.pending_count || 0) : 0;
-
     document.querySelectorAll("[data-topbar-project-link]").forEach(function (link) {
       link.href = currentProjectDetailUrl(currentKey);
     });
@@ -781,8 +775,8 @@
       });
       syncProjectSwitcherBadge(
         switcher.querySelector("[data-current-project-badge]"),
-        pendingCount,
-        "当前项目待处理"
+        Number(switcher.dataset.totalPendingCount || 0),
+        "全部项目待处理"
       );
     });
   }
@@ -8288,6 +8282,7 @@
       promptAppUpdateIfNeeded: promptAppUpdateIfNeeded,
       openAppUpdateModal: openAppUpdateModal,
       startTopbarRealtime: startTopbarRealtime,
+      renderTopbarStatus: renderTopbarStatus,
       mediaOrientation: mediaOrientation,
       preferredImageViewerFitWidthScale: preferredImageViewerFitWidthScale,
       filterSelectOptions: filterSelectOptions,

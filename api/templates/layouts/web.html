@@ -93,7 +93,7 @@
             <span class="project-switcher-badge project-switcher-trigger-badge" data-current-project-badge hidden aria-hidden="true"></span>
             {% when Some with (project) %}
             <span class="project-switcher-current">{{ project.name }}</span>
-            <span class="project-switcher-badge project-switcher-trigger-badge" data-current-project-badge {% if project.assigned_pending_count <= 0 %}hidden aria-hidden="true"{% else %}aria-label="当前项目待处理 {{ project.assigned_pending_count }}"{% endif %}>{% if project.assigned_pending_count > 99 %}99{% else %}{{ project.assigned_pending_count }}{% endif %}</span>
+            <span class="project-switcher-badge project-switcher-trigger-badge" data-current-project-badge {% if project.topbar_pending_count <= 0 %}hidden aria-hidden="true"{% else %}aria-label="全部项目待处理 {{ project.topbar_pending_count }}"{% endif %}>{% if project.topbar_pending_count > 99 %}99{% else %}{{ project.topbar_pending_count }}{% endif %}</span>
             {% endmatch %}
             </span>
             <span class="account-caret" aria-hidden="true"></span>

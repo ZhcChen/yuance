@@ -2346,7 +2346,7 @@ async fn web_project_switcher_shows_assigned_pending_badges_for_current_user() {
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
-    assert!(body.contains(r#"data-current-project-badge aria-label="当前项目待处理 2">2</span>"#));
+    assert!(body.contains(r#"data-current-project-badge aria-label="全部项目待处理 3">3</span>"#));
     assert!(body.contains(
         r#"data-project-key="YCE" data-project-name="元策 MVP" data-project-pending-count="2""#
     ));

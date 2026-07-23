@@ -110,7 +110,7 @@ struct ProjectOption {
 struct CurrentProjectView {
     key: String,
     name: String,
-    assigned_pending_count: i64,
+    topbar_pending_count: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -2485,13 +2485,10 @@ pub async fn project_detail_page(
         &project_key,
     )
     .await?;
-    let assigned_pending_count = project_option_pending_count(
-        &context.topbar_project_options,
-        &selected_project.project_key,
-    );
+    let topbar_pending_count = total_project_option_pending_count(&context.topbar_project_options);
     context.current_project = Some(current_project_from_domain(
         selected_project,
-        assigned_pending_count,
+        topbar_pending_count,
     ));
     refresh_context_system_nav(pool, &mut context).await?;
 
@@ -2645,12 +2642,8 @@ pub async fn project_personal_analysis_page(
         &project_key,
     )
     .await?;
-    let assigned_pending_count =
-        project_option_pending_count(&context.topbar_project_options, &selected.project_key);
-    context.current_project = Some(current_project_from_domain(
-        selected,
-        assigned_pending_count,
-    ));
+    let topbar_pending_count = total_project_option_pending_count(&context.topbar_project_options);
+    context.current_project = Some(current_project_from_domain(selected, topbar_pending_count));
     refresh_context_system_nav(pool, &mut context).await?;
 
     let username = sqlx::query_scalar::<_, String>("SELECT username FROM users WHERE id = ?1")
@@ -3309,13 +3302,10 @@ pub async fn project_resource_detail_page(
         &project_key,
     )
     .await?;
-    let assigned_pending_count = project_option_pending_count(
-        &context.topbar_project_options,
-        &selected_project.project_key,
-    );
+    let topbar_pending_count = total_project_option_pending_count(&context.topbar_project_options);
     context.current_project = Some(current_project_from_domain(
         selected_project,
-        assigned_pending_count,
+        topbar_pending_count,
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
@@ -3399,13 +3389,10 @@ pub async fn project_resource_unlock(
         &project_key,
     )
     .await?;
-    let assigned_pending_count = project_option_pending_count(
-        &context.topbar_project_options,
-        &selected_project.project_key,
-    );
+    let topbar_pending_count = total_project_option_pending_count(&context.topbar_project_options);
     context.current_project = Some(current_project_from_domain(
         selected_project,
-        assigned_pending_count,
+        topbar_pending_count,
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
@@ -5999,12 +5986,10 @@ async fn work_item_list_page(
             &requested_project_key,
         )
         .await?;
-        let assigned_pending_count =
-            project_option_pending_count(&context.topbar_project_options, &selected.project_key);
-        context.current_project = Some(current_project_from_domain(
-            selected,
-            assigned_pending_count,
-        ));
+        let topbar_pending_count =
+            total_project_option_pending_count(&context.topbar_project_options);
+        context.current_project =
+            Some(current_project_from_domain(selected, topbar_pending_count));
         refresh_context_system_nav(pool, &mut context).await?;
     }
     let current_project = context.current_project.clone();
@@ -6539,12 +6524,8 @@ async fn build_project_context(
         projects::get_or_select_current_project_for_user(pool, user_id, can_access_all_projects)
             .await?
             .map(|project| {
-                let assigned_pending_count = project_options
-                    .iter()
-                    .find(|option| option.key == project.project_key)
-                    .map(|option| option.assigned_pending_count)
-                    .unwrap_or_default();
-                current_project_from_domain(project, assigned_pending_count)
+                let topbar_pending_count = total_project_option_pending_count(&project_options);
+                current_project_from_domain(project, topbar_pending_count)
             });
 
     Ok((current_project, project_options))
@@ -7238,21 +7219,20 @@ fn project_option_from_summary(
 
 fn current_project_from_domain(
     project: projects::CurrentProject,
-    assigned_pending_count: i64,
+    topbar_pending_count: i64,
 ) -> CurrentProjectView {
     CurrentProjectView {
         key: project.project_key,
         name: project.name,
-        assigned_pending_count,
+        topbar_pending_count,
     }
 }
 
-fn project_option_pending_count(project_options: &[ProjectOption], project_key: &str) -> i64 {
+fn total_project_option_pending_count(project_options: &[ProjectOption]) -> i64 {
     project_options
         .iter()
-        .find(|option| option.key.eq_ignore_ascii_case(project_key))
-        .map(|option| option.assigned_pending_count)
-        .unwrap_or_default()
+        .map(|option| option.assigned_pending_count.max(0))
+        .sum()
 }
 
 fn project_detail_from_domain(project: projects::ProjectDetail) -> ProjectDetailView {
