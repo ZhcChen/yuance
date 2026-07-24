@@ -82,6 +82,15 @@ pub struct ProjectMemberDetail {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserProjectMembershipSummary {
+    pub project_id: i64,
+    pub project_key: String,
+    pub project_name: String,
+    pub project_status: String,
+    pub member_role: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectCycleDetail {
     pub id: i64,
     pub project_id: i64,
@@ -571,6 +580,44 @@ pub async fn list_project_summaries_for_user_paginated(
         per_page: pagination.per_page,
         total_items,
     })
+}
+
+pub async fn list_user_project_memberships(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<Vec<UserProjectMembershipSummary>> {
+    let rows = sqlx::query_as::<_, (i64, String, String, String, String)>(
+        r#"
+        SELECT
+            p.id,
+            p.project_key,
+            p.name,
+            p.status,
+            pm.member_role
+        FROM project_members pm
+        JOIN projects p ON p.id = pm.project_id
+        WHERE pm.user_id = ?1
+        ORDER BY p.updated_at DESC, p.id DESC
+        "#,
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(project_id, project_key, project_name, project_status, member_role)| {
+                UserProjectMembershipSummary {
+                    project_id,
+                    project_key,
+                    project_name,
+                    project_status,
+                    member_role,
+                }
+            },
+        )
+        .collect())
 }
 
 pub async fn get_current_project_for_user(

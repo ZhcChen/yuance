@@ -161,11 +161,40 @@
       <input type="hidden" name="per_page" value="{{ pagination.per_page }}" data-user-project-per-page>
 
       <section class="user-project-section">
+        <label>
+          搜索当前项目
+          <input
+            type="search"
+            placeholder="搜索项目名称、编码、角色或状态"
+            autocomplete="off"
+            data-user-project-current-search
+          >
+        </label>
         <div class="member-picker-head">
           <span>当前已加入项目</span>
-          <strong data-user-project-current-count>0 个项目</strong>
+          <div class="user-project-current-toolbar">
+            <strong data-user-project-current-count>0 个项目</strong>
+            <span class="user-project-current-selected" data-user-project-current-selected>已选择 0 个</span>
+            <form
+              class="inline-form"
+              method="post"
+              action="/web/system/users"
+              data-user-project-current-batch-form
+              data-confirm-submit-form
+              data-confirm-title="批量移除项目成员"
+              data-confirm-message="确认移除所选项目成员？"
+              data-confirm-action="批量移除"
+            >
+              <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+              <input type="hidden" name="page" value="{{ pagination.page }}" data-user-project-current-page>
+              <input type="hidden" name="per_page" value="{{ pagination.per_page }}" data-user-project-current-per-page>
+              <div hidden data-user-project-current-batch-inputs></div>
+              <button class="btn btn-sm btn-secondary" type="submit" data-user-project-current-batch-submit disabled>批量移除</button>
+            </form>
+          </div>
         </div>
         <div class="user-project-current-list" data-user-project-current-list></div>
+        <div class="user-project-current-empty" data-user-project-current-filter-empty hidden>没有匹配项目</div>
       </section>
 
       <div class="member-picker">

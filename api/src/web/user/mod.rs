@@ -476,8 +476,11 @@ struct UserAssignedProjectView {
     name: String,
     status: String,
     status_tone: &'static str,
+    role_code: String,
+    role: String,
     active_assigned_count: i64,
     can_remove: bool,
+    can_update_role: bool,
     remove_block_reason: String,
 }
 
@@ -1429,6 +1432,14 @@ struct ParsedSystemUserProjectAssignForm {
     member_role: String,
 }
 
+#[derive(Debug)]
+struct ParsedSystemUserProjectRemoveForm {
+    csrf_token: String,
+    page: Option<i64>,
+    per_page: Option<i64>,
+    project_keys: Vec<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SystemUserProjectRemoveForm {
     #[serde(default, rename = "_csrf")]
@@ -1437,6 +1448,17 @@ pub struct SystemUserProjectRemoveForm {
     page: Option<i64>,
     #[serde(default)]
     per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemUserProjectRoleForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+    member_role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5721,7 +5743,8 @@ pub async fn system_users_page(
     let total_items = users::count_users(pool).await?;
     let total_pages = total_pages(total_items, requested_pagination.per_page);
     let page_number = requested_pagination.page.min(total_pages);
-    let user_summaries = users::list_users_page(pool, page_number, requested_pagination.per_page).await?;
+    let user_summaries =
+        users::list_users_page(pool, page_number, requested_pagination.per_page).await?;
     let pagination = system_users_pagination_view(
         page_number,
         requested_pagination.per_page,
@@ -5959,15 +5982,7 @@ pub async fn system_user_project_assign(
         ));
     }
 
-    let mut seen_project_keys = HashSet::new();
-    let project_keys = form
-        .project_keys
-        .iter()
-        .map(|project_key| project_key.trim())
-        .filter(|project_key| !project_key.is_empty())
-        .filter(|project_key| seen_project_keys.insert((*project_key).to_string()))
-        .map(str::to_string)
-        .collect::<Vec<_>>();
+    let project_keys = normalize_non_empty_unique_strings(&form.project_keys);
     if project_keys.is_empty() {
         return Err(AppError::BadRequest(
             "请至少选择一个要分配的项目".to_string(),
@@ -5999,9 +6014,7 @@ pub async fn system_user_project_assign(
         "user.project.assign",
         "user",
         &username,
-        &format!(
-            r#"{{"project_keys":{project_keys_json},"member_role":{member_role_json}}}"#
-        ),
+        &format!(r#"{{"project_keys":{project_keys_json},"member_role":{member_role_json}}}"#),
     )
     .await?;
 
@@ -6045,6 +6058,132 @@ pub async fn system_user_project_remove(
         "user",
         &username,
         &format!(r#"{{"project_key":{project_key_json}}}"#),
+    )
+    .await?;
+
+    Ok(Redirect::to(&redirect_url).into_response())
+}
+
+pub async fn system_user_project_remove_batch(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_system_user_project_remove_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match system_context_or_redirect(&state, &headers, "system.users.manage").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let pool = state.pool()?;
+    if !can_manage_system_user_projects(pool, context.user_id).await? {
+        return Err(AppError::Forbidden(
+            "需要全项目管理权限才能直接移除项目成员".to_string(),
+        ));
+    }
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
+    let user = users::get_user_summary_by_username(pool, &username)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("用户不存在".to_string()))?;
+    if user.is_super_admin {
+        return Err(AppError::BadRequest(
+            "超级管理员默认拥有全项目访问，不能通过这里移除项目".to_string(),
+        ));
+    }
+
+    let project_keys = normalize_non_empty_unique_strings(&form.project_keys);
+    if project_keys.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要移除的项目".to_string(),
+        ));
+    }
+
+    let assigned_projects = load_user_assigned_projects(pool, user.id).await?;
+    let assigned_project_map = assigned_projects
+        .into_iter()
+        .map(|project| (project.key.clone(), project))
+        .collect::<HashMap<_, _>>();
+    for project_key in &project_keys {
+        let Some(project) = assigned_project_map.get(project_key) else {
+            return Err(AppError::BadRequest(format!(
+                "用户当前未加入项目 {project_key}"
+            )));
+        };
+        if !project.can_remove {
+            let reason = if project.remove_block_reason.is_empty() {
+                "该项目当前不允许移除成员".to_string()
+            } else {
+                project.remove_block_reason.clone()
+            };
+            return Err(AppError::BadRequest(reason));
+        }
+    }
+
+    for project_key in &project_keys {
+        projects::remove_project_member(pool, context.user_id, project_key, &username).await?;
+    }
+
+    let project_keys_json =
+        serde_json::to_string(&project_keys).unwrap_or_else(|_| "[]".to_string());
+    audit::record(
+        pool,
+        Some(context.user_id),
+        "user.project.remove.batch",
+        "user",
+        &username,
+        &format!(r#"{{"project_keys":{project_keys_json}}}"#),
+    )
+    .await?;
+
+    Ok(Redirect::to(&redirect_url).into_response())
+}
+
+pub async fn system_user_project_role_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((username, project_key)): Path<(String, String)>,
+    Form(form): Form<SystemUserProjectRoleForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match system_context_or_redirect(&state, &headers, "system.users.manage").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let pool = state.pool()?;
+    if !can_manage_system_user_projects(pool, context.user_id).await? {
+        return Err(AppError::Forbidden(
+            "需要全项目管理权限才能直接调整项目成员角色".to_string(),
+        ));
+    }
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
+    let user = users::get_user_summary_by_username(pool, &username)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("用户不存在".to_string()))?;
+    if user.is_super_admin {
+        return Err(AppError::BadRequest(
+            "超级管理员默认拥有全项目访问，无需在项目内调整角色".to_string(),
+        ));
+    }
+
+    let member = projects::update_project_member_role(
+        pool,
+        context.user_id,
+        &project_key,
+        &username,
+        &form.member_role,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(context.user_id),
+        "user.project.role.update",
+        "user",
+        &username,
+        &format!(
+            r#"{{"project_key":"{}","member_role":"{}"}}"#,
+            project_key, member.member_role
+        ),
     )
     .await?;
 
@@ -7985,7 +8124,9 @@ fn parse_project_member_form(form: &[u8]) -> AppResult<ParsedProjectMemberForm> 
     })
 }
 
-fn parse_system_user_project_assign_form(form: &[u8]) -> AppResult<ParsedSystemUserProjectAssignForm> {
+fn parse_system_user_project_assign_form(
+    form: &[u8],
+) -> AppResult<ParsedSystemUserProjectAssignForm> {
     let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
         .map_err(|error| AppError::BadRequest(format!("项目分配表单解析失败：{error}")))?;
     let mut csrf_token = String::new();
@@ -8016,6 +8157,36 @@ fn parse_system_user_project_assign_form(form: &[u8]) -> AppResult<ParsedSystemU
         per_page,
         project_keys,
         member_role,
+    })
+}
+
+fn parse_system_user_project_remove_form(
+    form: &[u8],
+) -> AppResult<ParsedSystemUserProjectRemoveForm> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("项目移除表单解析失败：{error}")))?;
+    let mut csrf_token = String::new();
+    let mut page = None;
+    let mut per_page = None;
+    let mut project_keys = Vec::new();
+    for (key, value) in pairs {
+        match key.as_str() {
+            csrf::CSRF_FIELD_NAME => csrf_token = value,
+            "page" => {
+                page = value.trim().parse::<i64>().ok();
+            }
+            "per_page" => {
+                per_page = value.trim().parse::<i64>().ok();
+            }
+            "project_key" => project_keys.push(value),
+            _ => {}
+        }
+    }
+    Ok(ParsedSystemUserProjectRemoveForm {
+        csrf_token,
+        page,
+        per_page,
+        project_keys,
     })
 }
 
@@ -8739,12 +8910,13 @@ async fn load_user_assigned_projects(
     pool: &SqlitePool,
     user_id: i64,
 ) -> AppResult<Vec<UserAssignedProjectView>> {
-    let active_assigned_counts = projects::count_pending_assigned_work_items_by_project(pool, user_id, false)
-        .await?
-        .into_iter()
-        .map(|entry| (entry.project_key, entry.total))
-        .collect::<HashMap<_, _>>();
-    Ok(projects::list_project_summaries_for_user(pool, user_id, false)
+    let active_assigned_counts =
+        projects::count_pending_assigned_work_items_by_project(pool, user_id, false)
+            .await?
+            .into_iter()
+            .map(|entry| (entry.project_key, entry.total))
+            .collect::<HashMap<_, _>>();
+    Ok(projects::list_user_project_memberships(pool, user_id)
         .await?
         .into_iter()
         .map(|project| {
@@ -8769,12 +8941,17 @@ async fn load_assignable_user_project_options(
 }
 
 fn user_assigned_project_from_summary(
-    project: projects::ProjectSummary,
+    project: projects::UserProjectMembershipSummary,
     active_assigned_count: i64,
 ) -> UserAssignedProjectView {
-    let (status, status_tone) = project_status_label(&project.status);
-    let can_remove = active_assigned_count <= 0;
-    let remove_block_reason = if can_remove {
+    let (status, status_tone) = project_status_label(&project.project_status);
+    let role_code = project.member_role;
+    let role = project_member_role_label(&role_code).to_string();
+    let can_update_role = role_code != "owner";
+    let can_remove = can_update_role && active_assigned_count <= 0;
+    let remove_block_reason = if role_code == "owner" {
+        "该成员当前是项目负责人，请先在项目详情中转移负责人".to_string()
+    } else if can_remove {
         String::new()
     } else {
         format!(
@@ -8784,13 +8961,27 @@ fn user_assigned_project_from_summary(
     };
     UserAssignedProjectView {
         key: project.project_key,
-        name: project.name,
+        name: project.project_name,
         status: status.to_string(),
         status_tone,
+        role_code,
+        role,
         active_assigned_count,
         can_remove,
+        can_update_role,
         remove_block_reason,
     }
+}
+
+fn normalize_non_empty_unique_strings(values: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .filter(|value| seen.insert((*value).to_string()))
+        .map(str::to_string)
+        .collect()
 }
 
 fn user_project_assignment_option_from_summary(
@@ -8807,7 +8998,10 @@ fn user_project_assignment_option_from_summary(
     }
 }
 
-fn user_row_from_summary(user: users::UserSummary, assigned_projects: Vec<UserAssignedProjectView>) -> UserRow {
+fn user_row_from_summary(
+    user: users::UserSummary,
+    assigned_projects: Vec<UserAssignedProjectView>,
+) -> UserRow {
     let (status, status_tone) = user_status_label(&user.status);
     let assigned_projects_json =
         serde_json::to_string(&assigned_projects).unwrap_or_else(|_| "[]".to_string());

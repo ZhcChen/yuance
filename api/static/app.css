@@ -4484,6 +4484,20 @@ code {
   gap: 8px;
 }
 
+.user-project-current-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.user-project-current-selected {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
 .user-project-current-card {
   min-width: 0;
   display: grid;
@@ -4492,6 +4506,13 @@ code {
   border: 1px solid var(--line);
   border-radius: 14px;
   background: var(--panel-soft);
+}
+
+.user-project-current-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .user-project-current-meta {
@@ -4516,9 +4537,44 @@ code {
   white-space: nowrap;
 }
 
-.user-project-current-footer {
+.user-project-current-checkbox {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+}
+
+.user-project-current-badges {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.user-project-current-role-form {
+  display: grid;
+  gap: 8px;
+}
+
+.user-project-current-role-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-project-current-role-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.user-project-current-footer {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -4527,6 +4583,7 @@ code {
   color: var(--muted);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.5;
 }
 
 .user-project-current-actions {

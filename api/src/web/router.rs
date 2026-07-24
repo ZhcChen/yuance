@@ -279,8 +279,16 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(web::user::system_user_project_assign),
         )
         .route(
+            "/web/system/users/{username}/projects/remove",
+            axum::routing::post(web::user::system_user_project_remove_batch),
+        )
+        .route(
             "/web/system/users/{username}/projects/{project_key}/remove",
             axum::routing::post(web::user::system_user_project_remove),
+        )
+        .route(
+            "/web/system/users/{username}/projects/{project_key}/role",
+            axum::routing::post(web::user::system_user_project_role_update),
         )
         .route(
             "/web/system/roles",

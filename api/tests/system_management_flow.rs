@@ -122,6 +122,9 @@ async fn system_users_page_renders_project_assignment_controls() {
     assert!(body.contains(r#"id="user-project-assign-modal""#));
     assert!(modal_body.contains(r#"data-user-project-assign-form"#));
     assert!(body.contains("已加入项目"));
+    assert!(modal_body.contains(r#"data-user-project-current-search"#));
+    assert!(modal_body.contains(r#"data-user-project-current-batch-form"#));
+    assert!(modal_body.contains("批量移除"));
     assert!(modal_body.contains("可分配项目"));
     assert!(modal_body.contains(&available_project.project_key));
     assert!(!modal_body.contains(&paused_project.name));
@@ -422,12 +425,16 @@ async fn admin_can_assign_multiple_projects_from_system_users_page() {
         .await
         .expect("assigned projects should load");
     assert_eq!(assigned.len(), 2);
-    assert!(assigned
-        .iter()
-        .any(|project| project.project_key == project_a.project_key));
-    assert!(assigned
-        .iter()
-        .any(|project| project.project_key == project_b.project_key));
+    assert!(
+        assigned
+            .iter()
+            .any(|project| project.project_key == project_a.project_key)
+    );
+    assert!(
+        assigned
+            .iter()
+            .any(|project| project.project_key == project_b.project_key)
+    );
 
     let detail_a = projects::get_project_detail(&pool, &project_a.project_key)
         .await
@@ -443,12 +450,16 @@ async fn admin_can_assign_multiple_projects_from_system_users_page() {
     let members_b = projects::list_project_members(&pool, detail_b.id)
         .await
         .expect("project b members should load");
-    assert!(members_a
-        .iter()
-        .any(|member| member.username == "member1" && member.member_role == "viewer"));
-    assert!(members_b
-        .iter()
-        .any(|member| member.username == "member1" && member.member_role == "viewer"));
+    assert!(
+        members_a
+            .iter()
+            .any(|member| member.username == "member1" && member.member_role == "viewer")
+    );
+    assert!(
+        members_b
+            .iter()
+            .any(|member| member.username == "member1" && member.member_role == "viewer")
+    );
 }
 
 #[tokio::test]
@@ -506,6 +517,189 @@ async fn admin_can_remove_project_from_system_users_page() {
         !projects::is_project_member(&pool, project.id, member_user_id)
             .await
             .expect("membership should load")
+    );
+}
+
+#[tokio::test]
+async fn admin_can_batch_remove_projects_from_system_users_page() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let project_a = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "批量移除项目 A".to_string(),
+            description: "系统用户页批量移除 A".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project a should create");
+    let project_b = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "批量移除项目 B".to_string(),
+            description: "系统用户页批量移除 B".to_string(),
+            status: "acceptance".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project b should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project_a.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project a");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project_b.project_key,
+        "member1",
+        "viewer",
+    )
+    .await
+    .expect("member should join project b");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/member1/projects/remove")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(&format!(
+                    "project_key={}&project_key={}&page=3&per_page=20",
+                    project_a.project_key, project_b.project_key
+                ))))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=3&per_page=20"
+    );
+    assert!(
+        !projects::is_project_member(&pool, project_a.id, member_user_id)
+            .await
+            .expect("project a membership should load")
+    );
+    assert!(
+        !projects::is_project_member(&pool, project_b.id, member_user_id)
+            .await
+            .expect("project b membership should load")
+    );
+}
+
+#[tokio::test]
+async fn system_user_project_batch_remove_blocks_when_any_project_has_active_work_items() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let project_a = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "批量阻塞项目 A".to_string(),
+            description: "系统用户页批量移除阻塞 A".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project a should create");
+    let project_b = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "批量阻塞项目 B".to_string(),
+            description: "系统用户页批量移除阻塞 B".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project b should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project_a.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project a");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project_b.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project b");
+    projects::create_work_item(
+        &pool,
+        member_user_id,
+        projects::CreateWorkItemInput {
+            project_key: project_b.project_key.clone(),
+            item_type: "task".to_string(),
+            title: "阻塞批量移除的任务".to_string(),
+            description: String::new(),
+            priority: "P2".to_string(),
+            assignee_username: "member1".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("blocking work item should create");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/member1/projects/remove")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(&format!(
+                    "project_key={}&project_key={}",
+                    project_a.project_key, project_b.project_key
+                ))))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        projects::is_project_member(&pool, project_a.id, member_user_id)
+            .await
+            .expect("project a membership should load")
+    );
+    assert!(
+        projects::is_project_member(&pool, project_b.id, member_user_id)
+            .await
+            .expect("project b membership should load")
     );
 }
 
@@ -578,6 +772,67 @@ async fn system_user_project_remove_blocks_when_member_still_has_active_work_ite
         projects::is_project_member(&pool, project.id, member_user_id)
             .await
             .expect("membership should load")
+    );
+}
+
+#[tokio::test]
+async fn admin_can_update_project_role_from_system_users_page() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "角色调整项目".to_string(),
+            description: "系统用户页角色调整".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/system/users/member1/projects/{}/role",
+                    project.project_key
+                ))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(
+                    "member_role=maintainer&page=2&per_page=10",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=2"
+    );
+    assert_eq!(
+        projects::project_member_role(&pool, project.id, member_user_id)
+            .await
+            .expect("member role should load"),
+        Some("maintainer".to_string())
     );
 }
 
