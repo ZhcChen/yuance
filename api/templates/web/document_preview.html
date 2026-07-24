@@ -366,6 +366,50 @@
       background: #fff;
     }
 
+    .pdf-page-surface {
+      display: grid;
+      place-items: center;
+      min-width: 120px;
+      min-height: 160px;
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: inset 0 0 0 1px rgb(226 232 240 / 96%);
+      overflow: hidden;
+    }
+
+    .pdf-page.is-loading .pdf-page-surface,
+    .pdf-thumb.is-loading .pdf-thumb-surface {
+      background:
+        linear-gradient(135deg, rgb(239 246 255 / 88%), rgb(248 250 252 / 98%));
+    }
+
+    .pdf-page-placeholder,
+    .pdf-thumb-placeholder {
+      display: grid;
+      place-items: center;
+      gap: 8px;
+      width: 100%;
+      height: 100%;
+      padding: 16px 12px;
+      text-align: center;
+      color: #64748b;
+    }
+
+    .pdf-page-placeholder-copy,
+    .pdf-thumb-placeholder-copy {
+      color: #334155;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 18px;
+      letter-spacing: 0.02em;
+    }
+
+    .pdf-page-placeholder-hint,
+    .pdf-thumb-placeholder-hint {
+      font-size: 11px;
+      line-height: 17px;
+    }
+
     .pdf-page-label {
       margin-top: 8px;
       color: #475569;
@@ -563,6 +607,7 @@
     .pdf-thumb-surface {
       display: grid;
       place-items: center;
+      min-height: 96px;
       padding: 8px;
       border-radius: 14px;
       background: rgb(255 255 255 / 96%);

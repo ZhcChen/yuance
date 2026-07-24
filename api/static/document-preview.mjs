@@ -4,6 +4,15 @@ const MAX_ZOOM_FACTOR = 2.4;
 const MIN_ZOOM_FACTOR = 0.7;
 const PAGE_MARKER_RATIO = 0.32;
 const THUMBNAIL_WIDTH = 156;
+const MAX_RENDER_OUTPUT_SCALE = 1.8;
+const MAX_THUMB_OUTPUT_SCALE = 1.2;
+const PAGE_RENDER_OVERSCAN_FACTOR = 1.2;
+const PAGE_UNLOAD_OVERSCAN_FACTOR = 2.6;
+const PAGE_RENDER_CONCURRENCY = 2;
+const THUMBNAIL_RENDER_CONCURRENCY = 1;
+const THUMBNAIL_QUEUE_DELAY_MS = 36;
+const PAGE_CARD_PADDING = 24;
+const PAGE_LABEL_SPACE = 26;
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -12,6 +21,15 @@ export function clamp(value, min, max) {
 export function computeFitWidthScale(viewportWidth, containerWidth) {
   const availableWidth = Math.max(240, Number(containerWidth || 0) - FIT_WIDTH_PADDING);
   return Math.max(MIN_FIT_SCALE, availableWidth / Math.max(1, Number(viewportWidth || 1)));
+}
+
+export function computeScaledPageSize(baseWidth, baseHeight, containerWidth, zoomFactor) {
+  const scale = computeFitWidthScale(baseWidth, containerWidth) * Number(zoomFactor || 1);
+  return {
+    scale,
+    width: Math.max(120, Math.round(baseWidth * scale)),
+    height: Math.max(160, Math.round(baseHeight * scale)),
+  };
 }
 
 export function pickCurrentPage(metrics, scrollTop, viewportHeight) {
@@ -36,6 +54,36 @@ export function pickCurrentPage(metrics, scrollTop, viewportHeight) {
     }
   }
   return closestPage;
+}
+
+export function collectPagesInRange(metrics, scrollTop, viewportHeight, overscanPx) {
+  if (!Array.isArray(metrics) || metrics.length === 0) {
+    return [];
+  }
+  const rangeTop = Math.max(0, Number(scrollTop || 0) - Number(overscanPx || 0));
+  const rangeBottom = Number(scrollTop || 0) + Number(viewportHeight || 0) + Number(overscanPx || 0);
+  const pages = [];
+  for (const metric of metrics) {
+    const top = Number(metric.top || 0);
+    const bottom = top + Number(metric.height || 0);
+    if (bottom >= rangeTop && top <= rangeBottom) {
+      pages.push(metric.pageNumber);
+    }
+  }
+  if (pages.length > 0) {
+    return pages;
+  }
+  return [pickCurrentPage(metrics, scrollTop, viewportHeight)];
+}
+
+export function sortPageNumbersByDistance(pageNumbers, currentPage) {
+  return [...pageNumbers].sort((left, right) => {
+    const distanceDiff = Math.abs(left - currentPage) - Math.abs(right - currentPage);
+    if (distanceDiff !== 0) {
+      return distanceDiff;
+    }
+    return left - right;
+  });
 }
 
 export function findActiveOutlineEntry(entries, currentPage) {
@@ -121,10 +169,36 @@ function createCanvas(doc) {
   return doc.createElement("canvas");
 }
 
+function createPagePlaceholder(doc, pageNumber, hint) {
+  const shell = doc.createElement("div");
+  shell.className = "pdf-page-placeholder";
+  const title = doc.createElement("span");
+  title.className = "pdf-page-placeholder-copy";
+  title.textContent = "第 " + pageNumber + " 页";
+  const copy = doc.createElement("span");
+  copy.className = "pdf-page-placeholder-hint";
+  copy.textContent = hint;
+  shell.append(title, copy);
+  return shell;
+}
+
+function createThumbnailPlaceholder(doc, pageNumber, hint) {
+  const shell = doc.createElement("div");
+  shell.className = "pdf-thumb-placeholder";
+  const title = doc.createElement("span");
+  title.className = "pdf-thumb-placeholder-copy";
+  title.textContent = "P" + pageNumber;
+  const copy = doc.createElement("span");
+  copy.className = "pdf-thumb-placeholder-hint";
+  copy.textContent = hint;
+  shell.append(title, copy);
+  return shell;
+}
+
 function drawThumbnailFromCanvas(sourceCanvas, viewport, doc) {
   const thumbnailCanvas = createCanvas(doc);
   const ratio = viewport.height / Math.max(1, viewport.width);
-  const deviceScale = Math.min(2, Number(globalThis.devicePixelRatio || 1));
+  const deviceScale = Math.min(MAX_THUMB_OUTPUT_SCALE, Number(globalThis.devicePixelRatio || 1));
   const targetWidth = THUMBNAIL_WIDTH;
   const targetHeight = Math.max(60, Math.round(targetWidth * ratio));
   thumbnailCanvas.width = Math.round(targetWidth * deviceScale);
@@ -144,6 +218,31 @@ function scheduleAnimationFrame(callback) {
     return;
   }
   callback();
+}
+
+function delay(ms) {
+  return new Promise((resolve) => {
+    if (typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      window.setTimeout(resolve, ms);
+      return;
+    }
+    setTimeout(resolve, ms);
+  });
+}
+
+function buildPageMetric(meta) {
+  if (!meta.article) {
+    return {
+      pageNumber: meta.pageNumber,
+      top: 0,
+      height: meta.scaledHeight + PAGE_CARD_PADDING + PAGE_LABEL_SPACE,
+    };
+  }
+  return {
+    pageNumber: meta.pageNumber,
+    top: meta.article.offsetTop,
+    height: meta.article.offsetHeight,
+  };
 }
 
 export function initPdfPreview(options) {
@@ -180,15 +279,23 @@ export function initPdfPreview(options) {
   const state = {
     currentPage: 1,
     outlineEntries: [],
+    outlineButtons: new Map(),
     pageArticles: new Map(),
+    pageMetas: [],
+    pageMetaByNumber: new Map(),
     pageMetrics: [],
     pdfDocument: null,
-    renderToken: 0,
+    renderGeneration: 0,
+    renderQueue: [],
+    pendingRenderPages: new Set(),
+    activePageRenders: 0,
+    activeThumbRenders: 0,
     resizeTimer: 0,
     scrollSyncFrame: 0,
     suppressScrollSyncUntil: 0,
     thumbnailButtons: new Map(),
-    outlineButtons: new Map(),
+    thumbnailQueue: [],
+    pendingThumbnailPages: new Set(),
     zoomFactor: 1,
   };
 
@@ -256,22 +363,110 @@ export function initPdfPreview(options) {
         scrollIntoViewIfNeeded(button);
       }
     }
+    const activeMeta = state.pageMetaByNumber.get(pageNumber);
+    if (activeMeta && !activeMeta.thumbReady) {
+      enqueueThumbnail(activeMeta, true);
+    }
   }
 
   function measurePageMetrics() {
-    if (!scrollWrap) {
-      state.pageMetrics = [];
+    state.pageMetrics = state.pageMetas.map(buildPageMetric);
+  }
+
+  function createPageShell(meta) {
+    const article = root.createElement("article");
+    article.className = "pdf-page";
+    article.dataset.pageNumber = String(meta.pageNumber);
+    const surface = root.createElement("div");
+    surface.className = "pdf-page-surface";
+    const label = root.createElement("div");
+    label.className = "pdf-page-label";
+    label.textContent = "第 " + meta.pageNumber + " / " + state.pdfDocument.numPages + " 页";
+    article.append(surface, label);
+    meta.article = article;
+    meta.surface = surface;
+    meta.label = label;
+    state.pageArticles.set(meta.pageNumber, article);
+    pagesWrap.appendChild(article);
+  }
+
+  function setPagePlaceholder(meta, hint, loading) {
+    if (!meta.surface || !meta.article) {
       return;
     }
-    const scrollRect = scrollWrap.getBoundingClientRect();
-    state.pageMetrics = Array.from(state.pageArticles.entries()).map(([pageNumber, article]) => {
-      const rect = article.getBoundingClientRect();
-      return {
-        pageNumber,
-        top: rect.top - scrollRect.top + scrollWrap.scrollTop,
-        height: rect.height,
-      };
+    meta.surface.replaceChildren(createPagePlaceholder(root, meta.pageNumber, hint));
+    meta.article.classList.toggle("is-loading", Boolean(loading));
+    meta.article.classList.remove("is-rendered");
+    meta.renderedCanvas = null;
+    meta.renderedLayoutKey = "";
+  }
+
+  function applyPageLayout(meta) {
+    if (!meta.surface) {
+      return;
+    }
+    const size = computeScaledPageSize(meta.baseWidth, meta.baseHeight, scrollWrap.clientWidth, state.zoomFactor);
+    meta.scale = size.scale;
+    meta.scaledWidth = size.width;
+    meta.scaledHeight = size.height;
+    meta.layoutKey = size.width + "x" + size.height;
+    meta.surface.style.width = size.width + "px";
+    meta.surface.style.height = size.height + "px";
+    if (meta.renderedLayoutKey && meta.renderedLayoutKey !== meta.layoutKey) {
+      setPagePlaceholder(meta, "滚动到可视区域时自动渲染", false);
+    } else if (!meta.renderedCanvas) {
+      setPagePlaceholder(meta, meta.isRendering ? "正在渲染当前页面..." : "滚动到可视区域时自动渲染", meta.isRendering);
+    }
+  }
+
+  function createThumbnailShell(meta) {
+    if (!thumbnailList) {
+      return;
+    }
+    const button = root.createElement("button");
+    button.type = "button";
+    button.className = "pdf-thumb is-loading";
+    button.dataset.pageNumber = String(meta.pageNumber);
+    const surface = root.createElement("span");
+    surface.className = "pdf-thumb-surface";
+    surface.appendChild(createThumbnailPlaceholder(root, meta.pageNumber, "等待缩略图"));
+    const metaCopy = root.createElement("span");
+    metaCopy.className = "pdf-thumb-meta";
+    metaCopy.textContent = "第 " + meta.pageNumber + " 页";
+    button.append(surface, metaCopy);
+    button.addEventListener("click", () => {
+      setSidebarTab("pages");
+      scrollToPage(meta.pageNumber, "smooth");
     });
+    thumbnailList.appendChild(button);
+    meta.thumbButton = button;
+    meta.thumbSurface = surface;
+    state.thumbnailButtons.set(meta.pageNumber, button);
+  }
+
+  function setThumbnailPlaceholder(meta, hint, loading = true) {
+    if (!meta.thumbSurface || !meta.thumbButton) {
+      return;
+    }
+    meta.thumbSurface.replaceChildren(createThumbnailPlaceholder(root, meta.pageNumber, hint));
+    meta.thumbButton.classList.toggle("is-loading", Boolean(loading));
+    meta.thumbReady = false;
+  }
+
+  function computeRenderOverscan() {
+    return Math.max(680, scrollWrap.clientHeight * PAGE_RENDER_OVERSCAN_FACTOR);
+  }
+
+  function computeUnloadOverscan() {
+    return Math.max(1600, scrollWrap.clientHeight * PAGE_UNLOAD_OVERSCAN_FACTOR);
+  }
+
+  function isMetricWithinRange(metric, scrollTop, viewportHeight, overscanPx) {
+    const rangeTop = Math.max(0, Number(scrollTop || 0) - Number(overscanPx || 0));
+    const rangeBottom = Number(scrollTop || 0) + Number(viewportHeight || 0) + Number(overscanPx || 0);
+    const top = Number(metric.top || 0);
+    const bottom = top + Number(metric.height || 0);
+    return bottom >= rangeTop && top <= rangeBottom;
   }
 
   function syncCurrentPageFromScroll() {
@@ -285,6 +480,125 @@ export function initPdfPreview(options) {
     syncActivePage(pageNumber);
   }
 
+  function clearPendingPageQueue() {
+    state.renderGeneration += 1;
+    state.renderQueue = [];
+    state.pendingRenderPages.clear();
+  }
+
+  function unloadPage(meta) {
+    if (!meta.renderedCanvas && !meta.renderedLayoutKey) {
+      return;
+    }
+    setPagePlaceholder(meta, "滚动到可视区域时自动渲染", false);
+  }
+
+  async function renderPage(meta, generation) {
+    if (!meta || !state.pdfDocument || meta.isRendering) {
+      return;
+    }
+    if (meta.renderedLayoutKey && meta.renderedLayoutKey === meta.layoutKey) {
+      return;
+    }
+    const expectedLayoutKey = meta.layoutKey;
+    meta.isRendering = true;
+    setPagePlaceholder(meta, "正在渲染当前页面...", true);
+    state.activePageRenders += 1;
+    try {
+      const page = await state.pdfDocument.getPage(meta.pageNumber);
+      const viewport = page.getViewport({ scale: meta.scale });
+      const outputScale = Math.min(MAX_RENDER_OUTPUT_SCALE, Number(globalThis.devicePixelRatio || 1));
+      const canvas = createCanvas(root);
+      const context = canvas.getContext("2d");
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = Math.floor(viewport.width) + "px";
+      canvas.style.height = Math.floor(viewport.height) + "px";
+      if (context) {
+        await page.render({
+          canvasContext: context,
+          viewport,
+          transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+        }).promise;
+      }
+      if (generation !== state.renderGeneration || meta.layoutKey !== expectedLayoutKey) {
+        return;
+      }
+      if (!meta.surface || !meta.article) {
+        return;
+      }
+      meta.surface.replaceChildren(canvas);
+      meta.article.classList.remove("is-loading");
+      meta.article.classList.add("is-rendered");
+      meta.renderedCanvas = canvas;
+      meta.renderedLayoutKey = expectedLayoutKey;
+      if (!meta.thumbReady && meta.thumbSurface) {
+        meta.thumbSurface.replaceChildren(drawThumbnailFromCanvas(canvas, viewport, root));
+        meta.thumbReady = true;
+        meta.thumbButton?.classList.remove("is-loading");
+      }
+    } catch (_error) {
+      setPagePlaceholder(meta, "当前页面渲染失败，请稍后重试", false);
+    } finally {
+      meta.isRendering = false;
+      state.activePageRenders = Math.max(0, state.activePageRenders - 1);
+      processPageRenderQueue();
+    }
+  }
+
+  function enqueuePageRender(meta, priority) {
+    if (!meta || meta.isRendering || (meta.renderedLayoutKey && meta.renderedLayoutKey === meta.layoutKey)) {
+      return;
+    }
+    if (state.pendingRenderPages.has(meta.pageNumber)) {
+      return;
+    }
+    state.pendingRenderPages.add(meta.pageNumber);
+    if (priority) {
+      state.renderQueue.unshift(meta.pageNumber);
+    } else {
+      state.renderQueue.push(meta.pageNumber);
+    }
+  }
+
+  function processPageRenderQueue() {
+    while (state.activePageRenders < PAGE_RENDER_CONCURRENCY && state.renderQueue.length > 0) {
+      const pageNumber = state.renderQueue.shift();
+      state.pendingRenderPages.delete(pageNumber);
+      const meta = state.pageMetaByNumber.get(pageNumber);
+      if (!meta) {
+        continue;
+      }
+      void renderPage(meta, state.renderGeneration);
+    }
+  }
+
+  function scheduleVisiblePageWork() {
+    if (!state.pageMetas.length || !state.pageMetrics.length) {
+      return;
+    }
+    const scrollTop = scrollWrap.scrollTop;
+    const viewportHeight = scrollWrap.clientHeight;
+    const renderPages = new Set(
+      collectPagesInRange(state.pageMetrics, scrollTop, viewportHeight, computeRenderOverscan()),
+    );
+    const orderedPages = sortPageNumbersByDistance(renderPages, state.currentPage);
+    for (const pageNumber of orderedPages) {
+      enqueuePageRender(state.pageMetaByNumber.get(pageNumber), pageNumber === state.currentPage);
+    }
+    const unloadOverscan = computeUnloadOverscan();
+    for (const metric of state.pageMetrics) {
+      if (renderPages.has(metric.pageNumber)) {
+        continue;
+      }
+      if (isMetricWithinRange(metric, scrollTop, viewportHeight, unloadOverscan)) {
+        continue;
+      }
+      unloadPage(state.pageMetaByNumber.get(metric.pageNumber));
+    }
+    processPageRenderQueue();
+  }
+
   function scheduleScrollSync() {
     if (state.scrollSyncFrame) {
       return;
@@ -293,6 +607,7 @@ export function initPdfPreview(options) {
     scheduleAnimationFrame(() => {
       state.scrollSyncFrame = 0;
       syncCurrentPageFromScroll();
+      scheduleVisiblePageWork();
     });
   }
 
@@ -308,6 +623,7 @@ export function initPdfPreview(options) {
       behavior: behavior || "smooth",
     });
     syncActivePage(pageNumber);
+    scheduleVisiblePageWork();
     return true;
   }
 
@@ -324,27 +640,119 @@ export function initPdfPreview(options) {
     scrollToPage(requestedPage, "smooth");
   }
 
-  function renderThumbnail(sourceCanvas, viewport, pageNumber) {
-    if (!thumbnailList) {
+  async function renderThumbnail(meta) {
+    if (!meta || !state.pdfDocument || meta.thumbReady || meta.thumbRendering) {
       return;
     }
-    const button = root.createElement("button");
-    button.type = "button";
-    button.className = "pdf-thumb";
-    button.dataset.pageNumber = String(pageNumber);
-    const surface = root.createElement("span");
-    surface.className = "pdf-thumb-surface";
-    surface.appendChild(drawThumbnailFromCanvas(sourceCanvas, viewport, root));
-    const meta = root.createElement("span");
-    meta.className = "pdf-thumb-meta";
-    meta.textContent = "第 " + pageNumber + " 页";
-    button.append(surface, meta);
-    button.addEventListener("click", () => {
-      setSidebarTab("pages");
-      scrollToPage(pageNumber, "smooth");
-    });
-    thumbnailList.appendChild(button);
-    state.thumbnailButtons.set(pageNumber, button);
+    meta.thumbRendering = true;
+    state.activeThumbRenders += 1;
+    try {
+      const page = await state.pdfDocument.getPage(meta.pageNumber);
+      const viewport = page.getViewport({
+        scale: THUMBNAIL_WIDTH / Math.max(1, meta.baseWidth),
+      });
+      const outputScale = Math.min(MAX_THUMB_OUTPUT_SCALE, Number(globalThis.devicePixelRatio || 1));
+      const canvas = createCanvas(root);
+      const context = canvas.getContext("2d");
+      canvas.width = Math.round(viewport.width * outputScale);
+      canvas.height = Math.round(viewport.height * outputScale);
+      canvas.style.width = Math.round(viewport.width) + "px";
+      canvas.style.height = Math.round(viewport.height) + "px";
+      if (context) {
+        await page.render({
+          canvasContext: context,
+          viewport,
+          transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
+        }).promise;
+      }
+      if (meta.thumbSurface) {
+        meta.thumbSurface.replaceChildren(canvas);
+      }
+      meta.thumbReady = true;
+      meta.thumbButton?.classList.remove("is-loading");
+    } catch (_error) {
+      setThumbnailPlaceholder(meta, "缩略图暂不可用", false);
+    } finally {
+      meta.thumbRendering = false;
+      state.activeThumbRenders = Math.max(0, state.activeThumbRenders - 1);
+      void processThumbnailQueue();
+    }
+  }
+
+  function enqueueThumbnail(meta, priority) {
+    if (!meta || meta.thumbReady || meta.thumbRendering) {
+      return;
+    }
+    if (state.pendingThumbnailPages.has(meta.pageNumber)) {
+      return;
+    }
+    state.pendingThumbnailPages.add(meta.pageNumber);
+    if (priority) {
+      state.thumbnailQueue.unshift(meta.pageNumber);
+    } else {
+      state.thumbnailQueue.push(meta.pageNumber);
+    }
+    void processThumbnailQueue();
+  }
+
+  async function processThumbnailQueue() {
+    while (state.activeThumbRenders < THUMBNAIL_RENDER_CONCURRENCY && state.thumbnailQueue.length > 0) {
+      const pageNumber = state.thumbnailQueue.shift();
+      state.pendingThumbnailPages.delete(pageNumber);
+      const meta = state.pageMetaByNumber.get(pageNumber);
+      if (!meta) {
+        continue;
+      }
+      void renderThumbnail(meta);
+      if (state.thumbnailQueue.length > 0) {
+        await delay(THUMBNAIL_QUEUE_DELAY_MS);
+      }
+    }
+  }
+
+  function refreshPageLayout() {
+    clearPendingPageQueue();
+    for (const meta of state.pageMetas) {
+      applyPageLayout(meta);
+    }
+    measurePageMetrics();
+    scheduleVisiblePageWork();
+    syncActivePage(Math.min(state.currentPage, state.pageMetas.length || 1));
+  }
+
+  async function buildPageMetas() {
+    const metas = [];
+    const total = state.pdfDocument ? state.pdfDocument.numPages : 0;
+    for (let pageNumber = 1; pageNumber <= total; pageNumber += 1) {
+      setStatus("正在分析 PDF 页面结构（" + pageNumber + " / " + total + "）...", true);
+      const page = await state.pdfDocument.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1 });
+      const meta = {
+        article: null,
+        baseHeight: viewport.height,
+        baseWidth: viewport.width,
+        isRendering: false,
+        label: null,
+        layoutKey: "",
+        pageNumber,
+        renderedCanvas: null,
+        renderedLayoutKey: "",
+        scale: 1,
+        scaledHeight: Math.round(viewport.height),
+        scaledWidth: Math.round(viewport.width),
+        surface: null,
+        thumbButton: null,
+        thumbReady: false,
+        thumbRendering: false,
+        thumbSurface: null,
+      };
+      metas.push(meta);
+      if (pageNumber % 10 === 0) {
+        await delay(0);
+      }
+    }
+    state.pageMetas = metas;
+    state.pageMetaByNumber = new Map(metas.map((meta) => [meta.pageNumber, meta]));
   }
 
   async function renderOutline() {
@@ -398,69 +806,39 @@ export function initPdfPreview(options) {
     outlineList.appendChild(fragment);
   }
 
-  async function renderPdf() {
-    if (!state.pdfDocument) {
-      return;
-    }
-    const currentToken = state.renderToken + 1;
-    state.renderToken = currentToken;
+  function buildPageShells() {
     pagesWrap.replaceChildren();
     state.pageArticles.clear();
-    state.pageMetrics = [];
+    for (const meta of state.pageMetas) {
+      createPageShell(meta);
+      applyPageLayout(meta);
+    }
+    measurePageMetrics();
+  }
+
+  function buildThumbnailShells() {
+    if (!thumbnailList) {
+      return;
+    }
+    thumbnailList.replaceChildren();
     state.thumbnailButtons.clear();
-    if (thumbnailList) {
-      thumbnailList.replaceChildren();
+    for (const meta of state.pageMetas) {
+      createThumbnailShell(meta);
+      setThumbnailPlaceholder(meta, "等待缩略图", true);
     }
     if (thumbnailEmpty) {
-      thumbnailEmpty.hidden = false;
+      thumbnailEmpty.hidden = state.pageMetas.length > 0;
     }
-    setStatus("正在渲染 PDF 页面，请稍候...", true);
+  }
 
-    const pageTotal = state.pdfDocument.numPages;
-    for (let pageNumber = 1; pageNumber <= pageTotal; pageNumber += 1) {
-      if (currentToken !== state.renderToken) {
-        return;
-      }
-      setStatus("正在渲染第 " + pageNumber + " / " + pageTotal + " 页...", true);
-      const page = await state.pdfDocument.getPage(pageNumber);
-      const baseViewport = page.getViewport({ scale: 1 });
-      const fitScale = computeFitWidthScale(baseViewport.width, scrollWrap.clientWidth) * state.zoomFactor;
-      const viewport = page.getViewport({ scale: fitScale });
-      const outputScale = Number(globalThis.devicePixelRatio || 1);
-      const article = root.createElement("article");
-      article.className = "pdf-page";
-      article.dataset.pageNumber = String(pageNumber);
-      const canvas = createCanvas(root);
-      const context = canvas.getContext("2d");
-      canvas.width = Math.floor(viewport.width * outputScale);
-      canvas.height = Math.floor(viewport.height * outputScale);
-      canvas.style.width = Math.floor(viewport.width) + "px";
-      canvas.style.height = Math.floor(viewport.height) + "px";
-      if (context) {
-        await page.render({
-          canvasContext: context,
-          viewport,
-          transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
-        }).promise;
-      }
-      const label = root.createElement("div");
-      label.className = "pdf-page-label";
-      label.textContent = "第 " + pageNumber + " / " + pageTotal + " 页";
-      article.append(canvas, label);
-      pagesWrap.appendChild(article);
-      state.pageArticles.set(pageNumber, article);
-      renderThumbnail(canvas, viewport, pageNumber);
-      if (pageNumber === 1) {
-        syncActivePage(1);
-      }
+  function queueThumbnailPrefetch() {
+    const orderedPages = sortPageNumbersByDistance(
+      state.pageMetas.map((meta) => meta.pageNumber),
+      state.currentPage || 1,
+    );
+    for (const pageNumber of orderedPages) {
+      enqueueThumbnail(state.pageMetaByNumber.get(pageNumber), false);
     }
-
-    measurePageMetrics();
-    if (state.currentPage > pageTotal) {
-      state.currentPage = pageTotal;
-    }
-    syncActivePage(state.currentPage || 1);
-    setStatus("", false);
   }
 
   async function loadPdf() {
@@ -483,11 +861,14 @@ export function initPdfPreview(options) {
         pageInput.min = "1";
         pageInput.max = String(state.pdfDocument.numPages);
       }
-      await Promise.all([renderPdf(), renderOutline()]);
-      syncActivePage(state.currentPage || 1);
-      if (thumbnailEmpty) {
-        thumbnailEmpty.hidden = state.thumbnailButtons.size > 0;
-      }
+      await renderOutline();
+      await buildPageMetas();
+      buildPageShells();
+      buildThumbnailShells();
+      syncActivePage(Math.min(state.currentPage || 1, state.pdfDocument.numPages));
+      scheduleVisiblePageWork();
+      queueThumbnailPrefetch();
+      setStatus("", false);
     } catch (error) {
       const message = error && error.message ? error.message : "PDF 预览加载失败，请刷新后重试。";
       setStatus(message, true);
@@ -509,19 +890,19 @@ export function initPdfPreview(options) {
   if (zoomOut) {
     zoomOut.addEventListener("click", () => {
       state.zoomFactor = clamp(state.zoomFactor - 0.15, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
-      renderPdf();
+      refreshPageLayout();
     });
   }
   if (zoomIn) {
     zoomIn.addEventListener("click", () => {
       state.zoomFactor = clamp(state.zoomFactor + 0.15, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
-      renderPdf();
+      refreshPageLayout();
     });
   }
   if (zoomReset) {
     zoomReset.addEventListener("click", () => {
       state.zoomFactor = 1;
-      renderPdf();
+      refreshPageLayout();
     });
   }
   if (pageGo) {
@@ -554,15 +935,15 @@ export function initPdfPreview(options) {
       }
       window.clearTimeout(state.resizeTimer);
       state.resizeTimer = window.setTimeout(() => {
-        renderPdf();
+        refreshPageLayout();
       }, 120);
     });
   }
 
   setSidebarTab("pages");
-  loadPdf();
+  void loadPdf();
   return {
-    rerender: renderPdf,
+    refreshPageLayout,
     state,
   };
 }

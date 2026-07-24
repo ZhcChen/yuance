@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 
 import {
+  collectPagesInRange,
   computeFitWidthScale,
+  computeScaledPageSize,
   findActiveOutlineEntry,
   pickCurrentPage,
   resolveOutlineEntries,
+  sortPageNumbersByDistance,
 } from "../api/static/document-preview.mjs";
 
 assert.equal(computeFitWidthScale(1000, 800), 0.75);
 assert.equal(computeFitWidthScale(1000, 1600), 1.528);
+assert.deepEqual(computeScaledPageSize(800, 1200, 1600, 1), {
+  scale: 1.91,
+  width: 1528,
+  height: 2292,
+});
 
 assert.equal(
   pickCurrentPage(
@@ -34,6 +42,23 @@ assert.equal(
   ),
   2,
 );
+
+assert.deepEqual(
+  collectPagesInRange(
+    [
+      { pageNumber: 1, top: 0, height: 400 },
+      { pageNumber: 2, top: 420, height: 400 },
+      { pageNumber: 3, top: 840, height: 400 },
+      { pageNumber: 4, top: 1260, height: 400 },
+    ],
+    430,
+    600,
+    200,
+  ),
+  [1, 2, 3],
+);
+
+assert.deepEqual(sortPageNumbersByDistance([5, 2, 4, 1], 3), [2, 4, 1, 5]);
 
 const introRef = { num: 1, gen: 0 };
 const chapterRef = { num: 2, gen: 0 };
