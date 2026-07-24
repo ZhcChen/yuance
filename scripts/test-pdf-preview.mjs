@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 
 import {
+  collectFilteredOutlineIds,
   collectPagesInRange,
   collectOutlineAncestorIds,
+  computeFitPageScale,
   computeFitWidthScale,
   computeScaledPageSize,
   findActiveOutlineEntry,
+  normalizeOutlineSearchKeyword,
   pickCurrentPage,
   resolveOutlineEntries,
   sortPageNumbersByDistance,
@@ -17,6 +20,17 @@ assert.deepEqual(computeScaledPageSize(800, 1200, 1600, 1), {
   scale: 1.91,
   width: 1528,
   height: 2292,
+});
+assert.equal(computeFitPageScale(800, 1200, 1600, 900), 0.65);
+assert.deepEqual(computeScaledPageSize(800, 1200, 1600, 900, "fit-page", 1), {
+  scale: 0.65,
+  width: 520,
+  height: 780,
+});
+assert.deepEqual(computeScaledPageSize(800, 1200, 1600, 900, "actual-size", 1), {
+  scale: 1,
+  width: 800,
+  height: 1200,
 });
 
 assert.equal(
@@ -119,3 +133,8 @@ assert.equal(findActiveOutlineEntry(outlineEntries, 6), "outline-2");
 assert.equal(findActiveOutlineEntry(outlineEntries, 99), "outline-3");
 assert.deepEqual(collectOutlineAncestorIds(outlineEntries, "outline-2"), ["outline-1"]);
 assert.deepEqual(collectOutlineAncestorIds(outlineEntries, "outline-3"), []);
+assert.equal(normalizeOutlineSearchKeyword("  第 一 章  "), "第 一 章");
+assert.deepEqual(
+  [...collectFilteredOutlineIds(outlineEntries, "第一章", "outline-3")],
+  ["outline-2", "outline-1", "outline-3"],
+);

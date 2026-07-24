@@ -216,6 +216,13 @@
       transform: translateY(-1px);
     }
 
+    .preview-tool.is-active {
+      border-color: rgb(59 130 246 / 26%);
+      background: #dbeafe;
+      color: #0f172a;
+      box-shadow: 0 10px 24px rgb(37 99 235 / 14%);
+    }
+
     .preview-panel-body {
       min-height: 0;
       background: linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 96%));
@@ -532,6 +539,8 @@
     }
 
     .pdf-sidebar-scrubber {
+      position: relative;
+      --range-progress: 0;
       display: grid;
       gap: 8px;
       padding: 12px;
@@ -570,6 +579,40 @@
     .pdf-page-range:disabled {
       cursor: not-allowed;
       opacity: 0.56;
+    }
+
+    .pdf-page-range-bubble {
+      position: absolute;
+      top: -10px;
+      left: calc(12px + var(--range-progress, 0) * (100% - 24px));
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 999px;
+      background: #0f172a;
+      color: #f8fafc;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 16px;
+      box-shadow: 0 12px 28px rgb(15 23 42 / 22%);
+      transform: translate(-50%, -100%);
+      pointer-events: none;
+    }
+
+    .pdf-page-range-bubble::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -5px;
+      width: 10px;
+      height: 10px;
+      background: #0f172a;
+      transform: translateX(-50%) rotate(45deg);
+      border-radius: 2px;
     }
 
     .pdf-sidebar-tabs {
@@ -627,6 +670,59 @@
       height: 100%;
       overflow: auto;
       padding-right: 4px;
+    }
+
+    .pdf-outline-search-wrap {
+      margin-bottom: 12px;
+    }
+
+    .pdf-outline-search-shell {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      padding: 8px;
+      border-radius: 16px;
+      background: rgb(248 250 252 / 96%);
+      box-shadow: inset 0 0 0 1px rgb(226 232 240 / 92%);
+    }
+
+    .pdf-outline-search {
+      width: 100%;
+      min-width: 0;
+      height: 36px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: #fff;
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 600;
+      outline: none;
+      box-shadow: inset 0 0 0 1px rgb(226 232 240 / 96%);
+    }
+
+    .pdf-outline-search:focus {
+      box-shadow: inset 0 0 0 1px rgb(37 99 235 / 38%);
+      background: rgb(239 246 255 / 92%);
+    }
+
+    .pdf-outline-search-clear {
+      min-width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: rgb(15 23 42 / 8%);
+      color: #334155;
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .pdf-outline-search-clear:hover {
+      background: rgb(37 99 235 / 14%);
+      transform: translateY(-1px);
     }
 
     .pdf-sidebar-empty {
@@ -798,8 +894,14 @@
       font-size: 12px;
       font-weight: 700;
       line-height: 18px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      word-break: break-word;
+    }
+
+    .pdf-outline-match {
+      padding: 0 3px;
+      border-radius: 6px;
+      background: rgb(251 191 36 / 24%);
+      color: #92400e;
     }
 
     .pdf-outline-page {
@@ -1006,7 +1108,9 @@
               <button class="pdf-toolbar-step" type="button" id="pdf-page-next" aria-label="下一页" disabled>›</button>
             </label>
             <button class="preview-tool" type="button" id="pdf-zoom-out">－</button>
-            <button class="preview-tool" type="button" id="pdf-zoom-reset">适宽</button>
+            <button class="preview-tool is-active" type="button" id="pdf-zoom-fit-width" aria-pressed="true">适宽</button>
+            <button class="preview-tool" type="button" id="pdf-zoom-actual" aria-pressed="false">100%</button>
+            <button class="preview-tool" type="button" id="pdf-zoom-fit-page" aria-pressed="false">适页</button>
             <button class="preview-tool" type="button" id="pdf-zoom-in">＋</button>
             {% endif %}
             {% if has_text_preview %}
@@ -1036,11 +1140,12 @@
                 <strong>快速定位</strong>
                 <span>支持页缩略图预览，若 PDF 自带目录会自动识别。</span>
               </div>
-              <div class="pdf-sidebar-scrubber">
+              <div class="pdf-sidebar-scrubber" id="pdf-page-range-shell">
                 <div class="pdf-sidebar-scrubber-head">
                   <strong id="pdf-page-range-label">拖动快速定位</strong>
                   <span>拖动即跳转</span>
                 </div>
+                <span class="pdf-page-range-bubble" id="pdf-page-range-bubble" hidden>P1</span>
                 <input class="pdf-page-range" id="pdf-page-range" type="range" min="1" max="1" value="1" disabled>
               </div>
               <div class="pdf-sidebar-tabs" role="tablist" aria-label="PDF 导航模式">
@@ -1057,6 +1162,20 @@
               </section>
               <section class="pdf-sidebar-panel" role="tabpanel" data-pdf-sidebar-panel="outline" hidden>
                 <div class="pdf-sidebar-scroll">
+                  <div class="pdf-outline-search-wrap" id="pdf-outline-search-wrap" hidden>
+                    <label class="pdf-outline-search-shell" for="pdf-outline-search">
+                      <input
+                        class="pdf-outline-search"
+                        id="pdf-outline-search"
+                        type="search"
+                        placeholder="搜索目录章节"
+                        autocomplete="off"
+                        spellcheck="false"
+                        disabled
+                      >
+                      <button class="pdf-outline-search-clear" id="pdf-outline-search-clear" type="button" hidden>清空</button>
+                    </label>
+                  </div>
                   <div class="pdf-outline-list" id="pdf-outline-list"></div>
                   <div class="pdf-sidebar-empty" id="pdf-outline-empty">当前 PDF 未检测到可用目录。</div>
                 </div>

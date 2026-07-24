@@ -1,5 +1,7 @@
 const FIT_WIDTH_PADDING = 72;
 const MIN_FIT_SCALE = 0.75;
+const MIN_FIT_PAGE_SCALE = 0.28;
+const FIT_PAGE_VERTICAL_PADDING = 120;
 const MAX_ZOOM_FACTOR = 2.4;
 const MIN_ZOOM_FACTOR = 0.7;
 const PAGE_MARKER_RATIO = 0.32;
@@ -23,8 +25,43 @@ export function computeFitWidthScale(viewportWidth, containerWidth) {
   return Math.max(MIN_FIT_SCALE, availableWidth / Math.max(1, Number(viewportWidth || 1)));
 }
 
-export function computeScaledPageSize(baseWidth, baseHeight, containerWidth, zoomFactor) {
-  const scale = computeFitWidthScale(baseWidth, containerWidth) * Number(zoomFactor || 1);
+export function computeFitPageScale(viewportWidth, viewportHeight, containerWidth, containerHeight) {
+  const availableWidth = Math.max(240, Number(containerWidth || 0) - FIT_WIDTH_PADDING);
+  const availableHeight = Math.max(220, Number(containerHeight || 0) - FIT_PAGE_VERTICAL_PADDING);
+  const widthScale = Math.max(MIN_FIT_PAGE_SCALE, availableWidth / Math.max(1, Number(viewportWidth || 1)));
+  const heightScale = Math.max(MIN_FIT_PAGE_SCALE, availableHeight / Math.max(1, Number(viewportHeight || 1)));
+  return Math.min(widthScale, heightScale);
+}
+
+function resolveZoomScale(baseWidth, baseHeight, containerWidth, containerHeight, zoomMode) {
+  if (zoomMode === "actual-size") {
+    return 1;
+  }
+  if (zoomMode === "fit-page") {
+    return computeFitPageScale(baseWidth, baseHeight, containerWidth, containerHeight);
+  }
+  return computeFitWidthScale(baseWidth, containerWidth);
+}
+
+export function computeScaledPageSize(
+  baseWidth,
+  baseHeight,
+  containerWidth,
+  containerHeightOrZoomFactor,
+  zoomMode = "fit-width",
+  zoomFactor = 1,
+) {
+  const legacySignature = typeof containerHeightOrZoomFactor === "number" && arguments.length <= 4;
+  const containerHeight = legacySignature ? 0 : Number(containerHeightOrZoomFactor || 0);
+  const resolvedZoomMode = legacySignature ? "fit-width" : zoomMode;
+  const resolvedZoomFactor = legacySignature ? Number(containerHeightOrZoomFactor || 1) : Number(zoomFactor || 1);
+  const scale = resolveZoomScale(
+    baseWidth,
+    baseHeight,
+    containerWidth,
+    containerHeight,
+    resolvedZoomMode,
+  ) * resolvedZoomFactor;
   return {
     scale,
     width: Math.max(120, Math.round(baseWidth * scale)),
@@ -116,6 +153,40 @@ export function collectOutlineAncestorIds(entries, entryId) {
     currentEntry = entryById.get(currentEntry.parentId) || null;
   }
   return ancestors;
+}
+
+export function normalizeOutlineSearchKeyword(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function collectFilteredOutlineIds(entries, keyword, activeEntryId = null) {
+  const normalizedKeyword = normalizeOutlineSearchKeyword(keyword);
+  const visibleIds = new Set();
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return visibleIds;
+  }
+  if (!normalizedKeyword) {
+    for (const entry of entries) {
+      visibleIds.add(entry.id);
+    }
+    return visibleIds;
+  }
+  for (const entry of entries) {
+    if (!normalizeOutlineSearchKeyword(entry.title).includes(normalizedKeyword)) {
+      continue;
+    }
+    visibleIds.add(entry.id);
+    for (const ancestorId of collectOutlineAncestorIds(entries, entry.id)) {
+      visibleIds.add(ancestorId);
+    }
+  }
+  if (activeEntryId) {
+    visibleIds.add(activeEntryId);
+    for (const ancestorId of collectOutlineAncestorIds(entries, activeEntryId)) {
+      visibleIds.add(ancestorId);
+    }
+  }
+  return visibleIds;
 }
 
 function normalizeOutlineTitle(value, fallbackPageNumber) {
@@ -282,13 +353,20 @@ export function initPdfPreview(options) {
   const pageNext = root.getElementById("pdf-page-next");
   const pageRange = root.getElementById("pdf-page-range");
   const pageRangeLabel = root.getElementById("pdf-page-range-label");
+  const pageRangeBubble = root.getElementById("pdf-page-range-bubble");
+  const pageRangeShell = root.getElementById("pdf-page-range-shell");
   const zoomOut = root.getElementById("pdf-zoom-out");
   const zoomIn = root.getElementById("pdf-zoom-in");
-  const zoomReset = root.getElementById("pdf-zoom-reset");
+  const zoomFitWidth = root.getElementById("pdf-zoom-fit-width");
+  const zoomActual = root.getElementById("pdf-zoom-actual");
+  const zoomFitPage = root.getElementById("pdf-zoom-fit-page");
   const thumbnailList = root.getElementById("pdf-thumbnail-list");
   const thumbnailEmpty = root.getElementById("pdf-thumbnail-empty");
   const outlineList = root.getElementById("pdf-outline-list");
   const outlineEmpty = root.getElementById("pdf-outline-empty");
+  const outlineSearch = root.getElementById("pdf-outline-search");
+  const outlineSearchClear = root.getElementById("pdf-outline-search-clear");
+  const outlineSearchWrap = root.getElementById("pdf-outline-search-wrap");
   const outlineTab = root.querySelector('[data-pdf-sidebar-tab="outline"]');
   const pageTab = root.querySelector('[data-pdf-sidebar-tab="pages"]');
   const tabItems = root.querySelectorAll("[data-pdf-sidebar-tab]");
@@ -306,6 +384,9 @@ export function initPdfPreview(options) {
     outlineEntryById: new Map(),
     outlineRows: new Map(),
     outlineToggles: new Map(),
+    outlineTitleNodes: new Map(),
+    outlineVisibleIds: new Set(),
+    outlineSearchKeyword: "",
     pageArticles: new Map(),
     pageMetas: [],
     pageMetaByNumber: new Map(),
@@ -322,8 +403,16 @@ export function initPdfPreview(options) {
     thumbnailButtons: new Map(),
     thumbnailQueue: [],
     pendingThumbnailPages: new Set(),
+    pageRangeInteracting: false,
+    zoomMode: "fit-width",
     zoomFactor: 1,
   };
+
+  const zoomModeButtons = new Map([
+    ["fit-width", zoomFitWidth],
+    ["actual-size", zoomActual],
+    ["fit-page", zoomFitPage],
+  ]);
 
   function setStatus(message, visible) {
     if (statusCopy) {
@@ -353,6 +442,39 @@ export function initPdfPreview(options) {
     pageCount.textContent = "第 " + pageNumber + " / " + state.pdfDocument.numPages + " 页";
   }
 
+  function updateZoomModeUi() {
+    for (const [mode, button] of zoomModeButtons.entries()) {
+      if (!button) {
+        continue;
+      }
+      const isActive = state.zoomMode === mode;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    }
+  }
+
+  function updatePageRangeBubble(pageNumber) {
+    if (!pageRangeBubble || !pageRangeShell || !state.pdfDocument) {
+      return;
+    }
+    const maxPage = Math.max(1, state.pdfDocument.numPages);
+    const boundedPage = clamp(pageNumber, 1, maxPage);
+    const progress = maxPage <= 1 ? 0 : (boundedPage - 1) / (maxPage - 1);
+    pageRangeShell.style.setProperty("--range-progress", String(progress));
+    pageRangeBubble.textContent = "P" + boundedPage;
+    pageRangeBubble.hidden = !state.pageRangeInteracting;
+  }
+
+  function setPageRangeInteraction(active) {
+    state.pageRangeInteracting = Boolean(active);
+    if (pageRangeBubble) {
+      pageRangeBubble.hidden = !state.pageRangeInteracting;
+    }
+    updatePageRangeBubble(
+      Number.parseInt(pageRange?.value || String(state.currentPage || 1), 10) || state.currentPage || 1,
+    );
+  }
+
   function setPageNavigationState(pageNumber) {
     if (!state.pdfDocument) {
       if (pagePrev) {
@@ -366,6 +488,9 @@ export function initPdfPreview(options) {
       }
       if (pageRangeLabel) {
         pageRangeLabel.textContent = "拖动快速定位";
+      }
+      if (pageRangeBubble) {
+        pageRangeBubble.hidden = true;
       }
       return;
     }
@@ -384,6 +509,7 @@ export function initPdfPreview(options) {
     if (pageRangeLabel) {
       pageRangeLabel.textContent = "第 " + boundedPage + " / " + state.pdfDocument.numPages + " 页";
     }
+    updatePageRangeBubble(boundedPage);
   }
 
   function scrollIntoViewIfNeeded(element, block = "nearest") {
@@ -397,6 +523,9 @@ export function initPdfPreview(options) {
   }
 
   function isOutlineEntryHidden(entry) {
+    if (state.outlineVisibleIds.size > 0 && !state.outlineVisibleIds.has(entry.id)) {
+      return true;
+    }
     if (!entry || !entry.parentId) {
       return false;
     }
@@ -415,6 +544,7 @@ export function initPdfPreview(options) {
       const row = state.outlineRows.get(entry.id);
       const button = state.outlineButtons.get(entry.id);
       const toggle = state.outlineToggles.get(entry.id);
+      const titleNode = state.outlineTitleNodes.get(entry.id);
       if (row) {
         row.hidden = isOutlineEntryHidden(entry);
       }
@@ -429,6 +559,10 @@ export function initPdfPreview(options) {
         const expanded = !state.outlineCollapsedIds.has(entry.id);
         toggle.classList.toggle("is-collapsed", !expanded);
         toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+        toggle.hidden = state.outlineVisibleIds.size > 0 && !state.outlineVisibleIds.has(entry.id);
+      }
+      if (titleNode) {
+        renderOutlineTitle(titleNode, entry.title, state.outlineSearchKeyword);
       }
     }
   }
@@ -460,11 +594,83 @@ export function initPdfPreview(options) {
     }
     const activeOutlineId = findActiveOutlineEntry(state.outlineEntries, pageNumber);
     ensureOutlinePathExpanded(activeOutlineId);
+    state.outlineVisibleIds = collectFilteredOutlineIds(
+      state.outlineEntries,
+      state.outlineSearchKeyword,
+      activeOutlineId,
+    );
+    updateOutlineEmptyState();
     updateOutlineTree(activeOutlineId, pageChanged);
     const activeMeta = state.pageMetaByNumber.get(pageNumber);
     if (activeMeta && !activeMeta.thumbReady) {
       enqueueThumbnail(activeMeta, true);
     }
+  }
+
+  function updateOutlineEmptyState() {
+    if (!outlineEmpty) {
+      return;
+    }
+    if (state.outlineEntries.length === 0) {
+      outlineEmpty.hidden = false;
+      outlineEmpty.textContent = "当前 PDF 未检测到可用目录。";
+      return;
+    }
+    if (state.outlineVisibleIds.size === 0) {
+      outlineEmpty.hidden = false;
+      outlineEmpty.textContent = "未找到匹配的目录章节。";
+      return;
+    }
+    outlineEmpty.hidden = true;
+  }
+
+  function renderOutlineTitle(node, title, keyword) {
+    if (!node) {
+      return;
+    }
+    const rawTitle = String(title || "");
+    const normalizedKeyword = normalizeOutlineSearchKeyword(keyword);
+    if (!normalizedKeyword) {
+      node.textContent = rawTitle;
+      return;
+    }
+    const loweredTitle = rawTitle.toLowerCase();
+    let index = 0;
+    let searchOffset = 0;
+    const fragment = root.createDocumentFragment();
+    while (searchOffset < rawTitle.length) {
+      const matchIndex = loweredTitle.indexOf(normalizedKeyword, searchOffset);
+      if (matchIndex === -1) {
+        break;
+      }
+      if (matchIndex > index) {
+        fragment.appendChild(root.createTextNode(rawTitle.slice(index, matchIndex)));
+      }
+      const mark = root.createElement("mark");
+      mark.className = "pdf-outline-match";
+      mark.textContent = rawTitle.slice(matchIndex, matchIndex + normalizedKeyword.length);
+      fragment.appendChild(mark);
+      index = matchIndex + normalizedKeyword.length;
+      searchOffset = index;
+    }
+    if (index < rawTitle.length) {
+      fragment.appendChild(root.createTextNode(rawTitle.slice(index)));
+    }
+    node.replaceChildren(fragment);
+  }
+
+  function applyOutlineFilter() {
+    const activeOutlineId = findActiveOutlineEntry(state.outlineEntries, state.currentPage);
+    state.outlineVisibleIds = collectFilteredOutlineIds(
+      state.outlineEntries,
+      state.outlineSearchKeyword,
+      activeOutlineId,
+    );
+    if (outlineSearchClear) {
+      outlineSearchClear.hidden = !state.outlineSearchKeyword;
+    }
+    updateOutlineEmptyState();
+    updateOutlineTree(activeOutlineId, false);
   }
 
   function measurePageMetrics() {
@@ -503,7 +709,14 @@ export function initPdfPreview(options) {
     if (!meta.surface) {
       return;
     }
-    const size = computeScaledPageSize(meta.baseWidth, meta.baseHeight, scrollWrap.clientWidth, state.zoomFactor);
+    const size = computeScaledPageSize(
+      meta.baseWidth,
+      meta.baseHeight,
+      scrollWrap.clientWidth,
+      scrollWrap.clientHeight,
+      state.zoomMode,
+      state.zoomFactor,
+    );
     meta.scale = size.scale;
     meta.scaledWidth = size.width;
     meta.scaledHeight = size.height;
@@ -884,6 +1097,7 @@ export function initPdfPreview(options) {
     state.outlineEntryById.clear();
     state.outlineRows.clear();
     state.outlineToggles.clear();
+    state.outlineTitleNodes.clear();
     let outlineEntries = [];
     try {
       const outline = await state.pdfDocument.getOutline();
@@ -895,11 +1109,22 @@ export function initPdfPreview(options) {
     state.outlineEntryById = new Map(outlineEntries.map((entry) => [entry.id, entry]));
     const hasOutline = outlineEntries.length > 0;
     outlineTab.hidden = !hasOutline;
+    if (outlineSearchWrap) {
+      outlineSearchWrap.hidden = !hasOutline;
+    }
+    if (outlineSearch) {
+      outlineSearch.disabled = !hasOutline;
+      outlineSearch.value = hasOutline ? state.outlineSearchKeyword : "";
+    }
+    if (outlineSearchClear) {
+      outlineSearchClear.hidden = !hasOutline || !state.outlineSearchKeyword;
+    }
     if (!hasOutline && pageTab) {
       setSidebarTab("pages");
     }
-    outlineEmpty.hidden = hasOutline;
     if (!hasOutline) {
+      state.outlineVisibleIds = new Set();
+      updateOutlineEmptyState();
       return;
     }
     const fragment = root.createDocumentFragment();
@@ -945,7 +1170,7 @@ export function initPdfPreview(options) {
       }
       const title = root.createElement("span");
       title.className = "pdf-outline-title";
-      title.textContent = entry.title;
+      renderOutlineTitle(title, entry.title, state.outlineSearchKeyword);
       const page = root.createElement("span");
       page.className = "pdf-outline-page";
       page.textContent = typeof entry.pageNumber === "number" ? "P" + entry.pageNumber : "—";
@@ -954,9 +1179,10 @@ export function initPdfPreview(options) {
       fragment.appendChild(row);
       state.outlineButtons.set(entry.id, button);
       state.outlineRows.set(entry.id, row);
+      state.outlineTitleNodes.set(entry.id, title);
     }
     outlineList.appendChild(fragment);
-    updateOutlineTree(findActiveOutlineEntry(state.outlineEntries, state.currentPage), false);
+    applyOutlineFilter();
   }
 
   function buildPageShells() {
@@ -1046,22 +1272,57 @@ export function initPdfPreview(options) {
       }
     });
   }
+
+  function setZoomMode(mode) {
+    state.zoomMode = mode;
+    state.zoomFactor = 1;
+    updateZoomModeUi();
+    refreshPageLayout();
+  }
+
   if (zoomOut) {
     zoomOut.addEventListener("click", () => {
       state.zoomFactor = clamp(state.zoomFactor - 0.15, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
+      updateZoomModeUi();
       refreshPageLayout();
     });
   }
   if (zoomIn) {
     zoomIn.addEventListener("click", () => {
       state.zoomFactor = clamp(state.zoomFactor + 0.15, MIN_ZOOM_FACTOR, MAX_ZOOM_FACTOR);
+      updateZoomModeUi();
       refreshPageLayout();
     });
   }
-  if (zoomReset) {
-    zoomReset.addEventListener("click", () => {
-      state.zoomFactor = 1;
-      refreshPageLayout();
+  if (zoomFitWidth) {
+    zoomFitWidth.addEventListener("click", () => {
+      setZoomMode("fit-width");
+    });
+  }
+  if (zoomActual) {
+    zoomActual.addEventListener("click", () => {
+      setZoomMode("actual-size");
+    });
+  }
+  if (zoomFitPage) {
+    zoomFitPage.addEventListener("click", () => {
+      setZoomMode("fit-page");
+    });
+  }
+  if (outlineSearch) {
+    outlineSearch.addEventListener("input", () => {
+      state.outlineSearchKeyword = normalizeOutlineSearchKeyword(outlineSearch.value);
+      applyOutlineFilter();
+    });
+  }
+  if (outlineSearchClear) {
+    outlineSearchClear.addEventListener("click", () => {
+      state.outlineSearchKeyword = "";
+      if (outlineSearch) {
+        outlineSearch.value = "";
+        outlineSearch.focus();
+      }
+      applyOutlineFilter();
     });
   }
   if (pageGo) {
@@ -1097,7 +1358,24 @@ export function initPdfPreview(options) {
     });
   }
   if (pageRange) {
+    pageRange.addEventListener("pointerdown", () => {
+      setPageRangeInteraction(true);
+    });
+    pageRange.addEventListener("focus", () => {
+      setPageRangeInteraction(true);
+    });
     pageRange.addEventListener("input", handlePageRangeInput);
+    pageRange.addEventListener("change", () => {
+      setPageRangeInteraction(false);
+    });
+    pageRange.addEventListener("blur", () => {
+      setPageRangeInteraction(false);
+    });
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("pointerup", () => {
+      setPageRangeInteraction(false);
+    });
   }
   scrollWrap.addEventListener("scroll", scheduleScrollSync, { passive: true });
   if (typeof window !== "undefined") {
@@ -1112,6 +1390,7 @@ export function initPdfPreview(options) {
     });
   }
 
+  updateZoomModeUi();
   setSidebarTab("pages");
   void loadPdf();
   return {
