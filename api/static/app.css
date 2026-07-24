@@ -8092,6 +8092,87 @@ select option {
   overflow: hidden;
 }
 
+.system-openapi-access-panel {
+  overflow: hidden;
+}
+
+.system-openapi-body {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.system-openapi-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.system-openapi-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.system-openapi-summary-item {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel-soft) 82%, var(--panel) 18%);
+}
+
+.system-openapi-summary-item dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+}
+
+.system-openapi-summary-item dd {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.system-openapi-summary-item code {
+  font-size: 12px;
+}
+
+.system-openapi-summary-item-muted dd {
+  color: var(--muted);
+}
+
+.system-openapi-scope-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.system-openapi-scope {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--brand-line) 52%, var(--line) 48%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand-soft) 54%, var(--panel) 46%);
+  color: var(--brand-strong);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .api-token-table-wrap {
   position: relative;
   overflow-x: auto;

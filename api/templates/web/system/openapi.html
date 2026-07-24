@@ -18,30 +18,42 @@
   </section>
 
   <section class="storage-layout">
-    <section class="panel">
+    <section class="panel system-openapi-access-panel">
       <div class="panel-head">
         <div>
           <h2>文档与接入</h2>
           <p>system token 使用 Bearer 认证；第一阶段仅开放版本读取与版本写入能力。</p>
         </div>
       </div>
-      <div class="detail-actions">
-        <a class="btn btn-secondary" href="/api/system/openapi.json" target="_blank" rel="noreferrer">下载 OpenAPI JSON</a>
-        <a class="btn btn-secondary" href="/web/system/api-docs" target="_blank" rel="noreferrer">打开在线文档</a>
-      </div>
-      <div class="detail-list">
-        <div class="detail-list-item">
-          <strong>认证方式</strong>
-          <span><code>Authorization: Bearer &lt;system_token&gt;</code></span>
+      <div class="system-openapi-body">
+        <div class="system-openapi-actions">
+          <a class="btn btn-secondary" href="/api/system/openapi.json" target="_blank" rel="noreferrer">下载 OpenAPI JSON</a>
+          <a class="btn btn-secondary" href="/web/system/api-docs" target="_blank" rel="noreferrer">打开在线文档</a>
         </div>
-        <div class="detail-list-item">
-          <strong>当前开放</strong>
-          <span>版本列表、详情、创建、编辑、发布、资产上传签名、上传确认。</span>
-        </div>
-        <div class="detail-list-item">
-          <strong>未开放</strong>
-          <span>版本保留策略、对象存储设置、用户/角色/审计等其它系统接口。</span>
-        </div>
+        <dl class="system-openapi-summary">
+          <div class="system-openapi-summary-item">
+            <dt>认证方式</dt>
+            <dd><code>Authorization: Bearer &lt;system_token&gt;</code></dd>
+          </div>
+          <div class="system-openapi-summary-item">
+            <dt>当前开放</dt>
+            <dd>
+              <div class="system-openapi-scope-list" aria-label="当前开放接口范围">
+                <span class="system-openapi-scope">版本列表</span>
+                <span class="system-openapi-scope">版本详情</span>
+                <span class="system-openapi-scope">创建版本</span>
+                <span class="system-openapi-scope">编辑版本</span>
+                <span class="system-openapi-scope">发布版本</span>
+                <span class="system-openapi-scope">资产上传签名</span>
+                <span class="system-openapi-scope">上传确认</span>
+              </div>
+            </dd>
+          </div>
+          <div class="system-openapi-summary-item system-openapi-summary-item-muted">
+            <dt>暂未开放</dt>
+            <dd>版本保留策略、对象存储设置、用户 / 角色 / 审计等其它系统接口。</dd>
+          </div>
+        </dl>
       </div>
     </section>
 
