@@ -2176,6 +2176,174 @@
     });
   }
 
+  function userProjectAssignModal() {
+    return document.getElementById("user-project-assign-modal");
+  }
+
+  function parseUserProjectAssignments(value) {
+    if (!value) {
+      return [];
+    }
+    try {
+      var items = JSON.parse(value);
+      return Array.isArray(items)
+        ? items.filter(function (item) { return item && typeof item === "object" && item.key; })
+        : [];
+    } catch (_error) {
+      return [];
+    }
+  }
+
+  function assignedProjectsForModal(modal) {
+    return modal && Array.isArray(modal.yuanceAssignedProjects) ? modal.yuanceAssignedProjects : [];
+  }
+
+  function renderUserProjectCurrentAssignments(modal) {
+    if (!modal) {
+      return;
+    }
+    var projects = assignedProjectsForModal(modal);
+    var count = modal.querySelector("[data-user-project-current-count]");
+    var list = modal.querySelector("[data-user-project-current-list]");
+    if (count) {
+      count.textContent = projects.length + " 个项目";
+    }
+    if (!list) {
+      return;
+    }
+    list.innerHTML = "";
+    if (projects.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "user-project-current-empty";
+      empty.textContent = "当前还没有加入任何项目";
+      list.appendChild(empty);
+      return;
+    }
+    var fragment = document.createDocumentFragment();
+    projects.forEach(function (project) {
+      var card = document.createElement("article");
+      card.className = "user-project-current-card";
+
+      var meta = document.createElement("div");
+      meta.className = "user-project-current-meta";
+
+      var title = document.createElement("strong");
+      title.textContent = project.name || project.key || "";
+      meta.appendChild(title);
+
+      var code = document.createElement("span");
+      code.textContent = project.key || "";
+      meta.appendChild(code);
+
+      card.appendChild(meta);
+
+      if (project.status) {
+        var status = document.createElement("span");
+        status.className = "status status-" + (project.status_tone || "info");
+        status.textContent = project.status;
+        card.appendChild(status);
+      }
+
+      fragment.appendChild(card);
+    });
+    list.appendChild(fragment);
+  }
+
+  function updateUserProjectAssignForm(modal) {
+    if (!modal) {
+      return;
+    }
+    var selected = modal.querySelectorAll("[data-user-project-checkbox]:checked").length;
+    var count = modal.querySelector("[data-user-project-selected-count]");
+    var submit = modal.querySelector("[data-user-project-submit]");
+    if (count) {
+      count.textContent = "已选择 " + selected + " 个项目";
+    }
+    if (submit) {
+      submit.disabled = selected === 0;
+    }
+  }
+
+  function filterUserProjectAssignOptions(modal) {
+    if (!modal) {
+      return;
+    }
+    var assignedKeys = new Set(
+      assignedProjectsForModal(modal)
+        .map(function (project) { return String(project.key || "").trim(); })
+        .filter(Boolean)
+    );
+    var input = modal.querySelector("[data-user-project-search]");
+    var keyword = (input && input.value ? input.value : "").trim().toLocaleLowerCase("zh-CN");
+    var visibleCount = 0;
+    modal.querySelectorAll("[data-user-project-option]").forEach(function (option) {
+      var projectKey = option.getAttribute("data-project-key") || "";
+      var haystack = [
+        projectKey,
+        option.getAttribute("data-project-name") || "",
+        option.getAttribute("data-project-owner") || "",
+        option.getAttribute("data-project-status") || "",
+        option.textContent || "",
+      ].join(" ").toLocaleLowerCase("zh-CN");
+      var visible = !assignedKeys.has(projectKey) && (!keyword || haystack.indexOf(keyword) >= 0);
+      option.hidden = !visible;
+      if (visible) {
+        visibleCount += 1;
+      }
+    });
+    var empty = modal.querySelector("[data-user-project-empty]");
+    if (empty) {
+      empty.hidden = visibleCount > 0;
+      if (visibleCount > 0 || keyword) {
+        empty.textContent = "没有匹配项目";
+      } else if (assignedKeys.size > 0) {
+        empty.textContent = "该用户已加入所有可分配项目";
+      } else {
+        empty.textContent = "暂无可分配项目";
+      }
+    }
+  }
+
+  function prepareUserProjectAssignModal(trigger) {
+    var modal = userProjectAssignModal();
+    if (!modal || !trigger) {
+      return;
+    }
+    var username = (trigger.dataset.username || "").trim();
+    var displayName = (trigger.dataset.displayName || "").trim();
+    var page = (trigger.dataset.page || "").trim();
+    var perPage = (trigger.dataset.perPage || "").trim();
+    var summary = modal.querySelector("[data-user-project-assign-summary]");
+    var form = modal.querySelector("[data-user-project-assign-form]");
+    var pageField = modal.querySelector("[data-user-project-page]");
+    var perPageField = modal.querySelector("[data-user-project-per-page]");
+    var search = modal.querySelector("[data-user-project-search]");
+
+    modal.yuanceAssignedProjects = parseUserProjectAssignments(trigger.dataset.assignedProjects || "[]");
+
+    if (summary) {
+      summary.textContent = "为 " + displayName + " @" + username + " 批量分配项目；已加入项目不会重复出现在候选列表中。";
+    }
+    if (form && username) {
+      form.action = "/web/system/users/" + encodeURIComponent(username) + "/projects";
+    }
+    if (pageField && page) {
+      pageField.value = page;
+    }
+    if (perPageField && perPage) {
+      perPageField.value = perPage;
+    }
+    modal.querySelectorAll("[data-user-project-checkbox]").forEach(function (checkbox) {
+      checkbox.checked = false;
+    });
+    if (search) {
+      search.value = "";
+    }
+    renderUserProjectCurrentAssignments(modal);
+    filterUserProjectAssignOptions(modal);
+    updateUserProjectAssignForm(modal);
+  }
+
   function updateTokenProjectScope(scope) {
     if (!scope) {
       return;
@@ -8793,6 +8961,9 @@
     var modalOpen = event.target.closest("[data-modal-open]");
     if (modalOpen) {
       event.preventDefault();
+      if (modalOpen.hasAttribute("data-user-project-assign-trigger")) {
+        prepareUserProjectAssignModal(modalOpen);
+      }
       var modal = document.getElementById(modalOpen.getAttribute("data-modal-open"));
       openModal(modal, modalOpen);
       return;
@@ -9314,6 +9485,18 @@
       updateMemberBatchForm(memberBatchForm);
       showToast("请至少选择一个要加入的项目成员。", "error");
       memberBatchForm.querySelector("[data-member-candidate-search]")?.focus({ preventScroll: true });
+      return;
+    }
+    var userProjectAssignForm = event.target.closest("[data-user-project-assign-form]");
+    if (
+      userProjectAssignForm &&
+      !userProjectAssignForm.querySelector("[data-user-project-checkbox]:checked")
+    ) {
+      event.preventDefault();
+      updateUserProjectAssignForm(userProjectAssignModal());
+      showToast("请至少选择一个要分配的项目。", "error");
+      userProjectAssignForm.querySelector("[data-user-project-search]")?.focus({ preventScroll: true });
+      return;
     }
     var tokenProjectScope = event.target.querySelector("[data-token-project-scope]");
     if (
@@ -9456,6 +9639,11 @@
     var input = event.target.closest("[data-member-candidate-search]");
     if (input) {
       filterMemberCandidates(input);
+      return;
+    }
+    var projectSearch = event.target.closest("[data-user-project-search]");
+    if (projectSearch) {
+      filterUserProjectAssignOptions(userProjectAssignModal());
     }
   });
 
@@ -9463,6 +9651,13 @@
     var checkbox = event.target.closest("[data-member-candidate-checkbox]");
     if (checkbox) {
       updateMemberBatchForm(memberBatchFormFor(checkbox));
+      return;
+    }
+
+    var projectCheckbox = event.target.closest("[data-user-project-checkbox]");
+    if (projectCheckbox) {
+      updateUserProjectAssignForm(userProjectAssignModal());
+      return;
     }
 
     var tokenProjectCheckbox = event.target.closest("[data-token-project-all], [data-token-project-option]");

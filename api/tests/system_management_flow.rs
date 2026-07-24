@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, rbac, storage, system_api_tokens},
+    domains::{auth, bootstrap, projects, rbac, storage, system_api_tokens},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -44,6 +44,87 @@ async fn system_users_page_renders_accounts_and_roles_for_admin() {
     assert!(body.contains(r#"data-select-search-placeholder="搜索角色""#));
     assert!(!body.contains("action-menu"));
     assert!(!body.contains("<aside class=\"sidebar\""));
+}
+
+#[tokio::test]
+async fn system_users_page_renders_project_assignment_controls() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+
+    let joined_project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "已加入项目".to_string(),
+            description: "用于验证当前项目摘要".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("joined project should create");
+    let available_project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "可分配项目".to_string(),
+            description: "用于验证候选项目列表".to_string(),
+            status: "acceptance".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("available project should create");
+    let paused_project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "暂停项目".to_string(),
+            description: "不应进入分配候选".to_string(),
+            status: "on_hold".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("paused project should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &joined_project.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/users")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let modal_body = html_fragment(&body, r#"id="user-project-assign-modal""#, "</aside>");
+
+    assert!(body.contains("<th>项目</th>"));
+    assert!(body.contains(r#"data-user-project-assign-trigger"#));
+    assert!(body.contains(r#"id="user-project-assign-modal""#));
+    assert!(modal_body.contains(r#"data-user-project-assign-form"#));
+    assert!(body.contains("已加入项目"));
+    assert!(modal_body.contains("可分配项目"));
+    assert!(modal_body.contains(&available_project.project_key));
+    assert!(!modal_body.contains(&paused_project.name));
 }
 
 #[tokio::test]
@@ -279,6 +360,95 @@ async fn system_users_page_paginates_with_shared_controls() {
         .await
         .expect("router should respond");
     assert_eq!(invalid_page_response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn admin_can_assign_multiple_projects_from_system_users_page() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let project_a = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "批量项目 A".to_string(),
+            description: "系统用户页批量分配 A".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project a should create");
+    let project_b = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "批量项目 B".to_string(),
+            description: "系统用户页批量分配 B".to_string(),
+            status: "not_started".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project b should create");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/system/users/member1/projects")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf(&format!(
+                    "project_key={}&project_key={}&member_role=viewer&page=2&per_page=5",
+                    project_a.project_key, project_b.project_key
+                ))))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=2&per_page=5"
+    );
+
+    let assigned = projects::list_project_summaries_for_user(&pool, member_user_id, false)
+        .await
+        .expect("assigned projects should load");
+    assert_eq!(assigned.len(), 2);
+    assert!(assigned
+        .iter()
+        .any(|project| project.project_key == project_a.project_key));
+    assert!(assigned
+        .iter()
+        .any(|project| project.project_key == project_b.project_key));
+
+    let detail_a = projects::get_project_detail(&pool, &project_a.project_key)
+        .await
+        .expect("project a detail should load")
+        .expect("project a should exist");
+    let detail_b = projects::get_project_detail(&pool, &project_b.project_key)
+        .await
+        .expect("project b detail should load")
+        .expect("project b should exist");
+    let members_a = projects::list_project_members(&pool, detail_a.id)
+        .await
+        .expect("project a members should load");
+    let members_b = projects::list_project_members(&pool, detail_b.id)
+        .await
+        .expect("project b members should load");
+    assert!(members_a
+        .iter()
+        .any(|member| member.username == "member1" && member.member_role == "viewer"));
+    assert!(members_b
+        .iter()
+        .any(|member| member.username == "member1" && member.member_role == "viewer"));
 }
 
 #[tokio::test]

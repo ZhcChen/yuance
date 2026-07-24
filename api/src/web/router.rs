@@ -275,6 +275,10 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(web::user::system_user_password_reset),
         )
         .route(
+            "/web/system/users/{username}/projects",
+            axum::routing::post(web::user::system_user_project_assign),
+        )
+        .route(
             "/web/system/roles",
             get(web::user::system_roles_page).post(web::user::system_roles_create),
         )

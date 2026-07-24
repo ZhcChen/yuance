@@ -464,6 +464,27 @@ struct UserRow {
     role_names: String,
     is_super_admin: bool,
     updated_at: String,
+    assigned_projects: Vec<UserAssignedProjectView>,
+    assigned_project_count: usize,
+    assigned_project_overflow_count: usize,
+    assigned_projects_json: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UserAssignedProjectView {
+    key: String,
+    name: String,
+    status: String,
+    status_tone: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct UserProjectAssignmentOptionView {
+    key: String,
+    name: String,
+    owner: String,
+    status: String,
+    summary: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1257,10 +1278,13 @@ struct SystemUsersTemplate {
     topbar_project_options: Vec<ProjectOption>,
     users: Vec<UserRow>,
     roles: Vec<RoleRow>,
+    project_assignment_options: Vec<UserProjectAssignmentOptionView>,
+    has_project_assignment_options: bool,
     has_users: bool,
     pagination: PaginationView,
     pagination_pages: Vec<PaginationPageView>,
     can_manage_users: bool,
+    can_manage_user_projects: bool,
 }
 
 #[derive(Template)]
@@ -1391,6 +1415,15 @@ pub struct ResetPasswordForm {
     #[serde(default)]
     per_page: Option<i64>,
     password: String,
+}
+
+#[derive(Debug)]
+struct ParsedSystemUserProjectAssignForm {
+    csrf_token: String,
+    page: Option<i64>,
+    per_page: Option<i64>,
+    project_keys: Vec<String>,
+    member_role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5675,11 +5708,7 @@ pub async fn system_users_page(
     let total_items = users::count_users(pool).await?;
     let total_pages = total_pages(total_items, requested_pagination.per_page);
     let page_number = requested_pagination.page.min(total_pages);
-    let users = users::list_users_page(pool, page_number, requested_pagination.per_page)
-        .await?
-        .into_iter()
-        .map(user_row_from_summary)
-        .collect::<Vec<_>>();
+    let user_summaries = users::list_users_page(pool, page_number, requested_pagination.per_page).await?;
     let pagination = system_users_pagination_view(
         page_number,
         requested_pagination.per_page,
@@ -5695,6 +5724,25 @@ pub async fn system_users_page(
         .collect::<Vec<_>>();
     let can_manage_users =
         rbac::user_has_permission(pool, context.user_id, "system.users.manage").await?;
+    let can_manage_user_projects = if can_manage_users {
+        can_manage_system_user_projects(pool, context.user_id).await?
+    } else {
+        false
+    };
+    let project_assignment_options = if can_manage_user_projects {
+        load_assignable_user_project_options(pool).await?
+    } else {
+        Vec::new()
+    };
+    let mut users = Vec::with_capacity(user_summaries.len());
+    for user in user_summaries {
+        let assigned_projects = if user.is_super_admin {
+            Vec::new()
+        } else {
+            load_user_assigned_projects(pool, user.id).await?
+        };
+        users.push(user_row_from_summary(user, assigned_projects));
+    }
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -5711,9 +5759,12 @@ pub async fn system_users_page(
             has_users: !users.is_empty(),
             users,
             roles,
+            has_project_assignment_options: !project_assignment_options.is_empty(),
+            project_assignment_options,
             pagination,
             pagination_pages,
             can_manage_users,
+            can_manage_user_projects,
         })?
         .into_response(),
     )
@@ -5861,6 +5912,83 @@ pub async fn system_user_password_reset(
         "user",
         &username,
         "{}",
+    )
+    .await?;
+
+    Ok(Redirect::to(&redirect_url).into_response())
+}
+
+pub async fn system_user_project_assign(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_system_user_project_assign_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match system_context_or_redirect(&state, &headers, "system.users.manage").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let pool = state.pool()?;
+    if !can_manage_system_user_projects(pool, context.user_id).await? {
+        return Err(AppError::Forbidden(
+            "需要全项目管理权限才能直接分配项目".to_string(),
+        ));
+    }
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
+    let user = users::get_user_summary_by_username(pool, &username)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("用户不存在".to_string()))?;
+    if user.is_super_admin {
+        return Err(AppError::BadRequest(
+            "超级管理员默认拥有全项目访问，无需额外分配项目".to_string(),
+        ));
+    }
+
+    let mut seen_project_keys = HashSet::new();
+    let project_keys = form
+        .project_keys
+        .iter()
+        .map(|project_key| project_key.trim())
+        .filter(|project_key| !project_key.is_empty())
+        .filter(|project_key| seen_project_keys.insert((*project_key).to_string()))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if project_keys.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要分配的项目".to_string(),
+        ));
+    }
+
+    let mut assigned_project_keys = Vec::new();
+    for project_key in project_keys {
+        let member = projects::add_project_member(
+            pool,
+            context.user_id,
+            &project_key,
+            &username,
+            &form.member_role,
+        )
+        .await?;
+        if member.username == username {
+            assigned_project_keys.push(project_key);
+        }
+    }
+
+    let project_keys_json =
+        serde_json::to_string(&assigned_project_keys).unwrap_or_else(|_| "[]".to_string());
+    let member_role_json =
+        serde_json::to_string(&form.member_role).unwrap_or_else(|_| "\"member\"".to_string());
+    audit::record(
+        pool,
+        Some(context.user_id),
+        "user.project.assign",
+        "user",
+        &username,
+        &format!(
+            r#"{{"project_keys":{project_keys_json},"member_role":{member_role_json}}}"#
+        ),
     )
     .await?;
 
@@ -7801,6 +7929,40 @@ fn parse_project_member_form(form: &[u8]) -> AppResult<ParsedProjectMemberForm> 
     })
 }
 
+fn parse_system_user_project_assign_form(form: &[u8]) -> AppResult<ParsedSystemUserProjectAssignForm> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("项目分配表单解析失败：{error}")))?;
+    let mut csrf_token = String::new();
+    let mut page = None;
+    let mut per_page = None;
+    let mut project_keys = Vec::new();
+    let mut member_role = String::new();
+    for (key, value) in pairs {
+        match key.as_str() {
+            csrf::CSRF_FIELD_NAME => csrf_token = value,
+            "page" => {
+                page = value.trim().parse::<i64>().ok();
+            }
+            "per_page" => {
+                per_page = value.trim().parse::<i64>().ok();
+            }
+            "project_key" => project_keys.push(value),
+            "member_role" => member_role = value,
+            _ => {}
+        }
+    }
+    if member_role.trim().is_empty() {
+        member_role = "member".to_string();
+    }
+    Ok(ParsedSystemUserProjectAssignForm {
+        csrf_token,
+        page,
+        per_page,
+        project_keys,
+        member_role,
+    })
+}
+
 fn parse_i64_form_value(form: &[u8], field_name: &str) -> AppResult<Option<i64>> {
     let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
         .map_err(|error| AppError::BadRequest(format!("表单解析失败：{error}")))?;
@@ -8505,8 +8667,70 @@ fn activity_from_summary(activity: projects::ProjectActivitySummary) -> Activity
     }
 }
 
-fn user_row_from_summary(user: users::UserSummary) -> UserRow {
+async fn can_manage_system_user_projects(pool: &SqlitePool, user_id: i64) -> AppResult<bool> {
+    let Some(user) = users::get_user_summary(pool, user_id).await? else {
+        return Ok(false);
+    };
+    let can_access_all_projects =
+        user_can_access_all_projects(pool, user_id, user.is_super_admin).await?;
+    if !can_access_all_projects {
+        return Ok(false);
+    }
+    rbac::user_has_permission(pool, user_id, "project.manage").await
+}
+
+async fn load_user_assigned_projects(
+    pool: &SqlitePool,
+    user_id: i64,
+) -> AppResult<Vec<UserAssignedProjectView>> {
+    Ok(projects::list_project_summaries_for_user(pool, user_id, false)
+        .await?
+        .into_iter()
+        .map(user_assigned_project_from_summary)
+        .collect())
+}
+
+async fn load_assignable_user_project_options(
+    pool: &SqlitePool,
+) -> AppResult<Vec<UserProjectAssignmentOptionView>> {
+    Ok(projects::list_project_summaries(pool)
+        .await?
+        .into_iter()
+        .filter(|project| projects::ensure_project_accepts_writes(&project.status).is_ok())
+        .map(user_project_assignment_option_from_summary)
+        .collect())
+}
+
+fn user_assigned_project_from_summary(project: projects::ProjectSummary) -> UserAssignedProjectView {
+    let (status, status_tone) = project_status_label(&project.status);
+    UserAssignedProjectView {
+        key: project.project_key,
+        name: project.name,
+        status: status.to_string(),
+        status_tone,
+    }
+}
+
+fn user_project_assignment_option_from_summary(
+    project: projects::ProjectSummary,
+) -> UserProjectAssignmentOptionView {
+    let (status, _) = project_status_label(&project.status);
+    let owner = fallback_text(project.owner_display_name, "未设置负责人");
+    UserProjectAssignmentOptionView {
+        key: project.project_key,
+        name: project.name,
+        owner: owner.clone(),
+        status: status.to_string(),
+        summary: format!("{owner} · {status}"),
+    }
+}
+
+fn user_row_from_summary(user: users::UserSummary, assigned_projects: Vec<UserAssignedProjectView>) -> UserRow {
     let (status, status_tone) = user_status_label(&user.status);
+    let assigned_projects_json =
+        serde_json::to_string(&assigned_projects).unwrap_or_else(|_| "[]".to_string());
+    let assigned_project_count = assigned_projects.len();
+    let assigned_project_overflow_count = assigned_project_count.saturating_sub(2);
     UserRow {
         username: user.username,
         display_name: user.display_name,
@@ -8518,6 +8742,10 @@ fn user_row_from_summary(user: users::UserSummary) -> UserRow {
         role_names: fallback_text(user.role_names, "未分配"),
         is_super_admin: user.is_super_admin,
         updated_at: display_timestamp(user.updated_at),
+        assigned_projects,
+        assigned_project_count,
+        assigned_project_overflow_count,
+        assigned_projects_json,
     }
 }
 

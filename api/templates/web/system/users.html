@@ -31,6 +31,7 @@
           <tr>
             <th>用户</th>
             <th>联系方式</th>
+            <th>项目</th>
             <th>角色</th>
             <th>状态</th>
             <th>更新</th>
@@ -45,6 +46,32 @@
               <div class="muted-line">@{{ user.username }}{% if user.is_super_admin %} · 超级管理员{% endif %}</div>
             </td>
             <td>{{ user.contact }}</td>
+            <td>
+              {% if user.is_super_admin %}
+              <div class="user-project-stack">
+                <span class="status status-info">全项目访问</span>
+                <span class="muted-line">超级管理员无需单独加入项目。</span>
+              </div>
+              {% else %}
+              <div class="user-project-stack">
+                <strong>{{ user.assigned_project_count }} 个项目</strong>
+                {% if user.assigned_project_count > 0 %}
+                <div class="user-project-chip-list">
+                  {% for project in user.assigned_projects %}
+                  {% if loop.index0 < 2 %}
+                  <span class="user-project-chip" title="{{ project.key }} · {{ project.name }}">{{ project.key }}</span>
+                  {% endif %}
+                  {% endfor %}
+                  {% if user.assigned_project_overflow_count > 0 %}
+                  <span class="user-project-chip user-project-chip-muted">+{{ user.assigned_project_overflow_count }}</span>
+                  {% endif %}
+                </div>
+                {% else %}
+                <span class="muted-line">暂未加入任何项目</span>
+                {% endif %}
+              </div>
+              {% endif %}
+            </td>
             <td>{{ user.role_names }}</td>
             <td><span class="status status-{{ user.status_tone }}">{{ user.status }}</span></td>
             <td>{{ user.updated_at }}</td>
@@ -71,6 +98,21 @@
                 </form>
                 <button class="btn btn-sm btn-secondary" type="button" data-modal-open="user-role-modal-{{ user.username }}">调整角色</button>
                 <button class="btn btn-sm btn-secondary" type="button" data-modal-open="user-password-modal-{{ user.username }}">重置密码</button>
+                {% if can_manage_user_projects %}
+                <button
+                  class="btn btn-sm btn-secondary"
+                  type="button"
+                  data-modal-open="user-project-assign-modal"
+                  data-user-project-assign-trigger
+                  data-username="{{ user.username }}"
+                  data-display-name="{{ user.display_name }}"
+                  data-page="{{ pagination.page }}"
+                  data-per-page="{{ pagination.per_page }}"
+                  data-assigned-projects="{{ user.assigned_projects_json }}"
+                >
+                  分配项目
+                </button>
+                {% endif %}
               </div>
               {% else %}
               <span class="muted-line">只读</span>
@@ -102,6 +144,91 @@
 </section>
 
 {% if can_manage_users %}
+{% if can_manage_user_projects %}
+<aside id="user-project-assign-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="user-project-assign-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="user-project-assign-modal-title">分配项目</h2>
+        <p data-user-project-assign-summary>支持一次选择多个项目，统一设置本次加入的项目角色。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/system/users" data-user-project-assign-form>
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="page" value="{{ pagination.page }}" data-user-project-page>
+      <input type="hidden" name="per_page" value="{{ pagination.per_page }}" data-user-project-per-page>
+
+      <section class="user-project-section">
+        <div class="member-picker-head">
+          <span>当前已加入项目</span>
+          <strong data-user-project-current-count>0 个项目</strong>
+        </div>
+        <div class="user-project-current-list" data-user-project-current-list></div>
+      </section>
+
+      <div class="member-picker">
+        <label>
+          搜索项目
+          <input
+            type="search"
+            placeholder="{% if has_project_assignment_options %}搜索项目名称、编码、负责人或状态{% else %}暂无可分配项目{% endif %}"
+            autocomplete="off"
+            data-user-project-search
+            {% if !has_project_assignment_options %}disabled{% endif %}
+          >
+        </label>
+        <div class="member-picker-head">
+          <span>可分配项目</span>
+          <strong data-user-project-selected-count>已选择 0 个项目</strong>
+        </div>
+        {% if has_project_assignment_options %}
+        <div class="member-candidate-list" data-user-project-option-list>
+          {% for project in project_assignment_options %}
+          <label
+            class="member-candidate"
+            data-user-project-option
+            data-project-key="{{ project.key }}"
+            data-project-name="{{ project.name }}"
+            data-project-owner="{{ project.owner }}"
+            data-project-status="{{ project.status }}"
+          >
+            <input type="checkbox" name="project_key" value="{{ project.key }}" data-user-project-checkbox>
+            <span>
+              <strong>{{ project.name }}</strong>
+              <em>{{ project.key }}</em>
+            </span>
+            <small>{{ project.summary }}</small>
+          </label>
+          {% endfor %}
+          <div class="search-combobox-empty" data-user-project-empty hidden>没有匹配项目</div>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无可分配项目</strong>
+          <span>当前没有处于可写状态的项目。</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <label>
+        <span>项目角色</span>
+        <select name="member_role" data-select-searchable data-select-search-placeholder="搜索项目角色">
+          <option value="member" selected>项目成员</option>
+          <option value="maintainer">项目管理员</option>
+          <option value="viewer">只读成员</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit" data-user-project-submit {% if !has_project_assignment_options %}disabled{% endif %}>确认分配</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
+
 <aside id="user-create-modal" class="modal" data-modal hidden aria-hidden="true">
   <div class="modal-backdrop" data-modal-close></div>
   <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="user-create-modal-title" tabindex="-1">

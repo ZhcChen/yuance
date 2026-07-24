@@ -4434,6 +4434,99 @@ code {
   white-space: nowrap;
 }
 
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.row-actions form {
+  margin: 0;
+}
+
+.user-project-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.user-project-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.user-project-chip {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.user-project-chip-muted {
+  color: var(--muted);
+}
+
+.user-project-section {
+  display: grid;
+  gap: 10px;
+}
+
+.user-project-current-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.user-project-current-card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+}
+
+.user-project-current-meta {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.user-project-current-meta strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-project-current-meta span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-project-current-empty {
+  padding: 14px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .personal-analysis-page {
   max-width: 1380px;
   margin: 0 auto;
