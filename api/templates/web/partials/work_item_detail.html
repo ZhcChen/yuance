@@ -25,6 +25,31 @@
     </div>
   </div>
 
+  {% if can_manage_work_items && !item.is_deleted %}
+  <div class="discussion-composer-dock" data-discussion-composer-dock data-discussion-dock-state="inline">
+    <form class="discussion-composer" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ item.reporter_username }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="parent_comment_id" value="">
+      <input type="hidden" name="body_format" value="html" data-discussion-body-format>
+      <input type="hidden" name="body" value="" data-discussion-body>
+      <div class="discussion-composer-avatar" data-user-avatar data-avatar-name="我" aria-hidden="true">我</div>
+      <div class="discussion-composer-main">
+        <label class="sr-only" for="discussion-body-main">发表内容</label>
+        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-placeholder="请输入内容...">
+          {% include "web/partials/rich_text_toolbar.html" %}
+          <div id="discussion-body-main" class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
+        </div>
+        <div class="discussion-composer-footer">
+          <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
+          <button class="btn btn-secondary" type="submit" data-discussion-submit>发表</button>
+          <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>发表并指派</button>
+        </div>
+        <div class="discussion-upload-status" role="status" aria-live="polite" data-discussion-status hidden></div>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
   <div class="discussion-list-region" data-discussion-list-region>
   {% if has_comments %}
   <ol class="discussion-thread">
@@ -134,31 +159,6 @@
   </div>
   {% endif %}
   </div>
-
-  {% if can_manage_work_items && !item.is_deleted %}
-  <div class="discussion-composer-dock" data-discussion-composer-dock>
-    <form class="discussion-composer" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ item.reporter_username }}">
-      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
-      <input type="hidden" name="parent_comment_id" value="">
-      <input type="hidden" name="body_format" value="html" data-discussion-body-format>
-      <input type="hidden" name="body" value="" data-discussion-body>
-      <div class="discussion-composer-avatar" data-user-avatar data-avatar-name="我" aria-hidden="true">我</div>
-      <div class="discussion-composer-main">
-        <label class="sr-only" for="discussion-body-main">发表内容</label>
-        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-placeholder="请输入内容...">
-          {% include "web/partials/rich_text_toolbar.html" %}
-          <div id="discussion-body-main" class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
-        </div>
-        <div class="discussion-composer-footer">
-          <label class="discussion-assign-status">指派后状态<select data-discussion-assign-status data-select-panel-min-width="208">{% for option in status_options %}<option value="{{ option.value }}" {% if option.selected %}selected{% endif %}>{{ option.label }}</option>{% endfor %}</select></label>
-          <button class="btn btn-secondary" type="submit" data-discussion-submit>发表</button>
-          <button class="btn btn-primary" type="submit" data-discussion-submit data-discussion-assign>发表并指派</button>
-        </div>
-        <div class="discussion-upload-status" role="status" aria-live="polite" data-discussion-status hidden></div>
-      </div>
-    </form>
-  </div>
-  {% endif %}
 </section>
 
 <div data-discussion-modals>

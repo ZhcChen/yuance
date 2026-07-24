@@ -1063,6 +1063,10 @@
     return root ? root.querySelector("[data-discussion-composer-dock]") : null;
   }
 
+  function discussionHasPosts(root) {
+    return Boolean(root && root.querySelector(".discussion-post"));
+  }
+
   function clearDiscussionComposerDockLayout() {
     if (discussionComposerDockResizeObserver) {
       discussionComposerDockResizeObserver.disconnect();
@@ -1071,6 +1075,11 @@
     if (!root) {
       return;
     }
+    var dock = discussionComposerDock(root);
+    if (dock) {
+      dock.dataset.discussionDockState = "inline";
+    }
+    delete root.dataset.discussionDockFixed;
     root.style.removeProperty("--discussion-dock-left");
     root.style.removeProperty("--discussion-dock-width");
     root.style.removeProperty("--discussion-dock-reserve");
@@ -1081,7 +1090,8 @@
     var root = currentWorkItemDiscussionRoot();
     var dock = discussionComposerDock(root);
     var composer = dock ? dock.querySelector(".discussion-composer") : null;
-    if (!root || !dock || !composer) {
+    var list = discussionListRegion(root);
+    if (!root || !dock || !composer || !list) {
       clearDiscussionComposerDockLayout();
       return;
     }
@@ -1094,6 +1104,10 @@
       ? viewportWidth - sidePadding * 2
       : Math.min(Math.round(rootRect.width), viewportWidth - left - sidePadding);
     var reserve = Math.ceil(composer.getBoundingClientRect().height) + 34;
+    var dockRect = dock.getBoundingClientRect();
+    var shouldFix = discussionHasPosts(root) && dockRect.top <= 24 && rootRect.bottom - 24 > reserve;
+    dock.dataset.discussionDockState = shouldFix ? "fixed" : "inline";
+    root.dataset.discussionDockFixed = shouldFix ? "true" : "false";
     root.style.setProperty("--discussion-dock-left", Math.max(sidePadding, left) + "px");
     root.style.setProperty("--discussion-dock-width", Math.max(280, width) + "px");
     root.style.setProperty("--discussion-dock-reserve", Math.max(220, reserve) + "px");
@@ -1110,7 +1124,8 @@
     var root = currentWorkItemDiscussionRoot();
     var dock = discussionComposerDock(root);
     var composer = dock ? dock.querySelector(".discussion-composer") : null;
-    if (!root || !dock || !composer) {
+    var list = discussionListRegion(root);
+    if (!root || !dock || !composer || !list) {
       clearDiscussionComposerDockLayout();
       return;
     }
@@ -1127,6 +1142,7 @@
     discussionComposerDockResizeObserver.observe(root);
     discussionComposerDockResizeObserver.observe(dock);
     discussionComposerDockResizeObserver.observe(composer);
+    discussionComposerDockResizeObserver.observe(list);
   }
 
   function discussionCountValue(node) {
@@ -10059,6 +10075,7 @@
     if (activeSelectControl) {
       closeSelectControl(activeSelectControl, false);
     }
+    scheduleDiscussionComposerDockLayout();
     loadVisibleAttachmentImages();
     scheduleVisibleAttachmentImageChecks();
   }, true);
