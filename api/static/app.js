@@ -7728,17 +7728,46 @@
   function openDocumentPreviewWindow(url) {
     if (!url) {
       showToast("当前文件预览地址不可用。", "error");
-      return;
+      return false;
     }
+    var previewLink = null;
+    try {
+      previewLink = document.createElement("a");
+      previewLink.href = url;
+      previewLink.target = "_blank";
+      previewLink.rel = "noopener noreferrer";
+      previewLink.style.position = "fixed";
+      previewLink.style.left = "-9999px";
+      if (document.body && typeof document.body.appendChild === "function") {
+        document.body.appendChild(previewLink);
+      }
+      if (typeof previewLink.click === "function") {
+        previewLink.click();
+        return true;
+      }
+    } catch (_error) {
+      previewLink = null;
+    } finally {
+      if (previewLink && typeof previewLink.remove === "function") {
+        previewLink.remove();
+      }
+    }
+
     var openedWindow = null;
     try {
-      openedWindow = window.open(url, "_blank", "noopener");
+      openedWindow = window.open(url, "_blank");
     } catch (_error) {
       openedWindow = null;
     }
-    if (!openedWindow) {
-      window.location.href = url;
+    if (openedWindow) {
+      try {
+        openedWindow.opener = null;
+      } catch (_error) {}
+      return true;
     }
+
+    showToast("浏览器阻止了新标签页预览，请允许弹出新页面后重试。", "warning");
+    return false;
   }
 
   function richAttachmentElement(target) {
@@ -8558,6 +8587,7 @@
       preferredImageViewerFitWidthScale: preferredImageViewerFitWidthScale,
       filterSelectOptions: filterSelectOptions,
       reloadDiscussionAtComment: reloadDiscussionAtComment,
+      openDocumentPreviewWindow: openDocumentPreviewWindow,
       richAttachmentMetadata: richAttachmentMetadata,
       absoluteAttachmentUrl: absoluteAttachmentUrl,
       richTextPlainText: richTextPlainText,
