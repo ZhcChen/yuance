@@ -221,6 +221,11 @@
       background: linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 96%));
     }
 
+    .preview-panel-body-pdf {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 248px;
+    }
+
     .preview-panel-body-scroll {
       width: 100%;
       height: 100%;
@@ -346,6 +351,12 @@
       border-radius: 20px;
       background: rgb(255 255 255 / 78%);
       box-shadow: 0 20px 40px rgb(15 23 42 / 12%);
+      transition: box-shadow 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .pdf-page.is-active {
+      background: rgb(219 234 254 / 62%);
+      box-shadow: 0 24px 48px rgb(37 99 235 / 18%);
     }
 
     .pdf-page canvas {
@@ -361,6 +372,273 @@
       font-size: 12px;
       line-height: 18px;
       text-align: center;
+    }
+
+    .pdf-toolbar-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      padding: 0 8px 0 12px;
+      border: 1px solid rgb(148 163 184 / 26%);
+      border-radius: 999px;
+      background: #fff;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 18px;
+    }
+
+    .pdf-toolbar-group input {
+      width: 64px;
+      height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 999px;
+      background: rgb(241 245 249 / 96%);
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 700;
+      text-align: center;
+      outline: none;
+    }
+
+    .pdf-toolbar-group input:focus {
+      box-shadow: inset 0 0 0 1px rgb(37 99 235 / 42%);
+      background: #eff6ff;
+    }
+
+    .pdf-toolbar-action {
+      min-width: 0;
+      min-height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 999px;
+      background: rgb(15 23 42 / 8%);
+      color: #0f172a;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .pdf-toolbar-action:hover {
+      background: rgb(37 99 235 / 14%);
+      transform: translateY(-1px);
+    }
+
+    .pdf-sidebar {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-width: 0;
+      border-left: 1px solid rgb(226 232 240 / 88%);
+      background: linear-gradient(180deg, rgb(255 255 255 / 98%), rgb(248 250 252 / 96%));
+    }
+
+    .pdf-sidebar-head {
+      display: grid;
+      gap: 12px;
+      padding: 16px 14px 14px;
+      border-bottom: 1px solid rgb(226 232 240 / 88%);
+    }
+
+    .pdf-sidebar-copy {
+      display: grid;
+      gap: 4px;
+    }
+
+    .pdf-sidebar-copy strong {
+      color: #0f172a;
+      font-size: 13px;
+      line-height: 20px;
+    }
+
+    .pdf-sidebar-copy span {
+      color: #64748b;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .pdf-sidebar-tabs {
+      position: relative;
+      display: inline-grid;
+      grid-auto-flow: column;
+      gap: 6px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgb(226 232 240 / 78%);
+    }
+
+    .pdf-sidebar-tab {
+      position: relative;
+      z-index: 1;
+      min-width: 0;
+      min-height: 34px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: color 180ms ease, transform 180ms ease, background 180ms ease;
+    }
+
+    .pdf-sidebar-tab:hover {
+      color: #0f172a;
+      transform: translateY(-1px);
+    }
+
+    .pdf-sidebar-tab.is-active {
+      background: #fff;
+      color: #0f172a;
+      box-shadow: 0 10px 24px rgb(15 23 42 / 10%);
+    }
+
+    .pdf-sidebar-tab[hidden] {
+      display: none;
+    }
+
+    .pdf-sidebar-content {
+      min-height: 0;
+      padding: 12px;
+    }
+
+    .pdf-sidebar-panel {
+      height: 100%;
+      min-height: 0;
+    }
+
+    .pdf-sidebar-scroll {
+      height: 100%;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .pdf-sidebar-empty {
+      display: grid;
+      place-items: center;
+      min-height: 100%;
+      padding: 18px 12px;
+      color: #94a3b8;
+      font-size: 12px;
+      line-height: 18px;
+      text-align: center;
+    }
+
+    .pdf-thumbnails {
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+
+    .pdf-thumb {
+      display: grid;
+      gap: 8px;
+      width: 100%;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: 18px;
+      background: rgb(248 250 252 / 92%);
+      color: #334155;
+      text-align: left;
+      cursor: pointer;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .pdf-thumb:hover {
+      transform: translateY(-1px);
+      border-color: rgb(59 130 246 / 24%);
+      background: #fff;
+      box-shadow: 0 12px 28px rgb(15 23 42 / 10%);
+    }
+
+    .pdf-thumb.is-active {
+      border-color: rgb(59 130 246 / 34%);
+      background: #eff6ff;
+      box-shadow: 0 14px 30px rgb(37 99 235 / 14%);
+    }
+
+    .pdf-thumb-surface {
+      display: grid;
+      place-items: center;
+      padding: 8px;
+      border-radius: 14px;
+      background: rgb(255 255 255 / 96%);
+      box-shadow: inset 0 0 0 1px rgb(226 232 240 / 96%);
+    }
+
+    .pdf-thumb canvas {
+      display: block;
+      max-width: 100%;
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .pdf-thumb-meta {
+      color: #475569;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 18px;
+    }
+
+    .pdf-outline-list {
+      display: grid;
+      gap: 8px;
+      align-content: start;
+    }
+
+    .pdf-outline-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      min-height: 40px;
+      padding: 10px 12px 10px calc(12px + var(--outline-depth, 0) * 14px);
+      border: 1px solid transparent;
+      border-radius: 14px;
+      background: transparent;
+      color: #0f172a;
+      text-align: left;
+      cursor: pointer;
+      transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+    }
+
+    .pdf-outline-item:hover:not(.is-disabled) {
+      background: rgb(239 246 255 / 84%);
+      border-color: rgb(59 130 246 / 18%);
+      transform: translateY(-1px);
+    }
+
+    .pdf-outline-item.is-active {
+      background: #dbeafe;
+      border-color: rgb(59 130 246 / 22%);
+    }
+
+    .pdf-outline-item.is-disabled {
+      cursor: default;
+      color: #94a3b8;
+      opacity: 0.76;
+    }
+
+    .pdf-outline-title {
+      min-width: 0;
+      overflow: hidden;
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 18px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .pdf-outline-page {
+      flex: 0 0 auto;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 18px;
     }
 
     .text-preview {
@@ -465,6 +743,16 @@
         justify-content: flex-start;
       }
 
+      .preview-panel-body-pdf {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) 320px;
+      }
+
+      .pdf-sidebar {
+        border-top: 1px solid rgb(226 232 240 / 88%);
+        border-left: 0;
+      }
+
       .pdf-stage {
         padding: 14px;
       }
@@ -541,6 +829,11 @@
           <div class="preview-panel-tools">
             {% if has_pdf_preview %}
             <span class="preview-tool" id="pdf-page-count">载入中</span>
+            <label class="pdf-toolbar-group" for="pdf-page-input">
+              <span>跳转</span>
+              <input id="pdf-page-input" type="number" min="1" value="1" disabled>
+              <button class="pdf-toolbar-action" type="button" id="pdf-page-go">前往</button>
+            </label>
             <button class="preview-tool" type="button" id="pdf-zoom-out">－</button>
             <button class="preview-tool" type="button" id="pdf-zoom-reset">适宽</button>
             <button class="preview-tool" type="button" id="pdf-zoom-in">＋</button>
@@ -555,7 +848,7 @@
           </div>
         </div>
 
-        <div class="preview-panel-body">
+        <div class="preview-panel-body{% if has_pdf_preview %} preview-panel-body-pdf{% endif %}">
           {% if has_pdf_preview %}
           <div class="preview-panel-body-scroll" id="pdf-preview-scroll">
             <div class="pdf-stage" data-pdf-preview data-pdf-url="{{ pdf_preview_url }}">
@@ -566,6 +859,32 @@
               <div class="pdf-pages" id="pdf-preview-pages"></div>
             </div>
           </div>
+          <aside class="pdf-sidebar" aria-label="PDF 快速定位">
+            <div class="pdf-sidebar-head">
+              <div class="pdf-sidebar-copy">
+                <strong>快速定位</strong>
+                <span>支持页缩略图预览，若 PDF 自带目录会自动识别。</span>
+              </div>
+              <div class="pdf-sidebar-tabs" role="tablist" aria-label="PDF 导航模式">
+                <button class="pdf-sidebar-tab is-active" type="button" role="tab" aria-selected="true" data-pdf-sidebar-tab="pages">页面</button>
+                <button class="pdf-sidebar-tab" type="button" role="tab" aria-selected="false" data-pdf-sidebar-tab="outline">目录</button>
+              </div>
+            </div>
+            <div class="pdf-sidebar-content">
+              <section class="pdf-sidebar-panel" role="tabpanel" data-pdf-sidebar-panel="pages">
+                <div class="pdf-sidebar-scroll">
+                  <div class="pdf-thumbnails" id="pdf-thumbnail-list"></div>
+                  <div class="pdf-sidebar-empty" id="pdf-thumbnail-empty" hidden>PDF 页面缩略图加载中...</div>
+                </div>
+              </section>
+              <section class="pdf-sidebar-panel" role="tabpanel" data-pdf-sidebar-panel="outline" hidden>
+                <div class="pdf-sidebar-scroll">
+                  <div class="pdf-outline-list" id="pdf-outline-list"></div>
+                  <div class="pdf-sidebar-empty" id="pdf-outline-empty">当前 PDF 未检测到可用目录。</div>
+                </div>
+              </section>
+            </div>
+          </aside>
           {% else if has_text_preview %}
           <div class="preview-panel-body-scroll">
             <div class="text-preview">
@@ -629,6 +948,16 @@
         if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
           return;
         }
+        var target = event.target;
+        if (
+          target &&
+          (target.isContentEditable ||
+            target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.tagName === "SELECT")
+        ) {
+          return;
+        }
         if (event.key === "ArrowLeft") {
           var previousLink = document.querySelector('[data-preview-nav="previous"]');
           if (previousLink && previousLink.getAttribute("href")) {
@@ -647,142 +976,13 @@
   {% if has_pdf_preview %}
   <script type="module">
     import * as pdfjsLib from "/static/vendor/pdfjs/build/pdf.min.mjs";
+    import { initPdfPreview } from "/static/document-preview.mjs";
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/build/pdf.worker.min.mjs";
-
-    var stage = document.querySelector("[data-pdf-preview]");
-    var pagesWrap = document.getElementById("pdf-preview-pages");
-    var scrollWrap = document.getElementById("pdf-preview-scroll");
-    var status = document.getElementById("pdf-preview-status");
-    var statusCopy = document.getElementById("pdf-preview-status-copy");
-    var pageCount = document.getElementById("pdf-page-count");
-    var zoomOut = document.getElementById("pdf-zoom-out");
-    var zoomIn = document.getElementById("pdf-zoom-in");
-    var zoomReset = document.getElementById("pdf-zoom-reset");
-    var zoomFactor = 1;
-    var pdfDocument = null;
-    var renderToken = 0;
-
-    function setStatus(message, visible) {
-      if (statusCopy) {
-        statusCopy.textContent = message;
-      }
-      if (status) {
-        status.hidden = visible === false;
-      }
-    }
-
-    function fitWidthScale(page) {
-      var viewport = page.getViewport({ scale: 1 });
-      var containerWidth = 0;
-      if (scrollWrap) {
-        containerWidth = scrollWrap.clientWidth;
-      } else if (stage) {
-        containerWidth = stage.clientWidth;
-      } else if (pagesWrap) {
-        containerWidth = pagesWrap.clientWidth;
-      }
-      var availableWidth = Math.max(240, containerWidth - 72);
-      return Math.max(0.75, availableWidth / viewport.width);
-    }
-
-    async function renderPdf() {
-      if (!pdfDocument || !pagesWrap) {
-        return;
-      }
-      var currentToken = renderToken + 1;
-      renderToken = currentToken;
-      pagesWrap.replaceChildren();
-      setStatus("正在渲染 PDF 页面，请稍候...", true);
-      for (var pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
-        if (currentToken !== renderToken) {
-          return;
-        }
-        var page = await pdfDocument.getPage(pageNumber);
-        var scale = fitWidthScale(page) * zoomFactor;
-        var viewport = page.getViewport({ scale: scale });
-        var outputScale = window.devicePixelRatio || 1;
-        var article = document.createElement("article");
-        article.className = "pdf-page";
-        var canvas = document.createElement("canvas");
-        var context = canvas.getContext("2d");
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
-        canvas.style.width = Math.floor(viewport.width) + "px";
-        canvas.style.height = Math.floor(viewport.height) + "px";
-        var renderContext = {
-          canvasContext: context,
-          viewport: viewport,
-          transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
-        };
-        await page.render(renderContext).promise;
-        var label = document.createElement("div");
-        label.className = "pdf-page-label";
-        label.textContent = "第 " + pageNumber + " / " + pdfDocument.numPages + " 页";
-        article.append(canvas, label);
-        pagesWrap.appendChild(article);
-      }
-      if (pageCount) {
-        pageCount.textContent = pdfDocument.numPages + " 页";
-      }
-      setStatus("", false);
-    }
-
-    async function loadPdf() {
-      if (!stage) {
-        return;
-      }
-      var sourceUrl = stage.dataset.pdfUrl || "";
-      if (!sourceUrl) {
-        setStatus("缺少 PDF 预览地址。", true);
-        return;
-      }
-      try {
-        setStatus("正在加载 PDF 预览，请稍候...", true);
-        var loadingTask = pdfjsLib.getDocument({
-          url: sourceUrl,
-          cMapUrl: "/static/vendor/pdfjs/cmaps/",
-          cMapPacked: true,
-          standardFontDataUrl: "/static/vendor/pdfjs/standard_fonts/",
-        });
-        pdfDocument = await loadingTask.promise;
-        await renderPdf();
-      } catch (error) {
-        var message = error && error.message ? error.message : "PDF 预览加载失败，请刷新后重试。";
-        setStatus(message, true);
-      }
-    }
-
-    if (zoomOut) {
-      zoomOut.addEventListener("click", function () {
-        zoomFactor = Math.max(0.7, zoomFactor - 0.15);
-        renderPdf();
-      });
-    }
-    if (zoomIn) {
-      zoomIn.addEventListener("click", function () {
-        zoomFactor = Math.min(2.4, zoomFactor + 0.15);
-        renderPdf();
-      });
-    }
-    if (zoomReset) {
-      zoomReset.addEventListener("click", function () {
-        zoomFactor = 1;
-        renderPdf();
-      });
-    }
-
-    window.addEventListener("resize", function () {
-      if (!pdfDocument) {
-        return;
-      }
-      window.clearTimeout(window.__yuancePdfResizeTimer);
-      window.__yuancePdfResizeTimer = window.setTimeout(function () {
-        renderPdf();
-      }, 120);
+    initPdfPreview({
+      pdfjsLib: pdfjsLib,
+      root: document,
     });
-
-    loadPdf();
   </script>
   {% endif %}
 </body>
