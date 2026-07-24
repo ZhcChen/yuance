@@ -38,6 +38,8 @@
   var workItemDiscussionQueuedHash = "";
   var workItemDiscussionPendingRefresh = false;
   var workItemDiscussionPendingHash = "";
+  var discussionComposerDockResizeObserver = null;
+  var discussionComposerDockSyncFrame = null;
   var workItemTypingClientId = "";
   var workItemTypingIdleTimerId = null;
   var workItemTypingActive = false;
@@ -1057,6 +1059,76 @@
     return root ? root.querySelector("[data-discussion-list-region]") : null;
   }
 
+  function discussionComposerDock(root) {
+    return root ? root.querySelector("[data-discussion-composer-dock]") : null;
+  }
+
+  function clearDiscussionComposerDockLayout() {
+    if (discussionComposerDockResizeObserver) {
+      discussionComposerDockResizeObserver.disconnect();
+    }
+    var root = currentWorkItemDiscussionRoot();
+    if (!root) {
+      return;
+    }
+    root.style.removeProperty("--discussion-dock-left");
+    root.style.removeProperty("--discussion-dock-width");
+    root.style.removeProperty("--discussion-dock-reserve");
+  }
+
+  function syncDiscussionComposerDockLayout() {
+    discussionComposerDockSyncFrame = null;
+    var root = currentWorkItemDiscussionRoot();
+    var dock = discussionComposerDock(root);
+    var composer = dock ? dock.querySelector(".discussion-composer") : null;
+    if (!root || !dock || !composer) {
+      clearDiscussionComposerDockLayout();
+      return;
+    }
+    var viewportWidth = Math.max(window.innerWidth || 0, 0);
+    var mobile = viewportWidth <= 900;
+    var sidePadding = viewportWidth <= 620 ? 12 : 18;
+    var rootRect = root.getBoundingClientRect();
+    var left = mobile ? sidePadding : Math.max(sidePadding, Math.round(rootRect.left));
+    var width = mobile
+      ? viewportWidth - sidePadding * 2
+      : Math.min(Math.round(rootRect.width), viewportWidth - left - sidePadding);
+    var reserve = Math.ceil(composer.getBoundingClientRect().height) + 34;
+    root.style.setProperty("--discussion-dock-left", Math.max(sidePadding, left) + "px");
+    root.style.setProperty("--discussion-dock-width", Math.max(280, width) + "px");
+    root.style.setProperty("--discussion-dock-reserve", Math.max(220, reserve) + "px");
+  }
+
+  function scheduleDiscussionComposerDockLayout() {
+    if (discussionComposerDockSyncFrame) {
+      return;
+    }
+    discussionComposerDockSyncFrame = window.requestAnimationFrame(syncDiscussionComposerDockLayout);
+  }
+
+  function bindDiscussionComposerDockLayout() {
+    var root = currentWorkItemDiscussionRoot();
+    var dock = discussionComposerDock(root);
+    var composer = dock ? dock.querySelector(".discussion-composer") : null;
+    if (!root || !dock || !composer) {
+      clearDiscussionComposerDockLayout();
+      return;
+    }
+    scheduleDiscussionComposerDockLayout();
+    if (!("ResizeObserver" in window)) {
+      return;
+    }
+    if (!discussionComposerDockResizeObserver) {
+      discussionComposerDockResizeObserver = new ResizeObserver(function () {
+        scheduleDiscussionComposerDockLayout();
+      });
+    }
+    discussionComposerDockResizeObserver.disconnect();
+    discussionComposerDockResizeObserver.observe(root);
+    discussionComposerDockResizeObserver.observe(dock);
+    discussionComposerDockResizeObserver.observe(composer);
+  }
+
   function discussionCountValue(node) {
     var text = node ? String(node.textContent || "") : "";
     var matched = text.match(/\d+/);
@@ -1168,6 +1240,7 @@
         initAttachmentImagePreviews(document);
         initDiscussionRichMedia(document);
         initRichTextEditors(document);
+        bindDiscussionComposerDockLayout();
         workItemDiscussionPendingRefresh = false;
         if (!settings.targetHash && nextCountValue > previousCount) {
           pulseDiscussionCount(currentWorkItemDiscussionRoot());
@@ -9122,6 +9195,7 @@
     initDiscussionRichMedia(event.target);
     initRichTextEditors(event.target);
     startWorkItemDiscussionRealtime();
+    bindDiscussionComposerDockLayout();
   });
 
   function syncPermissionParent(parent) {
@@ -9417,6 +9491,7 @@
   initTokenProjectScopes(document);
   initSelectControls(document);
   startWorkItemDiscussionRealtime();
+  bindDiscussionComposerDockLayout();
   if (currentMessageCenter() && window.history && window.history.replaceState) {
     window.history.replaceState({ yuanceMessageCenter: true }, "", window.location.href);
   }
@@ -9431,6 +9506,7 @@
       refreshTopbarStatus();
       startWorkItemDiscussionRealtime();
       flushPendingWorkItemDiscussionRefresh();
+      bindDiscussionComposerDockLayout();
     }
   });
   document.querySelectorAll("[data-bug-report-form]").forEach(updateBugReportGroupTitles);
@@ -9446,6 +9522,7 @@
     }
     updateWorkItemTypingState(false, { force: true, keepalive: true });
     stopWorkItemDiscussionRealtime();
+    clearDiscussionComposerDockLayout();
     document.querySelectorAll("[data-file-preview]").forEach(function (preview) {
       if (preview.localObjectUrl) {
         URL.revokeObjectURL(preview.localObjectUrl);
@@ -9476,12 +9553,14 @@
     }
     refreshImageViewerLayout();
     scheduleContentTabsSync(false);
+    scheduleDiscussionComposerDockLayout();
   });
 
   window.addEventListener("pageshow", function () {
     clearPageTransitionState();
     scheduleContentTabsSync(false);
     startWorkItemDiscussionRealtime();
+    bindDiscussionComposerDockLayout();
   });
 
   window.addEventListener("hashchange", function () {

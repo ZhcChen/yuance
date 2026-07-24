@@ -13,7 +13,7 @@
   <div class="work-item-description-body discussion-rich-body">{{ item.description_html|safe }}</div>
 </section>
 
-<section class="discussion-section" aria-labelledby="discussion-title" data-work-item-discussion data-item-key="{{ item.key }}">
+<section class="discussion-section" aria-labelledby="discussion-title" data-work-item-discussion data-item-key="{{ item.key }}" {% if can_manage_work_items && !item.is_deleted %}data-discussion-has-composer{% endif %}>
   <div class="content-section-head discussion-heading">
     <div class="content-section-copy">
       <span class="section-kicker">协作记录</span>
@@ -136,7 +136,7 @@
   </div>
 
   {% if can_manage_work_items && !item.is_deleted %}
-  <div class="discussion-composer-dock">
+  <div class="discussion-composer-dock" data-discussion-composer-dock>
     <form class="discussion-composer" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ item.reporter_username }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="parent_comment_id" value="">
