@@ -26,8 +26,8 @@
   </div>
 
   {% if can_manage_work_items && !item.is_deleted %}
-  <div class="discussion-composer-dock" data-discussion-composer-dock data-discussion-dock-state="inline">
-    <form class="discussion-composer" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-item-key="{{ item.key }}" data-assign-target="{{ item.reporter_username }}">
+  <div class="discussion-composer-dock">
+    <form class="discussion-composer" method="post" action="/web/work-items/{{ item.key }}/comments" data-discussion-form data-discussion-main-composer data-item-key="{{ item.key }}" data-assign-target="{{ item.reporter_username }}">
       <input type="hidden" name="_csrf" value="{{ csrf_token }}">
       <input type="hidden" name="parent_comment_id" value="">
       <input type="hidden" name="body_format" value="html" data-discussion-body-format>
@@ -159,6 +159,12 @@
   </div>
   {% endif %}
   </div>
+
+  {% if can_manage_work_items && !item.is_deleted && has_comments %}
+  <div class="discussion-composer-shortcut">
+    <button class="btn btn-secondary" type="button" data-discussion-scroll-composer>发表新评论</button>
+  </div>
+  {% endif %}
 </section>
 
 <div data-discussion-modals>

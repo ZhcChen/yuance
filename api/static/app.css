@@ -524,19 +524,9 @@ body {
   gap: 22px;
 }
 
-.discussion-section[data-discussion-has-composer][data-discussion-dock-fixed="true"] .discussion-list-region {
-  padding-bottom: var(--discussion-dock-reserve, 236px);
-}
-
 .discussion-composer-dock {
-  position: relative;
   margin: 18px 0 24px;
   min-width: 0;
-}
-
-.discussion-composer-dock[data-discussion-dock-state="fixed"] {
-  min-height: 0;
-  margin: 0;
 }
 
 .discussion-composer {
@@ -557,29 +547,18 @@ body {
   margin: 0;
 }
 
-.discussion-composer-dock[data-discussion-dock-state="fixed"] .discussion-composer {
-  position: fixed;
-  left: var(--discussion-dock-left, 18px);
-  width: min(var(--discussion-dock-width, calc(100vw - 36px)), calc(100vw - 36px));
-  max-width: calc(100vw - 36px);
-  bottom: max(12px, calc(env(safe-area-inset-bottom, 0px) + 12px));
-  z-index: 24;
-  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  box-shadow: 0 18px 36px rgb(22 34 50 / 10%), 0 4px 12px rgb(22 34 50 / 6%);
-  backdrop-filter: blur(18px) saturate(1.04);
-  animation: discussion-composer-dock-in 180ms ease;
+.discussion-composer[data-discussion-main-composer] {
+  scroll-margin-top: 112px;
 }
 
-@keyframes discussion-composer-dock-in {
-  from {
-    opacity: 0.94;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.discussion-composer-shortcut {
+  display: flex;
+  justify-content: center;
+  margin-top: -2px;
+}
+
+.discussion-composer-shortcut .btn {
+  min-width: 152px;
 }
 
 .discussion-composer-avatar,
@@ -1875,13 +1854,6 @@ body {
   .discussion-post-actions {
     align-items: flex-start;
     flex-direction: column-reverse;
-  }
-
-  .discussion-composer-dock[data-discussion-dock-state="fixed"] .discussion-composer {
-    left: 12px;
-    width: calc(100vw - 24px);
-    max-width: calc(100vw - 24px);
-    bottom: max(10px, calc(env(safe-area-inset-bottom, 0px) + 10px));
   }
 
   .discussion-post-action-buttons {

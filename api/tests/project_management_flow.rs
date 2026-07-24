@@ -4189,6 +4189,8 @@ async fn web_work_item_detail_page_renders_full_shell() {
     assert!(body.contains(r#"id="work-item-edit-modal""#));
     assert!(body.contains(r#"class="work-item-action-rail""#));
     assert!(body.contains(r#"data-discussion-form"#));
+    assert!(body.contains(r#"data-discussion-main-composer"#));
+    assert!(body.contains(r#"data-discussion-scroll-composer"#));
     assert!(!body.contains(r#"id="work-item-comment-modal""#));
     assert!(!body.contains(r#"id="work-item-attachment-modal""#));
     assert!(body.contains("编辑任务"));

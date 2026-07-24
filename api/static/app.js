@@ -38,8 +38,6 @@
   var workItemDiscussionQueuedHash = "";
   var workItemDiscussionPendingRefresh = false;
   var workItemDiscussionPendingHash = "";
-  var discussionComposerDockResizeObserver = null;
-  var discussionComposerDockSyncFrame = null;
   var workItemTypingClientId = "";
   var workItemTypingIdleTimerId = null;
   var workItemTypingActive = false;
@@ -1059,8 +1057,8 @@
     return root ? root.querySelector("[data-discussion-list-region]") : null;
   }
 
-  function discussionComposerDock(root) {
-    return root ? root.querySelector("[data-discussion-composer-dock]") : null;
+  function mainDiscussionComposer(root) {
+    return root ? root.querySelector("[data-discussion-main-composer]") : null;
   }
 
   function discussionHasPosts(root) {
@@ -1068,86 +1066,34 @@
   }
 
   function clearDiscussionComposerDockLayout() {
-    if (discussionComposerDockResizeObserver) {
-      discussionComposerDockResizeObserver.disconnect();
-    }
-    var root = currentWorkItemDiscussionRoot();
-    if (!root) {
-      return;
-    }
-    var dock = discussionComposerDock(root);
-    if (dock) {
-      dock.dataset.discussionDockState = "inline";
-    }
-    delete root.dataset.discussionDockFixed;
-    root.style.removeProperty("--discussion-dock-left");
-    root.style.removeProperty("--discussion-dock-width");
-    root.style.removeProperty("--discussion-dock-reserve");
+    return;
   }
 
-  function syncDiscussionComposerDockLayout() {
-    discussionComposerDockSyncFrame = null;
+  function scrollToMainDiscussionComposer(options) {
+    var settings = options || {};
     var root = currentWorkItemDiscussionRoot();
-    var dock = discussionComposerDock(root);
-    var composer = dock ? dock.querySelector(".discussion-composer") : null;
-    var list = discussionListRegion(root);
-    if (!root || !dock || !composer || !list) {
-      clearDiscussionComposerDockLayout();
-      return;
+    var composer = mainDiscussionComposer(root);
+    if (!root || !composer || !discussionHasPosts(root)) {
+      return false;
     }
-    var viewportWidth = Math.max(window.innerWidth || 0, 0);
-    var viewportHeight = Math.max(window.innerHeight || 0, 0);
-    var mobile = viewportWidth <= 900;
-    var sidePadding = viewportWidth <= 620 ? 12 : 18;
-    var rootRect = root.getBoundingClientRect();
-    var listRect = list.getBoundingClientRect();
-    var left = mobile ? sidePadding : Math.max(sidePadding, Math.round(rootRect.left));
-    var width = mobile
-      ? viewportWidth - sidePadding * 2
-      : Math.min(Math.round(rootRect.width), viewportWidth - left - sidePadding);
-    var reserve = Math.ceil(composer.getBoundingClientRect().height) + 34;
-    var listTriggerLine = viewportHeight - Math.min(reserve, 320);
-    var shouldFix =
-      discussionHasPosts(root) &&
-      listRect.top <= listTriggerLine &&
-      rootRect.bottom - 24 > reserve;
-    dock.dataset.discussionDockState = shouldFix ? "fixed" : "inline";
-    root.dataset.discussionDockFixed = shouldFix ? "true" : "false";
-    root.style.setProperty("--discussion-dock-left", Math.max(sidePadding, left) + "px");
-    root.style.setProperty("--discussion-dock-width", Math.max(280, width) + "px");
-    root.style.setProperty("--discussion-dock-reserve", Math.max(220, reserve) + "px");
+    composer.scrollIntoView({
+      behavior: prefersReducedMotion() || settings.immediate ? "auto" : "smooth",
+      block: settings.block || "start",
+    });
+    if (settings.focus !== false) {
+      window.setTimeout(function () {
+        composer.querySelector("[data-rich-text-input]")?.focus({ preventScroll: true });
+      }, prefersReducedMotion() || settings.immediate ? 0 : 160);
+    }
+    return true;
   }
 
   function scheduleDiscussionComposerDockLayout() {
-    if (discussionComposerDockSyncFrame) {
-      return;
-    }
-    discussionComposerDockSyncFrame = window.requestAnimationFrame(syncDiscussionComposerDockLayout);
+    return;
   }
 
   function bindDiscussionComposerDockLayout() {
-    var root = currentWorkItemDiscussionRoot();
-    var dock = discussionComposerDock(root);
-    var composer = dock ? dock.querySelector(".discussion-composer") : null;
-    var list = discussionListRegion(root);
-    if (!root || !dock || !composer || !list) {
-      clearDiscussionComposerDockLayout();
-      return;
-    }
-    scheduleDiscussionComposerDockLayout();
-    if (!("ResizeObserver" in window)) {
-      return;
-    }
-    if (!discussionComposerDockResizeObserver) {
-      discussionComposerDockResizeObserver = new ResizeObserver(function () {
-        scheduleDiscussionComposerDockLayout();
-      });
-    }
-    discussionComposerDockResizeObserver.disconnect();
-    discussionComposerDockResizeObserver.observe(root);
-    discussionComposerDockResizeObserver.observe(dock);
-    discussionComposerDockResizeObserver.observe(composer);
-    discussionComposerDockResizeObserver.observe(list);
+    return;
   }
 
   function discussionCountValue(node) {
@@ -9326,6 +9272,13 @@
     if (composerFileRemove) {
       event.preventDefault();
       removeComposerFile(composerFileRemove);
+      return;
+    }
+
+    var discussionScrollComposer = event.target.closest("[data-discussion-scroll-composer]");
+    if (discussionScrollComposer) {
+      event.preventDefault();
+      scrollToMainDiscussionComposer({ focus: true });
       return;
     }
 
