@@ -117,22 +117,22 @@
           {% if can_edit_primary_post %}
           <button class="btn btn-secondary" type="button" data-modal-open="work-item-edit-modal">编辑内容</button>
           {% endif %}
+          <button class="btn btn-secondary" type="button" data-discussion-scroll-composer>发表新评论</button>
           {% endif %}
-          <button class="btn btn-secondary" type="button" data-modal-open="work-item-flow-history-modal">查看指派记录</button>
-          {% if can_manage_work_items && !item.is_deleted %}
-          {% if item.status_code == "closed" || item.status_code == "cancelled" %}
+          <button class="btn btn-secondary" type="button" data-modal-open="work-item-flow-history-modal">查看操作记录</button>
+          {% if can_reopen_work_item %}
           <form method="post" action="/web/work-items/{{ item.key }}/status" data-success-message="{{ item.kind }}已重新打开。">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="status" value="in_progress">
             <button class="btn btn-secondary" type="submit">重新打开</button>
           </form>
-          {% else %}
+          {% endif %}
+          {% if can_close_work_item %}
           <form method="post" action="/web/work-items/{{ item.key }}/status" data-confirm-submit-form data-success-message="{{ item.kind }}已关闭。" data-confirm-title="确认关闭{{ item.kind }}" data-confirm-message="关闭后协作记录仍会保留，也可以再次打开。" data-confirm-action="确认关闭">
             <input type="hidden" name="_csrf" value="{{ csrf_token }}">
             <input type="hidden" name="status" value="closed">
             <button class="btn btn-close-item" type="submit">关闭{{ item.kind }}</button>
           </form>
-          {% endif %}
           {% endif %}
         </div>
         <dl class="action-panel-context">
@@ -210,8 +210,8 @@
   <section class="modal-panel modal-wide" role="dialog" aria-modal="true" aria-labelledby="work-item-flow-history-modal-title" tabindex="-1">
     <div class="modal-head">
       <div>
-        <h2 id="work-item-flow-history-modal-title">指派记录</h2>
-        <p>按表格查看状态流转、指派变化与处理说明。</p>
+        <h2 id="work-item-flow-history-modal-title">操作记录</h2>
+        <p>按表格查看指派、关闭、重新打开与编辑记录。</p>
       </div>
       <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
     </div>

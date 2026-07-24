@@ -5,9 +5,10 @@
       <tr>
         <th scope="col">时间</th>
         <th scope="col">操作人</th>
+        <th scope="col">操作</th>
         <th scope="col">状态流转</th>
         <th scope="col">指派流转</th>
-        <th class="flow-history-note-col" scope="col">处理说明</th>
+        <th class="flow-history-note-col" scope="col">说明</th>
       </tr>
     </thead>
     <tbody>
@@ -15,6 +16,7 @@
       <tr>
         <td>{{ record.created_at }}</td>
         <td>{{ record.actor }}</td>
+        <td>{{ record.operation }}</td>
         <td><span class="flow-history-transition">{{ record.status_change }}</span></td>
         <td><span class="flow-history-transition">{{ record.assignee_change }}</span></td>
         <td class="flow-history-note-cell">{{ record.note }}</td>
@@ -23,7 +25,7 @@
     </tbody>
   </table>
 </div>
-<nav class="pager table-pager" aria-label="指派记录分页">
+<nav class="pager table-pager" aria-label="操作记录分页">
   <div class="pager-meta">
     <strong>共 {{ flow_history_pagination.total_items }} 条</strong>
     <span>当前显示 {{ flow_history_pagination.range_start }}-{{ flow_history_pagination.range_end }}</span>
@@ -50,7 +52,7 @@
 </nav>
 {% else %}
 <div class="empty-state flow-history-empty">
-  <strong>暂无指派记录</strong>
-  <span>后续状态流转、指派变化和处理说明会汇总展示在这里。</span>
+  <strong>暂无操作记录</strong>
+  <span>后续指派、关闭、重新打开和编辑动作会汇总展示在这里。</span>
 </div>
 {% endif %}

@@ -281,7 +281,11 @@ async fn api_token_visible_authors_use_token_name_across_work_items_resources_an
         .expect("router should respond");
     let create_item_status = create_item_response.status();
     let create_item_body = response_body(create_item_response).await;
-    assert_eq!(create_item_status, StatusCode::CREATED, "{create_item_body}");
+    assert_eq!(
+        create_item_status,
+        StatusCode::CREATED,
+        "{create_item_body}"
+    );
     let create_item_json: serde_json::Value =
         serde_json::from_str(&create_item_body).expect("work item json should parse");
     assert_eq!(create_item_json["data"]["reporter"], token_name);
@@ -350,7 +354,10 @@ async fn api_token_visible_authors_use_token_name_across_work_items_resources_an
         .expect("router should respond");
     assert_eq!(resource_page.status(), StatusCode::OK);
     let resource_page_body = response_body(resource_page).await;
-    assert!(resource_page_body.contains(token_name), "{resource_page_body}");
+    assert!(
+        resource_page_body.contains(token_name),
+        "{resource_page_body}"
+    );
 
     let create_folder_response = app
         .clone()
@@ -360,14 +367,20 @@ async fn api_token_visible_authors_use_token_name_across_work_items_resources_an
                 .uri("/api/v1/projects/YCE/folders")
                 .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(r#"{"name":"Token 文件夹","description":"作者显示"}"#))
+                .body(Body::from(
+                    r#"{"name":"Token 文件夹","description":"作者显示"}"#,
+                ))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
     let create_folder_status = create_folder_response.status();
     let create_folder_body = response_body(create_folder_response).await;
-    assert_eq!(create_folder_status, StatusCode::CREATED, "{create_folder_body}");
+    assert_eq!(
+        create_folder_status,
+        StatusCode::CREATED,
+        "{create_folder_body}"
+    );
     let create_folder_json: serde_json::Value =
         serde_json::from_str(&create_folder_body).expect("folder json should parse");
     assert_eq!(create_folder_json["data"]["created_by"], token_name);
@@ -996,9 +1009,10 @@ async fn rich_text_comments_preserve_controlled_file_attachment_cards() {
         .expect("storage config should load")
         .expect("storage config should exist");
 
-    let draft = projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None, "")
-        .await
-        .expect("draft should be created");
+    let draft =
+        projects::create_work_item_comment_draft(&pool, admin.user_id, "YCE-TASK-2", None, "")
+            .await
+            .expect("draft should be created");
     let attachment = files::create_attachment(
         &pool,
         &config,
@@ -3756,7 +3770,7 @@ async fn web_current_project_redirects_resource_detail_to_selected_project_libra
             body: "<p>用于验证切换项目后的资料详情跳转。</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
-        actor_display_name_snapshot: String::new(),
+            actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -4185,12 +4199,16 @@ async fn web_work_item_detail_page_renders_full_shell() {
     assert!(body.contains("YCE-TASK-2"));
     assert!(body.contains("发布人"));
     assert!(body.contains("指派 / 流转"));
+    assert!(body.contains("查看操作记录"));
+    assert!(body.contains("发表新评论"));
+    assert!(!body.contains("查看指派记录"));
     assert!(body.contains(r#"data-modal-open="work-item-edit-modal""#));
     assert!(body.contains(r#"id="work-item-edit-modal""#));
     assert!(body.contains(r#"class="work-item-action-rail""#));
     assert!(body.contains(r#"data-discussion-form"#));
     assert!(body.contains(r#"data-discussion-main-composer"#));
     assert!(body.contains(r#"data-discussion-scroll-composer"#));
+    assert!(!body.contains(r#"discussion-composer-shortcut"#));
     assert!(!body.contains(r#"id="work-item-comment-modal""#));
     assert!(!body.contains(r#"id="work-item-attachment-modal""#));
     assert!(body.contains("编辑任务"));
@@ -4247,7 +4265,7 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
             body: "<p>A</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
-        actor_display_name_snapshot: String::new(),
+            actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -4262,7 +4280,7 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
             body: "<p>B</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
-        actor_display_name_snapshot: String::new(),
+            actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -4648,7 +4666,7 @@ async fn web_search_finds_visible_project_resources() {
             body: "yuance-search-demo".to_string(),
             body_format: project_resources::RESOURCE_BODY_FORMAT_PLAIN.to_string(),
             access_password: String::new(),
-        actor_display_name_snapshot: String::new(),
+            actor_display_name_snapshot: String::new(),
         },
     )
     .await
@@ -6080,6 +6098,8 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert_eq!(progress_page.status(), StatusCode::OK);
     let progress_body = response_body(progress_page).await;
     assert!(progress_body.contains("指派 / 流转"));
+    assert!(progress_body.contains("查看操作记录"));
+    assert!(progress_body.contains("发表新评论"));
     assert!(progress_body.contains("关闭任务"));
     assert!(progress_body.contains(r#"data-success-message="任务已关闭。""#));
     assert!(progress_body.contains(r#"data-success-message="任务已保存。""#));
@@ -6092,6 +6112,7 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert!(!progress_body.contains(r#"value="resolved"#));
     assert!(!progress_body.contains(r#"value="verified"#));
     assert!(!progress_body.contains("取消工作项"));
+    assert!(!progress_body.contains("查看指派记录"));
 
     sqlx::query("UPDATE work_items SET status = 'cancelled' WHERE item_key = 'OPS-TASK-1'")
         .execute(&pool)
@@ -6112,6 +6133,223 @@ async fn work_item_status_machine_rejects_invalid_shortcuts_and_shapes_page_acti
     assert!(cancelled_body.contains("重新打开"));
     assert!(cancelled_body.contains(r#"<option value="in_progress" selected"#));
     assert!(!cancelled_body.contains(r#"<option value="cancelled""#));
+}
+
+#[tokio::test]
+async fn web_work_item_only_current_assignee_can_close_but_members_can_reopen() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let assignee = create_regular_user(&pool, "close_owner", "当前处理人").await;
+    let member = create_regular_user(&pool, "reopen_member", "协作成员").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "close_owner", "member")
+        .await
+        .expect("assignee should join project");
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "reopen_member", "member")
+        .await
+        .expect("member should join project");
+    let created = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "仅处理人可关闭".to_string(),
+            description: "验证关闭与重新打开权限".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: "close_owner".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let admin_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", created.item_key))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(admin_detail.status(), StatusCode::OK);
+    let admin_body = response_body(admin_detail).await;
+    assert!(!admin_body.contains("关闭任务"));
+
+    let assignee_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", created.item_key))
+                .header(header::COOKIE, assignee.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(assignee_detail.status(), StatusCode::OK);
+    let assignee_body = response_body(assignee_detail).await;
+    assert!(assignee_body.contains("关闭任务"));
+
+    let close_forbidden = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-items/{}/status", created.item_key))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=closed",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(close_forbidden.status(), StatusCode::FORBIDDEN);
+
+    let close_success = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-items/{}/status", created.item_key))
+                .header(header::COOKIE, with_csrf_cookie(&assignee.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=closed",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(close_success.status(), StatusCode::SEE_OTHER);
+
+    let member_detail = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/work-items/{}", created.item_key))
+                .header(header::COOKIE, member.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(member_detail.status(), StatusCode::OK);
+    let member_body = response_body(member_detail).await;
+    assert!(member_body.contains("重新打开"));
+
+    let reopen_success = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-items/{}/status", created.item_key))
+                .header(header::COOKIE, with_csrf_cookie(&member.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=in_progress",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reopen_success.status(), StatusCode::SEE_OTHER);
+
+    let item = projects::get_work_item_detail(&pool, &created.item_key)
+        .await
+        .expect("item should reload")
+        .expect("item should exist");
+    assert_eq!(item.status, "in_progress");
+}
+
+#[tokio::test]
+async fn web_work_item_operation_history_includes_edit_close_and_reopen_records() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let edit_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/edit")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&title=Edited+Task&description=Edited+description&status=in_progress&priority=P1&assignee_username=admin&due_date=&parent_item_key=YCE-REQ-1",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(edit_response.status(), StatusCode::SEE_OTHER);
+
+    let close_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/status")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=closed",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(close_response.status(), StatusCode::SEE_OTHER);
+
+    let reopen_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/YCE-TASK-2/status")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&status=in_progress",
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reopen_response.status(), StatusCode::SEE_OTHER);
+
+    let history_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2/flow-records")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(history_response.status(), StatusCode::OK);
+    let history_body = response_body(history_response).await;
+
+    assert!(history_body.contains("编辑"));
+    assert!(history_body.contains("关闭"));
+    assert!(history_body.contains("重新打开"));
+    assert!(history_body.contains("作者编辑了主帖内容"));
+    assert!(history_body.contains("进行中 → 已关闭"));
+    assert!(history_body.contains("已关闭 → 进行中"));
 }
 
 #[tokio::test]
@@ -7083,10 +7321,15 @@ async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
         .await
         .expect("demo seed should apply");
     seed_memory_storage_config(&pool, initialized.user_id).await;
-    let draft =
-        projects::create_work_item_comment_draft(&pool, initialized.user_id, "YCE-TASK-2", None, "")
-            .await
-            .expect("draft should create");
+    let draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("draft should create");
     let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
         .await
         .expect("work item should load")
@@ -7183,7 +7426,7 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
             body: String::new(),
             body_format: "html".to_string(),
             access_password: String::new(),
-        actor_display_name_snapshot: String::new(),
+            actor_display_name_snapshot: String::new(),
         },
     )
     .await

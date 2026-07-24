@@ -356,6 +356,7 @@ struct WorkItemComment {
 struct WorkItemFlowRecord {
     actor: String,
     created_at: String,
+    operation: String,
     status_change: String,
     assignee_change: String,
     note: String,
@@ -1069,6 +1070,8 @@ struct WorkItemDetailTemplate {
     has_attachments: bool,
     can_manage_work_items: bool,
     can_edit_primary_post: bool,
+    can_close_work_item: bool,
+    can_reopen_work_item: bool,
     can_restore_work_items: bool,
 }
 
@@ -4259,6 +4262,13 @@ pub async fn work_item_detail_page(
             && project_accepts_writes;
     let can_edit_primary_post =
         can_manage_work_items && can_edit_work_item_primary_post(&item, context.user_id);
+    let can_close_work_item = can_manage_work_items
+        && !item.is_deleted
+        && !matches!(item.status_code.as_str(), "closed" | "cancelled")
+        && item.assignee_username == context.current_username;
+    let can_reopen_work_item = can_manage_work_items
+        && !item.is_deleted
+        && matches!(item.status_code.as_str(), "closed" | "cancelled");
     let can_restore_work_items =
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
@@ -4299,6 +4309,8 @@ pub async fn work_item_detail_page(
             comments,
             can_manage_work_items,
             can_edit_primary_post,
+            can_close_work_item,
+            can_reopen_work_item,
             can_restore_work_items,
             has_flow_history: !flow_history_records.is_empty(),
             flow_history_records,
@@ -7310,6 +7322,7 @@ async fn render_dashboard(
 struct WebContext<'a> {
     user_id: i64,
     current_user: String,
+    current_username: String,
     csrf_token: String,
     is_super_admin: bool,
     can_access_all_projects: bool,
@@ -7336,6 +7349,7 @@ async fn web_context_or_redirect<'a>(
         return Ok(Ok(WebContext {
             user_id: 0,
             current_user: "yuance_admin".to_string(),
+            current_username: "yuance_admin".to_string(),
             csrf_token: csrf::ensure_token(headers),
             is_super_admin: true,
             can_access_all_projects: true,
@@ -7369,6 +7383,7 @@ async fn web_context_or_redirect<'a>(
     Ok(Ok(WebContext {
         user_id: user.id,
         current_user: user.display_name,
+        current_username: user.username,
         csrf_token: csrf::ensure_token(headers),
         is_super_admin: user.is_super_admin,
         can_access_all_projects,
@@ -8717,6 +8732,7 @@ fn flow_record_from_summary(comment: projects::WorkItemCommentSummary) -> WorkIt
     WorkItemFlowRecord {
         actor: fallback_text(comment.author_display_name, "系统"),
         created_at: display_timestamp(comment.created_at),
+        operation: work_item_flow_operation_label(&flow_change),
         status_change: flow_transition_text(&flow_change.previous_status, &flow_change.next_status),
         assignee_change: flow_transition_text(
             &flow_change.previous_assignee,
@@ -8724,6 +8740,42 @@ fn flow_record_from_summary(comment: projects::WorkItemCommentSummary) -> WorkIt
         ),
         note: fallback_text(flow_change.note, "—"),
     }
+}
+
+fn operation_record_from_summary(record: projects::WorkItemOperationSummary) -> WorkItemFlowRecord {
+    match record.source_kind.as_str() {
+        "edit" => WorkItemFlowRecord {
+            actor: fallback_text(record.actor_display_name, "系统"),
+            created_at: display_timestamp(record.created_at),
+            operation: "编辑".to_string(),
+            status_change: "—".to_string(),
+            assignee_change: "—".to_string(),
+            note: "作者编辑了主帖内容".to_string(),
+        },
+        _ => {
+            let comment = projects::WorkItemCommentSummary {
+                id: 0,
+                parent_comment_id: None,
+                parent_author_display_name: String::new(),
+                body: normalize_operation_flow_body(&record.body),
+                body_format: projects::COMMENT_BODY_FORMAT_PLAIN.to_string(),
+                author_user_id: None,
+                author_username: String::new(),
+                author_display_name: record.actor_display_name,
+                created_at: record.created_at,
+                updated_at: String::new(),
+                is_flow: true,
+                is_draft: false,
+            };
+            flow_record_from_summary(comment)
+        }
+    }
+}
+
+fn normalize_operation_flow_body(body: &str) -> String {
+    body.strip_prefix("[yuance-flow] ")
+        .unwrap_or(body)
+        .to_string()
 }
 
 fn work_item_comment_body_for_display(body: &str, is_flow: bool) -> String {
@@ -8849,6 +8901,37 @@ fn work_item_flow_change(body: &str, is_flow: bool) -> WorkItemFlowChange {
     }
 
     flow_change
+}
+
+fn work_item_flow_operation_label(flow_change: &WorkItemFlowChange) -> String {
+    let has_status_change =
+        !flow_change.previous_status.is_empty() && !flow_change.next_status.is_empty();
+    let has_assignee_change =
+        !flow_change.previous_assignee.is_empty() || !flow_change.next_assignee.is_empty();
+
+    if has_status_change
+        && flow_change.next_status == "已关闭"
+        && flow_change.previous_status != flow_change.next_status
+    {
+        return "关闭".to_string();
+    }
+
+    if has_status_change
+        && flow_change.next_status == "进行中"
+        && matches!(flow_change.previous_status.as_str(), "已关闭" | "已取消")
+    {
+        return "重新打开".to_string();
+    }
+
+    if has_assignee_change {
+        return "指派 / 流转".to_string();
+    }
+
+    if has_status_change {
+        return "状态流转".to_string();
+    }
+
+    "处理记录".to_string()
 }
 
 fn split_flow_transition(value: &str) -> (String, String) {
@@ -10679,7 +10762,9 @@ async fn load_work_item_flow_history(
     PaginationView,
     Vec<PaginationPageView>,
 )> {
-    let page = projects::list_work_item_flow_comments_paginated(pool, item.id, pagination).await?;
+    let page =
+        projects::list_work_item_operation_records_paginated(pool, item.id, &item.key, pagination)
+            .await?;
     let total_pages = page.total_pages();
     let pagination_view = work_item_flow_history_pagination_view(
         &item.key,
@@ -10693,7 +10778,7 @@ async fn load_work_item_flow_history(
     Ok((
         page.items
             .into_iter()
-            .map(flow_record_from_summary)
+            .map(operation_record_from_summary)
             .collect(),
         pagination_view,
         pagination_pages,
@@ -12801,6 +12886,8 @@ fn render_sample_work_item_detail_page(
             next_entry_title: String::new(),
             can_manage_work_items: true,
             can_edit_primary_post: true,
+            can_close_work_item: true,
+            can_reopen_work_item: false,
             can_restore_work_items: true,
         })?
         .into_response(),
@@ -12895,6 +12982,7 @@ fn sample_work_item_flow_records() -> Vec<WorkItemFlowRecord> {
         WorkItemFlowRecord {
             actor: "陈".to_string(),
             created_at: "今天 16:20".to_string(),
+            operation: "指派 / 流转".to_string(),
             status_change: "待处理 → 进行中".to_string(),
             assignee_change: "未分配 → 陈".to_string(),
             note: "开始处理数据库设计与字段约束。".to_string(),
@@ -12902,16 +12990,42 @@ fn sample_work_item_flow_records() -> Vec<WorkItemFlowRecord> {
         WorkItemFlowRecord {
             actor: "陈".to_string(),
             created_at: "今天 14:10".to_string(),
+            operation: "编辑".to_string(),
             status_change: "—".to_string(),
-            assignee_change: "陈 → 界面验证成员".to_string(),
-            note: "提交首轮页面联调，转给界面验证。".to_string(),
+            assignee_change: "—".to_string(),
+            note: "作者编辑了主帖内容".to_string(),
+        },
+        WorkItemFlowRecord {
+            actor: "陈".to_string(),
+            created_at: "今天 12:40".to_string(),
+            operation: "关闭".to_string(),
+            status_change: "进行中 → 已关闭".to_string(),
+            assignee_change: "—".to_string(),
+            note: "已完成处理，关闭等待归档。".to_string(),
+        },
+        WorkItemFlowRecord {
+            actor: "陈".to_string(),
+            created_at: "今天 11:25".to_string(),
+            operation: "重新打开".to_string(),
+            status_change: "已关闭 → 进行中".to_string(),
+            assignee_change: "—".to_string(),
+            note: "补充修复后继续处理。".to_string(),
         },
         WorkItemFlowRecord {
             actor: "界面验证成员".to_string(),
             created_at: "今天 10:05".to_string(),
+            operation: "指派 / 流转".to_string(),
             status_change: "进行中 → 待确认".to_string(),
-            assignee_change: "界面验证成员 → 陈".to_string(),
+            assignee_change: "陈 → 界面验证成员".to_string(),
             note: "已完成视觉确认，请负责人复核。".to_string(),
+        },
+        WorkItemFlowRecord {
+            actor: "陈".to_string(),
+            created_at: "今天 09:10".to_string(),
+            operation: "指派 / 流转".to_string(),
+            status_change: "—".to_string(),
+            assignee_change: "陈 → 界面验证成员".to_string(),
+            note: "提交首轮页面联调，转给界面验证。".to_string(),
         },
     ]
 }

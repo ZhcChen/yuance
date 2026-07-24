@@ -170,6 +170,14 @@ pub struct WorkItemCommentSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkItemOperationSummary {
+    pub source_kind: String,
+    pub actor_display_name: String,
+    pub created_at: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectActivitySummary {
     pub id: i64,
     pub project_key: String,
@@ -3152,6 +3160,105 @@ pub async fn list_work_item_flow_comments_paginated(
     })
 }
 
+pub async fn list_work_item_operation_records_paginated(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    item_key: &str,
+    pagination: Pagination,
+) -> AppResult<Paginated<WorkItemOperationSummary>> {
+    let body_prefix = format!("{WORK_ITEM_FLOW_COMMENT_PREFIX}%");
+    let flow_total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_item_comments c
+        WHERE c.work_item_id = ?1
+          AND c.deleted_at IS NULL
+          AND c.is_draft = 0
+          AND c.body LIKE ?2
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(&body_prefix)
+    .fetch_one(pool)
+    .await?;
+    let edit_total = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM project_activities pa
+        WHERE pa.target_type = 'work_item'
+          AND pa.target_id = ?1
+          AND pa.action = 'work_item.updated'
+        "#,
+    )
+    .bind(item_key)
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query_as::<_, (String, String, String, String)>(
+        r#"
+        SELECT
+            source_kind,
+            actor_display_name,
+            created_at,
+            body
+        FROM (
+            SELECT
+                'flow' AS source_kind,
+                c.id AS sort_id,
+                COALESCE(NULLIF(c.actor_display_name_snapshot, ''), u.display_name, '') AS actor_display_name,
+                c.created_at AS created_at,
+                c.body AS body
+            FROM work_item_comments c
+            LEFT JOIN users u ON u.id = c.author_user_id
+            WHERE c.work_item_id = ?1
+              AND c.deleted_at IS NULL
+              AND c.is_draft = 0
+              AND c.body LIKE ?2
+
+            UNION ALL
+
+            SELECT
+                'edit' AS source_kind,
+                pa.id AS sort_id,
+                COALESCE(NULLIF(pa.actor_display_name_snapshot, ''), u.display_name, '') AS actor_display_name,
+                pa.created_at AS created_at,
+                '' AS body
+            FROM project_activities pa
+            LEFT JOIN users u ON u.id = pa.actor_user_id
+            WHERE pa.target_type = 'work_item'
+              AND pa.target_id = ?3
+              AND pa.action = 'work_item.updated'
+        ) records
+        ORDER BY created_at DESC, sort_id DESC
+        LIMIT ?4 OFFSET ?5
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(&body_prefix)
+    .bind(item_key)
+    .bind(pagination.per_page)
+    .bind(pagination.offset())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(Paginated {
+        items: rows
+            .into_iter()
+            .map(
+                |(source_kind, actor_display_name, created_at, body)| WorkItemOperationSummary {
+                    source_kind,
+                    actor_display_name,
+                    created_at,
+                    body,
+                },
+            )
+            .collect(),
+        page: pagination.page,
+        per_page: pagination.per_page,
+        total_items: flow_total + edit_total,
+    })
+}
+
 pub async fn update_work_item_status(
     pool: &SqlitePool,
     actor_user_id: i64,
@@ -3190,6 +3297,11 @@ pub async fn update_work_item_status(
     };
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
+    if status == "closed" && assignee_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden(
+            "只有当前处理人可以关闭该工作项。".to_string(),
+        ));
+    }
     let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
@@ -3323,6 +3435,11 @@ pub async fn handoff_work_item(
     };
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
+    if status == "closed" && current_assignee_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden(
+            "只有当前处理人可以关闭该工作项。".to_string(),
+        ));
+    }
     if let Some(comment_id) = input.source_comment_id {
         get_work_item_comment(pool, work_item_id, comment_id).await?;
     }
@@ -3519,6 +3636,11 @@ pub async fn update_work_item(
     }
     ensure_project_accepts_writes(&project_status)?;
     ensure_work_item_status_transition(&current_status, status)?;
+    if status == "closed" && current_assignee_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden(
+            "只有当前处理人可以关闭该工作项。".to_string(),
+        ));
+    }
     let parent_work_item_id =
         resolve_parent_work_item_id(pool, project_id, &item_type, parent_item_key).await?;
 
