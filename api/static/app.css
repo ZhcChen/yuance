@@ -4486,9 +4486,7 @@ code {
 
 .user-project-current-card {
   min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
   gap: 10px;
   padding: 12px 14px;
   border: 1px solid var(--line);
@@ -4516,6 +4514,30 @@ code {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.user-project-current-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.user-project-current-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.user-project-current-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.user-project-current-actions .inline-form {
+  margin: 0;
 }
 
 .user-project-current-empty {

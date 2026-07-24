@@ -2205,6 +2205,11 @@
     var projects = assignedProjectsForModal(modal);
     var count = modal.querySelector("[data-user-project-current-count]");
     var list = modal.querySelector("[data-user-project-current-list]");
+    var username = modal.dataset.username || "";
+    var displayName = modal.dataset.displayName || username;
+    var csrf = modal.querySelector("input[name='_csrf']")?.value || "";
+    var page = modal.querySelector("[data-user-project-page]")?.value || "";
+    var perPage = modal.querySelector("[data-user-project-per-page]")?.value || "";
     if (count) {
       count.textContent = projects.length + " 个项目";
     }
@@ -2243,6 +2248,75 @@
         status.textContent = project.status;
         card.appendChild(status);
       }
+
+      var footer = document.createElement("div");
+      footer.className = "user-project-current-footer";
+
+      var note = document.createElement("span");
+      note.className = "user-project-current-note";
+      if (Number(project.active_assigned_count || 0) > 0) {
+        note.textContent = "待转交 " + project.active_assigned_count + " 个工作项";
+      } else {
+        note.textContent = "可直接移除";
+      }
+      footer.appendChild(note);
+
+      var actions = document.createElement("div");
+      actions.className = "user-project-current-actions";
+      if (project.can_remove) {
+        var form = document.createElement("form");
+        form.className = "inline-form";
+        form.method = "post";
+        form.action = "/web/system/users/"
+          + encodeURIComponent(username)
+          + "/projects/"
+          + encodeURIComponent(project.key || "")
+          + "/remove";
+        form.setAttribute("data-confirm-submit-form", "");
+        form.setAttribute("data-confirm-title", "移除项目成员");
+        form.setAttribute(
+          "data-confirm-message",
+          "确认将 " + displayName + " @" + username + " 从项目 " + (project.key || "") + " 中移除？"
+        );
+        form.setAttribute("data-confirm-action", "移除");
+
+        var csrfInput = document.createElement("input");
+        csrfInput.type = "hidden";
+        csrfInput.name = "_csrf";
+        csrfInput.value = csrf;
+        form.appendChild(csrfInput);
+
+        var pageInput = document.createElement("input");
+        pageInput.type = "hidden";
+        pageInput.name = "page";
+        pageInput.value = page;
+        form.appendChild(pageInput);
+
+        var perPageInput = document.createElement("input");
+        perPageInput.type = "hidden";
+        perPageInput.name = "per_page";
+        perPageInput.value = perPage;
+        form.appendChild(perPageInput);
+
+        var button = document.createElement("button");
+        button.className = "btn btn-sm btn-secondary";
+        button.type = "submit";
+        button.textContent = "移除";
+        form.appendChild(button);
+        actions.appendChild(form);
+      } else {
+        var blocked = document.createElement("button");
+        blocked.className = "btn btn-sm btn-secondary";
+        blocked.type = "button";
+        blocked.disabled = true;
+        blocked.textContent = "不可移除";
+        if (project.remove_block_reason) {
+          blocked.title = project.remove_block_reason;
+        }
+        actions.appendChild(blocked);
+      }
+      footer.appendChild(actions);
+      card.appendChild(footer);
 
       fragment.appendChild(card);
     });
@@ -2320,6 +2394,8 @@
     var search = modal.querySelector("[data-user-project-search]");
 
     modal.yuanceAssignedProjects = parseUserProjectAssignments(trigger.dataset.assignedProjects || "[]");
+    modal.dataset.username = username;
+    modal.dataset.displayName = displayName;
 
     if (summary) {
       summary.textContent = "为 " + displayName + " @" + username + " 批量分配项目；已加入项目不会重复出现在候选列表中。";

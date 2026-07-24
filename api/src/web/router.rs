@@ -279,6 +279,10 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(web::user::system_user_project_assign),
         )
         .route(
+            "/web/system/users/{username}/projects/{project_key}/remove",
+            axum::routing::post(web::user::system_user_project_remove),
+        )
+        .route(
             "/web/system/roles",
             get(web::user::system_roles_page).post(web::user::system_roles_create),
         )

@@ -452,6 +452,136 @@ async fn admin_can_assign_multiple_projects_from_system_users_page() {
 }
 
 #[tokio::test]
+async fn admin_can_remove_project_from_system_users_page() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "待移除项目".to_string(),
+            description: "系统用户页移除项目".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/system/users/member1/projects/{}/remove",
+                    project.project_key
+                ))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("page=2&per_page=5")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/system/users?page=2&per_page=5"
+    );
+    assert!(
+        !projects::is_project_member(&pool, project.id, member_user_id)
+            .await
+            .expect("membership should load")
+    );
+}
+
+#[tokio::test]
+async fn system_user_project_remove_blocks_when_member_still_has_active_work_items() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "member1", "成员一", "MemberPass2026!", "member").await;
+    let project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "阻塞移除项目".to_string(),
+            description: "系统用户页移除受阻".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("project should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &project.project_key,
+        "member1",
+        "member",
+    )
+    .await
+    .expect("member should join project");
+    let created = projects::create_work_item(
+        &pool,
+        member_user_id,
+        projects::CreateWorkItemInput {
+            project_key: project.project_key.clone(),
+            item_type: "task".to_string(),
+            title: "阻塞移除的任务".to_string(),
+            description: String::new(),
+            priority: "P2".to_string(),
+            assignee_username: "member1".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("work item should create");
+    assert!(!created.item_key.is_empty());
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/system/users/member1/projects/{}/remove",
+                    project.project_key
+                ))
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(with_csrf("page=1&per_page=10")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        projects::is_project_member(&pool, project.id, member_user_id)
+            .await
+            .expect("membership should load")
+    );
+}
+
+#[tokio::test]
 async fn admin_can_create_member_user_and_member_can_login() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

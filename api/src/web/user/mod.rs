@@ -476,6 +476,9 @@ struct UserAssignedProjectView {
     name: String,
     status: String,
     status_tone: &'static str,
+    active_assigned_count: i64,
+    can_remove: bool,
+    remove_block_reason: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1424,6 +1427,16 @@ struct ParsedSystemUserProjectAssignForm {
     per_page: Option<i64>,
     project_keys: Vec<String>,
     member_role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemUserProjectRemoveForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5995,6 +6008,49 @@ pub async fn system_user_project_assign(
     Ok(Redirect::to(&redirect_url).into_response())
 }
 
+pub async fn system_user_project_remove(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((username, project_key)): Path<(String, String)>,
+    Form(form): Form<SystemUserProjectRemoveForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match system_context_or_redirect(&state, &headers, "system.users.manage").await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let pool = state.pool()?;
+    if !can_manage_system_user_projects(pool, context.user_id).await? {
+        return Err(AppError::Forbidden(
+            "需要全项目管理权限才能直接移除项目成员".to_string(),
+        ));
+    }
+    let redirect_url = system_users_redirect_url(form.page, form.per_page)?;
+    let user = users::get_user_summary_by_username(pool, &username)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("用户不存在".to_string()))?;
+    if user.is_super_admin {
+        return Err(AppError::BadRequest(
+            "超级管理员默认拥有全项目访问，不能通过这里移除项目".to_string(),
+        ));
+    }
+
+    projects::remove_project_member(pool, context.user_id, &project_key, &username).await?;
+    let project_key_json =
+        serde_json::to_string(&project_key).unwrap_or_else(|_| "\"\"".to_string());
+    audit::record(
+        pool,
+        Some(context.user_id),
+        "user.project.remove",
+        "user",
+        &username,
+        &format!(r#"{{"project_key":{project_key_json}}}"#),
+    )
+    .await?;
+
+    Ok(Redirect::to(&redirect_url).into_response())
+}
+
 pub async fn system_roles_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -8683,10 +8739,21 @@ async fn load_user_assigned_projects(
     pool: &SqlitePool,
     user_id: i64,
 ) -> AppResult<Vec<UserAssignedProjectView>> {
+    let active_assigned_counts = projects::count_pending_assigned_work_items_by_project(pool, user_id, false)
+        .await?
+        .into_iter()
+        .map(|entry| (entry.project_key, entry.total))
+        .collect::<HashMap<_, _>>();
     Ok(projects::list_project_summaries_for_user(pool, user_id, false)
         .await?
         .into_iter()
-        .map(user_assigned_project_from_summary)
+        .map(|project| {
+            let active_assigned_count = active_assigned_counts
+                .get(&project.project_key)
+                .copied()
+                .unwrap_or(0);
+            user_assigned_project_from_summary(project, active_assigned_count)
+        })
         .collect())
 }
 
@@ -8701,13 +8768,28 @@ async fn load_assignable_user_project_options(
         .collect())
 }
 
-fn user_assigned_project_from_summary(project: projects::ProjectSummary) -> UserAssignedProjectView {
+fn user_assigned_project_from_summary(
+    project: projects::ProjectSummary,
+    active_assigned_count: i64,
+) -> UserAssignedProjectView {
     let (status, status_tone) = project_status_label(&project.status);
+    let can_remove = active_assigned_count <= 0;
+    let remove_block_reason = if can_remove {
+        String::new()
+    } else {
+        format!(
+            "该成员在此项目仍有 {} 个待处理 / 进行中 / 待确认工作项，需先转交处理人",
+            active_assigned_count
+        )
+    };
     UserAssignedProjectView {
         key: project.project_key,
         name: project.name,
         status: status.to_string(),
         status_tone,
+        active_assigned_count,
+        can_remove,
+        remove_block_reason,
     }
 }
 
