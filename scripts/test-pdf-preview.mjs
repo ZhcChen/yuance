@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import {
   collectPagesInRange,
+  collectOutlineAncestorIds,
   computeFitWidthScale,
   computeScaledPageSize,
   findActiveOutlineEntry,
@@ -108,11 +109,13 @@ const outlineEntries = await resolveOutlineEntries(pdfDocument, [
 ]);
 
 assert.deepEqual(outlineEntries, [
-  { id: "outline-1", title: "引言", pageNumber: 1, depth: 0 },
-  { id: "outline-2", title: "第一章", pageNumber: 5, depth: 1 },
-  { id: "outline-3", title: "附录", pageNumber: 9, depth: 0 },
+  { id: "outline-1", title: "引言", pageNumber: 1, depth: 0, hasChildren: true, parentId: null },
+  { id: "outline-2", title: "第一章", pageNumber: 5, depth: 1, hasChildren: false, parentId: "outline-1" },
+  { id: "outline-3", title: "附录", pageNumber: 9, depth: 0, hasChildren: false, parentId: null },
 ]);
 
 assert.equal(findActiveOutlineEntry(outlineEntries, 1), "outline-1");
 assert.equal(findActiveOutlineEntry(outlineEntries, 6), "outline-2");
 assert.equal(findActiveOutlineEntry(outlineEntries, 99), "outline-3");
+assert.deepEqual(collectOutlineAncestorIds(outlineEntries, "outline-2"), ["outline-1"]);
+assert.deepEqual(collectOutlineAncestorIds(outlineEntries, "outline-3"), []);

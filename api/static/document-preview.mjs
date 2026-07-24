@@ -104,6 +104,20 @@ export function findActiveOutlineEntry(entries, currentPage) {
   return activeId;
 }
 
+export function collectOutlineAncestorIds(entries, entryId) {
+  if (!Array.isArray(entries) || !entryId) {
+    return [];
+  }
+  const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+  const ancestors = [];
+  let currentEntry = entryById.get(entryId) || null;
+  while (currentEntry && currentEntry.parentId) {
+    ancestors.unshift(currentEntry.parentId);
+    currentEntry = entryById.get(currentEntry.parentId) || null;
+  }
+  return ancestors;
+}
+
 function normalizeOutlineTitle(value, fallbackPageNumber) {
   const title = String(value || "").replace(/\s+/g, " ").trim();
   if (title) {
@@ -145,23 +159,27 @@ export async function resolveOutlineEntries(pdfDocument, outlineItems) {
   const entries = [];
   let idCounter = 0;
 
-  async function walk(items, depth) {
+  async function walk(items, depth, parentId) {
     for (const item of items || []) {
       const pageNumber = await resolveOutlinePageNumber(pdfDocument, item.dest);
       const title = normalizeOutlineTitle(item.title, pageNumber);
+      const id = "outline-" + String(idCounter += 1);
+      const hasChildren = Array.isArray(item.items) && item.items.length > 0;
       entries.push({
-        id: "outline-" + String(idCounter += 1),
+        id,
         title,
         pageNumber,
         depth,
+        hasChildren,
+        parentId: parentId || null,
       });
-      if (Array.isArray(item.items) && item.items.length > 0) {
-        await walk(item.items, depth + 1);
+      if (hasChildren) {
+        await walk(item.items, depth + 1, id);
       }
     }
   }
 
-  await walk(outlineItems || [], 0);
+  await walk(outlineItems || [], 0, null);
   return entries;
 }
 
@@ -260,6 +278,10 @@ export function initPdfPreview(options) {
   const pageCount = root.getElementById("pdf-page-count");
   const pageInput = root.getElementById("pdf-page-input");
   const pageGo = root.getElementById("pdf-page-go");
+  const pagePrev = root.getElementById("pdf-page-prev");
+  const pageNext = root.getElementById("pdf-page-next");
+  const pageRange = root.getElementById("pdf-page-range");
+  const pageRangeLabel = root.getElementById("pdf-page-range-label");
   const zoomOut = root.getElementById("pdf-zoom-out");
   const zoomIn = root.getElementById("pdf-zoom-in");
   const zoomReset = root.getElementById("pdf-zoom-reset");
@@ -280,6 +302,10 @@ export function initPdfPreview(options) {
     currentPage: 1,
     outlineEntries: [],
     outlineButtons: new Map(),
+    outlineCollapsedIds: new Set(),
+    outlineEntryById: new Map(),
+    outlineRows: new Map(),
+    outlineToggles: new Map(),
     pageArticles: new Map(),
     pageMetas: [],
     pageMetaByNumber: new Map(),
@@ -327,14 +353,90 @@ export function initPdfPreview(options) {
     pageCount.textContent = "第 " + pageNumber + " / " + state.pdfDocument.numPages + " 页";
   }
 
-  function scrollIntoViewIfNeeded(element) {
+  function setPageNavigationState(pageNumber) {
+    if (!state.pdfDocument) {
+      if (pagePrev) {
+        pagePrev.disabled = true;
+      }
+      if (pageNext) {
+        pageNext.disabled = true;
+      }
+      if (pageRange) {
+        pageRange.disabled = true;
+      }
+      if (pageRangeLabel) {
+        pageRangeLabel.textContent = "拖动快速定位";
+      }
+      return;
+    }
+    const boundedPage = clamp(pageNumber, 1, state.pdfDocument.numPages);
+    if (pagePrev) {
+      pagePrev.disabled = boundedPage <= 1;
+    }
+    if (pageNext) {
+      pageNext.disabled = boundedPage >= state.pdfDocument.numPages;
+    }
+    if (pageRange) {
+      pageRange.disabled = false;
+      pageRange.max = String(state.pdfDocument.numPages);
+      pageRange.value = String(boundedPage);
+    }
+    if (pageRangeLabel) {
+      pageRangeLabel.textContent = "第 " + boundedPage + " / " + state.pdfDocument.numPages + " 页";
+    }
+  }
+
+  function scrollIntoViewIfNeeded(element, block = "nearest") {
     if (!element || typeof element.scrollIntoView !== "function") {
       return;
     }
     element.scrollIntoView({
-      block: "nearest",
+      block,
       inline: "nearest",
     });
+  }
+
+  function isOutlineEntryHidden(entry) {
+    if (!entry || !entry.parentId) {
+      return false;
+    }
+    let currentParentId = entry.parentId;
+    while (currentParentId) {
+      if (state.outlineCollapsedIds.has(currentParentId)) {
+        return true;
+      }
+      currentParentId = state.outlineEntryById.get(currentParentId)?.parentId || null;
+    }
+    return false;
+  }
+
+  function updateOutlineTree(activeOutlineId, pageChanged) {
+    for (const entry of state.outlineEntries) {
+      const row = state.outlineRows.get(entry.id);
+      const button = state.outlineButtons.get(entry.id);
+      const toggle = state.outlineToggles.get(entry.id);
+      if (row) {
+        row.hidden = isOutlineEntryHidden(entry);
+      }
+      if (button) {
+        const isActive = entry.id === activeOutlineId;
+        button.classList.toggle("is-active", isActive);
+        if (isActive && pageChanged && row && !row.hidden) {
+          scrollIntoViewIfNeeded(row, "center");
+        }
+      }
+      if (toggle) {
+        const expanded = !state.outlineCollapsedIds.has(entry.id);
+        toggle.classList.toggle("is-collapsed", !expanded);
+        toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+      }
+    }
+  }
+
+  function ensureOutlinePathExpanded(entryId) {
+    for (const ancestorId of collectOutlineAncestorIds(state.outlineEntries, entryId)) {
+      state.outlineCollapsedIds.delete(ancestorId);
+    }
   }
 
   function syncActivePage(pageNumber) {
@@ -345,6 +447,7 @@ export function initPdfPreview(options) {
       pageInput.value = String(pageNumber);
     }
     setPageCount(pageNumber);
+    setPageNavigationState(pageNumber);
     for (const [entryPageNumber, article] of state.pageArticles.entries()) {
       article.classList.toggle("is-active", entryPageNumber === pageNumber);
     }
@@ -352,17 +455,12 @@ export function initPdfPreview(options) {
       const isActive = entryPageNumber === pageNumber;
       button.classList.toggle("is-active", isActive);
       if (isActive && pageChanged) {
-        scrollIntoViewIfNeeded(button);
+        scrollIntoViewIfNeeded(button, "center");
       }
     }
     const activeOutlineId = findActiveOutlineEntry(state.outlineEntries, pageNumber);
-    for (const [id, button] of state.outlineButtons.entries()) {
-      const isActive = id === activeOutlineId;
-      button.classList.toggle("is-active", isActive);
-      if (isActive && pageChanged) {
-        scrollIntoViewIfNeeded(button);
-      }
-    }
+    ensureOutlinePathExpanded(activeOutlineId);
+    updateOutlineTree(activeOutlineId, pageChanged);
     const activeMeta = state.pageMetaByNumber.get(pageNumber);
     if (activeMeta && !activeMeta.thumbReady) {
       enqueueThumbnail(activeMeta, true);
@@ -627,6 +725,14 @@ export function initPdfPreview(options) {
     return true;
   }
 
+  function jumpRelativePage(step) {
+    if (!state.pdfDocument) {
+      return;
+    }
+    const targetPage = clamp((state.currentPage || 1) + step, 1, state.pdfDocument.numPages);
+    scrollToPage(targetPage, "smooth");
+  }
+
   function handlePageJump() {
     if (!state.pdfDocument || !pageInput) {
       return;
@@ -638,6 +744,19 @@ export function initPdfPreview(options) {
     );
     pageInput.value = String(requestedPage);
     scrollToPage(requestedPage, "smooth");
+  }
+
+  function handlePageRangeInput() {
+    if (!state.pdfDocument || !pageRange) {
+      return;
+    }
+    const requestedPage = clamp(
+      Number.parseInt(pageRange.value || "1", 10) || state.currentPage || 1,
+      1,
+      state.pdfDocument.numPages,
+    );
+    setPageNavigationState(requestedPage);
+    scrollToPage(requestedPage, "auto");
   }
 
   async function renderThumbnail(meta) {
@@ -761,6 +880,10 @@ export function initPdfPreview(options) {
     }
     outlineList.replaceChildren();
     state.outlineButtons.clear();
+    state.outlineCollapsedIds.clear();
+    state.outlineEntryById.clear();
+    state.outlineRows.clear();
+    state.outlineToggles.clear();
     let outlineEntries = [];
     try {
       const outline = await state.pdfDocument.getOutline();
@@ -769,6 +892,7 @@ export function initPdfPreview(options) {
       outlineEntries = [];
     }
     state.outlineEntries = outlineEntries;
+    state.outlineEntryById = new Map(outlineEntries.map((entry) => [entry.id, entry]));
     const hasOutline = outlineEntries.length > 0;
     outlineTab.hidden = !hasOutline;
     if (!hasOutline && pageTab) {
@@ -780,10 +904,36 @@ export function initPdfPreview(options) {
     }
     const fragment = root.createDocumentFragment();
     for (const entry of outlineEntries) {
+      const row = root.createElement("div");
+      row.className = "pdf-outline-row";
+      row.style.setProperty("--outline-depth", String(entry.depth));
+      const leading = root.createElement("span");
+      leading.className = "pdf-outline-leading";
+      if (entry.hasChildren) {
+        const toggle = root.createElement("button");
+        toggle.type = "button";
+        toggle.className = "pdf-outline-toggle";
+        toggle.setAttribute("aria-label", "折叠或展开目录");
+        toggle.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (state.outlineCollapsedIds.has(entry.id)) {
+            state.outlineCollapsedIds.delete(entry.id);
+          } else {
+            state.outlineCollapsedIds.add(entry.id);
+          }
+          updateOutlineTree(findActiveOutlineEntry(state.outlineEntries, state.currentPage), false);
+        });
+        leading.appendChild(toggle);
+        state.outlineToggles.set(entry.id, toggle);
+      } else {
+        const spacer = root.createElement("span");
+        spacer.className = "pdf-outline-spacer";
+        leading.appendChild(spacer);
+      }
       const button = root.createElement("button");
       button.type = "button";
       button.className = "pdf-outline-item";
-      button.style.setProperty("--outline-depth", String(entry.depth));
       if (typeof entry.pageNumber !== "number") {
         button.classList.add("is-disabled");
         button.disabled = true;
@@ -800,10 +950,13 @@ export function initPdfPreview(options) {
       page.className = "pdf-outline-page";
       page.textContent = typeof entry.pageNumber === "number" ? "P" + entry.pageNumber : "—";
       button.append(title, page);
-      fragment.appendChild(button);
+      row.append(leading, button);
+      fragment.appendChild(row);
       state.outlineButtons.set(entry.id, button);
+      state.outlineRows.set(entry.id, row);
     }
     outlineList.appendChild(fragment);
+    updateOutlineTree(findActiveOutlineEntry(state.outlineEntries, state.currentPage), false);
   }
 
   function buildPageShells() {
@@ -856,10 +1009,16 @@ export function initPdfPreview(options) {
         standardFontDataUrl: "/static/vendor/pdfjs/standard_fonts/",
       });
       state.pdfDocument = await loadingTask.promise;
+      setPageNavigationState(1);
       if (pageInput) {
         pageInput.disabled = false;
         pageInput.min = "1";
         pageInput.max = String(state.pdfDocument.numPages);
+      }
+      if (pageRange) {
+        pageRange.disabled = false;
+        pageRange.min = "1";
+        pageRange.max = String(state.pdfDocument.numPages);
       }
       await renderOutline();
       await buildPageMetas();
@@ -908,6 +1067,16 @@ export function initPdfPreview(options) {
   if (pageGo) {
     pageGo.addEventListener("click", handlePageJump);
   }
+  if (pagePrev) {
+    pagePrev.addEventListener("click", () => {
+      jumpRelativePage(-1);
+    });
+  }
+  if (pageNext) {
+    pageNext.addEventListener("click", () => {
+      jumpRelativePage(1);
+    });
+  }
   if (pageInput) {
     pageInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
@@ -926,6 +1095,9 @@ export function initPdfPreview(options) {
       );
       pageInput.value = String(normalizedPage);
     });
+  }
+  if (pageRange) {
+    pageRange.addEventListener("input", handlePageRangeInput);
   }
   scrollWrap.addEventListener("scroll", scheduleScrollSync, { passive: true });
   if (typeof window !== "undefined") {

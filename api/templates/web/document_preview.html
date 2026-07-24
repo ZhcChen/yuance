@@ -433,6 +433,34 @@
       line-height: 18px;
     }
 
+    .pdf-toolbar-step {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: rgb(15 23 42 / 8%);
+      color: #0f172a;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+    }
+
+    .pdf-toolbar-step:hover:not(:disabled) {
+      background: rgb(37 99 235 / 14%);
+      transform: translateY(-1px);
+    }
+
+    .pdf-toolbar-step:disabled {
+      opacity: 0.42;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .pdf-toolbar-group input {
       width: 64px;
       height: 28px;
@@ -501,6 +529,47 @@
       color: #64748b;
       font-size: 12px;
       line-height: 18px;
+    }
+
+    .pdf-sidebar-scrubber {
+      display: grid;
+      gap: 8px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgb(248 250 252 / 96%);
+      box-shadow: inset 0 0 0 1px rgb(226 232 240 / 92%);
+    }
+
+    .pdf-sidebar-scrubber-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .pdf-sidebar-scrubber-head strong {
+      color: #0f172a;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .pdf-sidebar-scrubber-head span {
+      color: #64748b;
+      font-size: 11px;
+      line-height: 17px;
+      white-space: nowrap;
+    }
+
+    .pdf-page-range {
+      width: 100%;
+      margin: 0;
+      accent-color: #2563eb;
+      cursor: pointer;
+    }
+
+    .pdf-page-range:disabled {
+      cursor: not-allowed;
+      opacity: 0.56;
     }
 
     .pdf-sidebar-tabs {
@@ -634,6 +703,61 @@
       align-content: start;
     }
 
+    .pdf-outline-row {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr);
+      align-items: start;
+      gap: 8px;
+      padding-left: calc(var(--outline-depth, 0) * 14px);
+    }
+
+    .pdf-outline-leading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+    }
+
+    .pdf-outline-toggle,
+    .pdf-outline-spacer {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+    }
+
+    .pdf-outline-toggle {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: rgb(15 23 42 / 6%);
+      color: #475569;
+      cursor: pointer;
+      transition: background 160ms ease, transform 160ms ease;
+    }
+
+    .pdf-outline-toggle::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-right: 1.8px solid currentColor;
+      border-bottom: 1.8px solid currentColor;
+      transform: rotate(45deg);
+      transition: transform 160ms ease;
+    }
+
+    .pdf-outline-toggle:hover {
+      background: rgb(37 99 235 / 12%);
+      transform: translateY(-1px);
+    }
+
+    .pdf-outline-toggle.is-collapsed::before {
+      transform: rotate(-45deg);
+    }
+
     .pdf-outline-item {
       display: flex;
       align-items: center;
@@ -641,7 +765,7 @@
       gap: 12px;
       width: 100%;
       min-height: 40px;
-      padding: 10px 12px 10px calc(12px + var(--outline-depth, 0) * 14px);
+      padding: 10px 12px;
       border: 1px solid transparent;
       border-radius: 14px;
       background: transparent;
@@ -875,9 +999,11 @@
             {% if has_pdf_preview %}
             <span class="preview-tool" id="pdf-page-count">载入中</span>
             <label class="pdf-toolbar-group" for="pdf-page-input">
+              <button class="pdf-toolbar-step" type="button" id="pdf-page-prev" aria-label="上一页" disabled>‹</button>
               <span>跳转</span>
               <input id="pdf-page-input" type="number" min="1" value="1" disabled>
               <button class="pdf-toolbar-action" type="button" id="pdf-page-go">前往</button>
+              <button class="pdf-toolbar-step" type="button" id="pdf-page-next" aria-label="下一页" disabled>›</button>
             </label>
             <button class="preview-tool" type="button" id="pdf-zoom-out">－</button>
             <button class="preview-tool" type="button" id="pdf-zoom-reset">适宽</button>
@@ -909,6 +1035,13 @@
               <div class="pdf-sidebar-copy">
                 <strong>快速定位</strong>
                 <span>支持页缩略图预览，若 PDF 自带目录会自动识别。</span>
+              </div>
+              <div class="pdf-sidebar-scrubber">
+                <div class="pdf-sidebar-scrubber-head">
+                  <strong id="pdf-page-range-label">拖动快速定位</strong>
+                  <span>拖动即跳转</span>
+                </div>
+                <input class="pdf-page-range" id="pdf-page-range" type="range" min="1" max="1" value="1" disabled>
               </div>
               <div class="pdf-sidebar-tabs" role="tablist" aria-label="PDF 导航模式">
                 <button class="pdf-sidebar-tab is-active" type="button" role="tab" aria-selected="true" data-pdf-sidebar-tab="pages">页面</button>
