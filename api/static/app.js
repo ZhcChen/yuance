@@ -1096,16 +1096,21 @@
       return;
     }
     var viewportWidth = Math.max(window.innerWidth || 0, 0);
+    var viewportHeight = Math.max(window.innerHeight || 0, 0);
     var mobile = viewportWidth <= 900;
     var sidePadding = viewportWidth <= 620 ? 12 : 18;
     var rootRect = root.getBoundingClientRect();
+    var listRect = list.getBoundingClientRect();
     var left = mobile ? sidePadding : Math.max(sidePadding, Math.round(rootRect.left));
     var width = mobile
       ? viewportWidth - sidePadding * 2
       : Math.min(Math.round(rootRect.width), viewportWidth - left - sidePadding);
     var reserve = Math.ceil(composer.getBoundingClientRect().height) + 34;
-    var dockRect = dock.getBoundingClientRect();
-    var shouldFix = discussionHasPosts(root) && dockRect.top <= 24 && rootRect.bottom - 24 > reserve;
+    var listTriggerLine = viewportHeight - Math.min(reserve, 320);
+    var shouldFix =
+      discussionHasPosts(root) &&
+      listRect.top <= listTriggerLine &&
+      rootRect.bottom - 24 > reserve;
     dock.dataset.discussionDockState = shouldFix ? "fixed" : "inline";
     root.dataset.discussionDockFixed = shouldFix ? "true" : "false";
     root.style.setProperty("--discussion-dock-left", Math.max(sidePadding, left) + "px");
