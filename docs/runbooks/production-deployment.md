@@ -129,9 +129,10 @@ YUANCE_SECURITY_MASTER_KEY
 说明：
 
 - 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
-- PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 继续保持站内离线预览。
-- 其余尚未切到纯前端预览栈的文档格式，当前以下载原文件为准。
-- 如果当前仍使用测试内存存储，文档预览页同样可以直接读取对象内容，不依赖外部文档服务。
+- PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 统一走站内前端离线预览。
+- 文档预览页只负责生成临时可访问地址，实际解析与渲染全部由浏览器完成。
+- `doc`、`ppt`、`rtf`、`odt`、`odp` 等旧格式当前统一按“下载原文件查看”处理。
+- 如果当前仍使用测试内存存储，文档预览页会自动回退到同源读取，不依赖外部文档服务。
 
 正式环境 `.env` 必须保持：
 

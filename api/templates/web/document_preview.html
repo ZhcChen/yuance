@@ -912,9 +912,62 @@
       line-height: 18px;
     }
 
-    .text-preview {
+    .document-preview-root {
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      color: #0f172a;
+    }
+
+    .document-preview-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      align-self: flex-start;
+      margin: 18px 20px 0;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgb(15 23 42 / 7%);
+      color: #334155;
+      font-size: 12px;
+      line-height: 18px;
+    }
+
+    .document-preview-status.is-error {
+      background: rgb(239 68 68 / 12%);
+      color: #b91c1c;
+    }
+
+    .document-preview-status[hidden] {
+      display: none;
+    }
+
+    .document-preview-host {
+      flex: 1 1 auto;
       min-height: 100%;
       padding: 20px 22px 30px;
+      color: #0f172a;
+    }
+
+    .document-preview-host.is-office {
+      padding: 0;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgb(248 250 252 / 96%), rgb(241 245 249 / 92%));
+    }
+
+    .document-preview-empty {
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 32px 24px;
+      color: #475569;
+      text-align: center;
+    }
+
+    .text-preview {
+      min-height: 100%;
+      padding: 0;
       color: #0f172a;
     }
 
@@ -928,23 +981,72 @@
       color: #0f172a;
     }
 
-    .csv-preview {
+    .sheet-preview {
       min-height: 100%;
-      padding: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
       color: #0f172a;
     }
 
-    .csv-preview table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      min-width: 720px;
-    }
-
-    .csv-preview thead th {
+    .sheet-preview-tabs {
       position: sticky;
       top: 0;
-      z-index: 1;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 18px 20px 12px;
+      border-bottom: 1px solid rgb(226 232 240 / 88%);
+      background: linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 96%));
+    }
+
+    .sheet-preview-tab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 14px;
+      border: 1px solid rgb(148 163 184 / 26%);
+      border-radius: 999px;
+      background: #fff;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+    }
+
+    .sheet-preview-tab:hover {
+      border-color: rgb(37 99 235 / 34%);
+      background: rgb(239 246 255 / 88%);
+      transform: translateY(-1px);
+    }
+
+    .sheet-preview-tab.is-active {
+      border-color: rgb(59 130 246 / 26%);
+      background: #dbeafe;
+      color: #0f172a;
+      box-shadow: 0 10px 24px rgb(37 99 235 / 14%);
+    }
+
+    .sheet-preview-table-wrap {
+      min-height: 0;
+      overflow: auto;
+      padding: 0 0 24px;
+    }
+
+    .sheet-preview-table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    .sheet-preview-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
       background: rgb(248 250 252 / 98%);
       color: #334155;
       font-size: 12px;
@@ -952,8 +1054,24 @@
       text-align: left;
     }
 
-    .csv-preview th,
-    .csv-preview td {
+    .sheet-preview-table thead th:first-child {
+      left: 0;
+      z-index: 3;
+    }
+
+    .sheet-preview-table tbody th {
+      position: sticky;
+      left: 0;
+      z-index: 1;
+      background: rgb(248 250 252 / 98%);
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    .sheet-preview-table th,
+    .sheet-preview-table td {
       padding: 12px 14px;
       border-bottom: 1px solid rgb(226 232 240 / 96%);
       border-right: 1px solid rgb(226 232 240 / 72%);
@@ -962,13 +1080,14 @@
       line-height: 18px;
       white-space: pre-wrap;
       word-break: break-word;
+      background-clip: padding-box;
     }
 
-    .csv-preview tr > :first-child {
+    .sheet-preview-table tr > :first-child {
       border-left: 1px solid rgb(226 232 240 / 72%);
     }
 
-    .csv-preview tbody tr:nth-child(even) td {
+    .sheet-preview-table tbody tr:nth-child(even) td {
       background: rgb(248 250 252 / 58%);
     }
 
@@ -983,6 +1102,20 @@
       color: #475569;
       font-size: 12px;
       line-height: 18px;
+    }
+
+    .sheet-preview-note {
+      margin: 14px 20px 0;
+    }
+
+    .office-preview-stage {
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      padding: 18px;
+      background:
+        radial-gradient(circle at top, rgb(59 130 246 / 8%), transparent 28%),
+        linear-gradient(180deg, rgb(248 250 252 / 98%), rgb(241 245 249 / 96%));
     }
 
     @keyframes preview-spin {
@@ -1113,12 +1246,10 @@
             <button class="preview-tool" type="button" id="pdf-zoom-fit-page" aria-pressed="false">适页</button>
             <button class="preview-tool" type="button" id="pdf-zoom-in">＋</button>
             {% endif %}
-            {% if has_text_preview %}
-            <span class="preview-tool">{{ text_preview_line_count }} 行</span>
-            {% endif %}
-            {% if has_csv_preview %}
-            <span class="preview-tool">{{ csv_preview_rows.len() }} 行</span>
-            <span class="preview-tool">{{ csv_preview_headers.len() }} 列</span>
+            {% if !has_pdf_preview %}
+            <span class="preview-tool" data-preview-metric="primary" hidden></span>
+            <span class="preview-tool" data-preview-metric="secondary" hidden></span>
+            <span class="preview-tool" data-preview-metric="tertiary" hidden></span>
             {% endif %}
           </div>
         </div>
@@ -1126,7 +1257,7 @@
         <div class="preview-panel-body{% if has_pdf_preview %} preview-panel-body-pdf{% endif %}">
           {% if has_pdf_preview %}
           <div class="preview-panel-body-scroll" id="pdf-preview-scroll">
-            <div class="pdf-stage" data-pdf-preview data-pdf-url="{{ pdf_preview_url }}">
+            <div class="pdf-stage" data-pdf-preview data-pdf-url="{{ preview_content_url }}">
               <div class="pdf-status" id="pdf-preview-status">
                 <span class="pdf-spinner" aria-hidden="true"></span>
                 <span id="pdf-preview-status-copy">正在加载 PDF 预览，请稍候...</span>
@@ -1182,48 +1313,22 @@
               </section>
             </div>
           </aside>
-          {% else if has_text_preview %}
-          <div class="preview-panel-body-scroll">
-            <div class="text-preview">
-              <pre>{{ text_preview_content }}</pre>
-              {% if text_preview_is_truncated %}
-              <div class="preview-note-banner">已截断展示前 {{ text_preview_line_count }} 行，请下载原文件查看完整内容。</div>
-              {% endif %}
-            </div>
-          </div>
-          {% else if has_csv_preview %}
-          <div class="preview-panel-body-scroll">
-            <div class="csv-preview">
-              <table>
-                <thead>
-                  <tr>
-                    {% for header in csv_preview_headers %}
-                    <th>{{ header }}</th>
-                    {% endfor %}
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for row in csv_preview_rows %}
-                  <tr>
-                    {% for cell in row %}
-                    <td>{{ cell }}</td>
-                    {% endfor %}
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
-              {% if csv_preview_is_truncated %}
-              <div style="padding: 14px 16px; color: #64748b; font-size: 12px; line-height: 18px;">
-                当前仅展示部分行列，请下载原文件查看完整表格。
-              </div>
-              {% endif %}
-            </div>
-          </div>
           {% else %}
-          <div class="preview-empty">
-            <div>
-              <strong>当前文件没有可渲染的离线视图。</strong>
-              <div style="margin-top: 8px;">请下载原文件查看。</div>
+          <div class="preview-panel-body-scroll">
+            <div
+              class="document-preview-root"
+              data-document-preview-root
+              data-preview-type="{{ preview_type }}"
+              data-preview-url="{{ preview_content_url }}"
+              data-preview-title="{{ title }}"
+              data-preview-kind-label="{{ kind_label }}"
+              data-preview-file-type="{{ file_type_badge }}"
+            >
+              <div class="document-preview-status" data-preview-status>
+                <span class="pdf-spinner" aria-hidden="true"></span>
+                <span data-preview-status-copy>正在加载{{ kind_label }}预览，请稍候...</span>
+              </div>
+              <div class="document-preview-host" data-preview-host></div>
             </div>
           </div>
           {% endif %}
@@ -1270,17 +1375,9 @@
     })();
   </script>
 
-  {% if has_pdf_preview %}
   <script type="module">
-    import * as pdfjsLib from "/static/vendor/pdfjs/build/pdf.min.mjs";
-    import { initPdfPreview } from "/static/document-preview.mjs";
-
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/build/pdf.worker.min.mjs";
-    initPdfPreview({
-      pdfjsLib: pdfjsLib,
-      root: document,
-    });
+    import { initDocumentPreview } from "/static/document-preview.mjs";
+    initDocumentPreview({ root: document });
   </script>
-  {% endif %}
 </body>
 </html>

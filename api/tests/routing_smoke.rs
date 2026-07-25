@@ -568,8 +568,59 @@ async fn static_document_preview_module_is_served() {
     );
 
     let body = response_body(response).await;
+    assert!(body.contains("initDocumentPreview"));
     assert!(body.contains("initPdfPreview"));
-    assert!(body.contains("getDocument"));
+    assert!(body.contains("renderSpreadsheetPreview"));
+}
+
+#[tokio::test]
+async fn static_sheetjs_bundle_is_served_for_document_preview() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/sheetjs/xlsx.full.min.js")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("XLSX"));
+    assert!(body.contains("sheet_to_json"));
+}
+
+#[tokio::test]
+async fn static_ooxml_module_is_served_for_document_preview() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/ooxml/docx.mjs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("DocxScrollViewer"));
+    assert!(body.contains("DocxViewer"));
 }
 
 #[tokio::test]

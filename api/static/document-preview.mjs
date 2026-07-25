@@ -17,6 +17,11 @@ const PAGE_CARD_PADDING = 24;
 const PAGE_LABEL_SPACE = 26;
 const PDF_FETCH_TIMEOUT_MS = 20000;
 const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d];
+const GENERIC_FETCH_TIMEOUT_MS = 20000;
+const TEXT_PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
+const SHEET_PREVIEW_MAX_ROWS = 300;
+const SHEET_PREVIEW_MAX_COLS = 40;
+const previewScriptLoaders = new Map();
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -1489,4 +1494,538 @@ export function initPdfPreview(options) {
     refreshPageLayout,
     state,
   };
+}
+
+function normalizePreviewErrorMessage(value) {
+  const normalized = String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.slice(0, 160);
+}
+
+function buildPreviewFetchErrorMessage(statusCode, detail) {
+  const normalized = normalizePreviewErrorMessage(detail);
+  if (!normalized) {
+    return "附件读取失败（HTTP " + statusCode + "），请刷新后重试。";
+  }
+  return "附件读取失败（HTTP " + statusCode + "）： " + normalized;
+}
+
+async function fetchPreviewBytes(sourceUrl, accept = "*/*") {
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timeoutId = 0;
+  try {
+    if (controller && typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, GENERIC_FETCH_TIMEOUT_MS);
+    }
+    const response = await fetch(sourceUrl, {
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller ? controller.signal : undefined,
+      headers: {
+        Accept: accept,
+      },
+    });
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = await response.text();
+      } catch (_error) {
+        detail = "";
+      }
+      throw new Error(buildPreviewFetchErrorMessage(response.status, detail));
+    }
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (bytes.byteLength === 0) {
+      throw new Error("附件内容为空，当前无法预览。");
+    }
+    return bytes;
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw new Error("附件读取超时，请刷新后重试。");
+    }
+    throw error;
+  } finally {
+    clearWindowTimer(timeoutId);
+  }
+}
+
+function previewMetricNodes(root) {
+  return [
+    root.querySelector('[data-preview-metric="primary"]'),
+    root.querySelector('[data-preview-metric="secondary"]'),
+    root.querySelector('[data-preview-metric="tertiary"]'),
+  ].filter(Boolean);
+}
+
+function setPreviewMetrics(root, values) {
+  const metrics = previewMetricNodes(root);
+  const labels = Array.isArray(values) ? values.filter(Boolean) : [];
+  metrics.forEach((node, index) => {
+    const value = labels[index] || "";
+    node.textContent = value;
+    node.hidden = !value;
+  });
+}
+
+function previewStatusNodes(root) {
+  return {
+    shell: root.querySelector("[data-preview-status]"),
+    copy: root.querySelector("[data-preview-status-copy]"),
+  };
+}
+
+function setPreviewStatus(root, message, tone = "info") {
+  const status = previewStatusNodes(root);
+  if (!status.shell || !status.copy) {
+    return;
+  }
+  status.copy.textContent = message || "";
+  status.shell.hidden = !message;
+  status.shell.classList.toggle("is-error", tone === "error");
+}
+
+function previewHost(root) {
+  return root.querySelector("[data-preview-host]");
+}
+
+function clearPreviewHost(root, officeMode = false) {
+  const host = previewHost(root);
+  if (!host) {
+    return null;
+  }
+  host.classList.toggle("is-office", officeMode);
+  host.replaceChildren();
+  return host;
+}
+
+function buildPreviewEmptyState(doc, title, detail) {
+  const shell = doc.createElement("div");
+  shell.className = "document-preview-empty";
+  const copy = doc.createElement("div");
+  const strong = doc.createElement("strong");
+  strong.textContent = title;
+  copy.appendChild(strong);
+  if (detail) {
+    const description = doc.createElement("div");
+    description.style.marginTop = "8px";
+    description.textContent = detail;
+    copy.appendChild(description);
+  }
+  shell.appendChild(copy);
+  return shell;
+}
+
+function formatPreviewByteSize(byteSize) {
+  const value = Number(byteSize || 0);
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+  if (value < 1024) {
+    return Math.round(value) + " B";
+  }
+  const units = ["KB", "MB", "GB"];
+  let current = value;
+  let unitIndex = -1;
+  while (current >= 1024 && unitIndex < units.length - 1) {
+    current /= 1024;
+    unitIndex += 1;
+  }
+  return (Math.round(current * 10) / 10).toString() + " " + units[unitIndex];
+}
+
+function replacementCharacterRatio(value) {
+  const text = String(value || "");
+  if (!text) {
+    return 0;
+  }
+  const replacementCount = (text.match(/\uFFFD/g) || []).length;
+  return replacementCount / text.length;
+}
+
+function decodePreviewText(bytes) {
+  const utf8Decoder = new TextDecoder("utf-8", { fatal: false });
+  const utf8Text = utf8Decoder.decode(bytes).replace(/\r\n/g, "\n");
+  let best = {
+    encoding: "UTF-8",
+    text: utf8Text,
+    score: replacementCharacterRatio(utf8Text),
+  };
+  for (const encoding of ["gb18030", "utf-16le"]) {
+    try {
+      const decoder = new TextDecoder(encoding, { fatal: false });
+      const text = decoder.decode(bytes).replace(/\r\n/g, "\n");
+      const score = replacementCharacterRatio(text);
+      if (score < best.score) {
+        best = {
+          encoding: encoding.toUpperCase(),
+          text,
+          score,
+        };
+      }
+    } catch (_error) {
+      // Ignore unsupported decoders.
+    }
+  }
+  return {
+    encoding: best.encoding,
+    text: best.text,
+  };
+}
+
+function previewArrayBuffer(bytes) {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
+function loadScriptOnce(src, globalName) {
+  const cached = previewScriptLoaders.get(src);
+  if (cached) {
+    return cached;
+  }
+  const promise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-preview-script="' + src + '"]');
+    if (existing) {
+      if (!globalName || globalThis[globalName]) {
+        resolve(globalName ? globalThis[globalName] : undefined);
+        return;
+      }
+      existing.addEventListener("load", () => {
+        resolve(globalName ? globalThis[globalName] : undefined);
+      }, { once: true });
+      existing.addEventListener("error", () => {
+        reject(new Error("加载预览脚本失败。"));
+      }, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.dataset.previewScript = src;
+    script.addEventListener("load", () => {
+      resolve(globalName ? globalThis[globalName] : undefined);
+    }, { once: true });
+    script.addEventListener("error", () => {
+      reject(new Error("加载预览脚本失败。"));
+    }, { once: true });
+    document.head.appendChild(script);
+  });
+  previewScriptLoaders.set(src, promise);
+  return promise;
+}
+
+async function ensureSheetJs() {
+  const xlsx = await loadScriptOnce("/static/vendor/sheetjs/xlsx.full.min.js", "XLSX");
+  if (!xlsx || !xlsx.utils || typeof xlsx.read !== "function") {
+    throw new Error("表格预览模块初始化失败。");
+  }
+  return xlsx;
+}
+
+function appendPreviewNote(target, text) {
+  const note = document.createElement("div");
+  note.className = "preview-note-banner";
+  note.textContent = text;
+  target.appendChild(note);
+}
+
+async function renderTextPreview(root, sourceUrl) {
+  setPreviewStatus(root, "正在读取文本内容，请稍候...");
+  const bytes = await fetchPreviewBytes(sourceUrl, "text/plain,application/octet-stream;q=0.9,*/*;q=0.1");
+  const truncated = bytes.byteLength > TEXT_PREVIEW_MAX_BYTES;
+  const previewBytes = truncated ? bytes.slice(0, TEXT_PREVIEW_MAX_BYTES) : bytes;
+  const decoded = decodePreviewText(previewBytes);
+  const host = clearPreviewHost(root, false);
+  if (!host) {
+    return;
+  }
+  const shell = document.createElement("div");
+  shell.className = "text-preview";
+  const pre = document.createElement("pre");
+  pre.textContent = decoded.text;
+  shell.appendChild(pre);
+  if (truncated) {
+    appendPreviewNote(shell, "当前仅展示前 2 MB 内容，请下载原文件查看完整文本。");
+  }
+  host.appendChild(shell);
+  const lineCount = decoded.text ? decoded.text.split("\n").length : 0;
+  setPreviewMetrics(root, [
+    lineCount + " 行",
+    decoded.encoding,
+    formatPreviewByteSize(bytes.byteLength),
+  ]);
+  setPreviewStatus(root, "");
+}
+
+function sheetCellDisplayValue(cell) {
+  if (!cell) {
+    return "";
+  }
+  if (cell.w != null && cell.w !== "") {
+    return String(cell.w);
+  }
+  if (cell.v == null) {
+    return "";
+  }
+  return String(cell.v);
+}
+
+function buildSheetTable(XLSX, worksheet) {
+  if (!worksheet || !worksheet["!ref"]) {
+    return {
+      table: null,
+      totalRows: 0,
+      totalCols: 0,
+      truncated: false,
+    };
+  }
+  const range = XLSX.utils.decode_range(worksheet["!ref"]);
+  const totalRows = Math.max(0, range.e.r - range.s.r + 1);
+  const totalCols = Math.max(0, range.e.c - range.s.c + 1);
+  const renderRows = Math.min(totalRows, SHEET_PREVIEW_MAX_ROWS);
+  const renderCols = Math.min(totalCols, SHEET_PREVIEW_MAX_COLS);
+  const truncated = renderRows < totalRows || renderCols < totalCols;
+  const table = document.createElement("table");
+  table.className = "sheet-preview-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  const corner = document.createElement("th");
+  corner.textContent = "#";
+  headRow.appendChild(corner);
+  for (let columnIndex = 0; columnIndex < renderCols; columnIndex += 1) {
+    const header = document.createElement("th");
+    header.textContent = XLSX.utils.encode_col(range.s.c + columnIndex);
+    headRow.appendChild(header);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (let rowIndex = 0; rowIndex < renderRows; rowIndex += 1) {
+    const row = document.createElement("tr");
+    const rowLabel = document.createElement("th");
+    rowLabel.scope = "row";
+    rowLabel.textContent = String(range.s.r + rowIndex + 1);
+    row.appendChild(rowLabel);
+    for (let columnIndex = 0; columnIndex < renderCols; columnIndex += 1) {
+      const cell = document.createElement("td");
+      const cellRef = XLSX.utils.encode_cell({
+        r: range.s.r + rowIndex,
+        c: range.s.c + columnIndex,
+      });
+      cell.textContent = sheetCellDisplayValue(worksheet[cellRef]);
+      row.appendChild(cell);
+    }
+    tbody.appendChild(row);
+  }
+  table.appendChild(tbody);
+  return {
+    table,
+    totalRows,
+    totalCols,
+    truncated,
+  };
+}
+
+async function renderSpreadsheetPreview(root, sourceUrl) {
+  setPreviewStatus(root, "正在解析表格内容，请稍候...");
+  const bytes = await fetchPreviewBytes(
+    sourceUrl,
+    "application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/octet-stream;q=0.9,*/*;q=0.1",
+  );
+  const XLSX = await ensureSheetJs();
+  let workbook = null;
+  try {
+    workbook = XLSX.read(previewArrayBuffer(bytes), {
+      type: "array",
+      cellFormula: false,
+      cellHTML: false,
+      cellText: true,
+      dense: false,
+    });
+  } catch (_error) {
+    throw new Error("当前表格文件无法解析，请下载原文件查看。");
+  }
+  const sheetNames = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames : [];
+  if (sheetNames.length === 0) {
+    throw new Error("表格内容为空，当前无法预览。");
+  }
+
+  const host = clearPreviewHost(root, false);
+  if (!host) {
+    return;
+  }
+  const shell = document.createElement("div");
+  shell.className = "sheet-preview";
+  const tabs = document.createElement("div");
+  tabs.className = "sheet-preview-tabs";
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "sheet-preview-table-wrap";
+  const note = document.createElement("div");
+  note.className = "preview-note-banner sheet-preview-note";
+  note.hidden = true;
+
+  function renderSheet(sheetName) {
+    tabs.querySelectorAll(".sheet-preview-tab").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.sheetName === sheetName);
+    });
+    tableWrap.replaceChildren();
+    note.hidden = true;
+    note.textContent = "";
+    const worksheet = workbook.Sheets[sheetName];
+    const tableResult = buildSheetTable(XLSX, worksheet);
+    if (!tableResult.table) {
+      tableWrap.appendChild(
+        buildPreviewEmptyState(document, "当前工作表没有可展示的内容。", "可以切换其他工作表或下载原文件查看。"),
+      );
+      setPreviewMetrics(root, [
+        sheetNames.length + " 个工作表",
+        "0 行",
+        "0 列",
+      ]);
+      return;
+    }
+    tableWrap.appendChild(tableResult.table);
+    if (tableResult.truncated) {
+      note.hidden = false;
+      note.textContent = "当前仅展示部分行列，请下载原文件查看完整表格。";
+    }
+    setPreviewMetrics(root, [
+      sheetNames.length + " 个工作表",
+      tableResult.totalRows + " 行",
+      tableResult.totalCols + " 列",
+    ]);
+  }
+
+  for (const sheetName of sheetNames) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sheet-preview-tab";
+    button.dataset.sheetName = sheetName;
+    button.textContent = sheetName;
+    button.addEventListener("click", () => {
+      renderSheet(sheetName);
+    });
+    tabs.appendChild(button);
+  }
+
+  shell.append(tabs, tableWrap, note);
+  host.appendChild(shell);
+  renderSheet(sheetNames[0]);
+  setPreviewStatus(root, "");
+}
+
+function nextAnimationFrame() {
+  return new Promise((resolve) => {
+    scheduleAnimationFrame(resolve);
+  });
+}
+
+async function renderOfficePreview(root, sourceUrl, previewType) {
+  const label = previewType === "pptx" ? "演示文稿" : "Word 文档";
+  setPreviewStatus(root, "正在加载" + label + "预览，请稍候...");
+  const bytes = await fetchPreviewBytes(sourceUrl, "application/octet-stream,*/*;q=0.1");
+  const host = clearPreviewHost(root, true);
+  if (!host) {
+    return;
+  }
+  const stage = document.createElement("div");
+  stage.className = "office-preview-stage";
+  host.appendChild(stage);
+  await nextAnimationFrame();
+  if (previewType === "docx") {
+    const { DocxScrollViewer } = await import("/static/vendor/ooxml/docx.mjs");
+    const viewer = new DocxScrollViewer(stage);
+    await viewer.load(previewArrayBuffer(bytes));
+    if (typeof viewer.relayout === "function") {
+      viewer.relayout();
+    }
+    setPreviewMetrics(root, [
+      (viewer.pageCount || 0) + " 页",
+      formatPreviewByteSize(bytes.byteLength),
+    ]);
+  } else {
+    const { PptxScrollViewer } = await import("/static/vendor/ooxml/pptx.mjs");
+    const viewer = new PptxScrollViewer(stage);
+    await viewer.load(previewArrayBuffer(bytes));
+    if (typeof viewer.relayout === "function") {
+      viewer.relayout();
+    }
+    setPreviewMetrics(root, [
+      (viewer.slideCount || 0) + " 张幻灯片",
+      formatPreviewByteSize(bytes.byteLength),
+    ]);
+  }
+  setPreviewStatus(root, "");
+}
+
+function renderPreviewError(root, message) {
+  const host = clearPreviewHost(root, false);
+  if (host) {
+    host.appendChild(
+      buildPreviewEmptyState(document, "当前无法加载预览。", message || "请刷新后重试，或下载原文件查看。"),
+    );
+  }
+  setPreviewMetrics(root, []);
+  setPreviewStatus(root, message || "当前无法加载预览。", "error");
+}
+
+async function initNonPdfPreview(root) {
+  const previewRoot = root.querySelector("[data-document-preview-root]");
+  if (!previewRoot) {
+    return false;
+  }
+  const previewType = String(previewRoot.dataset.previewType || "").trim().toLowerCase();
+  const sourceUrl = String(previewRoot.dataset.previewUrl || "").trim();
+  if (!previewType || !sourceUrl) {
+    renderPreviewError(previewRoot, "缺少预览地址，请刷新后重试。");
+    return true;
+  }
+  try {
+    switch (previewType) {
+      case "text":
+        await renderTextPreview(previewRoot, sourceUrl);
+        break;
+      case "spreadsheet":
+        await renderSpreadsheetPreview(previewRoot, sourceUrl);
+        break;
+      case "docx":
+      case "pptx":
+        await renderOfficePreview(previewRoot, sourceUrl, previewType);
+        break;
+      default:
+        renderPreviewError(previewRoot, "当前文件类型暂不支持站内预览。");
+        break;
+    }
+  } catch (error) {
+    const message = error && error.message ? error.message : "当前无法加载预览。";
+    renderPreviewError(previewRoot, message);
+  }
+  return true;
+}
+
+async function initPdfPreviewPage(root) {
+  const pdfStage = root.querySelector("[data-pdf-preview]");
+  if (!pdfStage) {
+    return false;
+  }
+  const pdfjsLib = await import("/static/vendor/pdfjs/build/pdf.min.mjs");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/build/pdf.worker.min.mjs";
+  initPdfPreview({
+    pdfjsLib,
+    root,
+  });
+  return true;
+}
+
+export async function initDocumentPreview(options = {}) {
+  const root = options.root || document;
+  if (await initNonPdfPreview(root)) {
+    return;
+  }
+  await initPdfPreviewPage(root);
 }

@@ -1,7 +1,7 @@
 ---
 title: refactor: 纯前端离线文档预览与富文本文件卡统一升级
 type: refactor
-status: in_progress
+status: completed
 date: 2026-07-19
 origin: 用户口头确认：移除后端 Office 转换依赖，文档预览全部改为前端处理
 deepened: 2026-07-25
@@ -108,7 +108,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: 后端预览契约瘦身为“元信息 + 原始字节流”**
+- [x] **Unit 1: 后端预览契约瘦身为“元信息 + 原始字节流”**
 
 **Goal:** 移除服务端 Office 转换与模板内嵌文本/CSV 渲染职责，让后端只保留受控入口和统一元信息输出。
 
@@ -145,7 +145,7 @@ flowchart TB
 - 后端代码中不再存在 `LibreOffice / soffice / preview-cache / onlyoffice` 预览路径依赖。
 - `/preview` 页面仍能稳定打开，并且前端可以从同源内容 URL 拉到对应附件字节流。
 
-- [ ] **Unit 2: 纯前端预览页解析栈重构**
+- [x] **Unit 2: 纯前端预览页解析栈重构**
 
 **Goal:** 把 PDF、文本、表格、DOCX、PPTX 的渲染全部收敛到浏览器模块中。
 
@@ -187,7 +187,7 @@ flowchart TB
 - 预览页网络面板里不再出现任何 Office 转换 API 或服务端 PDF 缓存请求。
 - `docx/xlsx/pptx` 预览成功时，浏览器拿到的是原始附件字节流，而不是后端预先转好的 PDF。
 
-- [ ] **Unit 3: 文件卡、右键菜单与预览支持矩阵统一**
+- [x] **Unit 3: 文件卡、右键菜单与预览支持矩阵统一**
 
 **Goal:** 让富文本编辑态、已发布正文、资料库和工作项详情中的文件卡统一表达“可预览/不可预览”能力。
 
@@ -222,7 +222,7 @@ flowchart TB
 **Verification:**
 - 文件卡、右键菜单、详情正文、资料正文的预览判断逻辑一致，不再存在“按钮可点但页面实际不支持”的错位。
 
-- [ ] **Unit 4: 文档、部署口径与降级策略同步**
+- [x] **Unit 4: 文档、部署口径与降级策略同步**
 
 **Goal:** 移除所有后端转换部署口径，补足纯前端预览说明与验证清单。
 

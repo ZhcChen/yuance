@@ -3375,6 +3375,11 @@
         "yaml",
         "yml",
         "csv",
+        "xls",
+        "xlsx",
+        "ods",
+        "docx",
+        "pptx",
         "pdf",
       ].indexOf(extension) >= 0
     ) {
@@ -3389,6 +3394,16 @@
         return "md";
       case "text/csv":
         return "csv";
+      case "application/vnd.ms-excel":
+        return "xls";
+      case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        return "xlsx";
+      case "application/vnd.oasis.opendocument.spreadsheet":
+        return "ods";
+      case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return "docx";
+      case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        return "pptx";
       case "application/json":
         return "json";
       case "application/xml":

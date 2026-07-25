@@ -17,6 +17,8 @@ use crate::{
 };
 
 static PDFJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/pdfjs");
+static OOXML_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/ooxml");
+static SHEETJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/sheetjs");
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -675,6 +677,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/static/vendor/marked/marked.umd.js", get(static_marked))
         .route("/static/vendor/dompurify/purify.min.js", get(static_dompurify))
         .route("/static/vendor/pdfjs/{*path}", get(static_pdfjs_asset))
+        .route("/static/vendor/ooxml/{*path}", get(static_ooxml_asset))
+        .route("/static/vendor/sheetjs/{*path}", get(static_sheetjs_asset))
         .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
@@ -1275,6 +1279,18 @@ async fn static_dompurify() -> impl IntoResponse {
 }
 
 async fn static_pdfjs_asset(Path(path): Path<String>) -> Response {
+    static_dir_asset_response(&PDFJS_VENDOR_DIR, &path)
+}
+
+async fn static_ooxml_asset(Path(path): Path<String>) -> Response {
+    static_dir_asset_response(&OOXML_VENDOR_DIR, &path)
+}
+
+async fn static_sheetjs_asset(Path(path): Path<String>) -> Response {
+    static_dir_asset_response(&SHEETJS_VENDOR_DIR, &path)
+}
+
+fn static_dir_asset_response(dir: &Dir<'_>, path: &str) -> Response {
     let normalized = path.trim_matches('/');
     if normalized.is_empty()
         || normalized.starts_with('.')
@@ -1284,13 +1300,17 @@ async fn static_pdfjs_asset(Path(path): Path<String>) -> Response {
         return StatusCode::NOT_FOUND.into_response();
     }
 
-    let Some(file) = PDFJS_VENDOR_DIR.get_file(normalized) else {
+    let Some(file) = dir.get_file(normalized) else {
         return StatusCode::NOT_FOUND.into_response();
     };
 
     let content_type = match normalized.rsplit('.').next().unwrap_or_default() {
         "mjs" | "js" => "application/javascript; charset=utf-8",
+        "wasm" => "application/wasm",
         "ttf" => "font/ttf",
+        "css" => "text/css; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "svg" => "image/svg+xml",
         "txt" => "text/plain; charset=utf-8",
         _ => "application/octet-stream",
     };
@@ -1300,7 +1320,7 @@ async fn static_pdfjs_asset(Path(path): Path<String>) -> Response {
             (header::CONTENT_TYPE, content_type),
             (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
         ],
-        file.contents(),
+        file.contents().to_vec(),
     )
         .into_response()
 }

@@ -1099,6 +1099,7 @@ struct DocumentPreviewTemplate {
     source_url: String,
     source_label: String,
     kind_label: String,
+    preview_type: String,
     file_type_badge: String,
     meta_text: String,
     position_text: String,
@@ -1112,16 +1113,8 @@ struct DocumentPreviewTemplate {
     has_error: bool,
     error_message: String,
     preview_hint: String,
+    preview_content_url: String,
     has_pdf_preview: bool,
-    pdf_preview_url: String,
-    has_text_preview: bool,
-    text_preview_content: String,
-    text_preview_line_count: usize,
-    text_preview_is_truncated: bool,
-    has_csv_preview: bool,
-    csv_preview_headers: Vec<String>,
-    csv_preview_rows: Vec<Vec<String>>,
-    csv_preview_is_truncated: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1153,21 +1146,9 @@ struct DetailSequenceNavigationLink {
 enum AttachmentPreviewStrategy {
     Pdf,
     Text,
-    Csv,
-}
-
-#[derive(Debug, Clone)]
-struct TextPreviewContent {
-    content: String,
-    line_count: usize,
-    is_truncated: bool,
-}
-
-#[derive(Debug, Clone)]
-struct CsvPreviewTable {
-    headers: Vec<String>,
-    rows: Vec<Vec<String>>,
-    is_truncated: bool,
+    Spreadsheet,
+    Docx,
+    Pptx,
 }
 
 #[derive(Template)]
@@ -9828,23 +9809,50 @@ async fn attachment_document_preview_response(
     )
     .await?;
 
-    let template = build_document_preview_template(
+    let resolved_preview_content_url = resolve_attachment_preview_content_url(
         state,
         pool,
+        &attachment,
+        preview_content_url,
+    )
+    .await?;
+
+    let template = build_document_preview_template(
         attachment,
         source_url,
         source_label,
         navigation,
-        preview_content_url.to_string(),
+        resolved_preview_content_url,
         download_url.to_string(),
     )
     .await?;
     Ok(response::html(template)?.into_response())
 }
 
-async fn build_document_preview_template(
+async fn resolve_attachment_preview_content_url(
     state: &AppState,
     pool: &SqlitePool,
+    attachment: &files::FileAttachmentSummary,
+    fallback_preview_content_url: &str,
+) -> AppResult<String> {
+    if storage::read_test_memory_object(pool, &state.settings, &attachment.object_key)
+        .await?
+        .is_some()
+    {
+        return Ok(fallback_preview_content_url.to_string());
+    }
+
+    let signed = storage::presign_download_url(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+    )
+    .await?;
+    Ok(signed.url)
+}
+
+async fn build_document_preview_template(
     attachment: files::FileAttachmentSummary,
     source_url: String,
     source_label: String,
@@ -9899,17 +9907,18 @@ async fn build_document_preview_template(
         ));
     };
     let kind_label = document_preview_kind_label(strategy).to_string();
+    let preview_type = document_preview_type_code(strategy).to_string();
     let file_type_badge = file_type.to_ascii_uppercase();
     let meta_text = format!(
         "{kind_label} · {} · 站内离线预览",
         format_byte_size(attachment.byte_size)
     );
-    let error_navigation = navigation.clone();
-    let mut template = DocumentPreviewTemplate {
+    Ok(DocumentPreviewTemplate {
         title,
         source_url,
         source_label,
         kind_label,
+        preview_type,
         file_type_badge,
         meta_text,
         position_text: navigation.position_text,
@@ -9938,58 +9947,10 @@ async fn build_document_preview_template(
         download_url,
         has_error: false,
         error_message: String::new(),
-        preview_hint: preview_hint_for_strategy(strategy, &file_type),
-        has_pdf_preview: false,
-        pdf_preview_url: String::new(),
-        has_text_preview: false,
-        text_preview_content: String::new(),
-        text_preview_line_count: 0,
-        text_preview_is_truncated: false,
-        has_csv_preview: false,
-        csv_preview_headers: Vec::new(),
-        csv_preview_rows: Vec::new(),
-        csv_preview_is_truncated: false,
-    };
-
-    match strategy {
-        AttachmentPreviewStrategy::Pdf => {
-            template.has_pdf_preview = true;
-            template.pdf_preview_url = preview_content_url;
-        }
-        AttachmentPreviewStrategy::Text => {
-            let (_content_type, content) =
-                storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-            let text_preview = build_text_preview_content(&content);
-            template.has_text_preview = true;
-            template.text_preview_content = text_preview.content;
-            template.text_preview_line_count = text_preview.line_count;
-            template.text_preview_is_truncated = text_preview.is_truncated;
-        }
-        AttachmentPreviewStrategy::Csv => {
-            let (_content_type, content) =
-                storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-            match build_csv_preview_table(&content) {
-                Ok(table) => {
-                    template.has_csv_preview = true;
-                    template.csv_preview_headers = table.headers;
-                    template.csv_preview_rows = table.rows;
-                    template.csv_preview_is_truncated = table.is_truncated;
-                }
-                Err(error) => {
-                    return Ok(document_preview_error_template(
-                        template.title,
-                        template.source_url,
-                        template.source_label,
-                        error_navigation.clone(),
-                        template.download_url,
-                        error.to_string(),
-                    ));
-                }
-            }
-        }
-    }
-
-    Ok(template)
+        preview_hint: preview_hint_for_strategy(strategy),
+        preview_content_url,
+        has_pdf_preview: matches!(strategy, AttachmentPreviewStrategy::Pdf),
+    })
 }
 
 fn document_preview_error_template(
@@ -10012,6 +9973,7 @@ fn document_preview_error_template(
         source_url,
         source_label,
         kind_label: fallback_kind_label,
+        preview_type: "unsupported".to_string(),
         file_type_badge: fallback_file_type,
         meta_text: "当前无法直接加载预览，可以刷新后重试或下载原文件。".to_string(),
         position_text: navigation.position_text,
@@ -10041,33 +10003,36 @@ fn document_preview_error_template(
         has_error: true,
         error_message,
         preview_hint: "当前无法直接加载预览，可以刷新后重试或下载原文件。".to_string(),
+        preview_content_url: String::new(),
         has_pdf_preview: false,
-        pdf_preview_url: String::new(),
-        has_text_preview: false,
-        text_preview_content: String::new(),
-        text_preview_line_count: 0,
-        text_preview_is_truncated: false,
-        has_csv_preview: false,
-        csv_preview_headers: Vec::new(),
-        csv_preview_rows: Vec::new(),
-        csv_preview_is_truncated: false,
     }
 }
 
-const TEXT_PREVIEW_MAX_BYTES: usize = 2 * 1024 * 1024;
-const CSV_PREVIEW_MAX_BYTES: usize = 2 * 1024 * 1024;
-const CSV_PREVIEW_MAX_ROWS: usize = 200;
-const CSV_PREVIEW_MAX_COLUMNS: usize = 24;
-
-fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy, _file_type: &str) -> String {
+fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy) -> String {
     match strategy {
         AttachmentPreviewStrategy::Pdf => {
             "原始 PDF 将直接在站内预览，无需外部文档服务。".to_string()
         }
-        AttachmentPreviewStrategy::Text => "文本内容由应用服务直接读取并渲染。".to_string(),
-        AttachmentPreviewStrategy::Csv => {
-            "CSV 将以表格方式在站内渲染，超大文件会截断展示。".to_string()
+        AttachmentPreviewStrategy::Text => "文本内容将由站内前端模块直接解析并渲染。".to_string(),
+        AttachmentPreviewStrategy::Spreadsheet => {
+            "表格内容将由站内前端模块直接解析并渲染。".to_string()
         }
+        AttachmentPreviewStrategy::Docx => {
+            "Word 文档将由站内前端模块直接解析并渲染。".to_string()
+        }
+        AttachmentPreviewStrategy::Pptx => {
+            "演示文稿将由站内前端模块直接解析并渲染。".to_string()
+        }
+    }
+}
+
+fn document_preview_type_code(strategy: AttachmentPreviewStrategy) -> &'static str {
+    match strategy {
+        AttachmentPreviewStrategy::Pdf => "pdf",
+        AttachmentPreviewStrategy::Text => "text",
+        AttachmentPreviewStrategy::Spreadsheet => "spreadsheet",
+        AttachmentPreviewStrategy::Docx => "docx",
+        AttachmentPreviewStrategy::Pptx => "pptx",
     }
 }
 
@@ -10075,99 +10040,10 @@ fn document_preview_kind_label(strategy: AttachmentPreviewStrategy) -> &'static 
     match strategy {
         AttachmentPreviewStrategy::Pdf => "PDF",
         AttachmentPreviewStrategy::Text => "文本",
-        AttachmentPreviewStrategy::Csv => "表格",
+        AttachmentPreviewStrategy::Spreadsheet => "表格",
+        AttachmentPreviewStrategy::Docx => "Word",
+        AttachmentPreviewStrategy::Pptx => "演示",
     }
-}
-
-fn build_text_preview_content(content: &[u8]) -> TextPreviewContent {
-    let is_truncated = content.len() > TEXT_PREVIEW_MAX_BYTES;
-    let preview_bytes = if is_truncated {
-        &content[..TEXT_PREVIEW_MAX_BYTES]
-    } else {
-        content
-    };
-    let text = String::from_utf8_lossy(preview_bytes).replace("\r\n", "\n");
-    let line_count = text.lines().count().max(1);
-    TextPreviewContent {
-        content: text,
-        line_count,
-        is_truncated,
-    }
-}
-
-fn build_csv_preview_table(content: &[u8]) -> AppResult<CsvPreviewTable> {
-    if content.len() > CSV_PREVIEW_MAX_BYTES {
-        return Err(AppError::BadRequest(
-            "CSV 文件过大，暂不支持站内表格预览，请下载原文件查看。".to_string(),
-        ));
-    }
-
-    let mut reader = csv::ReaderBuilder::new()
-        .flexible(true)
-        .from_reader(content);
-    let header_record = reader
-        .headers()
-        .map_err(|error| AppError::BadRequest(format!("解析 CSV 表头失败：{error}")))?
-        .clone();
-    let mut is_truncated = false;
-    let mut headers = header_record
-        .iter()
-        .take(CSV_PREVIEW_MAX_COLUMNS)
-        .map(normalize_preview_cell)
-        .collect::<Vec<_>>();
-    if header_record.len() > CSV_PREVIEW_MAX_COLUMNS {
-        headers.push(format!(
-            "… 其余 {} 列",
-            header_record.len() - CSV_PREVIEW_MAX_COLUMNS
-        ));
-        is_truncated = true;
-    }
-
-    let mut rows = Vec::new();
-    for (index, record) in reader.records().enumerate() {
-        if index >= CSV_PREVIEW_MAX_ROWS {
-            is_truncated = true;
-            break;
-        }
-        let record =
-            record.map_err(|error| AppError::BadRequest(format!("解析 CSV 内容失败：{error}")))?;
-        let mut row = record
-            .iter()
-            .take(CSV_PREVIEW_MAX_COLUMNS)
-            .map(normalize_preview_cell)
-            .collect::<Vec<_>>();
-        if record.len() > CSV_PREVIEW_MAX_COLUMNS {
-            row.push(format!(
-                "… 其余 {} 列",
-                record.len() - CSV_PREVIEW_MAX_COLUMNS
-            ));
-            is_truncated = true;
-        }
-        rows.push(row);
-    }
-
-    Ok(CsvPreviewTable {
-        headers,
-        rows,
-        is_truncated,
-    })
-}
-
-fn normalize_preview_cell(value: &str) -> String {
-    let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
-    let collapsed = normalized
-        .chars()
-        .filter(|character| *character == '\n' || *character == '\t' || !character.is_control())
-        .collect::<String>();
-    let mut output = String::new();
-    for (index, character) in collapsed.chars().enumerate() {
-        if index >= 240 {
-            output.push('…');
-            return output;
-        }
-        output.push(character);
-    }
-    output
 }
 
 async fn attachment_document_preview_content_response(
@@ -10191,14 +10067,31 @@ async fn attachment_document_preview_content_response(
         ));
     };
 
-    let (content_type, content) = match strategy {
-        AttachmentPreviewStrategy::Pdf => {
-            let (_content_type, content) =
-                storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-            ("application/pdf".to_string(), content)
-        }
-        AttachmentPreviewStrategy::Text | AttachmentPreviewStrategy::Csv => {
-            return Err(AppError::NotFound("该预览不提供二进制内容入口".to_string()));
+    let (storage_content_type, content) =
+        storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+    let normalized_storage_content_type = storage_content_type.trim().to_ascii_lowercase();
+    let content_type = if !attachment.content_type.trim().is_empty()
+        && (normalized_storage_content_type.is_empty()
+            || normalized_storage_content_type == "application/octet-stream")
+    {
+        attachment.content_type.clone()
+    } else if !storage_content_type.trim().is_empty() {
+        storage_content_type
+    } else if !attachment.content_type.trim().is_empty() {
+        attachment.content_type.clone()
+    } else {
+        match strategy {
+            AttachmentPreviewStrategy::Pdf => "application/pdf".to_string(),
+            AttachmentPreviewStrategy::Text => "text/plain; charset=utf-8".to_string(),
+            AttachmentPreviewStrategy::Spreadsheet => "application/octet-stream".to_string(),
+            AttachmentPreviewStrategy::Docx => {
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    .to_string()
+            }
+            AttachmentPreviewStrategy::Pptx => {
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    .to_string()
+            }
         }
     };
 
@@ -12146,20 +12039,19 @@ fn attachment_preview_strategy(
     let file_type = attachment_preview_file_type(filename, content_type)?;
     match file_type {
         "pdf" => Some(AttachmentPreviewStrategy::Pdf),
-        "csv" => Some(AttachmentPreviewStrategy::Csv),
+        "csv" | "xls" | "xlsx" | "ods" => Some(AttachmentPreviewStrategy::Spreadsheet),
         "txt" | "log" | "md" | "json" | "xml" | "yaml" | "yml" => {
             Some(AttachmentPreviewStrategy::Text)
         }
+        "docx" => Some(AttachmentPreviewStrategy::Docx),
+        "pptx" => Some(AttachmentPreviewStrategy::Pptx),
         _ => None,
     }
 }
 
 fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'static str> {
     match normalized_attachment_extension(filename).as_deref() {
-        Some("doc") => Some("doc"),
         Some("docx") => Some("docx"),
-        Some("odt") => Some("odt"),
-        Some("rtf") => Some("rtf"),
         Some("txt") => Some("txt"),
         Some("log") => Some("log"),
         Some("md") => Some("md"),
@@ -12171,9 +12063,7 @@ fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'
         Some("xlsx") => Some("xlsx"),
         Some("csv") => Some("csv"),
         Some("ods") => Some("ods"),
-        Some("ppt") => Some("ppt"),
         Some("pptx") => Some("pptx"),
-        Some("odp") => Some("odp"),
         Some("pdf") => Some("pdf"),
         _ => attachment_preview_file_type_from_content_type(content_type),
     }
@@ -12191,11 +12081,10 @@ fn normalized_attachment_extension(filename: &str) -> Option<String> {
 
 fn attachment_preview_file_type_from_content_type(content_type: &str) -> Option<&'static str> {
     match content_type.trim().to_ascii_lowercase().as_str() {
-        "application/msword" => Some("doc"),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
         "application/vnd.ms-excel" => Some("xls"),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
-        "application/vnd.ms-powerpoint" => Some("ppt"),
+        "application/vnd.oasis.opendocument.spreadsheet" => Some("ods"),
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" => Some("pptx"),
         "application/pdf" => Some("pdf"),
         "text/plain" => Some("txt"),
@@ -13091,14 +12980,14 @@ mod tests {
     }
 
     #[test]
-    fn attachment_preview_strategy_supports_text_csv_pdf_only() {
+    fn attachment_preview_strategy_supports_frontend_document_types() {
         assert_eq!(
             attachment_preview_strategy("说明.md", "text/markdown"),
             Some(AttachmentPreviewStrategy::Text)
         );
         assert_eq!(
             attachment_preview_strategy("数据.csv", "text/csv"),
-            Some(AttachmentPreviewStrategy::Csv)
+            Some(AttachmentPreviewStrategy::Spreadsheet)
         );
         assert_eq!(
             attachment_preview_strategy("报告.pdf", "application/pdf"),
@@ -13109,29 +12998,25 @@ mod tests {
                 "需求说明.docx",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ),
+            Some(AttachmentPreviewStrategy::Docx)
+        );
+        assert_eq!(
+            attachment_preview_strategy(
+                "宣讲材料.pptx",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ),
+            Some(AttachmentPreviewStrategy::Pptx)
+        );
+        assert_eq!(
+            attachment_preview_strategy(
+                "兼容表格.ods",
+                "application/vnd.oasis.opendocument.spreadsheet",
+            ),
+            Some(AttachmentPreviewStrategy::Spreadsheet)
+        );
+        assert_eq!(
+            attachment_preview_strategy("旧版文档.doc", "application/msword"),
             None
         );
-    }
-
-    #[test]
-    fn build_text_preview_content_marks_large_payload_as_truncated() {
-        let oversized = vec![b'a'; TEXT_PREVIEW_MAX_BYTES + 16];
-        let preview = build_text_preview_content(&oversized);
-        assert!(preview.is_truncated);
-        assert_eq!(preview.content.len(), TEXT_PREVIEW_MAX_BYTES);
-        assert_eq!(preview.line_count, 1);
-    }
-
-    #[test]
-    fn build_csv_preview_table_limits_columns_and_rows() {
-        let csv = "姓名,角色,邮箱,备注,附加\n张三,开发,zhangsan@example.com,第一行,扩展值\n李四,测试,lisi@example.com,第二行,扩展值"
-            .as_bytes()
-            .to_vec();
-        let table = build_csv_preview_table(&csv).expect("csv preview should parse");
-
-        assert_eq!(table.headers.len(), 5);
-        assert_eq!(table.rows.len(), 2);
-        assert_eq!(table.rows[0][0], "张三");
-        assert!(!table.is_truncated);
     }
 }

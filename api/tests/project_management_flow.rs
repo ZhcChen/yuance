@@ -9777,6 +9777,73 @@ async fn web_work_item_pdf_preview_content_is_served_as_inline_pdf() {
 }
 
 #[tokio::test]
+async fn web_work_item_docx_preview_page_uses_frontend_preview_contract() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "frontend-preview.docx".to_string(),
+            content_type:
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    .to_string(),
+            byte_size: 2048,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: Some("登记工作项附件 frontend-preview.docx".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/preview",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("data-document-preview-root"));
+    assert!(body.contains(r#"data-preview-type="docx""#));
+    assert!(body.contains("data-preview-url=\""));
+    assert!(body.contains("Word预览"));
+}
+
+#[tokio::test]
 async fn web_work_item_attachment_download_rejects_archived_attachment() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
