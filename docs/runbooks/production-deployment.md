@@ -40,7 +40,7 @@ API 端口：127.0.0.1:33033
 - `/web`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
-- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 可直接预览，Office / ODF 文档需要服务器安装 `libreoffice` 或 `soffice`。
+- 文档预览已改为站内离线处理；当前 PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 可直接预览，其余文档格式后续逐步切到纯前端预览栈。
 
 ## 本地构建镜像 tar
 
@@ -126,26 +126,12 @@ YUANCE_SESSION_SECRET
 YUANCE_SECURITY_MASTER_KEY
 ```
 
-如需启用 Office / OpenDocument 离线预览，请确保正式机已安装以下任一命令：
-
-- `libreoffice`
-- `soffice`
-
-验证方式：
-
-```bash
-libreoffice --version
-# 或
-soffice --version
-```
-
 说明：
 
-- PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 不依赖 LibreOffice。
-- `doc/docx/odt/rtf/xls/xlsx/ods/ppt/pptx/odp` 会在服务端临时转换为 PDF 后再站内预览。
-- 转换后的 PDF 会缓存到 `data/preview-cache/`，重复预览同一附件不会再次转换。
-- 如果服务器未安装 LibreOffice，相关 Office 文档会在预览页内显示友好错误提示，但原文件下载不受影响。
-- 如果当前仍使用测试内存存储，文档预览页同样可以直接读取对象内容，不再依赖外部文档服务。
+- 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
+- PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 继续保持站内离线预览。
+- 其余尚未切到纯前端预览栈的文档格式，当前以下载原文件为准。
+- 如果当前仍使用测试内存存储，文档预览页同样可以直接读取对象内容，不依赖外部文档服务。
 
 正式环境 `.env` 必须保持：
 

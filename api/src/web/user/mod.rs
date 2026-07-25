@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fs,
-    path::{Path as FsPath, PathBuf},
-    process::Command,
-};
+use std::collections::{HashMap, HashSet};
 
 use askama::Template;
 use axum::{
@@ -14,7 +9,6 @@ use axum::{
 };
 use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use sha2::Digest;
 use sqlx::SqlitePool;
 
 use crate::{
@@ -1160,7 +1154,6 @@ enum AttachmentPreviewStrategy {
     Pdf,
     Text,
     Csv,
-    OfficePdf,
 }
 
 #[derive(Debug, Clone)]
@@ -9963,20 +9956,6 @@ async fn build_document_preview_template(
             template.has_pdf_preview = true;
             template.pdf_preview_url = preview_content_url;
         }
-        AttachmentPreviewStrategy::OfficePdf => {
-            if let Err(error) = ensure_office_preview_cached_pdf(state, pool, &attachment).await {
-                return Ok(document_preview_error_template(
-                    template.title,
-                    template.source_url,
-                    template.source_label,
-                    error_navigation.clone(),
-                    template.download_url,
-                    error.to_string(),
-                ));
-            }
-            template.has_pdf_preview = true;
-            template.pdf_preview_url = preview_content_url;
-        }
         AttachmentPreviewStrategy::Text => {
             let (_content_type, content) =
                 storage::read_object(pool, &state.settings, &attachment.object_key).await?;
@@ -10080,7 +10059,7 @@ const CSV_PREVIEW_MAX_BYTES: usize = 2 * 1024 * 1024;
 const CSV_PREVIEW_MAX_ROWS: usize = 200;
 const CSV_PREVIEW_MAX_COLUMNS: usize = 24;
 
-fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy, file_type: &str) -> String {
+fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy, _file_type: &str) -> String {
     match strategy {
         AttachmentPreviewStrategy::Pdf => {
             "原始 PDF 将直接在站内预览，无需外部文档服务。".to_string()
@@ -10089,10 +10068,6 @@ fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy, file_type: &st
         AttachmentPreviewStrategy::Csv => {
             "CSV 将以表格方式在站内渲染，超大文件会截断展示。".to_string()
         }
-        AttachmentPreviewStrategy::OfficePdf => format!(
-            "{} 文档会先在服务器本地离线转换为 PDF，再进入站内预览。",
-            file_type.to_ascii_uppercase()
-        ),
     }
 }
 
@@ -10101,7 +10076,6 @@ fn document_preview_kind_label(strategy: AttachmentPreviewStrategy) -> &'static 
         AttachmentPreviewStrategy::Pdf => "PDF",
         AttachmentPreviewStrategy::Text => "文本",
         AttachmentPreviewStrategy::Csv => "表格",
-        AttachmentPreviewStrategy::OfficePdf => "文档",
     }
 }
 
@@ -10223,12 +10197,6 @@ async fn attachment_document_preview_content_response(
                 storage::read_object(pool, &state.settings, &attachment.object_key).await?;
             ("application/pdf".to_string(), content)
         }
-        AttachmentPreviewStrategy::OfficePdf => {
-            let cache_path = ensure_office_preview_cached_pdf(state, pool, &attachment).await?;
-            let content = fs::read(&cache_path)
-                .map_err(|error| AppError::BadRequest(format!("读取离线预览缓存失败：{error}")))?;
-            ("application/pdf".to_string(), content)
-        }
         AttachmentPreviewStrategy::Text | AttachmentPreviewStrategy::Csv => {
             return Err(AppError::NotFound("该预览不提供二进制内容入口".to_string()));
         }
@@ -10240,152 +10208,6 @@ async fn attachment_document_preview_content_response(
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
     headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
     Ok(response)
-}
-
-async fn ensure_office_preview_cached_pdf(
-    state: &AppState,
-    pool: &SqlitePool,
-    attachment: &files::FileAttachmentSummary,
-) -> AppResult<PathBuf> {
-    let cache_path = office_preview_cache_path(&state.settings, attachment);
-    if cache_path.is_file() {
-        return Ok(cache_path);
-    }
-
-    let (_, content) = storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-    let original_filename = attachment.original_filename.clone();
-    let cache_path_clone = cache_path.clone();
-    tokio::task::spawn_blocking(move || {
-        convert_office_content_to_pdf(&cache_path_clone, &original_filename, &content)
-    })
-    .await
-    .map_err(|error| AppError::BadRequest(format!("等待离线预览转换任务失败：{error}")))??;
-    Ok(cache_path)
-}
-
-fn office_preview_cache_path(
-    settings: &crate::platform::config::Settings,
-    attachment: &files::FileAttachmentSummary,
-) -> PathBuf {
-    let mut hasher = sha2::Sha256::new();
-    sha2::Digest::update(&mut hasher, attachment.object_key.as_bytes());
-    sha2::Digest::update(&mut hasher, attachment.original_filename.as_bytes());
-    sha2::Digest::update(&mut hasher, attachment.content_type.as_bytes());
-    sha2::Digest::update(&mut hasher, attachment.byte_size.to_string().as_bytes());
-    let digest = hex::encode(sha2::Digest::finalize(hasher));
-    preview_cache_root(settings).join(format!("{digest}.pdf"))
-}
-
-fn preview_cache_root(settings: &crate::platform::config::Settings) -> PathBuf {
-    FsPath::new(&settings.data_dir).join("preview-cache")
-}
-
-fn convert_office_content_to_pdf(
-    cache_path: &FsPath,
-    original_filename: &str,
-    content: &[u8],
-) -> AppResult<()> {
-    if let Some(parent) = cache_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| AppError::BadRequest(format!("创建预览缓存目录失败：{error}")))?;
-    }
-
-    let temp_root = cache_path
-        .parent()
-        .unwrap_or_else(|| FsPath::new("."))
-        .join(format!("tmp-{}", uuid::Uuid::new_v4()));
-    fs::create_dir_all(&temp_root)
-        .map_err(|error| AppError::BadRequest(format!("创建临时转换目录失败：{error}")))?;
-
-    let input_name = sanitized_preview_source_filename(original_filename);
-    let input_path = temp_root.join(&input_name);
-    fs::write(&input_path, content)
-        .map_err(|error| AppError::BadRequest(format!("写入临时预览文件失败：{error}")))?;
-
-    let mut command_errors = Vec::new();
-    let mut converted_pdf_path = None;
-    for binary in ["libreoffice", "soffice"] {
-        match Command::new(binary)
-            .arg("--headless")
-            .arg("--convert-to")
-            .arg("pdf")
-            .arg("--outdir")
-            .arg(&temp_root)
-            .arg(&input_path)
-            .output()
-        {
-            Ok(output) if output.status.success() => {
-                let output_path = temp_root.join(output_pdf_filename(&input_name));
-                if output_path.is_file() {
-                    converted_pdf_path = Some(output_path);
-                    break;
-                }
-                command_errors.push(format!(
-                    "{binary} 转换命令已成功执行，但未找到导出的 PDF 文件"
-                ));
-            }
-            Ok(output) => {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let detail = if !stderr.is_empty() {
-                    stderr
-                } else if !stdout.is_empty() {
-                    stdout
-                } else {
-                    format!("退出码 {}", output.status)
-                };
-                command_errors.push(format!("{binary}: {detail}"));
-            }
-            Err(error) => {
-                command_errors.push(format!("{binary}: {error}"));
-            }
-        }
-    }
-
-    let Some(output_path) = converted_pdf_path else {
-        let _ = fs::remove_dir_all(&temp_root);
-        return Err(AppError::BadRequest(format!(
-            "离线文档预览转换失败：服务器未安装 LibreOffice / soffice，或当前文件无法转换为 PDF。{}",
-            command_errors.join("；")
-        )));
-    };
-
-    fs::copy(&output_path, cache_path)
-        .map_err(|error| AppError::BadRequest(format!("写入预览缓存失败：{error}")))?;
-    let _ = fs::remove_dir_all(&temp_root);
-    Ok(())
-}
-
-fn sanitized_preview_source_filename(original_filename: &str) -> String {
-    let filename = original_filename.trim();
-    if filename.is_empty() {
-        return "document".to_string();
-    }
-    let sanitized = filename
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-') {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    if sanitized.trim_matches('_').is_empty() {
-        "document".to_string()
-    } else {
-        sanitized
-    }
-}
-
-fn output_pdf_filename(input_name: &str) -> String {
-    let path = FsPath::new(input_name);
-    let stem = path
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or("document");
-    format!("{stem}.pdf")
 }
 
 fn document_preview_navigation<F>(
@@ -12328,9 +12150,6 @@ fn attachment_preview_strategy(
         "txt" | "log" | "md" | "json" | "xml" | "yaml" | "yml" => {
             Some(AttachmentPreviewStrategy::Text)
         }
-        "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "ppt" | "pptx" | "odp" => {
-            Some(AttachmentPreviewStrategy::OfficePdf)
-        }
         _ => None,
     }
 }
@@ -13272,7 +13091,7 @@ mod tests {
     }
 
     #[test]
-    fn attachment_preview_strategy_supports_text_csv_pdf_and_office() {
+    fn attachment_preview_strategy_supports_text_csv_pdf_only() {
         assert_eq!(
             attachment_preview_strategy("说明.md", "text/markdown"),
             Some(AttachmentPreviewStrategy::Text)
@@ -13290,7 +13109,7 @@ mod tests {
                 "需求说明.docx",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             ),
-            Some(AttachmentPreviewStrategy::OfficePdf)
+            None
         );
     }
 
@@ -13314,12 +13133,5 @@ mod tests {
         assert_eq!(table.rows.len(), 2);
         assert_eq!(table.rows[0][0], "张三");
         assert!(!table.is_truncated);
-    }
-
-    #[test]
-    fn output_pdf_filename_uses_source_stem() {
-        assert_eq!(output_pdf_filename("需求说明.docx"), "需求说明.pdf");
-        assert_eq!(output_pdf_filename("report.final.pptx"), "report.final.pdf");
-        assert_eq!(output_pdf_filename(""), "document.pdf");
     }
 }

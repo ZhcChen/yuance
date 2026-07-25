@@ -3367,10 +3367,6 @@
     var extension = normalizedFileExtension(filename);
     if (
       [
-        "doc",
-        "docx",
-        "odt",
-        "rtf",
         "txt",
         "log",
         "md",
@@ -3378,31 +3374,13 @@
         "xml",
         "yaml",
         "yml",
-        "xls",
-        "xlsx",
         "csv",
-        "ods",
-        "ppt",
-        "pptx",
-        "odp",
         "pdf",
       ].indexOf(extension) >= 0
     ) {
       return extension;
     }
     switch ((contentType || "").trim().toLowerCase()) {
-      case "application/msword":
-        return "doc";
-      case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        return "docx";
-      case "application/vnd.ms-excel":
-        return "xls";
-      case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-        return "xlsx";
-      case "application/vnd.ms-powerpoint":
-        return "ppt";
-      case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-        return "pptx";
       case "application/pdf":
         return "pdf";
       case "text/plain":

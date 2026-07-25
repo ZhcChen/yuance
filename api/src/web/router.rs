@@ -42,8 +42,6 @@ impl AppState {
                 log_level: "off".to_string(),
                 env: "test".to_string(),
                 security_master_key: "test-master-key-that-is-long-enough".to_string(),
-                onlyoffice_document_server_url: String::new(),
-                onlyoffice_jwt_secret: String::new(),
             },
             pool: None,
         }

@@ -14,8 +14,6 @@ pub struct Settings {
     pub log_level: String,
     pub env: String,
     pub security_master_key: String,
-    pub onlyoffice_document_server_url: String,
-    pub onlyoffice_jwt_secret: String,
 }
 
 impl Settings {
@@ -43,8 +41,6 @@ impl Settings {
                 "YUANCE_SECURITY_MASTER_KEY",
                 "change-me-32-byte-minimum",
             ),
-            onlyoffice_document_server_url: env_string("YUANCE_ONLYOFFICE_DOCUMENT_SERVER_URL", ""),
-            onlyoffice_jwt_secret: env_string("YUANCE_ONLYOFFICE_JWT_SECRET", ""),
         };
 
         if settings.env.trim().is_empty() {
@@ -131,8 +127,6 @@ mod tests {
             log_level: "off".to_string(),
             env: "test".to_string(),
             security_master_key: "test-master-key-that-is-long-enough".to_string(),
-            onlyoffice_document_server_url: String::new(),
-            onlyoffice_jwt_secret: String::new(),
         }
     }
 
