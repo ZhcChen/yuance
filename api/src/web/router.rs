@@ -156,6 +156,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::project_resource_unlock),
         )
         .route(
+            "/web/projects/{project_key}/resources/{resource_id}/password/reset",
+            post(web::user::project_resource_password_reset),
+        )
+        .route(
             "/web/projects/{project_key}/resources/{resource_id}/edit",
             post(web::user::project_resource_update),
         )

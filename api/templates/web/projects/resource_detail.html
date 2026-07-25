@@ -42,6 +42,9 @@
       </nav>
       {% endif %}
       <a class="btn btn-secondary" href="/web/projects/{{ project.code }}?tab=library" data-smart-back data-smart-back-key="resource:{{ resource.id }}" data-fallback-url="/web/projects/{{ project.code }}?tab=library">返回资料库</a>
+      {% if can_reset_resource_password %}
+      <button class="btn btn-secondary" type="button" data-modal-open="project-resource-password-reset-modal">重置保险箱密码</button>
+      {% endif %}
       {% if can_manage_resources && is_unlocked %}
       <button class="btn btn-secondary" type="button" data-modal-open="project-resource-edit-modal">编辑资料</button>
       <form class="inline-form" method="post" action="{{ resource.archive_url }}" data-confirm-submit-form data-confirm-title="归档资料" data-confirm-message="确认归档资料「{{ resource.title }}」？归档后不会删除历史内容。" data-confirm-action="归档">
@@ -72,6 +75,12 @@
         {% endif %}
         <button class="btn btn-primary" type="submit">验证并查看</button>
       </form>
+      {% if can_reset_resource_password %}
+      <div class="resource-lock-admin-actions">
+        <button class="btn btn-secondary" type="button" data-modal-open="project-resource-password-reset-modal">超级管理员重置保险箱密码</button>
+        <p class="field-hint">无需旧密码，可直接设置新密码或清除当前保险箱密码。</p>
+      </div>
+      {% endif %}
     </div>
   </section>
   {% else %}
@@ -92,6 +101,46 @@
   </section>
   {% endif %}
 </section>
+
+{% if can_reset_resource_password %}
+<aside id="project-resource-password-reset-modal" class="modal" data-modal hidden aria-hidden="true">
+  <div class="modal-backdrop" data-modal-close></div>
+  <section class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="project-resource-password-reset-modal-title" tabindex="-1">
+    <div class="modal-head">
+      <div>
+        <h2 id="project-resource-password-reset-modal-title">重置保险箱密码</h2>
+        <p>{% if resource.is_protected %}当前资料已启用保险箱。{% else %}当前资料未启用保险箱。{% endif %}此操作仅限超级管理员使用，不需要旧密码。</p>
+      </div>
+      <button class="icon-btn" type="button" data-modal-close aria-label="关闭">×</button>
+    </div>
+    <form class="modal-body modal-form" method="post" action="/web/projects/{{ project.code }}/resources/{{ resource.id }}/password/reset" data-success-message="保险箱密码已更新。">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <div class="field-grid one-column">
+        <fieldset class="form-fieldset">
+          <legend>重置方式</legend>
+          <label>
+            <input name="access_password_action" type="radio" value="set" checked>
+            设置新密码
+          </label>
+          <label>
+            <input name="access_password_action" type="radio" value="clear">
+            清除当前密码
+          </label>
+        </fieldset>
+        <label>
+          <span>新密码</span>
+          <input name="access_password" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="选择“设置新密码”时填写">
+        </label>
+        <em class="field-hint">清除密码后，项目内有访问权限的成员可直接查看这条资料。</em>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" type="button" data-modal-close>取消</button>
+        <button class="btn btn-primary" type="submit">确认重置</button>
+      </div>
+    </form>
+  </section>
+</aside>
+{% endif %}
 
 {% if can_manage_resources && is_unlocked %}
 <aside id="project-resource-edit-modal" class="modal" data-modal hidden aria-hidden="true">

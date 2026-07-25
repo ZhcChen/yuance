@@ -82,6 +82,13 @@ pub struct UpdateProjectResourceInput {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResetProjectResourceAccessPasswordInput {
+    pub access_password_action: String,
+    pub access_password: String,
+    pub actor_display_name_snapshot: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PreparedResourceBody {
     body: String,
     body_format: String,
@@ -454,6 +461,77 @@ pub async fn archive_resource(
         .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))
 }
 
+pub async fn reset_resource_access_password(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    resource_id: i64,
+    input: ResetProjectResourceAccessPasswordInput,
+) -> AppResult<ProjectResourceDetail> {
+    let existing = get_resource(pool, resource_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))?;
+    let access_password_action =
+        normalize_access_password_reset_action(&input.access_password_action)?;
+    let access_password_hash = match access_password_action {
+        RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR => String::new(),
+        RESOURCE_ACCESS_PASSWORD_ACTION_SET => {
+            let password = input.access_password.trim();
+            if password.is_empty() {
+                return Err(AppError::BadRequest(
+                    "设置访问密码时必须填写 4-128 位密码".to_string(),
+                ));
+            }
+            validate_access_password(password)?;
+            auth::hash_password(password)?
+        }
+        _ => unreachable!("unsupported access password reset action"),
+    };
+    let actor_display_name_snapshot =
+        normalize_display_name_snapshot(&input.actor_display_name_snapshot);
+
+    sqlx::query(
+        r#"
+        UPDATE project_resources
+        SET access_password_hash = ?2,
+            updated_by_user_id = ?3,
+            updated_by_display_name_snapshot = ?4,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(resource_id)
+    .bind(access_password_hash)
+    .bind(actor_user_id)
+    .bind(&actor_display_name_snapshot)
+    .execute(pool)
+    .await?;
+
+    let summary = match access_password_action {
+        RESOURCE_ACCESS_PASSWORD_ACTION_SET => {
+            format!("重置资料 {} 的保险箱密码", existing.title)
+        }
+        RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR => {
+            format!("清除资料 {} 的保险箱密码", existing.title)
+        }
+        _ => unreachable!("unsupported access password reset action"),
+    };
+    record_project_activity(
+        pool,
+        existing.project_id,
+        actor_user_id,
+        &actor_display_name_snapshot,
+        "project_resource.password.reset",
+        "project_resource",
+        &resource_id.to_string(),
+        &summary,
+    )
+    .await?;
+
+    get_resource(pool, resource_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))
+}
+
 pub async fn verify_resource_password(
     pool: &SqlitePool,
     resource_id: i64,
@@ -747,6 +825,16 @@ fn normalize_access_password_action(action: &str) -> AppResult<&'static str> {
         RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR => Ok(RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR),
         _ => Err(AppError::BadRequest(
             "访问密码操作只能是 keep / set / clear".to_string(),
+        )),
+    }
+}
+
+fn normalize_access_password_reset_action(action: &str) -> AppResult<&'static str> {
+    match action.trim() {
+        RESOURCE_ACCESS_PASSWORD_ACTION_SET => Ok(RESOURCE_ACCESS_PASSWORD_ACTION_SET),
+        RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR => Ok(RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR),
+        _ => Err(AppError::BadRequest(
+            "访问密码重置操作只能是 set / clear".to_string(),
         )),
     }
 }

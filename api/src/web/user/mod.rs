@@ -927,6 +927,7 @@ struct ProjectResourceDetailTemplate {
     next_entry_url: String,
     next_entry_title: String,
     can_manage_resources: bool,
+    can_reset_resource_password: bool,
     is_unlocked: bool,
     unlock_error: String,
 }
@@ -1777,6 +1778,16 @@ pub struct ProjectResourceUnlockForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
     password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProjectResourcePasswordResetForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    access_password_action: String,
+    #[serde(default)]
+    access_password: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3696,6 +3707,7 @@ pub async fn project_resource_detail_page(
                 .map(|entry| entry.title.clone())
                 .unwrap_or_default(),
             can_manage_resources,
+            can_reset_resource_password: context.is_super_admin,
             is_unlocked,
             unlock_error: String::new(),
         })?
@@ -3812,11 +3824,77 @@ pub async fn project_resource_unlock(
                 .map(|entry| entry.title.clone())
                 .unwrap_or_default(),
             can_manage_resources,
+            can_reset_resource_password: context.is_super_admin,
             is_unlocked: verified,
             unlock_error,
         })?
         .into_response(),
     )
+}
+
+pub async fn project_resource_password_reset(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Form(form): Form<ProjectResourcePasswordResetForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+        let project = projects::get_project_detail(pool, &project_key)
+            .await?
+            .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        if !context.is_super_admin {
+            return Err(AppError::Forbidden(
+                "只有超级管理员可以重置资料保险箱密码".to_string(),
+            ));
+        }
+
+        let existing =
+            project_resources::get_project_resource(pool, project.id, resource_id).await?;
+        let resource = project_resources::reset_resource_access_password(
+            pool,
+            context.user_id,
+            existing.id,
+            project_resources::ResetProjectResourceAccessPasswordInput {
+                access_password_action: form.access_password_action,
+                access_password: form.access_password,
+                actor_display_name_snapshot: context.current_user.clone(),
+            },
+        )
+        .await?;
+        let mode = if resource.is_protected {
+            "set"
+        } else {
+            "clear"
+        };
+        let metadata = serde_json::json!({
+            "project": project.project_key.as_str(),
+            "mode": mode,
+            "actor_is_super_admin": true,
+        })
+        .to_string();
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "project_resource.password.reset",
+            "project_resource",
+            &resource.id.to_string(),
+            &metadata,
+        )
+        .await?;
+
+        return Ok(
+            Redirect::to(&project_resource_url(&project.project_key, resource.id)).into_response(),
+        );
+    }
+
+    Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
 }
 
 pub async fn project_resource_update(
@@ -12061,6 +12139,7 @@ fn audit_action_label(action: &str) -> &str {
         "api_token.create" => "创建访问 Token",
         "api_token.update" => "更新访问 Token",
         "api_token.delete" => "删除访问 Token",
+        "project_resource.password.reset" => "重置资料保险箱密码",
         _ => action,
     }
 }

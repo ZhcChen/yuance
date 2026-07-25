@@ -865,6 +865,240 @@ async fn project_resource_password_can_be_set_kept_and_cleared_after_creation() 
 }
 
 #[tokio::test]
+async fn web_super_admin_can_reset_project_resource_password_from_locked_state() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let member = create_regular_user(&pool, "resource_member", "资料成员").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "resource_member", "member")
+        .await
+        .expect("member should join project");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        admin.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "受保护资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>secret=yuance</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password: "safe-pass".to_string(),
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("resource should create");
+
+    let locked_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{}", resource.id))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(locked_response.status(), StatusCode::OK);
+    let locked_body = response_body(locked_response).await;
+    assert!(locked_body.contains("超级管理员重置保险箱密码"));
+    assert!(!locked_body.contains("secret=yuance"));
+
+    let clear_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/password/reset",
+                    resource.id
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&access_password_action=clear"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(clear_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        clear_response
+            .headers()
+            .get(header::LOCATION)
+            .unwrap()
+            .to_str()
+            .expect("location should be utf-8"),
+        format!("/web/projects/YCE/resources/{}", resource.id)
+    );
+
+    let cleared = project_resources::get_resource(&pool, resource.id)
+        .await
+        .expect("resource should load")
+        .expect("resource should exist");
+    assert!(!cleared.is_protected);
+
+    let unlocked_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{}", resource.id))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unlocked_response.status(), StatusCode::OK);
+    let unlocked_body = response_body(unlocked_response).await;
+    assert!(unlocked_body.contains("secret=yuance"));
+    assert!(unlocked_body.contains("重置保险箱密码"));
+
+    let invalid_set_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/password/reset",
+                    resource.id
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::ACCEPT, "text/html, application/json")
+                .header("x-yuance-web-form", "fetch")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&access_password_action=set&access_password="
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_set_response.status(), StatusCode::BAD_REQUEST);
+    let invalid_set_body = response_body(invalid_set_response).await;
+    assert!(invalid_set_body.contains("设置访问密码时必须填写 4-128 位密码"));
+
+    let set_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/password/reset",
+                    resource.id
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&access_password_action=set&access_password=new-safe-pass"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(set_response.status(), StatusCode::SEE_OTHER);
+
+    let protected_again = project_resources::get_resource(&pool, resource.id)
+        .await
+        .expect("resource should load")
+        .expect("resource should exist");
+    assert!(protected_again.is_protected);
+    assert!(
+        !project_resources::verify_resource_password(&pool, resource.id, "safe-pass")
+            .await
+            .expect("old password verification should finish")
+    );
+    assert!(
+        project_resources::verify_resource_password(&pool, resource.id, "new-safe-pass")
+            .await
+            .expect("new password should verify")
+    );
+
+    let relocked_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{}", resource.id))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(relocked_response.status(), StatusCode::OK);
+    let relocked_body = response_body(relocked_response).await;
+    assert!(relocked_body.contains("这条资料已设置访问密码"));
+    assert!(!relocked_body.contains("secret=yuance"));
+    assert!(relocked_body.contains("超级管理员重置保险箱密码"));
+
+    let member_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/resources/{}", resource.id))
+                .header(header::COOKIE, member.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(member_detail_response.status(), StatusCode::OK);
+    let member_detail_body = response_body(member_detail_response).await;
+    assert!(!member_detail_body.contains("超级管理员重置保险箱密码"));
+
+    let forbidden_reset_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/password/reset",
+                    resource.id
+                ))
+                .header(header::COOKIE, member.cookie)
+                .header(header::ACCEPT, "text/html, application/json")
+                .header("x-yuance-web-form", "fetch")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&access_password_action=clear"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_reset_response.status(), StatusCode::FORBIDDEN);
+    let forbidden_reset_body = response_body(forbidden_reset_response).await;
+    assert!(forbidden_reset_body.contains("只有超级管理员可以重置资料保险箱密码"));
+
+    let audit_rows = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT action, metadata
+        FROM audit_logs
+        WHERE action = 'project_resource.password.reset'
+        ORDER BY id ASC
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("audit rows should load");
+    assert_eq!(audit_rows.len(), 2);
+    assert_eq!(audit_rows[0].0, "project_resource.password.reset");
+    assert!(audit_rows[0].1.contains(r#""project":"YCE""#));
+    assert!(audit_rows[0].1.contains(r#""mode":"clear""#));
+    assert!(audit_rows[1].1.contains(r#""mode":"set""#));
+}
+
+#[tokio::test]
 async fn api_v1_pat_resource_write_scope_required_for_resource_mutations() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
