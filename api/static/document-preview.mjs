@@ -1512,7 +1512,7 @@ function buildPreviewFetchErrorMessage(statusCode, detail) {
   return "附件读取失败（HTTP " + statusCode + "）： " + normalized;
 }
 
-async function fetchPreviewBytes(sourceUrl, accept = "*/*") {
+export async function fetchPreviewBytes(sourceUrl, accept = "*/*") {
   const controller = typeof AbortController === "function" ? new AbortController() : null;
   let timeoutId = 0;
   try {
@@ -1563,7 +1563,7 @@ function previewMetricNodes(root) {
   ].filter(Boolean);
 }
 
-function setPreviewMetrics(root, values) {
+export function setPreviewMetrics(root, values) {
   const metrics = previewMetricNodes(root);
   const labels = Array.isArray(values) ? values.filter(Boolean) : [];
   metrics.forEach((node, index) => {
@@ -1580,7 +1580,7 @@ function previewStatusNodes(root) {
   };
 }
 
-function setPreviewStatus(root, message, tone = "info") {
+export function setPreviewStatus(root, message, tone = "info") {
   const status = previewStatusNodes(root);
   if (!status.shell || !status.copy) {
     return;
@@ -1594,7 +1594,7 @@ function previewHost(root) {
   return root.querySelector("[data-preview-host]");
 }
 
-function clearPreviewHost(root, officeMode = false) {
+export function clearPreviewHost(root, officeMode = false) {
   const host = previewHost(root);
   if (!host) {
     return null;
@@ -1604,7 +1604,7 @@ function clearPreviewHost(root, officeMode = false) {
   return host;
 }
 
-function buildPreviewEmptyState(doc, title, detail) {
+export function buildPreviewEmptyState(doc, title, detail) {
   const shell = doc.createElement("div");
   shell.className = "document-preview-empty";
   const copy = doc.createElement("div");
@@ -1621,7 +1621,7 @@ function buildPreviewEmptyState(doc, title, detail) {
   return shell;
 }
 
-function formatPreviewByteSize(byteSize) {
+export function formatPreviewByteSize(byteSize) {
   const value = Number(byteSize || 0);
   if (!Number.isFinite(value) || value <= 0) {
     return "0 B";
@@ -1997,6 +1997,12 @@ async function initNonPdfPreview(root) {
       case "pptx":
         await renderOfficePreview(previewRoot, sourceUrl, previewType);
         break;
+      case "legacy-doc":
+      case "legacy-ppt": {
+        const { renderLegacyDocumentPreview } = await import("/static/document-preview-legacy.mjs");
+        await renderLegacyDocumentPreview(previewRoot, sourceUrl, previewType);
+        break;
+      }
       default:
         renderPreviewError(previewRoot, "当前文件类型暂不支持站内预览。");
         break;

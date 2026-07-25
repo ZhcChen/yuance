@@ -964,6 +964,19 @@ pub async fn presign_download_url(
     object_key: &str,
     expire_seconds: u64,
 ) -> AppResult<SignedObjectRequest> {
+    if let Some(config) = active_config(pool).await?
+        && is_test_memory_config(settings, &config)
+    {
+        let object_key = normalize_object_key(object_key)?;
+        let query = serde_urlencoded::to_string([("object_key", object_key.as_str())])
+            .map_err(|error| AppError::BadRequest(format!("生成测试下载地址失败：{error}")))?;
+        return Ok(SignedObjectRequest {
+            method: "GET".to_string(),
+            url: format!("/api/v1/test-storage/download?{query}"),
+            headers: Vec::new(),
+        });
+    }
+
     let operator = build_operator_from_active_config(pool, settings)
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;

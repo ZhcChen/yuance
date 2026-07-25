@@ -8,7 +8,6 @@ use axum::{
         sse::{Event, KeepAlive, Sse},
     },
 };
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 
@@ -18,7 +17,6 @@ use crate::{
         project_resources, projects, rbac, storage, system_api_tokens, system_releases, users,
     },
     platform::{
-        crypto,
         error::{AppError, AppResult},
         realtime,
         security::csrf,
@@ -27,6 +25,11 @@ use crate::{
         audit_context,
         response::{ApiEnvelope, json},
         router::{AppState, app_release_version},
+        test_storage::{
+            TestStorageDownloadQuery, TestStorageUploadQuery, bind_test_storage_download_grant,
+            bind_test_storage_upload_grant, verify_test_storage_download_grant,
+            verify_test_storage_upload_grant,
+        },
     },
 };
 
@@ -727,21 +730,6 @@ pub struct SystemReleaseDetailPayload {
     pub assets: Vec<SystemReleaseAssetPayload>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct TestStorageUploadQuery {
-    object_key: String,
-    #[serde(default)]
-    grant: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct TestStorageUploadGrant {
-    object_key: String,
-    user_id: i64,
-    expires_at: i64,
-}
-
-const TEST_STORAGE_UPLOAD_GRANT_AAD: &[u8] = b"yuance:test-storage-upload:v1";
 #[derive(Debug, Clone)]
 struct ApiTokenActor {
     display_name: String,
@@ -4080,6 +4068,37 @@ pub async fn test_storage_upload(
     Ok(StatusCode::NO_CONTENT)
 }
 
+pub async fn test_storage_download(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<TestStorageDownloadQuery>,
+) -> AppResult<impl IntoResponse> {
+    let user_id = require_test_storage_upload_actor_user_id(&state, &headers).await?;
+    let granted_content_type = verify_test_storage_download_grant(&state, &query, user_id)?;
+    let (storage_content_type, content) =
+        storage::read_object(state.pool()?, &state.settings, &query.object_key).await?;
+    let normalized_storage_content_type = storage_content_type.trim().to_ascii_lowercase();
+    let content_type = if !granted_content_type.trim().is_empty()
+        && (normalized_storage_content_type.is_empty()
+            || normalized_storage_content_type == "application/octet-stream")
+    {
+        granted_content_type
+    } else if !storage_content_type.trim().is_empty() {
+        storage_content_type
+    } else if !granted_content_type.trim().is_empty() {
+        granted_content_type
+    } else {
+        "application/octet-stream".to_string()
+    };
+
+    let mut response = content.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, content_type.parse()?);
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
+    Ok(response)
+}
+
 pub async fn list_api_tokens(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4652,6 +4671,15 @@ async fn signed_attachment_url_payload(
             expires_in_seconds,
             &mut request,
         )?;
+    } else {
+        bind_test_storage_download_grant(
+            state,
+            &attachment.object_key,
+            &attachment.content_type,
+            actor_user_id,
+            expires_in_seconds,
+            &mut request,
+        )?;
     }
 
     Ok(AttachmentSignedUrlPayload {
@@ -4659,64 +4687,6 @@ async fn signed_attachment_url_payload(
         request,
         expires_in_seconds,
     })
-}
-
-fn bind_test_storage_upload_grant(
-    state: &AppState,
-    object_key: &str,
-    user_id: i64,
-    expires_in_seconds: u64,
-    request: &mut storage::SignedObjectRequest,
-) -> AppResult<()> {
-    if !request.url.starts_with("/api/v1/test-storage/upload?") {
-        return Ok(());
-    }
-
-    let expires_in_seconds = i64::try_from(expires_in_seconds)
-        .map_err(|_| AppError::BadRequest("测试上传授权有效期无效".to_string()))?;
-    let grant = TestStorageUploadGrant {
-        object_key: object_key.to_string(),
-        user_id,
-        expires_at: Utc::now().timestamp() + expires_in_seconds,
-    };
-    let plaintext = serde_json::to_string(&grant)
-        .map_err(|error| AppError::BadRequest(format!("生成测试上传授权失败：{error}")))?;
-    let encrypted_grant = crypto::encrypt_secret(
-        &state.settings.security_master_key,
-        &plaintext,
-        TEST_STORAGE_UPLOAD_GRANT_AAD,
-    )?;
-    let query = serde_urlencoded::to_string([
-        ("object_key", object_key),
-        ("grant", encrypted_grant.as_str()),
-    ])
-    .map_err(|error| AppError::BadRequest(format!("生成测试上传地址失败：{error}")))?;
-    request.url = format!("/api/v1/test-storage/upload?{query}");
-    Ok(())
-}
-
-fn verify_test_storage_upload_grant(
-    state: &AppState,
-    query: &TestStorageUploadQuery,
-    user_id: i64,
-) -> AppResult<()> {
-    let plaintext = crypto::decrypt_secret(
-        &state.settings.security_master_key,
-        &query.grant,
-        TEST_STORAGE_UPLOAD_GRANT_AAD,
-    )
-    .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
-    let grant: TestStorageUploadGrant = serde_json::from_str(&plaintext)
-        .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
-    if grant.object_key != query.object_key
-        || grant.user_id != user_id
-        || grant.expires_at <= Utc::now().timestamp()
-    {
-        return Err(AppError::Forbidden(
-            "测试对象存储上传授权无效或已过期".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 fn normalize_signed_url_expiration(kind: SignedUrlKind, value: Option<u64>) -> AppResult<u64> {

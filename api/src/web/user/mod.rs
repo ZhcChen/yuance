@@ -20,7 +20,10 @@ use crate::{
     },
     platform::error::{AppError, AppResult},
     platform::{crypto, security::csrf},
-    web::{audit_context, response, router::AppState},
+    web::{
+        audit_context, response, router::AppState,
+        test_storage::bind_test_storage_download_grant,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -1115,6 +1118,7 @@ struct DocumentPreviewTemplate {
     preview_hint: String,
     preview_content_url: String,
     has_pdf_preview: bool,
+    is_experimental_preview: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1149,6 +1153,8 @@ enum AttachmentPreviewStrategy {
     Spreadsheet,
     Docx,
     Pptx,
+    LegacyDoc,
+    LegacyPpt,
 }
 
 #[derive(Template)]
@@ -3546,7 +3552,8 @@ pub async fn project_attachment_preview_content(
         ensure_project_access(pool, &context, project.id).await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
-        return attachment_document_preview_content_response(&state, pool, attachment).await;
+        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
+            .await;
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -4161,7 +4168,8 @@ pub async fn project_resource_attachment_preview_content(
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
                 .await?;
-        return attachment_document_preview_content_response(&state, pool, attachment).await;
+        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
+            .await;
     }
 
     Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
@@ -4292,6 +4300,7 @@ pub async fn work_item_detail_page(
         &item_key,
         context.user_id,
         context.can_access_all_projects,
+        state.settings.experimental_legacy_preview_enabled,
     )
     .await?
     else {
@@ -4327,7 +4336,12 @@ pub async fn work_item_detail_page(
     let attachments = files::list_attachments(pool, "work_item", item.id)
         .await?
         .into_iter()
-        .map(attachment_from_summary)
+        .map(|attachment| {
+            attachment_from_summary(
+                attachment,
+                state.settings.experimental_legacy_preview_enabled,
+            )
+        })
         .collect::<Vec<_>>();
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
@@ -4484,7 +4498,13 @@ pub async fn work_item_status_update(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_project_key_access(
@@ -4530,7 +4550,13 @@ pub async fn work_item_handoff(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_work_item_accepts_writes(&item)?;
@@ -4590,7 +4616,13 @@ pub async fn work_item_update(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_project_key_access(
@@ -4722,7 +4754,13 @@ pub async fn work_item_restore(
     };
     if let Some(pool) = context.pool {
         ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_project_key_access(
@@ -4766,7 +4804,13 @@ pub async fn work_item_comment_create(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_work_item_accepts_writes(&item)?;
@@ -4819,7 +4863,13 @@ pub async fn work_item_comment_update(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_work_item_accepts_writes(&item)?;
@@ -4873,7 +4923,13 @@ pub async fn work_item_attachment_create(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_work_item_accepts_writes(&item)?;
@@ -4938,7 +4994,13 @@ pub async fn work_item_attachment_download(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_project_key_access(
@@ -4977,7 +5039,13 @@ pub async fn work_item_attachment_preview(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_project_key_access(
@@ -5031,7 +5099,13 @@ pub async fn work_item_attachment_preview_content(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key).await? else {
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled,
+        )
+        .await?
+        else {
             return Ok(StatusCode::NOT_FOUND.into_response());
         };
         ensure_project_key_access(
@@ -5043,7 +5117,8 @@ pub async fn work_item_attachment_preview_content(
         .await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
-        return attachment_document_preview_content_response(&state, pool, attachment).await;
+        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
+            .await;
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -5239,7 +5314,8 @@ pub async fn work_item_comment_attachment_preview_content(
         .await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-        return attachment_document_preview_content_response(&state, pool, attachment).await;
+        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
+            .await;
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -5787,13 +5863,21 @@ pub async fn system_release_asset_download(
         Err(response) => return Ok(response),
     };
     let asset = system_releases::get_release_asset(state.pool()?, release_id, asset_id).await?;
-    let request = storage::presign_download_url(
+    let mut request = storage::presign_download_url(
         state.pool()?,
         &state.settings,
         &asset.object_key,
         storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
     )
     .await?;
+    bind_test_storage_download_grant(
+        &state,
+        &asset.object_key,
+        &asset.content_type,
+        context.user_id,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        &mut request,
+    )?;
     if !request.headers.is_empty() {
         return Err(AppError::BadRequest(
             "当前版本包下载签名包含额外请求头，暂不支持浏览器直接跳转".to_string(),
@@ -7274,8 +7358,14 @@ pub async fn work_item_detail_partial(
     ensure_view_permission(pool, &headers, user.id, "work_item.view").await?;
     let can_access_all_projects =
         user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
-    let Some((item, comments)) =
-        load_work_item_detail_for_user(pool, &item_key, user.id, can_access_all_projects).await?
+    let Some((item, comments)) = load_work_item_detail_for_user(
+        pool,
+        &item_key,
+        user.id,
+        can_access_all_projects,
+        state.settings.experimental_legacy_preview_enabled,
+    )
+    .await?
     else {
         return Ok(StatusCode::NOT_FOUND.into_response());
     };
@@ -8545,12 +8635,18 @@ fn project_user_option_from_summary(user: users::UserSummary) -> ProjectUserOpti
     }
 }
 
-fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
+fn attachment_from_summary(
+    attachment: files::FileAttachmentSummary,
+    experimental_legacy_preview_enabled: bool,
+) -> AttachmentView {
     let (status, status_tone) = attachment_status_label(&attachment.status);
     let is_previewable_image = is_previewable_image_content_type(&attachment.content_type);
     let is_previewable_video = is_previewable_video_content_type(&attachment.content_type);
-    let is_previewable_document =
-        is_previewable_document_attachment(&attachment.original_filename, &attachment.content_type);
+    let preview_strategy =
+        attachment_preview_strategy(&attachment.original_filename, &attachment.content_type);
+    let is_previewable_document = preview_strategy.is_some_and(|strategy| {
+        !is_experimental_preview_strategy(strategy) || experimental_legacy_preview_enabled
+    });
     AttachmentView {
         id: attachment.id,
         filename: attachment.original_filename,
@@ -8812,6 +8908,7 @@ fn comment_from_summary_with_permission(
 fn comment_with_attachments(
     mut comment: WorkItemComment,
     attachments: Vec<files::FileAttachmentSummary>,
+    experimental_legacy_preview_enabled: bool,
 ) -> WorkItemComment {
     let inline_attachment_ids = projects::work_item_comment_inline_attachment_ids(
         comment.id,
@@ -8821,7 +8918,7 @@ fn comment_with_attachments(
     comment.attachments = attachments
         .into_iter()
         .filter(|attachment| !inline_attachment_ids.contains(&attachment.id))
-        .map(attachment_from_summary)
+        .map(|attachment| attachment_from_summary(attachment, experimental_legacy_preview_enabled))
         .collect::<Vec<_>>();
     comment.has_attachments = !comment.attachments.is_empty();
     comment
@@ -9812,12 +9909,14 @@ async fn attachment_document_preview_response(
     let resolved_preview_content_url = resolve_attachment_preview_content_url(
         state,
         pool,
+        actor_user_id,
         &attachment,
         preview_content_url,
     )
     .await?;
 
     let template = build_document_preview_template(
+        &state.settings,
         attachment,
         source_url,
         source_label,
@@ -9832,27 +9931,30 @@ async fn attachment_document_preview_response(
 async fn resolve_attachment_preview_content_url(
     state: &AppState,
     pool: &SqlitePool,
+    actor_user_id: i64,
     attachment: &files::FileAttachmentSummary,
-    fallback_preview_content_url: &str,
+    _fallback_preview_content_url: &str,
 ) -> AppResult<String> {
-    if storage::read_test_memory_object(pool, &state.settings, &attachment.object_key)
-        .await?
-        .is_some()
-    {
-        return Ok(fallback_preview_content_url.to_string());
-    }
-
-    let signed = storage::presign_download_url(
+    let mut signed = storage::presign_download_url(
         pool,
         &state.settings,
         &attachment.object_key,
         storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
     )
     .await?;
+    bind_test_storage_download_grant(
+        state,
+        &attachment.object_key,
+        &attachment.content_type,
+        actor_user_id,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        &mut signed,
+    )?;
     Ok(signed.url)
 }
 
 async fn build_document_preview_template(
+    settings: &crate::platform::config::Settings,
     attachment: files::FileAttachmentSummary,
     source_url: String,
     source_label: String,
@@ -9894,6 +9996,16 @@ async fn build_document_preview_template(
             "当前文件类型暂不支持文档预览。".to_string(),
         ));
     };
+    if is_experimental_preview_strategy(strategy) && !settings.experimental_legacy_preview_enabled {
+        return Ok(document_preview_error_template(
+            title,
+            source_url,
+            source_label,
+            navigation,
+            download_url,
+            legacy_preview_disabled_message(strategy).to_string(),
+        ));
+    }
     let Some(file_type) =
         attachment_preview_file_type(&attachment.original_filename, &attachment.content_type)
     else {
@@ -9909,10 +10021,17 @@ async fn build_document_preview_template(
     let kind_label = document_preview_kind_label(strategy).to_string();
     let preview_type = document_preview_type_code(strategy).to_string();
     let file_type_badge = file_type.to_ascii_uppercase();
-    let meta_text = format!(
-        "{kind_label} · {} · 站内离线预览",
-        format_byte_size(attachment.byte_size)
-    );
+    let meta_text = if is_experimental_preview_strategy(strategy) {
+        format!(
+            "{kind_label} · {} · 实验性站内预览",
+            format_byte_size(attachment.byte_size)
+        )
+    } else {
+        format!(
+            "{kind_label} · {} · 站内离线预览",
+            format_byte_size(attachment.byte_size)
+        )
+    };
     Ok(DocumentPreviewTemplate {
         title,
         source_url,
@@ -9950,6 +10069,7 @@ async fn build_document_preview_template(
         preview_hint: preview_hint_for_strategy(strategy),
         preview_content_url,
         has_pdf_preview: matches!(strategy, AttachmentPreviewStrategy::Pdf),
+        is_experimental_preview: is_experimental_preview_strategy(strategy),
     })
 }
 
@@ -9968,6 +10088,7 @@ fn document_preview_error_template(
         .map(document_preview_kind_label)
         .unwrap_or("文档预览")
         .to_string();
+    let fallback_strategy = attachment_preview_strategy(&title, "");
     DocumentPreviewTemplate {
         title,
         source_url,
@@ -10005,6 +10126,23 @@ fn document_preview_error_template(
         preview_hint: "当前无法直接加载预览，可以刷新后重试或下载原文件。".to_string(),
         preview_content_url: String::new(),
         has_pdf_preview: false,
+        is_experimental_preview: fallback_strategy.is_some_and(is_experimental_preview_strategy),
+    }
+}
+
+fn is_experimental_preview_strategy(strategy: AttachmentPreviewStrategy) -> bool {
+    matches!(
+        strategy,
+        AttachmentPreviewStrategy::LegacyDoc | AttachmentPreviewStrategy::LegacyPpt
+    )
+}
+
+fn legacy_preview_disabled_message(strategy: AttachmentPreviewStrategy) -> &'static str {
+    match strategy {
+        AttachmentPreviewStrategy::LegacyDoc | AttachmentPreviewStrategy::LegacyPpt => {
+            "当前环境未启用旧版 Office 文档实验性预览，请下载原文件查看。"
+        }
+        _ => "当前环境未启用该实验性预览，请下载原文件查看。",
     }
 }
 
@@ -10023,6 +10161,14 @@ fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy) -> String {
         AttachmentPreviewStrategy::Pptx => {
             "演示文稿将由站内前端模块直接解析并渲染。".to_string()
         }
+        AttachmentPreviewStrategy::LegacyDoc => {
+            "旧版 Word 文档将走实验性前端解析链路，复杂版式与图片兼容性可能有限。"
+                .to_string()
+        }
+        AttachmentPreviewStrategy::LegacyPpt => {
+            "旧版演示文稿将走实验性前端解析链路，复杂版式兼容性有限，且当前运行时会带可见水印。"
+                .to_string()
+        }
     }
 }
 
@@ -10033,6 +10179,8 @@ fn document_preview_type_code(strategy: AttachmentPreviewStrategy) -> &'static s
         AttachmentPreviewStrategy::Spreadsheet => "spreadsheet",
         AttachmentPreviewStrategy::Docx => "docx",
         AttachmentPreviewStrategy::Pptx => "pptx",
+        AttachmentPreviewStrategy::LegacyDoc => "legacy-doc",
+        AttachmentPreviewStrategy::LegacyPpt => "legacy-ppt",
     }
 }
 
@@ -10043,12 +10191,15 @@ fn document_preview_kind_label(strategy: AttachmentPreviewStrategy) -> &'static 
         AttachmentPreviewStrategy::Spreadsheet => "表格",
         AttachmentPreviewStrategy::Docx => "Word",
         AttachmentPreviewStrategy::Pptx => "演示",
+        AttachmentPreviewStrategy::LegacyDoc => "Word",
+        AttachmentPreviewStrategy::LegacyPpt => "演示",
     }
 }
 
 async fn attachment_document_preview_content_response(
     state: &AppState,
     pool: &SqlitePool,
+    actor_user_id: i64,
     attachment: files::FileAttachmentSummary,
 ) -> AppResult<Response> {
     if attachment.status == "deleted" {
@@ -10059,7 +10210,7 @@ async fn attachment_document_preview_content_response(
             "附件尚未上传完成，请稍后再试".to_string(),
         ));
     }
-    let Some(strategy) =
+    let Some(_strategy) =
         attachment_preview_strategy(&attachment.original_filename, &attachment.content_type)
     else {
         return Err(AppError::BadRequest(
@@ -10067,40 +10218,22 @@ async fn attachment_document_preview_content_response(
         ));
     };
 
-    let (storage_content_type, content) =
-        storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-    let normalized_storage_content_type = storage_content_type.trim().to_ascii_lowercase();
-    let content_type = if !attachment.content_type.trim().is_empty()
-        && (normalized_storage_content_type.is_empty()
-            || normalized_storage_content_type == "application/octet-stream")
-    {
-        attachment.content_type.clone()
-    } else if !storage_content_type.trim().is_empty() {
-        storage_content_type
-    } else if !attachment.content_type.trim().is_empty() {
-        attachment.content_type.clone()
-    } else {
-        match strategy {
-            AttachmentPreviewStrategy::Pdf => "application/pdf".to_string(),
-            AttachmentPreviewStrategy::Text => "text/plain; charset=utf-8".to_string(),
-            AttachmentPreviewStrategy::Spreadsheet => "application/octet-stream".to_string(),
-            AttachmentPreviewStrategy::Docx => {
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    .to_string()
-            }
-            AttachmentPreviewStrategy::Pptx => {
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                    .to_string()
-            }
-        }
-    };
-
-    let mut response = content.into_response();
-    let headers = response.headers_mut();
-    headers.insert(header::CONTENT_TYPE, content_type.parse()?);
-    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
-    headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
-    Ok(response)
+    let mut signed = storage::presign_download_url(
+        pool,
+        &state.settings,
+        &attachment.object_key,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+    )
+    .await?;
+    bind_test_storage_download_grant(
+        state,
+        &attachment.object_key,
+        &attachment.content_type,
+        actor_user_id,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        &mut signed,
+    )?;
+    Ok(Redirect::temporary(&signed.url).into_response())
 }
 
 fn document_preview_navigation<F>(
@@ -10543,6 +10676,7 @@ fn ensure_comment_accepts_attachments(comment: &projects::WorkItemCommentSummary
 async fn load_work_item_detail(
     pool: &SqlitePool,
     item_key: &str,
+    experimental_legacy_preview_enabled: bool,
 ) -> AppResult<Option<(WorkItemDetailView, Vec<WorkItemComment>)>> {
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
@@ -10554,6 +10688,7 @@ async fn load_work_item_detail(
         comments.push(comment_with_attachments(
             comment_from_summary(comment),
             attachments,
+            experimental_legacy_preview_enabled,
         ));
     }
     promote_primary_post_to_description(&mut item, &mut comments);
@@ -10566,6 +10701,7 @@ async fn load_work_item_detail_for_user(
     item_key: &str,
     user_id: i64,
     _can_access_all_projects: bool,
+    experimental_legacy_preview_enabled: bool,
 ) -> AppResult<Option<(WorkItemDetailView, Vec<WorkItemComment>)>> {
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
@@ -10588,6 +10724,7 @@ async fn load_work_item_detail_for_user(
         comments.push(comment_with_attachments(
             comment_from_summary_with_permission(comment, can_manage),
             attachments,
+            experimental_legacy_preview_enabled,
         ));
     }
     promote_primary_post_to_description(&mut item, &mut comments);
@@ -12045,12 +12182,15 @@ fn attachment_preview_strategy(
         }
         "docx" => Some(AttachmentPreviewStrategy::Docx),
         "pptx" => Some(AttachmentPreviewStrategy::Pptx),
+        "doc" => Some(AttachmentPreviewStrategy::LegacyDoc),
+        "ppt" => Some(AttachmentPreviewStrategy::LegacyPpt),
         _ => None,
     }
 }
 
 fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'static str> {
     match normalized_attachment_extension(filename).as_deref() {
+        Some("doc") => Some("doc"),
         Some("docx") => Some("docx"),
         Some("txt") => Some("txt"),
         Some("log") => Some("log"),
@@ -12063,6 +12203,7 @@ fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'
         Some("xlsx") => Some("xlsx"),
         Some("csv") => Some("csv"),
         Some("ods") => Some("ods"),
+        Some("ppt") => Some("ppt"),
         Some("pptx") => Some("pptx"),
         Some("pdf") => Some("pdf"),
         _ => attachment_preview_file_type_from_content_type(content_type),
@@ -12081,10 +12222,14 @@ fn normalized_attachment_extension(filename: &str) -> Option<String> {
 
 fn attachment_preview_file_type_from_content_type(content_type: &str) -> Option<&'static str> {
     match content_type.trim().to_ascii_lowercase().as_str() {
+        "application/msword" => Some("doc"),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
         "application/vnd.ms-excel" => Some("xls"),
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
         "application/vnd.oasis.opendocument.spreadsheet" => Some("ods"),
+        "application/vnd.ms-powerpoint"
+        | "application/powerpoint"
+        | "application/x-mspowerpoint" => Some("ppt"),
         "application/vnd.openxmlformats-officedocument.presentationml.presentation" => Some("pptx"),
         "application/pdf" => Some("pdf"),
         "text/plain" => Some("txt"),
@@ -13016,7 +13161,11 @@ mod tests {
         );
         assert_eq!(
             attachment_preview_strategy("旧版文档.doc", "application/msword"),
-            None
+            Some(AttachmentPreviewStrategy::LegacyDoc)
+        );
+        assert_eq!(
+            attachment_preview_strategy("旧版课件.ppt", "application/vnd.ms-powerpoint"),
+            Some(AttachmentPreviewStrategy::LegacyPpt)
         );
     }
 }

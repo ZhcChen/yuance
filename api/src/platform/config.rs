@@ -14,6 +14,7 @@ pub struct Settings {
     pub log_level: String,
     pub env: String,
     pub security_master_key: String,
+    pub experimental_legacy_preview_enabled: bool,
 }
 
 impl Settings {
@@ -41,6 +42,10 @@ impl Settings {
                 "YUANCE_SECURITY_MASTER_KEY",
                 "change-me-32-byte-minimum",
             ),
+            experimental_legacy_preview_enabled: env_bool(
+                "YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED",
+                false,
+            )?,
         };
 
         if settings.env.trim().is_empty() {
@@ -65,6 +70,23 @@ impl Settings {
 
 fn env_string(name: &str, default: &str) -> String {
     env::var(name).unwrap_or_else(|_| default.to_string())
+}
+
+fn env_bool(name: &str, default: bool) -> AppResult<bool> {
+    match env::var(name) {
+        Ok(value) => parse_bool(name, &value),
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_bool(name: &str, value: &str) -> AppResult<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" => Ok(false),
+        _ => Err(AppError::Config(format!(
+            "{name} 仅支持 true/false、yes/no、on/off、1/0"
+        ))),
+    }
 }
 
 fn parse_duration_seconds(name: &str, value: &str) -> AppResult<i64> {
@@ -127,6 +149,7 @@ mod tests {
             log_level: "off".to_string(),
             env: "test".to_string(),
             security_master_key: "test-master-key-that-is-long-enough".to_string(),
+            experimental_legacy_preview_enabled: false,
         }
     }
 
@@ -182,6 +205,23 @@ mod tests {
                 .expect("refresh ttl should parse"),
             30 * 24 * 60 * 60
         );
+    }
+
+    #[test]
+    fn parse_bool_accepts_supported_boolean_variants() {
+        for value in ["1", "true", "TRUE", "yes", "on"] {
+            assert!(parse_bool("YUANCE_TEST_BOOL", value).expect("true variant should parse"));
+        }
+        for value in ["0", "false", "FALSE", "no", "off"] {
+            assert!(!parse_bool("YUANCE_TEST_BOOL", value).expect("false variant should parse"));
+        }
+    }
+
+    #[test]
+    fn parse_bool_rejects_invalid_values() {
+        let error = parse_bool("YUANCE_TEST_BOOL", "maybe")
+            .expect_err("invalid boolean should be rejected");
+        assert!(error.to_string().contains("YUANCE_TEST_BOOL"));
     }
 
     #[test]

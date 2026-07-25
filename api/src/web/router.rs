@@ -19,6 +19,10 @@ use crate::{
 static PDFJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/pdfjs");
 static OOXML_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/ooxml");
 static SHEETJS_VENDOR_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/static/vendor/sheetjs");
+static LEGACY_DOC_VENDOR_DIR: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/static/vendor/legacy-doc");
+static LEGACY_PPT_VENDOR_DIR: Dir<'_> =
+    include_dir!("$CARGO_MANIFEST_DIR/static/vendor/legacy-ppt");
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -44,6 +48,7 @@ impl AppState {
                 log_level: "off".to_string(),
                 env: "test".to_string(),
                 security_master_key: "test-master-key-that-is-long-enough".to_string(),
+                experimental_legacy_preview_enabled: false,
             },
             pool: None,
         }
@@ -490,6 +495,10 @@ pub fn build_router(state: AppState) -> Router {
             put(web::api::test_storage_upload),
         )
         .route(
+            "/api/v1/test-storage/download",
+            get(web::api::test_storage_download),
+        )
+        .route(
             "/api/v1/projects",
             get(web::api::list_projects).post(web::api::create_project),
         )
@@ -672,6 +681,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))
         .route("/static/document-preview.mjs", get(static_document_preview))
+        .route(
+            "/static/document-preview-legacy.mjs",
+            get(static_document_preview_legacy),
+        )
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
         .route("/static/vendor/marked/marked.umd.js", get(static_marked))
@@ -679,6 +692,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/static/vendor/pdfjs/{*path}", get(static_pdfjs_asset))
         .route("/static/vendor/ooxml/{*path}", get(static_ooxml_asset))
         .route("/static/vendor/sheetjs/{*path}", get(static_sheetjs_asset))
+        .route(
+            "/static/vendor/legacy-doc/{*path}",
+            get(static_legacy_doc_asset),
+        )
+        .route(
+            "/static/vendor/legacy-ppt/{*path}",
+            get(static_legacy_ppt_asset),
+        )
         .route("/favicon.ico", get(static_favicon))
         .route("/admin", get(admin_not_found))
         .fallback(not_found)
@@ -1209,6 +1230,22 @@ async fn static_document_preview() -> impl IntoResponse {
     )
 }
 
+async fn static_document_preview_legacy() -> impl IntoResponse {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
+        ],
+        include_str!("../../static/document-preview-legacy.mjs"),
+    )
+}
+
 async fn version_manifest() -> impl IntoResponse {
     let body = serde_json::json!({
         "version": app_release_version(),
@@ -1290,6 +1327,14 @@ async fn static_sheetjs_asset(Path(path): Path<String>) -> Response {
     static_dir_asset_response(&SHEETJS_VENDOR_DIR, &path)
 }
 
+async fn static_legacy_doc_asset(Path(path): Path<String>) -> Response {
+    static_dir_asset_response(&LEGACY_DOC_VENDOR_DIR, &path)
+}
+
+async fn static_legacy_ppt_asset(Path(path): Path<String>) -> Response {
+    static_dir_asset_response(&LEGACY_PPT_VENDOR_DIR, &path)
+}
+
 fn static_dir_asset_response(dir: &Dir<'_>, path: &str) -> Response {
     let normalized = path.trim_matches('/');
     if normalized.is_empty()
@@ -1307,6 +1352,7 @@ fn static_dir_asset_response(dir: &Dir<'_>, path: &str) -> Response {
     let content_type = match normalized.rsplit('.').next().unwrap_or_default() {
         "mjs" | "js" => "application/javascript; charset=utf-8",
         "wasm" => "application/wasm",
+        "otf" => "font/otf",
         "ttf" => "font/ttf",
         "css" => "text/css; charset=utf-8",
         "json" => "application/json; charset=utf-8",

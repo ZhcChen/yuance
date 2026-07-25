@@ -574,6 +574,32 @@ async fn static_document_preview_module_is_served() {
 }
 
 #[tokio::test]
+async fn static_legacy_document_preview_module_is_served() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/document-preview-legacy.mjs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("renderLegacyDocumentPreview"));
+    assert!(body.contains("renderLegacyDocPreview"));
+    assert!(body.contains("renderLegacyPptPreview"));
+}
+
+#[tokio::test]
 async fn static_sheetjs_bundle_is_served_for_document_preview() {
     let app = build_router(AppState::for_tests());
 
@@ -621,6 +647,82 @@ async fn static_ooxml_module_is_served_for_document_preview() {
     let body = response_body(response).await;
     assert!(body.contains("DocxScrollViewer"));
     assert!(body.contains("DocxViewer"));
+}
+
+#[tokio::test]
+async fn static_legacy_doc_bundle_is_served_for_document_preview() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/legacy-doc/index.js")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("parseMsDoc"));
+    assert!(body.contains("renderMsDoc"));
+}
+
+#[tokio::test]
+async fn static_legacy_ppt_manifest_and_font_assets_are_served() {
+    let app = build_router(AppState::for_tests());
+
+    let manifest_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/legacy-ppt/manifest.json")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(manifest_response.status(), StatusCode::OK);
+    assert_eq!(
+        manifest_response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .unwrap(),
+        "application/json; charset=utf-8"
+    );
+    let manifest_body = response_body(manifest_response).await;
+    assert!(manifest_body.contains("\"feature\": \"ppt\""));
+    assert!(manifest_body.contains("\"watermarkRequired\": true"));
+
+    let font_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/vendor/legacy-ppt/ppt-font-cjk.otf")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(font_response.status(), StatusCode::OK);
+    assert_eq!(
+        font_response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "font/otf"
+    );
+    let font_body = font_response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect")
+        .to_bytes();
+    assert!(!font_body.is_empty());
 }
 
 #[tokio::test]
@@ -827,6 +929,7 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        experimental_legacy_preview_enabled: false,
     }
 }
 

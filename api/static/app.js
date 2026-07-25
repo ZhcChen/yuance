@@ -3367,6 +3367,7 @@
     var extension = normalizedFileExtension(filename);
     if (
       [
+        "doc",
         "txt",
         "log",
         "md",
@@ -3378,6 +3379,7 @@
         "xls",
         "xlsx",
         "ods",
+        "ppt",
         "docx",
         "pptx",
         "pdf",
@@ -3388,6 +3390,8 @@
     switch ((contentType || "").trim().toLowerCase()) {
       case "application/pdf":
         return "pdf";
+      case "application/msword":
+        return "doc";
       case "text/plain":
         return "txt";
       case "text/markdown":
@@ -3400,6 +3404,10 @@
         return "xlsx";
       case "application/vnd.oasis.opendocument.spreadsheet":
         return "ods";
+      case "application/vnd.ms-powerpoint":
+      case "application/powerpoint":
+      case "application/x-mspowerpoint":
+        return "ppt";
       case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
         return "docx";
       case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
