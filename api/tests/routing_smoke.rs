@@ -548,6 +548,31 @@ async fn static_pdfjs_module_is_served_for_document_preview() {
 }
 
 #[tokio::test]
+async fn static_document_preview_module_is_served() {
+    let app = build_router(AppState::for_tests());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/static/document-preview.mjs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/javascript; charset=utf-8"
+    );
+
+    let body = response_body(response).await;
+    assert!(body.contains("initPdfPreview"));
+    assert!(body.contains("getDocument"));
+}
+
+#[tokio::test]
 async fn static_pdfjs_cmap_asset_is_served() {
     let app = build_router(AppState::for_tests());
 

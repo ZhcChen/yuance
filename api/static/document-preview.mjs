@@ -15,6 +15,8 @@ const THUMBNAIL_RENDER_CONCURRENCY = 1;
 const THUMBNAIL_QUEUE_DELAY_MS = 36;
 const PAGE_CARD_PADDING = 24;
 const PAGE_LABEL_SPACE = 26;
+const PDF_FETCH_TIMEOUT_MS = 20000;
+const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d];
 
 export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -256,6 +258,94 @@ export async function resolveOutlineEntries(pdfDocument, outlineItems) {
 
 function createCanvas(doc) {
   return doc.createElement("canvas");
+}
+
+function clearWindowTimer(timerId) {
+  if (!timerId) {
+    return;
+  }
+  if (typeof window !== "undefined" && typeof window.clearTimeout === "function") {
+    window.clearTimeout(timerId);
+    return;
+  }
+  clearTimeout(timerId);
+}
+
+function normalizeInlineErrorMessage(value) {
+  const normalized = String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.slice(0, 120);
+}
+
+function buildPdfFetchErrorMessage(statusCode, detail) {
+  const normalizedDetail = normalizeInlineErrorMessage(detail);
+  if (!normalizedDetail) {
+    return "附件读取失败（HTTP " + statusCode + "），请刷新后重试。";
+  }
+  return "附件读取失败（HTTP " + statusCode + "）： " + normalizedDetail;
+}
+
+function hasPdfSignature(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength < PDF_SIGNATURE.length) {
+    return false;
+  }
+  for (let index = 0; index < PDF_SIGNATURE.length; index += 1) {
+    if (bytes[index] !== PDF_SIGNATURE[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function fetchPdfBytes(sourceUrl) {
+  const controller = typeof AbortController === "function" ? new AbortController() : null;
+  let timeoutId = 0;
+  try {
+    if (controller && typeof window !== "undefined" && typeof window.setTimeout === "function") {
+      timeoutId = window.setTimeout(() => {
+        controller.abort();
+      }, PDF_FETCH_TIMEOUT_MS);
+    }
+    const response = await fetch(sourceUrl, {
+      credentials: "same-origin",
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller ? controller.signal : undefined,
+      headers: {
+        Accept: "application/pdf,application/octet-stream;q=0.9,*/*;q=0.1",
+      },
+    });
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = await response.text();
+      } catch (_error) {
+        detail = "";
+      }
+      throw new Error(buildPdfFetchErrorMessage(response.status, detail));
+    }
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (bytes.byteLength === 0) {
+      throw new Error("附件内容为空，无法预览 PDF。");
+    }
+    if (!hasPdfSignature(bytes)) {
+      throw new Error("附件读取失败，返回内容不是有效的 PDF 文件。");
+    }
+    return bytes;
+  } catch (error) {
+    if (error && error.name === "AbortError") {
+      throw new Error("PDF 预览加载超时，请刷新后重试。");
+    }
+    throw error;
+  } finally {
+    clearWindowTimer(timeoutId);
+  }
 }
 
 function createPagePlaceholder(doc, pageNumber, hint) {
@@ -1227,9 +1317,11 @@ export function initPdfPreview(options) {
       return;
     }
     try {
-      setStatus("正在加载 PDF 预览，请稍候...", true);
+      setStatus("正在读取 PDF 文件，请稍候...", true);
+      const pdfData = await fetchPdfBytes(sourceUrl);
+      setStatus("正在解析 PDF 结构，请稍候...", true);
       const loadingTask = pdfjsLib.getDocument({
-        url: sourceUrl,
+        data: pdfData,
         cMapUrl: "/static/vendor/pdfjs/cmaps/",
         cMapPacked: true,
         standardFontDataUrl: "/static/vendor/pdfjs/standard_fonts/",

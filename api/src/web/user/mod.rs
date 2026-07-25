@@ -10092,9 +10092,9 @@ async fn attachment_document_preview_content_response(
 
     let (content_type, content) = match strategy {
         AttachmentPreviewStrategy::Pdf => {
-            let (content_type, content) =
+            let (_content_type, content) =
                 storage::read_object(pool, &state.settings, &attachment.object_key).await?;
-            (content_type, content)
+            ("application/pdf".to_string(), content)
         }
         AttachmentPreviewStrategy::OfficePdf => {
             let cache_path = ensure_office_preview_cached_pdf(state, pool, &attachment).await?;

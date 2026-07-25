@@ -2,6 +2,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode, header},
 };
+use base64::Engine as _;
 use http_body_util::BodyExt;
 use std::str;
 use tower::ServiceExt;
@@ -9413,6 +9414,92 @@ async fn web_work_item_attachment_download_serves_test_memory_object() {
 }
 
 #[tokio::test]
+async fn web_work_item_pdf_preview_content_is_served_as_inline_pdf() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let pdf_bytes = minimal_pdf_bytes();
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "inline-preview.pdf".to_string(),
+            content_type: "application/pdf".to_string(),
+            byte_size: pdf_bytes.len() as i64,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: Some("登记工作项附件 inline-preview.pdf".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    let operator = storage::build_operator_from_active_config(&pool, &test_settings())
+        .await
+        .expect("test storage should build")
+        .expect("test storage should exist");
+    operator
+        .write_with(&attachment.object_key, pdf_bytes.clone())
+        .content_type("application/octet-stream")
+        .await
+        .expect("pdf object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/preview/content",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/pdf"
+    );
+    assert_eq!(
+        response.headers().get(header::CONTENT_DISPOSITION).unwrap(),
+        "inline"
+    );
+    assert_eq!(
+        response
+            .headers()
+            .get(header::X_CONTENT_TYPE_OPTIONS)
+            .unwrap(),
+        "nosniff"
+    );
+    assert_eq!(response_bytes(response).await, pdf_bytes);
+}
+
+#[tokio::test]
 async fn web_work_item_attachment_download_rejects_archived_attachment() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -12096,6 +12183,22 @@ async fn response_body(response: axum::response::Response) -> String {
     std::str::from_utf8(&body)
         .expect("body should be utf-8")
         .to_string()
+}
+
+async fn response_bytes(response: axum::response::Response) -> Vec<u8> {
+    response
+        .into_body()
+        .collect()
+        .await
+        .expect("body should collect")
+        .to_bytes()
+        .to_vec()
+}
+
+fn minimal_pdf_bytes() -> Vec<u8> {
+    base64::engine::general_purpose::STANDARD
+        .decode("JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA0IDAgUgo+Pgo+PgovQ29udGVudHMgNSAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL1R5cGUgL0ZvbnQKL1N1YnR5cGUgL1R5cGUxCi9CYXNlRm9udCAvSGVsdmV0aWNhCj4+CmVuZG9iago1IDAgb2JqCjw8IC9MZW5ndGggNDQgPj4Kc3RyZWFtCkJUCi9GMSAyNCBUZgoxMDAgNzAwIFRkCihIZWxsbywgUERGISkgVGoKRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1OCAwMDAwMCBuIAowMDAwMDAwMTE1IDAwMDAwIG4gCjAwMDAwMDAyNDEgMDAwMDAgbiAKMDAwMDAwMDMxMSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDYKL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjQwNAolJUVPRg==")
+        .expect("embedded pdf fixture should decode")
 }
 
 async fn create_test_api_token(app: axum::Router, cookie: &str, payload: &str) -> String {

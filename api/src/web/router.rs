@@ -667,6 +667,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/version.json", get(version_manifest))
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))
+        .route("/static/document-preview.mjs", get(static_document_preview))
         .route("/static/brand/yuance-logo.svg", get(static_yuance_logo))
         .route("/static/vendor/htmx.min.js", get(static_htmx))
         .route("/static/vendor/marked/marked.umd.js", get(static_marked))
@@ -1183,6 +1184,22 @@ async fn static_app_js() -> impl IntoResponse {
             ),
         ],
         format!("{bootstrap}{}", include_str!("../../static/app.js")),
+    )
+}
+
+async fn static_document_preview() -> impl IntoResponse {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (
+                header::CACHE_CONTROL,
+                "no-store, max-age=0, must-revalidate",
+            ),
+        ],
+        include_str!("../../static/document-preview.mjs"),
     )
 }
 
