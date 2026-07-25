@@ -708,20 +708,63 @@ async fn project_resource_library_requires_password_for_protected_details() {
     assert!(wrong_body.contains("访问密码不正确"));
     assert!(!wrong_body.contains("client_id=yuance"));
 
-    let correct_unlock = app
+    let wrong_unlock_async = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
                 .uri(format!("/web/projects/YCE/resources/{resource_id}/unlock"))
-                .header(header::COOKIE, admin.cookie)
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::ACCEPT, "text/html, application/json")
+                .header("x-yuance-web-form", "fetch")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&password=wrong-pass"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(wrong_unlock_async.status(), StatusCode::BAD_REQUEST);
+    let wrong_unlock_async_body = response_body(wrong_unlock_async).await;
+    assert!(wrong_unlock_async_body.contains("访问密码不正确"));
+
+    let correct_unlock = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/projects/YCE/resources/{resource_id}/unlock"))
+                .header(header::COOKIE, admin.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(format!("_csrf={CSRF_TOKEN}&password=safe-pass")))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(correct_unlock.status(), StatusCode::OK);
-    let unlocked_body = response_body(correct_unlock).await;
+    assert_eq!(correct_unlock.status(), StatusCode::SEE_OTHER);
+    let unlocked_location = correct_unlock
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("unlock redirect location should exist")
+        .to_string();
+    assert!(unlocked_location.starts_with(&format!(
+        "/web/projects/YCE/resources/{resource_id}?access="
+    )));
+
+    let unlocked_response = app
+        .oneshot(
+            Request::builder()
+                .uri(unlocked_location)
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unlocked_response.status(), StatusCode::OK);
+    let unlocked_body = response_body(unlocked_response).await;
     assert!(unlocked_body.contains("client_id=yuance"));
 }
 

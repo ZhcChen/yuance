@@ -64,7 +64,7 @@
         <h2>这条资料已设置访问密码</h2>
         <p>请输入创建该资料时设置的访问密码。验证通过后会展示正文和正文内附件。</p>
       </div>
-      <form class="modal-form resource-unlock-form" method="post" action="/web/projects/{{ project.code }}/resources/{{ resource.id }}/unlock">
+      <form class="modal-form resource-unlock-form" method="post" action="/web/projects/{{ project.code }}/resources/{{ resource.id }}/unlock" data-skip-success-toast>
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <label>
           访问密码

@@ -3633,6 +3633,7 @@ pub async fn project_resource_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path((project_key, resource_id)): Path<(String, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
 ) -> AppResult<Response> {
     let mut context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
@@ -3665,7 +3666,18 @@ pub async fn project_resource_detail_page(
         user_can_write_project_content_for_context(pool, &context, project.id).await?
             && project_accepts_writes
             && resource.status != "archived";
-    let is_unlocked = !resource.is_protected;
+    let access_token = if resource.is_protected
+        && verify_project_resource_access_token(
+            &state,
+            &query.access,
+            context.user_id,
+            resource.id,
+        )? {
+        Some(query.access)
+    } else {
+        None
+    };
+    let is_unlocked = !resource.is_protected || access_token.is_some();
     let detail_navigation =
         load_project_resource_sequence_navigation(pool, project.id, resource.id).await?;
 
@@ -3682,7 +3694,7 @@ pub async fn project_resource_detail_page(
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
             project: project_detail_from_domain(project),
-            resource: project_resource_from_detail(resource, None),
+            resource: project_resource_from_detail(resource, access_token.as_deref()),
             resource_category_options: project_resource_category_options(),
             has_previous_entry: detail_navigation.previous.is_some(),
             previous_entry_url: detail_navigation
@@ -3778,6 +3790,18 @@ pub async fn project_resource_unlock(
         user_can_write_project_content_for_context(pool, &context, project.id).await?
             && project_accepts_writes
             && resource.status != "archived";
+    if verified {
+        let redirect_url = access_token
+            .as_deref()
+            .map(|token| project_resource_url_with_access(&project.project_key, resource.id, token))
+            .unwrap_or_else(|| project_resource_url(&project.project_key, resource.id));
+        return Ok(Redirect::to(&redirect_url).into_response());
+    }
+    if is_async_web_form_request(&headers) {
+        return Err(AppError::BadRequest(
+            "访问密码不正确，请重新输入。".to_string(),
+        ));
+    }
     let unlock_error = if verified {
         String::new()
     } else {
@@ -7947,6 +7971,19 @@ fn project_resource_url(project_key: &str, resource_id: i64) -> String {
     format!("/web/projects/{project_key}/resources/{resource_id}")
 }
 
+fn project_resource_url_with_access(
+    project_key: &str,
+    resource_id: i64,
+    access_token: &str,
+) -> String {
+    let encoded =
+        serde_urlencoded::to_string([("access", access_token)]).unwrap_or_else(|_| String::new());
+    if encoded.is_empty() {
+        return project_resource_url(project_key, resource_id);
+    }
+    format!("/web/projects/{project_key}/resources/{resource_id}?{encoded}")
+}
+
 fn project_resource_edit_url(project_key: &str, resource_id: i64) -> String {
     format!("/web/projects/{project_key}/resources/{resource_id}/edit")
 }
@@ -8037,6 +8074,18 @@ fn is_htmx(headers: &HeaderMap) -> bool {
         .get("HX-Request")
         .and_then(|value| value.to_str().ok())
         == Some("true")
+}
+
+fn is_async_web_form_request(headers: &HeaderMap) -> bool {
+    headers.contains_key("x-yuance-web-form")
+        || headers
+            .get("HX-Request")
+            .and_then(|value| value.to_str().ok())
+            == Some("true")
+        || headers
+            .get("x-requested-with")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.eq_ignore_ascii_case("xmlhttprequest"))
 }
 
 fn parse_csrf_token_form(form: &[u8]) -> AppResult<String> {
