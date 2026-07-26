@@ -2,6 +2,14 @@
   <table class="data-table work-item-table">
     <thead>
       <tr>
+        {% if show_batch_selection %}
+        <th class="work-table-select" scope="col">
+          <label class="work-table-check" aria-label="全选当前页">
+            <input type="checkbox" data-work-item-batch-select-all>
+            <span></span>
+          </label>
+        </th>
+        {% endif %}
         <th scope="col">编号</th>
         <th class="work-table-title" scope="col">标题</th>
         <th scope="col">项目</th>
@@ -14,6 +22,14 @@
     <tbody>
       {% for item in items %}
       <tr>
+        {% if show_batch_selection %}
+        <td class="work-table-select">
+          <label class="work-table-check" aria-label="选择工作项 {{ item.key }}">
+            <input type="checkbox" name="item_key" value="{{ item.key }}" data-work-item-batch-checkbox>
+            <span></span>
+          </label>
+        </td>
+        {% endif %}
         <td>
           <div class="work-table-key">
             <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>

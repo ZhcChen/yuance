@@ -2143,6 +2143,73 @@
     });
   }
 
+  function workItemBatchFormFor(element) {
+    return element && element.closest("[data-work-item-batch-form]");
+  }
+
+  function workItemBatchCheckboxes(form) {
+    return Array.from(form?.querySelectorAll("[data-work-item-batch-checkbox]") || []);
+  }
+
+  function updateWorkItemBatchTargets(form) {
+    if (!form) {
+      return "";
+    }
+    var action = (form.querySelector("[data-work-item-batch-action]")?.value || "").trim();
+    form.querySelectorAll("[data-work-item-batch-target]").forEach(function (field) {
+      var target = field.getAttribute("data-work-item-batch-target") || "";
+      var active = target === action;
+      field.hidden = !active;
+      field.querySelectorAll("input, select, textarea").forEach(function (input) {
+        input.disabled = !active;
+        input.required = active && target !== "cycle";
+      });
+    });
+    return action;
+  }
+
+  function updateWorkItemBatchForm(form) {
+    if (!form) {
+      return;
+    }
+    var selected = workItemBatchCheckboxes(form).filter(function (checkbox) {
+      return checkbox.checked;
+    }).length;
+    var action = updateWorkItemBatchTargets(form);
+    var count = form.querySelector("[data-work-item-batch-selected-count]");
+    var toolbar = form.querySelector("[data-work-item-batch-toolbar]");
+    var submit = form.querySelector("[data-work-item-batch-submit]");
+    var selectAll = form.querySelector("[data-work-item-batch-select-all]");
+    var checkboxes = workItemBatchCheckboxes(form);
+    var activeTarget = action
+      ? form.querySelector('[data-work-item-batch-target="' + action + '"]')
+      : null;
+    var activeInput = activeTarget && activeTarget.querySelector("input, select, textarea");
+    var targetReady = Boolean(action);
+    if (action && activeInput && activeInput.required) {
+      targetReady = String(activeInput.value || "").trim() !== "";
+    }
+    if (count) {
+      count.textContent = "已选择 " + selected + " 项";
+    }
+    if (toolbar) {
+      toolbar.hidden = selected === 0;
+    }
+    if (submit) {
+      submit.disabled = selected === 0 || !action || !targetReady;
+    }
+    if (selectAll) {
+      selectAll.checked = checkboxes.length > 0 && selected === checkboxes.length;
+      selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+    }
+  }
+
+  function initWorkItemBatchForms(root) {
+    (root || document).querySelectorAll("[data-work-item-batch-form]").forEach(function (form) {
+      updateWorkItemBatchForm(form);
+    });
+  }
+
   function userProjectAssignModal() {
     return document.getElementById("user-project-assign-modal");
   }
@@ -9765,6 +9832,26 @@
       updateTokenProjectScope(tokenProjectScope);
       showToast("请选择全部项目，或至少选择一个指定项目。", "error");
       tokenProjectScope.querySelector("summary")?.focus({ preventScroll: true });
+      return;
+    }
+    var workItemBatchForm = event.target.closest("[data-work-item-batch-form]");
+    if (
+      workItemBatchForm &&
+      !workItemBatchForm.querySelector("[data-work-item-batch-checkbox]:checked")
+    ) {
+      event.preventDefault();
+      updateWorkItemBatchForm(workItemBatchForm);
+      showToast("请至少选择一个工作项。", "error");
+      workItemBatchForm.querySelector("[data-work-item-batch-select-all]")?.focus({ preventScroll: true });
+      return;
+    }
+    var workItemBatchAction = workItemBatchForm?.querySelector("[data-work-item-batch-action]");
+    if (workItemBatchAction && !(workItemBatchAction.value || "").trim()) {
+      event.preventDefault();
+      updateWorkItemBatchForm(workItemBatchForm);
+      showToast("请选择批量动作。", "error");
+      workItemBatchAction.focus({ preventScroll: true });
+      return;
     }
   }, true);
 
@@ -9927,6 +10014,31 @@
       return;
     }
 
+    var workItemBatchCheckbox = event.target.closest("[data-work-item-batch-checkbox]");
+    if (workItemBatchCheckbox) {
+      updateWorkItemBatchForm(workItemBatchFormFor(workItemBatchCheckbox));
+      return;
+    }
+    var workItemBatchSelectAll = event.target.closest("[data-work-item-batch-select-all]");
+    if (workItemBatchSelectAll) {
+      var workItemBatchForm = workItemBatchFormFor(workItemBatchSelectAll);
+      workItemBatchCheckboxes(workItemBatchForm).forEach(function (checkbox) {
+        checkbox.checked = workItemBatchSelectAll.checked;
+      });
+      updateWorkItemBatchForm(workItemBatchForm);
+      return;
+    }
+    var workItemBatchAction = event.target.closest("[data-work-item-batch-action]");
+    if (workItemBatchAction) {
+      updateWorkItemBatchForm(workItemBatchFormFor(workItemBatchAction));
+      return;
+    }
+    var workItemBatchTargetInput = event.target.closest("[data-work-item-batch-target] input, [data-work-item-batch-target] select, [data-work-item-batch-target] textarea");
+    if (workItemBatchTargetInput) {
+      updateWorkItemBatchForm(workItemBatchFormFor(workItemBatchTargetInput));
+      return;
+    }
+
     var tokenProjectCheckbox = event.target.closest("[data-token-project-all], [data-token-project-option]");
     if (tokenProjectCheckbox) {
       var scope = tokenProjectCheckbox.closest("[data-token-project-scope]");
@@ -9949,6 +10061,7 @@
   initProjectSwitcher(document);
   initUserComboboxes(document);
   initMemberBatchForms(document);
+  initWorkItemBatchForms(document);
   initSmartBackLinks(document);
   initTokenProjectScopes(document);
   initSelectControls(document);

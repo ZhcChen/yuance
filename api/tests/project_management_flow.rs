@@ -4110,6 +4110,245 @@ async fn web_work_item_saved_view_rejects_duplicate_names_and_isolated_per_user(
 }
 
 #[tokio::test]
+async fn web_work_item_batch_update_can_assign_tasks_and_render_controls() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let _member = create_regular_user(&pool, "batch_task_owner", "批量任务处理人").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "batch_task_owner", "member")
+        .await
+        .expect("member should join project");
+    projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
+        .await
+        .expect("admin should select YCE");
+    let third_task = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "补齐批量操作联调".to_string(),
+            description: "用于验证批量指派".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: String::new(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("third task should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list_response.status(), StatusCode::OK);
+    let list_body = response_body(list_response).await;
+    assert!(list_body.contains("data-work-item-batch-form"));
+    assert!(list_body.contains("data-work-item-batch-select-all"));
+    assert!(list_body.contains("data-work-item-batch-checkbox"));
+    assert!(list_body.contains("批量调整周期"));
+    assert!(list_body.contains("执行批量操作"));
+
+    let batch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/batch")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&item_key=YCE-TASK-1&item_key=YCE-TASK-2&item_key={}&action=assignee&assignee_username=batch_task_owner&return_to=%2Fweb%2Ftasks",
+                    third_task.item_key
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(batch_response.status(), StatusCode::SEE_OTHER);
+
+    let assigned_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_items wi
+        JOIN users u ON u.id = wi.assignee_user_id
+        WHERE wi.item_key IN (?1, ?2, ?3)
+          AND u.username = ?4
+        "#,
+    )
+    .bind("YCE-TASK-1")
+    .bind("YCE-TASK-2")
+    .bind(&third_task.item_key)
+    .bind("batch_task_owner")
+    .fetch_one(&pool)
+    .await
+    .expect("assigned count should load");
+    assert_eq!(assigned_count, 3);
+
+    let audit_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM audit_logs WHERE action = 'work_item.batch.update' AND target_type = 'project' AND target_id = 'YCE'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("audit count should load");
+    assert_eq!(audit_count, 1);
+}
+
+#[tokio::test]
+async fn web_work_item_batch_update_can_update_cycle_and_record_flow() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
+        .await
+        .expect("admin should select YCE");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "批量协作迭代".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-15".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let batch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/batch")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&item_key=YCE-TASK-1&item_key=YCE-TASK-2&action=cycle&cycle_id={}&return_to=%2Fweb%2Ftasks",
+                    cycle.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(batch_response.status(), StatusCode::SEE_OTHER);
+
+    let cycle_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM work_items WHERE item_key IN ('YCE-TASK-1', 'YCE-TASK-2') AND cycle_id = ?1",
+    )
+    .bind(cycle.id)
+    .fetch_one(&pool)
+    .await
+    .expect("cycle count should load");
+    assert_eq!(cycle_count, 2);
+
+    let flow_comment_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM work_item_comments WHERE work_item_id IN (SELECT id FROM work_items WHERE item_key IN ('YCE-TASK-1', 'YCE-TASK-2')) AND body = ?1",
+    )
+    .bind("[yuance-flow] 周期：未关联 → 批量协作迭代")
+    .fetch_one(&pool)
+    .await
+    .expect("flow comment count should load");
+    assert_eq!(flow_comment_count, 2);
+}
+
+#[tokio::test]
+async fn web_work_item_batch_update_rejects_cross_project_items() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
+        .await
+        .expect("admin should select YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let batch_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/batch")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&item_key=YCE-TASK-1&item_key=OPS-TASK-1&action=priority&priority=P1&return_to=%2Fweb%2Ftasks",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(batch_response.status(), StatusCode::BAD_REQUEST);
+    let batch_body = response_body(batch_response).await;
+    assert!(batch_body.contains("不属于当前项目 YCE"));
+
+    let yce_priority = sqlx::query_scalar::<_, String>(
+        "SELECT priority FROM work_items WHERE item_key = 'YCE-TASK-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("yce priority should load");
+    let ops_priority = sqlx::query_scalar::<_, String>(
+        "SELECT priority FROM work_items WHERE item_key = 'OPS-TASK-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("ops priority should load");
+    assert_eq!(yce_priority, "P0");
+    assert_eq!(ops_priority, "P2");
+}
+
+#[tokio::test]
+async fn web_work_item_batch_update_rejects_status_not_supported_for_type() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
+        .await
+        .expect("admin should select YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let batch_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-items/batch")
+                .header(header::COOKIE, initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&item_key=YCE-TASK-2&action=status&status=resolved&return_to=%2Fweb%2Ftasks",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(batch_response.status(), StatusCode::BAD_REQUEST);
+    let batch_body = response_body(batch_response).await;
+    assert!(batch_body.contains("任务 不支持状态 已解决"));
+}
+
+#[tokio::test]
 async fn web_current_project_rejects_projects_outside_member_scope() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

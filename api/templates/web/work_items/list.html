@@ -194,7 +194,86 @@
       <span>选择当前项目后再查看{{ title }}，避免跨项目混合。</span>
     </div>
     {% else if has_items %}
+    {% if show_batch_selection %}
+    <form
+      class="work-item-batch-form"
+      method="post"
+      action="/web/work-items/batch"
+      data-work-item-batch-form
+      data-success-message="批量操作已完成。"
+    >
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+      <input type="hidden" name="project_key" value="{{ filters.project_key }}">
+      <input type="hidden" name="item_type" value="{{ item_type }}">
+      <input type="hidden" name="return_to" value="{{ current_view_url }}">
+      <section class="work-item-batch-toolbar" data-work-item-batch-toolbar hidden>
+        <div class="work-item-batch-summary">
+          <strong data-work-item-batch-selected-count>已选择 0 项</strong>
+          <span>仅对当前页已勾选的{{ title }}执行单一批量动作。</span>
+        </div>
+        <div class="work-item-batch-controls">
+          <label>
+            <span>批量动作</span>
+            <select name="action" data-work-item-batch-action required>
+              <option value="">请选择动作</option>
+              <option value="assignee">批量指派</option>
+              <option value="status">批量调整状态</option>
+              <option value="priority">批量调整优先级</option>
+              <option value="cycle">批量调整周期</option>
+            </select>
+          </label>
+          <label data-work-item-batch-target="assignee" hidden>
+            <span>目标处理人</span>
+            <select name="assignee_username" data-select-searchable data-select-search-placeholder="搜索处理人" disabled>
+              <option value="">请选择处理人</option>
+              {% for member in assignee_options %}
+              <option value="{{ member.username }}">{{ member.display_name }} @{{ member.username }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label data-work-item-batch-target="status" hidden>
+            <span>目标状态</span>
+            <select name="status" disabled>
+              <option value="">请选择状态</option>
+              <option value="open">待处理</option>
+              <option value="in_progress">进行中</option>
+              <option value="pending_confirmation">待确认</option>
+              {% if item_type == "bug" %}
+              <option value="resolved">已解决</option>
+              <option value="verified">已验证</option>
+              {% else %}
+              <option value="done">已完成</option>
+              {% endif %}
+              <option value="closed">已关闭</option>
+            </select>
+          </label>
+          <label data-work-item-batch-target="priority" hidden>
+            <span>目标优先级</span>
+            <select name="priority" disabled>
+              <option value="">请选择优先级</option>
+              <option value="P0">紧急</option>
+              <option value="P1">高</option>
+              <option value="P2">中</option>
+              <option value="P3">低</option>
+            </select>
+          </label>
+          <label data-work-item-batch-target="cycle" hidden>
+            <span>目标周期</span>
+            <select name="cycle_id" data-select-searchable data-select-search-placeholder="搜索周期" disabled>
+              <option value="">取消关联</option>
+              {% for cycle in cycle_options %}
+              <option value="{{ cycle.id }}">{{ cycle.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button class="btn btn-primary" type="submit" data-work-item-batch-submit disabled>执行批量操作</button>
+        </div>
+      </section>
+      {% include "web/partials/work_item_table.html" %}
+    </form>
+    {% else %}
     {% include "web/partials/work_item_table.html" %}
+    {% endif %}
     {% include "web/partials/work_item_pagination.html" %}
     {% else %}
     <div class="empty-state">

@@ -192,6 +192,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/bugs", get(web::user::bugs_page))
         .route("/web/work-items", post(web::user::work_items_create))
         .route(
+            "/web/work-items/batch",
+            post(web::user::work_item_batch_update),
+        )
+        .route(
             "/web/work-item-views",
             post(web::user::work_item_saved_view_create),
         )

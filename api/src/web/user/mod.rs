@@ -970,6 +970,7 @@ struct WorkItemListTemplate {
     pagination_pages: Vec<PaginationPageView>,
     has_items: bool,
     can_manage_work_items: bool,
+    show_batch_selection: bool,
 }
 
 #[derive(Template)]
@@ -1349,6 +1350,7 @@ struct WorkItemsPartialTemplate {
     items: Vec<WorkItem>,
     has_items: bool,
     empty_message: String,
+    show_batch_selection: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1972,6 +1974,27 @@ pub struct WorkItemSavedViewRenameForm {
 pub struct WorkItemSavedViewActionForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    return_to: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemBatchForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    project_key: String,
+    item_type: String,
+    #[serde(default, rename = "item_key")]
+    item_keys: Vec<String>,
+    action: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    cycle_id: String,
     #[serde(default)]
     return_to: String,
 }
@@ -4449,6 +4472,66 @@ pub async fn work_item_saved_view_delete(
     }
 
     Ok(Redirect::to(work_item_saved_view_return_to(&form.return_to, None)).into_response())
+}
+
+pub async fn work_item_batch_update(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    RawForm(form): RawForm,
+) -> AppResult<Response> {
+    let form = parse_work_item_batch_form(&form)?;
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        let project = projects::get_project_detail(pool, &form.project_key)
+            .await?
+            .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
+        ensure_project_access(pool, &context, project.id).await?;
+        ensure_project_content_write_access(pool, &context, project.id).await?;
+        let cycle_id = parse_optional_positive_i64(&form.cycle_id, "周期")?;
+        let result = projects::batch_update_work_items(
+            pool,
+            context.user_id,
+            projects::BatchUpdateWorkItemsInput {
+                project_key: form.project_key.clone(),
+                item_type: form.item_type.clone(),
+                item_keys: form.item_keys.clone(),
+                action: form.action.clone(),
+                status: form.status.clone(),
+                assignee_username: form.assignee_username.clone(),
+                priority: form.priority.clone(),
+                cycle_id,
+                actor_display_name_snapshot: context.current_user.clone(),
+            },
+        )
+        .await?;
+
+        let metadata = serde_json::json!({
+            "project_key": result.project_key,
+            "item_type": result.item_type,
+            "action": result.action,
+            "updated_count": result.updated_count,
+            "item_keys": result.item_keys,
+        });
+        audit::record(
+            pool,
+            Some(context.user_id),
+            "work_item.batch.update",
+            "project",
+            &form.project_key,
+            &metadata.to_string(),
+        )
+        .await?;
+    }
+
+    Ok(
+        Redirect::to(work_item_saved_view_return_to(&form.return_to, Some(&form.item_type)))
+            .into_response(),
+    )
 }
 
 pub async fn work_item_detail_page(
@@ -7499,6 +7582,7 @@ async fn work_item_list_page(
     };
     let current_view_url = work_item_page_url(meta.active, &filters, page_number, per_page);
     let clear_default_url = format!("/web/{}?clear_default=1", meta.active);
+    let show_batch_selection = can_manage_work_items && !items.is_empty();
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -7536,6 +7620,7 @@ async fn work_item_list_page(
             summary,
             pagination,
             can_manage_work_items,
+            show_batch_selection,
         })?
         .into_response(),
     )
@@ -7554,6 +7639,7 @@ pub async fn work_items_partial(
             has_items: !items.is_empty(),
             empty_message: empty_work_items_message(item_type),
             items,
+            show_batch_selection: false,
         })
         .map(IntoResponse::into_response);
     };
@@ -7583,6 +7669,7 @@ pub async fn work_items_partial(
         has_items: !items.is_empty(),
         empty_message: empty_work_items_message(item_type),
         items,
+        show_batch_selection: false,
     })
     .map(IntoResponse::into_response)
 }
@@ -8505,6 +8592,50 @@ fn parse_system_api_token_create_form(form: &[u8]) -> AppResult<SystemApiTokenCr
 
 fn parse_system_api_token_update_form(form: &[u8]) -> AppResult<SystemApiTokenUpdateForm> {
     parse_system_api_token_form(form)
+}
+
+fn parse_work_item_batch_form(form: &[u8]) -> AppResult<WorkItemBatchForm> {
+    let pairs = serde_urlencoded::from_bytes::<Vec<(String, String)>>(form)
+        .map_err(|error| AppError::BadRequest(format!("工作项批量表单解析失败：{error}")))?;
+    let mut csrf_token = String::new();
+    let mut project_key = String::new();
+    let mut item_type = String::new();
+    let mut item_keys = Vec::new();
+    let mut action = String::new();
+    let mut status = String::new();
+    let mut assignee_username = String::new();
+    let mut priority = String::new();
+    let mut cycle_id = String::new();
+    let mut return_to = String::new();
+
+    for (key, value) in pairs {
+        match key.as_str() {
+            csrf::CSRF_FIELD_NAME => csrf_token = value,
+            "project_key" => project_key = value,
+            "item_type" => item_type = value,
+            "item_key" => item_keys.push(value),
+            "action" => action = value,
+            "status" => status = value,
+            "assignee_username" => assignee_username = value,
+            "priority" => priority = value,
+            "cycle_id" => cycle_id = value,
+            "return_to" => return_to = value,
+            _ => {}
+        }
+    }
+
+    Ok(WorkItemBatchForm {
+        csrf_token,
+        project_key,
+        item_type,
+        item_keys,
+        action,
+        status,
+        assignee_username,
+        priority,
+        cycle_id,
+        return_to,
+    })
 }
 
 fn api_token_project_scope_from_form(
