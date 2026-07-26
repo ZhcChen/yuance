@@ -4282,6 +4282,198 @@
     return form ? form.querySelector("[data-discussion-body]") : null;
   }
 
+  var DISCUSSION_DRAFT_STORAGE_PREFIX = "yuance-discussion-draft:v1:";
+
+  function discussionDraftStorage() {
+    return window.localStorage || null;
+  }
+
+  function discussionRootForForm(form) {
+    if (!form) {
+      return null;
+    }
+    return form.closest("[data-work-item-discussion]") || currentWorkItemDiscussionRoot();
+  }
+
+  function discussionDraftCurrentUsername(form) {
+    var root = discussionRootForForm(form);
+    return root?.dataset?.discussionCurrentUsername || "";
+  }
+
+  function discussionDraftParentCommentId(form) {
+    if (!form) {
+      return "";
+    }
+    var parentInput = form.querySelector("input[name='parent_comment_id']");
+    if (parentInput && parentInput.value) {
+      return String(parentInput.value);
+    }
+    var editor = richTextEditorForForm(form);
+    return editor?.dataset?.commentParentId || "";
+  }
+
+  function discussionDraftStorageKey(form) {
+    if (!form) {
+      return "";
+    }
+    var itemKey = form.dataset.itemKey || "";
+    var currentUsername = discussionDraftCurrentUsername(form);
+    if (!itemKey || !currentUsername) {
+      return "";
+    }
+    return (
+      DISCUSSION_DRAFT_STORAGE_PREFIX +
+      [itemKey, discussionDraftParentCommentId(form), currentUsername]
+        .map(function (part) { return encodeURIComponent(String(part || "")); })
+        .join(":")
+    );
+  }
+
+  function readDiscussionDraftSnapshot(form) {
+    var storageKey = discussionDraftStorageKey(form);
+    var storage = discussionDraftStorage();
+    if (!storageKey || !storage) {
+      return null;
+    }
+    try {
+      var raw = storage.getItem(storageKey);
+      if (!raw) {
+        return null;
+      }
+      var snapshot = JSON.parse(raw);
+      if (!snapshot || Number(snapshot.version) !== 1) {
+        storage.removeItem(storageKey);
+        return null;
+      }
+      return {
+        version: 1,
+        item_key: String(snapshot.item_key || form.dataset.itemKey || ""),
+        parent_comment_id: String(snapshot.parent_comment_id || discussionDraftParentCommentId(form) || ""),
+        current_username: String(snapshot.current_username || discussionDraftCurrentUsername(form) || ""),
+        body_html: typeof snapshot.body_html === "string" ? snapshot.body_html : "",
+        comment_id: snapshot.comment_id ? String(snapshot.comment_id) : "",
+        is_draft: snapshot.is_draft === true,
+        saved_at: Number(snapshot.saved_at || 0),
+      };
+    } catch (_error) {
+      try {
+        storage.removeItem(storageKey);
+      } catch (_storageError) {
+        // localStorage 不可用时保持静默降级。
+      }
+      return null;
+    }
+  }
+
+  function writeDiscussionDraftSnapshot(form, snapshot) {
+    var storageKey = discussionDraftStorageKey(form);
+    var storage = discussionDraftStorage();
+    if (!storageKey || !storage || !snapshot) {
+      return false;
+    }
+    try {
+      storage.setItem(storageKey, JSON.stringify(snapshot));
+      return true;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function clearDiscussionDraftSnapshot(form) {
+    if (!form) {
+      return;
+    }
+    if (form.discussionDraftPersistTimer) {
+      window.clearTimeout(form.discussionDraftPersistTimer);
+      form.discussionDraftPersistTimer = null;
+    }
+    var storageKey = discussionDraftStorageKey(form);
+    var storage = discussionDraftStorage();
+    if (!storageKey || !storage) {
+      return;
+    }
+    try {
+      storage.removeItem(storageKey);
+    } catch (_error) {
+      // localStorage 不可用时保持静默降级。
+    }
+  }
+
+  function persistDiscussionDraft(form) {
+    if (!form) {
+      return false;
+    }
+    var editor = richTextEditorForForm(form);
+    var input = richTextInput(editor);
+    if (!editor || !input) {
+      return false;
+    }
+    var bodyHtml = serializeRichTextEditor(editor);
+    var commentId = form.dataset.discussionCommentId || editor.dataset.commentId || "";
+    if (!commentId && richTextIsEmptyHtml(bodyHtml)) {
+      clearDiscussionDraftSnapshot(form);
+      return false;
+    }
+    return writeDiscussionDraftSnapshot(form, {
+      version: 1,
+      item_key: form.dataset.itemKey || "",
+      parent_comment_id: discussionDraftParentCommentId(form),
+      current_username: discussionDraftCurrentUsername(form),
+      body_html: bodyHtml,
+      comment_id: commentId ? String(commentId) : "",
+      is_draft:
+        form.dataset.discussionDraft === "true" ||
+        editor.dataset.commentDraft === "true" ||
+        Boolean(commentId),
+      saved_at: Date.now(),
+    });
+  }
+
+  function queuePersistDiscussionDraft(form) {
+    if (!form) {
+      return;
+    }
+    if (form.discussionDraftPersistTimer) {
+      window.clearTimeout(form.discussionDraftPersistTimer);
+    }
+    form.discussionDraftPersistTimer = window.setTimeout(function () {
+      form.discussionDraftPersistTimer = null;
+      persistDiscussionDraft(form);
+    }, 120);
+  }
+
+  function restoreDiscussionDraft(form) {
+    var snapshot = readDiscussionDraftSnapshot(form);
+    if (!snapshot) {
+      return false;
+    }
+    var editor = richTextEditorForForm(form);
+    var input = richTextInput(editor);
+    if (!editor || !input) {
+      return false;
+    }
+    if (richTextEditorHasUserContent(editor) || form.dataset.discussionCommentId || editor.dataset.commentId) {
+      return false;
+    }
+    input.innerHTML = snapshot.body_html || "";
+    hydrateStoredRichAttachments(editor);
+    hydrateRichMentionNodes(editor);
+    if (snapshot.comment_id) {
+      form.dataset.discussionCommentId = snapshot.comment_id;
+      form.dataset.discussionDraft = "true";
+      editor.dataset.commentId = snapshot.comment_id;
+      editor.dataset.commentDraft = "true";
+    }
+    if (
+      form.classList &&
+      form.classList.contains("discussion-reply-form") &&
+      (snapshot.comment_id || !richTextIsEmptyHtml(snapshot.body_html || ""))
+    ) {
+      form.hidden = false;
+    }
+    return true;
+  }
+
   function resourceFormForEditor(editor) {
     return editor ? editor.closest("[data-resource-form]") : null;
   }
@@ -5561,6 +5753,7 @@
       if (form) {
         form.dataset.discussionCommentId = String(comment.id);
         form.dataset.discussionDraft = "true";
+        persistDiscussionDraft(form);
       }
       return String(comment.id);
     });
@@ -5741,6 +5934,7 @@
       setRichAttachmentState(node, "uploaded", "上传完成 · " + formatFileSize(file.size), 100);
       if (form) {
         discussionStatus(form, "", "info");
+        persistDiscussionDraft(form);
       }
     } catch (error) {
       if (uploadController.cancelled || node.dataset.richDeleteRequested === "true") {
@@ -5853,6 +6047,10 @@
       await deleteRichAttachmentNode(editor, node);
       cleanupRichAttachmentNode(node);
       node.remove();
+      var discussionForm = editor && editor.closest("[data-discussion-form]");
+      if (discussionForm) {
+        persistDiscussionDraft(discussionForm);
+      }
     } catch (error) {
       node.dataset.richRemoving = "false";
       node.dataset.richDeleteRequested = "false";
@@ -5892,6 +6090,10 @@
       }
       hydrateStoredRichAttachments(editor);
       hydrateRichMentionNodes(editor);
+      var discussionForm = editor.closest("[data-discussion-form]");
+      if (discussionForm) {
+        restoreDiscussionDraft(discussionForm);
+      }
       editor.addEventListener("click", function (event) {
         if (event.target.closest("[data-rich-command]")) {
           return;
@@ -5913,6 +6115,9 @@
       });
       input.addEventListener("input", function () {
         handleRichMentionInput(editor);
+        if (discussionForm) {
+          queuePersistDiscussionDraft(discussionForm);
+        }
       });
       input.addEventListener("paste", function (event) {
         var files = Array.from(event.clipboardData?.files || []);
@@ -5977,6 +6182,9 @@
       if (editor.closest("[data-discussion-form]")) {
         input.addEventListener("input", function () {
           updateWorkItemTypingState(true);
+        });
+        input.addEventListener("blur", function () {
+          persistDiscussionDraft(discussionForm);
         });
         input.addEventListener("blur", function () {
           window.setTimeout(function () {
@@ -7398,6 +7606,7 @@
     if (!form) {
       return;
     }
+    clearDiscussionDraftSnapshot(form);
     delete form.dataset.discussionDraft;
     delete form.dataset.discussionLocked;
     delete form.dataset.discussionAssignmentComplete;
@@ -7565,6 +7774,7 @@
       }
       updateWorkItemTypingState(false, { force: true });
       discussionStatus(form, "", "info");
+      clearDiscussionDraftSnapshot(form);
       var shouldResetComposer = !form.classList.contains("discussion-reply-form");
       if (shouldResetComposer) {
         resetDiscussionForm(form);
@@ -9581,6 +9791,10 @@
       selectPanelTargetWidth: selectPanelTargetWidth,
       publishBugReportRichText: publishBugReportRichText,
       replaceMessageCenterFromHtml: replaceMessageCenterFromHtml,
+      discussionDraftStorageKey: discussionDraftStorageKey,
+      persistDiscussionDraft: persistDiscussionDraft,
+      restoreDiscussionDraft: restoreDiscussionDraft,
+      clearDiscussionDraftSnapshot: clearDiscussionDraftSnapshot,
       submitBugReport: submitBugReport,
       submitDiscussion: submitDiscussion,
       submitMessageReadAll: submitMessageReadAll,

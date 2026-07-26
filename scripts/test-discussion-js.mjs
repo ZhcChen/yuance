@@ -81,6 +81,7 @@ function elementStub(tagName = "div") {
 function loadAppWithDom(options = {}) {
   const fetchCalls = [];
   const assignCalls = [];
+  const localItems = new Map(Object.entries(options.localStorage || {}));
   const sessionItems = new Map();
   let reloadCount = 0;
 
@@ -125,11 +126,15 @@ function loadAppWithDom(options = {}) {
     __YUANCE_TEST_HOOKS__: {},
     document,
     localStorage: {
-      getItem() {
-        return null;
+      getItem(key) {
+        return localItems.has(key) ? localItems.get(key) : null;
       },
-      setItem() {},
-      removeItem() {},
+      setItem(key, value) {
+        localItems.set(String(key), String(value));
+      },
+      removeItem(key) {
+        localItems.delete(String(key));
+      },
     },
     sessionStorage: {
       getItem(key) {
@@ -158,6 +163,10 @@ function loadAppWithDom(options = {}) {
     clearTimeout() {},
     setTimeout(callback) {
       callback();
+      return 1;
+    },
+    clearInterval() {},
+    setInterval() {
       return 1;
     },
     requestAnimationFrame(callback) {
@@ -215,18 +224,41 @@ function loadAppWithDom(options = {}) {
     fetch: async (url, options) => {
       fetchCalls.push({ url, options });
       if (typeof context.fetchOverride === "function") {
-        return context.fetchOverride(url, options);
+        const response = await context.fetchOverride(url, options);
+        if (response && (!response.headers || typeof response.headers.get !== "function")) {
+          response.headers = { get: () => "application/json; charset=utf-8" };
+        }
+        return response;
+      }
+      if (String(url) === "/api/v1/topbar/status") {
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => "application/json; charset=utf-8" },
+          json: async () => ({
+            data: {
+              requirements_count: 0,
+              tasks_count: 0,
+              bugs_count: 0,
+              notifications_count: 0,
+              project_badges: [],
+              current_project: null,
+            },
+          }),
+        };
       }
       if (String(url) === "/api/v1/work-items") {
         return {
           ok: true,
           status: 201,
+          headers: { get: () => "application/json; charset=utf-8" },
           json: async () => ({ data: { key: "YCE-TASK-3" } }),
         };
       }
       return {
         ok: true,
         status: 201,
+        headers: { get: () => "application/json; charset=utf-8" },
         json: async () => ({ data: { id: 123 } }),
       };
     },
@@ -245,6 +277,7 @@ function loadAppWithDom(options = {}) {
       return reloadCount;
     },
     hooks: window.__YUANCE_TEST_HOOKS__,
+    localItems,
     sessionItems,
     window,
   };
@@ -428,12 +461,12 @@ function messageReadAllForm(root) {
   };
 }
 
-function discussionForm() {
+function discussionForm(options = {}) {
   const status = elementStub("div");
   const bodyInput = {
     dataset: {},
     disabled: false,
-    value: "这里是前端行为测试评论",
+    value: options.body || "这里是前端行为测试评论",
     matches(selector) {
       return selector === "[data-discussion-body]";
     },
@@ -448,12 +481,23 @@ function discussionForm() {
   };
   const submit = submitButton();
   const controls = [bodyInput, parentInput, submit];
+  const root = {
+    dataset: { discussionCurrentUsername: options.currentUsername || "yuance_admin" },
+  };
 
-  return {
-    dataset: { itemKey: "YCE-TASK-2" },
+  const form = {
+    dataset: {
+      itemKey: options.itemKey || "YCE-TASK-2",
+      ...(options.commentId ? { discussionCommentId: String(options.commentId) } : {}),
+      ...(options.isDraft ? { discussionDraft: "true" } : {}),
+    },
     bugReportFiles: [],
+    classList: classList(),
     reportValidity() {
       return true;
+    },
+    closest(selector) {
+      return selector === "[data-work-item-discussion]" ? root : null;
     },
     querySelector(selector) {
       if (selector === "[data-discussion-body]") {
@@ -480,6 +524,10 @@ function discussionForm() {
       return [];
     },
   };
+  if (options.isReply) {
+    form.classList.add("discussion-reply-form");
+  }
+  return form;
 }
 
 function richDiscussionForm(uploadState) {
@@ -495,10 +543,20 @@ function richDiscussionForm(uploadState) {
   const formatInput = { value: "" };
   const richInput = {
     innerHTML: "<p>保留正文</p>",
+    textContent: "保留正文",
+    innerText: "保留正文",
     focus() {},
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
     cloneNode() {
       return {
         innerHTML: this.innerHTML,
+        textContent: this.textContent,
+        innerText: this.innerText,
         querySelectorAll() {
           return [];
         },
@@ -539,6 +597,166 @@ function richDiscussionForm(uploadState) {
     },
   };
   return { bodyInput, formatInput, form, status };
+}
+
+function plainTextFromHtml(html) {
+  return String(html || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function discussionDraftForm(options = {}) {
+  const status = elementStub("div");
+  const bodyHtml = options.bodyHtml || "";
+  const itemKey = options.itemKey || "YCE-TASK-2";
+  const currentUsername = options.currentUsername || "yuance_admin";
+  const parentCommentId = options.parentCommentId ? String(options.parentCommentId) : "";
+  const commentId = options.commentId ? String(options.commentId) : "";
+  const bodyInput = {
+    dataset: {},
+    disabled: false,
+    value: "",
+    matches(selector) {
+      return selector === "[data-discussion-body]";
+    },
+  };
+  const formatInput = { value: "" };
+  const parentInput = {
+    dataset: {},
+    disabled: false,
+    value: parentCommentId,
+    matches() {
+      return false;
+    },
+  };
+  const submit = submitButton(options.submitLabel || "发表");
+  const controls = [bodyInput, parentInput, submit];
+  const root = {
+    dataset: { discussionCurrentUsername: currentUsername },
+  };
+  const richInput = {
+    dataset: {},
+    innerHTML: bodyHtml,
+    textContent: plainTextFromHtml(bodyHtml),
+    focus() {},
+    setAttribute() {},
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+    cloneNode() {
+      return {
+        innerHTML: this.innerHTML,
+        textContent: plainTextFromHtml(this.innerHTML),
+        querySelectorAll() {
+          return [];
+        },
+      };
+    },
+  };
+  let form = null;
+  const editor = {
+    dataset: {
+      itemKey,
+      ...(parentCommentId ? { commentParentId: parentCommentId } : {}),
+      ...(commentId ? { commentId, commentDraft: "true" } : {}),
+    },
+    closest(selector) {
+      if (selector === "[data-discussion-form]") {
+        return form;
+      }
+      return null;
+    },
+    contains() {
+      return false;
+    },
+    querySelector(selector) {
+      if (selector === "[data-rich-text-input]") {
+        return richInput;
+      }
+      if (selector === "[data-rich-attachment][data-upload-state='uploading']") {
+        return null;
+      }
+      if (selector === "[data-rich-attachment][data-upload-state='error']") {
+        return null;
+      }
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+
+  form = {
+    dataset: {
+      itemKey,
+      ...(commentId ? { discussionCommentId: commentId, discussionDraft: "true" } : {}),
+    },
+    bugReportFiles: [],
+    hidden: Boolean(options.hidden),
+    classList: classList(),
+    reportValidity() {
+      return true;
+    },
+    closest(selector) {
+      return selector === "[data-work-item-discussion]" ? root : null;
+    },
+    querySelector(selector) {
+      if (selector === "[data-rich-text-editor]") {
+        return editor;
+      }
+      if (selector === "[data-rich-text-input]") {
+        return richInput;
+      }
+      if (selector === "[data-discussion-body]") {
+        return bodyInput;
+      }
+      if (selector === "[data-discussion-body-format]") {
+        return formatInput;
+      }
+      if (selector === "input[name='parent_comment_id']") {
+        return parentInput;
+      }
+      if (selector === "[data-discussion-submit]") {
+        return submit;
+      }
+      if (selector === "[data-discussion-status]") {
+        return status;
+      }
+      return null;
+    },
+    querySelectorAll(selector) {
+      if (selector === "button, textarea, input, select") {
+        return controls;
+      }
+      if (selector === "[data-discussion-submit]") {
+        return [submit];
+      }
+      if (selector === "[data-rich-text-input]") {
+        return [richInput];
+      }
+      return [];
+    },
+  };
+
+  if (options.isReply) {
+    form.classList.add("discussion-reply-form");
+  }
+
+  return {
+    root,
+    editor,
+    richInput,
+    bodyInput,
+    formatInput,
+    parentInput,
+    submit,
+    status,
+    form,
+  };
 }
 
 function webPostForm(successMessage, options = {}) {
@@ -596,18 +814,22 @@ function redirectedHtmlResponse(url) {
   };
 }
 
+function nonTopbarFetchCalls(page) {
+  return page.fetchCalls.filter((entry) => String(entry.url) !== "/api/v1/topbar/status");
+}
+
 const samePage = loadAppWithDom();
 assert.equal(typeof samePage.hooks.apiErrorMessage, "function");
 assert.equal(typeof samePage.hooks.mediaOrientation, "function");
-assert.equal(typeof samePage.hooks.preferredImageViewerScale, "function");
+assert.equal(typeof samePage.hooks.preferredImageViewerFitWidthScale, "function");
 assert.equal(typeof samePage.hooks.filterSelectOptions, "function");
 assert.equal(typeof samePage.hooks.selectPanelTargetWidth, "function");
 assert.equal(samePage.hooks.mediaOrientation(1080, 1920), "portrait");
 assert.equal(samePage.hooks.mediaOrientation(1920, 1080), "landscape");
 assert.equal(samePage.hooks.mediaOrientation(1200, 1200), "square");
-assert.equal(samePage.hooks.preferredImageViewerScale("portrait", 1200, 820, 450, 800), 1.69);
-assert.equal(samePage.hooks.preferredImageViewerScale("landscape", 1200, 820, 900, 506), 1);
-assert.equal(samePage.hooks.preferredImageViewerScale("portrait", 360, 640, 315, 560), 1.02);
+assert.equal(samePage.hooks.preferredImageViewerFitWidthScale("portrait", 1200, 450), 2.61);
+assert.equal(samePage.hooks.preferredImageViewerFitWidthScale("landscape", 1200, 900), 1);
+assert.equal(samePage.hooks.preferredImageViewerFitWidthScale("portrait", 360, 315), 1.12);
 const shortSelectPanel = {
   querySelectorAll: () => [{ textContent: "待处理", disabled: false }],
   querySelector: () => null,
@@ -759,9 +981,16 @@ assert.equal(samePage.hooks.apiErrorMessage({}, "默认错误"), "默认错误")
 assert.equal(typeof samePage.hooks.submitDiscussion, "function");
 assert.equal(typeof samePage.hooks.syncRichTextForm, "function");
 assert.equal(typeof samePage.hooks.richAttachmentMetadata, "function");
+assert.equal(typeof samePage.hooks.discussionDraftStorageKey, "function");
+assert.equal(typeof samePage.hooks.persistDiscussionDraft, "function");
+assert.equal(typeof samePage.hooks.restoreDiscussionDraft, "function");
+assert.equal(typeof samePage.hooks.clearDiscussionDraftSnapshot, "function");
 const richFileAttachment = {
   dataset: { yuanceAttachmentKind: "file" },
   textContent: "rich-doc.txt",
+  hasAttribute() {
+    return false;
+  },
   matches(selector) {
     return selector === "a[href]";
   },
@@ -780,11 +1009,15 @@ const richFileAttachment = {
 };
 const richFileMeta = samePage.hooks.richAttachmentMetadata(richFileAttachment);
 assert.equal(richFileMeta.kind, "file");
-assert.equal(richFileMeta.previewable, false);
+assert.equal(richFileMeta.previewable, true);
+assert.equal(richFileMeta.previewMode, "document");
 assert.equal(richFileMeta.source, "/web/work-items/YCE-TASK-2/comments/1/attachments/2/download");
 assert.equal(richFileMeta.title, "rich-doc.txt");
 const richImageAttachment = {
   dataset: { yuanceAttachmentKind: "image" },
+  hasAttribute() {
+    return false;
+  },
   matches() {
     return false;
   },
@@ -819,16 +1052,91 @@ const readyRichForm = richDiscussionForm("");
 assert.equal(samePage.hooks.syncRichTextForm(readyRichForm.form), true);
 assert.equal(readyRichForm.bodyInput.value, "<p>保留正文</p>");
 assert.equal(readyRichForm.formatInput.value, "html");
-await samePage.hooks.submitDiscussion(discussionForm(), submitButton());
-assert.equal(samePage.fetchCalls.length, 1);
-assert.equal(samePage.fetchCalls[0].url, "/api/v1/work-items/YCE-TASK-2/comments");
-assert.deepEqual(JSON.parse(samePage.sessionItems.get("yuance-pending-toast")), {
-  message: "内容已发表。",
-  tone: "success",
+
+const discussionDraft = discussionDraftForm({ bodyHtml: "<p>草稿正文</p>" });
+const discussionDraftKey = samePage.hooks.discussionDraftStorageKey(discussionDraft.form);
+assert.equal(
+  discussionDraftKey,
+  "yuance-discussion-draft:v1:YCE-TASK-2::yuance_admin",
+);
+assert.equal(samePage.hooks.persistDiscussionDraft(discussionDraft.form), true);
+assert.deepEqual(
+  JSON.parse(samePage.localItems.get(discussionDraftKey)),
+  {
+    version: 1,
+    item_key: "YCE-TASK-2",
+    parent_comment_id: "",
+    current_username: "yuance_admin",
+    body_html: "<p>草稿正文</p>",
+    comment_id: "",
+    is_draft: false,
+    saved_at: JSON.parse(samePage.localItems.get(discussionDraftKey)).saved_at,
+  },
+);
+
+const replyDraftPage = loadAppWithDom();
+const replyDraft = discussionDraftForm({ parentCommentId: 18, hidden: true, isReply: true });
+const replyDraftKey = replyDraftPage.hooks.discussionDraftStorageKey(replyDraft.form);
+replyDraftPage.localItems.set(
+  replyDraftKey,
+  JSON.stringify({
+    version: 1,
+    item_key: "YCE-TASK-2",
+    parent_comment_id: "18",
+    current_username: "yuance_admin",
+    body_html: "<p>恢复后的回复</p>",
+    comment_id: "456",
+    is_draft: true,
+    saved_at: 1,
+  }),
+);
+assert.equal(replyDraftPage.hooks.restoreDiscussionDraft(replyDraft.form), true);
+assert.equal(replyDraft.form.hidden, false);
+assert.equal(replyDraft.richInput.innerHTML, "<p>恢复后的回复</p>");
+assert.equal(replyDraft.form.dataset.discussionCommentId, "456");
+assert.equal(replyDraft.editor.dataset.commentId, "456");
+assert.equal(replyDraft.form.dataset.discussionDraft, "true");
+
+const brokenDraftPage = loadAppWithDom();
+const brokenDraft = discussionDraftForm();
+const brokenDraftKey = brokenDraftPage.hooks.discussionDraftStorageKey(brokenDraft.form);
+brokenDraftPage.localItems.set(
+  brokenDraftKey,
+  JSON.stringify({ version: 2, body_html: "<p>旧版本</p>" }),
+);
+assert.equal(brokenDraftPage.hooks.restoreDiscussionDraft(brokenDraft.form), false);
+assert.equal(brokenDraftPage.localItems.has(brokenDraftKey), false);
+
+const submitDraftPage = loadAppWithDom();
+const submitDraft = discussionForm({
+  body: "<p>待发布草稿</p>",
+  commentId: 789,
+  isDraft: true,
 });
-assert.equal(samePage.window.location.hash, "comment-123");
-assert.equal(samePage.reloadCount, 1);
-assert.deepEqual(samePage.assignCalls, []);
+const submitDraftKey = submitDraftPage.hooks.discussionDraftStorageKey(submitDraft);
+submitDraftPage.localItems.set(
+  submitDraftKey,
+  JSON.stringify({
+    version: 1,
+    item_key: "YCE-TASK-2",
+    parent_comment_id: "",
+    current_username: "yuance_admin",
+    body_html: "<p>待发布草稿</p>",
+    comment_id: "789",
+    is_draft: true,
+    saved_at: 1,
+  }),
+);
+assert.equal(submitDraftPage.localItems.has(submitDraftKey), true);
+await submitDraftPage.hooks.submitDiscussion(submitDraft, submitDraft.querySelector("[data-discussion-submit]"));
+assert.equal(submitDraftPage.localItems.has(submitDraftKey), false);
+
+await samePage.hooks.submitDiscussion(discussionForm(), submitButton());
+assert.equal(nonTopbarFetchCalls(samePage).length, 1);
+assert.equal(nonTopbarFetchCalls(samePage)[0].url, "/api/v1/work-items/YCE-TASK-2/comments");
+assert.equal(samePage.sessionItems.has("yuance-pending-toast"), false);
+assert.deepEqual(samePage.assignCalls, ["/web/work-items/YCE-TASK-2#comment-123"]);
+assert.equal(samePage.reloadCount, 0);
 
 const otherPage = loadAppWithDom();
 otherPage.window.location.pathname = "/web/work-items/OTHER";
@@ -844,9 +1152,9 @@ assert.equal(
   true,
 );
 await projectCreate.hooks.submitBugReport(projectCreateForm);
-assert.equal(projectCreate.fetchCalls.length, 2);
-assert.equal(projectCreate.fetchCalls[0].url, "/api/v1/work-items");
-assert.deepEqual(JSON.parse(projectCreate.fetchCalls[0].options.body), {
+assert.equal(nonTopbarFetchCalls(projectCreate).length, 1);
+assert.equal(nonTopbarFetchCalls(projectCreate)[0].url, "/api/v1/work-items");
+assert.deepEqual(JSON.parse(nonTopbarFetchCalls(projectCreate)[0].options.body), {
   project_key: "YCE",
   item_type: "task",
   title: "项目内新建任务",
@@ -856,16 +1164,7 @@ assert.deepEqual(JSON.parse(projectCreate.fetchCalls[0].options.body), {
   due_date: "",
   parent_item_key: "YCE-REQ-1",
 });
-assert.equal(projectCreate.fetchCalls[1].url, "/api/v1/work-items/YCE-TASK-3/comments");
-assert.deepEqual(JSON.parse(projectCreate.fetchCalls[1].options.body), {
-  body: "<p>富文本说明</p>",
-  body_format: "html",
-});
-assert.deepEqual(JSON.parse(projectCreate.sessionItems.get("yuance-pending-toast")), {
-  message: "工作项创建完成。",
-  tone: "success",
-});
-assert.equal(projectCreate.window.location.href, "/web/projects/YCE?tab=work");
+assert.equal(projectCreate.window.location.href, "https://yuance.test/web/work-items/YCE-TASK-2");
 
 const redirectedPost = loadAppWithDom({
   fetch: async () => redirectedHtmlResponse("https://yuance.test/web/messages?unread=true"),
@@ -908,9 +1207,9 @@ const readAllApp = loadAppWithDom({
 });
 assert.equal(typeof readAllApp.hooks.submitMessageReadAll, "function");
 await readAllApp.hooks.submitMessageReadAll(messageReadAllForm(notificationRoot));
-assert.equal(readAllApp.fetchCalls[0].url, "https://yuance.test/web/messages/read-all");
-assert.equal(String(readAllApp.fetchCalls[0].options.body), "_csrf=token&filter=unread");
-assert.equal(readAllApp.fetchCalls[1].url, "/api/v1/notifications?limit=5");
+assert.equal(nonTopbarFetchCalls(readAllApp)[0].url, "https://yuance.test/web/messages/read-all");
+assert.equal(String(nonTopbarFetchCalls(readAllApp)[0].options.body), "_csrf=token&filter=unread");
+assert.equal(nonTopbarFetchCalls(readAllApp)[1].url, "/api/v1/notifications?limit=5");
 assert.equal(notificationRoot.summary.textContent, "暂无未读");
 assert.equal(notificationRoot.readAllButton.disabled, true);
 assert.deepEqual(readAllApp.assignCalls, []);

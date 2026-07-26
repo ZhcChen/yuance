@@ -1066,6 +1066,7 @@ struct WorkItemDetailTemplate {
     active: &'static str,
     environment: String,
     current_user: String,
+    current_username: String,
     csrf_token: String,
     system_nav: SystemNav,
     current_project: Option<CurrentProjectView>,
@@ -1102,6 +1103,7 @@ struct WorkItemDetailTemplate {
 #[template(path = "web/partials/work_item_detail.html")]
 struct WorkItemDetailPartialTemplate {
     csrf_token: String,
+    current_username: String,
     item: WorkItemDetailView,
     status_options: Vec<WorkItemStatusOption>,
     comments: Vec<WorkItemComment>,
@@ -4639,6 +4641,7 @@ pub async fn work_item_detail_page(
             active: work_item_active_key(&item.kind),
             environment: state.settings.env.clone(),
             current_user: context.current_user,
+            current_username: context.current_username,
             csrf_token: context.csrf_token,
             system_nav: context.system_nav,
             current_project: context.current_project,
@@ -7729,11 +7732,13 @@ pub async fn work_item_detail_partial(
     let assignee_options = load_project_member_options(pool, &item.project_key).await?;
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
     let discussion_count = discussion_comment_count(&comments);
+    let current_username = user.username.clone();
     response::html(WorkItemDetailPartialTemplate {
         csrf_token: csrf::ensure_token(&headers),
+        current_username: current_username.clone(),
         discussion_mention_options_json: discussion_mention_options_json(
             &assignee_options,
-            &user.username,
+            &current_username,
         ),
         discussion_count,
         has_comments: discussion_count > 0,
@@ -13331,6 +13336,7 @@ fn render_sample_work_item_detail_page(
             active: "tasks",
             environment: state.settings.env.clone(),
             current_user: context.current_user,
+            current_username: context.current_username,
             csrf_token: context.csrf_token,
             system_nav: context.system_nav,
             current_project: context.current_project,
@@ -13376,6 +13382,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
     let status_options = work_item_status_options("任务", "in_progress")?;
     Ok(WorkItemDetailPartialTemplate {
         csrf_token: "sample-csrf-token".to_string(),
+        current_username: "yuance_admin".to_string(),
         discussion_mention_options_json: serde_json::json!([
             {
                 "username": "qa_li",

@@ -5082,6 +5082,7 @@ async fn work_item_detail_partial_renders_comments() {
     assert!(body.contains("先统一项目与工作项查询模型"));
     assert!(body.contains("讨论"));
     assert!(body.contains(r#"data-discussion-form"#));
+    assert!(body.contains(r#"data-discussion-current-username=""#));
     assert!(body.contains(
         r#"class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle"#
     ));
