@@ -14174,6 +14174,273 @@ async fn project_cycles_can_be_managed_from_web_and_link_work_items() {
 }
 
 #[tokio::test]
+async fn project_cycle_detail_renders_status_board_and_member_loads() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let reviewer = create_regular_user(&pool, "cycle_load_member", "周期协作人").await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "cycle_load_member",
+        "member",
+    )
+    .await
+    .expect("reviewer should join project");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "2026-07 推进看板".to_string(),
+            goal: "验证周期详情看板和成员负载".to_string(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+
+    let open_requirement = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "requirement".to_string(),
+            title: "待处理需求".to_string(),
+            description: "待处理需求描述".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: "admin".to_string(),
+            due_date: "2026-07-30".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("open requirement should create");
+    projects::set_work_item_cycle(&pool, initialized.user_id, &open_requirement.item_key, Some(cycle.id), "")
+        .await
+        .expect("open requirement should bind cycle");
+
+    let in_progress_task = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "进行中任务".to_string(),
+            description: "进行中任务描述".to_string(),
+            priority: "P0".to_string(),
+            assignee_username: "cycle_load_member".to_string(),
+            due_date: "2026-07-29".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("task should create");
+    projects::set_work_item_cycle(&pool, initialized.user_id, &in_progress_task.item_key, Some(cycle.id), "")
+        .await
+        .expect("task should bind cycle");
+    projects::update_work_item(
+        &pool,
+        initialized.user_id,
+        &in_progress_task.item_key,
+        projects::UpdateWorkItemInput {
+            title: in_progress_task.title.clone(),
+            description: in_progress_task.description.clone(),
+            status: "in_progress".to_string(),
+            priority: "P0".to_string(),
+            assignee_username: "cycle_load_member".to_string(),
+            due_date: "2026-07-29".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("task should update");
+
+    let pending_bug = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "bug".to_string(),
+            title: "待确认 Bug".to_string(),
+            description: "待确认 Bug 描述".to_string(),
+            priority: "P1".to_string(),
+            assignee_username: "cycle_load_member".to_string(),
+            due_date: "2026-07-24".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("bug should create");
+    projects::set_work_item_cycle(&pool, initialized.user_id, &pending_bug.item_key, Some(cycle.id), "")
+        .await
+        .expect("bug should bind cycle");
+    projects::update_work_item(
+        &pool,
+        initialized.user_id,
+        &pending_bug.item_key,
+        projects::UpdateWorkItemInput {
+            title: pending_bug.title.clone(),
+            description: pending_bug.description.clone(),
+            status: "pending_confirmation".to_string(),
+            priority: "P1".to_string(),
+            assignee_username: "cycle_load_member".to_string(),
+            due_date: "2026-07-24".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("bug should update");
+
+    let completed_task = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "已收口任务".to_string(),
+            description: "已收口任务描述".to_string(),
+            priority: "P3".to_string(),
+            assignee_username: "admin".to_string(),
+            due_date: "2026-07-25".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("completed task should create");
+    projects::set_work_item_cycle(&pool, initialized.user_id, &completed_task.item_key, Some(cycle.id), "")
+        .await
+        .expect("completed task should bind cycle");
+    projects::update_work_item(
+        &pool,
+        initialized.user_id,
+        &completed_task.item_key,
+        projects::UpdateWorkItemInput {
+            title: completed_task.title.clone(),
+            description: completed_task.description.clone(),
+            status: "in_progress".to_string(),
+            priority: "P3".to_string(),
+            assignee_username: "admin".to_string(),
+            due_date: "2026-07-25".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("completed task should move in progress");
+    projects::update_work_item(
+        &pool,
+        initialized.user_id,
+        &completed_task.item_key,
+        projects::UpdateWorkItemInput {
+            title: completed_task.title.clone(),
+            description: completed_task.description.clone(),
+            status: "done".to_string(),
+            priority: "P3".to_string(),
+            assignee_username: "admin".to_string(),
+            due_date: "2026-07-25".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("completed task should close loop");
+
+    let unassigned_task = projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "YCE".to_string(),
+            item_type: "task".to_string(),
+            title: "未指派任务".to_string(),
+            description: "未指派任务描述".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: "admin".to_string(),
+            due_date: "2026-07-23".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("unassigned task should create");
+    projects::set_work_item_cycle(&pool, initialized.user_id, &unassigned_task.item_key, Some(cycle.id), "")
+        .await
+        .expect("unassigned task should bind cycle");
+    projects::update_work_item(
+        &pool,
+        initialized.user_id,
+        &unassigned_task.item_key,
+        projects::UpdateWorkItemInput {
+            title: unassigned_task.title.clone(),
+            description: unassigned_task.description.clone(),
+            status: "open".to_string(),
+            priority: "P2".to_string(),
+            assignee_username: String::new(),
+            due_date: "2026-07-23".to_string(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "系统管理员".to_string(),
+        },
+    )
+    .await
+    .expect("unassigned task should update");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/cycles/{}", cycle.id))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("状态看板"));
+    assert!(body.contains("成员负载"));
+    assert!(body.contains("待处理"));
+    assert!(body.contains("进行中"));
+    assert!(body.contains("待确认"));
+    assert!(body.contains("已收口"));
+    assert!(body.contains("待处理需求"));
+    assert!(body.contains("进行中任务"));
+    assert!(body.contains("待确认 Bug"));
+    assert!(body.contains("已收口任务"));
+    assert!(body.contains("周期协作人"));
+    assert!(body.contains("未指派"));
+    assert!(body.contains("高优先级 2"));
+    assert!(body.contains("逾期 2"));
+    assert!(body.contains("未指派 1"));
+    assert!(body.contains(&format!(
+        "/web/tasks?project_key=YCE&#38;cycle_id={}&#38;status=pending&#38;assignee_username=cycle_load_member",
+        cycle.id
+    )));
+    assert!(body.contains(&format!(
+        "/web/requirements?project_key=YCE&#38;cycle_id={}&#38;status=open",
+        cycle.id
+    )));
+
+    let reviewer_items = projects::count_pending_assigned_work_items(&pool, reviewer.user_id, false, Some("YCE"))
+        .await
+        .expect("reviewer counts should load");
+    assert_eq!(reviewer_items.tasks, 1);
+    assert_eq!(reviewer_items.bugs, 1);
+}
+
+#[tokio::test]
 async fn project_cycles_reject_invalid_ranges_and_cross_project_links() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

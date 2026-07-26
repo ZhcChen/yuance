@@ -180,6 +180,62 @@ struct ProjectCycleQuickLinkView {
 }
 
 #[derive(Debug, Clone)]
+struct ProjectCycleBoardTypeLinkView {
+    label: &'static str,
+    count_label: String,
+    url: String,
+    enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleBoardItemView {
+    key: String,
+    kind_code: String,
+    kind: String,
+    title: String,
+    assignee: String,
+    priority_code: String,
+    priority: String,
+    status: String,
+    status_tone: &'static str,
+    meta: String,
+    url: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleBoardColumnView {
+    key: &'static str,
+    label: &'static str,
+    description: &'static str,
+    tone: &'static str,
+    count_label: String,
+    items: Vec<ProjectCycleBoardItemView>,
+    has_items: bool,
+    empty_message: String,
+    type_links: Vec<ProjectCycleBoardTypeLinkView>,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleLoadActionView {
+    label: &'static str,
+    url: String,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleLoadRowView {
+    member: String,
+    subtitle: String,
+    pending_count: i64,
+    in_progress_count: i64,
+    pending_confirmation_count: i64,
+    high_priority_count: i64,
+    overdue_count: i64,
+    active_count: i64,
+    is_unassigned: bool,
+    action_links: Vec<ProjectCycleLoadActionView>,
+}
+
+#[derive(Debug, Clone)]
 struct DetailFieldView {
     label: &'static str,
     value: String,
@@ -1062,6 +1118,13 @@ struct ProjectCycleDetailTemplate {
     meta_fields: Vec<DetailFieldView>,
     time_fields: Vec<DetailFieldView>,
     quick_links: Vec<ProjectCycleQuickLinkView>,
+    board_columns: Vec<ProjectCycleBoardColumnView>,
+    has_board_items: bool,
+    member_load_rows: Vec<ProjectCycleLoadRowView>,
+    has_member_load_rows: bool,
+    load_high_priority_total: i64,
+    load_overdue_total: i64,
+    load_unassigned_total: i64,
     can_manage_work_items: bool,
 }
 
@@ -3254,10 +3317,35 @@ pub async fn project_cycle_detail_page(
         &project.project_key,
         projects::get_project_cycle(pool, project.id, cycle_id).await?,
     );
+    let cycle_work_items =
+        projects::list_project_cycle_work_item_snapshots(pool, project.id, cycle.id).await?;
+    let project_members = projects::list_project_members(pool, project.id)
+        .await?
+        .into_iter()
+        .map(project_member_from_summary)
+        .collect::<Vec<_>>();
+    let board_columns = project_cycle_board_columns(&project_key, &cycle, &cycle_work_items);
+    let member_load_rows =
+        project_cycle_member_load_rows(&project_key, &cycle, &project_members, &cycle_work_items);
     let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
     let can_manage_work_items =
         user_can_write_project_content_for_context(pool, &context, project.id).await?
             && project_accepts_writes;
+    let has_board_items = board_columns.iter().any(|column| column.has_items);
+    let has_member_load_rows = member_load_rows.iter().any(|row| row.active_count > 0);
+    let load_high_priority_total = member_load_rows
+        .iter()
+        .map(|row| row.high_priority_count)
+        .sum::<i64>();
+    let load_overdue_total = member_load_rows
+        .iter()
+        .map(|row| row.overdue_count)
+        .sum::<i64>();
+    let load_unassigned_total = member_load_rows
+        .iter()
+        .find(|row| row.is_unassigned)
+        .map(|row| row.active_count)
+        .unwrap_or_default();
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
         &state,
@@ -3276,6 +3364,13 @@ pub async fn project_cycle_detail_page(
             meta_fields: project_cycle_meta_fields(&cycle),
             time_fields: project_cycle_time_fields(&cycle),
             quick_links: project_cycle_quick_links(&project_key, &cycle),
+            board_columns,
+            has_board_items,
+            member_load_rows,
+            has_member_load_rows,
+            load_high_priority_total,
+            load_overdue_total,
+            load_unassigned_total,
             can_manage_work_items,
         })?
         .into_response(),
@@ -9555,6 +9650,263 @@ fn project_cycle_quick_links(
     ]
 }
 
+fn project_cycle_filtered_work_item_list_url(
+    project_key: &str,
+    item_type: &str,
+    cycle_id: i64,
+    status: Option<&str>,
+    assignee_username: Option<&str>,
+) -> String {
+    let path = work_item_list_path(item_type);
+    let mut params = Vec::new();
+    push_query_param(&mut params, "project_key", project_key);
+    push_query_param(&mut params, "cycle_id", &cycle_id.to_string());
+    if let Some(status) = status.filter(|value| !value.trim().is_empty()) {
+        push_query_param(&mut params, "status", status);
+    }
+    if let Some(assignee_username) = assignee_username.filter(|value| !value.trim().is_empty()) {
+        push_query_param(&mut params, "assignee_username", assignee_username);
+    }
+    format!("{path}?{}", params.join("&"))
+}
+
+fn project_cycle_board_bucket(
+    status: &str,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+) {
+    match status {
+        "open" => (
+            "open",
+            "待处理",
+            "等待认领或开始处理的事项。",
+            "warning",
+            Some("open"),
+        ),
+        "in_progress" => (
+            "in_progress",
+            "进行中",
+            "已经开始处理，需要持续推进。",
+            "info",
+            Some("in_progress"),
+        ),
+        "pending_confirmation" => (
+            "pending_confirmation",
+            "待确认",
+            "等待验收、补充反馈或结果确认。",
+            "warning",
+            Some("pending_confirmation"),
+        ),
+        _ => (
+            "settled",
+            "已收口",
+            "包含已完成、已解决、已验证、已关闭等终态事项。",
+            "ok",
+            None,
+        ),
+    }
+}
+
+fn project_cycle_board_item_view(
+    item: &projects::ProjectCycleWorkItemSnapshot,
+) -> ProjectCycleBoardItemView {
+    let (kind, status, status_tone) = work_item_labels(&item.item_type, &item.status);
+    ProjectCycleBoardItemView {
+        key: item.item_key.clone(),
+        kind_code: work_item_kind_code(&item.item_type).to_string(),
+        kind: kind.to_string(),
+        title: item.title.clone(),
+        assignee: fallback_text(item.assignee_display_name.clone(), "未指派"),
+        priority_code: item.priority.clone(),
+        priority: priority_label(&item.priority).to_string(),
+        status: status.to_string(),
+        status_tone,
+        meta: if item.due_date.trim().is_empty() {
+            format!("最近更新 {}", display_timestamp(item.updated_at.clone()))
+        } else {
+            format!("截止 {}", item.due_date)
+        },
+        url: format!("/web/work-items/{}", item.item_key),
+    }
+}
+
+fn project_cycle_board_columns(
+    project_key: &str,
+    cycle: &ProjectCycleView,
+    items: &[projects::ProjectCycleWorkItemSnapshot],
+) -> Vec<ProjectCycleBoardColumnView> {
+    #[derive(Default)]
+    struct ColumnAccumulator {
+        count: i64,
+        requirement_count: i64,
+        task_count: i64,
+        bug_count: i64,
+        items: Vec<ProjectCycleBoardItemView>,
+    }
+
+    let mut columns = HashMap::<&'static str, ColumnAccumulator>::new();
+    for item in items {
+        let (key, _label, _description, _tone, _status_filter) =
+            project_cycle_board_bucket(&item.status);
+        let column = columns.entry(key).or_default();
+        column.count += 1;
+        match item.item_type.as_str() {
+            "requirement" => column.requirement_count += 1,
+            "bug" => column.bug_count += 1,
+            _ => column.task_count += 1,
+        }
+        if column.items.len() < 5 {
+            column.items.push(project_cycle_board_item_view(item));
+        }
+    }
+
+    ["open", "in_progress", "pending_confirmation", "settled"]
+        .into_iter()
+        .map(|key| {
+            let (bucket_key, label, description, tone, status_filter) =
+                project_cycle_board_bucket(key);
+            let data = columns.remove(bucket_key).unwrap_or_default();
+            let type_links = [
+                ("需求", "requirement", data.requirement_count),
+                ("任务", "task", data.task_count),
+                ("Bug", "bug", data.bug_count),
+            ]
+            .into_iter()
+            .map(|(type_label, item_type, count)| ProjectCycleBoardTypeLinkView {
+                label: type_label,
+                count_label: format!("{count}"),
+                url: project_cycle_filtered_work_item_list_url(
+                    project_key,
+                    item_type,
+                    cycle.id,
+                    status_filter,
+                    None,
+                ),
+                enabled: count > 0,
+            })
+            .collect::<Vec<_>>();
+            ProjectCycleBoardColumnView {
+                key: bucket_key,
+                label,
+                description,
+                tone,
+                count_label: format!("{} 条", data.count),
+                has_items: !data.items.is_empty(),
+                empty_message: if bucket_key == "settled" {
+                    "当前周期还没有进入终态的工作项。".to_string()
+                } else {
+                    format!("当前周期暂无“{label}”状态的工作项。")
+                },
+                items: data.items,
+                type_links,
+            }
+        })
+        .collect()
+}
+
+fn project_cycle_member_load_rows(
+    project_key: &str,
+    cycle: &ProjectCycleView,
+    members: &[ProjectMemberView],
+    items: &[projects::ProjectCycleWorkItemSnapshot],
+) -> Vec<ProjectCycleLoadRowView> {
+    #[derive(Debug, Clone, Default)]
+    struct LoadCounts {
+        pending_count: i64,
+        in_progress_count: i64,
+        pending_confirmation_count: i64,
+        high_priority_count: i64,
+        overdue_count: i64,
+        active_count: i64,
+    }
+
+    let today = cycle_today_text();
+    let mut counts_by_member = HashMap::<String, LoadCounts>::new();
+    for item in items {
+        if !is_active_work_item_status(&item.status) {
+            continue;
+        }
+        let key = item.assignee_username.trim().to_string();
+        let counts = counts_by_member.entry(key).or_default();
+        counts.active_count += 1;
+        match item.status.as_str() {
+            "open" => counts.pending_count += 1,
+            "in_progress" => counts.in_progress_count += 1,
+            "pending_confirmation" => counts.pending_confirmation_count += 1,
+            _ => {}
+        }
+        if is_high_priority_code(&item.priority) {
+            counts.high_priority_count += 1;
+        }
+        if !item.due_date.trim().is_empty() && item.due_date.as_str() < today.as_str() {
+            counts.overdue_count += 1;
+        }
+    }
+
+    let mut rows = members
+        .iter()
+        .map(|member| {
+            let counts = counts_by_member
+                .remove(member.username.as_str())
+                .unwrap_or_default();
+            ProjectCycleLoadRowView {
+                member: member.display_name.clone(),
+                subtitle: format!("@{} · {}", member.username, member.role),
+                pending_count: counts.pending_count,
+                in_progress_count: counts.in_progress_count,
+                pending_confirmation_count: counts.pending_confirmation_count,
+                high_priority_count: counts.high_priority_count,
+                overdue_count: counts.overdue_count,
+                active_count: counts.active_count,
+                is_unassigned: false,
+                action_links: ["requirement", "task", "bug"]
+                    .into_iter()
+                    .map(|item_type| ProjectCycleLoadActionView {
+                        label: work_item_type_label(item_type),
+                        url: project_cycle_filtered_work_item_list_url(
+                            project_key,
+                            item_type,
+                            cycle.id,
+                            Some("pending"),
+                            Some(member.username.as_str()),
+                        ),
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    rows.sort_by(|left, right| {
+        right
+            .active_count
+            .cmp(&left.active_count)
+            .then(right.overdue_count.cmp(&left.overdue_count))
+            .then(right.high_priority_count.cmp(&left.high_priority_count))
+            .then_with(|| left.member.cmp(&right.member))
+    });
+
+    if let Some(unassigned_counts) = counts_by_member.remove("") {
+        rows.push(ProjectCycleLoadRowView {
+            member: "未指派".to_string(),
+            subtitle: "当前周期仍有工作项未绑定处理人".to_string(),
+            pending_count: unassigned_counts.pending_count,
+            in_progress_count: unassigned_counts.in_progress_count,
+            pending_confirmation_count: unassigned_counts.pending_confirmation_count,
+            high_priority_count: unassigned_counts.high_priority_count,
+            overdue_count: unassigned_counts.overdue_count,
+            active_count: unassigned_counts.active_count,
+            is_unassigned: true,
+            action_links: Vec::new(),
+        });
+    }
+
+    rows
+}
+
 fn project_cycle_option_from_view(cycle: &ProjectCycleView) -> ProjectCycleOptionView {
     ProjectCycleOptionView {
         id: cycle.id,
@@ -13946,6 +14298,103 @@ fn sample_project_cycle_options() -> Vec<ProjectCycleOptionView> {
         .collect()
 }
 
+fn sample_project_cycle_members() -> Vec<ProjectMemberView> {
+    vec![
+        ProjectMemberView {
+            display_name: "陈".to_string(),
+            username: "yuance_admin".to_string(),
+            role_code: "owner".to_string(),
+            role: "项目负责人".to_string(),
+            joined_at: "今天".to_string(),
+        },
+        ProjectMemberView {
+            display_name: "测试李".to_string(),
+            username: "qa_li".to_string(),
+            role_code: "member".to_string(),
+            role: "项目成员".to_string(),
+            joined_at: "今天".to_string(),
+        },
+    ]
+}
+
+fn sample_project_cycle_snapshots(
+    cycle_id: i64,
+) -> Vec<projects::ProjectCycleWorkItemSnapshot> {
+    match cycle_id {
+        1 => vec![
+            projects::ProjectCycleWorkItemSnapshot {
+                item_key: "YCE-REQ-8".to_string(),
+                item_type: "requirement".to_string(),
+                title: "统一周期详情负责人视角".to_string(),
+                status: "open".to_string(),
+                priority: "P1".to_string(),
+                assignee_username: "yuance_admin".to_string(),
+                assignee_display_name: "陈".to_string(),
+                due_date: "2026-07-28".to_string(),
+                updated_at: "2026-07-26 16:20:00".to_string(),
+            },
+            projects::ProjectCycleWorkItemSnapshot {
+                item_key: "YCE-TASK-16".to_string(),
+                item_type: "task".to_string(),
+                title: "补齐周期看板与成员负载分析".to_string(),
+                status: "in_progress".to_string(),
+                priority: "P0".to_string(),
+                assignee_username: "qa_li".to_string(),
+                assignee_display_name: "测试李".to_string(),
+                due_date: "2026-07-27".to_string(),
+                updated_at: "2026-07-26 15:08:00".to_string(),
+            },
+            projects::ProjectCycleWorkItemSnapshot {
+                item_key: "YCE-BUG-11".to_string(),
+                item_type: "bug".to_string(),
+                title: "修复周期详情快捷跳转回退异常".to_string(),
+                status: "pending_confirmation".to_string(),
+                priority: "P1".to_string(),
+                assignee_username: String::new(),
+                assignee_display_name: String::new(),
+                due_date: "2026-07-24".to_string(),
+                updated_at: "2026-07-26 14:35:00".to_string(),
+            },
+            projects::ProjectCycleWorkItemSnapshot {
+                item_key: "YCE-TASK-9".to_string(),
+                item_type: "task".to_string(),
+                title: "沉淀周期详情页基础骨架".to_string(),
+                status: "done".to_string(),
+                priority: "P2".to_string(),
+                assignee_username: "yuance_admin".to_string(),
+                assignee_display_name: "陈".to_string(),
+                due_date: String::new(),
+                updated_at: "2026-07-24 20:10:00".to_string(),
+            },
+        ],
+        2 => vec![
+            projects::ProjectCycleWorkItemSnapshot {
+                item_key: "YCE-REQ-2".to_string(),
+                item_type: "requirement".to_string(),
+                title: "完成初版项目数据模型".to_string(),
+                status: "done".to_string(),
+                priority: "P1".to_string(),
+                assignee_username: "yuance_admin".to_string(),
+                assignee_display_name: "陈".to_string(),
+                due_date: "2026-06-25".to_string(),
+                updated_at: "2026-06-28 18:30:00".to_string(),
+            },
+            projects::ProjectCycleWorkItemSnapshot {
+                item_key: "YCE-TASK-3".to_string(),
+                item_type: "task".to_string(),
+                title: "收敛工作项主表与基础索引".to_string(),
+                status: "closed".to_string(),
+                priority: "P2".to_string(),
+                assignee_username: "yuance_admin".to_string(),
+                assignee_display_name: "陈".to_string(),
+                due_date: "2026-06-30".to_string(),
+                updated_at: "2026-07-02 20:10:00".to_string(),
+            },
+        ],
+        _ => Vec::new(),
+    }
+}
+
 fn sample_domain_work_items(item_type: Option<&str>) -> Vec<projects::WorkItemSummary> {
     let items = vec![
         projects::WorkItemSummary {
@@ -14127,6 +14576,26 @@ fn render_sample_project_cycle_detail(
         created_at: "今天".to_string(),
         updated_at: "今天 16:20".to_string(),
     };
+    let cycle_work_items = sample_project_cycle_snapshots(cycle.id);
+    let project_members = sample_project_cycle_members();
+    let board_columns = project_cycle_board_columns(project_key, &cycle, &cycle_work_items);
+    let member_load_rows =
+        project_cycle_member_load_rows(project_key, &cycle, &project_members, &cycle_work_items);
+    let has_board_items = board_columns.iter().any(|column| column.has_items);
+    let has_member_load_rows = member_load_rows.iter().any(|row| row.active_count > 0);
+    let load_high_priority_total = member_load_rows
+        .iter()
+        .map(|row| row.high_priority_count)
+        .sum::<i64>();
+    let load_overdue_total = member_load_rows
+        .iter()
+        .map(|row| row.overdue_count)
+        .sum::<i64>();
+    let load_unassigned_total = member_load_rows
+        .iter()
+        .find(|row| row.is_unassigned)
+        .map(|row| row.active_count)
+        .unwrap_or_default();
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -14146,6 +14615,13 @@ fn render_sample_project_cycle_detail(
             meta_fields: project_cycle_meta_fields(&cycle),
             time_fields: project_cycle_time_fields(&cycle),
             quick_links: project_cycle_quick_links(project_key, &cycle),
+            board_columns,
+            has_board_items,
+            member_load_rows,
+            has_member_load_rows,
+            load_high_priority_total,
+            load_overdue_total,
+            load_unassigned_total,
             can_manage_work_items: true,
         })?
         .into_response(),

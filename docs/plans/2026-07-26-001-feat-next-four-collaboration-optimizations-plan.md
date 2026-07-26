@@ -1,7 +1,7 @@
 ---
 title: feat: 元策下一阶段四项协作效率优化计划
 type: feat
-status: active
+status: completed
 date: 2026-07-26
 origin: docs/ideation/2026-07-26-001-yuance-next-optimization.md
 ---
@@ -534,7 +534,7 @@ flowchart TB
 **Verification:**
 - 新路由和周期详情渲染通过集成测试验证。
 
-- [ ] **Unit 9: 周期状态看板与成员负载分析**
+- [x] **Unit 9: 周期状态看板与成员负载分析**
 
 **Goal:** 在周期详情页提供负责人真正关心的推进可视化。
 

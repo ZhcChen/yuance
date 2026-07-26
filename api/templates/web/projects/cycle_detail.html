@@ -140,10 +140,144 @@
           </div>
         </div>
         <div class="project-tab-panels">
-          <div class="cycle-insight-card">
+          <div class="cycle-insight-card cycle-insight-card-compact">
             <strong>本周期当前已关联 {{ cycle.total_items }} 条工作项，其中还有 {{ cycle.pending_count }} 条处于待推进状态。</strong>
-            <p>这一页先承载负责人最常用的周期元信息、时间状态和快捷跳转；下一步会继续在这里补齐状态看板与成员负载分析。</p>
+            <p>负责人可以直接从下方看板判断当前卡点，从成员负载区查看谁还在堆积高优先级与逾期事项。</p>
+            <div class="cycle-insight-pills">
+              <span>高优先级 {{ load_high_priority_total }}</span>
+              <span>逾期 {{ load_overdue_total }}</span>
+              <span>未指派 {{ load_unassigned_total }}</span>
+            </div>
           </div>
+        </div>
+      </section>
+
+      <section class="project-tabs-card">
+        <div class="project-tabs-head">
+          <div>
+            <p class="eyebrow">状态看板</p>
+            <h2>按状态看推进面</h2>
+          </div>
+        </div>
+        <div class="project-tab-panels">
+          {% if has_board_items %}
+          <div class="cycle-board-grid">
+            {% for column in board_columns %}
+            <article class="cycle-board-column" data-tone="{{ column.tone }}" data-status="{{ column.key }}">
+              <div class="cycle-board-column-head">
+                <div>
+                  <strong>{{ column.label }}</strong>
+                  <p>{{ column.description }}</p>
+                </div>
+                <span>{{ column.count_label }}</span>
+              </div>
+              <div class="cycle-board-type-links">
+                {% for link in column.type_links %}
+                  {% if link.enabled %}
+                  <a href="{{ link.url }}">{{ link.label }} {{ link.count_label }}</a>
+                  {% else %}
+                  <span>{{ link.label }} {{ link.count_label }}</span>
+                  {% endif %}
+                {% endfor %}
+              </div>
+              {% if column.has_items %}
+              <div class="cycle-board-items">
+                {% for item in column.items %}
+                <article class="cycle-board-item">
+                  <div class="cycle-board-item-head">
+                    <span class="work-kind" data-kind="{{ item.kind_code }}">{{ item.kind }}</span>
+                    <span class="priority" data-priority="{{ item.priority_code }}">{{ item.priority }}</span>
+                  </div>
+                  <a class="cycle-board-item-title" href="{{ item.url }}">{{ item.key }} · {{ item.title }}</a>
+                  <div class="cycle-board-item-meta">
+                    <span>{{ item.assignee }}</span>
+                    <span>{{ item.meta }}</span>
+                  </div>
+                  <div class="cycle-board-item-foot">
+                    <span class="status status-{{ item.status_tone }}">{{ item.status }}</span>
+                  </div>
+                </article>
+                {% endfor %}
+              </div>
+              {% else %}
+              <div class="empty-state cycle-board-empty">
+                <strong>暂无事项</strong>
+                <span>{{ column.empty_message }}</span>
+              </div>
+              {% endif %}
+            </article>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="empty-state cycle-board-empty-state">
+            <strong>当前周期还没有关联工作项</strong>
+            <span>先把需求、任务或 Bug 关联到该周期后，这里会自动形成状态看板。</span>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="project-tabs-card">
+        <div class="project-tabs-head">
+          <div>
+            <p class="eyebrow">成员负载</p>
+            <h2>按成员看待推进压力</h2>
+            <p>聚焦待处理 / 进行中 / 待确认，并额外标出高优先级和逾期。</p>
+          </div>
+        </div>
+        <div class="project-tab-panels">
+          {% if has_member_load_rows %}
+          <div class="table-wrap">
+            <table class="data-table cycle-load-table">
+              <thead>
+                <tr>
+                  <th scope="col">成员</th>
+                  <th scope="col">待处理</th>
+                  <th scope="col">进行中</th>
+                  <th scope="col">待确认</th>
+                  <th scope="col">高优先级</th>
+                  <th scope="col">逾期</th>
+                  <th scope="col">活跃合计</th>
+                  <th scope="col">快捷筛选</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in member_load_rows %}
+                <tr {% if row.is_unassigned %}class="cycle-load-row-unassigned"{% endif %}>
+                  <td>
+                    <div class="cycle-load-member">
+                      <strong>{{ row.member }}</strong>
+                      <span>{{ row.subtitle }}</span>
+                    </div>
+                  </td>
+                  <td>{{ row.pending_count }}</td>
+                  <td>{{ row.in_progress_count }}</td>
+                  <td>{{ row.pending_confirmation_count }}</td>
+                  <td>{{ row.high_priority_count }}</td>
+                  <td>{{ row.overdue_count }}</td>
+                  <td><strong>{{ row.active_count }}</strong></td>
+                  <td>
+                    {% if !row.is_unassigned %}
+                    <div class="cycle-load-actions">
+                      {% for action in row.action_links %}
+                      <a href="{{ action.url }}">{{ action.label }}</a>
+                      {% endfor %}
+                    </div>
+                    {% else %}
+                    <span class="cycle-load-empty-action">需先完成指派</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% else %}
+          <div class="empty-state cycle-board-empty-state">
+            <strong>当前周期暂无待推进负载</strong>
+            <span>一旦周期内出现待处理、进行中或待确认事项，这里会自动形成成员负载矩阵。</span>
+          </div>
+          {% endif %}
         </div>
       </section>
     </div>

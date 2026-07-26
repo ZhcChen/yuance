@@ -134,6 +134,19 @@ pub struct WorkItemSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectCycleWorkItemSnapshot {
+    pub item_key: String,
+    pub item_type: String,
+    pub title: String,
+    pub status: String,
+    pub priority: String,
+    pub assignee_username: String,
+    pub assignee_display_name: String,
+    pub due_date: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkItemDetail {
     pub id: i64,
     pub item_key: String,
@@ -1665,6 +1678,96 @@ pub async fn get_project_cycle(
     .ok_or_else(|| AppError::NotFound("周期不存在".to_string()))?;
 
     Ok(project_cycle_detail_from_row(row))
+}
+
+pub async fn list_project_cycle_work_item_snapshots(
+    pool: &SqlitePool,
+    project_id: i64,
+    cycle_id: i64,
+) -> AppResult<Vec<ProjectCycleWorkItemSnapshot>> {
+    if project_id <= 0 || cycle_id <= 0 {
+        return Err(AppError::BadRequest("周期 ID 无效".to_string()));
+    }
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            wi.item_key,
+            wi.item_type,
+            wi.title,
+            wi.status,
+            wi.priority,
+            COALESCE(assignee.username, '') AS assignee_username,
+            COALESCE(assignee.display_name, '') AS assignee_display_name,
+            COALESCE(wi.due_date, '') AS due_date,
+            wi.updated_at
+        FROM work_items wi
+        LEFT JOIN users assignee ON assignee.id = wi.assignee_user_id
+        WHERE wi.project_id = ?1
+          AND wi.cycle_id = ?2
+          AND wi.deleted_at IS NULL
+        ORDER BY
+            CASE wi.status
+                WHEN 'open' THEN 1
+                WHEN 'in_progress' THEN 2
+                WHEN 'pending_confirmation' THEN 3
+                ELSE 4
+            END ASC,
+            CASE wi.priority
+                WHEN 'P0' THEN 1
+                WHEN 'P1' THEN 2
+                WHEN 'P2' THEN 3
+                WHEN 'P3' THEN 4
+                ELSE 5
+            END ASC,
+            wi.updated_at DESC,
+            wi.id DESC
+        "#,
+    )
+    .bind(project_id)
+    .bind(cycle_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                item_key,
+                item_type,
+                title,
+                status,
+                priority,
+                assignee_username,
+                assignee_display_name,
+                due_date,
+                updated_at,
+            )| ProjectCycleWorkItemSnapshot {
+                item_key,
+                item_type,
+                title,
+                status,
+                priority,
+                assignee_username,
+                assignee_display_name,
+                due_date,
+                updated_at,
+            },
+        )
+        .collect())
 }
 
 pub async fn create_project_cycle(
