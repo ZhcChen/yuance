@@ -417,7 +417,7 @@ struct PaginationPageView {
 
 #[derive(Debug, Clone)]
 struct NotificationView {
-    id: i64,
+    open_url: String,
     kind_label: &'static str,
     title: String,
     body: String,
@@ -816,6 +816,10 @@ struct DashboardTemplate {
     topbar_project_options: Vec<ProjectOption>,
     metrics: Vec<Metric>,
     projects: Vec<ProjectRow>,
+    pending_discussions: Vec<NotificationView>,
+    has_pending_discussions: bool,
+    pending_discussion_count: i64,
+    pending_discussions_url: String,
     activities: Vec<Activity>,
     can_manage_projects: bool,
     current_username: String,
@@ -992,12 +996,16 @@ struct MessagesTemplate {
     notifications: Vec<NotificationView>,
     unread_count: i64,
     unread_badge_label: String,
+    pending_count: i64,
+    pending_badge_label: String,
     filter: &'static str,
     filter_all: bool,
     filter_unread: bool,
+    filter_pending: bool,
     filter_read: bool,
     all_tab_url: String,
     unread_tab_url: String,
+    pending_tab_url: String,
     read_tab_url: String,
     empty_title: &'static str,
     has_notifications: bool,
@@ -1009,6 +1017,7 @@ struct MessagesTemplate {
 enum MessageFilter {
     All,
     Unread,
+    Pending,
     Read,
 }
 
@@ -1016,6 +1025,7 @@ impl MessageFilter {
     fn from_query(filter: &str, unread: bool) -> Self {
         match filter.trim().to_ascii_lowercase().as_str() {
             "unread" => Self::Unread,
+            "pending" => Self::Pending,
             "read" => Self::Read,
             _ if unread => Self::Unread,
             _ => Self::All,
@@ -1026,6 +1036,7 @@ impl MessageFilter {
         match self {
             Self::All => "all",
             Self::Unread => "unread",
+            Self::Pending => "pending",
             Self::Read => "read",
         }
     }
@@ -1034,6 +1045,7 @@ impl MessageFilter {
         match self {
             Self::All => notifications::NotificationFilter::All,
             Self::Unread => notifications::NotificationFilter::Unread,
+            Self::Pending => notifications::NotificationFilter::PendingDiscussion,
             Self::Read => notifications::NotificationFilter::Read,
         }
     }
@@ -1042,6 +1054,7 @@ impl MessageFilter {
         match self {
             Self::All => "暂无消息",
             Self::Unread => "没有未读消息",
+            Self::Pending => "没有待处理讨论",
             Self::Read => "没有已读消息",
         }
     }
@@ -2595,7 +2608,19 @@ pub async fn messages_page(
     );
     let filter_all = filter == MessageFilter::All;
     let filter_unread = filter == MessageFilter::Unread;
+    let filter_pending = filter == MessageFilter::Pending;
     let filter_read = filter == MessageFilter::Read;
+    let pending_count = match context.pool {
+        Some(pool) => {
+            notifications::count_for_user_filtered(
+                pool,
+                context.user_id,
+                notifications::NotificationFilter::PendingDiscussion,
+            )
+            .await?
+        }
+        None => 0,
+    };
     response::html(MessagesTemplate {
         active: "messages",
         environment: state.settings.env.clone(),
@@ -2608,12 +2633,16 @@ pub async fn messages_page(
         notifications: items,
         unread_count,
         unread_badge_label: topnav_badge(unread_count),
+        pending_count,
+        pending_badge_label: topnav_badge(pending_count),
         filter: filter.as_query_value(),
         filter_all,
         filter_unread,
+        filter_pending,
         filter_read,
         all_tab_url: message_page_url(MessageFilter::All, 1, per_page),
         unread_tab_url: message_page_url(MessageFilter::Unread, 1, per_page),
+        pending_tab_url: message_page_url(MessageFilter::Pending, 1, per_page),
         read_tab_url: message_page_url(MessageFilter::Read, 1, per_page),
         empty_title: filter.empty_title(),
         pagination,
@@ -7754,7 +7783,13 @@ async fn render_dashboard(
     state: &AppState,
     context: DashboardRenderContext<'_>,
 ) -> AppResult<Html<String>> {
-    let (metrics, projects, activities) = match context.pool {
+    let (
+        metrics,
+        projects,
+        pending_discussions,
+        pending_discussion_count,
+        activities,
+    ) = match context.pool {
         Some(pool) => {
             let can_view_projects =
                 rbac::user_has_permission(pool, context.user_id, "project.view").await?;
@@ -7798,6 +7833,23 @@ async fn render_dashboard(
             } else {
                 Vec::new()
             };
+            let pending_discussion_count = notifications::count_for_user_filtered(
+                pool,
+                context.user_id,
+                notifications::NotificationFilter::PendingDiscussion,
+            )
+            .await?;
+            let pending_discussions = notifications::list_for_user_page_filtered(
+                pool,
+                context.user_id,
+                notifications::NotificationFilter::PendingDiscussion,
+                1,
+                5,
+            )
+            .await?
+            .into_iter()
+            .map(notification_view)
+            .collect::<Vec<_>>();
             (
                 metrics_from_data(&all_project_summaries, &assigned_pending_counts),
                 all_project_summaries
@@ -7810,13 +7862,21 @@ async fn render_dashboard(
                         project_from_summary_with_pending(project, pending)
                     })
                     .collect(),
+                pending_discussions,
+                pending_discussion_count,
                 activity_summaries
                     .into_iter()
                     .map(activity_from_summary)
                     .collect(),
             )
         }
-        None => (sample_metrics(), sample_projects(), sample_activities()),
+        None => (
+            sample_metrics(),
+            sample_projects(),
+            sample_pending_discussions(),
+            2,
+            sample_activities(),
+        ),
     };
     let can_manage_projects = match context.pool {
         Some(pool) => rbac::user_has_permission(pool, context.user_id, "project.manage").await?,
@@ -7833,6 +7893,10 @@ async fn render_dashboard(
         topbar_project_options: context.topbar_project_options,
         metrics,
         projects,
+        has_pending_discussions: !pending_discussions.is_empty(),
+        pending_discussions,
+        pending_discussion_count,
+        pending_discussions_url: message_page_url(MessageFilter::Pending, 1, 10),
         activities,
         can_manage_projects,
         current_username: context.current_username,
@@ -9263,7 +9327,7 @@ fn comment_from_summary(comment: projects::WorkItemCommentSummary) -> WorkItemCo
 
 fn notification_view(notification: notifications::NotificationSummary) -> NotificationView {
     NotificationView {
-        id: notification.id,
+        open_url: format!("/web/messages/{}/open", notification.id),
         kind_label: match notification.kind.as_str() {
             "comment_replied" => "回复",
             "comment_mentioned" => "提及",
@@ -11926,6 +11990,7 @@ fn message_page_url(filter: MessageFilter, page: i64, per_page: i64) -> String {
     match filter {
         MessageFilter::All => {}
         MessageFilter::Unread => params.push("filter=unread".to_string()),
+        MessageFilter::Pending => params.push("filter=pending".to_string()),
         MessageFilter::Read => params.push("filter=read".to_string()),
     }
     if page > 1 {
@@ -12957,6 +13022,29 @@ fn sample_metrics() -> Vec<Metric> {
             value: "1".to_string(),
             tone: "danger",
             icon: "bug",
+        },
+    ]
+}
+
+fn sample_pending_discussions() -> Vec<NotificationView> {
+    vec![
+        NotificationView {
+            open_url: "/web/messages/1/open".to_string(),
+            kind_label: "提及",
+            title: "请补充联调结论".to_string(),
+            body: "测试李 在 YCE-TASK-2 中提及你补充联调结果。".to_string(),
+            actor: "测试李".to_string(),
+            created_at: "10 分钟前".to_string(),
+            is_unread: true,
+        },
+        NotificationView {
+            open_url: "/web/messages/2/open".to_string(),
+            kind_label: "回复",
+            title: "接口返回字段已确认".to_string(),
+            body: "开发王 回复了你在 YCE-BUG-3 的讨论。".to_string(),
+            actor: "开发王".to_string(),
+            created_at: "30 分钟前".to_string(),
+            is_unread: true,
         },
     ]
 }

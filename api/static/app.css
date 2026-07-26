@@ -2437,6 +2437,15 @@ textarea:focus-visible {
 .message-content small { color: var(--muted); font-size: 11px; }
 .message-open { color: var(--brand); font-size: 12px; font-weight: 700; }
 .message-empty { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.discussion-reminder-list { display: grid; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel); }
+.discussion-reminder-row { display: grid; gap: 6px; padding: 14px 16px; border-bottom: 1px solid var(--line); color: var(--text); text-decoration: none; transition: background 140ms ease; }
+.discussion-reminder-row:last-child { border-bottom: 0; }
+.discussion-reminder-row:hover { background: var(--panel-hover); }
+.discussion-reminder-kind { width: fit-content; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--brand-soft) 56%, var(--panel)); color: var(--brand-strong); font-size: 11px; font-weight: 800; line-height: 18px; }
+.discussion-reminder-row strong { font-size: 14px; line-height: 20px; }
+.discussion-reminder-row span:not(.discussion-reminder-kind),
+.discussion-reminder-row small { color: var(--muted); line-height: 18px; }
+.discussion-reminder-row small { font-size: 12px; }
 
 .discussion-post {
   scroll-margin-top: calc(var(--topbar-height) + 20px);

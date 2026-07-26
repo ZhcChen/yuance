@@ -33,6 +33,7 @@ pub struct CreateNotification<'a> {
 pub enum NotificationFilter {
     All,
     Unread,
+    PendingDiscussion,
     Read,
 }
 
@@ -41,9 +42,14 @@ impl NotificationFilter {
         match self {
             Self::All => "all",
             Self::Unread => "unread",
+            Self::PendingDiscussion => "pending_discussion",
             Self::Read => "read",
         }
     }
+}
+
+pub fn is_pending_discussion_kind(kind: &str) -> bool {
+    matches!(kind, "comment_replied" | "comment_mentioned")
 }
 
 pub async fn create_in_transaction(
@@ -165,6 +171,11 @@ async fn list_for_user_window(
           AND (
               ?2 = 'all'
               OR (?2 = 'unread' AND n.read_at IS NULL)
+              OR (
+                  ?2 = 'pending_discussion'
+                  AND n.read_at IS NULL
+                  AND n.kind IN ('comment_replied', 'comment_mentioned')
+              )
               OR (?2 = 'read' AND n.read_at IS NOT NULL)
           )
         ORDER BY n.created_at DESC, n.id DESC
@@ -217,6 +228,11 @@ pub async fn count_for_user_filtered(
           AND (
               ?2 = 'all'
               OR (?2 = 'unread' AND read_at IS NULL)
+              OR (
+                  ?2 = 'pending_discussion'
+                  AND read_at IS NULL
+                  AND kind IN ('comment_replied', 'comment_mentioned')
+              )
               OR (?2 = 'read' AND read_at IS NOT NULL)
           )
         "#,

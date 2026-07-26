@@ -2457,6 +2457,113 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
 }
 
 #[tokio::test]
+async fn web_messages_page_filters_pending_discussions_and_drops_read_items() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let receiver = create_regular_user(&pool, "message_pending_owner", "待处理消息负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "message_pending_owner", "member")
+        .await
+        .expect("receiver should join project");
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item should exist");
+
+    insert_test_notification_with_kind(
+        &pool,
+        receiver.user_id,
+        admin.user_id,
+        work_item_id,
+        "work_item_assigned",
+        "指派消息",
+        "这条指派不应进入待处理讨论",
+    )
+    .await;
+    insert_test_notification_with_kind(
+        &pool,
+        receiver.user_id,
+        admin.user_id,
+        work_item_id,
+        "comment_replied",
+        "回复消息",
+        "这条回复应进入待处理讨论",
+    )
+    .await;
+    insert_test_notification_with_kind(
+        &pool,
+        receiver.user_id,
+        admin.user_id,
+        work_item_id,
+        "comment_mentioned",
+        "提及消息",
+        "这条提及应进入待处理讨论",
+    )
+    .await;
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let pending_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?filter=pending")
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(pending_response.status(), StatusCode::OK);
+    let pending_body = response_body(pending_response).await;
+    assert!(pending_body.contains("待处理讨论"));
+    assert!(pending_body.contains("回复消息"));
+    assert!(pending_body.contains("提及消息"));
+    assert!(!pending_body.contains("指派消息"));
+    assert_eq!(pending_body.matches("class=\"message-row").count(), 2);
+    assert!(pending_body.contains(r#"href="/web/messages?filter=unread""#));
+    assert!(pending_body.contains(r#"href="/web/messages?filter=read""#));
+    assert!(pending_body.contains(r#"name="filter" value="pending""#));
+
+    let mention_notice = notifications::list_for_user(&pool, receiver.user_id, true, 10)
+        .await
+        .expect("notifications should load")
+        .into_iter()
+        .find(|item| item.title == "提及消息")
+        .expect("mention notice should exist");
+    let open_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", mention_notice.id))
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(open_response.status(), StatusCode::SEE_OTHER);
+
+    let refreshed_pending_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?filter=pending")
+                .header(header::COOKIE, receiver.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(refreshed_pending_response.status(), StatusCode::OK);
+    let refreshed_pending_body = response_body(refreshed_pending_response).await;
+    assert!(refreshed_pending_body.contains("回复消息"));
+    assert!(!refreshed_pending_body.contains("提及消息"));
+    assert_eq!(refreshed_pending_body.matches("class=\"message-row").count(), 1);
+}
+
+#[tokio::test]
 async fn work_item_comment_mentions_create_notifications_and_open_to_comment_anchor() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
@@ -3470,6 +3577,64 @@ async fn web_dashboard_renders_demo_projects_from_database() {
     assert!(body.contains(r#"id="project-create-modal""#));
     assert!(body.contains(r#"action="/web/projects""#));
     assert!(!body.contains(">导入</button>"));
+}
+
+#[tokio::test]
+async fn web_dashboard_renders_pending_discussion_panel_without_assignments() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let receiver = create_regular_user(&pool, "dashboard_pending_owner", "工作台讨论负责人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "dashboard_pending_owner", "member")
+        .await
+        .expect("receiver should join project");
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item should exist");
+    insert_test_notification_with_kind(
+        &pool,
+        receiver.user_id,
+        admin.user_id,
+        work_item_id,
+        "work_item_assigned",
+        "工作台指派消息",
+        "这条指派不应进入待处理讨论面板",
+    )
+    .await;
+    insert_test_notification_with_kind(
+        &pool,
+        receiver.user_id,
+        admin.user_id,
+        work_item_id,
+        "comment_replied",
+        "工作台回复消息",
+        "这条回复应进入待处理讨论面板",
+    )
+    .await;
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web")
+                .header(header::COOKIE, receiver.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("待我处理讨论"));
+    assert!(body.contains("当前 1 条"));
+    assert!(body.contains("工作台回复消息"));
+    assert!(!body.contains("工作台指派消息"));
+    assert!(body.contains(r#"href="/web/messages?filter=pending""#));
 }
 
 #[tokio::test]
@@ -13707,6 +13872,34 @@ async fn insert_test_notification(
     .bind(work_item_id)
     .bind(format!("角标消息 {index:03}"))
     .bind(format!("第 {index:03} 条消息"))
+    .execute(pool)
+    .await
+    .expect("notification should insert");
+}
+
+async fn insert_test_notification_with_kind(
+    pool: &sqlx::SqlitePool,
+    recipient_user_id: i64,
+    actor_user_id: i64,
+    work_item_id: i64,
+    kind: &str,
+    title: &str,
+    body: &str,
+) {
+    sqlx::query(
+        r#"
+        INSERT INTO notifications (
+            recipient_user_id, actor_user_id, kind, work_item_id, title, body
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "#,
+    )
+    .bind(recipient_user_id)
+    .bind(actor_user_id)
+    .bind(kind)
+    .bind(work_item_id)
+    .bind(title)
+    .bind(body)
     .execute(pool)
     .await
     .expect("notification should insert");
