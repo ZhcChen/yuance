@@ -1769,6 +1769,8 @@ pub async fn list_work_items(
                     priority: query.priority,
                     project_key: String::new(),
                     assignee_username: query.assignee_username,
+                    cycle_id: String::new(),
+                    sort_by: String::new(),
                 },
                 projects::Pagination {
                     page: 1,
@@ -1806,6 +1808,8 @@ pub async fn list_work_items(
             priority: query.priority,
             project_key,
             assignee_username: query.assignee_username,
+            cycle_id: String::new(),
+            sort_by: String::new(),
         },
         pagination,
     )

@@ -3867,6 +3867,249 @@ async fn web_work_item_list_paginates_current_project_items() {
 }
 
 #[tokio::test]
+async fn web_work_item_saved_view_can_apply_default_filters_and_be_managed() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
+        .await
+        .expect("admin should select YCE");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "协作迭代一".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-15".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+    projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        Some(cycle.id),
+        "系统管理员",
+    )
+    .await
+    .expect("task should join cycle");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-item-views")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&name=%E9%87%8D%E7%82%B9%E4%BB%BB%E5%8A%A1&q=&status=in_progress&priority=P0&assignee_username=admin&cycle_id={}&sort=priority_desc&per_page=20&is_default=true&return_to=%2Fweb%2Ftasks%3Fstatus%3Din_progress",
+                    cycle.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create_response.status(), StatusCode::SEE_OTHER);
+
+    let saved_view_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM work_item_saved_views WHERE user_id = ?1 AND name = ?2",
+    )
+    .bind(initialized.user_id)
+    .bind("重点任务")
+    .fetch_one(&pool)
+    .await
+    .expect("saved view should persist");
+
+    let default_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(default_response.status(), StatusCode::OK);
+    let default_body = response_body(default_response).await;
+    assert!(default_body.contains("重点任务"));
+    assert!(default_body.contains(r#"option value="in_progress" selected"#));
+    assert!(default_body.contains(r#"option value="P0" selected"#));
+    assert!(default_body.contains(&format!(r#"option value="{}" selected"#, cycle.id)));
+    assert!(default_body.contains(r#"option value="priority_desc" selected"#));
+    assert!(default_body.contains(r#"<option value="20" selected>20</option>"#));
+    assert!(default_body.contains("YCE-TASK-2"));
+    assert!(!default_body.contains("YCE-TASK-1"));
+
+    let rename_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-item-views/{saved_view_id}/rename"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&name=%E5%8D%8F%E4%BD%9C%E9%87%8D%E7%82%B9&return_to=%2Fweb%2Ftasks"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(rename_response.status(), StatusCode::SEE_OTHER);
+
+    let renamed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let renamed_body = response_body(renamed_response).await;
+    assert!(renamed_body.contains("协作重点"));
+    assert!(!renamed_body.contains("重点任务"));
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-item-views/{saved_view_id}/delete"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&return_to=%2Fweb%2Ftasks"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::SEE_OTHER);
+
+    let after_delete_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(after_delete_response.status(), StatusCode::OK);
+    let after_delete_body = response_body(after_delete_response).await;
+    assert!(!after_delete_body.contains("协作重点"));
+    assert!(after_delete_body.contains("YCE-TASK-1"));
+    assert!(after_delete_body.contains("YCE-TASK-2"));
+}
+
+#[tokio::test]
+async fn web_work_item_saved_view_rejects_duplicate_names_and_isolated_per_user() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let member = create_regular_user(&pool, "saved_view_member", "视图成员").await;
+    projects::add_project_member(&pool, initialized.user_id, "YCE", "saved_view_member", "member")
+        .await
+        .expect("member should join project");
+    projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
+        .await
+        .expect("admin should select YCE");
+    projects::set_current_project_for_user(&pool, member.user_id, false, "YCE")
+        .await
+        .expect("member should select YCE");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let first_create_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-item-views")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&name=%E5%BE%85%E6%88%91%E5%A4%84%E7%90%86&assignee_username=admin&sort=updated_desc&per_page=10&return_to=%2Fweb%2Ftasks"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(first_create_response.status(), StatusCode::SEE_OTHER);
+
+    let duplicate_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/work-item-views")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&project_key=YCE&item_type=task&name=%E5%BE%85%E6%88%91%E5%A4%84%E7%90%86&assignee_username=admin&sort=updated_desc&per_page=10&return_to=%2Fweb%2Ftasks"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(duplicate_response.status(), StatusCode::BAD_REQUEST);
+    let duplicate_body = response_body(duplicate_response).await;
+    assert!(duplicate_body.contains("保存视图“待我处理”已存在"));
+
+    let admin_view_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM work_item_saved_views WHERE user_id = ?1 AND name = ?2",
+    )
+    .bind(initialized.user_id)
+    .bind("待我处理")
+    .fetch_one(&pool)
+    .await
+    .expect("admin saved view should persist");
+
+    let member_views = projects::list_work_item_saved_views_for_user(
+        &pool,
+        member.user_id,
+        false,
+        "YCE",
+        "task",
+    )
+    .await
+    .expect("member views should load");
+    assert!(member_views.is_empty());
+
+    let forbidden_rename_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/work-item-views/{admin_view_id}/rename"))
+                .header(header::COOKIE, member.cookie)
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf={CSRF_TOKEN}&name=%E9%9D%9E%E6%B3%95%E4%BF%AE%E6%94%B9&return_to=%2Fweb%2Ftasks"
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_rename_response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn web_current_project_rejects_projects_outside_member_scope() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

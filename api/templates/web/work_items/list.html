@@ -49,6 +49,81 @@
         <strong>筛选条件</strong>
         <span>组合条件可快速缩小当前项目中的{{ title }}范围</span>
       </div>
+      {% if !current_project_required %}
+      <div class="saved-view-section">
+        <div class="saved-view-section-head">
+          <strong>常用视图</strong>
+          <span>保存常用筛选后可一键切换，默认视图会在进入当前列表时自动带出。</span>
+        </div>
+        <div class="saved-view-chip-row">
+          <a class="saved-view-chip {% if filters.clear_default %}active{% endif %}" href="{{ clear_default_url }}">全部{{ title }}</a>
+          {% for view in saved_views %}
+          <a class="saved-view-chip {% if view.is_current %}active{% endif %}" href="{{ view.url }}">
+            <span>{{ view.name }}</span>
+            {% if view.is_default %}<small>默认</small>{% endif %}
+          </a>
+          {% endfor %}
+        </div>
+        <form class="saved-view-create-form" method="post" action="/web/work-item-views" data-success-message="视图已保存。">
+          <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+          <input type="hidden" name="project_key" value="{{ filters.project_key }}">
+          <input type="hidden" name="item_type" value="{{ item_type }}">
+          <input type="hidden" name="q" value="{{ filters.q }}">
+          <input type="hidden" name="status" value="{{ filters.status }}">
+          <input type="hidden" name="priority" value="{{ filters.priority }}">
+          <input type="hidden" name="assignee_username" value="{{ filters.assignee_username }}">
+          <input type="hidden" name="cycle_id" value="{{ filters.cycle_id }}">
+          <input type="hidden" name="sort" value="{{ filters.sort_by }}">
+          <input type="hidden" name="per_page" value="{{ pagination.per_page }}">
+          <input type="hidden" name="return_to" value="{{ current_view_url }}">
+          <label class="saved-view-name-field">
+            <span>保存当前视图</span>
+            <input name="name" maxlength="40" placeholder="例如：待我处理、高优先级、最近更新" required>
+          </label>
+          <label class="saved-view-default-toggle">
+            <input name="is_default" type="checkbox" value="true">
+            <span>设为默认</span>
+          </label>
+          <button class="btn btn-secondary btn-sm" type="submit">保存</button>
+        </form>
+        {% if has_saved_views %}
+        <div class="saved-view-manage-list">
+          {% for view in saved_views %}
+          <article class="saved-view-manage-item">
+            <div class="saved-view-manage-main">
+              <div class="saved-view-manage-title">
+                <a href="{{ view.url }}">{{ view.name }}</a>
+                {% if view.is_default %}<span class="status status-info">默认</span>{% endif %}
+                {% if view.is_current %}<span class="status status-success">当前</span>{% endif %}
+              </div>
+              <p>{{ view.summary }}</p>
+            </div>
+            <div class="saved-view-manage-actions">
+              {% if !view.is_default %}
+              <form class="inline-form" method="post" action="/web/work-item-views/{{ view.id }}/default" data-success-message="默认视图已更新。">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <input type="hidden" name="return_to" value="{{ current_view_url }}">
+                <button class="btn btn-secondary btn-sm" type="submit">设为默认</button>
+              </form>
+              {% endif %}
+              <form class="inline-form saved-view-rename-form" method="post" action="/web/work-item-views/{{ view.id }}/rename" data-success-message="视图名称已更新。">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <input type="hidden" name="return_to" value="{{ current_view_url }}">
+                <input name="name" value="{{ view.name }}" maxlength="40" aria-label="重命名视图 {{ view.name }}">
+                <button class="btn btn-secondary btn-sm" type="submit">重命名</button>
+              </form>
+              <form class="inline-form" method="post" action="/web/work-item-views/{{ view.id }}/delete" data-confirm-submit-form data-confirm-title="删除保存视图" data-confirm-message="确认删除视图“{{ view.name }}”？删除后不会影响原始工作项数据。" data-confirm-action="删除视图">
+                <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                <input type="hidden" name="return_to" value="{{ current_view_url }}">
+                <button class="btn btn-secondary btn-sm" type="submit">删除</button>
+              </form>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
       <form class="filter-bar" method="get">
       <label class="filter-keyword">
         关键词
@@ -88,9 +163,27 @@
           {% endfor %}
         </select>
       </label>
+      <label>
+        周期
+        <select name="cycle_id" data-select-searchable data-select-search-placeholder="搜索周期">
+          <option value="">全部周期</option>
+          {% for cycle in cycle_options %}
+          <option value="{{ cycle.id }}" {% if filters.cycle_id == cycle.id_text %}selected{% endif %}>{{ cycle.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        排序
+        <select name="sort">
+          <option value="updated_desc" {% if filters.sort_by == "updated_desc" %}selected{% endif %}>最近更新</option>
+          <option value="created_desc" {% if filters.sort_by == "created_desc" %}selected{% endif %}>最近创建</option>
+          <option value="priority_desc" {% if filters.sort_by == "priority_desc" %}selected{% endif %}>优先级从高到低</option>
+          <option value="due_date_asc" {% if filters.sort_by == "due_date_asc" %}selected{% endif %}>截止日期最近</option>
+        </select>
+      </label>
       <div class="filter-actions">
         <button class="btn btn-primary" type="submit">筛选</button>
-        <a class="btn btn-secondary" href="/web/{{ active }}">重置</a>
+        <a class="btn btn-secondary" href="{{ clear_default_url }}">重置</a>
       </div>
       </form>
     </div>

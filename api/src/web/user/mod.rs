@@ -373,6 +373,19 @@ struct WorkItemListFilterView {
     priority: String,
     project_key: String,
     assignee_username: String,
+    cycle_id: String,
+    sort_by: String,
+    clear_default: bool,
+}
+
+#[derive(Debug, Clone)]
+struct WorkItemSavedViewView {
+    id: i64,
+    name: String,
+    summary: String,
+    url: String,
+    is_default: bool,
+    is_current: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -948,6 +961,10 @@ struct WorkItemListTemplate {
     assignee_options: Vec<ProjectMemberView>,
     cycle_options: Vec<ProjectCycleOptionView>,
     filters: WorkItemListFilterView,
+    saved_views: Vec<WorkItemSavedViewView>,
+    has_saved_views: bool,
+    current_view_url: String,
+    clear_default_url: String,
     summary: WorkItemListSummary,
     pagination: PaginationView,
     pagination_pages: Vec<PaginationPageView>,
@@ -1894,19 +1911,69 @@ pub struct SystemApiTokenDeleteForm {
 #[derive(Debug, Deserialize)]
 pub struct WorkItemListQuery {
     #[serde(default)]
+    q: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    priority: Option<String>,
+    #[serde(default)]
+    project_key: Option<String>,
+    #[serde(default)]
+    assignee_username: Option<String>,
+    #[serde(default)]
+    cycle_id: Option<String>,
+    #[serde(default)]
+    sort: Option<String>,
+    #[serde(default)]
+    clear_default: bool,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemSavedViewCreateForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    project_key: String,
+    item_type: String,
+    name: String,
+    #[serde(default)]
     q: String,
     #[serde(default)]
     status: String,
     #[serde(default)]
     priority: String,
     #[serde(default)]
-    project_key: String,
-    #[serde(default)]
     assignee_username: String,
     #[serde(default)]
-    page: Option<i64>,
+    cycle_id: String,
+    #[serde(default)]
+    sort: String,
     #[serde(default)]
     per_page: Option<i64>,
+    #[serde(default)]
+    is_default: bool,
+    #[serde(default)]
+    return_to: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemSavedViewRenameForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    name: String,
+    #[serde(default)]
+    return_to: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WorkItemSavedViewActionForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+    #[serde(default)]
+    return_to: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4280,6 +4347,108 @@ pub async fn bugs_page(
         query,
     )
     .await
+}
+
+pub async fn work_item_saved_view_create(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Form(form): Form<WorkItemSavedViewCreateForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        projects::create_work_item_saved_view(
+            pool,
+            context.user_id,
+            context.can_access_all_projects,
+            &form.project_key,
+            &form.item_type,
+            projects::CreateWorkItemSavedViewInput {
+                name: form.name,
+                filter: projects::WorkItemListFilter {
+                    item_type: Some(form.item_type.clone()),
+                    keyword: form.q,
+                    status: form.status,
+                    priority: form.priority,
+                    project_key: form.project_key.clone(),
+                    assignee_username: form.assignee_username,
+                    cycle_id: form.cycle_id,
+                    sort_by: form.sort,
+                },
+                per_page: form.per_page.unwrap_or(10),
+                is_default: form.is_default,
+            },
+        )
+        .await?;
+    }
+
+    Ok(Redirect::to(work_item_saved_view_return_to(
+        &form.return_to,
+        Some(&form.item_type),
+    ))
+    .into_response())
+}
+
+pub async fn work_item_saved_view_rename(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+    Form(form): Form<WorkItemSavedViewRenameForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        projects::rename_work_item_saved_view(pool, context.user_id, saved_view_id, &form.name)
+            .await?;
+    }
+
+    Ok(Redirect::to(work_item_saved_view_return_to(&form.return_to, None)).into_response())
+}
+
+pub async fn work_item_saved_view_set_default(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+    Form(form): Form<WorkItemSavedViewActionForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        projects::set_default_work_item_saved_view(pool, context.user_id, saved_view_id).await?;
+    }
+
+    Ok(Redirect::to(work_item_saved_view_return_to(&form.return_to, None)).into_response())
+}
+
+pub async fn work_item_saved_view_delete(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+    Form(form): Form<WorkItemSavedViewActionForm>,
+) -> AppResult<Response> {
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
+        projects::delete_work_item_saved_view(pool, context.user_id, saved_view_id).await?;
+    }
+
+    Ok(Redirect::to(work_item_saved_view_return_to(&form.return_to, None)).into_response())
 }
 
 pub async fn work_item_detail_page(
@@ -7042,6 +7211,32 @@ impl WorkItemListPageMeta {
     }
 }
 
+fn work_item_default_sort() -> &'static str {
+    "updated_desc"
+}
+
+fn work_item_list_path(item_type: &str) -> &'static str {
+    match item_type {
+        "requirement" => "/web/requirements",
+        "bug" => "/web/bugs",
+        _ => "/web/tasks",
+    }
+}
+
+fn work_item_saved_view_return_to<'a>(value: &'a str, item_type: Option<&'a str>) -> &'a str {
+    let safe = safe_web_return_to(value);
+    if safe != "/web" {
+        return safe;
+    }
+    item_type.map(work_item_list_path).unwrap_or("/web")
+}
+
+fn apply_work_item_query_value(target: &mut String, value: &Option<String>) {
+    if let Some(value) = value {
+        *target = value.trim().to_string();
+    }
+}
+
 async fn work_item_list_page(
     state: AppState,
     headers: &HeaderMap,
@@ -7056,7 +7251,12 @@ async fn work_item_list_page(
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, headers, context.user_id, "work_item.view").await?;
     }
-    let requested_project_key = query.project_key.trim().to_ascii_uppercase();
+    let requested_project_key = query
+        .project_key
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_uppercase();
     if !requested_project_key.is_empty()
         && let Some(pool) = context.pool
     {
@@ -7076,16 +7276,83 @@ async fn work_item_list_page(
     let project_key = current_project
         .as_ref()
         .map(|project| project.key.clone())
-        .unwrap_or_else(|| query.project_key.trim().to_ascii_uppercase());
-    let filters = WorkItemListFilterView {
-        q: query.q.trim().to_string(),
-        status: query.status.trim().to_string(),
-        priority: query.priority.trim().to_string(),
-        project_key,
-        assignee_username: query.assignee_username.trim().to_string(),
-    };
-    let pagination = normalize_web_pagination(query.page, query.per_page)?;
+        .unwrap_or_else(|| requested_project_key.clone());
     let current_project_required = current_project.is_none();
+    let default_saved_view = if current_project_required {
+        None
+    } else {
+        match (context.pool, item_type, current_project.as_ref()) {
+            (Some(pool), Some(item_type), Some(project_context)) => {
+                projects::get_default_work_item_saved_view_for_user(
+                    pool,
+                    context.user_id,
+                    context.can_access_all_projects,
+                    &project_context.key,
+                    item_type,
+                )
+                .await?
+            }
+            _ => None,
+        }
+    };
+    let mut filters = if query.clear_default {
+        WorkItemListFilterView {
+            q: String::new(),
+            status: String::new(),
+            priority: String::new(),
+            project_key: project_key.clone(),
+            assignee_username: String::new(),
+            cycle_id: String::new(),
+            sort_by: work_item_default_sort().to_string(),
+            clear_default: true,
+        }
+    } else if let Some(saved_view) = default_saved_view.as_ref() {
+        WorkItemListFilterView {
+            q: saved_view.filter.keyword.clone(),
+            status: saved_view.filter.status.clone(),
+            priority: saved_view.filter.priority.clone(),
+            project_key: project_key.clone(),
+            assignee_username: saved_view.filter.assignee_username.clone(),
+            cycle_id: saved_view.filter.cycle_id.clone(),
+            sort_by: if saved_view.filter.sort_by.trim().is_empty() {
+                work_item_default_sort().to_string()
+            } else {
+                saved_view.filter.sort_by.clone()
+            },
+            clear_default: false,
+        }
+    } else {
+        WorkItemListFilterView {
+            q: String::new(),
+            status: String::new(),
+            priority: String::new(),
+            project_key: project_key.clone(),
+            assignee_username: String::new(),
+            cycle_id: String::new(),
+            sort_by: work_item_default_sort().to_string(),
+            clear_default: false,
+        }
+    };
+    apply_work_item_query_value(&mut filters.q, &query.q);
+    apply_work_item_query_value(&mut filters.status, &query.status);
+    apply_work_item_query_value(&mut filters.priority, &query.priority);
+    apply_work_item_query_value(&mut filters.assignee_username, &query.assignee_username);
+    apply_work_item_query_value(&mut filters.cycle_id, &query.cycle_id);
+    if let Some(sort) = query.sort.as_ref() {
+        let trimmed = sort.trim();
+        filters.sort_by = if trimmed.is_empty() {
+            work_item_default_sort().to_string()
+        } else {
+            trimmed.to_string()
+        };
+    }
+    if filters.sort_by.trim().is_empty() {
+        filters.sort_by = work_item_default_sort().to_string();
+    }
+    let resolved_per_page = query
+        .per_page
+        .or(default_saved_view.as_ref().map(|view| view.per_page));
+    let pagination = normalize_web_pagination(query.page, resolved_per_page)?;
     let list_filter = projects::WorkItemListFilter {
         item_type: item_type.map(ToOwned::to_owned),
         keyword: filters.q.clone(),
@@ -7093,6 +7360,8 @@ async fn work_item_list_page(
         priority: filters.priority.clone(),
         project_key: filters.project_key.clone(),
         assignee_username: filters.assignee_username.clone(),
+        cycle_id: filters.cycle_id.clone(),
+        sort_by: filters.sort_by.clone(),
     };
     let (items, total_items, page_number, per_page, summary) = if current_project_required {
         (
@@ -7152,6 +7421,7 @@ async fn work_item_list_page(
             }
         }
     };
+    filters.project_key = project_key.clone();
     let total_pages = total_pages(total_items, per_page);
     let pagination = work_item_pagination_view(
         meta.active,
@@ -7189,6 +7459,23 @@ async fn work_item_list_page(
             ),
             _ => (false, Vec::new(), Vec::new()),
         };
+    let saved_views = match (context.pool, item_type, current_project.as_ref()) {
+        (Some(pool), Some(item_type), Some(project_context)) => {
+            let views = projects::list_work_item_saved_views_for_user(
+                pool,
+                context.user_id,
+                context.can_access_all_projects,
+                &project_context.key,
+                item_type,
+            )
+            .await?;
+            views
+                .into_iter()
+                .map(|view| work_item_saved_view_from_domain(meta.active, &filters, per_page, &assignee_options, &cycle_options, view))
+                .collect::<Vec<_>>()
+        }
+        _ => Vec::new(),
+    };
     let parent_options = if item_type == Some("task") && !filters.project_key.is_empty() {
         match context.pool {
             Some(pool) => projects::list_work_item_summaries_filtered_for_user(
@@ -7210,6 +7497,8 @@ async fn work_item_list_page(
     } else {
         Vec::new()
     };
+    let current_view_url = work_item_page_url(meta.active, &filters, page_number, per_page);
+    let clear_default_url = format!("/web/{}?clear_default=1", meta.active);
 
     let csrf_token = context.csrf_token.clone();
     with_csrf_cookie(
@@ -7232,6 +7521,10 @@ async fn work_item_list_page(
             parent_options,
             assignee_options,
             cycle_options,
+            saved_views: saved_views.clone(),
+            has_saved_views: !saved_views.is_empty(),
+            current_view_url,
+            clear_default_url,
             pagination_pages: work_item_pagination_pages(
                 meta.active,
                 &filters,
@@ -11573,6 +11866,121 @@ fn audit_pagination_pages(
         .collect()
 }
 
+fn work_item_saved_view_from_domain(
+    active: &str,
+    current_filters: &WorkItemListFilterView,
+    current_per_page: i64,
+    assignee_options: &[ProjectMemberView],
+    cycle_options: &[ProjectCycleOptionView],
+    view: projects::WorkItemSavedView,
+) -> WorkItemSavedViewView {
+    let filters = WorkItemListFilterView {
+        q: view.filter.keyword.clone(),
+        status: view.filter.status.clone(),
+        priority: view.filter.priority.clone(),
+        project_key: view.project_key.clone(),
+        assignee_username: view.filter.assignee_username.clone(),
+        cycle_id: view.filter.cycle_id.clone(),
+        sort_by: if view.filter.sort_by.trim().is_empty() {
+            work_item_default_sort().to_string()
+        } else {
+            view.filter.sort_by.clone()
+        },
+        clear_default: false,
+    };
+    let summary = work_item_saved_view_summary(&filters, view.per_page, assignee_options, cycle_options);
+    let is_current = filters.q == current_filters.q
+        && filters.status == current_filters.status
+        && filters.priority == current_filters.priority
+        && filters.project_key == current_filters.project_key
+        && filters.assignee_username == current_filters.assignee_username
+        && filters.cycle_id == current_filters.cycle_id
+        && filters.sort_by == current_filters.sort_by
+        && view.per_page == current_per_page
+        && !current_filters.clear_default;
+
+    WorkItemSavedViewView {
+        id: view.id,
+        name: view.name,
+        summary,
+        url: work_item_page_url(active, &filters, 1, view.per_page),
+        is_default: view.is_default,
+        is_current,
+    }
+}
+
+fn work_item_saved_view_summary(
+    filters: &WorkItemListFilterView,
+    per_page: i64,
+    assignee_options: &[ProjectMemberView],
+    cycle_options: &[ProjectCycleOptionView],
+) -> String {
+    let mut parts = Vec::new();
+    if !filters.q.is_empty() {
+        parts.push(format!("关键词：{}", filters.q));
+    }
+    if !filters.status.is_empty() {
+        parts.push(format!("状态：{}", work_item_status_filter_label(&filters.status)));
+    }
+    if !filters.priority.is_empty() {
+        parts.push(format!("优先级：{}", work_item_priority_filter_label(&filters.priority)));
+    }
+    if !filters.assignee_username.is_empty() {
+        let assignee = assignee_options
+            .iter()
+            .find(|option| option.username == filters.assignee_username)
+            .map(|option| option.display_name.as_str())
+            .unwrap_or(filters.assignee_username.as_str());
+        parts.push(format!("处理人：{assignee}"));
+    }
+    if !filters.cycle_id.is_empty() {
+        let cycle_name = cycle_options
+            .iter()
+            .find(|option| option.id_text == filters.cycle_id)
+            .map(|option| option.label.as_str())
+            .unwrap_or("指定周期");
+        parts.push(format!("周期：{cycle_name}"));
+    }
+    parts.push(format!("排序：{}", work_item_sort_label(&filters.sort_by)));
+    parts.push(format!("每页 {per_page} 条"));
+
+    parts.join(" · ")
+}
+
+fn work_item_status_filter_label(status: &str) -> &'static str {
+    match status {
+        "pending" => "待处理 / 进行中 / 待确认",
+        "open" => "待处理",
+        "in_progress" => "进行中",
+        "pending_confirmation" => "待确认",
+        "done" => "已完成",
+        "resolved" => "已解决",
+        "verified" => "已验证",
+        "closed" => "已关闭",
+        "cancelled" => "已取消",
+        _ => "全部状态",
+    }
+}
+
+fn work_item_priority_filter_label(priority: &str) -> &'static str {
+    match priority {
+        "P0" => "紧急",
+        "P1" => "高",
+        "P2" => "中",
+        "P3" => "低",
+        _ => "全部优先级",
+    }
+}
+
+fn work_item_sort_label(sort_by: &str) -> &'static str {
+    match sort_by {
+        "created_desc" => "最近创建",
+        "priority_desc" => "优先级从高到低",
+        "due_date_asc" => "截止日期最近",
+        _ => "最近更新",
+    }
+}
+
 fn work_item_pagination_view(
     active: &str,
     filters: &WorkItemListFilterView,
@@ -11616,6 +12024,13 @@ fn work_item_page_url(
     push_query_param(&mut params, "priority", &filters.priority);
     push_query_param(&mut params, "project_key", &filters.project_key);
     push_query_param(&mut params, "assignee_username", &filters.assignee_username);
+    push_query_param(&mut params, "cycle_id", &filters.cycle_id);
+    if filters.sort_by != work_item_default_sort() {
+        push_query_param(&mut params, "sort", &filters.sort_by);
+    }
+    if filters.clear_default {
+        params.push("clear_default=1".to_string());
+    }
     if page > 1 {
         params.push(format!("page={page}"));
     }

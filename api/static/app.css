@@ -8060,7 +8060,7 @@ select option {
 
 .filter-bar {
   display: grid;
-  grid-template-columns: minmax(240px, 1.7fr) repeat(3, minmax(140px, 1fr)) auto;
+  grid-template-columns: minmax(240px, 1.5fr) repeat(5, minmax(130px, 1fr)) auto;
   gap: 12px;
   align-items: end;
   padding: 14px 16px 16px;
@@ -8086,6 +8086,163 @@ select option {
 .filter-shell-head span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.saved-view-section {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 0;
+}
+
+.saved-view-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.saved-view-section-head strong {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.saved-view-section-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.saved-view-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.saved-view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.saved-view-chip small {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1;
+}
+
+.saved-view-chip:hover,
+.saved-view-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
+  color: var(--brand);
+  transform: translateY(-1px);
+}
+
+.saved-view-chip.active {
+  border-color: color-mix(in srgb, var(--brand) 26%, transparent);
+  background: color-mix(in srgb, var(--brand) 10%, var(--panel));
+  color: var(--brand);
+}
+
+.saved-view-create-form {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.8fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.saved-view-name-field,
+.saved-view-default-toggle {
+  margin: 0;
+}
+
+.saved-view-name-field {
+  display: grid;
+  gap: 6px;
+}
+
+.saved-view-name-field span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.saved-view-default-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+
+.saved-view-manage-list {
+  display: grid;
+  gap: 10px;
+}
+
+.saved-view-manage-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.saved-view-manage-main {
+  display: grid;
+  gap: 6px;
+}
+
+.saved-view-manage-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.saved-view-manage-title a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.saved-view-manage-title a:hover {
+  color: var(--brand);
+}
+
+.saved-view-manage-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.saved-view-manage-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.saved-view-rename-form {
+  gap: 8px;
+  align-items: center;
+}
+
+.saved-view-rename-form input {
+  min-width: 180px;
 }
 
 .filter-actions {
@@ -9678,10 +9835,19 @@ select option {
   }
 
   .filter-bar {
-    grid-template-columns: minmax(220px, 1.5fr) repeat(2, minmax(140px, 1fr));
+    grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(140px, 1fr));
   }
 
   .filter-actions {
+    justify-content: flex-start;
+  }
+
+  .saved-view-create-form,
+  .saved-view-manage-item {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-view-manage-actions {
     justify-content: flex-start;
   }
 
@@ -10096,6 +10262,11 @@ select option {
 
   .storage-version-actions {
     justify-content: flex-start;
+  }
+
+  .saved-view-section-head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .detail-dl.inline {

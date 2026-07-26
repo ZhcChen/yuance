@@ -1,6 +1,9 @@
 use chrono::{Duration, Utc};
 use rand_core::{OsRng, RngCore};
-use sqlx::{AssertSqlSafe, Row, SqlitePool, sqlite::SqliteRow};
+use sqlx::{
+    AssertSqlSafe, Row, SqlitePool,
+    sqlite::{Sqlite, SqliteRow},
+};
 use std::borrow::Cow;
 
 use crate::{
@@ -20,6 +23,11 @@ const PROJECT_STATUS_ON_HOLD: &str = "on_hold";
 const PROJECT_STATUS_CANCELLED: &str = "cancelled";
 const PROJECT_STATUS_ARCHIVED: &str = "archived";
 const WORK_ITEM_FLOW_COMMENT_PREFIX: &str = "[yuance-flow] ";
+const WORK_ITEM_SORT_UPDATED_DESC: &str = "updated_desc";
+const WORK_ITEM_SORT_CREATED_DESC: &str = "created_desc";
+const WORK_ITEM_SORT_PRIORITY_DESC: &str = "priority_desc";
+const WORK_ITEM_SORT_DUE_DATE_ASC: &str = "due_date_asc";
+const WORK_ITEM_SAVED_VIEW_LIMIT_PER_SCOPE: i64 = 20;
 pub const COMMENT_BODY_FORMAT_PLAIN: &str = "plain";
 pub const COMMENT_BODY_FORMAT_HTML: &str = "html";
 
@@ -316,6 +324,8 @@ pub struct WorkItemListFilter {
     pub priority: String,
     pub project_key: String,
     pub assignee_username: String,
+    pub cycle_id: String,
+    pub sort_by: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -323,6 +333,29 @@ pub struct WorkItemListStats {
     pub total_items: i64,
     pub active_items: i64,
     pub high_priority_items: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkItemSavedView {
+    pub id: i64,
+    pub project_id: i64,
+    pub project_key: String,
+    pub item_type: String,
+    pub name: String,
+    pub filter: WorkItemListFilter,
+    pub per_page: i64,
+    pub is_default: bool,
+    pub cycle_name: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateWorkItemSavedViewInput {
+    pub name: String,
+    pub filter: WorkItemListFilter,
+    pub per_page: i64,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -358,11 +391,14 @@ impl<T> Paginated<T> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NormalizedWorkItemFilter {
     item_type: String,
+    keyword: String,
     keyword_like: String,
     status: String,
     priority: String,
     project_key: String,
     assignee_username: String,
+    cycle_id: Option<i64>,
+    sort_by: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -741,6 +777,312 @@ pub async fn clear_current_project(pool: &SqlitePool, user_id: i64) -> AppResult
         .bind(user_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn list_work_item_saved_views_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    project_key: &str,
+    item_type: &str,
+) -> AppResult<Vec<WorkItemSavedView>> {
+    let scope = resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
+        .await?;
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+            i64,
+            i64,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            id,
+            name,
+            keyword,
+            status,
+            priority,
+            assignee_username,
+            sort_by,
+            cycle_id,
+            COALESCE((
+                SELECT pc.name
+                FROM project_cycles pc
+                WHERE pc.id = work_item_saved_views.cycle_id
+            ), '') AS cycle_name,
+            per_page,
+            is_default,
+            created_at,
+            updated_at
+        FROM work_item_saved_views
+        WHERE user_id = ?1
+          AND project_id = ?2
+          AND item_type = ?3
+        ORDER BY is_default DESC, updated_at DESC, id DESC
+        "#,
+    )
+    .bind(user_id)
+    .bind(scope.project_id)
+    .bind(&scope.item_type)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(
+                id,
+                name,
+                keyword,
+                status,
+                priority,
+                assignee_username,
+                sort_by,
+                cycle_id,
+                cycle_name,
+                per_page,
+                is_default,
+                created_at,
+                updated_at,
+            )| WorkItemSavedView {
+                id,
+                project_id: scope.project_id,
+                project_key: scope.project_key.clone(),
+                item_type: scope.item_type.clone(),
+                name,
+                filter: WorkItemListFilter {
+                    item_type: Some(scope.item_type.clone()),
+                    keyword,
+                    status,
+                    priority,
+                    project_key: scope.project_key.clone(),
+                    assignee_username,
+                    cycle_id: cycle_id.map(|value| value.to_string()).unwrap_or_default(),
+                    sort_by,
+                },
+                per_page,
+                is_default: is_default != 0,
+                cycle_name,
+                created_at,
+                updated_at,
+            },
+        )
+        .collect())
+}
+
+pub async fn get_default_work_item_saved_view_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    project_key: &str,
+    item_type: &str,
+) -> AppResult<Option<WorkItemSavedView>> {
+    let views = list_work_item_saved_views_for_user(pool, user_id, is_super_admin, project_key, item_type)
+        .await?;
+    Ok(views.into_iter().find(|view| view.is_default))
+}
+
+pub async fn create_work_item_saved_view(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    project_key: &str,
+    item_type: &str,
+    input: CreateWorkItemSavedViewInput,
+) -> AppResult<WorkItemSavedView> {
+    let scope =
+        resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
+            .await?;
+    let name = validate_name(&input.name, "视图名称", 40)?;
+    let filter = canonicalize_work_item_saved_view_filter(scope.project_key.as_str(), &scope.item_type, input.filter)?;
+    let pagination = normalize_pagination(Pagination {
+        page: 1,
+        per_page: input.per_page,
+    })?;
+    ensure_work_item_saved_view_cycle_in_scope(pool, scope.project_id, &filter.cycle_id).await?;
+
+    let existing_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM work_item_saved_views
+        WHERE user_id = ?1
+          AND project_id = ?2
+          AND item_type = ?3
+        "#,
+    )
+    .bind(user_id)
+    .bind(scope.project_id)
+    .bind(&scope.item_type)
+    .fetch_one(pool)
+    .await?;
+    if existing_count >= WORK_ITEM_SAVED_VIEW_LIMIT_PER_SCOPE {
+        return Err(AppError::BadRequest(format!(
+            "每个项目的每类工作项最多只能保存 {} 个视图",
+            WORK_ITEM_SAVED_VIEW_LIMIT_PER_SCOPE
+        )));
+    }
+
+    let mut tx = pool.begin().await?;
+    if input.is_default {
+        clear_default_work_item_saved_views(&mut tx, user_id, scope.project_id, &scope.item_type).await?;
+    }
+    let insert_result = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO work_item_saved_views (
+            user_id,
+            project_id,
+            item_type,
+            name,
+            keyword,
+            status,
+            priority,
+            assignee_username,
+            cycle_id,
+            sort_by,
+            per_page,
+            is_default,
+            updated_at
+        )
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'))
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(scope.project_id)
+    .bind(&scope.item_type)
+    .bind(&name)
+    .bind(&filter.keyword)
+    .bind(&filter.status)
+    .bind(&filter.priority)
+    .bind(&filter.assignee_username)
+    .bind(parse_saved_view_cycle_id(&filter.cycle_id)?)
+    .bind(&filter.sort_by)
+    .bind(pagination.per_page)
+    .bind(if input.is_default { 1 } else { 0 })
+    .fetch_one(&mut *tx)
+    .await;
+    let saved_view_id = match insert_result {
+        Ok(saved_view_id) => saved_view_id,
+        Err(error) => {
+            return Err(map_work_item_saved_view_write_error(error, &name));
+        }
+    };
+    tx.commit().await?;
+
+    get_work_item_saved_view_by_id(pool, user_id, saved_view_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("保存视图不存在".to_string()))
+}
+
+pub async fn rename_work_item_saved_view(
+    pool: &SqlitePool,
+    user_id: i64,
+    saved_view_id: i64,
+    name: &str,
+) -> AppResult<WorkItemSavedView> {
+    let current = get_work_item_saved_view_by_id(pool, user_id, saved_view_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("保存视图不存在".to_string()))?;
+    let name = validate_name(name, "视图名称", 40)?;
+    if name == current.name {
+        return Ok(current);
+    }
+
+    let update_result = sqlx::query(
+        r#"
+        UPDATE work_item_saved_views
+        SET name = ?2,
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND user_id = ?3
+        "#,
+    )
+    .bind(saved_view_id)
+    .bind(&name)
+    .bind(user_id)
+    .execute(pool)
+    .await;
+    match update_result {
+        Ok(result) => {
+            if result.rows_affected() == 0 {
+                return Err(AppError::NotFound("保存视图不存在".to_string()));
+            }
+        }
+        Err(error) => return Err(map_work_item_saved_view_write_error(error, &name)),
+    }
+
+    get_work_item_saved_view_by_id(pool, user_id, saved_view_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("保存视图不存在".to_string()))
+}
+
+pub async fn set_default_work_item_saved_view(
+    pool: &SqlitePool,
+    user_id: i64,
+    saved_view_id: i64,
+) -> AppResult<WorkItemSavedView> {
+    let current = get_work_item_saved_view_by_id(pool, user_id, saved_view_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("保存视图不存在".to_string()))?;
+    if current.is_default {
+        return Ok(current);
+    }
+
+    let mut tx = pool.begin().await?;
+    clear_default_work_item_saved_views(
+        &mut tx,
+        user_id,
+        current.project_id,
+        &current.item_type,
+    )
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE work_item_saved_views
+        SET is_default = 1,
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND user_id = ?2
+        "#,
+    )
+    .bind(saved_view_id)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    get_work_item_saved_view_by_id(pool, user_id, saved_view_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("保存视图不存在".to_string()))
+}
+
+pub async fn delete_work_item_saved_view(
+    pool: &SqlitePool,
+    user_id: i64,
+    saved_view_id: i64,
+) -> AppResult<()> {
+    let result = sqlx::query(
+        "DELETE FROM work_item_saved_views WHERE id = ?1 AND user_id = ?2",
+    )
+    .bind(saved_view_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("保存视图不存在".to_string()));
+    }
     Ok(())
 }
 
@@ -2100,21 +2442,8 @@ pub async fn list_work_item_summaries_filtered_paginated(
     let normalized = normalize_work_item_filter(filter)?;
     let pagination = normalize_pagination(pagination)?;
     let total_items = count_work_item_summaries_filtered(pool, &normalized).await?;
-    let rows = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let order_sql = work_item_sort_order_sql(&normalized.sort_by);
+    let query_sql = format!(
         r#"
             SELECT
                 wi.id,
@@ -2143,17 +2472,34 @@ pub async fn list_work_item_summaries_filtered_paginated(
               AND (?4 = '' OR wi.priority = ?4)
               AND (?5 = '' OR p.project_key = ?5)
               AND (?6 = '' OR assignee.username = ?6)
+              AND (?7 IS NULL OR wi.cycle_id = ?7)
               AND wi.deleted_at IS NULL
-            ORDER BY wi.updated_at DESC, wi.id DESC
-            LIMIT ?7 OFFSET ?8
+            ORDER BY {order_sql}
+            LIMIT ?8 OFFSET ?9
             "#,
-    )
+    );
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(AssertSqlSafe(query_sql))
     .bind(&normalized.item_type)
     .bind(&normalized.keyword_like)
     .bind(&normalized.status)
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(normalized.cycle_id)
     .bind(pagination.per_page)
     .bind(pagination.offset())
     .fetch_all(pool)
@@ -2249,21 +2595,8 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
     let pagination = normalize_pagination(pagination)?;
     let total_items =
         count_work_item_summaries_filtered_for_user(pool, user_id, &normalized).await?;
-    let rows = sqlx::query_as::<
-        _,
-        (
-            i64,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-            String,
-        ),
-    >(
+    let order_sql = work_item_sort_order_sql(&normalized.sort_by);
+    let query_sql = format!(
         r#"
             SELECT
                 wi.id,
@@ -2294,11 +2627,27 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
               AND (?5 = '' OR wi.priority = ?5)
               AND (?6 = '' OR p.project_key = ?6)
               AND (?7 = '' OR assignee.username = ?7)
+              AND (?8 IS NULL OR wi.cycle_id = ?8)
               AND wi.deleted_at IS NULL
-            ORDER BY wi.updated_at DESC, wi.id DESC
-            LIMIT ?8 OFFSET ?9
+            ORDER BY {order_sql}
+            LIMIT ?9 OFFSET ?10
             "#,
-    )
+    );
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+        ),
+    >(AssertSqlSafe(query_sql))
     .bind(user_id)
     .bind(&normalized.item_type)
     .bind(&normalized.keyword_like)
@@ -2306,6 +2655,7 @@ pub async fn list_work_item_summaries_filtered_for_user_paginated(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(normalized.cycle_id)
     .bind(pagination.per_page)
     .bind(pagination.offset())
     .fetch_all(pool)
@@ -2378,11 +2728,12 @@ pub async fn work_item_list_stats_filtered_for_user(
             OR wi.description LIKE ?3
             OR p.project_key LIKE ?3
             OR p.name LIKE ?3
-          )
+        )
           AND (?4 = '' OR (?4 = 'pending' AND wi.status NOT IN ('done', 'closed', 'resolved', 'verified', 'cancelled')) OR wi.status = ?4)
           AND (?5 = '' OR wi.priority = ?5)
           AND (?6 = '' OR p.project_key = ?6)
           AND (?7 = '' OR assignee.username = ?7)
+          AND (?8 IS NULL OR wi.cycle_id = ?8)
           AND wi.deleted_at IS NULL
         "#,
     )
@@ -2393,6 +2744,7 @@ pub async fn work_item_list_stats_filtered_for_user(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(normalized.cycle_id)
     .fetch_one(pool)
     .await?;
 
@@ -5311,14 +5663,35 @@ fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<Normalize
         "" => String::new(),
         value => validate_username_ref(value)?,
     };
+    let cycle_id = match filter.cycle_id.trim() {
+        "" => None,
+        value => Some(
+            value
+                .parse::<i64>()
+                .map_err(|_| AppError::BadRequest("周期不能为空且必须是数字".to_string()))
+                .and_then(|parsed| {
+                    if parsed <= 0 {
+                        Err(AppError::BadRequest(
+                            "周期不能为空且必须是数字".to_string(),
+                        ))
+                    } else {
+                        Ok(parsed)
+                    }
+                })?,
+        ),
+    };
+    let sort_by = validate_work_item_sort(&filter.sort_by)?.to_string();
 
     Ok(NormalizedWorkItemFilter {
         item_type,
+        keyword,
         keyword_like,
         status,
         priority,
         project_key,
         assignee_username,
+        cycle_id,
+        sort_by,
     })
 }
 
@@ -5391,6 +5764,7 @@ async fn count_work_item_summaries_filtered(
           AND (?4 = '' OR wi.priority = ?4)
           AND (?5 = '' OR p.project_key = ?5)
           AND (?6 = '' OR assignee.username = ?6)
+          AND (?7 IS NULL OR wi.cycle_id = ?7)
           AND wi.deleted_at IS NULL
         "#,
     )
@@ -5400,6 +5774,7 @@ async fn count_work_item_summaries_filtered(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(normalized.cycle_id)
     .fetch_one(pool)
     .await?)
 }
@@ -5431,6 +5806,7 @@ async fn work_item_list_stats_filtered(
           AND (?4 = '' OR wi.priority = ?4)
           AND (?5 = '' OR p.project_key = ?5)
           AND (?6 = '' OR assignee.username = ?6)
+          AND (?7 IS NULL OR wi.cycle_id = ?7)
           AND wi.deleted_at IS NULL
         "#,
     )
@@ -5440,6 +5816,7 @@ async fn work_item_list_stats_filtered(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(normalized.cycle_id)
     .fetch_one(pool)
     .await?;
 
@@ -5476,6 +5853,7 @@ async fn count_work_item_summaries_filtered_for_user(
           AND (?5 = '' OR wi.priority = ?5)
           AND (?6 = '' OR p.project_key = ?6)
           AND (?7 = '' OR assignee.username = ?7)
+          AND (?8 IS NULL OR wi.cycle_id = ?8)
           AND wi.deleted_at IS NULL
         "#,
     )
@@ -5486,8 +5864,260 @@ async fn count_work_item_summaries_filtered_for_user(
     .bind(&normalized.priority)
     .bind(&normalized.project_key)
     .bind(&normalized.assignee_username)
+    .bind(normalized.cycle_id)
     .fetch_one(pool)
     .await?)
+}
+
+fn work_item_sort_order_sql(sort_by: &str) -> &'static str {
+    match sort_by {
+        WORK_ITEM_SORT_CREATED_DESC => "wi.created_at DESC, wi.id DESC",
+        WORK_ITEM_SORT_PRIORITY_DESC => {
+            "CASE wi.priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END ASC, wi.updated_at DESC, wi.id DESC"
+        }
+        WORK_ITEM_SORT_DUE_DATE_ASC => {
+            "CASE WHEN wi.due_date IS NULL OR wi.due_date = '' THEN 1 ELSE 0 END ASC, wi.due_date ASC, wi.updated_at DESC, wi.id DESC"
+        }
+        _ => "wi.updated_at DESC, wi.id DESC",
+    }
+}
+
+fn validate_work_item_sort(sort_by: &str) -> AppResult<&'static str> {
+    match sort_by.trim() {
+        "" | WORK_ITEM_SORT_UPDATED_DESC => Ok(WORK_ITEM_SORT_UPDATED_DESC),
+        WORK_ITEM_SORT_CREATED_DESC => Ok(WORK_ITEM_SORT_CREATED_DESC),
+        WORK_ITEM_SORT_PRIORITY_DESC => Ok(WORK_ITEM_SORT_PRIORITY_DESC),
+        WORK_ITEM_SORT_DUE_DATE_ASC => Ok(WORK_ITEM_SORT_DUE_DATE_ASC),
+        _ => Err(AppError::BadRequest("工作项排序方式不合法".to_string())),
+    }
+}
+
+fn parse_saved_view_cycle_id(value: &str) -> AppResult<Option<i64>> {
+    match value.trim() {
+        "" => Ok(None),
+        raw => {
+            let parsed = raw
+                .parse::<i64>()
+                .map_err(|_| AppError::BadRequest("周期不能为空且必须是数字".to_string()))?;
+            if parsed <= 0 {
+                return Err(AppError::BadRequest("周期不能为空且必须是数字".to_string()));
+            }
+            Ok(Some(parsed))
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct WorkItemSavedViewScope {
+    project_id: i64,
+    project_key: String,
+    item_type: String,
+}
+
+async fn resolve_work_item_saved_view_scope(
+    pool: &SqlitePool,
+    user_id: i64,
+    is_super_admin: bool,
+    project_key: &str,
+    item_type: &str,
+) -> AppResult<WorkItemSavedViewScope> {
+    let project_key = validate_project_key(project_key)?;
+    let item_type = validate_work_item_type(item_type)?.to_string();
+    let project = get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    if !is_super_admin && !is_project_member(pool, project.id, user_id).await? {
+        return Err(AppError::Forbidden("无权访问该项目".to_string()));
+    }
+    Ok(WorkItemSavedViewScope {
+        project_id: project.id,
+        project_key: project.project_key,
+        item_type,
+    })
+}
+
+fn canonicalize_work_item_saved_view_filter(
+    project_key: &str,
+    item_type: &str,
+    mut filter: WorkItemListFilter,
+) -> AppResult<WorkItemListFilter> {
+    filter.project_key = project_key.to_string();
+    filter.item_type = Some(item_type.to_string());
+    let normalized = normalize_work_item_filter(filter)?;
+    Ok(WorkItemListFilter {
+        item_type: (!normalized.item_type.is_empty()).then_some(normalized.item_type),
+        keyword: normalized.keyword,
+        status: normalized.status,
+        priority: normalized.priority,
+        project_key: normalized.project_key,
+        assignee_username: normalized.assignee_username,
+        cycle_id: normalized
+            .cycle_id
+            .map(|value| value.to_string())
+            .unwrap_or_default(),
+        sort_by: normalized.sort_by,
+    })
+}
+
+async fn ensure_work_item_saved_view_cycle_in_scope(
+    pool: &SqlitePool,
+    project_id: i64,
+    cycle_id: &str,
+) -> AppResult<()> {
+    let Some(cycle_id) = parse_saved_view_cycle_id(cycle_id)? else {
+        return Ok(());
+    };
+    let count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM project_cycles WHERE id = ?1 AND project_id = ?2",
+    )
+    .bind(cycle_id)
+    .bind(project_id)
+    .fetch_one(pool)
+    .await?;
+    if count == 0 {
+        return Err(AppError::BadRequest("周期不存在或不属于当前项目".to_string()));
+    }
+    Ok(())
+}
+
+async fn clear_default_work_item_saved_views(
+    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    user_id: i64,
+    project_id: i64,
+    item_type: &str,
+) -> AppResult<()> {
+    sqlx::query(
+        r#"
+        UPDATE work_item_saved_views
+        SET is_default = 0,
+            updated_at = datetime('now')
+        WHERE user_id = ?1
+          AND project_id = ?2
+          AND item_type = ?3
+        "#,
+    )
+    .bind(user_id)
+    .bind(project_id)
+    .bind(item_type)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn get_work_item_saved_view_by_id(
+    pool: &SqlitePool,
+    user_id: i64,
+    saved_view_id: i64,
+) -> AppResult<Option<WorkItemSavedView>> {
+    let row = sqlx::query_as::<
+        _,
+        (
+            i64,
+            i64,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+            String,
+            i64,
+            i64,
+            String,
+            String,
+        ),
+    >(
+        r#"
+        SELECT
+            wsv.id,
+            wsv.project_id,
+            p.project_key,
+            wsv.item_type,
+            wsv.name,
+            wsv.keyword,
+            wsv.status,
+            wsv.priority,
+            wsv.cycle_id,
+            wsv.assignee_username,
+            wsv.sort_by,
+            wsv.per_page,
+            wsv.is_default,
+            wsv.created_at,
+            wsv.updated_at
+        FROM work_item_saved_views wsv
+        JOIN projects p ON p.id = wsv.project_id
+        WHERE wsv.id = ?1
+          AND wsv.user_id = ?2
+        "#,
+    )
+    .bind(saved_view_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let Some((
+        id,
+        project_id,
+        project_key,
+        item_type,
+        name,
+        keyword,
+        status,
+        priority,
+        cycle_id,
+        assignee_username,
+        sort_by,
+        per_page,
+        is_default,
+        created_at,
+        updated_at,
+    )) = row
+    else {
+        return Ok(None);
+    };
+    let cycle_name = match cycle_id {
+        Some(cycle_id) => sqlx::query_scalar::<_, String>(
+            "SELECT name FROM project_cycles WHERE id = ?1",
+        )
+        .bind(cycle_id)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or_default(),
+        None => String::new(),
+    };
+
+    Ok(Some(WorkItemSavedView {
+        id,
+        project_id,
+        project_key: project_key.clone(),
+        item_type: item_type.clone(),
+        name,
+        filter: WorkItemListFilter {
+            item_type: Some(item_type),
+            keyword,
+            status,
+            priority,
+            project_key,
+            assignee_username,
+            cycle_id: cycle_id.map(|value| value.to_string()).unwrap_or_default(),
+            sort_by,
+        },
+        per_page,
+        is_default: is_default != 0,
+        cycle_name,
+        created_at,
+        updated_at,
+    }))
+}
+
+fn map_work_item_saved_view_write_error(error: sqlx::Error, name: &str) -> AppError {
+    let message = error.to_string();
+    if message.contains("UNIQUE constraint failed") {
+        return AppError::BadRequest(format!("保存视图“{name}”已存在，请更换名称"));
+    }
+    AppError::Database(error)
 }
 
 fn validate_project_key(project_key: &str) -> AppResult<String> {

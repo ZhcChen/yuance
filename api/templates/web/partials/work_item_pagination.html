@@ -10,6 +10,11 @@
     <input type="hidden" name="priority" value="{{ filters.priority }}">
     <input type="hidden" name="project_key" value="{{ filters.project_key }}">
     <input type="hidden" name="assignee_username" value="{{ filters.assignee_username }}">
+    <input type="hidden" name="cycle_id" value="{{ filters.cycle_id }}">
+    <input type="hidden" name="sort" value="{{ filters.sort_by }}">
+    {% if filters.clear_default %}
+    <input type="hidden" name="clear_default" value="true">
+    {% endif %}
     {% include "web/partials/pagination_size_jump.html" %}
   </form>
 </nav>

@@ -192,6 +192,22 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/bugs", get(web::user::bugs_page))
         .route("/web/work-items", post(web::user::work_items_create))
         .route(
+            "/web/work-item-views",
+            post(web::user::work_item_saved_view_create),
+        )
+        .route(
+            "/web/work-item-views/{saved_view_id}/rename",
+            post(web::user::work_item_saved_view_rename),
+        )
+        .route(
+            "/web/work-item-views/{saved_view_id}/default",
+            post(web::user::work_item_saved_view_set_default),
+        )
+        .route(
+            "/web/work-item-views/{saved_view_id}/delete",
+            post(web::user::work_item_saved_view_delete),
+        )
+        .route(
             "/web/work-items/{item_key}",
             get(web::user::work_item_detail_page),
         )
