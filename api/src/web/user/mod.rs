@@ -280,6 +280,41 @@ struct ProjectResourceDetailView {
     archive_url: String,
 }
 
+#[derive(Debug, Clone)]
+struct ProjectResourceVersionView {
+    version_label: String,
+    title: String,
+    category: String,
+    has_tags: bool,
+    tags: Vec<String>,
+    has_related_work_item: bool,
+    related_work_item_label: String,
+    has_related_cycle: bool,
+    related_cycle_label: String,
+    edited_by: String,
+    created_at: String,
+    url: String,
+    is_selected: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProjectResourceVersionDetailView {
+    version_label: String,
+    title: String,
+    category: String,
+    body_html: String,
+    has_tags: bool,
+    tags: Vec<String>,
+    has_related_work_item: bool,
+    related_work_item_label: String,
+    related_work_item_url: String,
+    has_related_cycle: bool,
+    related_cycle_label: String,
+    related_cycle_url: String,
+    edited_by: String,
+    created_at: String,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct ProjectResourceAccessGrant {
     resource_id: i64,
@@ -979,6 +1014,11 @@ struct ProjectResourceDetailTemplate {
     resource_tag_options: Vec<ProjectResourceTagOptionView>,
     resource_work_item_options: Vec<ProjectWorkItemOptionView>,
     cycle_options: Vec<ProjectCycleOptionView>,
+    versions: Vec<ProjectResourceVersionView>,
+    has_versions: bool,
+    has_selected_version: bool,
+    selected_version: ProjectResourceVersionDetailView,
+    current_resource_url: String,
     has_previous_entry: bool,
     previous_entry_url: String,
     previous_entry_title: String,
@@ -3811,6 +3851,126 @@ pub async fn project_resource_create(
     Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
 }
 
+async fn render_project_resource_detail_response(
+    state: &AppState,
+    context: WebContext<'_>,
+    project: projects::ProjectDetail,
+    resource: project_resources::ProjectResourceDetail,
+    access_token: Option<String>,
+    unlock_error: String,
+    selected_version_id: Option<i64>,
+) -> AppResult<Response> {
+    let Some(pool) = context.pool else {
+        return Ok(Redirect::to("/web/projects/YCE?tab=library").into_response());
+    };
+    let resource_tag_options = project_resources::list_project_resource_tags(pool, project.id)
+        .await?
+        .into_iter()
+        .map(project_resource_tag_option_from_summary)
+        .collect::<Vec<_>>();
+    let cycle_options = projects::list_project_cycles(pool, project.id)
+        .await?
+        .into_iter()
+        .map(|cycle| project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle)))
+        .collect::<Vec<_>>();
+    let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
+        .await?
+        .into_iter()
+        .map(project_work_item_option_from_summary)
+        .collect::<Vec<_>>();
+    let versions = project_resources::list_resource_versions(pool, project.id, resource.id)
+        .await?
+        .into_iter()
+        .map(|version| {
+            project_resource_version_from_summary(
+                version,
+                &project.project_key,
+                resource.id,
+                access_token.as_deref(),
+                selected_version_id,
+            )
+        })
+        .collect::<Vec<_>>();
+    let selected_version = if let Some(version_id) = selected_version_id {
+        let version = project_resources::get_resource_version(pool, project.id, resource.id, version_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("资料版本不存在".to_string()))?;
+        project_resource_version_from_detail(
+            version,
+            &project.project_key,
+            resource.id,
+            access_token.as_deref(),
+        )
+    } else {
+        ProjectResourceVersionDetailView::default()
+    };
+    let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
+    let can_manage_resources =
+        user_can_write_project_content_for_context(pool, &context, project.id).await?
+            && project_accepts_writes
+            && resource.status != "archived";
+    let is_unlocked = !resource.is_protected || access_token.is_some();
+    let detail_navigation =
+        load_project_resource_sequence_navigation(pool, project.id, resource.id).await?;
+    let current_resource_url = access_token
+        .as_deref()
+        .map(|token| project_resource_url_with_access(&project.project_key, resource.id, token))
+        .unwrap_or_else(|| project_resource_url(&project.project_key, resource.id));
+
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        state,
+        &csrf_token,
+        response::html(ProjectResourceDetailTemplate {
+            active: "projects",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            project: project_detail_from_domain(project),
+            resource: project_resource_from_detail(resource, access_token.as_deref()),
+            resource_category_options: project_resource_category_options(),
+            resource_tag_options,
+            resource_work_item_options,
+            cycle_options,
+            versions: versions.clone(),
+            has_versions: !versions.is_empty(),
+            has_selected_version: selected_version_id.is_some(),
+            selected_version,
+            current_resource_url,
+            has_previous_entry: detail_navigation.previous.is_some(),
+            previous_entry_url: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            previous_entry_title: detail_navigation
+                .previous
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
+            has_next_entry: detail_navigation.next.is_some(),
+            next_entry_url: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.url.clone())
+                .unwrap_or_default(),
+            next_entry_title: detail_navigation
+                .next
+                .as_ref()
+                .map(|entry| entry.title.clone())
+                .unwrap_or_default(),
+            can_manage_resources,
+            can_reset_resource_password: context.is_super_admin,
+            is_unlocked,
+            unlock_error,
+        })?
+        .into_response(),
+    )
+}
+
 pub async fn project_resource_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3843,26 +4003,6 @@ pub async fn project_resource_detail_page(
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
-    let resource_tag_options = project_resources::list_project_resource_tags(pool, project.id)
-        .await?
-        .into_iter()
-        .map(project_resource_tag_option_from_summary)
-        .collect::<Vec<_>>();
-    let cycle_options = projects::list_project_cycles(pool, project.id)
-        .await?
-        .into_iter()
-        .map(|cycle| project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle)))
-        .collect::<Vec<_>>();
-    let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
-        .await?
-        .into_iter()
-        .map(project_work_item_option_from_summary)
-        .collect::<Vec<_>>();
-    let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
-    let can_manage_resources =
-        user_can_write_project_content_for_context(pool, &context, project.id).await?
-            && project_accepts_writes
-            && resource.status != "archived";
     let access_token = if resource.is_protected
         && verify_project_resource_access_token(
             &state,
@@ -3874,57 +4014,71 @@ pub async fn project_resource_detail_page(
     } else {
         None
     };
-    let is_unlocked = !resource.is_protected || access_token.is_some();
-    let detail_navigation =
-        load_project_resource_sequence_navigation(pool, project.id, resource.id).await?;
-
-    let csrf_token = context.csrf_token.clone();
-    with_csrf_cookie(
+    render_project_resource_detail_response(
         &state,
-        &csrf_token,
-        response::html(ProjectResourceDetailTemplate {
-            active: "projects",
-            environment: state.settings.env.clone(),
-            current_user: context.current_user,
-            csrf_token: context.csrf_token,
-            system_nav: context.system_nav,
-            current_project: context.current_project,
-            topbar_project_options: context.topbar_project_options,
-            project: project_detail_from_domain(project),
-            resource: project_resource_from_detail(resource, access_token.as_deref()),
-            resource_category_options: project_resource_category_options(),
-            resource_tag_options,
-            resource_work_item_options,
-            cycle_options,
-            has_previous_entry: detail_navigation.previous.is_some(),
-            previous_entry_url: detail_navigation
-                .previous
-                .as_ref()
-                .map(|entry| entry.url.clone())
-                .unwrap_or_default(),
-            previous_entry_title: detail_navigation
-                .previous
-                .as_ref()
-                .map(|entry| entry.title.clone())
-                .unwrap_or_default(),
-            has_next_entry: detail_navigation.next.is_some(),
-            next_entry_url: detail_navigation
-                .next
-                .as_ref()
-                .map(|entry| entry.url.clone())
-                .unwrap_or_default(),
-            next_entry_title: detail_navigation
-                .next
-                .as_ref()
-                .map(|entry| entry.title.clone())
-                .unwrap_or_default(),
-            can_manage_resources,
-            can_reset_resource_password: context.is_super_admin,
-            is_unlocked,
-            unlock_error: String::new(),
-        })?
-        .into_response(),
+        context,
+        project,
+        resource,
+        access_token,
+        String::new(),
+        None,
     )
+    .await
+}
+
+pub async fn project_resource_version_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, version_id)): Path<(String, i64, i64)>,
+    Query(query): Query<ResourceAccessQuery>,
+) -> AppResult<Response> {
+    let mut context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        return Ok(Redirect::to("/web/projects/YCE?tab=library").into_response());
+    };
+    ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_project_access(pool, &context, project.id).await?;
+    let selected_project = projects::set_current_project_for_user(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &project_key,
+    )
+    .await?;
+    let topbar_pending_count = total_project_option_pending_count(&context.topbar_project_options);
+    context.current_project = Some(current_project_from_domain(
+        selected_project,
+        topbar_pending_count,
+    ));
+    refresh_context_system_nav(pool, &mut context).await?;
+    let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
+    let access_token = if resource.is_protected
+        && verify_project_resource_access_token(
+            &state,
+            &query.access,
+            context.user_id,
+            resource.id,
+        )? {
+        Some(query.access)
+    } else {
+        None
+    };
+    render_project_resource_detail_response(
+        &state,
+        context,
+        project,
+        resource,
+        access_token,
+        String::new(),
+        Some(version_id),
+    )
+    .await
 }
 
 pub async fn project_resource_unlock(
@@ -3960,21 +4114,6 @@ pub async fn project_resource_unlock(
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
-    let resource_tag_options = project_resources::list_project_resource_tags(pool, project.id)
-        .await?
-        .into_iter()
-        .map(project_resource_tag_option_from_summary)
-        .collect::<Vec<_>>();
-    let cycle_options = projects::list_project_cycles(pool, project.id)
-        .await?
-        .into_iter()
-        .map(|cycle| project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle)))
-        .collect::<Vec<_>>();
-    let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
-        .await?
-        .into_iter()
-        .map(project_work_item_option_from_summary)
-        .collect::<Vec<_>>();
     let verified =
         project_resources::verify_resource_password(pool, resource.id, &form.password).await?;
     let audit_action = if verified {
@@ -4000,11 +4139,6 @@ pub async fn project_resource_unlock(
     } else {
         None
     };
-    let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
-    let can_manage_resources =
-        user_can_write_project_content_for_context(pool, &context, project.id).await?
-            && project_accepts_writes
-            && resource.status != "archived";
     if verified {
         let redirect_url = access_token
             .as_deref()
@@ -4022,56 +4156,16 @@ pub async fn project_resource_unlock(
     } else {
         "访问密码不正确，请重新输入。".to_string()
     };
-    let detail_navigation =
-        load_project_resource_sequence_navigation(pool, project.id, resource.id).await?;
-
-    let csrf_token = context.csrf_token.clone();
-    with_csrf_cookie(
+    render_project_resource_detail_response(
         &state,
-        &csrf_token,
-        response::html(ProjectResourceDetailTemplate {
-            active: "projects",
-            environment: state.settings.env.clone(),
-            current_user: context.current_user,
-            csrf_token: context.csrf_token,
-            system_nav: context.system_nav,
-            current_project: context.current_project,
-            topbar_project_options: context.topbar_project_options,
-            project: project_detail_from_domain(project),
-            resource: project_resource_from_detail(resource, access_token.as_deref()),
-            resource_category_options: project_resource_category_options(),
-            resource_tag_options,
-            resource_work_item_options,
-            cycle_options,
-            has_previous_entry: detail_navigation.previous.is_some(),
-            previous_entry_url: detail_navigation
-                .previous
-                .as_ref()
-                .map(|entry| entry.url.clone())
-                .unwrap_or_default(),
-            previous_entry_title: detail_navigation
-                .previous
-                .as_ref()
-                .map(|entry| entry.title.clone())
-                .unwrap_or_default(),
-            has_next_entry: detail_navigation.next.is_some(),
-            next_entry_url: detail_navigation
-                .next
-                .as_ref()
-                .map(|entry| entry.url.clone())
-                .unwrap_or_default(),
-            next_entry_title: detail_navigation
-                .next
-                .as_ref()
-                .map(|entry| entry.title.clone())
-                .unwrap_or_default(),
-            can_manage_resources,
-            can_reset_resource_password: context.is_super_admin,
-            is_unlocked: verified,
-            unlock_error,
-        })?
-        .into_response(),
+        context,
+        project,
+        resource,
+        access_token,
+        unlock_error,
+        None,
     )
+    .await
 }
 
 pub async fn project_resource_password_reset(
@@ -8577,6 +8671,28 @@ fn project_resource_url_with_access(
     format!("/web/projects/{project_key}/resources/{resource_id}?{encoded}")
 }
 
+fn project_resource_version_url(project_key: &str, resource_id: i64, version_id: i64) -> String {
+    format!("/web/projects/{project_key}/resources/{resource_id}/versions/{version_id}")
+}
+
+fn project_resource_version_url_with_access(
+    project_key: &str,
+    resource_id: i64,
+    version_id: i64,
+    access_token: Option<&str>,
+) -> String {
+    let base = project_resource_version_url(project_key, resource_id, version_id);
+    let Some(access_token) = access_token.filter(|token| !token.trim().is_empty()) else {
+        return base;
+    };
+    let encoded =
+        serde_urlencoded::to_string([("access", access_token)]).unwrap_or_else(|_| String::new());
+    if encoded.is_empty() {
+        return base;
+    }
+    format!("{base}?{encoded}")
+}
+
 fn project_resource_edit_url(project_key: &str, resource_id: i64) -> String {
     format!("/web/projects/{project_key}/resources/{resource_id}/edit")
 }
@@ -9379,6 +9495,86 @@ fn project_resource_from_detail(
         updated_at: display_timestamp(resource.updated_at),
         edit_url: project_resource_edit_url(&project_key, resource_id),
         archive_url: project_resource_archive_url(&project_key, resource_id),
+    }
+}
+
+fn project_resource_version_from_summary(
+    version: project_resources::ProjectResourceVersionSummary,
+    project_key: &str,
+    resource_id: i64,
+    access_token: Option<&str>,
+    selected_version_id: Option<i64>,
+) -> ProjectResourceVersionView {
+    ProjectResourceVersionView {
+        version_label: format!("V{}", version.version_number),
+        title: version.title,
+        category: project_resources::category_label(&version.category).to_string(),
+        has_tags: !version.tags.is_empty(),
+        tags: version.tags,
+        has_related_work_item: version.related_work_item.is_some(),
+        related_work_item_label: version
+            .related_work_item
+            .as_ref()
+            .map(|item| format!("{} · {}", item.item_key, item.title))
+            .unwrap_or_default(),
+        has_related_cycle: version.related_cycle.is_some(),
+        related_cycle_label: version
+            .related_cycle
+            .as_ref()
+            .map(|cycle| format!("{} · {} ~ {}", cycle.name, cycle.start_date, cycle.end_date))
+            .unwrap_or_default(),
+        edited_by: fallback_text(version.edited_by_display_name, "系统"),
+        created_at: display_timestamp(version.created_at),
+        url: project_resource_version_url_with_access(
+            project_key,
+            resource_id,
+            version.id,
+            access_token,
+        ),
+        is_selected: selected_version_id == Some(version.id),
+    }
+}
+
+fn project_resource_version_from_detail(
+    version: project_resources::ProjectResourceVersionDetail,
+    project_key: &str,
+    _resource_id: i64,
+    access_token: Option<&str>,
+) -> ProjectResourceVersionDetailView {
+    let body_html = access_token
+        .map(|token| append_resource_access_token_to_body(&version.body_html, token))
+        .unwrap_or(version.body_html);
+    ProjectResourceVersionDetailView {
+        version_label: format!("V{}", version.version_number),
+        title: version.title,
+        category: project_resources::category_label(&version.category).to_string(),
+        body_html,
+        has_tags: !version.tags.is_empty(),
+        tags: version.tags,
+        has_related_work_item: version.related_work_item.is_some(),
+        related_work_item_label: version
+            .related_work_item
+            .as_ref()
+            .map(|item| format!("{} · {}", item.item_key, item.title))
+            .unwrap_or_default(),
+        related_work_item_url: version
+            .related_work_item
+            .as_ref()
+            .map(|item| format!("/web/work-items/{}", item.item_key))
+            .unwrap_or_default(),
+        has_related_cycle: version.related_cycle.is_some(),
+        related_cycle_label: version
+            .related_cycle
+            .as_ref()
+            .map(|cycle| format!("{} · {} ~ {}", cycle.name, cycle.start_date, cycle.end_date))
+            .unwrap_or_default(),
+        related_cycle_url: version
+            .related_cycle
+            .as_ref()
+            .map(|cycle| format!("{}#cycle-{}", project_cycles_url(project_key), cycle.id))
+            .unwrap_or_default(),
+        edited_by: fallback_text(version.edited_by_display_name, "系统"),
+        created_at: display_timestamp(version.created_at),
     }
 }
 

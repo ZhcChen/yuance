@@ -467,7 +467,7 @@ flowchart TB
 **Verification:**
 - 标签、关联与筛选链路通过集成测试验证。
 
-- [ ] **Unit 7: 资料版本历史与只读快照查看**
+- [x] **Unit 7: 资料版本历史与只读快照查看**
 
 **Goal:** 为资料编辑行为保留版本历史，并可查看历史快照。
 
@@ -476,7 +476,7 @@ flowchart TB
 **Dependencies:** Unit 6
 
 **Files:**
-- Create: `api/migrations/202607260003_create_project_resource_versions.sql`
+- Create: `api/migrations/202607260004_create_project_resource_versions.sql`
 - Modify: `api/src/domains/project_resources.rs`
 - Modify: `api/src/web/router.rs`
 - Modify: `api/src/web/user/mod.rs`

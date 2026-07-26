@@ -1110,6 +1110,237 @@ async fn api_project_resources_reject_cross_project_relations() {
 }
 
 #[tokio::test]
+async fn project_resource_versions_track_edits_and_render_snapshot_pages() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        admin.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "版本资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>V1 原始正文</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password: String::new(),
+            tags: vec!["首版".to_string()],
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("resource should create");
+
+    project_resources::update_resource(
+        &pool,
+        admin.user_id,
+        resource.id,
+        project_resources::UpdateProjectResourceInput {
+            title: "版本资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>V2 第二版正文</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password_action: project_resources::RESOURCE_ACCESS_PASSWORD_ACTION_KEEP
+                .to_string(),
+            access_password: String::new(),
+            tags: vec!["第二版".to_string()],
+            related_work_item_key: "YCE-TASK-2".to_string(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("resource second version should save");
+    project_resources::update_resource(
+        &pool,
+        admin.user_id,
+        resource.id,
+        project_resources::UpdateProjectResourceInput {
+            title: "版本资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>V3 最终正文</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password_action: project_resources::RESOURCE_ACCESS_PASSWORD_ACTION_KEEP
+                .to_string(),
+            access_password: String::new(),
+            tags: vec!["最终版".to_string()],
+            related_work_item_key: "YCE-TASK-2".to_string(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("resource third version should save");
+
+    let versions = project_resources::list_resource_versions(&pool, project.id, resource.id)
+        .await
+        .expect("versions should load");
+    assert_eq!(versions.len(), 3);
+    assert_eq!(
+        versions.iter().map(|version| version.version_number).collect::<Vec<_>>(),
+        vec![3, 2, 1]
+    );
+    assert_eq!(versions[0].tags, vec!["最终版".to_string()]);
+    assert_eq!(
+        versions[1]
+            .related_work_item
+            .as_ref()
+            .map(|item| item.item_key.as_str()),
+        Some("YCE-TASK-2")
+    );
+
+    let first_version = versions.last().expect("first version should exist");
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/versions/{}",
+                    resource.id, first_version.id
+                ))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let status = response.status();
+    let body = response_body(response).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body.contains("V1 原始正文"));
+    assert!(body.contains("V1"));
+    assert!(body.contains("资料快照"));
+}
+
+#[tokio::test]
+async fn protected_project_resource_version_pages_require_unlock_for_body() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let resource = project_resources::create_resource(
+        &pool,
+        admin.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "受保护版本资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>secret-v1</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password: "safe-pass".to_string(),
+            tags: vec!["受保护".to_string()],
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("resource should create");
+    project_resources::update_resource(
+        &pool,
+        admin.user_id,
+        resource.id,
+        project_resources::UpdateProjectResourceInput {
+            title: "受保护版本资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>secret-v2</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password_action: project_resources::RESOURCE_ACCESS_PASSWORD_ACTION_KEEP
+                .to_string(),
+            access_password: String::new(),
+            tags: vec!["受保护".to_string(), "第二版".to_string()],
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("resource version should update");
+
+    let versions = project_resources::list_resource_versions(&pool, project.id, resource.id)
+        .await
+        .expect("versions should load");
+    assert_eq!(versions.len(), 2);
+    let first_version = versions.last().expect("first version should exist");
+
+    let locked_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/versions/{}",
+                    resource.id, first_version.id
+                ))
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let locked_status = locked_response.status();
+    let locked_body = response_body(locked_response).await;
+    assert_eq!(locked_status, StatusCode::OK, "{locked_body}");
+    assert!(locked_body.contains("资料快照"));
+    assert!(!locked_body.contains("secret-v1"));
+
+    let unlock_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/web/projects/YCE/resources/{}/unlock", resource.id))
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!("_csrf={CSRF_TOKEN}&password=safe-pass")))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unlock_response.status(), StatusCode::SEE_OTHER);
+    let access_query = unlock_response
+        .headers()
+        .get(header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|location| location.split('?').nth(1))
+        .expect("unlock redirect should contain access token")
+        .to_string();
+
+    let unlocked_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/projects/YCE/resources/{}/versions/{}?{}",
+                    resource.id, first_version.id, access_query
+                ))
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let unlocked_status = unlocked_response.status();
+    let unlocked_body = response_body(unlocked_response).await;
+    assert_eq!(unlocked_status, StatusCode::OK, "{unlocked_body}");
+    assert!(unlocked_body.contains("secret-v1"));
+}
+
+#[tokio::test]
 async fn web_super_admin_can_reset_project_resource_password_from_locked_state() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
