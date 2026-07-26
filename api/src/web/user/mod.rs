@@ -184,6 +184,12 @@ struct ProjectUserOption {
     roles: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct DiscussionMentionOption {
+    username: String,
+    display_name: String,
+}
+
 #[derive(Debug, Clone)]
 struct ProjectResourceView {
     id: i64,
@@ -1071,6 +1077,7 @@ struct WorkItemDetailTemplate {
     status_options: Vec<WorkItemStatusOption>,
     attachments: Vec<AttachmentView>,
     comments: Vec<WorkItemComment>,
+    discussion_mention_options_json: String,
     discussion_count: usize,
     has_comments: bool,
     flow_history_records: Vec<WorkItemFlowRecord>,
@@ -1098,6 +1105,7 @@ struct WorkItemDetailPartialTemplate {
     item: WorkItemDetailView,
     status_options: Vec<WorkItemStatusOption>,
     comments: Vec<WorkItemComment>,
+    discussion_mention_options_json: String,
     discussion_count: usize,
     has_comments: bool,
     can_manage_work_items: bool,
@@ -4609,6 +4617,8 @@ pub async fn work_item_detail_page(
         rbac::user_has_permission(pool, context.user_id, "work_item.manage").await?
             && can_manage_work_items;
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
+    let discussion_mention_options_json =
+        discussion_mention_options_json(&assignee_options, &context.current_username);
     let flow_history_pagination = normalize_web_pagination(None, None)?;
     let (flow_history_records, flow_history_pagination, flow_history_pagination_pages) =
         load_work_item_flow_history(pool, &item, flow_history_pagination).await?;
@@ -4633,6 +4643,7 @@ pub async fn work_item_detail_page(
             system_nav: context.system_nav,
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
+            discussion_mention_options_json,
             discussion_count,
             has_comments: discussion_count > 0,
             item,
@@ -7715,10 +7726,15 @@ pub async fn work_item_detail_partial(
     )
     .await?
         && projects::ensure_project_accepts_writes(&project.status).is_ok();
+    let assignee_options = load_project_member_options(pool, &item.project_key).await?;
     let status_options = work_item_status_options(&item.kind, &item.status_code)?;
     let discussion_count = discussion_comment_count(&comments);
     response::html(WorkItemDetailPartialTemplate {
         csrf_token: csrf::ensure_token(&headers),
+        discussion_mention_options_json: discussion_mention_options_json(
+            &assignee_options,
+            &user.username,
+        ),
         discussion_count,
         has_comments: discussion_count > 0,
         item,
@@ -9012,6 +9028,21 @@ fn project_user_option_from_summary(user: users::UserSummary) -> ProjectUserOpti
     }
 }
 
+fn discussion_mention_options_json(
+    members: &[ProjectMemberView],
+    current_username: &str,
+) -> String {
+    let options = members
+        .iter()
+        .filter(|member| member.username != current_username)
+        .map(|member| DiscussionMentionOption {
+            username: member.username.clone(),
+            display_name: member.display_name.clone(),
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_string(&options).unwrap_or_else(|_| "[]".to_string())
+}
+
 fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
     let (status, status_tone) = attachment_status_label(&attachment.status);
     let is_previewable_image = is_previewable_image_content_type(&attachment.content_type);
@@ -9230,6 +9261,7 @@ fn notification_view(notification: notifications::NotificationSummary) -> Notifi
         id: notification.id,
         kind_label: match notification.kind.as_str() {
             "comment_replied" => "回复",
+            "comment_mentioned" => "提及",
             _ => "指派",
         },
         title: fallback_text(notification.title, "消息通知"),
@@ -13303,6 +13335,7 @@ fn render_sample_work_item_detail_page(
             system_nav: context.system_nav,
             current_project: context.current_project,
             topbar_project_options: context.topbar_project_options,
+            discussion_mention_options_json: partial.discussion_mention_options_json.clone(),
             discussion_count: partial.discussion_count,
             has_comments: partial.has_comments,
             item: partial.item,
@@ -13343,6 +13376,17 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
     let status_options = work_item_status_options("任务", "in_progress")?;
     Ok(WorkItemDetailPartialTemplate {
         csrf_token: "sample-csrf-token".to_string(),
+        discussion_mention_options_json: serde_json::json!([
+            {
+                "username": "qa_li",
+                "display_name": "测试李"
+            },
+            {
+                "username": "dev_wang",
+                "display_name": "开发王"
+            }
+        ])
+        .to_string(),
         status_options,
         item: WorkItemDetailView {
             id: 2,

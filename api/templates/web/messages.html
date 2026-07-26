@@ -8,7 +8,7 @@
     <div>
       <span class="section-kicker">协作通知</span>
       <h1>消息中心</h1>
-      <p>查看工作项指派和讨论回复，未读消息 {{ unread_count }} 条。</p>
+      <p>查看工作项指派、提及和讨论回复，未读消息 {{ unread_count }} 条。</p>
     </div>
     {% if unread_count > 0 %}
     <form method="post" action="/web/messages/read-all" data-message-read-all-form data-success-message="消息已全部标为已读。">
@@ -57,7 +57,7 @@
   {% else %}
   <div class="empty-state message-empty">
     <strong>{{ empty_title }}</strong>
-    <span>新的指派和回复会显示在这里。</span>
+    <span>新的指派、提及和回复会显示在这里。</span>
   </div>
   {% endif %}
 </section>

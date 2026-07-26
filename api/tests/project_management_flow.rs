@@ -2457,6 +2457,165 @@ async fn web_messages_page_paginates_notifications_with_shared_controls() {
 }
 
 #[tokio::test]
+async fn work_item_comment_mentions_create_notifications_and_open_to_comment_anchor() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let mentioned = create_regular_user(&pool, "mention_target", "提及成员").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "mention_target", "member")
+        .await
+        .expect("mentioned user should join project");
+
+    let comment = projects::add_work_item_comment_reply_with_format(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        r#"<p>请 <span data-yuance-mention-username="mention_target" data-yuance-mention-display-name="提及成员">@提及成员</span> 帮忙复核。</p>"#,
+        "html",
+        None,
+    )
+    .await
+    .expect("mention comment should create");
+
+    let mention_notice = notifications::list_for_user(&pool, mentioned.user_id, true, 10)
+        .await
+        .expect("notifications should load")
+        .into_iter()
+        .find(|item| item.kind == "comment_mentioned" && item.comment_id == Some(comment.id))
+        .expect("mention notification should exist");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let messages_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?filter=unread")
+                .header(header::COOKIE, mentioned.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(messages_response.status(), StatusCode::OK);
+    let messages_body = response_body(messages_response).await;
+    assert!(messages_body.contains("提及"), "{messages_body}");
+
+    let detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, admin.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains("data-rich-mention-options="));
+    assert!(detail_body.contains("mention_target"));
+    assert!(detail_body.contains(r#"data-yuance-mention-username="mention_target""#));
+
+    let open_response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/messages/{}/open", mention_notice.id))
+                .header(header::COOKIE, mentioned.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(open_response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        open_response.headers().get(header::LOCATION).unwrap(),
+        format!("/web/work-items/YCE-TASK-2#comment-{}", comment.id).as_str()
+    );
+    assert_eq!(
+        notifications::unread_count(&pool, mentioned.user_id)
+            .await
+            .expect("unread count should load"),
+        0
+    );
+}
+
+#[tokio::test]
+async fn work_item_comment_mentions_reject_non_project_members() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    create_regular_user(&pool, "mention_outsider", "提及外部成员").await;
+
+    let error = projects::add_work_item_comment_reply_with_format(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        r#"<p><span data-yuance-mention-username="mention_outsider" data-yuance-mention-display-name="提及外部成员">@提及外部成员</span> 不应被允许。</p>"#,
+        "html",
+        None,
+    )
+    .await
+    .expect_err("non-member mention should fail");
+
+    assert!(
+        error.to_string().contains("不是当前项目成员"),
+        "{}",
+        error
+    );
+}
+
+#[tokio::test]
+async fn work_item_reply_mentions_deduplicate_reply_notification_for_same_target() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let replier = create_regular_user(&pool, "mention_replier", "提及回复者").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "mention_replier", "member")
+        .await
+        .expect("replier should join project");
+
+    let parent_comment_id = projects::add_work_item_comment_reply(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        "请继续同步处理进展",
+        None,
+    )
+    .await
+    .expect("parent comment should create")
+    .id;
+
+    let reply = projects::add_work_item_comment_reply_with_format(
+        &pool,
+        replier.user_id,
+        "YCE-TASK-2",
+        r#"<p>收到，<span data-yuance-mention-username="admin" data-yuance-mention-display-name="系统管理员">@系统管理员</span> 我来继续跟进。</p>"#,
+        "html",
+        Some(parent_comment_id),
+    )
+    .await
+    .expect("reply should create");
+
+    let admin_notifications = notifications::list_for_user(&pool, admin.user_id, true, 10)
+        .await
+        .expect("admin notifications should load");
+    assert!(admin_notifications.iter().any(|item| {
+        item.kind == "comment_mentioned" && item.comment_id == Some(reply.id)
+    }));
+    assert!(!admin_notifications.iter().any(|item| {
+        item.kind == "comment_replied" && item.comment_id == Some(reply.id)
+    }));
+}
+
+#[tokio::test]
 async fn web_messages_page_clamps_unread_badge_to_99() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

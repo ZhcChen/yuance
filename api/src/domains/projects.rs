@@ -4,7 +4,7 @@ use sqlx::{
     AssertSqlSafe, Row, SqlitePool,
     sqlite::{Sqlite, SqliteRow},
 };
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
 use crate::{
     domains::notifications::{self, CreateNotification},
@@ -5046,6 +5046,14 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
         }
         reply_recipient = parent.author_user_id;
     }
+    let mention_usernames =
+        extract_comment_mention_usernames(&prepared.body, &prepared.body_format)?;
+    let mention_targets =
+        resolve_project_mention_targets(pool, project_id, &mention_usernames).await?;
+    let mention_target_user_ids = mention_targets
+        .iter()
+        .map(|target| target.user_id)
+        .collect::<HashSet<_>>();
 
     let mut tx = pool.begin().await?;
     let comment_id = sqlx::query_scalar::<_, i64>(
@@ -5084,7 +5092,9 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
     .execute(&mut *tx)
     .await?;
 
-    if let Some(recipient_user_id) = reply_recipient {
+    if let Some(recipient_user_id) = reply_recipient
+        && !mention_target_user_ids.contains(&recipient_user_id)
+    {
         notifications::create_in_transaction(
             &mut tx,
             CreateNotification {
@@ -5095,6 +5105,26 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
                 work_item_id,
                 comment_id: Some(comment_id),
                 title: &format!("你在 {item_key} 的内容收到回复"),
+                body: &prepared.plain_text,
+            },
+        )
+        .await?;
+    }
+
+    for target in &mention_targets {
+        if target.user_id == actor_user_id {
+            continue;
+        }
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id: target.user_id,
+                actor_user_id,
+                actor_display_name_snapshot: &actor_display_name_snapshot,
+                kind: "comment_mentioned",
+                work_item_id,
+                comment_id: Some(comment_id),
+                title: &format!("你在 {item_key} 中被提及"),
                 body: &prepared.plain_text,
             },
         )
@@ -5125,7 +5155,14 @@ pub async fn add_work_item_comment_reply_with_format_and_actor(
 
     tx.commit().await?;
     if let Some(recipient_user_id) = reply_recipient {
-        realtime::publish_topbar_refresh_for_user(recipient_user_id);
+        if !mention_target_user_ids.contains(&recipient_user_id) {
+            realtime::publish_topbar_refresh_for_user(recipient_user_id);
+        }
+    }
+    for target in &mention_targets {
+        if target.user_id != actor_user_id {
+            realtime::publish_topbar_refresh_for_user(target.user_id);
+        }
     }
     realtime::publish_work_item_discussion_refresh(item_key);
 
@@ -5237,6 +5274,14 @@ pub async fn publish_work_item_comment_draft(
         }
         reply_recipient = parent.author_user_id;
     }
+    let mention_usernames =
+        extract_comment_mention_usernames(&prepared.body, &prepared.body_format)?;
+    let mention_targets =
+        resolve_project_mention_targets(pool, project_id, &mention_usernames).await?;
+    let mention_target_user_ids = mention_targets
+        .iter()
+        .map(|target| target.user_id)
+        .collect::<HashSet<_>>();
 
     let mut tx = pool.begin().await?;
     let updated_count = sqlx::query(
@@ -5277,7 +5322,9 @@ pub async fn publish_work_item_comment_draft(
     .execute(&mut *tx)
     .await?;
 
-    if let Some(recipient_user_id) = reply_recipient {
+    if let Some(recipient_user_id) = reply_recipient
+        && !mention_target_user_ids.contains(&recipient_user_id)
+    {
         notifications::create_in_transaction(
             &mut tx,
             CreateNotification {
@@ -5288,6 +5335,26 @@ pub async fn publish_work_item_comment_draft(
                 work_item_id,
                 comment_id: Some(comment_id),
                 title: &format!("你在 {item_key} 的内容收到回复"),
+                body: &prepared.plain_text,
+            },
+        )
+        .await?;
+    }
+
+    for target in &mention_targets {
+        if target.user_id == actor_user_id {
+            continue;
+        }
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id: target.user_id,
+                actor_user_id,
+                actor_display_name_snapshot: &actor_display_name_snapshot,
+                kind: "comment_mentioned",
+                work_item_id,
+                comment_id: Some(comment_id),
+                title: &format!("你在 {item_key} 中被提及"),
                 body: &prepared.plain_text,
             },
         )
@@ -5318,7 +5385,14 @@ pub async fn publish_work_item_comment_draft(
 
     tx.commit().await?;
     if let Some(recipient_user_id) = reply_recipient {
-        realtime::publish_topbar_refresh_for_user(recipient_user_id);
+        if !mention_target_user_ids.contains(&recipient_user_id) {
+            realtime::publish_topbar_refresh_for_user(recipient_user_id);
+        }
+    }
+    for target in &mention_targets {
+        if target.user_id != actor_user_id {
+            realtime::publish_topbar_refresh_for_user(target.user_id);
+        }
     }
     realtime::publish_work_item_discussion_refresh(item_key);
 
@@ -5521,6 +5595,13 @@ async fn update_work_item_comment_with_format_internal(
     {
         return Err(AppError::Forbidden("无权修改该评论".to_string()));
     }
+    let previous_mentions = extract_comment_mention_usernames(&comment.body, &comment.body_format)?
+        .into_iter()
+        .collect::<HashSet<_>>();
+    let mention_usernames =
+        extract_comment_mention_usernames(&prepared.body, &prepared.body_format)?;
+    let mention_targets =
+        resolve_project_mention_targets(pool, project_id, &mention_usernames).await?;
     ensure_comment_body_attachment_references(pool, comment_id, &prepared.body).await?;
 
     let mut tx = pool.begin().await?;
@@ -5580,7 +5661,32 @@ async fn update_work_item_comment_with_format_internal(
     .execute(&mut *tx)
     .await?;
 
+    for target in &mention_targets {
+        if target.user_id == actor_user_id || previous_mentions.contains(&target.username) {
+            continue;
+        }
+        notifications::create_in_transaction(
+            &mut tx,
+            CreateNotification {
+                recipient_user_id: target.user_id,
+                actor_user_id,
+                actor_display_name_snapshot: "",
+                kind: "comment_mentioned",
+                work_item_id,
+                comment_id: Some(comment_id),
+                title: &format!("你在 {item_key} 中被提及"),
+                body: &prepared.plain_text,
+            },
+        )
+        .await?;
+    }
+
     tx.commit().await?;
+    for target in &mention_targets {
+        if target.user_id != actor_user_id && !previous_mentions.contains(&target.username) {
+            realtime::publish_topbar_refresh_for_user(target.user_id);
+        }
+    }
     realtime::publish_work_item_discussion_refresh(item_key);
 
     get_work_item_comment(pool, work_item_id, comment_id).await
@@ -6796,6 +6902,12 @@ struct PreparedWorkItemCommentBody {
     plain_text: String,
 }
 
+#[derive(Debug, Clone)]
+struct WorkItemMentionTarget {
+    user_id: i64,
+    username: String,
+}
+
 fn prepare_work_item_comment_body(
     body: &str,
     body_format: &str,
@@ -6913,6 +7025,7 @@ fn sanitize_comment_html(body: &str) -> String {
             "hr",
             "img",
             "pre",
+            "span",
             "video",
         ])
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
@@ -6924,6 +7037,8 @@ fn sanitize_comment_html(body: &str) -> String {
             "data-yuance-align",
             "data-yuance-file-kind",
             "data-yuance-file-ext",
+            "data-yuance-mention-display-name",
+            "data-yuance-mention-username",
         ])
         .attribute_filter(|element, attribute, value| match (element, attribute) {
             ("img", "src") | ("source", "src") | ("video", "src")
@@ -6955,6 +7070,7 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
             "hr",
             "img",
             "pre",
+            "span",
             "video",
         ])
         .add_tag_attributes("img", &["src", "alt", "title", "loading"])
@@ -6966,6 +7082,8 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
             "data-yuance-align",
             "data-yuance-file-kind",
             "data-yuance-file-ext",
+            "data-yuance-mention-display-name",
+            "data-yuance-mention-username",
         ])
         .attribute_filter(
             move |element, attribute, value| match (element, attribute) {
@@ -6980,6 +7098,82 @@ fn sanitize_work_item_description_html(body: &str, item_key: &str) -> String {
         )
         .clean(body)
         .to_string()
+}
+
+fn extract_comment_mention_usernames(body: &str, body_format: &str) -> AppResult<Vec<String>> {
+    if body_format != COMMENT_BODY_FORMAT_HTML {
+        return Ok(Vec::new());
+    }
+    let mut usernames = Vec::new();
+    let mut search_from = 0;
+    while let Some(relative_start) = body[search_from..].find('<') {
+        let tag_start = search_from + relative_start;
+        let Some(relative_end) = body[tag_start..].find('>') else {
+            break;
+        };
+        let tag_end = tag_start + relative_end + 1;
+        let tag_html = &body[tag_start..tag_end];
+        if let Some(username) = html_attribute_value(tag_html, "data-yuance-mention-username") {
+            let username = validate_username_ref(&username)?;
+            if !usernames.contains(&username) {
+                usernames.push(username);
+            }
+        }
+        search_from = tag_end;
+    }
+    Ok(usernames)
+}
+
+async fn resolve_project_mention_targets(
+    pool: &SqlitePool,
+    project_id: i64,
+    usernames: &[String],
+) -> AppResult<Vec<WorkItemMentionTarget>> {
+    if usernames.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut query = sqlx::QueryBuilder::<Sqlite>::new(
+        r#"
+        SELECT u.id, u.username, u.display_name
+        FROM users u
+        JOIN project_members pm ON pm.user_id = u.id
+        WHERE pm.project_id = "#,
+    );
+    query
+        .push_bind(project_id)
+        .push(" AND u.status = 'active' AND u.username IN (");
+    {
+        let mut separated = query.separated(", ");
+        for username in usernames {
+            separated.push_bind(username);
+        }
+    }
+    query.push(")");
+
+    let resolved = query
+        .build_query_as::<(i64, String, String)>()
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|(user_id, username, _display_name)| WorkItemMentionTarget {
+            user_id,
+            username,
+        })
+        .collect::<Vec<_>>();
+    let missing = usernames
+        .iter()
+        .filter(|username| !resolved.iter().any(|target| &target.username == *username))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(AppError::BadRequest(format!(
+            "以下被提及用户不是当前项目成员：{}",
+            missing.join("、")
+        )));
+    }
+
+    Ok(resolved)
 }
 
 fn looks_like_rich_work_item_description(description: &str) -> bool {

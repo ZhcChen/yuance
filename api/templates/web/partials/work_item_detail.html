@@ -13,7 +13,7 @@
   <div class="work-item-description-body discussion-rich-body">{{ item.description_html|safe }}</div>
 </section>
 
-<section class="discussion-section" aria-labelledby="discussion-title" data-work-item-discussion data-item-key="{{ item.key }}" {% if can_manage_work_items && !item.is_deleted %}data-discussion-has-composer{% endif %}>
+<section class="discussion-section" aria-labelledby="discussion-title" data-work-item-discussion data-item-key="{{ item.key }}" data-discussion-mention-options="{{ discussion_mention_options_json }}" {% if can_manage_work_items && !item.is_deleted %}data-discussion-has-composer{% endif %}>
   <div class="content-section-head discussion-heading">
     <div class="content-section-copy">
       <span class="section-kicker">协作记录</span>
@@ -35,7 +35,7 @@
       <div class="discussion-composer-avatar" data-user-avatar data-avatar-name="我" aria-hidden="true">我</div>
       <div class="discussion-composer-main">
         <label class="sr-only" for="discussion-body-main">发表内容</label>
-        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-placeholder="请输入内容...">
+        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-rich-mention-options="{{ discussion_mention_options_json }}" data-placeholder="请输入内容...">
           {% include "web/partials/rich_text_toolbar.html" %}
           <div id="discussion-body-main" class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
         </div>
@@ -132,7 +132,7 @@
             <input type="hidden" name="body" value="" data-discussion-body>
             <div class="discussion-composer-main">
               <div class="discussion-replying-to">回复 <strong>{{ comment.author }}</strong></div>
-              <div class="rich-text-editor rich-text-editor-compact" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-parent-id="{{ comment.id }}" data-placeholder="请输入内容...">
+              <div class="rich-text-editor rich-text-editor-compact" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-parent-id="{{ comment.id }}" data-rich-mention-options="{{ discussion_mention_options_json }}" data-placeholder="请输入内容...">
                 {% include "web/partials/rich_text_toolbar.html" %}
                 <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
               </div>
@@ -181,7 +181,7 @@
       <input type="hidden" name="body" value="" data-discussion-body>
       <div class="modal-field">
         <span class="field-label">内容</span>
-        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-id="{{ comment.id }}" data-rich-initial-html="{{ comment.body_html }}" data-placeholder="请输入内容...">
+        <div class="rich-text-editor" data-rich-text-editor data-item-key="{{ item.key }}" data-comment-id="{{ comment.id }}" data-rich-mention-options="{{ discussion_mention_options_json }}" data-rich-initial-html="{{ comment.body_html }}" data-placeholder="请输入内容...">
           {% include "web/partials/rich_text_toolbar.html" %}
           <div class="rich-text-input" contenteditable="true" role="textbox" aria-multiline="true" data-rich-text-input data-placeholder="请输入内容..."></div>
         </div>

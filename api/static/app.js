@@ -65,6 +65,7 @@
     pointerOriginY: 0,
   };
   var activeRichAttachmentMenu = null;
+  var activeRichMention = null;
   var AVATAR_COLORS = [
     "#1f5fbf",
     "#2d8a68",
@@ -647,7 +648,13 @@
   }
 
   function notificationKindLabel(kind) {
-    return kind === "comment_replied" ? "回复" : "指派";
+    if (kind === "comment_replied") {
+      return "回复";
+    }
+    if (kind === "comment_mentioned") {
+      return "提及";
+    }
+    return "指派";
   }
 
   function notificationText(value, fallback) {
@@ -1164,6 +1171,7 @@
     }
     workItemDiscussionRefreshPromise = (async function () {
       try {
+        closeRichMentionPanel();
         var previousCommentIds = discussionCommentIds(root);
         var previousCountNode = root.querySelector("[data-discussion-count]");
         var previousCount = discussionCountValue(previousCountNode);
@@ -1183,6 +1191,14 @@
         var nextRoot = fragment.querySelector("[data-work-item-discussion][data-item-key]");
         if (!nextRoot) {
           return false;
+        }
+        if (nextRoot.dataset.discussionMentionOptions) {
+          root.dataset.discussionMentionOptions = nextRoot.dataset.discussionMentionOptions;
+          var currentComposerEditor = root.querySelector("[data-discussion-main-composer] [data-rich-text-editor]");
+          if (currentComposerEditor) {
+            currentComposerEditor.dataset.richMentionOptions = nextRoot.dataset.discussionMentionOptions;
+            delete currentComposerEditor.richMentionOptionsCache;
+          }
         }
         var currentCount = root.querySelector("[data-discussion-count]");
         var nextCount = nextRoot.querySelector("[data-discussion-count]");
@@ -3864,6 +3880,404 @@
     return editor ? editor.querySelector("[data-rich-text-input]") : null;
   }
 
+  function richMentionOptions(editor) {
+    if (!editor) {
+      return [];
+    }
+    if (Array.isArray(editor.richMentionOptionsCache)) {
+      return editor.richMentionOptionsCache;
+    }
+    var raw = editor.dataset.richMentionOptions
+      || editor.closest("[data-work-item-discussion]")?.dataset.discussionMentionOptions
+      || "[]";
+    var options = [];
+    try {
+      options = JSON.parse(raw);
+    } catch (_error) {
+      options = [];
+    }
+    editor.richMentionOptionsCache = Array.isArray(options)
+      ? options.filter(function (option) {
+          return option
+            && typeof option.username === "string"
+            && option.username.trim()
+            && typeof option.display_name === "string"
+            && option.display_name.trim();
+        }).map(function (option) {
+          return {
+            username: option.username.trim(),
+            display_name: option.display_name.trim(),
+          };
+        })
+      : [];
+    return editor.richMentionOptionsCache;
+  }
+
+  function hydrateRichMentionNode(node) {
+    if (!node) {
+      return;
+    }
+    var username = String(node.dataset.yuanceMentionUsername || "").trim();
+    if (!username) {
+      return;
+    }
+    var displayName = String(node.dataset.yuanceMentionDisplayName || "").trim();
+    node.setAttribute("contenteditable", "false");
+    node.textContent = "@" + (displayName || username);
+  }
+
+  function hydrateRichMentionNodes(editor) {
+    var input = richTextInput(editor);
+    if (!input) {
+      return;
+    }
+    input.querySelectorAll("[data-yuance-mention-username]").forEach(hydrateRichMentionNode);
+  }
+
+  function currentRichSelectionRange(input) {
+    var selection = window.getSelection && window.getSelection();
+    if (
+      !input ||
+      !selection ||
+      selection.rangeCount === 0 ||
+      !selection.isCollapsed ||
+      !input.contains(selection.anchorNode)
+    ) {
+      return null;
+    }
+    return selection.getRangeAt(0).cloneRange();
+  }
+
+  function richMentionTriggerAllowed(editor) {
+    var input = richTextInput(editor);
+    var range = currentRichSelectionRange(input);
+    if (!range || !richMentionOptions(editor).length) {
+      return false;
+    }
+    var anchorElement = range.startContainer.nodeType === Node.ELEMENT_NODE
+      ? range.startContainer
+      : range.startContainer.parentElement;
+    if (anchorElement && anchorElement.closest("[data-rich-attachment], [data-yuance-mention-username]")) {
+      return false;
+    }
+    var prefixRange = range.cloneRange();
+    prefixRange.selectNodeContents(input);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    var prev = String(prefixRange.toString() || "").replace(/\u00a0/g, " ").slice(-1);
+    return !prev || /[\s([{"'“‘,，。！？!?;:：、\/\\<>-]/.test(prev);
+  }
+
+  function filterRichMentionOptions(editor, query) {
+    var normalizedQuery = String(query || "").trim().toLowerCase();
+    var options = richMentionOptions(editor);
+    if (!normalizedQuery) {
+      return options.slice(0, 6);
+    }
+    return options
+      .map(function (option, index) {
+        var username = option.username.toLowerCase();
+        var displayName = option.display_name.toLowerCase();
+        var score = 2;
+        if (username.indexOf(normalizedQuery) === 0 || displayName.indexOf(normalizedQuery) === 0) {
+          score = 0;
+        } else if (username.indexOf(normalizedQuery) >= 0 || displayName.indexOf(normalizedQuery) >= 0) {
+          score = 1;
+        }
+        return { option: option, score: score, index: index };
+      })
+      .filter(function (entry) {
+        return entry.score < 2;
+      })
+      .sort(function (left, right) {
+        if (left.score !== right.score) {
+          return left.score - right.score;
+        }
+        return left.index - right.index;
+      })
+      .slice(0, 6)
+      .map(function (entry) {
+        return entry.option;
+      });
+  }
+
+  function closeRichMentionPanel() {
+    if (!activeRichMention) {
+      return;
+    }
+    if (activeRichMention.panel) {
+      activeRichMention.panel.remove();
+    }
+    activeRichMention = null;
+  }
+
+  function richMentionContext(state) {
+    if (!state || !state.editor) {
+      return null;
+    }
+    var input = richTextInput(state.editor);
+    var selection = window.getSelection && window.getSelection();
+    if (
+      !input ||
+      !selection ||
+      selection.rangeCount === 0 ||
+      !selection.isCollapsed ||
+      !input.contains(selection.anchorNode)
+    ) {
+      return null;
+    }
+    var anchorElement = selection.anchorNode.nodeType === Node.ELEMENT_NODE
+      ? selection.anchorNode
+      : selection.anchorNode.parentElement;
+    if (anchorElement && anchorElement.closest("[data-rich-attachment], [data-yuance-mention-username]")) {
+      return null;
+    }
+    var range = state.triggerRange.cloneRange();
+    try {
+      range.setEnd(selection.anchorNode, selection.anchorOffset);
+    } catch (_error) {
+      return null;
+    }
+    var text = String(range.toString() || "").replace(/\u00a0/g, " ");
+    if (!text.startsWith("@") || /[\r\n]/.test(text)) {
+      return null;
+    }
+    var query = text.slice(1);
+    if (/\s/.test(query)) {
+      return null;
+    }
+    state.currentRange = selection.getRangeAt(0).cloneRange();
+    return { query: query };
+  }
+
+  function renderRichMentionPanel(state) {
+    var panel = state?.panel;
+    if (!panel) {
+      return;
+    }
+    var options = state.options || [];
+    if (options.length && state.activeIndex >= options.length) {
+      state.activeIndex = 0;
+    }
+    panel.innerHTML = "";
+    if (!options.length) {
+      var empty = document.createElement("div");
+      empty.className = "rich-mention-empty";
+      empty.textContent = "未找到匹配的项目成员";
+      panel.appendChild(empty);
+      return;
+    }
+    options.forEach(function (option, index) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "rich-mention-option" + (index === state.activeIndex ? " is-active" : "");
+      button.dataset.richMentionOption = String(index);
+      var title = document.createElement("strong");
+      title.textContent = option.display_name;
+      var meta = document.createElement("span");
+      meta.textContent = "@" + option.username;
+      button.append(title, meta);
+      panel.appendChild(button);
+    });
+  }
+
+  function richMentionCaretRect(state) {
+    var range = state?.currentRange ? state.currentRange.cloneRange() : null;
+    if (!range) {
+      var input = richTextInput(state?.editor);
+      range = currentRichSelectionRange(input);
+    }
+    if (!range) {
+      return null;
+    }
+    range.collapse(true);
+    var rect = range.getBoundingClientRect();
+    if (rect && (rect.width || rect.height || rect.top || rect.left || rect.bottom || rect.right)) {
+      return rect;
+    }
+    var marker = document.createElement("span");
+    marker.textContent = "\u200b";
+    range.insertNode(marker);
+    rect = marker.getBoundingClientRect();
+    marker.remove();
+    return rect;
+  }
+
+  function positionRichMentionPanel(state) {
+    var panel = state?.panel;
+    var rect = richMentionCaretRect(state);
+    if (!panel || !rect) {
+      return;
+    }
+    panel.hidden = false;
+    panel.style.left = "-9999px";
+    panel.style.top = "-9999px";
+    var panelWidth = panel.offsetWidth || 280;
+    var panelHeight = panel.offsetHeight || 0;
+    var viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    var left = Math.max(12, Math.min(rect.left, viewportWidth - panelWidth - 12));
+    var top = rect.bottom + 10;
+    if (panelHeight && top + panelHeight > viewportHeight - 12) {
+      top = Math.max(12, rect.top - panelHeight - 10);
+    }
+    panel.style.left = Math.round(left) + "px";
+    panel.style.top = Math.round(top) + "px";
+  }
+
+  function openRichMentionPanel(editor, triggerRange) {
+    closeRichMentionPanel();
+    var panel = document.createElement("div");
+    panel.className = "rich-mention-panel";
+    panel.dataset.richMentionPanel = "";
+    panel.hidden = true;
+    panel.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+    });
+    document.body.appendChild(panel);
+    activeRichMention = {
+      editor: editor,
+      panel: panel,
+      triggerRange: triggerRange.cloneRange(),
+      currentRange: null,
+      options: [],
+      activeIndex: 0,
+      lastQuery: "",
+    };
+    syncActiveRichMention(editor);
+  }
+
+  function syncActiveRichMention(editor) {
+    if (!activeRichMention || activeRichMention.editor !== editor) {
+      return;
+    }
+    var context = richMentionContext(activeRichMention);
+    if (!context) {
+      closeRichMentionPanel();
+      return;
+    }
+    if (activeRichMention.lastQuery !== context.query) {
+      activeRichMention.activeIndex = 0;
+      activeRichMention.lastQuery = context.query;
+    }
+    activeRichMention.options = filterRichMentionOptions(editor, context.query);
+    renderRichMentionPanel(activeRichMention);
+    positionRichMentionPanel(activeRichMention);
+  }
+
+  function handleRichMentionInput(editor) {
+    if (!editor) {
+      return;
+    }
+    if (editor.richPendingMentionTriggerRange) {
+      var triggerRange = editor.richPendingMentionTriggerRange;
+      editor.richPendingMentionTriggerRange = null;
+      openRichMentionPanel(editor, triggerRange);
+      return;
+    }
+    if (activeRichMention && activeRichMention.editor === editor) {
+      syncActiveRichMention(editor);
+    }
+  }
+
+  function moveRichMentionSelection(step) {
+    if (!activeRichMention || !activeRichMention.options.length) {
+      return false;
+    }
+    var count = activeRichMention.options.length;
+    activeRichMention.activeIndex =
+      (activeRichMention.activeIndex + step + count) % count;
+    renderRichMentionPanel(activeRichMention);
+    positionRichMentionPanel(activeRichMention);
+    return true;
+  }
+
+  function insertRichMention(option) {
+    if (!activeRichMention || !option) {
+      return false;
+    }
+    var editor = activeRichMention.editor;
+    var input = richTextInput(editor);
+    var selection = window.getSelection && window.getSelection();
+    var replaceRange = activeRichMention.triggerRange.cloneRange();
+    var currentRange = activeRichMention.currentRange
+      ? activeRichMention.currentRange.cloneRange()
+      : currentRichSelectionRange(input);
+    if (!input || !selection || !currentRange) {
+      return false;
+    }
+    try {
+      replaceRange.setEnd(currentRange.endContainer, currentRange.endOffset);
+    } catch (_error) {
+      return false;
+    }
+    replaceRange.deleteContents();
+    var mention = document.createElement("span");
+    mention.dataset.yuanceMentionUsername = option.username;
+    mention.dataset.yuanceMentionDisplayName = option.display_name;
+    hydrateRichMentionNode(mention);
+    var spacer = document.createTextNode("\u00a0");
+    var fragment = document.createDocumentFragment();
+    fragment.append(mention, spacer);
+    replaceRange.insertNode(fragment);
+    var caretRange = document.createRange();
+    caretRange.setStart(spacer, spacer.textContent.length);
+    caretRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(caretRange);
+    closeRichMentionPanel();
+    input.focus({ preventScroll: true });
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return true;
+  }
+
+  function chooseRichMentionOption(index) {
+    if (!activeRichMention || !activeRichMention.options.length) {
+      return false;
+    }
+    var targetIndex = Number(index);
+    if (!Number.isFinite(targetIndex) || targetIndex < 0 || targetIndex >= activeRichMention.options.length) {
+      targetIndex = activeRichMention.activeIndex;
+    }
+    return insertRichMention(activeRichMention.options[targetIndex]);
+  }
+
+  function handleRichMentionEditorKeydown(event, editor) {
+    if (!editor) {
+      return false;
+    }
+    if (activeRichMention && activeRichMention.editor === editor) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        return moveRichMentionSelection(1);
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        return moveRichMentionSelection(-1);
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+        if (activeRichMention.options.length) {
+          event.preventDefault();
+          return chooseRichMentionOption(activeRichMention.activeIndex);
+        }
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRichMentionPanel();
+        return true;
+      }
+    }
+    if (event.ctrlKey || event.metaKey || event.altKey) {
+      return false;
+    }
+    if (event.key === "@" && richMentionTriggerAllowed(editor)) {
+      var range = currentRichSelectionRange(richTextInput(editor));
+      if (range) {
+        editor.richPendingMentionTriggerRange = range;
+      }
+    }
+    return false;
+  }
+
   function discussionBodyInput(form) {
     return form ? form.querySelector("[data-discussion-body]") : null;
   }
@@ -5453,6 +5867,7 @@
     if (!input || !files.length) {
       return;
     }
+    closeRichMentionPanel();
     var nodes = files.map(function (file) {
       var node = createRichAttachmentNode(file);
       node.richFile = file;
@@ -5476,6 +5891,7 @@
         input.dataset.richInitialLoaded = "true";
       }
       hydrateStoredRichAttachments(editor);
+      hydrateRichMentionNodes(editor);
       editor.addEventListener("click", function (event) {
         if (event.target.closest("[data-rich-command]")) {
           return;
@@ -5486,6 +5902,17 @@
         } else {
           clearRichAttachmentSelection(editor, null);
         }
+        window.setTimeout(function () {
+          if (activeRichMention && activeRichMention.editor === editor) {
+            syncActiveRichMention(editor);
+          }
+        }, 0);
+      });
+      input.addEventListener("keydown", function (event) {
+        handleRichMentionEditorKeydown(event, editor);
+      });
+      input.addEventListener("input", function () {
+        handleRichMentionInput(editor);
       });
       input.addEventListener("paste", function (event) {
         var files = Array.from(event.clipboardData?.files || []);
@@ -9353,6 +9780,7 @@
     var replyToggle = event.target.closest("[data-discussion-reply-toggle]");
     if (replyToggle) {
       event.preventDefault();
+      closeRichMentionPanel();
       var replyForm = document.getElementById(replyToggle.dataset.discussionReplyToggle || "");
       if (replyForm) {
         var shouldOpen = replyForm.hidden;
@@ -9378,7 +9806,15 @@
     var richCommand = event.target.closest("[data-rich-command]");
     if (richCommand) {
       event.preventDefault();
+      closeRichMentionPanel();
       richTextCommand(richCommand.dataset.richCommand || "", richCommand.closest("[data-rich-text-editor]"));
+      return;
+    }
+
+    var richMentionOption = event.target.closest("[data-rich-mention-option]");
+    if (richMentionOption) {
+      event.preventDefault();
+      chooseRichMentionOption(richMentionOption.dataset.richMentionOption);
       return;
     }
 
@@ -9468,6 +9904,9 @@
     }
     if (!event.target.closest("[data-user-combobox]")) {
       closeUserComboboxes();
+    }
+    if (!event.target.closest("[data-rich-mention-panel]") && !event.target.closest("[data-rich-text-editor]")) {
+      closeRichMentionPanel();
     }
   });
 
@@ -9652,6 +10091,10 @@
     }
 
     if (event.key === "Escape") {
+      if (activeRichMention && activeRichMention.panel && !activeRichMention.panel.hidden) {
+        closeRichMentionPanel();
+        return;
+      }
       if (activeRichAttachmentMenu && !activeRichAttachmentMenu.hidden) {
         closeRichAttachmentMenu();
         return;
@@ -9663,6 +10106,18 @@
       closeDropdowns();
       closeDrawers();
     }
+  });
+
+  document.addEventListener("selectionchange", function () {
+    if (!activeRichMention) {
+      return;
+    }
+    window.requestAnimationFrame(function () {
+      if (!activeRichMention) {
+        return;
+      }
+      syncActiveRichMention(activeRichMention.editor);
+    });
   });
 
   document.body.addEventListener("htmx:configRequest", function (event) {
