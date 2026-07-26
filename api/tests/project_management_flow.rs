@@ -5329,6 +5329,58 @@ async fn web_current_project_redirects_resource_detail_to_selected_project_libra
 }
 
 #[tokio::test]
+async fn web_current_project_redirects_cycle_detail_to_selected_project_cycles() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "切项目周期回退".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/current-project")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&project_key=OPS&return_to=%2Fweb%2Fprojects%2FYCE%2Fcycles%2F{}",
+                    cycle.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/projects/OPS?tab=cycles"
+    );
+    let current = projects::get_current_project_for_user(&pool, initialized.user_id, true)
+        .await
+        .expect("current project should load")
+        .expect("current project should exist");
+    assert_eq!(current.project_key, "OPS");
+}
+
+#[tokio::test]
 async fn web_current_project_falls_back_for_unsafe_return_paths() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
