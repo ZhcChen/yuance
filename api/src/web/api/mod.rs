@@ -154,10 +154,30 @@ pub struct ProjectResourcePayload {
     pub summary: String,
     pub status: String,
     pub is_protected: bool,
+    pub tags: Vec<String>,
+    pub related_work_item: Option<ProjectResourceWorkItemRelationPayload>,
+    pub related_cycle: Option<ProjectResourceCycleRelationPayload>,
     pub created_by: String,
     pub updated_by: String,
     pub created_at: String,
     pub updated_at: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectResourceWorkItemRelationPayload {
+    pub key: String,
+    pub item_type: String,
+    pub title: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectResourceCycleRelationPayload {
+    pub id: i64,
+    pub name: String,
+    pub start_date: String,
+    pub end_date: String,
     pub url: String,
 }
 
@@ -833,6 +853,12 @@ pub struct ResourceQuery {
     category: String,
     #[serde(default)]
     status: String,
+    #[serde(default)]
+    tag: String,
+    #[serde(default)]
+    related_work_item_key: String,
+    #[serde(default)]
+    related_cycle_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -846,6 +872,12 @@ pub struct CreateProjectResourceRequest {
     body_format: String,
     #[serde(default)]
     access_password: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    related_work_item_key: String,
+    #[serde(default)]
+    related_cycle_id: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -862,6 +894,12 @@ pub struct UpdateProjectResourceRequest {
     access_password_action: String,
     #[serde(default)]
     access_password: String,
+    #[serde(default)]
+    tags: Option<Vec<String>>,
+    #[serde(default)]
+    related_work_item_key: Option<String>,
+    #[serde(default)]
+    related_cycle_id: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2701,6 +2739,9 @@ pub async fn list_project_resources(
             keyword: query.q,
             category: query.category,
             status: query.status,
+            tag: query.tag,
+            related_work_item_key: query.related_work_item_key,
+            related_cycle_id: parse_api_optional_i64(&query.related_cycle_id)?,
         },
     )
     .await?
@@ -2739,6 +2780,9 @@ pub async fn create_project_resource(
             body: payload.body,
             body_format: payload.body_format,
             access_password: payload.access_password,
+            tags: payload.tags,
+            related_work_item_key: payload.related_work_item_key,
+            related_cycle_id: parse_api_optional_cycle_id(payload.related_cycle_id)?,
             actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
@@ -2805,6 +2849,20 @@ pub async fn update_project_resource(
                 .unwrap_or_else(|| resource.body_format.clone()),
             access_password_action: payload.access_password_action,
             access_password: payload.access_password,
+            tags: payload.tags.unwrap_or_else(|| resource.tags.clone()),
+            related_work_item_key: payload
+                .related_work_item_key
+                .unwrap_or_else(|| {
+                    resource
+                        .related_work_item
+                        .as_ref()
+                        .map(|item| item.item_key.clone())
+                        .unwrap_or_default()
+                }),
+            related_cycle_id: parse_api_optional_cycle_id_with_fallback(
+                payload.related_cycle_id,
+                resource.related_cycle.as_ref().map(|cycle| cycle.id),
+            )?,
             actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
     )
@@ -4736,6 +4794,59 @@ fn normalize_api_pagination(
     Ok(projects::Pagination { page, per_page })
 }
 
+fn parse_api_optional_i64(value: &str) -> AppResult<Option<i64>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let parsed = value
+        .parse::<i64>()
+        .map_err(|_| AppError::BadRequest("参数必须是有效数字".to_string()))?;
+    if parsed <= 0 {
+        return Err(AppError::BadRequest("参数必须大于 0".to_string()));
+    }
+    Ok(Some(parsed))
+}
+
+fn parse_api_optional_cycle_id(
+    value: Option<serde_json::Value>,
+) -> AppResult<Option<i64>> {
+    parse_api_optional_cycle_id_with_fallback(value, None)
+}
+
+fn parse_api_optional_cycle_id_with_fallback(
+    value: Option<serde_json::Value>,
+    fallback: Option<i64>,
+) -> AppResult<Option<i64>> {
+    match value {
+        None => Ok(fallback),
+        Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Number(number)) => {
+            let Some(parsed) = number.as_i64() else {
+                return Err(AppError::BadRequest("关联周期 ID 无效".to_string()));
+            };
+            if parsed <= 0 {
+                return Err(AppError::BadRequest("关联周期 ID 无效".to_string()));
+            }
+            Ok(Some(parsed))
+        }
+        Some(serde_json::Value::String(text)) => {
+            let text = text.trim();
+            if text.is_empty() {
+                return Ok(None);
+            }
+            let parsed = text
+                .parse::<i64>()
+                .map_err(|_| AppError::BadRequest("关联周期 ID 无效".to_string()))?;
+            if parsed <= 0 {
+                return Err(AppError::BadRequest("关联周期 ID 无效".to_string()));
+            }
+            Ok(Some(parsed))
+        }
+        Some(_) => Err(AppError::BadRequest("关联周期 ID 无效".to_string())),
+    }
+}
+
 fn paginate_api_items<T>(items: Vec<T>, pagination: projects::Pagination) -> PaginatedPayload<T>
 where
     T: Serialize,
@@ -4886,9 +4997,10 @@ fn project_resource_summary_payload(
     resource: project_resources::ProjectResourceSummary,
 ) -> ProjectResourcePayload {
     let is_protected = resource.is_protected;
+    let project_key = resource.project_key.clone();
     ProjectResourcePayload {
         id: resource.id,
-        project_key: resource.project_key.clone(),
+        project_key: project_key.clone(),
         title: resource.title,
         category: resource.category,
         body: String::new(),
@@ -4900,6 +5012,13 @@ fn project_resource_summary_payload(
         },
         status: resource.status,
         is_protected,
+        tags: resource.tags,
+        related_work_item: resource
+            .related_work_item
+            .map(project_resource_work_item_relation_payload),
+        related_cycle: resource
+            .related_cycle
+            .map(|cycle| project_resource_cycle_relation_payload(&project_key, cycle)),
         created_by: resource.created_by_display_name,
         updated_by: resource.updated_by_display_name,
         created_at: resource.created_at,
@@ -4915,9 +5034,10 @@ fn project_resource_payload(
     resource: project_resources::ProjectResourceDetail,
 ) -> ProjectResourcePayload {
     let is_protected = resource.is_protected;
+    let project_key = resource.project_key.clone();
     ProjectResourcePayload {
         id: resource.id,
-        project_key: resource.project_key.clone(),
+        project_key: project_key.clone(),
         title: resource.title,
         category: resource.category,
         body: if is_protected {
@@ -4933,6 +5053,13 @@ fn project_resource_payload(
         },
         status: resource.status,
         is_protected,
+        tags: resource.tags,
+        related_work_item: resource
+            .related_work_item
+            .map(project_resource_work_item_relation_payload),
+        related_cycle: resource
+            .related_cycle
+            .map(|cycle| project_resource_cycle_relation_payload(&project_key, cycle)),
         created_by: resource.created_by_display_name,
         updated_by: resource.updated_by_display_name,
         created_at: resource.created_at,
@@ -4947,9 +5074,10 @@ fn project_resource_payload(
 fn project_resource_unlocked_payload(
     resource: project_resources::ProjectResourceDetail,
 ) -> ProjectResourcePayload {
+    let project_key = resource.project_key.clone();
     ProjectResourcePayload {
         id: resource.id,
-        project_key: resource.project_key.clone(),
+        project_key: project_key.clone(),
         title: resource.title,
         category: resource.category,
         body: resource.body,
@@ -4957,6 +5085,13 @@ fn project_resource_unlocked_payload(
         summary: resource.summary,
         status: resource.status,
         is_protected: resource.is_protected,
+        tags: resource.tags,
+        related_work_item: resource
+            .related_work_item
+            .map(project_resource_work_item_relation_payload),
+        related_cycle: resource
+            .related_cycle
+            .map(|cycle| project_resource_cycle_relation_payload(&project_key, cycle)),
         created_by: resource.created_by_display_name,
         updated_by: resource.updated_by_display_name,
         created_at: resource.created_at,
@@ -4965,6 +5100,30 @@ fn project_resource_unlocked_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+    }
+}
+
+fn project_resource_work_item_relation_payload(
+    relation: project_resources::ProjectResourceWorkItemRelation,
+) -> ProjectResourceWorkItemRelationPayload {
+    ProjectResourceWorkItemRelationPayload {
+        key: relation.item_key.clone(),
+        item_type: relation.item_type,
+        title: relation.title,
+        url: format!("/web/work-items/{}", relation.item_key),
+    }
+}
+
+fn project_resource_cycle_relation_payload(
+    project_key: &str,
+    relation: project_resources::ProjectResourceCycleRelation,
+) -> ProjectResourceCycleRelationPayload {
+    ProjectResourceCycleRelationPayload {
+        id: relation.id,
+        name: relation.name,
+        start_date: relation.start_date,
+        end_date: relation.end_date,
+        url: format!("/web/projects/{project_key}/cycles#cycle-{}", relation.id),
     }
 }
 

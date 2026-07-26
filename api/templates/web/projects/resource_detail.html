@@ -55,6 +55,44 @@
     </div>
   </section>
 
+  <section class="project-tabs-card resource-summary-card">
+    <div class="project-tabs-head">
+      <div>
+        <p class="eyebrow">资料标签与关联</p>
+        <h2>结构化信息</h2>
+      </div>
+    </div>
+    <div class="resource-summary-grid">
+      <div class="resource-summary-block">
+        <strong>标签</strong>
+        {% if resource.has_tags %}
+        <div class="resource-chip-row">
+          {% for tag in resource.tags %}
+          <span class="resource-chip">#{{ tag }}</span>
+          {% endfor %}
+        </div>
+        {% else %}
+        <span class="empty-inline">未设置标签</span>
+        {% endif %}
+      </div>
+      <div class="resource-summary-block">
+        <strong>关联对象</strong>
+        {% if resource.has_related_work_item || resource.has_related_cycle %}
+        <div class="resource-link-row">
+          {% if resource.has_related_work_item %}
+          <a class="resource-link-chip" href="{{ resource.related_work_item_url }}">关联工作项 · {{ resource.related_work_item_label }}</a>
+          {% endif %}
+          {% if resource.has_related_cycle %}
+          <a class="resource-link-chip" href="{{ resource.related_cycle_url }}">关联周期 · {{ resource.related_cycle_label }}</a>
+          {% endif %}
+        </div>
+        {% else %}
+        <span class="empty-inline">未关联工作项或周期</span>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+
   {% if resource.is_protected && !is_unlocked %}
   <section class="resource-lock-panel">
     <div class="resource-lock-card">
@@ -168,6 +206,28 @@
             {% endfor %}
           </select>
         </label>
+        <label>
+          标签
+          <input name="tags" value="{{ resource.tags_input }}" list="resource-detail-tag-suggestions" placeholder="多个标签用逗号分隔" data-resource-field>
+        </label>
+        <label>
+          关联工作项
+          <select name="related_work_item_key" data-resource-field data-select-searchable data-select-search-placeholder="搜索工作项">
+            <option value="">不关联</option>
+            {% for option in resource_work_item_options %}
+            <option value="{{ option.key }}" {% if resource.related_work_item_key == option.key %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          关联周期
+          <select name="related_cycle_id" data-resource-field data-select-searchable data-select-search-placeholder="搜索周期">
+            <option value="">不关联</option>
+            {% for option in cycle_options %}
+            <option value="{{ option.id }}" {% if resource.related_cycle_id_text == option.id_text %}selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
         <div class="wide-field">
           <fieldset class="form-fieldset">
             <legend>访问保护</legend>
@@ -210,5 +270,10 @@
     </form>
   </section>
 </aside>
+<datalist id="resource-detail-tag-suggestions">
+  {% for option in resource_tag_options %}
+  <option value="{{ option.name }}"></option>
+  {% endfor %}
+</datalist>
 {% endif %}
 {% endblock %}

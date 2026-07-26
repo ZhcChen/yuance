@@ -1,6 +1,9 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+};
 
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use crate::{
     domains::auth,
@@ -18,6 +21,30 @@ pub struct ProjectResourceFilter {
     pub keyword: String,
     pub category: String,
     pub status: String,
+    pub tag: String,
+    pub related_work_item_key: String,
+    pub related_cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectResourceTagSummary {
+    pub name: String,
+    pub usage_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectResourceWorkItemRelation {
+    pub item_key: String,
+    pub item_type: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectResourceCycleRelation {
+    pub id: i64,
+    pub name: String,
+    pub start_date: String,
+    pub end_date: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +59,9 @@ pub struct ProjectResourceSummary {
     pub summary: String,
     pub status: String,
     pub is_protected: bool,
+    pub tags: Vec<String>,
+    pub related_work_item: Option<ProjectResourceWorkItemRelation>,
+    pub related_cycle: Option<ProjectResourceCycleRelation>,
     pub created_by_display_name: String,
     pub updated_by_display_name: String,
     pub created_at: String,
@@ -51,6 +81,9 @@ pub struct ProjectResourceDetail {
     pub summary: String,
     pub status: String,
     pub is_protected: bool,
+    pub tags: Vec<String>,
+    pub related_work_item: Option<ProjectResourceWorkItemRelation>,
+    pub related_cycle: Option<ProjectResourceCycleRelation>,
     pub created_by_display_name: String,
     pub updated_by_display_name: String,
     pub archived_by_display_name: String,
@@ -67,6 +100,9 @@ pub struct CreateProjectResourceInput {
     pub body: String,
     pub body_format: String,
     pub access_password: String,
+    pub tags: Vec<String>,
+    pub related_work_item_key: String,
+    pub related_cycle_id: Option<i64>,
     pub actor_display_name_snapshot: String,
 }
 
@@ -78,6 +114,9 @@ pub struct UpdateProjectResourceInput {
     pub body_format: String,
     pub access_password_action: String,
     pub access_password: String,
+    pub tags: Vec<String>,
+    pub related_work_item_key: String,
+    pub related_cycle_id: Option<i64>,
     pub actor_display_name_snapshot: String,
 }
 
@@ -93,6 +132,12 @@ struct PreparedResourceBody {
     body: String,
     body_format: String,
     plain_text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NormalizedResourceTag {
+    name: String,
+    normalized_name: String,
 }
 
 type ResourceRow = (
@@ -130,6 +175,10 @@ pub async fn list_resources(
     };
     let category = normalize_category_filter(&filter.category)?;
     let status = normalize_status_filter(&filter.status)?;
+    let tag = normalize_tag_filter(&filter.tag)?;
+    let related_work_item_key =
+        validate_optional_text(&filter.related_work_item_key, "关联工作项", 40)?;
+    let related_cycle_id = normalize_related_cycle_id(filter.related_cycle_id)?;
 
     let rows = sqlx::query_as::<_, ResourceRow>(
         r#"
@@ -164,6 +213,39 @@ pub async fn list_resources(
             OR pr.category LIKE ?4
             OR (pr.access_password_hash = '' AND pr.body LIKE ?4)
           )
+          AND (
+            ?5 = ''
+            OR EXISTS (
+                SELECT 1
+                FROM project_resource_tag_relations prtr
+                JOIN project_resource_tags prt ON prt.id = prtr.tag_id
+                WHERE prtr.resource_id = pr.id
+                  AND prt.normalized_name = ?5
+            )
+          )
+          AND (
+            ?6 = ''
+            OR EXISTS (
+                SELECT 1
+                FROM project_resource_relations prr
+                JOIN work_items wi ON wi.id = prr.related_id
+                WHERE prr.resource_id = pr.id
+                  AND prr.relation_type = 'work_item'
+                  AND wi.deleted_at IS NULL
+                  AND wi.item_key = ?6
+            )
+          )
+          AND (
+            ?7 IS NULL
+            OR EXISTS (
+                SELECT 1
+                FROM project_resource_relations prr
+                JOIN project_cycles pc ON pc.id = prr.related_id
+                WHERE prr.resource_id = pr.id
+                  AND prr.relation_type = 'cycle'
+                  AND pc.id = ?7
+            )
+          )
         ORDER BY
           CASE pr.status WHEN 'active' THEN 0 ELSE 1 END,
           pr.updated_at DESC,
@@ -174,10 +256,48 @@ pub async fn list_resources(
     .bind(status)
     .bind(category)
     .bind(keyword_like)
+    .bind(tag)
+    .bind(related_work_item_key)
+    .bind(related_cycle_id)
     .fetch_all(pool)
     .await?;
 
-    Ok(rows.into_iter().map(resource_summary_from_row).collect())
+    let mut resources = rows
+        .into_iter()
+        .map(resource_summary_from_row)
+        .collect::<Vec<_>>();
+    populate_resource_summary_metadata(pool, &mut resources).await?;
+    Ok(resources)
+}
+
+pub async fn list_project_resource_tags(
+    pool: &SqlitePool,
+    project_id: i64,
+) -> AppResult<Vec<ProjectResourceTagSummary>> {
+    if project_id <= 0 {
+        return Err(AppError::BadRequest("项目 ID 无效".to_string()));
+    }
+
+    let rows = sqlx::query_as::<_, (String, i64)>(
+        r#"
+        SELECT
+            prt.name,
+            COUNT(prtr.resource_id) AS usage_count
+        FROM project_resource_tags prt
+        LEFT JOIN project_resource_tag_relations prtr ON prtr.tag_id = prt.id
+        WHERE prt.project_id = ?1
+        GROUP BY prt.id
+        ORDER BY LOWER(prt.name) ASC, prt.id ASC
+        "#,
+    )
+    .bind(project_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(name, usage_count)| ProjectResourceTagSummary { name, usage_count })
+        .collect())
 }
 
 pub async fn get_resource(
@@ -219,7 +339,12 @@ pub async fn get_resource(
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(resource_detail_from_row))
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let mut resource = resource_detail_from_row(row);
+    populate_resource_detail_metadata(pool, &mut resource).await?;
+    Ok(Some(resource))
 }
 
 pub async fn get_project_resource(
@@ -253,10 +378,14 @@ pub async fn create_resource(
         validate_access_password(&input.access_password)?;
         auth::hash_password(&input.access_password)?
     };
+    let tags = normalize_resource_tags(&input.tags)?;
+    let related_work_item_key =
+        validate_optional_text(&input.related_work_item_key, "关联工作项", 40)?;
+    let related_cycle_id = normalize_related_cycle_id(input.related_cycle_id)?;
     let actor_display_name_snapshot =
         normalize_display_name_snapshot(&input.actor_display_name_snapshot);
-
-    let created = sqlx::query_as::<_, (i64,)>(
+    let mut tx = pool.begin().await?;
+    let resource_id = sqlx::query_scalar::<_, i64>(
         r#"
         INSERT INTO project_resources (
             project_id,
@@ -280,14 +409,14 @@ pub async fn create_resource(
     .bind(access_password_hash)
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
 
     if !input.body.trim().is_empty() {
         let prepared = prepare_resource_body(
             pool,
             &project_key,
-            created.0,
+            resource_id,
             &input.body,
             &input.body_format,
             true,
@@ -304,28 +433,45 @@ pub async fn create_resource(
             WHERE id = ?1
             "#,
         )
-        .bind(created.0)
+        .bind(resource_id)
         .bind(prepared.body)
         .bind(prepared.body_format)
         .bind(actor_user_id)
         .bind(&actor_display_name_snapshot)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
 
-    record_project_activity(
-        pool,
+    sync_resource_tags(
+        &mut tx,
+        input.project_id,
+        actor_user_id,
+        resource_id,
+        &tags,
+    )
+    .await?;
+    sync_resource_relations(
+        &mut tx,
+        input.project_id,
+        resource_id,
+        &related_work_item_key,
+        related_cycle_id,
+    )
+    .await?;
+    record_project_activity_in_transaction(
+        &mut tx,
         input.project_id,
         actor_user_id,
         &actor_display_name_snapshot,
         "project_resource.create",
         "project_resource",
-        &created.0.to_string(),
+        &resource_id.to_string(),
         &format!("创建资料 {title}"),
     )
     .await?;
+    tx.commit().await?;
 
-    get_resource(pool, created.0)
+    get_resource(pool, resource_id)
         .await?
         .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))
 }
@@ -360,6 +506,10 @@ pub async fn update_resource(
         }
         _ => unreachable!("unsupported access password action"),
     };
+    let tags = normalize_resource_tags(&input.tags)?;
+    let related_work_item_key =
+        validate_optional_text(&input.related_work_item_key, "关联工作项", 40)?;
+    let related_cycle_id = normalize_related_cycle_id(input.related_cycle_id)?;
     let prepared = prepare_resource_body(
         pool,
         &existing.project_key,
@@ -371,7 +521,7 @@ pub async fn update_resource(
     .await?;
     let actor_display_name_snapshot =
         normalize_display_name_snapshot(&input.actor_display_name_snapshot);
-
+    let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
         UPDATE project_resources
@@ -394,11 +544,27 @@ pub async fn update_resource(
     .bind(access_password_hash)
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    record_project_activity(
-        pool,
+    sync_resource_tags(
+        &mut tx,
+        existing.project_id,
+        actor_user_id,
+        resource_id,
+        &tags,
+    )
+    .await?;
+    sync_resource_relations(
+        &mut tx,
+        existing.project_id,
+        resource_id,
+        &related_work_item_key,
+        related_cycle_id,
+    )
+    .await?;
+    record_project_activity_in_transaction(
+        &mut tx,
         existing.project_id,
         actor_user_id,
         &actor_display_name_snapshot,
@@ -408,6 +574,7 @@ pub async fn update_resource(
         &format!("更新资料 {title}"),
     )
     .await?;
+    tx.commit().await?;
 
     get_resource(pool, resource_id)
         .await?
@@ -424,7 +591,7 @@ pub async fn archive_resource(
     let existing = get_project_resource(pool, project_id, resource_id).await?;
     ensure_resource_accepts_writes(&existing)?;
     let actor_display_name_snapshot = normalize_display_name_snapshot(actor_display_name_snapshot);
-
+    let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
         UPDATE project_resources
@@ -441,11 +608,11 @@ pub async fn archive_resource(
     .bind(resource_id)
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
-    record_project_activity(
-        pool,
+    record_project_activity_in_transaction(
+        &mut tx,
         project_id,
         actor_user_id,
         &actor_display_name_snapshot,
@@ -455,6 +622,7 @@ pub async fn archive_resource(
         &format!("归档资料 {}", existing.title),
     )
     .await?;
+    tx.commit().await?;
 
     get_resource(pool, resource_id)
         .await?
@@ -488,7 +656,7 @@ pub async fn reset_resource_access_password(
     };
     let actor_display_name_snapshot =
         normalize_display_name_snapshot(&input.actor_display_name_snapshot);
-
+    let mut tx = pool.begin().await?;
     sqlx::query(
         r#"
         UPDATE project_resources
@@ -503,7 +671,7 @@ pub async fn reset_resource_access_password(
     .bind(access_password_hash)
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
 
     let summary = match access_password_action {
@@ -515,8 +683,8 @@ pub async fn reset_resource_access_password(
         }
         _ => unreachable!("unsupported access password reset action"),
     };
-    record_project_activity(
-        pool,
+    record_project_activity_in_transaction(
+        &mut tx,
         existing.project_id,
         actor_user_id,
         &actor_display_name_snapshot,
@@ -526,6 +694,7 @@ pub async fn reset_resource_access_password(
         &summary,
     )
     .await?;
+    tx.commit().await?;
 
     get_resource(pool, resource_id)
         .await?
@@ -640,6 +809,9 @@ fn resource_summary_from_row(row: ResourceRow) -> ProjectResourceSummary {
         summary: compact_summary(&plain),
         status,
         is_protected: is_protected == "1",
+        tags: Vec::new(),
+        related_work_item: None,
+        related_cycle: None,
         created_by_display_name,
         updated_by_display_name,
         created_at,
@@ -680,6 +852,9 @@ fn resource_detail_from_row(row: ResourceRow) -> ProjectResourceDetail {
         summary: compact_summary(&plain),
         status,
         is_protected: is_protected == "1",
+        tags: Vec::new(),
+        related_work_item: None,
+        related_cycle: None,
         created_by_display_name,
         updated_by_display_name,
         archived_by_display_name,
@@ -687,6 +862,311 @@ fn resource_detail_from_row(row: ResourceRow) -> ProjectResourceDetail {
         created_at,
         updated_at,
     }
+}
+
+async fn populate_resource_summary_metadata(
+    pool: &SqlitePool,
+    resources: &mut [ProjectResourceSummary],
+) -> AppResult<()> {
+    let resource_ids = resources.iter().map(|resource| resource.id).collect::<Vec<_>>();
+    let tags_map = load_resource_tags_map(pool, &resource_ids).await?;
+    let work_item_map = load_resource_work_item_relations_map(pool, &resource_ids).await?;
+    let cycle_map = load_resource_cycle_relations_map(pool, &resource_ids).await?;
+
+    for resource in resources {
+        resource.tags = tags_map.get(&resource.id).cloned().unwrap_or_default();
+        resource.related_work_item = work_item_map.get(&resource.id).cloned();
+        resource.related_cycle = cycle_map.get(&resource.id).cloned();
+    }
+    Ok(())
+}
+
+async fn populate_resource_detail_metadata(
+    pool: &SqlitePool,
+    resource: &mut ProjectResourceDetail,
+) -> AppResult<()> {
+    let resource_ids = [resource.id];
+    let tags_map = load_resource_tags_map(pool, &resource_ids).await?;
+    let work_item_map = load_resource_work_item_relations_map(pool, &resource_ids).await?;
+    let cycle_map = load_resource_cycle_relations_map(pool, &resource_ids).await?;
+
+    resource.tags = tags_map.get(&resource.id).cloned().unwrap_or_default();
+    resource.related_work_item = work_item_map.get(&resource.id).cloned();
+    resource.related_cycle = cycle_map.get(&resource.id).cloned();
+    Ok(())
+}
+
+async fn load_resource_tags_map(
+    pool: &SqlitePool,
+    resource_ids: &[i64],
+) -> AppResult<HashMap<i64, Vec<String>>> {
+    if resource_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new(
+        r#"
+        SELECT
+            prtr.resource_id,
+            prt.name
+        FROM project_resource_tag_relations prtr
+        JOIN project_resource_tags prt ON prt.id = prtr.tag_id
+        WHERE prtr.resource_id IN (
+        "#,
+    );
+    {
+        let mut separated = query.separated(", ");
+        for resource_id in resource_ids {
+            separated.push_bind(resource_id);
+        }
+        separated.push_unseparated(")");
+    }
+    query.push(" ORDER BY LOWER(prt.name) ASC, prt.id ASC");
+
+    let rows = query
+        .build_query_as::<(i64, String)>()
+        .fetch_all(pool)
+        .await?;
+
+    let mut map = HashMap::<i64, Vec<String>>::new();
+    for (resource_id, tag_name) in rows {
+        map.entry(resource_id).or_default().push(tag_name);
+    }
+    Ok(map)
+}
+
+async fn load_resource_work_item_relations_map(
+    pool: &SqlitePool,
+    resource_ids: &[i64],
+) -> AppResult<HashMap<i64, ProjectResourceWorkItemRelation>> {
+    if resource_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new(
+        r#"
+        SELECT
+            prr.resource_id,
+            wi.item_key,
+            wi.item_type,
+            wi.title
+        FROM project_resource_relations prr
+        JOIN work_items wi ON wi.id = prr.related_id
+        WHERE prr.relation_type = 'work_item'
+          AND wi.deleted_at IS NULL
+          AND prr.resource_id IN (
+        "#,
+    );
+    {
+        let mut separated = query.separated(", ");
+        for resource_id in resource_ids {
+            separated.push_bind(resource_id);
+        }
+        separated.push_unseparated(")");
+    }
+
+    let rows = query
+        .build_query_as::<(i64, String, String, String)>()
+        .fetch_all(pool)
+        .await?;
+
+    let mut map = HashMap::new();
+    for (resource_id, item_key, item_type, title) in rows {
+        map.insert(
+            resource_id,
+            ProjectResourceWorkItemRelation {
+                item_key,
+                item_type,
+                title,
+            },
+        );
+    }
+    Ok(map)
+}
+
+async fn load_resource_cycle_relations_map(
+    pool: &SqlitePool,
+    resource_ids: &[i64],
+) -> AppResult<HashMap<i64, ProjectResourceCycleRelation>> {
+    if resource_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let mut query = QueryBuilder::<Sqlite>::new(
+        r#"
+        SELECT
+            prr.resource_id,
+            pc.id,
+            pc.name,
+            pc.start_date,
+            pc.end_date
+        FROM project_resource_relations prr
+        JOIN project_cycles pc ON pc.id = prr.related_id
+        WHERE prr.relation_type = 'cycle'
+          AND prr.resource_id IN (
+        "#,
+    );
+    {
+        let mut separated = query.separated(", ");
+        for resource_id in resource_ids {
+            separated.push_bind(resource_id);
+        }
+        separated.push_unseparated(")");
+    }
+
+    let rows = query
+        .build_query_as::<(i64, i64, String, String, String)>()
+        .fetch_all(pool)
+        .await?;
+
+    let mut map = HashMap::new();
+    for (resource_id, cycle_id, name, start_date, end_date) in rows {
+        map.insert(
+            resource_id,
+            ProjectResourceCycleRelation {
+                id: cycle_id,
+                name,
+                start_date,
+                end_date,
+            },
+        );
+    }
+    Ok(map)
+}
+
+async fn sync_resource_tags(
+    tx: &mut Transaction<'_, Sqlite>,
+    project_id: i64,
+    actor_user_id: i64,
+    resource_id: i64,
+    tags: &[NormalizedResourceTag],
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM project_resource_tag_relations WHERE resource_id = ?1")
+        .bind(resource_id)
+        .execute(&mut **tx)
+        .await?;
+
+    for tag in tags {
+        sqlx::query(
+            r#"
+            INSERT INTO project_resource_tags (
+                project_id,
+                name,
+                normalized_name,
+                created_by_user_id
+            )
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(project_id, normalized_name)
+            DO UPDATE SET name = excluded.name
+            "#,
+        )
+        .bind(project_id)
+        .bind(&tag.name)
+        .bind(&tag.normalized_name)
+        .bind(actor_user_id)
+        .execute(&mut **tx)
+        .await?;
+
+        let tag_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT id
+            FROM project_resource_tags
+            WHERE project_id = ?1
+              AND normalized_name = ?2
+            "#,
+        )
+        .bind(project_id)
+        .bind(&tag.normalized_name)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO project_resource_tag_relations (resource_id, tag_id)
+            VALUES (?1, ?2)
+            "#,
+        )
+        .bind(resource_id)
+        .bind(tag_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn sync_resource_relations(
+    tx: &mut Transaction<'_, Sqlite>,
+    project_id: i64,
+    resource_id: i64,
+    related_work_item_key: &str,
+    related_cycle_id: Option<i64>,
+) -> AppResult<()> {
+    sqlx::query("DELETE FROM project_resource_relations WHERE resource_id = ?1")
+        .bind(resource_id)
+        .execute(&mut **tx)
+        .await?;
+
+    let related_work_item_key = related_work_item_key.trim();
+    if !related_work_item_key.is_empty() {
+        let work_item_id = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT id
+            FROM work_items
+            WHERE project_id = ?1
+              AND item_key = ?2
+              AND deleted_at IS NULL
+            "#,
+        )
+        .bind(project_id)
+        .bind(related_work_item_key)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("关联工作项不存在，或不属于当前项目".to_string()))?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO project_resource_relations (resource_id, relation_type, related_id)
+            VALUES (?1, 'work_item', ?2)
+            "#,
+        )
+        .bind(resource_id)
+        .bind(work_item_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    if let Some(cycle_id) = related_cycle_id {
+        let cycle_exists = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT id
+            FROM project_cycles
+            WHERE id = ?1
+              AND project_id = ?2
+            "#,
+        )
+        .bind(cycle_id)
+        .bind(project_id)
+        .fetch_optional(&mut **tx)
+        .await?;
+        if cycle_exists.is_none() {
+            return Err(AppError::BadRequest(
+                "关联周期不存在，或不属于当前项目".to_string(),
+            ));
+        }
+
+        sqlx::query(
+            r#"
+            INSERT INTO project_resource_relations (resource_id, relation_type, related_id)
+            VALUES (?1, 'cycle', ?2)
+            "#,
+        )
+        .bind(resource_id)
+        .bind(cycle_id)
+        .execute(&mut **tx)
+        .await?;
+    }
+
+    Ok(())
 }
 
 async fn project_key_by_id(pool: &SqlitePool, project_id: i64) -> AppResult<String> {
@@ -870,6 +1350,68 @@ fn normalize_status_filter(status: &str) -> AppResult<String> {
     }
 }
 
+fn normalize_tag_filter(tag: &str) -> AppResult<String> {
+    match normalize_resource_tags(&[tag.to_string()])?.into_iter().next() {
+        Some(tag) => Ok(tag.normalized_name),
+        None => Ok(String::new()),
+    }
+}
+
+fn normalize_related_cycle_id(value: Option<i64>) -> AppResult<Option<i64>> {
+    match value {
+        None => Ok(None),
+        Some(id) if id > 0 => Ok(Some(id)),
+        Some(_) => Err(AppError::BadRequest("关联周期 ID 无效".to_string())),
+    }
+}
+
+fn normalize_resource_tags(tags: &[String]) -> AppResult<Vec<NormalizedResourceTag>> {
+    let mut normalized = Vec::new();
+    let mut seen = HashSet::new();
+
+    for raw_tag in tags {
+        for candidate in split_resource_tag_candidates(raw_tag) {
+            let name = collapse_whitespace(&candidate);
+            if name.is_empty() {
+                continue;
+            }
+            if name.chars().count() > 32 {
+                return Err(AppError::BadRequest(
+                    "资料标签单个不能超过 32 个字符".to_string(),
+                ));
+            }
+            let normalized_name = name.to_lowercase();
+            if seen.insert(normalized_name.clone()) {
+                normalized.push(NormalizedResourceTag {
+                    name,
+                    normalized_name,
+                });
+            }
+        }
+    }
+
+    if normalized.len() > 20 {
+        return Err(AppError::BadRequest(
+            "单条资料最多设置 20 个标签".to_string(),
+        ));
+    }
+
+    Ok(normalized)
+}
+
+fn split_resource_tag_candidates(raw_tag: &str) -> Vec<String> {
+    raw_tag
+        .split([',', '，', ';', '；', '\n', '\r'])
+        .map(str::trim)
+        .filter(|candidate| !candidate.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn collapse_whitespace(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 fn normalize_body_format(body_format: &str) -> AppResult<String> {
     match body_format.trim() {
         "" | RESOURCE_BODY_FORMAT_HTML => Ok(RESOURCE_BODY_FORMAT_HTML.to_string()),
@@ -887,8 +1429,8 @@ fn ensure_resource_accepts_writes(resource: &ProjectResourceDetail) -> AppResult
     Ok(())
 }
 
-async fn record_project_activity(
-    pool: &SqlitePool,
+async fn record_project_activity_in_transaction(
+    tx: &mut Transaction<'_, Sqlite>,
     project_id: i64,
     actor_user_id: i64,
     actor_display_name_snapshot: &str,
@@ -919,7 +1461,7 @@ async fn record_project_activity(
     .bind(target_type)
     .bind(target_id)
     .bind(summary)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
 
     Ok(())

@@ -4478,6 +4478,45 @@
     return editor ? editor.closest("[data-resource-form]") : null;
   }
 
+  function resourceTagValues(form) {
+    return String(formFieldValue(form, "tags") || "")
+      .split(/[,，;；\n\r]+/)
+      .map(function (value) {
+        return value.trim();
+      })
+      .filter(function (value) {
+        return value.length > 0;
+      });
+  }
+
+  function resourceCycleIdValue(form) {
+    var value = String(formFieldValue(form, "related_cycle_id") || "").trim();
+    if (!value) {
+      return null;
+    }
+    var parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return value;
+    }
+    return parsed;
+  }
+
+  function resourceRequestPayload(form, overrides) {
+    var payload = {
+      title: formFieldValue(form, "title"),
+      category: formFieldValue(form, "category") || "other",
+      tags: resourceTagValues(form),
+      related_work_item_key: formFieldValue(form, "related_work_item_key") || "",
+      related_cycle_id: resourceCycleIdValue(form),
+    };
+    if (overrides && typeof overrides === "object") {
+      Object.keys(overrides).forEach(function (key) {
+        payload[key] = overrides[key];
+      });
+    }
+    return payload;
+  }
+
   var RICH_MARKDOWN_ALLOWED_TAGS = [
     "a",
     "blockquote",
@@ -5691,13 +5730,13 @@
       {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          title: formFieldValue(form, "title"),
-          category: formFieldValue(form, "category") || "other",
-          body: "",
-          body_format: "html",
-          access_password: formFieldValue(form, "access_password"),
-        }),
+        body: JSON.stringify(
+          resourceRequestPayload(form, {
+            body: "",
+            body_format: "html",
+            access_password: formFieldValue(form, "access_password"),
+          })
+        ),
       }
     )
       .then(function (created) {
@@ -8106,14 +8145,14 @@
         {
           method: "PATCH",
           headers: { "content-type": "application/json", accept: "application/json" },
-          body: JSON.stringify({
-            title: formFieldValue(form, "title"),
-            category: formFieldValue(form, "category") || "other",
-            body: body,
-            body_format: "html",
-            access_password_action: passwordFields.access_password_action,
-            access_password: passwordFields.access_password,
-          }),
+          body: JSON.stringify(
+            resourceRequestPayload(form, {
+              body: body,
+              body_format: "html",
+              access_password_action: passwordFields.access_password_action,
+              access_password: passwordFields.access_password,
+            })
+          ),
         }
       );
       resourceStatus(form, "", "info");

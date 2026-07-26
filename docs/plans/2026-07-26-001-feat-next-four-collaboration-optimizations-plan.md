@@ -431,7 +431,7 @@ flowchart TB
 **Verification:**
 - 消息过滤逻辑和页面渲染通过集成测试验证。
 
-- [ ] **Unit 6: 资料标签与可选关联的数据模型**
+- [x] **Unit 6: 资料标签与可选关联的数据模型**
 
 **Goal:** 为资料库增加标签体系和与工作项 / 周期的可选关联。
 
@@ -440,7 +440,7 @@ flowchart TB
 **Dependencies:** 无
 
 **Files:**
-- Create: `api/migrations/202607260002_create_project_resource_tags_and_relations.sql`
+- Create: `api/migrations/202607260003_create_project_resource_tags_and_relations.sql`
 - Modify: `api/src/domains/project_resources.rs`
 - Modify: `api/src/web/user/mod.rs`
 - Modify: `api/src/web/api/mod.rs`

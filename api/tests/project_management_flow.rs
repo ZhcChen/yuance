@@ -422,6 +422,21 @@ async fn project_resource_library_requires_password_for_protected_details() {
     projects::seed_demo_data(&pool, admin.user_id)
         .await
         .expect("demo seed should apply");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        admin.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "资料关联周期".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: String::new(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let create_response = app
@@ -433,9 +448,10 @@ async fn project_resource_library_requires_password_for_protected_details() {
                 .header(header::COOKIE, admin.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from(
-                    r#"{"title":"正式环境对接参数","category":"integration","body":"","body_format":"html","access_password":"safe-pass"}"#,
-                ))
+                .body(Body::from(format!(
+                    r#"{{"title":"正式环境对接参数","category":"integration","body":"","body_format":"html","access_password":"safe-pass","tags":["联调","正式环境"],"related_work_item_key":"YCE-TASK-2","related_cycle_id":{}}}"#,
+                    cycle.id
+                )))
                 .expect("request should build"),
         )
         .await
@@ -448,11 +464,31 @@ async fn project_resource_library_requires_password_for_protected_details() {
     let resource_id = created["data"]["id"]
         .as_i64()
         .expect("resource id should exist");
+    let created_tags = created["data"]["tags"]
+        .as_array()
+        .expect("created tags should be an array");
+    assert!(created_tags.iter().any(|tag| tag == "联调"));
+    assert!(created_tags.iter().any(|tag| tag == "正式环境"));
+    assert_eq!(created["data"]["related_work_item"]["key"], "YCE-TASK-2");
+    assert_eq!(created["data"]["related_cycle"]["id"], cycle.id);
     let stored = project_resources::get_resource(&pool, resource_id)
         .await
         .expect("resource should load")
         .expect("resource should exist");
     assert!(stored.is_protected);
+    assert!(stored.tags.iter().any(|tag| tag == "联调"));
+    assert!(stored.tags.iter().any(|tag| tag == "正式环境"));
+    assert_eq!(
+        stored
+            .related_work_item
+            .as_ref()
+            .map(|item| item.item_key.as_str()),
+        Some("YCE-TASK-2")
+    );
+    assert_eq!(
+        stored.related_cycle.as_ref().map(|related| related.id),
+        Some(cycle.id)
+    );
     assert!(
         project_resources::verify_resource_password(&pool, resource_id, "safe-pass")
             .await
@@ -670,6 +706,9 @@ async fn project_resource_library_requires_password_for_protected_details() {
     assert!(list_body.contains("正式环境对接参数"));
     assert!(list_body.contains("保险箱"));
     assert!(list_body.contains("受保护资料，验证访问密码后查看正文"));
+    assert!(list_body.contains("#正式环境"));
+    assert!(list_body.contains("YCE-TASK-2"));
+    assert!(list_body.contains("资料关联周期"));
     assert!(!list_body.contains("client_id=yuance"));
 
     let locked_response = app
@@ -686,6 +725,9 @@ async fn project_resource_library_requires_password_for_protected_details() {
     assert_eq!(locked_response.status(), StatusCode::OK);
     let locked_body = response_body(locked_response).await;
     assert!(locked_body.contains("这条资料已设置访问密码"));
+    assert!(locked_body.contains("#正式环境"));
+    assert!(locked_body.contains("YCE-TASK-2"));
+    assert!(locked_body.contains("资料关联周期"));
     assert!(!locked_body.contains("client_id=yuance"));
 
     let wrong_unlock = app
@@ -908,6 +950,166 @@ async fn project_resource_password_can_be_set_kept_and_cleared_after_creation() 
 }
 
 #[tokio::test]
+async fn api_project_resources_can_filter_by_tag() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    project_resources::create_resource(
+        &pool,
+        admin.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "支付联调资料".to_string(),
+            category: "integration".to_string(),
+            body: "<p>联调说明</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password: String::new(),
+            tags: vec!["联调".to_string(), "支付".to_string()],
+            related_work_item_key: "YCE-TASK-2".to_string(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("first resource should create");
+    project_resources::create_resource(
+        &pool,
+        admin.user_id,
+        project_resources::CreateProjectResourceInput {
+            project_id: project.id,
+            title: "会议纪要资料".to_string(),
+            category: "meeting".to_string(),
+            body: "<p>会议记录</p>".to_string(),
+            body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
+            access_password: String::new(),
+            tags: vec!["会议".to_string()],
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("second resource should create");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/projects/YCE/resources?tag=%E8%81%94%E8%B0%83")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let status = response.status();
+    let body = response_body(response).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).expect("response should be valid json");
+    let items = payload["data"].as_array().expect("data should be an array");
+    assert_eq!(items.len(), 1, "{body}");
+    assert_eq!(items[0]["title"], "支付联调资料");
+    let tags = items[0]["tags"].as_array().expect("tags should be an array");
+    assert!(tags.iter().any(|tag| tag == "支付"));
+    assert!(tags.iter().any(|tag| tag == "联调"));
+    assert_eq!(items[0]["related_work_item"]["key"], "YCE-TASK-2");
+}
+
+#[tokio::test]
+async fn api_project_resources_reject_cross_project_relations() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let ops_item = projects::create_work_item(
+        &pool,
+        admin.user_id,
+        projects::CreateWorkItemInput {
+            project_key: "OPS".to_string(),
+            item_type: "task".to_string(),
+            title: "OPS 资料关联任务".to_string(),
+            description: String::new(),
+            priority: "P2".to_string(),
+            assignee_username: String::new(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: "管理员".to_string(),
+        },
+    )
+    .await
+    .expect("ops work item should create");
+    let ops_cycle = projects::create_project_cycle(
+        &pool,
+        admin.user_id,
+        "OPS",
+        projects::CreateProjectCycleInput {
+            name: "OPS 外部周期".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: String::new(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+        },
+    )
+    .await
+    .expect("ops cycle should create");
+
+    let cross_item_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"title":"错误关联工作项","category":"integration","body":"<p>cross item</p>","body_format":"html","related_work_item_key":"{}"}}"#,
+                    ops_item.item_key
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let cross_item_status = cross_item_response.status();
+    let cross_item_body = response_body(cross_item_response).await;
+    assert_eq!(cross_item_status, StatusCode::BAD_REQUEST, "{cross_item_body}");
+    assert!(cross_item_body.contains("关联工作项不存在，或不属于当前项目"));
+
+    let cross_cycle_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/projects/YCE/resources")
+                .header(header::COOKIE, admin.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(format!(
+                    r#"{{"title":"错误关联周期","category":"integration","body":"<p>cross cycle</p>","body_format":"html","related_cycle_id":{}}}"#,
+                    ops_cycle.id
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let cross_cycle_status = cross_cycle_response.status();
+    let cross_cycle_body = response_body(cross_cycle_response).await;
+    assert_eq!(cross_cycle_status, StatusCode::BAD_REQUEST, "{cross_cycle_body}");
+    assert!(cross_cycle_body.contains("关联周期不存在，或不属于当前项目"));
+}
+
+#[tokio::test]
 async fn web_super_admin_can_reset_project_resource_password_from_locked_state() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;
@@ -934,6 +1136,9 @@ async fn web_super_admin_can_reset_project_resource_password_from_locked_state()
             body: "<p>secret=yuance</p>".to_string(),
             body_format: project_resources::RESOURCE_BODY_FORMAT_HTML.to_string(),
             access_password: "safe-pass".to_string(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
             actor_display_name_snapshot: "管理员".to_string(),
         },
     )
@@ -4854,6 +5059,9 @@ async fn web_current_project_redirects_resource_detail_to_selected_project_libra
             body: "<p>用于验证切换项目后的资料详情跳转。</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
             actor_display_name_snapshot: String::new(),
         },
     )
@@ -5350,6 +5558,9 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
             body: "<p>A</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
             actor_display_name_snapshot: String::new(),
         },
     )
@@ -5365,6 +5576,9 @@ async fn project_resource_detail_page_renders_previous_next_navigation() {
             body: "<p>B</p>".to_string(),
             body_format: "html".to_string(),
             access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
             actor_display_name_snapshot: String::new(),
         },
     )
@@ -5751,6 +5965,9 @@ async fn web_search_finds_visible_project_resources() {
             body: "yuance-search-demo".to_string(),
             body_format: project_resources::RESOURCE_BODY_FORMAT_PLAIN.to_string(),
             access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
             actor_display_name_snapshot: String::new(),
         },
     )
@@ -8511,6 +8728,9 @@ async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
             body: String::new(),
             body_format: "html".to_string(),
             access_password: String::new(),
+            tags: Vec::new(),
+            related_work_item_key: String::new(),
+            related_cycle_id: None,
             actor_display_name_snapshot: String::new(),
         },
     )

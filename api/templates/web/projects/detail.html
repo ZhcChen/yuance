@@ -444,6 +444,33 @@
                 <option value="all" {% if resource_filters.status == "all" %}selected{% endif %}>全部</option>
               </select>
             </label>
+            <label>
+              标签
+              <select name="tag" data-select-searchable data-select-search-placeholder="搜索标签">
+                <option value="">全部标签</option>
+                {% for option in resource_tag_options %}
+                <option value="{{ option.name }}" {% if resource_filters.tag == option.name %}selected{% endif %}>{{ option.name }}（{{ option.usage_count }}）</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              关联工作项
+              <select name="related_work_item_key" data-select-searchable data-select-search-placeholder="搜索工作项">
+                <option value="">全部工作项</option>
+                {% for option in resource_work_item_options %}
+                <option value="{{ option.key }}" {% if resource_filters.related_work_item_key == option.key %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>
+              关联周期
+              <select name="related_cycle_id" data-select-searchable data-select-search-placeholder="搜索周期">
+                <option value="">全部周期</option>
+                {% for option in cycle_options %}
+                <option value="{{ option.id }}" {% if resource_filters.related_cycle_id == option.id_text %}selected{% endif %}>{{ option.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
             <button class="btn btn-secondary" type="submit">筛选</button>
           </form>
 
@@ -461,6 +488,23 @@
                 </div>
                 <h4><a href="{{ resource.url }}">{{ resource.title }}</a></h4>
                 <p>{{ resource.summary }}</p>
+                {% if resource.has_tags %}
+                <div class="resource-chip-row">
+                  {% for tag in resource.tags %}
+                  <span class="resource-chip">#{{ tag }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                {% if resource.has_related_work_item || resource.has_related_cycle %}
+                <div class="resource-link-row">
+                  {% if resource.has_related_work_item %}
+                  <a class="resource-link-chip" href="{{ resource.related_work_item_url }}">关联工作项 · {{ resource.related_work_item_label }}</a>
+                  {% endif %}
+                  {% if resource.has_related_cycle %}
+                  <a class="resource-link-chip" href="{{ resource.related_cycle_url }}">关联周期 · {{ resource.related_cycle_label }}</a>
+                  {% endif %}
+                </div>
+                {% endif %}
                 <div class="resource-card-meta">
                   <span>创建：{{ resource.created_by }} · {{ resource.created_at }}</span>
                   <span>更新：{{ resource.updated_by }} · {{ resource.updated_at }}</span>
@@ -791,6 +835,28 @@
             {% endfor %}
           </select>
         </label>
+        <label>
+          标签
+          <input name="tags" list="project-resource-tag-suggestions" placeholder="多个标签用逗号分隔" data-resource-field>
+        </label>
+        <label>
+          关联工作项
+          <select name="related_work_item_key" data-resource-field data-select-searchable data-select-search-placeholder="搜索工作项">
+            <option value="">不关联</option>
+            {% for option in resource_work_item_options %}
+            <option value="{{ option.key }}">{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          关联周期
+          <select name="related_cycle_id" data-resource-field data-select-searchable data-select-search-placeholder="搜索周期">
+            <option value="">不关联</option>
+            {% for option in cycle_options %}
+            <option value="{{ option.id }}">{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </label>
         <label class="wide-field">
           访问密码
           <input name="access_password" type="password" minlength="4" maxlength="128" autocomplete="new-password" placeholder="可选，不填则不加密" data-resource-field>
@@ -816,6 +882,11 @@
     </form>
   </section>
 </aside>
+<datalist id="project-resource-tag-suggestions">
+  {% for option in resource_tag_options %}
+  <option value="{{ option.name }}"></option>
+  {% endfor %}
+</datalist>
 {% endif %}
 
 {% if can_manage_project %}

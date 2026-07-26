@@ -201,6 +201,14 @@ struct ProjectResourceView {
     status: String,
     status_tone: &'static str,
     is_protected: bool,
+    tags: Vec<String>,
+    has_tags: bool,
+    has_related_work_item: bool,
+    related_work_item_label: String,
+    related_work_item_url: String,
+    has_related_cycle: bool,
+    related_cycle_label: String,
+    related_cycle_url: String,
     created_by: String,
     updated_by: String,
     created_at: String,
@@ -213,12 +221,27 @@ struct ProjectResourceFilterView {
     q: String,
     category: String,
     status: String,
+    tag: String,
+    related_work_item_key: String,
+    related_cycle_id: String,
 }
 
 #[derive(Debug, Clone)]
 struct ProjectResourceCategoryOption {
     value: &'static str,
     label: &'static str,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectResourceTagOptionView {
+    name: String,
+    usage_count: i64,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectWorkItemOptionView {
+    key: String,
+    label: String,
 }
 
 #[derive(Debug, Clone)]
@@ -236,6 +259,17 @@ struct ProjectResourceDetailView {
     status: String,
     status_tone: &'static str,
     is_protected: bool,
+    tags: Vec<String>,
+    tags_input: String,
+    has_tags: bool,
+    related_work_item_key: String,
+    related_work_item_label: String,
+    related_work_item_url: String,
+    has_related_work_item: bool,
+    related_cycle_id_text: String,
+    related_cycle_label: String,
+    related_cycle_url: String,
+    has_related_cycle: bool,
     created_by: String,
     updated_by: String,
     archived_by: String,
@@ -916,6 +950,8 @@ struct ProjectDetailTemplate {
     has_resources: bool,
     resource_filters: ProjectResourceFilterView,
     resource_category_options: Vec<ProjectResourceCategoryOption>,
+    resource_tag_options: Vec<ProjectResourceTagOptionView>,
+    resource_work_item_options: Vec<ProjectWorkItemOptionView>,
     activities: Vec<Activity>,
     has_activities: bool,
     has_member_candidates: bool,
@@ -940,6 +976,9 @@ struct ProjectResourceDetailTemplate {
     project: ProjectDetailView,
     resource: ProjectResourceDetailView,
     resource_category_options: Vec<ProjectResourceCategoryOption>,
+    resource_tag_options: Vec<ProjectResourceTagOptionView>,
+    resource_work_item_options: Vec<ProjectWorkItemOptionView>,
+    cycle_options: Vec<ProjectCycleOptionView>,
     has_previous_entry: bool,
     previous_entry_url: String,
     previous_entry_title: String,
@@ -1786,6 +1825,12 @@ pub struct ProjectResourceForm {
     title: String,
     category: String,
     #[serde(default)]
+    tags: String,
+    #[serde(default)]
+    related_work_item_key: String,
+    #[serde(default)]
+    related_cycle_id: String,
+    #[serde(default)]
     body: String,
     #[serde(default)]
     body_format: String,
@@ -1851,6 +1896,12 @@ pub struct ProjectDetailQuery {
     category: String,
     #[serde(default)]
     status: String,
+    #[serde(default)]
+    tag: String,
+    #[serde(default)]
+    related_work_item_key: String,
+    #[serde(default)]
+    related_cycle_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2983,6 +3034,16 @@ pub async fn project_detail_page(
         .iter()
         .map(project_cycle_option_from_view)
         .collect::<Vec<_>>();
+    let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
+        .await?
+        .into_iter()
+        .map(project_work_item_option_from_summary)
+        .collect::<Vec<_>>();
+    let resource_tag_options = project_resources::list_project_resource_tags(pool, project.id)
+        .await?
+        .into_iter()
+        .map(project_resource_tag_option_from_summary)
+        .collect::<Vec<_>>();
     let resource_filters = ProjectResourceFilterView {
         q: query.q.trim().to_string(),
         category: query.category.trim().to_string(),
@@ -2991,6 +3052,9 @@ pub async fn project_detail_page(
         } else {
             query.status.trim().to_string()
         },
+        tag: query.tag.trim().to_string(),
+        related_work_item_key: query.related_work_item_key.trim().to_string(),
+        related_cycle_id: query.related_cycle_id.trim().to_string(),
     };
     let resources = project_resources::list_resources(
         pool,
@@ -2999,6 +3063,9 @@ pub async fn project_detail_page(
             keyword: resource_filters.q.clone(),
             category: resource_filters.category.clone(),
             status: resource_filters.status.clone(),
+            tag: resource_filters.tag.clone(),
+            related_work_item_key: resource_filters.related_work_item_key.clone(),
+            related_cycle_id: parse_optional_i64(&resource_filters.related_cycle_id)?,
         },
     )
     .await?
@@ -3063,6 +3130,8 @@ pub async fn project_detail_page(
             resources,
             resource_filters,
             resource_category_options: project_resource_category_options(),
+            resource_tag_options,
+            resource_work_item_options,
             activities,
             project_item_type_options: work_item_type_options(),
             cycle_options,
@@ -3717,6 +3786,9 @@ pub async fn project_resource_create(
                 body: form.body,
                 body_format: form.body_format,
                 access_password: form.access_password,
+                tags: parse_resource_tags_input(&form.tags),
+                related_work_item_key: form.related_work_item_key,
+                related_cycle_id: parse_optional_i64(&form.related_cycle_id)?,
                 actor_display_name_snapshot: context.current_user.clone(),
             },
         )
@@ -3771,6 +3843,21 @@ pub async fn project_resource_detail_page(
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
+    let resource_tag_options = project_resources::list_project_resource_tags(pool, project.id)
+        .await?
+        .into_iter()
+        .map(project_resource_tag_option_from_summary)
+        .collect::<Vec<_>>();
+    let cycle_options = projects::list_project_cycles(pool, project.id)
+        .await?
+        .into_iter()
+        .map(|cycle| project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle)))
+        .collect::<Vec<_>>();
+    let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
+        .await?
+        .into_iter()
+        .map(project_work_item_option_from_summary)
+        .collect::<Vec<_>>();
     let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
     let can_manage_resources =
         user_can_write_project_content_for_context(pool, &context, project.id).await?
@@ -3806,6 +3893,9 @@ pub async fn project_resource_detail_page(
             project: project_detail_from_domain(project),
             resource: project_resource_from_detail(resource, access_token.as_deref()),
             resource_category_options: project_resource_category_options(),
+            resource_tag_options,
+            resource_work_item_options,
+            cycle_options,
             has_previous_entry: detail_navigation.previous.is_some(),
             previous_entry_url: detail_navigation
                 .previous
@@ -3870,6 +3960,21 @@ pub async fn project_resource_unlock(
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
+    let resource_tag_options = project_resources::list_project_resource_tags(pool, project.id)
+        .await?
+        .into_iter()
+        .map(project_resource_tag_option_from_summary)
+        .collect::<Vec<_>>();
+    let cycle_options = projects::list_project_cycles(pool, project.id)
+        .await?
+        .into_iter()
+        .map(|cycle| project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle)))
+        .collect::<Vec<_>>();
+    let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
+        .await?
+        .into_iter()
+        .map(project_work_item_option_from_summary)
+        .collect::<Vec<_>>();
     let verified =
         project_resources::verify_resource_password(pool, resource.id, &form.password).await?;
     let audit_action = if verified {
@@ -3935,6 +4040,9 @@ pub async fn project_resource_unlock(
             project: project_detail_from_domain(project),
             resource: project_resource_from_detail(resource, access_token.as_deref()),
             resource_category_options: project_resource_category_options(),
+            resource_tag_options,
+            resource_work_item_options,
+            cycle_options,
             has_previous_entry: detail_navigation.previous.is_some(),
             previous_entry_url: detail_navigation
                 .previous
@@ -4063,6 +4171,9 @@ pub async fn project_resource_update(
                 body_format: form.body_format,
                 access_password_action: form.access_password_action,
                 access_password: form.access_password,
+                tags: parse_resource_tags_input(&form.tags),
+                related_work_item_key: form.related_work_item_key,
+                related_cycle_id: parse_optional_i64(&form.related_cycle_id)?,
                 actor_display_name_snapshot: context.current_user.clone(),
             },
         )
@@ -9079,6 +9190,25 @@ fn project_cycle_option_from_view(cycle: &ProjectCycleView) -> ProjectCycleOptio
     }
 }
 
+fn project_resource_tag_option_from_summary(
+    tag: project_resources::ProjectResourceTagSummary,
+) -> ProjectResourceTagOptionView {
+    ProjectResourceTagOptionView {
+        name: tag.name,
+        usage_count: tag.usage_count,
+    }
+}
+
+fn project_work_item_option_from_summary(
+    item: projects::WorkItemSummary,
+) -> ProjectWorkItemOptionView {
+    let kind = work_item_type_label(&item.item_type);
+    ProjectWorkItemOptionView {
+        key: item.item_key.clone(),
+        label: format!("{} · {} · {}", item.item_key, kind, item.title),
+    }
+}
+
 fn project_member_from_summary(member: projects::ProjectMemberSummary) -> ProjectMemberView {
     ProjectMemberView {
         display_name: member.display_name,
@@ -9139,6 +9269,8 @@ fn project_resource_from_summary(
 ) -> ProjectResourceView {
     let (status, status_tone) = project_resource_status_label(&resource.status);
     let is_protected = resource.is_protected;
+    let related_work_item = resource.related_work_item.clone();
+    let related_cycle = resource.related_cycle.clone();
     ProjectResourceView {
         id: resource.id,
         title: resource.title,
@@ -9153,6 +9285,26 @@ fn project_resource_from_summary(
         status: status.to_string(),
         status_tone,
         is_protected,
+        has_tags: !resource.tags.is_empty(),
+        tags: resource.tags,
+        has_related_work_item: related_work_item.is_some(),
+        related_work_item_label: related_work_item
+            .as_ref()
+            .map(|item| format!("{} · {}", item.item_key, item.title))
+            .unwrap_or_default(),
+        related_work_item_url: related_work_item
+            .as_ref()
+            .map(|item| format!("/web/work-items/{}", item.item_key))
+            .unwrap_or_default(),
+        has_related_cycle: related_cycle.is_some(),
+        related_cycle_label: related_cycle
+            .as_ref()
+            .map(|cycle| format!("{} · {} ~ {}", cycle.name, cycle.start_date, cycle.end_date))
+            .unwrap_or_default(),
+        related_cycle_url: related_cycle
+            .as_ref()
+            .map(|cycle| format!("{}#cycle-{}", project_cycles_url(&resource.project_key), cycle.id))
+            .unwrap_or_default(),
         created_by: fallback_text(resource.created_by_display_name, "系统"),
         updated_by: fallback_text(resource.updated_by_display_name, "系统"),
         created_at: display_timestamp(resource.created_at),
@@ -9168,6 +9320,9 @@ fn project_resource_from_detail(
     let (status, status_tone) = project_resource_status_label(&resource.status);
     let project_key = resource.project_key.clone();
     let resource_id = resource.id;
+    let related_work_item = resource.related_work_item.clone();
+    let related_cycle = resource.related_cycle.clone();
+    let tags_input = resource.tags.join(", ");
     let editor_body_html =
         project_resources::resource_body_html_for_display(&resource.body, &resource.body_format);
     let body_html = access_token
@@ -9187,6 +9342,35 @@ fn project_resource_from_detail(
         status: status.to_string(),
         status_tone,
         is_protected: resource.is_protected,
+        has_tags: !resource.tags.is_empty(),
+        tags_input,
+        tags: resource.tags,
+        related_work_item_key: related_work_item
+            .as_ref()
+            .map(|item| item.item_key.clone())
+            .unwrap_or_default(),
+        related_work_item_label: related_work_item
+            .as_ref()
+            .map(|item| format!("{} · {}", item.item_key, item.title))
+            .unwrap_or_default(),
+        related_work_item_url: related_work_item
+            .as_ref()
+            .map(|item| format!("/web/work-items/{}", item.item_key))
+            .unwrap_or_default(),
+        has_related_work_item: related_work_item.is_some(),
+        related_cycle_id_text: related_cycle
+            .as_ref()
+            .map(|cycle| cycle.id.to_string())
+            .unwrap_or_default(),
+        related_cycle_label: related_cycle
+            .as_ref()
+            .map(|cycle| format!("{} · {} ~ {}", cycle.name, cycle.start_date, cycle.end_date))
+            .unwrap_or_default(),
+        related_cycle_url: related_cycle
+            .as_ref()
+            .map(|cycle| format!("{}#cycle-{}", project_cycles_url(&project_key), cycle.id))
+            .unwrap_or_default(),
+        has_related_cycle: related_cycle.is_some(),
         created_by: fallback_text(resource.created_by_display_name, "系统"),
         updated_by: fallback_text(resource.updated_by_display_name, "系统"),
         archived_by: fallback_text(resource.archived_by_display_name, "系统"),
@@ -12421,6 +12605,36 @@ fn work_item_type_options() -> Vec<WorkItemTypeOption> {
     ]
 }
 
+fn work_item_type_label(value: &str) -> &'static str {
+    match value {
+        "requirement" => "需求",
+        "bug" => "Bug",
+        _ => "任务",
+    }
+}
+
+fn parse_resource_tags_input(value: &str) -> Vec<String> {
+    value.split([',', '，', ';', '；', '\n', '\r'])
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn parse_optional_i64(value: &str) -> AppResult<Option<i64>> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    let parsed = value
+        .parse::<i64>()
+        .map_err(|_| AppError::BadRequest("参数必须是有效数字".to_string()))?;
+    if parsed <= 0 {
+        return Err(AppError::BadRequest("参数必须大于 0".to_string()));
+    }
+    Ok(Some(parsed))
+}
+
 fn work_item_status_options(
     item_kind: &str,
     current_status: &str,
@@ -13349,6 +13563,14 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
         status: "可用".to_string(),
         status_tone: "ok",
         is_protected: true,
+        tags: vec!["联调".to_string(), "正式环境".to_string()],
+        has_tags: true,
+        has_related_work_item: true,
+        related_work_item_label: "YCE-TASK-2 · 接口联调".to_string(),
+        related_work_item_url: "/web/work-items/YCE-TASK-2".to_string(),
+        has_related_cycle: true,
+        related_cycle_label: "2026-07 核心交付 · 2026-07-01 ~ 2026-07-31".to_string(),
+        related_cycle_url: "/web/projects/YCE/cycles#cycle-1".to_string(),
         created_by: "陈".to_string(),
         updated_by: "陈".to_string(),
         created_at: "今天".to_string(),
@@ -13396,6 +13618,14 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             resources,
             resource_filters: ProjectResourceFilterView::default(),
             resource_category_options: project_resource_category_options(),
+            resource_tag_options: vec![ProjectResourceTagOptionView {
+                name: "联调".to_string(),
+                usage_count: 1,
+            }],
+            resource_work_item_options: vec![ProjectWorkItemOptionView {
+                key: "YCE-TASK-2".to_string(),
+                label: "YCE-TASK-2 · 任务 · 接口联调".to_string(),
+            }],
             activities,
             project_item_type_options: work_item_type_options(),
             cycle_options,
