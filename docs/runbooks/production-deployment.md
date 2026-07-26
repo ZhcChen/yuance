@@ -40,7 +40,7 @@ API 端口：127.0.0.1:33033
 - `/web`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
-- 文档预览已改为站内离线处理；当前 PDF、TXT、LOG、MD、JSON、XML、YAML、CSV 可直接预览，其余文档格式后续逐步切到纯前端预览栈。
+- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览，DOC、PPT 走 legacy 纯前端预览。
 
 ## 本地构建镜像 tar
 
@@ -130,8 +130,8 @@ YUANCE_SECURITY_MASTER_KEY
 
 - 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
 - PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 统一走站内前端离线预览。
+- DOC、PPT 也走站内前端 legacy 预览链路，不需要额外环境变量开关；复杂版式兼容性有限，PPT 当前运行时会带可见水印。
 - 文档预览页只负责生成临时可访问地址，实际解析与渲染全部由浏览器完成。
-- `doc`、`ppt`、`rtf`、`odt`、`odp` 等旧格式当前统一按“下载原文件查看”处理。
 - 如果当前仍使用测试内存存储，文档预览页会自动回退到同源读取，不依赖外部文档服务。
 
 正式环境 `.env` 必须保持：
