@@ -1,0 +1,201 @@
+{% extends "layouts/web.html" %}
+
+{% block title %}{{ cycle.name }} - {{ project.name }} - 元策{% endblock %}
+
+{% block content %}
+<section class="page-stack cycle-detail-page">
+  <section class="page-hero detail-hero">
+    <div>
+      <p class="eyebrow">项目周期 / {{ project.code }}</p>
+      <h1>{{ cycle.name }}</h1>
+      {% if cycle.goal != "" %}
+      <p>{{ cycle.goal }}</p>
+      {% else if cycle.description != "" %}
+      <p>{{ cycle.description }}</p>
+      {% else %}
+      <p>当前周期还没有填写目标说明，可先从右侧快捷入口进入关联工作项继续推进。</p>
+      {% endif %}
+      <div class="detail-meta">
+        <span class="status status-{{ cycle.status_tone }}">{{ cycle.status }}</span>
+        <span>所属项目：{{ project.name }}</span>
+        <span>总工作项：{{ cycle.total_items }}</span>
+        <span>{{ cycle.start_date }} ~ {{ cycle.end_date }}</span>
+      </div>
+    </div>
+    <div class="toolbar-actions">
+      <a class="btn btn-secondary" href="{{ cycle.anchor_url }}" data-smart-back data-smart-back-key="cycle:{{ cycle.id }}" data-fallback-url="{{ cycle.anchor_url }}">返回项目周期</a>
+    </div>
+  </section>
+
+  <section class="metric-grid detail-metrics" aria-label="周期统计">
+    {% for metric in metrics %}
+    <article class="metric metric-{{ metric.tone }}">
+      <div class="metric-head">
+        <span class="metric-label">{{ metric.label }}</span>
+        <span class="metric-ornament metric-icon-{{ metric.icon }}" aria-hidden="true"></span>
+      </div>
+      <strong>{{ metric.value }}</strong>
+    </article>
+    {% endfor %}
+  </section>
+
+  <div class="detail-grid cycle-detail-grid">
+    <div class="detail-main">
+      <section class="project-tabs-card">
+        <div class="project-tabs-head">
+          <div>
+            <p class="eyebrow">周期概览</p>
+            <h2>基础信息</h2>
+          </div>
+        </div>
+        <div class="project-tab-panels">
+          <div class="project-detail-overview cycle-detail-overview">
+            <section class="project-tab-section">
+              <div class="project-tab-section-head">
+                <div>
+                  <h3>核心字段</h3>
+                  <p>把周期身份、负责人和交付规模放在同一处查看。</p>
+                </div>
+              </div>
+              <dl class="detail-dl inline project-detail-dl">
+                {% for field in meta_fields %}
+                <div>
+                  <dt>{{ field.label }}</dt>
+                  <dd>{{ field.value }}</dd>
+                </div>
+                {% endfor %}
+              </dl>
+            </section>
+
+            <section class="project-tab-section project-description-section cycle-detail-description">
+              <div class="project-tab-section-head">
+                <div>
+                  <h3>目标与说明</h3>
+                  <p>明确这一轮周期要交付什么、关注什么。</p>
+                </div>
+              </div>
+              <div class="cycle-detail-description-body">
+                <article class="cycle-detail-description-block">
+                  <strong>周期目标</strong>
+                  {% if cycle.goal != "" %}
+                  <p>{{ cycle.goal }}</p>
+                  {% else %}
+                  <p>未填写周期目标</p>
+                  {% endif %}
+                </article>
+                <article class="cycle-detail-description-block">
+                  <strong>补充说明</strong>
+                  {% if cycle.description != "" %}
+                  <p>{{ cycle.description }}</p>
+                  {% else %}
+                  <p>暂无补充说明</p>
+                  {% endif %}
+                </article>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="project-tabs-card">
+        <div class="project-tabs-head">
+          <div>
+            <p class="eyebrow">时间状态</p>
+            <h2>当前节奏</h2>
+          </div>
+        </div>
+        <div class="project-tab-panels cycle-progress-panel">
+          <div class="cycle-progress-summary">
+            <div class="cycle-progress-figure">
+              <strong>{{ cycle.progress_percent }}%</strong>
+              <span>{{ cycle.progress_label }}</span>
+            </div>
+            <div class="project-cycle-roadmap-progress">
+              <div class="project-cycle-roadmap-progress-head">
+                <strong>{{ cycle.duration_label }}</strong>
+                <span>{{ cycle.schedule_hint }}</span>
+              </div>
+              <div class="project-cycle-roadmap-progress-track" aria-hidden="true">
+                <span class="project-cycle-roadmap-progress-fill status-{{ cycle.status_tone }}" style="width: {{ cycle.progress_percent }}%;"></span>
+              </div>
+            </div>
+          </div>
+
+          <dl class="detail-dl inline cycle-time-detail-dl">
+            {% for field in time_fields %}
+            <div>
+              <dt>{{ field.label }}</dt>
+              <dd>{{ field.value }}</dd>
+            </div>
+            {% endfor %}
+          </dl>
+        </div>
+      </section>
+
+      <section class="project-tabs-card">
+        <div class="project-tabs-head">
+          <div>
+            <p class="eyebrow">推进总览</p>
+            <h2>当前视角</h2>
+          </div>
+        </div>
+        <div class="project-tab-panels">
+          <div class="cycle-insight-card">
+            <strong>本周期当前已关联 {{ cycle.total_items }} 条工作项，其中还有 {{ cycle.pending_count }} 条处于待推进状态。</strong>
+            <p>这一页先承载负责人最常用的周期元信息、时间状态和快捷跳转；下一步会继续在这里补齐状态看板与成员负载分析。</p>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="detail-side">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>快捷跳转</h2>
+            <p>按周期直接进入现有工作项列表。</p>
+          </div>
+        </div>
+        <div class="cycle-quick-links">
+          {% for link in quick_links %}
+          <a class="cycle-quick-link" href="{{ link.url }}">
+            <div class="cycle-quick-link-head">
+              <strong>{{ link.label }}</strong>
+              <span>{{ link.count_label }}</span>
+            </div>
+            <p>{{ link.description }}</p>
+          </a>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>协作提示</h2>
+            <p>便于负责人快速判断当前周期是否需要继续跟进。</p>
+          </div>
+        </div>
+        <div class="cycle-note-list">
+          <article>
+            <strong>待推进</strong>
+            <p>{{ cycle.pending_count }} 条工作项仍处于待处理 / 进行中 / 待确认。</p>
+          </article>
+          <article>
+            <strong>更新时间</strong>
+            <p>最近一次周期更新记录：{{ cycle.updated_at }}。</p>
+          </article>
+          <article>
+            <strong>当前权限</strong>
+            {% if can_manage_work_items %}
+            <p>你可以继续编辑关联工作项、关闭周期并推进协作流转。</p>
+            {% else %}
+            <p>你当前为只读视角，可查看周期状态与关联工作项，但不能改动内容。</p>
+            {% endif %}
+          </article>
+        </div>
+      </section>
+    </aside>
+  </div>
+</section>
+{% endblock %}

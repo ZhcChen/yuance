@@ -120,6 +120,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::user::project_cycle_create),
         )
         .route(
+            "/web/projects/{project_key}/cycles/{cycle_id}",
+            get(web::user::project_cycle_detail_page),
+        )
+        .route(
             "/web/projects/{project_key}/cycles/{cycle_id}/edit",
             post(web::user::project_cycle_update),
         )

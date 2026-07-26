@@ -222,6 +222,7 @@
                       </td>
                       <td class="work-table-muted">{{ cycle.updated_at }}</td>
                       <td class="table-actions">
+                        <a class="btn btn-sm btn-secondary" href="{{ cycle.detail_url }}">查看详情</a>
                         {% if can_manage_work_items %}
                         <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-cycle-edit-modal-{{ cycle.id }}">编辑</button>
                         {% if !cycle.is_closed %}
@@ -229,11 +230,7 @@
                           <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                           <button class="btn btn-sm btn-secondary" type="submit">关闭</button>
                         </form>
-                        {% else %}
-                        <span class="attachment-action-hint">已关闭</span>
                         {% endif %}
-                        {% else %}
-                        <span class="attachment-action-hint">无操作</span>
                         {% endif %}
                       </td>
                     </tr>
@@ -328,6 +325,7 @@
                     </div>
 
                     <div class="project-cycle-roadmap-actions">
+                      <a class="btn btn-sm btn-secondary" href="{{ cycle.detail_url }}">查看详情</a>
                       {% if can_manage_work_items %}
                       <button class="btn btn-sm btn-secondary" type="button" data-modal-open="project-cycle-edit-modal-{{ cycle.id }}">编辑</button>
                       {% if !cycle.is_closed %}
@@ -335,11 +333,7 @@
                         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
                         <button class="btn btn-sm btn-secondary" type="submit">关闭</button>
                       </form>
-                      {% else %}
-                      <span class="attachment-action-hint">已关闭</span>
                       {% endif %}
-                      {% else %}
-                      <span class="attachment-action-hint">无操作</span>
                       {% endif %}
                     </div>
                   </div>

@@ -5571,6 +5571,45 @@ async fn web_project_detail_rejects_non_members() {
 }
 
 #[tokio::test]
+async fn web_project_cycle_detail_rejects_non_members() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "仅成员可见周期".to_string(),
+            goal: "权限校验".to_string(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+    let outsider_cookie = create_regular_user_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/cycles/{}", cycle.id))
+                .header(header::COOKIE, outsider_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn web_project_detail_can_update_project_and_transfer_owner() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -13959,7 +13998,30 @@ async fn project_cycles_can_be_managed_from_web_and_link_work_items() {
     assert!(cycle_page_body.contains("列表视图"));
     assert!(cycle_page_body.contains("路线图视图"));
     assert!(cycle_page_body.contains("2026-07 核心交付"));
+    assert!(cycle_page_body.contains(&format!(
+        r#"href="/web/projects/YCE/cycles/{}""#,
+        cycle.id
+    )));
     assert!(!cycle_page_body.contains("周期总数"));
+
+    let cycle_detail_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/cycles/{}", cycle.id))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(cycle_detail_response.status(), StatusCode::OK);
+    let cycle_detail_body = response_body(cycle_detail_response).await;
+    assert!(cycle_detail_body.contains("周期概览"));
+    assert!(cycle_detail_body.contains("时间状态"));
+    assert!(cycle_detail_body.contains("快捷跳转"));
+    assert!(cycle_detail_body.contains("2026-07-01 ~ 2026-07-31"));
+    assert!(cycle_detail_body.contains("收敛本轮上线交付与联调回归"));
 
     let create_item_body = serde_urlencoded::to_string([
         ("_csrf", CSRF_TOKEN),
@@ -14120,6 +14182,45 @@ async fn project_cycles_reject_invalid_ranges_and_cross_project_links() {
             .to_string()
             .contains("周期不存在或不属于当前项目")
     );
+}
+
+#[tokio::test]
+async fn project_cycle_detail_rejects_non_members() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "仅成员可见周期".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: "admin".to_string(),
+            start_date: "2026-07-01".to_string(),
+            end_date: "2026-07-31".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+    let outsider_cookie = create_regular_user_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/projects/YCE/cycles/{}", cycle.id))
+                .header(header::COOKIE, outsider_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 async fn bootstrap_admin(pool: &sqlx::SqlitePool) -> i64 {

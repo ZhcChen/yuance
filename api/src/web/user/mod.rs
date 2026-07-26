@@ -163,11 +163,26 @@ struct ProjectCycleView {
     progress_label: String,
     schedule_hint: String,
     anchor_url: String,
+    detail_url: String,
 }
 
 #[derive(Debug, Clone, Default)]
 struct ProjectCycleSummaryView {
     total: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ProjectCycleQuickLinkView {
+    label: &'static str,
+    description: String,
+    count_label: String,
+    url: String,
+}
+
+#[derive(Debug, Clone)]
+struct DetailFieldView {
+    label: &'static str,
+    value: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1029,6 +1044,25 @@ struct ProjectResourceDetailTemplate {
     can_reset_resource_password: bool,
     is_unlocked: bool,
     unlock_error: String,
+}
+
+#[derive(Template)]
+#[template(path = "web/projects/cycle_detail.html")]
+struct ProjectCycleDetailTemplate {
+    active: &'static str,
+    environment: String,
+    current_user: String,
+    csrf_token: String,
+    system_nav: SystemNav,
+    current_project: Option<CurrentProjectView>,
+    topbar_project_options: Vec<ProjectOption>,
+    project: ProjectDetailView,
+    cycle: ProjectCycleView,
+    metrics: Vec<Metric>,
+    meta_fields: Vec<DetailFieldView>,
+    time_fields: Vec<DetailFieldView>,
+    quick_links: Vec<ProjectCycleQuickLinkView>,
+    can_manage_work_items: bool,
 }
 
 #[derive(Template)]
@@ -3179,6 +3213,70 @@ pub async fn project_detail_page(
             can_manage_project,
             can_manage_work_items,
             active_tab: project_detail_tab(Some(query.tab.as_str())),
+        })?
+        .into_response(),
+    )
+}
+
+pub async fn project_cycle_detail_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let mut context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    let Some(pool) = context.pool else {
+        return render_sample_project_cycle_detail(&state, context, &project_key, cycle_id);
+    };
+    ensure_view_permission(pool, &headers, context.user_id, "project.view").await?;
+
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_project_access(pool, &context, project.id).await?;
+    let selected_project = projects::set_current_project_for_user(
+        pool,
+        context.user_id,
+        context.can_access_all_projects,
+        &project_key,
+    )
+    .await?;
+    let topbar_pending_count = total_project_option_pending_count(&context.topbar_project_options);
+    context.current_project = Some(current_project_from_domain(
+        selected_project,
+        topbar_pending_count,
+    ));
+    refresh_context_system_nav(pool, &mut context).await?;
+
+    let cycle = project_cycle_from_domain(
+        &project.project_key,
+        projects::get_project_cycle(pool, project.id, cycle_id).await?,
+    );
+    let project_accepts_writes = projects::ensure_project_accepts_writes(&project.status).is_ok();
+    let can_manage_work_items =
+        user_can_write_project_content_for_context(pool, &context, project.id).await?
+            && project_accepts_writes;
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        &state,
+        &csrf_token,
+        response::html(ProjectCycleDetailTemplate {
+            active: "projects",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            project: project_detail_from_domain(project),
+            cycle: cycle.clone(),
+            metrics: project_cycle_metrics(&cycle),
+            meta_fields: project_cycle_meta_fields(&cycle),
+            time_fields: project_cycle_time_fields(&cycle),
+            quick_links: project_cycle_quick_links(&project_key, &cycle),
+            can_manage_work_items,
         })?
         .into_response(),
     )
@@ -8496,6 +8594,10 @@ async fn project_switch_return_to(
         return Ok(rewritten);
     }
 
+    if let Some(rewritten) = rewrite_project_cycle_detail_return_to(safe_return_to, &project_key) {
+        return Ok(rewritten);
+    }
+
     Ok(rewrite_project_scoped_path(safe_return_to, &project_key)
         .or_else(|| rewrite_work_item_list_project_query(safe_return_to, &project_key))
         .unwrap_or_else(|| safe_return_to.to_string()))
@@ -8548,6 +8650,19 @@ fn rewrite_project_resource_detail_return_to(value: &str, project_key: &str) -> 
     }
 
     Some(project_library_url(project_key))
+}
+
+fn rewrite_project_cycle_detail_return_to(value: &str, project_key: &str) -> Option<String> {
+    let (without_fragment, _) = split_url_fragment(value);
+    let (path, _) = split_url_path_and_query(without_fragment);
+    let rest = path.strip_prefix("/web/projects/")?;
+    let (_, suffix) = rest.split_once('/')?;
+    let cycle_suffix = suffix.strip_prefix("cycles/")?;
+    if cycle_suffix.is_empty() || cycle_suffix.contains('/') {
+        return None;
+    }
+
+    Some(project_cycles_url(project_key))
 }
 
 fn work_item_list_path_for_key(item_type: Option<&str>, item_key: &str) -> &'static str {
@@ -8644,6 +8759,10 @@ fn project_info_url(project_key: &str) -> String {
 
 fn project_cycles_url(project_key: &str) -> String {
     format!("/web/projects/{project_key}?tab=cycles")
+}
+
+fn project_cycle_detail_url(project_key: &str, cycle_id: i64) -> String {
+    format!("/web/projects/{project_key}/cycles/{cycle_id}")
 }
 
 fn project_members_url(project_key: &str) -> String {
@@ -9286,6 +9405,7 @@ fn project_cycle_from_domain(
         progress_label,
         schedule_hint,
         anchor_url: format!("{}#cycle-{}", project_cycles_url(project_key), cycle.id),
+        detail_url: project_cycle_detail_url(project_key, cycle.id),
     }
 }
 
@@ -9293,6 +9413,146 @@ fn project_cycle_summary(cycles: &[ProjectCycleView]) -> ProjectCycleSummaryView
     ProjectCycleSummaryView {
         total: cycles.len(),
     }
+}
+
+fn project_cycle_metrics(cycle: &ProjectCycleView) -> Vec<Metric> {
+    vec![
+        Metric {
+            label: "需求",
+            value: cycle.requirement_count.to_string(),
+            tone: "info",
+            icon: "doc",
+        },
+        Metric {
+            label: "任务",
+            value: cycle.task_count.to_string(),
+            tone: "warning",
+            icon: "tasks",
+        },
+        Metric {
+            label: "Bug",
+            value: cycle.bug_count.to_string(),
+            tone: "danger",
+            icon: "bug",
+        },
+        Metric {
+            label: "待推进",
+            value: cycle.pending_count.to_string(),
+            tone: "ok",
+            icon: "inbox",
+        },
+    ]
+}
+
+fn project_cycle_meta_fields(cycle: &ProjectCycleView) -> Vec<DetailFieldView> {
+    vec![
+        DetailFieldView {
+            label: "周期状态",
+            value: cycle.status.to_string(),
+        },
+        DetailFieldView {
+            label: "总工作项",
+            value: cycle.total_items.to_string(),
+        },
+        DetailFieldView {
+            label: "周期负责人",
+            value: if cycle.has_owner {
+                format!("{} (@{})", cycle.owner, cycle.owner_username)
+            } else {
+                "未设置".to_string()
+            },
+        },
+        DetailFieldView {
+            label: "时间范围",
+            value: format!("{} ~ {}", cycle.start_date, cycle.end_date),
+        },
+        DetailFieldView {
+            label: "创建时间",
+            value: cycle.created_at.clone(),
+        },
+        DetailFieldView {
+            label: "最近更新",
+            value: cycle.updated_at.clone(),
+        },
+    ]
+}
+
+fn project_cycle_time_fields(cycle: &ProjectCycleView) -> Vec<DetailFieldView> {
+    vec![
+        DetailFieldView {
+            label: "周期时长",
+            value: cycle.duration_label.clone(),
+        },
+        DetailFieldView {
+            label: "时间进度",
+            value: cycle.progress_label.clone(),
+        },
+        DetailFieldView {
+            label: "当前提示",
+            value: if cycle.is_closed {
+                if cycle.closed_at.is_empty() {
+                    "已关闭".to_string()
+                } else {
+                    format!("关闭于 {}", cycle.closed_at)
+                }
+            } else {
+                cycle.schedule_hint.clone()
+            },
+        },
+        DetailFieldView {
+            label: "关联节奏",
+            value: format!(
+                "需求 {} / 任务 {} / Bug {}",
+                cycle.requirement_count, cycle.task_count, cycle.bug_count
+            ),
+        },
+    ]
+}
+
+fn project_cycle_work_item_list_url(project_key: &str, item_type: &str, cycle_id: i64) -> String {
+    let path = work_item_list_path(item_type);
+    let query = serde_urlencoded::to_string([
+        ("project_key", project_key.to_string()),
+        ("cycle_id", cycle_id.to_string()),
+    ])
+    .unwrap_or_else(|_| String::new());
+    if query.is_empty() {
+        path.to_string()
+    } else {
+        format!("{path}?{query}")
+    }
+}
+
+fn project_cycle_quick_links(
+    project_key: &str,
+    cycle: &ProjectCycleView,
+) -> Vec<ProjectCycleQuickLinkView> {
+    vec![
+        ProjectCycleQuickLinkView {
+            label: "查看周期需求",
+            description: "进入已关联当前周期的需求列表。".to_string(),
+            count_label: format!("共 {} 条", cycle.requirement_count),
+            url: project_cycle_work_item_list_url(project_key, "requirement", cycle.id),
+        },
+        ProjectCycleQuickLinkView {
+            label: "查看周期任务",
+            description: "进入已关联当前周期的任务列表。".to_string(),
+            count_label: format!("共 {} 条", cycle.task_count),
+            url: project_cycle_work_item_list_url(project_key, "task", cycle.id),
+        },
+        ProjectCycleQuickLinkView {
+            label: "查看周期 Bug",
+            description: "进入已关联当前周期的 Bug 列表。".to_string(),
+            count_label: format!("共 {} 条", cycle.bug_count),
+            url: project_cycle_work_item_list_url(project_key, "bug", cycle.id),
+        },
+        ProjectCycleQuickLinkView {
+            label: "返回项目周期",
+            description: "回到项目详情的周期摘要与路线图。".to_string(),
+            count_label: format!("待推进 {} 条", cycle.pending_count),
+            url: project_cycles_url(project_key),
+        },
+    ]
 }
 
 fn project_cycle_option_from_view(cycle: &ProjectCycleView) -> ProjectCycleOptionView {
@@ -13646,6 +13906,7 @@ fn sample_project_cycles() -> Vec<ProjectCycleView> {
             progress_label: active_progress_label,
             schedule_hint: active_schedule_hint,
             anchor_url: "/web/projects/YCE?tab=cycles#cycle-1".to_string(),
+            detail_url: "/web/projects/YCE/cycles/1".to_string(),
         },
         ProjectCycleView {
             id: 2,
@@ -13673,6 +13934,7 @@ fn sample_project_cycles() -> Vec<ProjectCycleView> {
             progress_label: closed_progress_label,
             schedule_hint: closed_schedule_hint,
             anchor_url: "/web/projects/YCE?tab=cycles#cycle-2".to_string(),
+            detail_url: "/web/projects/YCE/cycles/2".to_string(),
         },
     ]
 }
@@ -13829,6 +14091,62 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             can_manage_project: true,
             can_manage_work_items: true,
             active_tab: "info",
+        })?
+        .into_response(),
+    )
+}
+
+fn render_sample_project_cycle_detail(
+    state: &AppState,
+    context: WebContext<'_>,
+    project_key: &str,
+    cycle_id: i64,
+) -> AppResult<Response> {
+    if project_key != "YCE" {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    }
+
+    let Some(cycle) = sample_project_cycles()
+        .into_iter()
+        .find(|candidate| candidate.id == cycle_id)
+    else {
+        return Ok(StatusCode::NOT_FOUND.into_response());
+    };
+
+    let project = ProjectDetailView {
+        code: "YCE".to_string(),
+        name: "元策 MVP".to_string(),
+        description: "统一项目、需求、任务、Bug 的轻量项目管理系统。".to_string(),
+        owner_username: "chen".to_string(),
+        owner: "陈".to_string(),
+        status_code: "in_progress".to_string(),
+        status: "进行中".to_string(),
+        status_tone: "ok",
+        start_date: "2026-06-01".to_string(),
+        due_date: "2026-07-31".to_string(),
+        created_at: "今天".to_string(),
+        updated_at: "今天 16:20".to_string(),
+    };
+
+    let csrf_token = context.csrf_token.clone();
+    with_csrf_cookie(
+        state,
+        &csrf_token,
+        response::html(ProjectCycleDetailTemplate {
+            active: "projects",
+            environment: state.settings.env.clone(),
+            current_user: context.current_user,
+            csrf_token: context.csrf_token,
+            system_nav: context.system_nav,
+            current_project: context.current_project,
+            topbar_project_options: context.topbar_project_options,
+            project,
+            cycle: cycle.clone(),
+            metrics: project_cycle_metrics(&cycle),
+            meta_fields: project_cycle_meta_fields(&cycle),
+            time_fields: project_cycle_time_fields(&cycle),
+            quick_links: project_cycle_quick_links(project_key, &cycle),
+            can_manage_work_items: true,
         })?
         .into_response(),
     )
