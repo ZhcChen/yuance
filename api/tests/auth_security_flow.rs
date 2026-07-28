@@ -43,6 +43,8 @@ async fn login_page_sets_csrf_cookie_and_hidden_field() {
     assert!(body.contains(&format!("name=\"{CSRF_FIELD_NAME}\"")));
     assert!(body.contains("data-page-transition"));
     assert!(body.contains("登录"));
+    assert!(body.contains("placeholder=\"请输入用户名\""));
+    assert!(!body.contains("placeholder=\"yuance_admin\""));
     assert!(!body.contains("env-badge"));
     assert!(!body.contains("统一入口 /web"));
 }
