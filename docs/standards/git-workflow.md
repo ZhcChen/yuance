@@ -184,6 +184,4 @@ git push
 
 ## 子代理与 Git
 
-子代理默认不得执行任何 Git stage / commit / push 操作。
-
-即使用户明确授权子代理写文件，子代理产出也只能作为候选 diff / patch，由主线程逐文件 review 后决定是否合入。Git 操作必须由主线程执行。
+本项目禁止使用子代理；代码修改、审查和 Git stage / commit / push 均由主线程完成。

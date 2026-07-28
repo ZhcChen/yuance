@@ -1,93 +1,72 @@
-# CE 项目提示词模板
+# 项目工作流约束
 
 ## 工作模式
-- 本项目默认启用 **Compound Engineering (CE)** 作为主要 AI 工作架构。
-- 在没有用户明确要求切换流程的情况下，优先使用 CE 的工作流，避免混入其他并行流程。
-- **同一项任务默认只采用一套主工作流。** 若当前任务已明确选择 CE，就不要再混入其他设计/计划/执行流程。
-- 若用户明确指定使用其他流程、已有项目规范与 CE 冲突，或当前任务只是一次小型查询/解释，则以用户指令和项目现有规范为准。
+- 本项目默认采用 Compound Engineering（CE）作为主工作流；同一项任务默认只采用一套主工作流，避免混用其他设计、计划或执行流程。
+- 发生冲突时，依次遵循：用户明确指令、当前项目根目录规范、CE 工作流约定、全局默认行为。
 
-## 模型与子代理限制
-- 严禁任何子代理（subagent）、并行代理、外部委派代理或审查代理使用 GPT-5.6 及其相关 / 派生 / 别名模型。
-- 如果某个工具、插件或工作流无法明确确认子代理模型不属于 GPT-5.6 相关模型，不得启动该子代理；应改为主线程顺序执行或先向用户确认。
+## 子代理边界
+- 禁止启动任何子代理（subagent）、并行代理、外部委派代理或审查代理。
+- 调查、实现、审查和 Git 操作均由主线程完成，不以模型、插件或任务规模创建例外。
 
-## Git 分支与提交规则
-- 本项目后续默认直接在 `main` 分支开发、提交和推送。
-- 历史功能分支合并回 `main` 后视为归档，不再继续在该功能分支上追加开发。
-- 除非用户明确要求新建功能分支、PR 流程或隔离 worktree，否则不要主动创建 feature 分支。
-- 开始修改前先确认当前分支；若不在 `main`，应先提醒并切回 `main`，避免后续改动散落到旧分支。
-- 用户明确要求实现、修复、调整、完善、联调或继续任务时，视为授权在任务达到稳定可验收状态后自行提交并推送；每轮完成一个小逻辑 / 小功能 / 小修复后，默认按最小可解释业务闭环 commit，并立即 `git push` 到当前分支。
-- “继续”“开始吧”“可以”“按照建议继续”等泛化回复只继承当前明确任务的提交范围，不授权把工作区所有未提交改动一起提交，也不授权跨任务整理提交。
-- 一次用户任务包含多个相对独立功能点时，按功能边界、风险边界或可验证阶段拆分为多个 commit；同一页面 / 同一模块内连续的小样式、小文案或小交互修复可以合并为一个 commit，但 migration、seed、生成代码、部署配置、lockfile 默认单独成组。
-- 提交说明默认使用简体中文，概括本次 commit 的业务目的和改动范围；可使用 `feat:`、`fix:`、`docs:`、`test:`、`chore:` 等前缀，但不要为了格式牺牲可读性。
-- 每轮任务开始和提交前必须查看 `git status --short`；提交时只 stage 本轮相关文件，禁止默认使用 `git add .`。如果工作区存在用户或其他任务留下的无关改动，应拆开提交或保留不动；若同一文件混有本轮改动和旧改动，必须逐段检查并只暂存本轮意图，无法安全拆分时暂不提交并说明原因。
-- 提交前应完成与改动范围匹配的测试、构建、格式检查或页面验证，最低要求执行 `git diff --check` 并查看 staged diff；涉及 migration 时必须运行迁移和相关测试，涉及部署 / env / 密钥时必须确认没有真实敏感信息进入 diff。
-- 不提交明显编译失败、测试失败或半成品状态，除非用户明确要求保存现场；这种情况下 commit message 必须标明 `WIP` / 阻塞点，并仍需及时 push。完整细则见 `docs/standards/git-workflow.md`。
-
-## CE 默认工作流
-按任务类型优先采用以下顺序：
-
-1. 需求不清、范围未定：`ce:brainstorm` -> `docs/brainstorms/`
-2. 需求已清晰、需要计划：`ce:plan` -> `docs/plans/`
-3. 进入执行阶段：`ce:work`；需要实验性外部委派时用 `ce:work-beta`
-4. 代码改动完成后审查：`ce:review`
-5. 问题解决后沉淀：`ce:compound`；历史知识漂移时用 `ce:compound-refresh` -> `docs/solutions/`
+## 工作流
+- 默认按 `brainstorm -> plan -> execute -> review -> compound` 推进
+- `brainstorm` 只在需求不清、范围未定、方案分叉或未知项较多时启用
+- 需求已清晰时，直接进入 `plan`
+- 项目内可通过 `.pi/prompts/` 使用 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound` 作为 Pi 工作流入口
+- 历史文档中的 `ce:brainstorm`、`ce:plan`、`ce:work`、`ce:review`、`ce:compound` 分别对应当前 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound`
 
 ## 产物约定
-- 需求/产品定义：`docs/brainstorms/`
-- 技术计划：`docs/plans/`
-- 解决方案/经验沉淀：`docs/solutions/`
-- CE 运行期中间产物：`.context/compound-engineering/`
+- `docs/brainstorms/`：需求澄清与方案收敛
+- `docs/plans/`：执行计划
+- `docs/solutions/`：问题沉淀与经验复用
+- CE 运行期中间产物：`.context/compound-engineering/`，不纳入版本控制
+- `docs/*/TEMPLATE.md` 只作结构参考；正式文档优先使用具体文件名，例如 `YYYY-MM-DD-short-name.md`
 
 ## 执行规则
-- 在 CE 工作流中，优先保证：**先澄清，再规划，再执行，再审查，再沉淀**。
-- 对于跨文件、跨模块、带有不确定性的任务，不要跳过 `ce:brainstorm` 或 `ce:plan` 直接编码，除非用户明确要求。
-- 所有文档中的路径引用都使用**仓库相对路径**，不要使用绝对路径。
-- 当任务已经有现成计划文件或 brainstorm 文档时，优先复用和续写，不要重复生成平行文档。
-- 用户后续说“部署正式环境”时，默认含义是按 `docs/runbooks/production-deployment.md` 将元策正式环境实际部署到服务器 `qfy-sc-test`；部署口径对齐参考项目 qfy-sc 的测试环境：本地构建 `linux/amd64` 镜像 tar、上传制品、服务器 `docker load`、单次维护容器执行迁移和 `seed core`、`docker compose up -d`、Caddy 接入或 reload 以及健康检查，不依赖 easy-deploy 平台，也不在服务器编译或构建镜像。除非用户明确说“只准备部署文档 / 只构建镜像 / 只生成脚本”，不要把该指令理解为仅做本地准备。
-- 若项目中同时存在人工规范、项目 `AGENTS.md`、其他 AI 说明文件，则遵循：
-  1. 用户明确指令
-  2. 当前项目根目录下的规范文件
-  3. CE 工作流约定
-  4. 全局默认行为
+- `AGENTS.md`、`.pi/prompts/`、`docs/` 下工作流文件、代码注释、说明文档、提交信息默认使用简体中文；必要时可保留英文术语、命令原文或现有专有名词
+- 函数名、类型名、API 名称、配置键、命令名、路径、协议字段等领域性标识保持英文，或延续项目既有约定
+- 文档内统一使用仓库相对路径
+- 不直接在 `TEMPLATE.md` 中记录正式内容；需要新建文档时，复制结构并写入同目录下的具体文件
+- 有现成的 brainstorm 或 plan 时，优先复用和续写，不重复开平行文档
+- 大任务必须先在 plan 中拆出阶段和执行单元；默认不要把整个大任务直接作为单个 `/goal`
+- 开始改动前先确认当前任务对应的 plan；执行阶段可直接通过 `/execute` 进入，长任务优先使用 `/goal`，且 `/goal` 默认绑定当前阶段或一组连续单元
+- 只有在以下情况才停止执行：缺决策、缺权限/凭证/外部输入、危险不可逆操作、或工作已完成且验证通过
 
-## Context7 使用准则
-- 需要官方库或框架资料时，优先使用 Context7，减少依赖不确定来源的信息。
-- 先解析准确的库 ID，再拉取文档；遇到歧义时说明筛选理由。
-- 只拉取满足当前问题的最小上下文；Context7 不足时再考虑其他手段。
+## 正式环境部署
+- 用户说“部署正式环境”时，默认按 `docs/runbooks/production-deployment.md` 实际发布，入口为 `./scripts/deploy-production.sh`；只有明确说明“只构建镜像 / 只生成脚本 / 只更新文档”时才缩小范围。
+- 服务器禁止源码编译和镜像构建；具体发布、回滚和健康检查要求以 `docs/runbooks/production-deployment.md` 为准。
 
-## Chrome DevTools MCP 使用准则
-- 需要排查浏览器端行为、排版或网络问题时，优先使用 `chrome-devtools` MCP。
-- 调试前明确目标页面与采集目标；获取结果后整理关键观察并引用输出。
-- 若 MCP 不支持所需操作或报错，记录已尝试的命令与错误信息，再改用其他方式。
+## Review
+- 改动完成后对照 plan 复核结果
+- 至少执行聚焦验证，并检查明显回归或范围漂移
 
-## Subagent 默认策略
-- 所有 subagent、并行代理和外部委派都必须先满足上方“模型与子代理限制”；无法确认模型合规时，改为主线程顺序执行或先向用户确认。
-- 在满足模型限制、且任务可拆且写入范围可分离时，默认使用 subagent，不必等用户显式要求。
-- 主线程负责拆任务、分配文件 ownership、合并结果、最终验收与 git；子代理负责调查、实现、局部验证。
-- 默认并行：多个独立调查点用多个 explorer，多个独立改动块用多个 worker。
-- 每个 worker 必须有明确写入范围；不得回滚他人改动，遇到冲突优先适配并汇报。
-- 非关键路径任务不要立即等待；只有主线程下一步被阻塞时才 `wait_agent`，完成后及时 `close_agent`。
-- 立即阻塞的小任务、强耦合改动、需要连续交互的操作，优先主线程直接处理。
-- 所有 subagent 结果最终由主线程统一检查 diff、运行相关测试，并决定是否提交。
+## Compound
+- 出现关键决策、复发坑点、有效排查路径或可复用模式时，写入 `docs/solutions/`
 
-<!-- BEGIN COMPOUND CODEX TOOL MAP -->
-## Compound Codex Tool Mapping (Claude Compatibility)
+## 工具使用
+- 涉及第三方库、框架、SDK 或 API 的当前官方用法时，优先使用 Context7。
+- 排查浏览器端页面、样式、控制台或网络问题时，优先使用 `chrome-devtools`。
 
-This section maps Claude Code plugin tool references to Codex behavior.
-Only this block is managed automatically.
+## 工作方式
+- 优先做小而可验证的改动
+- 执行过程中避免无关重构
+- 纯信息型任务可直接回答，不强制创建文档
 
-Tool mapping:
-- Read: use shell reads (cat/sed) or rg
-- Write: create files via shell redirection or apply_patch
-- Edit/MultiEdit: use apply_patch
-- Bash: use shell_command
-- Grep: use rg (fallback: grep)
-- Glob: use rg --files or find
-- LS: use ls via shell_command
-- WebFetch/WebSearch: use curl or Context7 for library docs
-- AskUserQuestion/Question: present choices as a numbered list in chat and wait for a reply number. For multi-select (multiSelect: true), accept comma-separated numbers. Never skip or auto-configure — always wait for the user's response before proceeding.
-- Task/Subagent/Parallel: use Codex subagent/task spawning for splittable work when this project's model restrictions allow it; use multi_tool_use.parallel only for parallel tool calls in the main thread
-- TodoWrite/TodoRead: use file-based todos in todos/ with todo-create skill
-- Skill: open the referenced SKILL.md and follow it
-- ExitPlanMode: ignore
-<!-- END COMPOUND CODEX TOOL MAP -->
+
+# 开发参考
+
+## Git 提交与推送
+
+- 默认直接在当前主分支开发；除非用户明确要求，不额外创建功能分支。
+- 每完成一个小功能块、小修复或一个最小可解释闭环，默认立即提交并推送。
+- 及时提交和推送的核心目的，是降低因机器崩溃、终端异常或本地环境损坏导致代码丢失的风险。
+- 提交单位不是消息轮次，而是一个可以单独解释、单独回滚的小逻辑、小功能或小修复。
+- 不要等到整个大任务全部结束后再一次性提交；应按小功能块持续提交。
+- 开始改文件前，先执行 `git status --short` 查看工作区状态。
+- 提交前至少执行 `git diff --check`、`git diff --cached --check`、`git diff --cached`。
+- 只暂存本轮相关文件；默认不要直接使用 `git add .`。
+- 提交信息默认使用简体中文，建议前缀：`feat:`、`fix:`、`docs:`、`test:`、`chore:`、`refactor:`。
+- commit 成功后，默认立即执行 `git fetch origin`、`git rebase origin/main`、`git push origin main`，先同步远端，再完成推送。
+- 如果 `git push` 因远端已有新提交而被拒绝，默认不要强推；先同步远端并完成 `rebase`，处理完再推送。
+- 如果 `rebase` 过程中出现冲突，先解决冲突文件，再执行 `git add <file>` 和 `git rebase --continue`，完成后再 `git push origin main`。
+- 如果工作区存在无关改动，不回滚、不顺手整理、不混入本轮提交。
