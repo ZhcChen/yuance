@@ -955,6 +955,8 @@
     }
 
     .document-preview-host.is-office {
+      display: flex;
+      min-height: 0;
       padding: 0;
       overflow: hidden;
       background:
@@ -1114,8 +1116,10 @@
     }
 
     .office-preview-stage {
+      flex: 1 1 auto;
       width: 100%;
-      height: 100%;
+      min-height: 0;
+      height: auto;
       overflow: auto;
       padding: 18px;
       background:
