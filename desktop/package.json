@@ -1,0 +1,28 @@
+{
+  "name": "@yuance/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "元策桌面端 Electron 壳",
+  "author": "元策",
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "check": "node --check src/config.mjs && node --check src/main.mjs && node --check src/preload.cjs && node --check scripts/run-electron-builder.mjs && node --check scripts/verify-release-version.mjs",
+    "test": "node --test test/**/*.test.mjs",
+    "dist:ci": "npm run check && node ./scripts/run-electron-builder.mjs",
+    "dist:mac": "npm run check && node ./scripts/run-electron-builder.mjs --mac",
+    "dist:win": "npm run check && node ./scripts/run-electron-builder.mjs --win",
+    "dist:linux": "npm run check && node ./scripts/run-electron-builder.mjs --linux",
+    "verify:release-tag": "node ./scripts/verify-release-version.mjs"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "allowScripts": {
+    "electron@37.10.3": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

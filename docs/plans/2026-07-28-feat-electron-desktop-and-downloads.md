@@ -44,7 +44,7 @@ origin: 用户口头需求：以 Electron 初始化 0.1.0 桌面端，接入跨�
 - 在 `layouts/web.html` 的项目切换器左侧加入 `target="_blank"` 下载入口。
 - 覆盖系统 API 架构字段、公开下载页和下载跳转的 Rust 集成测试。
 
-### Unit 2：Electron 0.1.0 桌面工程
+### Unit 2：Electron 0.1.0 桌面工程（已完成）
 
 - 创建 `desktop/` 的 npm 工程、主进程、preload、开发启动与打包配置。
 - 默认加载正式 Web 地址，并允许本地通过环境变量覆盖。

@@ -1,6 +1,8 @@
 /target/
 /data/
 /dist/
+/desktop/dist/
+/desktop/release/
 /.context/
 node_modules/
 /.env

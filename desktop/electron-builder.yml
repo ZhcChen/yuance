@@ -1,0 +1,29 @@
+appId: com.quanxinfu.yuance
+productName: 元策
+asar: true
+icon: build/icon.svg
+artifactName: Yuance-${version}-${os}-${arch}.${ext}
+
+files:
+  - src/**
+  - package.json
+
+mac:
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  identity: "-"
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  target:
+    - target: dmg
+
+win:
+  target:
+    - target: nsis
+
+linux:
+  category: Office
+  executableName: yuance
+  target:
+    - target: AppImage

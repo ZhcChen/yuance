@@ -31,6 +31,9 @@
   var topbarRealtimeConnectedOnce = false;
   var topbarStatusRefreshPromise = null;
   var topbarStatusRefreshQueued = false;
+  var desktopNotificationKnownIds = new Set();
+  var desktopNotificationFeedInitialized = false;
+  var desktopNotificationClickUnsubscribe = null;
   var workItemDiscussionEventSource = null;
   var workItemDiscussionItemKey = "";
   var workItemDiscussionRefreshPromise = null;
@@ -647,6 +650,79 @@
     }
   }
 
+  function desktopBridge() {
+    var bridge = window.yuanceDesktop;
+    return bridge && typeof bridge === "object" ? bridge : null;
+  }
+
+  function desktopNotificationTarget(value) {
+    try {
+      var target = new URL(String(value || ""), window.location.href);
+      if (
+        target.origin === window.location.origin &&
+        (target.pathname === "/web" || target.pathname.indexOf("/web/") === 0)
+      ) {
+        return target.pathname + target.search + target.hash;
+      }
+    } catch (_error) {
+      // Use the message center fallback below.
+    }
+    return "/web/messages";
+  }
+
+  function notifyDesktopForNewItems(items) {
+    var entries = Array.isArray(items) ? items : [];
+    var freshUnread = entries.filter(function (item) {
+      var id = item && item.id != null ? String(item.id) : "";
+      return id && item.read !== true && !desktopNotificationKnownIds.has(id);
+    });
+    entries.forEach(function (item) {
+      var id = item && item.id != null ? String(item.id) : "";
+      if (id) {
+        desktopNotificationKnownIds.add(id);
+      }
+    });
+    if (!desktopNotificationFeedInitialized) {
+      desktopNotificationFeedInitialized = true;
+      return;
+    }
+    if (desktopNotificationKnownIds.size > 500) {
+      desktopNotificationKnownIds = new Set(entries.map(function (item) {
+        return item && item.id != null ? String(item.id) : "";
+      }).filter(Boolean));
+    }
+
+    var bridge = desktopBridge();
+    if (!bridge || typeof bridge.notify !== "function" || freshUnread.length === 0) {
+      return;
+    }
+    freshUnread
+      .sort(function (left, right) { return Number(right.id || 0) - Number(left.id || 0); })
+      .slice(0, 1)
+      .forEach(function (item) {
+        Promise.resolve(bridge.notify({
+          title: notificationText(item.title, "消息通知"),
+          body: notificationText(item.body, "查看详情"),
+          targetPath: desktopNotificationTarget(item.open_url),
+        })).catch(function () {
+          // Native notification delivery should not interrupt the Web workflow.
+        });
+      });
+  }
+
+  function initDesktopNativeNotifications() {
+    if (desktopNotificationClickUnsubscribe) {
+      return;
+    }
+    var bridge = desktopBridge();
+    if (!bridge || typeof bridge.onNotificationClick !== "function") {
+      return;
+    }
+    desktopNotificationClickUnsubscribe = bridge.onNotificationClick(function (targetPath) {
+      window.location.assign(desktopNotificationTarget(targetPath));
+    });
+  }
+
   function notificationKindLabel(kind) {
     if (kind === "comment_replied") {
       return "回复";
@@ -868,6 +944,7 @@
         headers: { accept: "application/json" },
       });
       renderNotificationFeed(root, feed);
+      notifyDesktopForNewItems(feed && feed.items);
     } catch (_error) {
       var summary = root.querySelector("[data-notification-summary]");
       var list = root.querySelector("[data-notification-list]");
@@ -1005,11 +1082,7 @@
   }
 
   async function handleTopbarRealtimeEvent() {
-    if (notificationDropdownIsOpen()) {
-      await refreshNotificationFeed(document.querySelector("[data-notification-root]"));
-      return;
-    }
-    await refreshTopbarStatus();
+    await refreshNotificationFeed(document.querySelector("[data-notification-root]"));
   }
 
   function startTopbarRealtime() {
@@ -10783,6 +10856,7 @@
   });
 
   initTopbarSearch(document);
+  initDesktopNativeNotifications();
   initNotificationFeed(document.querySelector("[data-notification-root]"));
   startTopbarStatusRefresh();
   initDatabaseStatsPage(document);
@@ -10819,6 +10893,10 @@
     highlightDiscussionPostByHash(window.location.hash, { scroll: false, updateHash: false, immediate: true });
   });
   window.addEventListener("pagehide", function () {
+    if (desktopNotificationClickUnsubscribe) {
+      desktopNotificationClickUnsubscribe();
+      desktopNotificationClickUnsubscribe = null;
+    }
     if (topbarEventSource) {
       topbarEventSource.close();
       topbarEventSource = null;
