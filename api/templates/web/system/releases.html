@@ -113,7 +113,7 @@
               {% if release.has_assets %}
               <div class="system-release-asset-chips">
                 {% for asset in release.assets %}
-                <span class="status status-{{ asset.status_tone }}">{{ asset.platform }}</span>
+                <span class="status status-{{ asset.status_tone }}">{{ asset.platform }} · {{ asset.architecture }}</span>
                 {% endfor %}
               </div>
               {% else %}
@@ -249,8 +249,15 @@
                 <option value="ios">iOS</option>
               </select>
             </label>
+            <label>
+              <span>架构</span>
+              <select data-release-architecture data-select-searchable data-select-search-placeholder="搜索架构">
+                <option value="universal">通用</option>
+                <option value="x64">x64</option>
+                <option value="arm64">ARM64</option>
+              </select>
+            </label>
             <label class="wide-field">
-              <span>选择文件</span>
               <input type="file" data-release-files multiple>
             </label>
             <button class="btn btn-secondary" type="button" data-release-upload-submit>上传安装包</button>
@@ -265,6 +272,7 @@
             <thead>
               <tr>
                 <th>平台</th>
+                <th>架构</th>
                 <th>文件</th>
                 <th>状态</th>
                 <th>大小</th>
@@ -276,6 +284,7 @@
               {% for asset in release.assets %}
               <tr>
                 <td>{{ asset.platform }}</td>
+                <td>{{ asset.architecture }}</td>
                 <td>
                   <strong>{{ asset.filename }}</strong>
                   <div class="muted-line">{{ asset.content_type }}</div>
@@ -343,6 +352,7 @@
           <thead>
             <tr>
               <th>平台</th>
+              <th>架构</th>
               <th>文件</th>
               <th>状态</th>
               <th>大小</th>
@@ -354,6 +364,7 @@
             {% for asset in release.assets %}
             <tr>
               <td>{{ asset.platform }}</td>
+              <td>{{ asset.architecture }}</td>
               <td>
                 <strong>{{ asset.filename }}</strong>
                 <div class="muted-line">{{ asset.content_type }}</div>

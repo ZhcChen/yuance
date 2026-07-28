@@ -720,6 +720,7 @@ pub struct SystemReleaseAssetPayload {
     pub release_id: i64,
     pub file_object_id: i64,
     pub platform: String,
+    pub architecture: String,
     pub object_key: String,
     pub filename: String,
     pub content_type: String,
@@ -1140,6 +1141,7 @@ pub struct UpdateSystemReleaseSettingsRequest {
 #[derive(Debug, Deserialize)]
 pub struct CreateSystemReleaseAssetRequest {
     platform: String,
+    architecture: String,
     original_filename: String,
     content_type: String,
     byte_size: i64,
@@ -3844,6 +3846,7 @@ pub async fn create_system_release_asset(
         release_id,
         system_releases::CreateSystemReleaseAssetInput {
             platform: payload.platform,
+            architecture: payload.architecture,
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
@@ -5323,6 +5326,7 @@ fn system_release_asset_payload(
         release_id: asset.release_id,
         file_object_id: asset.file_object_id,
         platform: asset.platform,
+        architecture: asset.architecture,
         object_key: asset.object_key,
         filename: asset.original_filename,
         content_type: asset.content_type,

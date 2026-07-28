@@ -1938,6 +1938,7 @@ async fn system_releases_page_renders_for_admin() {
     assert!(body.contains("保留策略"));
     assert!(body.contains(r#"data-modal-open="system-release-create-modal""#));
     assert!(body.contains(r#"action="/web/system/releases/settings""#));
+    assert!(body.contains(r#"href="/web/downloads" target="_blank""#));
     assert!(body.contains("暂无版本记录"));
 }
 
@@ -2100,6 +2101,7 @@ async fn system_token_can_manage_release_api_without_csrf() {
                 .body(Body::from(
                     serde_json::json!({
                         "platform": "linux",
+                        "architecture": "arm64",
                         "original_filename": "yuance-linux-v2.0.0.tar.gz",
                         "content_type": "application/gzip",
                         "byte_size": 10
@@ -2112,6 +2114,7 @@ async fn system_token_can_manage_release_api_without_csrf() {
         .expect("router should respond");
     assert_eq!(asset_response.status(), StatusCode::CREATED);
     let asset_json = response_json(asset_response).await;
+    assert_eq!(json_string(&asset_json, &["data", "architecture"]), "arm64");
     let asset_id = json_i64(&asset_json, &["data", "id"]);
 
     let upload_url_response = app
@@ -2229,6 +2232,146 @@ async fn system_token_can_manage_release_api_without_csrf() {
         .await
         .expect("router should respond");
     assert_eq!(settings_response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let release = create_system_release_api(
+        &app,
+        &admin_cookie,
+        "v0.1.0",
+        "元策桌面端 0.1.0",
+        "首个 Electron 桌面端版本",
+    )
+    .await;
+    let release_id = json_i64(&release, &["data", "release", "id"]);
+    let asset = create_system_release_asset_api_with_architecture(
+        &app,
+        &admin_cookie,
+        release_id,
+        "macos",
+        "arm64",
+        "Yuance-0.1.0-mac-arm64.dmg",
+        "application/x-apple-diskimage",
+        11,
+    )
+    .await;
+    let asset_id = json_i64(&asset, &["data", "id"]);
+    let upload =
+        get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id).await;
+    let upload_url = json_string(&upload, &["data", "request", "url"]);
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &upload_url,
+        b"desktop-app",
+        "application/x-apple-diskimage",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
+    update_system_release_api(
+        &app,
+        &admin_cookie,
+        release_id,
+        "v0.1.0",
+        "元策桌面端 0.1.0",
+        "首个 Electron 桌面端版本",
+        true,
+    )
+    .await;
+
+    let mobile_release = create_system_release_api(
+        &app,
+        &admin_cookie,
+        "v0.2.0",
+        "移动端预发布",
+        "不应覆盖桌面下载入口",
+    )
+    .await;
+    let mobile_release_id = json_i64(&mobile_release, &["data", "release", "id"]);
+    let mobile_asset = create_system_release_asset_api(
+        &app,
+        &admin_cookie,
+        mobile_release_id,
+        "android",
+        "Yuance-0.2.0-android-universal.apk",
+        "application/vnd.android.package-archive",
+        10,
+    )
+    .await;
+    let mobile_asset_id = json_i64(&mobile_asset, &["data", "id"]);
+    let mobile_upload = get_system_release_asset_upload_url_api(
+        &app,
+        &admin_cookie,
+        mobile_release_id,
+        mobile_asset_id,
+    )
+    .await;
+    let mobile_upload_url = json_string(&mobile_upload, &["data", "request", "url"]);
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &mobile_upload_url,
+        b"mobile-app",
+        "application/vnd.android.package-archive",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(&app, &admin_cookie, mobile_release_id, mobile_asset_id)
+        .await;
+    update_system_release_api(
+        &app,
+        &admin_cookie,
+        mobile_release_id,
+        "v0.2.0",
+        "移动端预发布",
+        "不应覆盖桌面下载入口",
+        true,
+    )
+    .await;
+
+    let downloads_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/downloads")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(downloads_response.status(), StatusCode::OK);
+    let downloads_body = response_body(downloads_response).await;
+    assert!(downloads_body.contains("元策桌面端 0.1.0"));
+    assert!(downloads_body.contains("Yuance-0.1.0-mac-arm64.dmg"));
+    assert!(downloads_body.contains(&format!("/web/downloads/{release_id}/assets/{asset_id}")));
+    assert!(downloads_body.contains("待发布"));
+    assert!(!downloads_body.contains("class=\"topbar\""));
+
+    let download_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/web/downloads/{release_id}/assets/{asset_id}"))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(download_response.status(), StatusCode::OK);
+    assert_eq!(
+        download_response
+            .headers()
+            .get(header::CONTENT_DISPOSITION)
+            .expect("download should use attachment disposition"),
+        "attachment"
+    );
+    assert_eq!(response_body(download_response).await, "desktop-app");
 }
 
 #[tokio::test]
@@ -2524,6 +2667,29 @@ async fn create_system_release_asset_api(
     content_type: &str,
     byte_size: i64,
 ) -> Value {
+    create_system_release_asset_api_with_architecture(
+        app,
+        admin_cookie,
+        release_id,
+        platform,
+        "universal",
+        filename,
+        content_type,
+        byte_size,
+    )
+    .await
+}
+
+async fn create_system_release_asset_api_with_architecture(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    platform: &str,
+    architecture: &str,
+    filename: &str,
+    content_type: &str,
+    byte_size: i64,
+) -> Value {
     let response = app
         .clone()
         .oneshot(
@@ -2536,6 +2702,7 @@ async fn create_system_release_asset_api(
                 .body(Body::from(
                     serde_json::json!({
                         "platform": platform,
+                        "architecture": architecture,
                         "original_filename": filename,
                         "content_type": content_type,
                         "byte_size": byte_size

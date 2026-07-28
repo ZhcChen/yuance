@@ -881,6 +881,7 @@ struct SystemReleaseSettingsView {
 struct SystemReleaseAssetView {
     id: i64,
     platform: String,
+    architecture: String,
     filename: String,
     content_type: String,
     byte_size: String,
@@ -1440,6 +1441,32 @@ struct SystemReleasesTemplate {
     message: String,
     message_tone: &'static str,
     can_manage_releases: bool,
+}
+
+#[derive(Debug, Clone)]
+struct DesktopDownloadLinkView {
+    available: bool,
+    url: String,
+    filename: String,
+    byte_size: String,
+}
+
+#[derive(Debug, Clone)]
+struct DesktopDownloadPlatformView {
+    name: &'static str,
+    x64: DesktopDownloadLinkView,
+    arm64: DesktopDownloadLinkView,
+}
+
+#[derive(Template)]
+#[template(path = "web/desktop_downloads.html")]
+struct DesktopDownloadsTemplate {
+    has_release: bool,
+    version_name: String,
+    title: String,
+    notes: String,
+    published_at: String,
+    platforms: Vec<DesktopDownloadPlatformView>,
 }
 
 #[derive(Template)]
@@ -6548,6 +6575,44 @@ pub async fn system_release_asset_download(
     Ok(Redirect::temporary(&request.url).into_response())
 }
 
+pub async fn desktop_downloads_page(State(state): State<AppState>) -> AppResult<Response> {
+    let latest_release = system_releases::get_latest_published_release_detail(state.pool()?).await?;
+    Ok(response::html(desktop_downloads_template(latest_release))?.into_response())
+}
+
+pub async fn desktop_download_asset(
+    State(state): State<AppState>,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+) -> AppResult<Response> {
+    let asset =
+        system_releases::get_published_release_asset(state.pool()?, release_id, asset_id).await?;
+
+    if let Some((content_type, content)) =
+        storage::read_test_memory_object(state.pool()?, &state.settings, &asset.object_key).await?
+    {
+        let mut response = content.into_response();
+        let headers = response.headers_mut();
+        headers.insert(header::CONTENT_TYPE, content_type.parse()?);
+        headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+        headers.insert(header::CONTENT_DISPOSITION, "attachment".parse()?);
+        return Ok(response);
+    }
+
+    let request = storage::presign_download_url(
+        state.pool()?,
+        &state.settings,
+        &asset.object_key,
+        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+    )
+    .await?;
+    if !request.headers.is_empty() {
+        return Err(AppError::BadRequest(
+            "当前版本包下载签名包含额外请求头，暂不支持浏览器直接跳转".to_string(),
+        ));
+    }
+    Ok(Redirect::temporary(&request.url).into_response())
+}
+
 pub async fn system_users_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -11243,6 +11308,95 @@ fn system_release_row_from_domain(
     }
 }
 
+fn desktop_downloads_template(
+    detail: Option<system_releases::SystemReleaseDetail>,
+) -> DesktopDownloadsTemplate {
+    let Some(detail) = detail else {
+        return DesktopDownloadsTemplate {
+            has_release: false,
+            version_name: String::new(),
+            title: String::new(),
+            notes: String::new(),
+            published_at: String::new(),
+            platforms: desktop_download_platforms(&[], 0),
+        };
+    };
+
+    let release = detail.release;
+    let platforms = desktop_download_platforms(&detail.assets, release.id);
+    DesktopDownloadsTemplate {
+        has_release: true,
+        version_name: release.version_name,
+        title: fallback_text(release.title, "元策桌面端"),
+        notes: fallback_text(release.notes, "此版本包含桌面端安装包。"),
+        published_at: display_timestamp(release.published_at),
+        platforms,
+    }
+}
+
+fn desktop_download_platforms(
+    assets: &[system_releases::SystemReleaseAssetSummary],
+    release_id: i64,
+) -> Vec<DesktopDownloadPlatformView> {
+    [
+        (system_releases::RELEASE_PLATFORM_MACOS, "macOS"),
+        (system_releases::RELEASE_PLATFORM_WINDOWS, "Windows"),
+        (system_releases::RELEASE_PLATFORM_LINUX, "Linux"),
+    ]
+    .into_iter()
+    .map(|(platform, name)| DesktopDownloadPlatformView {
+        name,
+        x64: desktop_download_link_view(
+            assets,
+            release_id,
+            platform,
+            system_releases::RELEASE_ARCHITECTURE_X64,
+        ),
+        arm64: desktop_download_link_view(
+            assets,
+            release_id,
+            platform,
+            system_releases::RELEASE_ARCHITECTURE_ARM64,
+        ),
+    })
+    .collect()
+}
+
+fn desktop_download_link_view(
+    assets: &[system_releases::SystemReleaseAssetSummary],
+    release_id: i64,
+    platform: &str,
+    architecture: &str,
+) -> DesktopDownloadLinkView {
+    let matching_asset = assets.iter().find(|asset| {
+        asset.status == "uploaded"
+            && asset.platform == platform
+            && asset.architecture == architecture
+    });
+    let matching_asset = matching_asset.or_else(|| {
+        assets.iter().find(|asset| {
+            asset.status == "uploaded"
+                && asset.platform == platform
+                && asset.architecture == system_releases::RELEASE_ARCHITECTURE_UNIVERSAL
+        })
+    });
+
+    match matching_asset {
+        Some(asset) => DesktopDownloadLinkView {
+            available: true,
+            url: format!("/web/downloads/{release_id}/assets/{}", asset.id),
+            filename: asset.original_filename.clone(),
+            byte_size: display_byte_size(asset.byte_size),
+        },
+        None => DesktopDownloadLinkView {
+            available: false,
+            url: String::new(),
+            filename: "暂未提供".to_string(),
+            byte_size: String::new(),
+        },
+    }
+}
+
 fn system_release_asset_view_from_domain(
     asset: system_releases::SystemReleaseAssetSummary,
 ) -> SystemReleaseAssetView {
@@ -11250,6 +11404,7 @@ fn system_release_asset_view_from_domain(
     SystemReleaseAssetView {
         id: asset.id,
         platform: system_release_platform_label(&asset.platform).to_string(),
+        architecture: system_release_architecture_label(&asset.architecture).to_string(),
         filename: asset.original_filename,
         content_type: asset.content_type,
         byte_size: display_byte_size(asset.byte_size),
@@ -13736,6 +13891,15 @@ fn system_release_platform_label(platform: &str) -> &'static str {
         "android" => "Android",
         "ios" => "iOS",
         _ => "未知平台",
+    }
+}
+
+fn system_release_architecture_label(architecture: &str) -> &'static str {
+    match architecture {
+        "x64" => "x64",
+        "arm64" => "ARM64",
+        "universal" => "通用",
+        _ => "未知架构",
     }
 }
 

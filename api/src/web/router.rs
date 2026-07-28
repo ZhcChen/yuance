@@ -65,6 +65,11 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
         .route("/web", get(web::user::dashboard))
+        .route("/web/downloads", get(web::user::desktop_downloads_page))
+        .route(
+            "/web/downloads/{release_id}/assets/{asset_id}",
+            get(web::user::desktop_download_asset),
+        )
         .route("/web/me", get(web::user::me_page))
         .route("/web/me/profile", post(web::user::me_profile_update))
         .route("/web/me/password", post(web::user::me_password_update))

@@ -4,7 +4,7 @@
     "title": "元策系统 API",
     "summary": "元策系统版本管理 OpenAPI。",
     "description": "该契约独立于普通业务 OpenAPI，主要面向版本管理自动化场景。调用时使用系统管理页创建的 system token，通过 Authorization: Bearer <token> 访问。当前只开放版本列表、详情、创建、编辑、发布和版本资产上传链路；版本保留策略等系统设置不在此文档中暴露。",
-    "version": "1.0.0"
+    "version": "1.1.0"
   },
   "servers": [
     {
@@ -513,6 +513,14 @@
               "ios"
             ]
           },
+          "architecture": {
+            "type": "string",
+            "enum": [
+              "x64",
+              "arm64",
+              "universal"
+            ]
+          },
           "object_key": {
             "type": "string"
           },
@@ -537,6 +545,7 @@
           "release_id",
           "file_object_id",
           "platform",
+          "architecture",
           "object_key",
           "filename",
           "content_type",
@@ -710,6 +719,15 @@
               "ios"
             ]
           },
+          "architecture": {
+            "type": "string",
+            "enum": [
+              "x64",
+              "arm64",
+              "universal"
+            ],
+            "default": "universal"
+          },
           "original_filename": {
             "type": "string"
           },
@@ -722,6 +740,7 @@
         },
         "required": [
           "platform",
+          "architecture",
           "original_filename",
           "content_type",
           "byte_size"

@@ -35,7 +35,7 @@ origin: 用户口头需求：以 Electron 初始化 0.1.0 桌面端，接入跨�
 
 ## Implementation Units
 
-### Unit 1：系统版本资产架构与下载页
+### Unit 1：系统版本资产架构与下载页（已完成）
 
 - 新增迁移，为 `system_release_assets` 添加 `architecture`。
 - 更新领域模型、系统管理 API、system OpenAPI、系统版本管理页面和上传脚本调用。

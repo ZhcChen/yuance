@@ -21,6 +21,10 @@ pub const RELEASE_PLATFORM_LINUX: &str = "linux";
 pub const RELEASE_PLATFORM_ANDROID: &str = "android";
 pub const RELEASE_PLATFORM_IOS: &str = "ios";
 
+pub const RELEASE_ARCHITECTURE_X64: &str = "x64";
+pub const RELEASE_ARCHITECTURE_ARM64: &str = "arm64";
+pub const RELEASE_ARCHITECTURE_UNIVERSAL: &str = "universal";
+
 pub const DEFAULT_RETENTION_COUNT: i64 = 5;
 pub const MIN_RETENTION_COUNT: i64 = 1;
 pub const MAX_RETENTION_COUNT: i64 = 50;
@@ -54,6 +58,7 @@ pub struct SystemReleaseAssetSummary {
     pub release_id: i64,
     pub file_object_id: i64,
     pub platform: String,
+    pub architecture: String,
     pub object_key: String,
     pub original_filename: String,
     pub content_type: String,
@@ -86,6 +91,7 @@ pub struct UpdateSystemReleaseInput {
 #[derive(Debug, Clone)]
 pub struct CreateSystemReleaseAssetInput {
     pub platform: String,
+    pub architecture: String,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
@@ -213,6 +219,54 @@ pub async fn get_release_detail(
     };
     let assets = list_release_assets(pool, release_id).await?;
     Ok(Some(SystemReleaseDetail { release, assets }))
+}
+
+pub async fn get_latest_published_release_detail(
+    pool: &SqlitePool,
+) -> AppResult<Option<SystemReleaseDetail>> {
+    let release_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT r.id
+        FROM system_release_versions r
+        WHERE r.status = 'published'
+          AND EXISTS (
+              SELECT 1
+              FROM system_release_assets sa
+              JOIN file_objects fo ON fo.id = sa.file_object_id
+              WHERE sa.release_id = r.id
+                AND sa.platform IN ('windows', 'macos', 'linux')
+                AND fo.status = 'uploaded'
+          )
+        ORDER BY r.published_at DESC, r.id DESC
+        LIMIT 1
+        "#,
+    )
+    .fetch_optional(pool)
+    .await?;
+
+    let Some(release_id) = release_id else {
+        return Ok(None);
+    };
+
+    get_release_detail(pool, release_id).await
+}
+
+pub async fn get_published_release_asset(
+    pool: &SqlitePool,
+    release_id: i64,
+    asset_id: i64,
+) -> AppResult<SystemReleaseAssetSummary> {
+    let asset = get_release_asset(pool, release_id, asset_id).await?;
+    let published = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM system_release_versions WHERE id = ?1 AND status = 'published'",
+    )
+    .bind(release_id)
+    .fetch_one(pool)
+    .await?;
+    if published <= 0 || asset.status != "uploaded" {
+        return Err(AppError::NotFound("版本安装包不存在".to_string()));
+    }
+    Ok(asset)
 }
 
 pub async fn create_release(
@@ -346,6 +400,7 @@ pub async fn create_release_asset(
         return Err(AppError::BadRequest("版本 ID 无效".to_string()));
     }
     let platform = validate_platform(&input.platform)?;
+    let architecture = validate_architecture(&input.architecture)?;
     let _release =
         sqlx::query_scalar::<_, i64>("SELECT id FROM system_release_versions WHERE id = ?1")
             .bind(release_id)
@@ -374,15 +429,17 @@ pub async fn create_release_asset(
         INSERT INTO system_release_assets (
             release_id,
             file_object_id,
-            platform
+            platform,
+            architecture
         )
-        VALUES (?1, ?2, ?3)
+        VALUES (?1, ?2, ?3, ?4)
         RETURNING id
         "#,
     )
     .bind(release_id)
     .bind(file_object.id)
     .bind(platform)
+    .bind(architecture)
     .fetch_one(pool)
     .await?;
 
@@ -404,6 +461,7 @@ pub async fn get_release_asset(
             sa.release_id,
             fo.id,
             sa.platform,
+            sa.architecture,
             fo.object_key,
             fo.original_filename,
             fo.content_type,
@@ -439,6 +497,7 @@ pub async fn list_release_assets(
             sa.release_id,
             fo.id,
             sa.platform,
+            sa.architecture,
             fo.object_key,
             fo.original_filename,
             fo.content_type,
@@ -679,6 +738,17 @@ fn validate_platform(value: &str) -> AppResult<&'static str> {
     }
 }
 
+fn validate_architecture(value: &str) -> AppResult<&'static str> {
+    match value.trim() {
+        RELEASE_ARCHITECTURE_X64 => Ok(RELEASE_ARCHITECTURE_X64),
+        RELEASE_ARCHITECTURE_ARM64 => Ok(RELEASE_ARCHITECTURE_ARM64),
+        RELEASE_ARCHITECTURE_UNIVERSAL => Ok(RELEASE_ARCHITECTURE_UNIVERSAL),
+        _ => Err(AppError::BadRequest(
+            "架构只能是 x64 / arm64 / universal".to_string(),
+        )),
+    }
+}
+
 fn validate_retention_count(value: i64) -> AppResult<i64> {
     if !(MIN_RETENTION_COUNT..=MAX_RETENTION_COUNT).contains(&value) {
         return Err(AppError::BadRequest(format!(
@@ -718,12 +788,13 @@ fn release_asset_from_row(row: ReleaseAssetRow) -> SystemReleaseAssetSummary {
         release_id: row.1,
         file_object_id: row.2,
         platform: row.3,
-        object_key: row.4,
-        original_filename: row.5,
-        content_type: row.6,
-        byte_size: row.7,
-        status: row.8,
-        created_at: row.9,
+        architecture: row.4,
+        object_key: row.5,
+        original_filename: row.6,
+        content_type: row.7,
+        byte_size: row.8,
+        status: row.9,
+        created_at: row.10,
     }
 }
 
@@ -746,6 +817,7 @@ type ReleaseAssetRow = (
     i64,
     i64,
     i64,
+    String,
     String,
     String,
     String,

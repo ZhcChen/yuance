@@ -6954,7 +6954,20 @@
     }
   }
 
-  function createSystemReleaseUploadItem(file, platform) {
+  function systemReleaseArchitectureLabel(architecture) {
+    switch (String(architecture || "").trim()) {
+      case "x64":
+        return "x64";
+      case "arm64":
+        return "ARM64";
+      case "universal":
+        return "通用";
+      default:
+        return "未知架构";
+    }
+  }
+
+  function createSystemReleaseUploadItem(file, platform, architecture) {
     var item = document.createElement("article");
     item.className = "system-release-upload-item";
 
@@ -6970,7 +6983,9 @@
 
     var meta = document.createElement("div");
     meta.className = "system-release-upload-item-meta";
-    meta.textContent = systemReleasePlatformLabel(platform) + " · " + formatFileSize(file.size || 0);
+    meta.textContent = systemReleasePlatformLabel(platform)
+      + " · " + systemReleaseArchitectureLabel(architecture)
+      + " · " + formatFileSize(file.size || 0);
 
     var status = document.createElement("div");
     status.className = "system-release-upload-item-status";
@@ -7005,7 +7020,7 @@
     }
   }
 
-  async function uploadSystemReleaseFile(root, file, platform) {
+  async function uploadSystemReleaseFile(root, file, platform, architecture) {
     var releaseId = String(root.dataset.releaseId || "").trim();
     if (!releaseId) {
       throw new Error("缺少版本 ID，无法上传安装包。");
@@ -7015,7 +7030,7 @@
       throw new Error("缺少上传列表容器。");
     }
 
-    var item = createSystemReleaseUploadItem(file, platform);
+    var item = createSystemReleaseUploadItem(file, platform, architecture);
     list.prepend(item);
     updateSystemReleaseUploadItem(item, {
       percent: 0,
@@ -7032,6 +7047,7 @@
       },
       body: JSON.stringify({
         platform: platform,
+        architecture: architecture,
         original_filename: file.name || "package.bin",
         content_type: file.type || "application/octet-stream",
         byte_size: Number(file.size || 0),
@@ -7111,10 +7127,11 @@
       return;
     }
     var platformSelect = root.querySelector("[data-release-platform]");
+    var architectureSelect = root.querySelector("[data-release-architecture]");
     var fileInput = root.querySelector("[data-release-files]");
     var files = fileInput && fileInput.files ? Array.from(fileInput.files) : [];
-    if (!platformSelect) {
-      showToast("缺少平台选择控件。", "error");
+    if (!platformSelect || !architectureSelect) {
+      showToast("缺少平台或架构选择控件。", "error");
       return;
     }
     if (files.length === 0) {
@@ -7125,6 +7142,7 @@
     root.dataset.uploadBusy = "true";
     button.disabled = true;
     platformSelect.disabled = true;
+    architectureSelect.disabled = true;
     if (fileInput) {
       fileInput.disabled = true;
     }
@@ -7132,9 +7150,10 @@
     var completed = 0;
     var failed = 0;
     var platform = platformSelect.value || "windows";
+    var architecture = architectureSelect.value || "universal";
     for (var index = 0; index < files.length; index += 1) {
       try {
-        await uploadSystemReleaseFile(root, files[index], platform);
+        await uploadSystemReleaseFile(root, files[index], platform, architecture);
         completed += 1;
       } catch (error) {
         failed += 1;
@@ -7145,6 +7164,7 @@
     delete root.dataset.uploadBusy;
     button.disabled = false;
     platformSelect.disabled = false;
+    architectureSelect.disabled = false;
     if (fileInput) {
       fileInput.disabled = false;
     }

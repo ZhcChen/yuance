@@ -2550,6 +2550,32 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.desktop-download-link {
+  display: inline-flex;
+  min-height: var(--topbar-control-height);
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--control-bg);
+  color: var(--muted-strong);
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 18px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.desktop-download-link:hover,
+.desktop-download-link:focus-visible {
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  outline: none;
+}
+
 .project-switcher {
   position: relative;
   height: var(--topbar-control-height);
@@ -10836,6 +10862,13 @@ select option {
   }
 
   .message-open { display: none; }
+
+  .desktop-download-link {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: end;
+    margin-right: 76px;
+  }
 
   .project-switcher {
     grid-column: 1 / -1;
