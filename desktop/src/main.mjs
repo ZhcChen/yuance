@@ -1,18 +1,50 @@
-import { app, BrowserWindow, Notification, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Notification, ipcMain, nativeImage, shell } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
+  resolvePngBrandIconPath,
+  shouldApplyRuntimeDockIcon,
+} from "./branding.mjs";
+import {
+  isDevelopmentRuntime,
   isSafeExternalUrl,
   isTrustedAppUrl,
   normalizeNotificationPayload,
+  resolveDesktopAppIdentity,
+  resolveDevelopmentDataPaths,
   resolveWebUrl,
 } from "./config.mjs";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+const isDevRuntime = isDevelopmentRuntime({
+  isPackaged: app.isPackaged,
+  channel: process.env.YUANCE_DESKTOP_CHANNEL,
+});
+const appIdentity = resolveDesktopAppIdentity(isDevRuntime);
 const webConfig = resolveWebUrl();
 const activeNotifications = new Set();
 let mainWindow = null;
+
+function resolveCurrentPngBrandIconPath() {
+  return resolvePngBrandIconPath({
+    isDevRuntime,
+    isPackaged: app.isPackaged,
+    moduleDir,
+    resourcesPath: process.resourcesPath,
+  });
+}
+
+function applyRuntimeBrandIcon() {
+  const dock = app.dock;
+  if (!shouldApplyRuntimeDockIcon(process.platform, Boolean(dock), isDevRuntime)) {
+    return;
+  }
+  const icon = nativeImage.createFromPath(resolveCurrentPngBrandIconPath());
+  if (!icon.isEmpty()) {
+    dock.setIcon(icon);
+  }
+}
 
 function openExternalIfSafe(value) {
   if (!isSafeExternalUrl(value)) {
@@ -50,7 +82,7 @@ function createMainWindow() {
     minHeight: 640,
     show: false,
     backgroundColor: "#f4f7f8",
-    title: "元策",
+    title: appIdentity.displayName,
     webPreferences: {
       preload: path.join(moduleDir, "preload.cjs"),
       contextIsolation: true,
@@ -104,10 +136,17 @@ function notifyFromRenderer(event, payload) {
   return { shown: true };
 }
 
-app.setAppUserModelId("com.quanxinfu.yuance");
+app.setName(appIdentity.displayName);
+app.setAppUserModelId(appIdentity.appUserModelId);
+if (isDevRuntime) {
+  const developmentDataPaths = resolveDevelopmentDataPaths(app.getPath("appData"));
+  app.setPath("userData", developmentDataPaths.userData);
+  app.setPath("sessionData", developmentDataPaths.sessionData);
+}
 ipcMain.handle("yuance:notify", notifyFromRenderer);
 
 app.whenReady().then(() => {
+  applyRuntimeBrandIcon();
   mainWindow = createMainWindow();
   app.on("activate", () => {
     if (!mainWindow) {

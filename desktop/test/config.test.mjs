@@ -1,15 +1,46 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 import {
+  DEVELOPMENT_APP_DISPLAY_NAME,
+  DEVELOPMENT_APP_USER_MODEL_ID,
   DEFAULT_WEB_URL,
   isSafeExternalUrl,
+  isDevelopmentRuntime,
   isTrustedAppUrl,
   normalizeNotificationPayload,
+  PRODUCTION_APP_DISPLAY_NAME,
+  PRODUCTION_APP_USER_MODEL_ID,
+  resolveDesktopAppIdentity,
+  resolveDevelopmentDataPaths,
   resolveWebUrl,
   safeNotificationTarget,
 } from "../src/config.mjs";
+
+test("separates development and packaged runtime identities", () => {
+  assert.equal(isDevelopmentRuntime({ isPackaged: false }), true);
+  assert.equal(isDevelopmentRuntime({ isPackaged: true, channel: "dev" }), true);
+  assert.equal(isDevelopmentRuntime({ isPackaged: true }), false);
+  assert.deepEqual(resolveDesktopAppIdentity(true), {
+    displayName: DEVELOPMENT_APP_DISPLAY_NAME,
+    appUserModelId: DEVELOPMENT_APP_USER_MODEL_ID,
+  });
+  assert.deepEqual(resolveDesktopAppIdentity(false), {
+    displayName: PRODUCTION_APP_DISPLAY_NAME,
+    appUserModelId: PRODUCTION_APP_USER_MODEL_ID,
+  });
+});
+
+test("keeps development user and session data outside the production profile", () => {
+  const appDataPath = path.join("test-data", "Application Support");
+  const userData = path.join(appDataPath, DEVELOPMENT_APP_DISPLAY_NAME);
+  assert.deepEqual(resolveDevelopmentDataPaths(appDataPath), {
+    userData,
+    sessionData: path.join(userData, "Session Data"),
+  });
+});
 
 test("uses the production Web URL by default", () => {
   assert.deepEqual(resolveWebUrl(), {
@@ -63,6 +94,13 @@ test("intercepts both direct navigations and server redirects", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /webContents\.on\("will-navigate", handleInAppNavigation\)/);
   assert.match(mainSource, /webContents\.on\("will-redirect", handleInAppNavigation\)/);
+});
+
+test("configures development storage before Electron becomes ready", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(mainSource, /app\.setPath\("userData", developmentDataPaths\.userData\)/);
+  assert.match(mainSource, /app\.setPath\("sessionData", developmentDataPaths\.sessionData\)/);
+  assert.match(mainSource, /applyRuntimeBrandIcon\(\);/);
 });
 
 test("allows only HTTP(S) external links", () => {

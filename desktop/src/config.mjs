@@ -1,5 +1,35 @@
+import path from "node:path";
+
 export const DEFAULT_WEB_URL = "https://yuance.quanxinfu.com/web";
 export const DEFAULT_NOTIFICATION_TITLE = "元策";
+export const PRODUCTION_APP_DISPLAY_NAME = "元策";
+export const DEVELOPMENT_APP_DISPLAY_NAME = "元策 Dev";
+export const PRODUCTION_APP_USER_MODEL_ID = "com.quanxinfu.yuance";
+export const DEVELOPMENT_APP_USER_MODEL_ID = "com.quanxinfu.yuance.dev";
+
+export function isDevelopmentRuntime({ isPackaged, channel } = {}) {
+  return !isPackaged || String(channel || "").trim().toLowerCase() === "dev";
+}
+
+export function resolveDesktopAppIdentity(isDevRuntime) {
+  return isDevRuntime
+    ? {
+        displayName: DEVELOPMENT_APP_DISPLAY_NAME,
+        appUserModelId: DEVELOPMENT_APP_USER_MODEL_ID,
+      }
+    : {
+        displayName: PRODUCTION_APP_DISPLAY_NAME,
+        appUserModelId: PRODUCTION_APP_USER_MODEL_ID,
+      };
+}
+
+export function resolveDevelopmentDataPaths(appDataPath) {
+  const userData = path.join(appDataPath, DEVELOPMENT_APP_DISPLAY_NAME);
+  return {
+    userData,
+    sessionData: path.join(userData, "Session Data"),
+  };
+}
 
 export function resolveWebUrl(rawUrl = process.env.YUANCE_DESKTOP_WEB_URL) {
   const candidate = String(rawUrl || DEFAULT_WEB_URL).trim();

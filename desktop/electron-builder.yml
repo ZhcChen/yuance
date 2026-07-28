@@ -8,6 +8,13 @@ files:
   - src/**
   - package.json
 
+extraResources:
+  - from: build
+    to: brand
+    filter:
+      - yuance-dock.png
+      - yuance-dev-dock.png
+
 mac:
   icon: build/icon.icns
   category: public.app-category.productivity
