@@ -43,6 +43,8 @@ async fn login_page_sets_csrf_cookie_and_hidden_field() {
     assert!(body.contains(&format!("name=\"{CSRF_FIELD_NAME}\"")));
     assert!(body.contains("data-page-transition"));
     assert!(body.contains("登录"));
+    assert!(!body.contains("env-badge"));
+    assert!(!body.contains("统一入口 /web"));
 }
 
 #[tokio::test]

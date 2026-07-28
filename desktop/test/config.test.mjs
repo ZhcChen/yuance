@@ -96,10 +96,12 @@ test("intercepts both direct navigations and server redirects", () => {
   assert.match(mainSource, /webContents\.on\("will-redirect", handleInAppNavigation\)/);
 });
 
-test("configures development storage before Electron becomes ready", () => {
+test("configures development storage and maximizes the startup window", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /app\.setPath\("userData", developmentDataPaths\.userData\)/);
   assert.match(mainSource, /app\.setPath\("sessionData", developmentDataPaths\.sessionData\)/);
+  assert.match(mainSource, /window\.maximize\(\);/);
+  assert.doesNotMatch(mainSource, /fullscreen: true/);
   assert.match(mainSource, /applyRuntimeBrandIcon\(\);/);
 });
 

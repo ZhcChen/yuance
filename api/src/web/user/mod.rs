@@ -1378,7 +1378,6 @@ enum AttachmentPreviewStrategy {
 #[derive(Template)]
 #[template(path = "web/login.html")]
 struct LoginTemplate {
-    environment: String,
     csrf_token: String,
     error_message: String,
 }
@@ -6016,7 +6015,6 @@ pub async fn login(State(state): State<AppState>, headers: HeaderMap) -> AppResu
         &state,
         &csrf_token,
         response::html(LoginTemplate {
-            environment: state.settings.env.clone(),
             csrf_token: csrf_token.clone(),
             error_message: String::new(),
         })?
@@ -6065,7 +6063,6 @@ pub async fn login_submit(
                 &state,
                 &csrf_token,
                 response::html(LoginTemplate {
-                    environment: state.settings.env.clone(),
                     csrf_token: csrf_token.clone(),
                     error_message: message,
                 })?

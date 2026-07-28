@@ -92,7 +92,10 @@ function createMainWindow() {
     },
   });
 
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", () => {
+    window.maximize();
+    window.show();
+  });
   window.webContents.on("will-navigate", handleInAppNavigation);
   window.webContents.on("will-redirect", handleInAppNavigation);
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
