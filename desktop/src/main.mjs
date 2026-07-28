@@ -34,6 +34,14 @@ function revealWindow(targetPath) {
   mainWindow.webContents.send("yuance:notification-click", targetPath);
 }
 
+function handleInAppNavigation(event, targetUrl) {
+  if (isTrustedAppUrl(targetUrl, webConfig.origin)) {
+    return;
+  }
+  event.preventDefault();
+  openExternalIfSafe(targetUrl);
+}
+
 function createMainWindow() {
   const window = new BrowserWindow({
     width: 1280,
@@ -53,13 +61,8 @@ function createMainWindow() {
   });
 
   window.once("ready-to-show", () => window.show());
-  window.webContents.on("will-navigate", (event, targetUrl) => {
-    if (isTrustedAppUrl(targetUrl, webConfig.origin)) {
-      return;
-    }
-    event.preventDefault();
-    openExternalIfSafe(targetUrl);
-  });
+  window.webContents.on("will-navigate", handleInAppNavigation);
+  window.webContents.on("will-redirect", handleInAppNavigation);
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfSafe(url);

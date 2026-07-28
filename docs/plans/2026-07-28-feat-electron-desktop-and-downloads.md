@@ -52,7 +52,7 @@ origin: 用户口头需求：以 Electron 初始化 0.1.0 桌面端，接入跨�
 - 提交 macOS、Windows、Linux 图标，macOS 配置 `identity: "-"` 进行 ad-hoc 签名。
 - 为纯配置与发行资产解析逻辑添加 Node 测试。
 
-### Unit 3：GitHub Actions 与 system OpenAPI 发布脚本
+### Unit 3：GitHub Actions 与 system OpenAPI 发布脚本（已完成）
 
 - 新增 `.github/workflows/release-desktop.yml`，以 `desktop-v*.*.*` 标签触发六项构建矩阵。
 - 发布 `dmg`、`exe`、`AppImage` 六个标准命名资产到 GitHub Release。
@@ -68,7 +68,7 @@ origin: 用户口头需求：以 Electron 初始化 0.1.0 桌面端，接入跨�
   - `YUANCE_RELEASE_TITLE`
   - `YUANCE_RELEASE_NOTES` / `YUANCE_RELEASE_NOTES_FILE`
 
-### Unit 4：验证、审查与交付
+### Unit 4：验证、审查与交付（已完成）
 
 - 运行 `cargo fmt --all`、版本管理相关 Rust 测试、Node 测试和 `git diff --check`。
 - 在本地浏览器验证下载页的桌面与移动尺寸、缺失资产状态与下载链接。

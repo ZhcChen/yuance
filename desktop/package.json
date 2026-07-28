@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "check": "node --check src/config.mjs && node --check src/main.mjs && node --check src/preload.cjs && node --check scripts/run-electron-builder.mjs && node --check scripts/verify-release-version.mjs",
+    "check": "node --check src/config.mjs && node --check src/main.mjs && node --check src/preload.cjs && node --check src/release-assets.mjs && node --check scripts/run-electron-builder.mjs && node --check scripts/verify-release-version.mjs && node --check scripts/collect-release-assets.mjs",
     "test": "node --test test/**/*.test.mjs",
     "dist:ci": "npm run check && node ./scripts/run-electron-builder.mjs",
     "dist:mac": "npm run check && node ./scripts/run-electron-builder.mjs --mac",

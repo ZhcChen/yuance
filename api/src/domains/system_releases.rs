@@ -25,6 +25,12 @@ pub const RELEASE_ARCHITECTURE_X64: &str = "x64";
 pub const RELEASE_ARCHITECTURE_ARM64: &str = "arm64";
 pub const RELEASE_ARCHITECTURE_UNIVERSAL: &str = "universal";
 
+const DESKTOP_RELEASE_PLATFORMS: [&str; 3] = [
+    RELEASE_PLATFORM_WINDOWS,
+    RELEASE_PLATFORM_MACOS,
+    RELEASE_PLATFORM_LINUX,
+];
+
 pub const DEFAULT_RETENTION_COUNT: i64 = 5;
 pub const MIN_RETENTION_COUNT: i64 = 1;
 pub const MAX_RETENTION_COUNT: i64 = 50;
@@ -224,31 +230,27 @@ pub async fn get_release_detail(
 pub async fn get_latest_published_release_detail(
     pool: &SqlitePool,
 ) -> AppResult<Option<SystemReleaseDetail>> {
-    let release_id = sqlx::query_scalar::<_, i64>(
+    let release_ids = sqlx::query_scalar::<_, i64>(
         r#"
-        SELECT r.id
-        FROM system_release_versions r
-        WHERE r.status = 'published'
-          AND EXISTS (
-              SELECT 1
-              FROM system_release_assets sa
-              JOIN file_objects fo ON fo.id = sa.file_object_id
-              WHERE sa.release_id = r.id
-                AND sa.platform IN ('windows', 'macos', 'linux')
-                AND fo.status = 'uploaded'
-          )
-        ORDER BY r.published_at DESC, r.id DESC
-        LIMIT 1
+        SELECT id
+        FROM system_release_versions
+        WHERE status = 'published'
+        ORDER BY published_at DESC, id DESC
         "#,
     )
-    .fetch_optional(pool)
+    .fetch_all(pool)
     .await?;
 
-    let Some(release_id) = release_id else {
-        return Ok(None);
-    };
+    for release_id in release_ids {
+        let Some(detail) = get_release_detail(pool, release_id).await? else {
+            continue;
+        };
+        if has_complete_desktop_downloads(&detail.assets) {
+            return Ok(Some(detail));
+        }
+    }
 
-    get_release_detail(pool, release_id).await
+    Ok(None)
 }
 
 pub async fn get_published_release_asset(
@@ -693,6 +695,26 @@ async fn ensure_version_name_available(
         )));
     }
     Ok(())
+}
+
+fn has_complete_desktop_downloads(assets: &[SystemReleaseAssetSummary]) -> bool {
+    DESKTOP_RELEASE_PLATFORMS.iter().all(|platform| {
+        let has_universal = assets.iter().any(|asset| {
+            asset.status == "uploaded"
+                && asset.platform == *platform
+                && asset.architecture == RELEASE_ARCHITECTURE_UNIVERSAL
+        });
+        has_universal
+            || (assets.iter().any(|asset| {
+                asset.status == "uploaded"
+                    && asset.platform == *platform
+                    && asset.architecture == RELEASE_ARCHITECTURE_X64
+            }) && assets.iter().any(|asset| {
+                asset.status == "uploaded"
+                    && asset.platform == *platform
+                    && asset.architecture == RELEASE_ARCHITECTURE_ARM64
+            }))
+    })
 }
 
 fn validate_version_name(value: &str) -> AppResult<String> {

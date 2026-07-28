@@ -2251,30 +2251,76 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
     )
     .await;
     let release_id = json_i64(&release, &["data", "release", "id"]);
-    let asset = create_system_release_asset_api_with_architecture(
-        &app,
-        &admin_cookie,
-        release_id,
-        "macos",
-        "arm64",
-        "Yuance-0.1.0-mac-arm64.dmg",
-        "application/x-apple-diskimage",
-        11,
-    )
-    .await;
-    let asset_id = json_i64(&asset, &["data", "id"]);
-    let upload =
-        get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id).await;
-    let upload_url = json_string(&upload, &["data", "request", "url"]);
-    upload_test_storage_object(
-        &app,
-        &admin_cookie,
-        &upload_url,
-        b"desktop-app",
-        "application/x-apple-diskimage",
-    )
-    .await;
-    mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
+    let desktop_assets = [
+        (
+            "macos",
+            "x64",
+            "Yuance-0.1.0-mac-x64.dmg",
+            "application/x-apple-diskimage",
+        ),
+        (
+            "macos",
+            "arm64",
+            "Yuance-0.1.0-mac-arm64.dmg",
+            "application/x-apple-diskimage",
+        ),
+        (
+            "windows",
+            "x64",
+            "Yuance-0.1.0-win-x64.exe",
+            "application/x-msdownload",
+        ),
+        (
+            "windows",
+            "arm64",
+            "Yuance-0.1.0-win-arm64.exe",
+            "application/x-msdownload",
+        ),
+        (
+            "linux",
+            "x64",
+            "Yuance-0.1.0-linux-x64.AppImage",
+            "application/octet-stream",
+        ),
+        (
+            "linux",
+            "arm64",
+            "Yuance-0.1.0-linux-arm64.AppImage",
+            "application/octet-stream",
+        ),
+    ];
+    let mut macos_arm64_asset_id = 0;
+    for (platform, architecture, filename, content_type) in desktop_assets {
+        let asset = create_system_release_asset_api_with_architecture(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            filename,
+            content_type,
+            11,
+        )
+        .await;
+        let asset_id = json_i64(&asset, &["data", "id"]);
+        let upload =
+            get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id)
+                .await;
+        let upload_url = json_string(&upload, &["data", "request", "url"]);
+        upload_test_storage_object(
+            &app,
+            &admin_cookie,
+            &upload_url,
+            b"desktop-app",
+            content_type,
+        )
+        .await;
+        mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
+        if platform == "macos" && architecture == "arm64" {
+            macos_arm64_asset_id = asset_id;
+        }
+    }
+    assert!(macos_arm64_asset_id > 0);
     update_system_release_api(
         &app,
         &admin_cookie,
@@ -2335,6 +2381,61 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
     )
     .await;
 
+    let incomplete_release = create_system_release_api(
+        &app,
+        &admin_cookie,
+        "v0.3.0",
+        "不完整桌面端版本",
+        "缺少部分桌面架构包，不应覆盖下载入口",
+    )
+    .await;
+    let incomplete_release_id = json_i64(&incomplete_release, &["data", "release", "id"]);
+    let incomplete_asset = create_system_release_asset_api_with_architecture(
+        &app,
+        &admin_cookie,
+        incomplete_release_id,
+        "windows",
+        "x64",
+        "Yuance-0.3.0-win-x64.exe",
+        "application/x-msdownload",
+        12,
+    )
+    .await;
+    let incomplete_asset_id = json_i64(&incomplete_asset, &["data", "id"]);
+    let incomplete_upload = get_system_release_asset_upload_url_api(
+        &app,
+        &admin_cookie,
+        incomplete_release_id,
+        incomplete_asset_id,
+    )
+    .await;
+    let incomplete_upload_url = json_string(&incomplete_upload, &["data", "request", "url"]);
+    upload_test_storage_object(
+        &app,
+        &admin_cookie,
+        &incomplete_upload_url,
+        b"incomplete!!",
+        "application/x-msdownload",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(
+        &app,
+        &admin_cookie,
+        incomplete_release_id,
+        incomplete_asset_id,
+    )
+    .await;
+    update_system_release_api(
+        &app,
+        &admin_cookie,
+        incomplete_release_id,
+        "v0.3.0",
+        "不完整桌面端版本",
+        "缺少部分桌面架构包，不应覆盖下载入口",
+        true,
+    )
+    .await;
+
     let downloads_response = app
         .clone()
         .oneshot(
@@ -2349,15 +2450,26 @@ async fn desktop_downloads_page_exposes_only_published_uploaded_assets() {
     let downloads_body = response_body(downloads_response).await;
     assert!(downloads_body.contains("元策桌面端 0.1.0"));
     assert!(downloads_body.contains("Yuance-0.1.0-mac-arm64.dmg"));
-    assert!(downloads_body.contains(&format!("/web/downloads/{release_id}/assets/{asset_id}")));
-    assert!(downloads_body.contains("待发布"));
+    assert!(downloads_body.contains(&format!(
+        "/web/downloads/{release_id}/assets/{macos_arm64_asset_id}"
+    )));
+    assert_eq!(
+        downloads_body
+            .matches(&format!("/web/downloads/{release_id}/assets/"))
+            .count(),
+        6
+    );
+    assert!(!downloads_body.contains("待发布"));
+    assert!(!downloads_body.contains("不完整桌面端版本"));
     assert!(!downloads_body.contains("class=\"topbar\""));
 
     let download_response = app
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/web/downloads/{release_id}/assets/{asset_id}"))
+                .uri(format!(
+                    "/web/downloads/{release_id}/assets/{macos_arm64_asset_id}"
+                ))
                 .body(Body::empty())
                 .expect("request should build"),
         )

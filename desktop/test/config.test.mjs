@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -56,6 +57,12 @@ test("normalizes native notification payloads", () => {
       targetPath: "/web/messages/42/open",
     },
   );
+});
+
+test("intercepts both direct navigations and server redirects", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(mainSource, /webContents\.on\("will-navigate", handleInAppNavigation\)/);
+  assert.match(mainSource, /webContents\.on\("will-redirect", handleInAppNavigation\)/);
 });
 
 test("allows only HTTP(S) external links", () => {

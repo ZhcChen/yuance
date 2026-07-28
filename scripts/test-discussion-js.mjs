@@ -192,6 +192,9 @@ function loadAppWithDom(options = {}) {
       };
     },
   };
+  if (options.desktopBridge) {
+    window.yuanceDesktop = options.desktopBridge;
+  }
 
   const context = {
     console,
@@ -1284,5 +1287,28 @@ const nonWebRedirect = loadAppWithDom({
 await nonWebRedirect.hooks.submitWebForm(webPostForm("不应出现"));
 assert.deepEqual(nonWebRedirect.assignCalls, ["https://yuance.test/webhook"]);
 assert.equal(nonWebRedirect.sessionItems.has("yuance-pending-toast"), false);
+
+const browserTopbarRealtime = loadAppWithDom();
+await new Promise((resolve) => setImmediate(resolve));
+browserTopbarRealtime.fetchCalls.length = 0;
+await browserTopbarRealtime.hooks.handleTopbarRealtimeEvent();
+assert.deepEqual(
+  browserTopbarRealtime.fetchCalls.map((entry) => String(entry.url)),
+  ["/api/v1/topbar/status"],
+);
+
+const desktopTopbarRealtime = loadAppWithDom({
+  desktopBridge: { notify() {} },
+});
+await new Promise((resolve) => setImmediate(resolve));
+const desktopNotificationRoot = notificationRootStub();
+desktopTopbarRealtime.window.document.querySelector = (selector) =>
+  selector === "[data-notification-root]" ? desktopNotificationRoot : null;
+desktopTopbarRealtime.fetchCalls.length = 0;
+await desktopTopbarRealtime.hooks.handleTopbarRealtimeEvent();
+assert.deepEqual(
+  desktopTopbarRealtime.fetchCalls.map((entry) => String(entry.url)).sort(),
+  ["/api/v1/notifications?limit=5", "/api/v1/topbar/status"],
+);
 
 console.log("discussion js behavior ok");

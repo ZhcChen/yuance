@@ -31,6 +31,8 @@
   var topbarRealtimeConnectedOnce = false;
   var topbarStatusRefreshPromise = null;
   var topbarStatusRefreshQueued = false;
+  var notificationFeedRefreshPromise = null;
+  var notificationFeedRefreshQueued = false;
   var desktopNotificationKnownIds = new Set();
   var desktopNotificationFeedInitialized = false;
   var desktopNotificationClickUnsubscribe = null;
@@ -935,7 +937,7 @@
     });
   }
 
-  async function initNotificationFeed(root) {
+  async function fetchNotificationFeed(root) {
     if (!root) {
       return;
     }
@@ -1043,10 +1045,29 @@
 
   async function refreshNotificationFeed(root) {
     var notificationRoot = root || document.querySelector("[data-notification-root]");
-    await Promise.all([
-      notificationRoot ? initNotificationFeed(notificationRoot) : Promise.resolve(),
-      refreshTopbarStatus(),
-    ]);
+    if (notificationFeedRefreshPromise) {
+      notificationFeedRefreshQueued = true;
+      return notificationFeedRefreshPromise;
+    }
+    notificationFeedRefreshPromise = (async function () {
+      try {
+        await Promise.all([
+          notificationRoot ? fetchNotificationFeed(notificationRoot) : Promise.resolve(),
+          refreshTopbarStatus(),
+        ]);
+      } finally {
+        notificationFeedRefreshPromise = null;
+        if (notificationFeedRefreshQueued) {
+          notificationFeedRefreshQueued = false;
+          refreshNotificationFeed(notificationRoot);
+        }
+      }
+    })();
+    return notificationFeedRefreshPromise;
+  }
+
+  function initNotificationFeed(root) {
+    return root ? refreshNotificationFeed(root) : Promise.resolve();
   }
 
   async function refreshTopbarStatus() {
@@ -1082,7 +1103,11 @@
   }
 
   async function handleTopbarRealtimeEvent() {
-    await refreshNotificationFeed(document.querySelector("[data-notification-root]"));
+    if (desktopBridge() || notificationDropdownIsOpen()) {
+      await refreshNotificationFeed(document.querySelector("[data-notification-root]"));
+      return;
+    }
+    await refreshTopbarStatus();
   }
 
   function startTopbarRealtime() {
@@ -9909,6 +9934,7 @@
       promptAppUpdateIfNeeded: promptAppUpdateIfNeeded,
       openAppUpdateModal: openAppUpdateModal,
       startTopbarRealtime: startTopbarRealtime,
+      handleTopbarRealtimeEvent: handleTopbarRealtimeEvent,
       renderTopbarStatus: renderTopbarStatus,
       mediaOrientation: mediaOrientation,
       preferredImageViewerFitWidthScale: preferredImageViewerFitWidthScale,
