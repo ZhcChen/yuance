@@ -42,6 +42,13 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 - R11：Desktop 文件选择、上传、下载、保存和定位使用主进程签发的 capability；renderer 不取得原始本地路径，也不能请求任意 URL、读文件或写文件。
 - R12：Desktop 原生系统通知仅由受限 Desktop adapter 请求、主进程投递；浏览器 UI 只负责站内通知状态，不能承担 Electron 系统能力。
 - R13：离线能力分为在线功能对齐、已同步数据只读缓存和可选离线写入同步三个阶段。
+- R14：REST、SSE 和 device-session 契约有明确的兼容、废弃、缓存、版本协商和服务端回滚规则，已发布 Desktop 不因服务端小版本变更失效。
+- R15：每个 Web feature 切换具有服务端控制的目标、粘滞、审计、指标、告警和紧急回退机制。
+- R16：Desktop 生产发行具有签名、平台信任链、制品完整性、安装/卸载数据语义和客户端版本兼容 Gate；自动更新保持独立阶段，不作为 D1 的隐含范围。
+- R17：D1 的设备授权、refresh 生命周期、Desktop SSE transport、代理/TLS、单实例和进程生命周期必须形成可测试的 RFC，不由 renderer 自行猜测或降级。
+- R18：共享 workspace 有单向依赖图、公开 export surface、唯一依赖解析和边界检查，避免跨宿主代码与 React runtime 漂移。
+- R19：W1-W3 和 D1-D2 具有隐私审查后的可观测性、性能预算与适用的无障碍验收；构建/E2E 通过不是唯一上线信号。
+- R20：D3/D4 的本地 schema 迁移、同步 checkpoint、离线授权新鲜度、附件内容版本和离线 operation 审计具有原子性与崩溃恢复语义。
 
 ## 交付原则
 
@@ -52,6 +59,9 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 - **按 feature 切换和回退。** 新旧入口并存；每个 feature 都要有旧路由、切换条件、回退路径和旧实现下线条件，禁止一次性重写所有 Askama 页面。
 - **业务规则只在服务端。** `api/src/domains/**` 保持权限、审计、状态约束和通知事实的唯一来源；客户端仅负责展示、输入校验、缓存和同步编排。
 - **Desktop 与离线单独设门。** 浏览器迁移不等待 `app://`、设备凭证、SQLite、附件缓存或冲突策略；Desktop 开始前必须完成安全设计和打包验证，离线能力则需额外批准。
+- **可演进契约。** `/api/v1`、SSE 事件和 device-session 先定义兼容窗口、未知字段/枚举行为、弃用和回滚，再由 Web 或 Desktop 消费；客户端不能把服务端小版本更新当作破坏性重装。
+- **可控切换与可诊断运行。** feature 切换必须由服务端统一决策并可审计、粘滞和紧急回退；发布前定义脱敏指标、告警、性能预算和无障碍验收，不能仅凭构建成功放量。
+- **发行信任先于长期凭证。** D1 若面向生产分发，必须完成平台签名、制品完整性和支持边界；自动更新、外部深链接和离线数据分别作为显式后续能力，不以现有安装包或 `app://` 自动获得。
 
 ## 目标职责、JavaScript 基线与构建方向
 
@@ -144,6 +154,14 @@ export function mountApp(dependencies) {
 - Web 与 Desktop 共享内部路由映射和服务端通知 ID 去重键。显示通知不自动标已读，用户点击后才调用幂等已读操作。
 - SSE 当前只能表达“刷新”信号，不能被当作离线同步协议；断线、`Lagged` 和重连的行为必须由 `api-client` / `app-core` 明确处理。
 
+### 契约兼容、缓存与 SSE transport
+
+- `/api/v1` 的默认演进规则是只追加兼容字段；客户端必须忽略未知字段，并把未知枚举映射为安全的“未知/需刷新”状态，不能据此发起写操作。任何 Browser 可调用的 REST/SSE 路径不得以 device-session capability 隐式改变破坏性语义，必须使用新 major 路径或保持向后兼容的服务端响应；device-session capability 仅适用于 Desktop 专属 endpoint。
+- REST 与事件契约分别维护 OpenAPI 和版本化事件 schema。Desktop 在认证握手中上报 `desktopVersion`、`rendererRevision`、协议版本、平台和架构；服务端只为 Desktop 专属 endpoint 返回支持范围、最低版本和 feature capability。服务端发布、回滚和废弃必须同时验证当前与上一稳定 Browser 契约及当前与上一稳定 Desktop 契约；首个稳定 Desktop 发布时固化可回归的兼容基线与弃用日期。
+- Browser SSE 继续使用同源 Cookie；Desktop 使用可携带短期 `Authorization` header 的受控 fetch-stream client，不使用浏览器 `EventSource` 假设，也不得把 Bearer 或 refresh 凭证放进 URL、查询参数、日志或错误上报。Desktop network service 仅从受信配置构造 canonical `https` origin 与固定 API/SSE path，renderer 不能传递任意 URL；REST/SSE 均显式拒绝重定向、不得手工跟随 `Location`、不携带 Cookie，并在每次重连重验 endpoint、TLS 与 device session。RFC 必须定义事件名/schema 版本、keep-alive、token 到期关闭语义、刷新后的重连顺序、指数退避上限、401/403 终态和代理禁缓冲。
+- 会话检查、CSRF、认证 JSON、用户数据错误、SSE 和签名附件授权响应统一使用 `Cache-Control: private, no-store`；SSE 禁止中间代理缓冲。只有明确公开且不可变的资源才能使用长缓存；任何后续用户态 GET 缓存都必须定义用户隔离键、`ETag`/版本和 `Vary`。
+- 契约 CI 对 OpenAPI 和事件 schema 执行 breaking-change diff；集成测试断言认证、SSE 和签名附件响应的缓存头、认证边界和 N/N-1 兼容行为。
+
 ### 通知的宿主分工
 
 1. 服务端 domain 创建通知事实和语义目标，SSE 只发出刷新信号。
@@ -164,6 +182,14 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 下载/保存必须先经系统保存对话框或应用受控缓存根；定位只允许针对主进程已经确认归属的文件。主进程不得提供泛化 `fetch(url)`、读文件或写文件 IPC。
 - 所有 capability、上传授权、重定向目标、MIME、文件大小和哈希校验都在主进程和服务端重复验证；日志、遥测和错误响应不得包含原始本地路径或短时签名 URL。
 
+### 灰度、可观测性、性能与可访问性
+
+- 每个迁移 feature 都由服务端的单一 rollout 决策点确定当前 canonical owner；决策至少包含目标粒度（全站/组织/角色/用户）、优先级、会话粘滞、审计、旧页返回策略和紧急回退。客户端不能仅靠本地 feature flag、UA 或缓存决定新旧实现。
+- W0 为首批切片定义放量与回退信号：认证失败、路由回退、前端错误、API/SSE 错误率、SSE 重连/`Lagged`、上传失败、关键任务完成率和支持工单。服务端与客户端事件只使用允许字段，并携带脱敏 correlation ID、release/客户端版本和 rollout 版本；不得包含 token、授权头、签名 URL、路径、文件内容或未经批准的业务文本。
+- D1 诊断设计必须明确默认收集范围、用户同意/企业禁用、崩溃报告 endpoint、source map 访问、日志轮转/容量/保留期和支持包预览/脱敏。注入 token、路径、签名 URL、文件名和项目名的负向测试必须证明日志与 crash report 不泄漏敏感值。
+- W1/W3/D2 在代表性设备与网络下定义并持续检查 JS/CSS 体积、首屏/导航、长任务、预览资源、列表/附件操作、SSE 重连和 Desktop renderer 内存/CPU 预算；预览和低频 feature 使用 route-level lazy loading，长列表明确分页或虚拟化策略。
+- 共享 UI 以适用的 WCAG 2.2 AA 为基线；迁移验收覆盖键盘路径、路由标题与焦点恢复、表单错误关联、对话框焦点陷阱、加载/通知 live region 和系统通知不可用时的站内等价状态。
+
 ## 决策门槛
 
 决策按阶段拆分。未收口的决定只阻塞其对应阶段，不应阻塞浏览器端 `web/` 的基础迁移。
@@ -177,6 +203,9 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 | 浏览器资源交付 | 首期明确采用同源交付；若未来选择跨源，必须先完成 CORS/Cookie/CSRF/SSE 集成验证。 | 决定开发代理、生产静态资源、SPA 回退和会话行为。 |
 | 首批迁移范围 | 确认新 Web 应用壳、消息中心和首个完整业务 feature；定义旧入口、回退和下线条件。 | 防止大爆炸式重写。 |
 | REST 契约基线 | 确认 OpenAPI/事件契约的维护方式、错误模型、CSRF 获取和未认证跳转行为。 | 决定 W1-W3 的 API 改动与测试。 |
+| 契约生命周期与缓存 | 固定 Browser/ Desktop 各自的 `/api/v1`/SSE 兼容边界、未知字段/枚举行为、Desktop 专属 capability、最低客户端版本、弃用期、Browser 与 Desktop 的 N/N-1 测试、用户态响应缓存头和代理缓冲规则。 | 防止服务端发布/回滚破坏已安装 Desktop、已发布 Browser 或跨用户缓存命中。 |
+| 灰度与回退治理 | 固定服务端 rollout 的目标粒度、粘滞、审计、canonical owner、旧页返回、量化放量/回退阈值和支持处置流程。 | 防止同一任务在新旧实现间跳转或无依据扩大覆盖。 |
+| 运行质量基线 | 设定隐私字段 allowlist、指标/告警、性能预算和 WCAG 2.2 AA 适用验收。 | 使 W1-W3 的上线、回退和问题定位可操作。 |
 
 ### D1 前必须确认的 Desktop 门槛
 
@@ -188,6 +217,10 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 | 文件 capability | 确认 `DesktopFileCapability` schema、发行者、绑定信息、TTL、失效条件、上传授权、保存/定位范围和隐私日志规则。 | 决定 D2 文件选择、上传、下载和定位实现。 |
 | 通知产品语义 | 明确投递类别、前台/最小化判定、设备偏好、显示与已读时机、目标缺失回退和退出后是否承诺通知。 | 决定 D2 Desktop adapter 和服务端通知契约。 |
 | 服务端配置 | 确认第一期仅支持官方服务端，或设计私有化/多服务器登记、TLS/私有 CA 和 endpoint allowlist。 | 禁止由任意远端页面 URL 决定 IPC 信任。 |
+| 设备授权与凭证生命周期 | 固定系统浏览器设备授权流、批准/取消/超时、账户切换、renderer 不接触密码、refresh 单飞、凭证库原子写入、崩溃恢复和本地优先清理状态机。 | 防止重复批准、refresh 重放、凭证库失败与不可恢复登录循环。 |
+| Desktop SSE 与网络 | 固定 fetch-stream Bearer transport、重连/轮换/代理行为、系统代理/PAC、TLS/私有 CA、禁止证书错误绕过和 endpoint 切换后的重新认证。 | 防止 `app://` 误用浏览器 Cookie/EventSource 假设或以降级方式绕过 TLS。 |
+| 生命周期与外部激活 | 固定单实例、窗口关闭/退出、休眠/唤醒、主进程/renderer 崩溃和凭证库不可用状态。D1 不注册自定义协议或通用外部深链接；将来若引入必须另行定义 OS 激活、认证前暂存和路由 schema。 | 防止多实例竞争、登录回传注入和平台行为漂移。 |
+| 发行与平台支持 | 固定平台 × 架构 × 能力矩阵、安装/升级/卸载的数据语义、生产签名/公证/制品哈希、构建 provenance/SBOM、依赖补丁 SLA 和支持边界；同时确认证书/签名服务所有者、受保护 CI environment、密钥注入、轮换/撤销演练和任一平台签名失败时阻止 `publish` 的 preflight。现有 ad-hoc 配置仅限预览。自动更新明确不在 D1，留给 D2 后独立 Gate。 | 在存储长期设备凭证前建立可验证的客户端信任链与恢复路径。 |
 
 推荐：Desktop 使用按设备可撤销的短生命周期凭证，refresh 凭证只存操作系统凭证库；renderer 不持有长期凭证或通用授权头。应用存活且窗口非前台时才展示原生通知，用户点击后才标已读。
 
@@ -199,6 +232,9 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 | 缓存同步 | 授权范围全量刷新 / 快照与稳定游标增量 | 决定初始同步、删除墓碑、权限撤销、重连和恢复语义。 |
 | 缓存数据与附件 | 数据集、附件下载策略、配额、加密、用户切换和登出清理 | 决定本地数据库、文件缓存和测试范围。 |
 | 冲突与附件同步 | 操作幂等、基线版本、实体冲突规则、内容哈希与续传 | D4 的前置条件，未确认时不得开始离线写入。 |
+| 本地 schema 与 checkpoint | 固定 SQLite schema version、事务迁移、迁移失败/降级/重建、批次 generation、原子 checkpoint、staging 文件和强杀恢复。 | 防止升级或同步中断后读取半迁移、半应用或损坏附件。 |
+| 离线授权新鲜度 | 使用服务端签发、可验证且短期的离线访问租约，绑定 endpoint/server/user/device/授权版本，定义最大离线时长、过期、单调时间/墙钟回拨、撤销未送达和附件解密行为。 | 将未送达撤权的最大暴露窗口限制在租约上限内，而不是无限信任最后一次同步。 |
+| 附件与 operation 完整性 | 定义版本化 `sha-256:<base64url>` 明文 `content_digest`、字节数、缓存键和 `pending -> verified -> available` 原子发布；同步写入定义 `(actor, device_session, operation_id)` 唯一性，以及仅含协议版本、操作类型、目标、基线版本、规范化 payload 和依赖的版本化 fingerprint，明确排除认证头、actor、device session、当前权限/角色和其他可变服务端状态；同 key 不同 fingerprint 返回 `409`，相同 fingerprint 返回原始终态并原子审计。 | 防止缓存错误命中、重复业务变更、同 key payload 混淆和重复/缺失审计。 |
 
 推荐将“已同步数据只读缓存”作为 D3 的单独产品 Gate；离线写入仅在同步协议、冲突策略和附件策略确定后进入 D4。
 
@@ -217,6 +253,9 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 - 建立 `/web/*` 页面、HTML partial、静态资源、表单写操作、REST、SSE、附件预览与旧路由的迁移清单。
 - 为每个首批 feature 记录：新入口、旧入口、canonical URL 当前所有者、路径参数、查询参数、锚点、未认证 `return_to`、页面内链接、旧通知、刷新/前进/后退行为、所需 REST/SSE、鉴权/CSRF 行为、Browser/ Desktop 验收、回退开关和旧实现下线条件。
+- 记录 `/api/v1` 与事件 schema 的兼容/弃用矩阵、当前与上一稳定客户端的支持窗口、按响应类别的缓存头、Browser Cookie SSE 与 Desktop Bearer fetch-stream 的宿主差异；Browser 可调用路径的任何破坏性变更必须使用独立 major 或保持向后兼容，device-session capability 只用于 Desktop 专属 endpoint。
+- 设计服务端 rollout 决策、目标粒度、粘滞、审计和紧急回退，并为每个切片绑定放量/回退指标、支持处置和旧页返回策略。
+- 定义隐私字段 allowlist、Web/Desktop 诊断与告警、性能预算及无障碍基线；把测量设备、网络和阈值写入后续验收，而不是事后解释指标。
 - 固定首期唯一生产链路：前端构建阶段 -> `web/dist` -> `api/Dockerfile` 多阶段构建 -> 最终 `yuance-api` 镜像静态目录 -> API 同源 `/web/app/*` 服务；明确入口/manifest/哈希资源缓存头、SPA 回退边界、构建失败语义和镜像回滚行为。
 - 固定 JavaScript ESM/JSX、JSDoc 约定、`jsconfig.json` 的 `allowJs` / `checkJs` / `noEmit` / `jsx: react-jsx` 配置，以及 `web`、`frontend`、`desktop` 的 `check:js` / `check:source` / `check` 脚本和根 `check:frontend` 聚合命令；不得创建应用 `.ts` / `.tsx` 源文件。
 - 明确 W0 不创建 Desktop renderer、不修改 Electron 认证、不引入 SQLite、缓存或同步。
@@ -226,6 +265,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 迁移清单覆盖首批浏览器路径，并能追溯到具体 API 契约、canonical URL、参数/锚点转换、Browser/ Desktop 差异和旧页面回退路径。
 - JSDoc 覆盖范围、`web`/共享包/Desktop renderer 的 `check:js`、`check:source`、`check` 与根 `check:frontend` 命令、异常豁免规则和 CI 失败条件已确定；`tsc` 的角色仅为无产物 JavaScript 检查器。
 - W0 决策记录说明同源 Cookie、CSRF、SSE、未认证跳转、静态资源交付、缓存头、镜像构建和回滚的验证方式。
+- 契约兼容、缓存、rollout、指标/隐私、性能和无障碍 Gate 已明确到可实现的 schema、配置、测试和量化阈值；D1/D3 的未决决策不被错误提前当作浏览器默认行为。
 - 后续 W1-W3 可以在不变更 `desktop/` 的情况下实施。
 
 ### W1：独立 Web 构建与首批 REST/SSE 契约
@@ -248,6 +288,8 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 为 `/web/app/*` 定义受控静态资源服务：仅导航请求回退到 SPA 入口，哈希资源、manifest 与资源 MIME 必须精确返回；入口 HTML/manifest 短缓存，哈希资源长期 `immutable` 缓存。
 - 建立隔离的 SPA 迁移入口和资源路径；旧 Askama `/web/*` 继续工作，不改变其默认行为。
 - 将首批新 Web 所需的会话检查、CSRF 获取、读写、登出、错误模型和 SSE 重连明确为 REST/事件契约。
+- 对每个 REST/SSE endpoint 标注兼容语义、认证方式、缓存类别和代理行为；认证/用户态/签名授权响应默认 `private, no-store`，事件 schema 独立版本化且受 breaking-change diff 保护。
+- 引入服务端 rollout 决策与脱敏运行事件；新旧入口均读取同一决策，指标按 rollout、release 和 correlation ID 关联，不将业务正文或凭证写入遥测。
 - 为通知新增语义目标读取与幂等单条/批量已读操作；保留旧 `/web/messages/{id}/open` 仅供旧页面兼容。
 - 新 Web 不读取 HTML meta、HTML partial 或 `/web/*` 展示 URL 作为业务契约。
 
@@ -258,6 +300,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - JSDoc/checkJs 检查、lint 和构建均通过：`npm --prefix web run check` 与 W1 范围的根 `npm run check:frontend` 必须以非零状态阻止构建；新增前端源文件不包含 `.ts` / `.tsx`。
 - 在正式同款 API 镜像中验证 `/web/app/*` 入口、带路径参数的深链接、资源 MIME、入口/哈希资源缓存头、构建版本和 manifest；缺失前端构建物或 manifest 时镜像构建必须失败，不能发布半套产物。
 - OpenAPI/事件契约覆盖已迁移交互；浏览器不会因 HTML 模板细节变化而失效。
+- 契约 breaking-change diff、当前/上一稳定 client 的契约套件、认证/SSE/签名授权的 `private, no-store` 与代理禁缓冲测试通过；rollout 评估、脱敏遥测和告警可定位每次切换的影响。
 
 ### W2：仅浏览器的应用壳、认证衔接与消息中心
 
@@ -277,6 +320,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 通知点击由新 Web router 解析语义目标并调用幂等已读 API，不再访问 HTML 跳转路由。
 - Browser adapter 只承担站内消息中心和浏览器文件能力，不提供 Electron 系统通知或本机文件路径能力。
 - `api/static/app.js` 继续支撑旧 Askama 页面，W2 不删除旧 Electron bridge 逻辑。
+- 新应用壳按服务端 rollout 决策保持会话粘滞；路由切换更新页面标题、主焦点和可访问的加载/错误状态，并上报脱敏的认证、路由和渲染失败指标。
 
 **验收：**
 
@@ -284,6 +328,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 对已迁移路由覆盖直接打开新旧 URL、路径/查询/锚点保留、未认证登录回跳、刷新、前进/后退和紧急回退后的 URL 兼容。
 - 旧 Askama 登录页、消息中心和 `/web/messages/{id}/open` 兼容路径仍可用。
 - W2 不需要改动 Electron，也不把浏览器 Cookie transport 或 `window.Notification` 暴露成未来 Desktop 的默认实现。
+- 自动与人工无障碍验收覆盖键盘导航、路由焦点恢复、表单错误关联和消息中心 live region；rollout 扩大或回退按 W0 量化阈值执行。
 
 ### W3：浏览器端高频 Feature 逐步迁移
 
@@ -303,6 +348,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 文档预览改用 API client、受控下载和前端资源路径，不依赖服务端模板、HTML partial 或旧 `/web/*/preview` 展示路由。
 - 每个 feature 的 UI 将渲染与 use case 分开：组件通过 props/回调呈现，feature controller/use case 通过 `app-core` 调用 API 和平台契约；不得在 JSX 中混入直接 `fetch`、SSE 或宿主判断。
 - 旧 Askama feature 直到权限、错误、分页、附件、实时刷新和回退窗口均通过后才下线。
+- 为列表、附件和文档预览记录 route-level lazy loading、分页/虚拟化、上传并发/取消、资源体积和性能预算；运行期采集长任务、预览失败和 SSE 重连，超过阈值暂停 rollout 或回退。
 
 **验收：**
 
@@ -310,6 +356,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - Browser E2E 对每个接管 canonical 路由的 feature 覆盖书签直达、路径参数、查询/锚点、未认证回跳、刷新、前进/后退、旧通知与页面内链接；回退后 URL 保持不变或按 W0 转换表转换。
 - 该 feature 的 Web 验收记录可直接作为 D2 功能对齐矩阵的基准。
 - 权限、审计、状态约束和通知创建仍只由 `api/src/domains/**` 决定；不引入客户端业务权限裁决、HTML 解析依赖或 Electron 特有代码。
+- Browser E2E 与自动 axe 扫描、键盘/焦点人工路径、bundle diff 和代表性网络/设备性能预算共同通过；同一 rollout 的错误率、关键任务完成率和支持信号满足 W0 放量条件。
 
 ### W4：从已验证 Web Feature 提炼共享 JavaScript 层
 
@@ -328,6 +375,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 建立 `mountApp({ api, platform, router })`，以 JSDoc 明确所有注入参数；本单元不创建 Electron renderer，也不以 Electron 需求改变已验证 Web 行为。
 - `platform-contract` 定义通知、文件、外链、生命周期和路由能力；Browser 和 Desktop 各自实现，禁止共享 package 通过 `window.yuanceDesktop`、UA 或环境变量分支决定行为。
 - 对共享目录增加静态规则，禁止 `electron`、Node.js、`ipcRenderer`、`window.yuanceDesktop`、原始本地路径和任意网络/文件系统访问。
+- 固定 workspace 的唯一根 lockfile 与依赖升级责任；依赖图只能是 `platform-contract` 无内部依赖、`api-client` 无 UI/平台依赖、`ui` 只依赖 React/样式、`app-core` 仅依赖 `api-client` 与 `platform-contract`、宿主位于最外层。各包通过 `exports` 白名单暴露 API，禁止 deep import 和循环依赖；`react`/`react-dom` 使用一致 peer dependency，并在 Browser/Desktop bundle 中验证单例解析。
 
 **验收：**
 
@@ -335,6 +383,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 至少一个完整业务 feature 通过共享包运行，而不是只有空应用壳。
 - 共享包可独立构建，`npm --prefix frontend run check` 与 W4 范围的根 `npm run check:frontend` 都通过 JSDoc/checkJs、lint 和测试，且不含宿主特有依赖或 `.ts` / `.tsx` 源文件。
 - 共享 UI 与 feature 能被新的 Browser composition root 使用，无需读取 Askama HTML 或 Web 全局 bridge。
+- CI 验证 workspace 唯一 lockfile、依赖 DAG、循环依赖、`exports` 白名单、禁止 deep import 和 React/React DOM 单例；构建产物体积与无障碍组件测试不超过 W0 预算。
 
 ### D1：Electron 安全宿主、设备认证与内置 Renderer
 
@@ -342,26 +391,32 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 **涉及文件：**
 
-- 新增：`desktop/src/renderer/main.jsx`、`desktop/src/renderer/jsconfig.json`、`desktop/src/renderer/platform/**`（认证、生命周期和最小路由 adapter）
-- 修改：`desktop/src/main.mjs`、`desktop/src/preload.cjs`、`desktop/src/config.mjs`、`desktop/package.json`（将 `check` 拆为 `check:main` 与 `check:renderer` 后再聚合）
-- 修改：`desktop/electron-builder.yml`、`desktop/package.json`、构建脚本和 GitHub Actions（将根 `check:frontend` 扩展为 Web + 共享包 + Desktop renderer）
-- 修改：`api/src/web/router.rs`、`api/src/web/api/mod.rs`、认证模块、OpenAPI（仅按 D1 已确认模型）
-- 测试：`desktop/test/**`、打包安装包 smoke/E2E、认证 API 测试、JSDoc/checkJs 与 manifest 完整性测试
+- 新增：`desktop/src/renderer/main.jsx`、`desktop/src/renderer/jsconfig.json`、`desktop/src/renderer/platform/**`（认证、生命周期和最小路由 adapter）、`desktop/src/credentials/**`、`desktop/src/network/**`、打包态生命周期/发行验证测试
+- 修改：`desktop/src/main.mjs`、`desktop/src/preload.cjs`、`desktop/src/config.mjs`、`desktop/package.json`（将 `check` 拆为 `check:main` 与 `check:renderer` 后再聚合，并显式管理单实例、凭证和网络状态）
+- 修改：`desktop/electron-builder.yml`、`desktop/package.json`、构建脚本和 GitHub Actions（将根 `check:frontend` 扩展为 Web + 共享包 + Desktop renderer，并增加签名、制品哈希、provenance/SBOM 和平台发布 Gate）
+- 修改：`api/src/web/router.rs`、`api/src/web/api/mod.rs`、认证模块、OpenAPI/事件契约（仅按 D1 已确认的 device-session、版本协商和 Desktop SSE 模型）
+- 修改：`docs/runbooks/desktop-release-publication.md`、相关发布/支持文档（记录发行、安装/卸载、诊断隐私、版本兼容和人工更新边界）
+- 测试：`desktop/test/**`、打包安装包 smoke/E2E、认证/API 契约测试、JSDoc/checkJs、manifest、签名/制品完整性、网络与生命周期测试
 
 **实施方式：**
 
-- 在代码改动前完成 device-session 协议：固定本地 renderer origin、远端 API endpoint、设备注册/批准、用户/设备绑定、scope、短期 access token、refresh rotation 与重放检测、撤销、登出、设备丢失处置、系统凭证库、服务端时间、SSE 和 IPC sender 校验；PAT 不得作为替代方案。
-- 正式包注册安全 `app://` 协议，限制资源根、路径遍历、CSP、导航、重定向、窗口打开、权限请求和协议可访问路径；不使用不受控 `file://`。
-- 保持并测试 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`、`webviewTag: false`，默认拒绝权限；`connect-src` 只允许构建时或本地受控配置的 API endpoint。开发态与正式态隔离数据目录和品牌，但不得放宽正式的信任边界。
-- Browser Cookie transport 不能默认复用到 `app://`。Desktop 采用已确认的独立 transport；refresh 凭证仅保存在系统凭证库，renderer 不获得长期凭证、任意请求代理或读取通用授权头的能力。
-- 显式将 renderer 输出和哈希 manifest 打入安装包；保留开发态与正式态 `userData`、session、Cookie、缓存和 macOS Dock 图标隔离。
+- 在代码改动前完成 device-session RFC。首期使用系统浏览器设备授权流：Desktop 仅显示验证地址/短期用户代码并轮询批准结果，renderer 不接触密码；RFC 定义设备注册、批准、`state`/nonce、用户/设备绑定、scope、超时、取消、账户切换、设备丢失、服务端时间、冷启动/重启恢复和所有用户可见错误。D1 不注册 `yuance://` 或通用外部深链接；未来若引入，必须另行定义 OS 激活、单实例交接、认证前暂存和语义路由 schema。
+- 认证状态由主进程的单一 credential manager 管理：access token 仅驻留内存并有最大生命周期，refresh 使用单飞锁和 refresh family 代际。发送 refresh 前，credential manager 必须在同一个 OS 凭证库记录中原子持久化 `{current_refresh, family, generation, pending_transaction_id}`；每次 rotation 使用高熵幂等 transaction ID，服务端在受限恢复窗口内仅对绑定 device session 的同一 ID 返回相同终态，不同 ID 使用旧代则触发重放处置。服务端已提交但本地写入失败、崩溃、响应丢失或旧响应迟到时，启动恢复只能读取该 pending 记录并按 transaction ID 查询/完成提交；只有新凭证与新代际原子写入成功后才清除 pending。无法读取或验证该记录时直接重新设备授权，不能盲目发起第二次 refresh。登出、endpoint 切换或用户切换先停止请求/SSE、清除内存和本地凭证，再通知 renderer；renderer 永不获得 refresh token 或通用授权头。
+- 正式包注册安全 `app://` 协议，限制资源根、路径遍历、CSP、导航、重定向、窗口打开、权限请求和协议可访问路径；不使用不受控 `file://`。保持并测试 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`、`webviewTag: false`，默认拒绝权限。
+- Browser Cookie transport 不能复用到 `app://`。Desktop REST/SSE 使用受控的 Bearer transport：SSE 为附带短期 header 的 fetch-stream，禁止 URL token；network service 只从受信配置构造 canonical HTTPS endpoint 与固定路径，renderer 不能传递 URL，所有 REST/SSE 请求设置 `redirect: "error"` 且不跟随 `Location`/不携带 Cookie。`connect-src` 只允许已确认 endpoint。仅使用系统代理/PAC 和 OS/企业受控信任库；禁止 `certificate-error` bypass，私有 CA、代理认证、TLS 过期/SAN 不匹配和 endpoint 变更均有明确拒绝/重新认证流程，并在每次重连重验 endpoint、TLS 和 device session。
+- 明确单实例、窗口关闭与应用退出、休眠/唤醒、renderer/主进程崩溃、连续启动失败和系统凭证库不可用的状态机。平台 × 架构 × 凭证库/通知/文件对话框/托盘/外链支持矩阵必须标出支持、降级或不支持；安装、升级、卸载、彻底清理和重装时的 `userData`、凭证、缓存、日志和设备撤销语义逐平台验证。
+- 显式将 renderer 输出和哈希 manifest 打入安装包；保留开发态与正式态 `userData`、session、Cookie、缓存和 macOS Dock 图标隔离。D1 的生产发行 Gate 要求 macOS Developer ID + notarization/stapling、Windows Authenticode 时间戳、Linux 制品签名与 SHA-256、受限 CI 密钥、构建 provenance/SBOM、依赖补丁 SLA 和下载页校验信息。Gate 前先完成证书/公证凭证所有权、受保护 GitHub Environment、签名服务或 secret 注入、轮换/撤销演练和每平台签名失败阻止 `publish` 的 preflight；未通过 Gate 的现有 ad-hoc/未签名制品只能标为开发或预览，不能作为长期设备凭证的生产分发渠道。
+- D1 不实现自动更新；继续使用经校验的人工下载和升级路径。自动更新、渠道、强制安全升级和回退只在 D2 后的 `G-DIST` 进入。
+- 诊断采用字段 allowlist 与脱敏：明确用户同意/企业禁用、崩溃报告 endpoint、source map 访问、日志轮转/容量/保留期和支持包预览。token、授权头、签名 URL、本地路径、文件名和项目内容不得写入日志、crash dump、遥测或支持包。
 - preload 只暴露 schema 校验后的最小 API；共享 feature 不读取全局 bridge，只有 Desktop adapter 可通过受控注入访问该能力。
 
 **验收：**
 
 - macOS、Windows、Linux 打包产物均包含 renderer，断网时能启动本地 Shell；不把这项验收表述为离线业务数据可用。
-- 打包态覆盖设备注册/登录、短期凭证刷新、已认证会话探针、受限 endpoint 的 SSE transport 建立/断开/拒绝路径、登出、CSP、SPA 深链接、导航/重定向拦截、内部路由和 renderer manifest；业务 feature 的读写与业务 SSE 行为只在 D2 对齐 E2E 中验收。
-- 负向测试覆盖错误服务器 endpoint、refresh 重放、设备撤销后的 REST/SSE 拒绝、用户切换、登出清理、系统凭证库不可用、伪造 IPC payload、非顶层或非 `app://` sender、路径穿越、未许可导航、`window.open` 和权限请求；renderer 不得获得长期凭证。
+- 打包态覆盖设备授权的开始、批准、取消、超时、账户切换、重启恢复、refresh 单飞/发送前 pending transaction ID 原子持久化/带 transaction ID 的 rotation、服务端已轮换后的凭证库写入失败/进程强杀/响应丢失/旧响应迟到恢复、已认证会话探针、受限 endpoint 的 fetch-stream SSE 建立/轮换/断开/拒绝路径、登出、CSP、SPA 深链接、导航/重定向拦截、内部路由和 renderer manifest；业务 feature 的读写与业务 SSE 行为只在 D2 对齐 E2E 中验收。
+- 负向测试覆盖错误服务器 endpoint、HTTP 降级、跨/同 origin 重定向、代理 `Location`、endpoint 切换期间重连、TLS 过期/SAN 不匹配/私有 CA/代理认证、refresh 重放、设备撤销后的 REST/SSE 拒绝、用户切换、登出清理、系统凭证库不可用、第二实例、休眠/唤醒、renderer/主进程崩溃、伪造 IPC payload、非顶层或非 `app://` sender、路径穿越、未许可导航、`window.open` 和权限请求；renderer 不得获得长期凭证。
+- 三平台安装、升级、普通卸载、彻底清理、重装和共享 OS 用户切换的用户数据/凭证/设备撤销语义通过支持矩阵验收；生产制品验签、哈希、provenance/SBOM、平台签名/公证与依赖补丁状态均可追溯。
+- 注入 token、授权头、签名 URL、路径、文件名和项目名后，日志、支持包和崩溃上报均不泄漏；诊断关闭或企业禁用时有受支持的最小行为。
 - Desktop 不加载生产 `/web` 页面，不信任远端页面决定的 IPC sender，也不因为开发 server/DevTools 扩大正式包的 CSP、导航或 IPC 权限。
 
 ### D2：Desktop 功能对齐与系统集成
@@ -384,6 +439,7 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 完成文件选择、上传、下载、保存和定位链路：Desktop adapter 只接触 `DesktopFileCapability`，主进程负责系统对话框、capability 生命周期和受控流式传输；renderer 不看到路径，主进程不成为任意 HTTP 或文件系统代理。
 - 外链、预览、托盘和窗口行为均通过显式 platform contract；URL allowlist、路由 schema、文件大小/MIME/哈希限制和用户归属在 renderer、主进程和服务端按各自职责重复校验。
 - 每次只完成一个可独立验收的 feature 对齐单元；Desktop 不阻塞 Web 后续 feature 的浏览器发布，但未对齐 feature 不得宣称桌面可用。
+- 对齐矩阵增加平台/架构支持、网络与凭证库降级、窗口/托盘生命周期、最大并发上传/下载、取消/背压、预览尺寸/页数、SSE 去抖/退避、内存/CPU/磁盘/日志预算和隐藏窗口节流列；任何支持差异必须可见、可测且不能改变共享业务规则。
 
 **验收：**
 
@@ -392,6 +448,27 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - 文件上传验证系统选文件、超限/错误提示、取消、进度、上传确认和权限失败；伪造/过期/跨用户 capability、任意路径、任意 URL、重定向、MIME/大小/哈希不匹配均被拒绝，日志和 renderer 不泄漏路径或签名 URL。
 - 下载/保存/定位仅对当前用户授权的服务器对象和主进程受控文件有效；用户切换、登出、窗口销毁或 TTL 到期后 capability 全部失效。
 - Browser 与 Desktop 复用同一共享 feature/API 契约；Desktop 不加载远端 `/web` 页面，Browser 不包含 Electron bridge 或系统文件/通知实现。
+- 在低配置设备、大附件、长时间后台、频繁断网、休眠恢复和系统能力不可用场景下，打包态 E2E 仍满足矩阵中的资源预算、降级提示、键盘/焦点和站内等价通知要求。
+
+### G-DIST：Desktop 发行与更新（D2 后独立 Gate）
+
+**目标：** 在 D2 的在线功能对齐和 D1 的生产制品信任链均通过后，选择性提供受控自动更新；它不改变 D1-D4 的功能阶段，也不阻塞 D3/D4 的数据路线。
+
+**涉及文件：**
+
+- 修改：`desktop/electron-builder.yml`、Desktop 构建/发布脚本、GitHub Actions、`scripts/publish-desktop-release.mjs`、系统版本/发布接口和 `docs/runbooks/desktop-release-publication.md`
+- 新增：更新 manifest、渠道配置、升级/回退 E2E 与发布暂停/最低版本控制测试
+
+**实施方式：**
+
+- 首先明确每个平台的更新支持矩阵；不支持可靠自动更新的制品保持人工下载，不能伪装为统一 updater。选定更新框架、可信更新 origin、签名 metadata、稳定/beta 渠道、灰度、暂停开关、下载校验、安装时机、用户延后和强制安全升级规则。
+- 更新源只接受已签名且哈希校验通过的 metadata/制品；更新信任根、metadata 签名覆盖的渠道/版本/平台/大小/哈希/过期时间、密钥轮换/撤销和 rollback protection 必须在 RFC 中固定。渠道、最低支持版本、紧急禁用版本和服务端 capability 一致。更新不得复用业务 API token、Desktop refresh token 或公开 OSS URL 作为认证/信任依据。
+- 定义 N 到 N-1 升级、失败回退、损坏下载、磁盘不足、离线、用户延后、服务端降级与本地 `userData`/凭证/cache schema 的兼容 manifest：每个客户端声明可读 schema 范围、是否允许自动回退和最低升级路径。不可逆 migration 禁止 updater 降级；允许降级时缓存只能安全失效并重同步，不承诺保留不可兼容的派生缓存。D3 数据库迁移的前向/降级限制必须被 updater 尊重。
+
+**验收：**
+
+- 每个支持平台的 stable/beta 渠道、签名/哈希、下载、安装、取消、暂停、失败回退和紧急最低版本策略经打包态 E2E 验证。
+- 从上一稳定版本升级到当前版本、服务端回滚到兼容版本以及用户延后升级均不丢失或越权读取凭证、服务器事实数据和用户配置；不可兼容派生缓存必须按 schema compatibility manifest 安全失效并重同步，不支持的 Linux/架构路径明确回退为人工升级。
 
 ### D3：可选离线只读缓存
 
@@ -399,22 +476,25 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 **涉及文件：**
 
-- 新增：`desktop/src/agent/` 或独立 Rust sidecar（按技术决策）
+- 新增：`desktop/src/agent/` 或独立 Rust sidecar（按技术决策）、本地 schema migration/checkpoint/attachment staging 模块
 - 修改：`frontend/packages/app-core/`、`frontend/packages/api-client/`
-- 修改：`api/src/web/api/mod.rs`、`docs/openapi/yuance.openapi.json`（仅当选择增量同步）
-- 测试：SQLite、缓存加密、网络切换、权限撤销、用户切换和附件缓存测试
+- 修改：`api/src/web/api/mod.rs`、`docs/openapi/yuance.openapi.json`（按选择的全量或增量同步补齐授权、批次和附件内容版本契约）
+- 测试：SQLite schema 迁移、强杀恢复、缓存加密、网络切换、离线授权、权限撤销、用户/endpoint 切换和附件缓存测试
 
 **实施方式：**
 
-- 按当前用户隔离 SQLite、附件缓存、密钥、配额和清理策略；renderer 不直接访问数据库或文件系统。
-- 先确定“授权范围全量刷新”或“快照 + 稳定游标”同步基线；后一种必须具备水位、墓碑、权限撤销、初始同步和重连语义。
-- `api-client` 通过 repository 接口读取缓存与远端数据，明确陈旧状态、网络状态和未缓存内容的展示。
+- 按 `(canonical endpoint, server instance, user, device)` 隔离 SQLite、附件缓存、密钥、配额、日志和清理策略；renderer 不直接访问数据库或文件系统，endpoint 切换不得复用凭证、缓存或设备批准记录。
+- 本地 agent 在启动时以单一 schema version 执行事务性 forward migration；迁移完成后才推进版本。迁移失败、磁盘满、密钥变化或降级客户端时停止读取不可信缓存并保留受限诊断标记，按 schema compatibility manifest 的范围安全重建/全量重同步，不能部分读取。
+- 先确定“授权范围全量刷新”或“快照 + 稳定游标”同步基线；后一种必须具备水位、墓碑、权限撤销、初始同步和重连语义。每个远端批次携带不可变 generation/batch ID，在同一数据库事务中写入实体投影、墓碑、授权元数据和完整应用 checkpoint；只有 commit 后才推进游标。附件采用 `pending -> verified -> available` 状态机：同一文件系统内完成 staging、长度/版本化 `sha-256:<base64url>` 明文 digest 校验、原子 rename 与文件/目录持久化后，才在事务中标为 `available` 并推进相关 checkpoint。启动时对账数据库、文件名、digest、generation、授权版本，清理/重拉不匹配或未提交 staging，不能显示为可读。
+- 离线内容只能由服务端签发、绑定 `(canonical endpoint, server instance, user, device, authorization version)` 的短期可验证访问租约解锁；租约记录签发/到期、最大离线时长和最高已见服务端时间/单调时间证据。墙钟回拨、凭证库丢失、租约无法验证、用户禁用或租约到期即锁定内容；撤权未送达的最大暴露窗口不得超过租约上限。
+- 附件清单包含稳定 ID、版本化 `sha-256:<base64url>` 明文 `content_digest`、内容版本、字节数、MIME、生命周期状态和授权元数据版本；缓存键包含服务器/用户、附件 ID、内容版本和 digest。加密缓存使用 AEAD，读取时先验证 AEAD 再验证明文 digest；签名下载 URL 绝不持久化。
+- `api-client` 通过 repository 接口读取缓存与远端数据，明确陈旧状态、网络状态、租约状态和未缓存内容的展示。
 
 **验收：**
 
-- 离线仅显示当前用户已同步、仍有权限的数据。
-- 用户切换、登出、权限撤销、缓存配额超限和网络切换不会泄漏旧用户数据。
-- 附件缓存遵守权限、配额和清理规则，未缓存附件不会伪装为可离线访问。
+- 离线仅显示当前用户、当前服务器、当前可验证授权租约范围内已同步的数据；租约到期、墙钟回拨、凭证库丢失或无法确认新鲜授权时锁定内容，不以旧缓存伪装为“仍有权限”，撤权未送达的最大暴露窗口不超过租约上限。
+- schema 升级、迁移中断、磁盘满、密钥轮换、批次任一写入点强杀、staging 附件损坏和重启后均按 schema compatibility manifest、数据库/文件对账和最近原子 checkpoint 恢复，不读取半迁移、半应用或非 `available` 附件。
+- 用户/endpoint 切换、登出、权限撤销、缓存配额超限和网络切换不会泄漏旧用户数据；附件仅在 AEAD、明文 `sha-256:<base64url>` digest、版本和授权均匹配后可读，未缓存、损坏或不匹配附件不会伪装为可离线访问。
 
 ### D4：可选离线写入与双向同步
 
@@ -429,20 +509,22 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 **实施方式：**
 
-- 每个本地操作生成不可变 operation ID、基线版本和依赖顺序。
-- 评论采用追加合并；标题、状态、成员关系等冲突由实体规则或用户确认处理。
-- 附件使用内容哈希和独立队列，不将二进制塞进普通业务 outbox。
+- 每个本地操作生成不可变 operation ID、基线版本和依赖顺序；同步写入先按 `(actor_user_id, device_session_id, operation_id)` 查询已存终态，再以相同键唯一约束写入。fingerprint 使用规范化、版本化序列化，仅包含协议版本、操作类型、目标、基线版本、规范化 payload 和依赖，明确排除认证头、actor、device session、当前权限/角色和其他可变服务端状态；同 key 且相同 fingerprint 无条件返回原始终态，即使重试发生在撤权或角色变更后。仅同 key 但 fingerprint 不同才返回 `409 idempotency_key_reused`，不改变领域状态并写受限安全审计；首次请求在同一事务持久化 fingerprint、领域变更、终态响应/错误分类和一条审计事件。
+- 评论采用追加合并；标题、状态、成员关系等冲突由实体规则或用户确认处理。客户端发生时间只作为审计信息，权限、actor、服务端受理时间和最终冲突判断只以服务端事实为准。
+- 附件使用内容哈希、内容版本和独立队列，不将二进制塞进普通业务 outbox；重试/续传、部分失败、取消和权限撤销都保留可恢复终态。
 - 同步 API 以服务端事实和权限判定为准；现有页码分页和“刷新”型 SSE 不能充当增量同步协议。
 
 **验收：**
 
-- 重试不会重复创建业务记录或重复弹出通知。
-- 冲突、权限撤销、部分附件失败和多端并发均有可恢复行为。
+- 网络超时后重试、重复提交、服务端响应丢失、撤权/角色变更后的同 key 相同 fingerprint 重试、同 key 不同 fingerprint、冲突、永久拒绝和审计写入失败不会重复创建业务记录/通知/审计，且客户端能恢复原始终态或得到受控 `409`。
+- 冲突、权限撤销、部分附件失败、多端并发、跨版本客户端和强杀恢复均有可恢复行为；审计可关联可信 device session、operation ID、客户端发生时间和服务端受理时间。
 
 ## 依赖关系与退出条件
 
 ```text
 W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3 -> D4
+                                                               \
+                                                                -> G-DIST（D2 后独立的发行/自动更新 Gate）
 ```
 
 - W0 直接阻塞 W1，并通过 W1 传递约束后续 W2-W4；Desktop 与离线决定不阻塞浏览器迁移。
@@ -451,7 +533,8 @@ W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3 -> D4
 - W4 依赖至少一个完整业务 feature 的浏览器验收，不能以空壳或静态原型作为抽取依据。
 - D1 依赖 W4 和全部 Desktop 安全门槛；在 D1 之前不改动 Electron 的业务实现。
 - D2 依赖 D1 与每个目标 feature 的 W3/W4 验收；D2 是在线 Desktop 功能可用的阶段，不是离线缓存阶段。
-- D3 依赖 D2 与离线只读决策；D4 依赖 D3、同步协议和单独批准。
+- `G-DIST` 依赖 D1 生产制品信任链与 D2 在线对齐，但不阻塞 D3/D4；未完成时只支持受控人工升级，不得暗示自动更新已经可用。
+- D3 依赖 D2 与离线只读决策、schema/checkpoint/授权/附件 Gate；D4 依赖 D3、同步协议、服务端幂等审计契约和单独批准。
 
 ## 范围边界
 
@@ -462,7 +545,9 @@ W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3 -> D4
 - 不在未确定设备凭证、`app://`、CSP、Electron 安全不变量、IPC 信任模型和文件 capability 前开始 D1/D2。
 - 不在未通过 Browser E2E 的 feature 上另起 Desktop 业务实现；Desktop 仅复用已验证 feature，并把系统差异限制在 adapter。
 - 不让 Browser 层伪装、模拟或直接承担 Desktop 原生通知、主机文件路径、任意文件系统访问或任意 HTTP 代理。
-- 不在未确定缓存范围、同步基线和冲突策略前承诺 D3/D4 离线能力。
+- 不在未确定缓存范围、同步基线、schema/checkpoint、离线授权新鲜度、附件版本和 operation 审计契约前承诺 D3/D4 离线能力。
+- 不把 D1 的打包资源、ad-hoc/未签名制品、`app://` 或手工下载误称为生产发行信任链或自动更新；自动更新只在 `G-DIST` Gate 后启用。
+- D1 不支持未定义的自定义协议、通用外部深链接、TLS 错误绕过或 renderer 侧凭证/代理降级；相关能力必须有独立 RFC 与打包态负向测试。
 
 ## APK 与 OSS 分发结论
 
@@ -487,13 +572,14 @@ APK 上传完成后“不能下载”不是 OSS 的必然行为。应先区分�
 
 ## 验证矩阵
 
-- W0：迁移清单、JavaScript/JSDoc 基线、`checkJs` 配置、浏览器资源交付设计和旧页面回退路径审阅。
-- W1：JavaScript/JSDoc 静态检查、lint、Web 构建、同源资源交付 smoke test、API/OpenAPI 契约测试、认证/CSRF/SSE 集成测试。
-- W2-W3：Browser E2E 覆盖登录衔接、会话刷新、导航、通知、权限、分页、错误、附件、预览、实时刷新、feature 回退及 JSDoc 边界。
-- W4：共享 package 单元测试、JSDoc/checkJs、依赖边界静态检查，以及抽取前后的浏览器回归对比。
-- D1：`npm --prefix desktop test`、根 `npm run check:frontend`、`npm --prefix desktop run check`、打包安装包的设备认证/SSE transport/导航/IPC/CSP/深链接测试、Electron 安全不变量与 renderer manifest 完整性校验。
-- D2：同一服务端 fixture 下的 Browser/Desktop 功能对齐 E2E、系统通知端到端验收、文件 capability/上传/下载/保存/定位测试、伪造 IPC/capability/路径/URL 的负向测试。
-- D3-D4：SQLite、缓存加密、用户切换、权限撤销、断网恢复、同步幂等、冲突和附件队列测试。
+- W0：迁移清单、JavaScript/JSDoc 基线、`checkJs` 配置、浏览器资源交付设计、契约兼容/缓存/rollout/观测/性能/无障碍 Gate 和旧页面回退路径审阅。
+- W1：JavaScript/JSDoc 静态检查、lint、Web 构建、同源资源交付 smoke test、OpenAPI/事件 schema breaking-change diff、N/N-1 契约套件、认证/CSRF/SSE/签名授权缓存头与代理集成测试、脱敏指标与告警验证。
+- W2-W3：Browser E2E 覆盖登录衔接、会话刷新、导航、通知、权限、分页、错误、附件、预览、实时刷新、feature 回退、服务端 rollout 粘滞、axe/键盘/焦点路径、bundle/性能预算及 JSDoc 边界。
+- W4：共享 package 单元测试、JSDoc/checkJs、依赖 DAG/循环/deep import/`exports`/React 单例边界检查，以及抽取前后的浏览器回归对比。
+- D1：`npm --prefix desktop test`、根 `npm run check:frontend`、`npm --prefix desktop run check`、打包安装包的设备授权/credential lifecycle（发送前 pending transaction ID、服务端已轮换后的强杀/响应丢失/凭证库失败）/fetch-stream SSE/HTTP 降级与 redirect 拒绝/代理/TLS/生命周期/导航/IPC/CSP/深链接拒绝测试、Electron 安全不变量、renderer manifest、诊断脱敏、平台支持矩阵和生产制品签名/哈希/provenance 验证。
+- D2：同一服务端 fixture 下的 Browser/Desktop 功能对齐 E2E、系统通知端到端验收、文件 capability/上传/下载/保存/定位测试、伪造 IPC/capability/路径/URL 的负向测试，以及大附件、后台、断网、休眠、低配置设备的资源/降级/无障碍验证。
+- G-DIST：支持平台的 stable/beta 渠道、签名 metadata/信任根/密钥轮换与撤销/rollback protection、升级/取消/暂停/回退/最低版本/schema compatibility manifest、用户数据兼容与不支持平台人工升级 E2E。
+- D3-D4：SQLite schema 迁移、强杀 checkpoint 恢复、`pending -> verified -> available` 附件状态机与数据库/文件对账、版本化 digest/AEAD、离线授权租约/墙钟回拨、用户/endpoint 切换、断网恢复、撤权/角色变更后的同 key 原终态、同 key 不同 fingerprint `409`、同步幂等/审计原子性、冲突和附件队列测试。
 - 真实 OSS 验收：上传一个测试 APK，分别访问系统下载、无 Cookie 的公开下载入口与草稿/未上传拒绝路径；使用 `curl -I -L` 和 Android 浏览器记录 HTTP 状态、`Content-Type`、`Content-Disposition`、`x-oss-request-id` 与服务端持久化的文件哈希。
 - 每个提交前执行与变更范围匹配的聚焦测试、`git diff --check`，并在阶段完成时对照本计划复核。
 
@@ -511,3 +597,7 @@ APK 上传完成后“不能下载”不是 OSS 的必然行为。应先区分�
 - **离线写入不是缓存的自然延伸。** 缺少稳定游标/快照、墓碑、基线版本、幂等 operation ID、冲突策略和附件独立队列时不得开始 D4。
 - **APK 的浏览器下载成功不等于可以安装。** Android 的未知来源授权、应用签名和渠道策略应由移动端发布方案单独覆盖。
 - **公开版本资产一经发布即属于公开内容。** `release_id` 与 `asset_id` 不是访问控制或机密；短时 OSS 签名 URL 是有效期内 bearer 凭证，不得写入审计详情、分析系统、错误上报或第三方跳转 Referer。若不接受该模型，必须在公开路由前增加鉴权与授权校验。
+- **契约或发行回滚不兼容。** 服务端 DTO/事件、已安装 Desktop、renderer revision、签名制品和 updater channel 若没有 N/N-1/最低版本规则，单独回滚任一方都会让用户无法认证或写入；发布 Gate 必须先验证兼容矩阵。
+- **设备认证与网络降级。** 若把系统浏览器授权、refresh rotation、Desktop SSE、代理/TLS 或单实例逻辑留给各 renderer 自由实现，会造成凭证泄漏、重放、登录循环或以证书错误绕过恢复连接。
+- **诊断和灰度泄漏。** 没有字段 allowlist、服务端粘滞 rollout、量化回退阈值和支持流程，既无法定位迁移事故，也可能把 token、路径或项目内容发送到日志/遥测。
+- **本地数据升级与断网状态不一致。** 没有 schema migration、原子 checkpoint、离线授权新鲜度、附件版本和 operation 审计原子性时，升级、强杀或重试会读到错误数据、重复执行业务操作或留下不可解释审计。
