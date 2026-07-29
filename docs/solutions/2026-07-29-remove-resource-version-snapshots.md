@@ -17,8 +17,8 @@ status: accepted
 - 停止创建和读取 `project_resource_versions` 快照。
 - 移除资料版本详情路由、详情页版本历史区块和对应样式。
 - 资料详情只显示当前富文本正文；旧版本 URL 不再提供访问入口。
-- 保留既有 `project_resource_versions` 表及其历史数据，不在本次变更中执行删除或清空。
-- 未来若要删除旧表，必须先确认生产历史数据的保留期限、备份方式和不可逆迁移授权。
+- 将 `project_resource_versions` 视为已废弃历史表，保留既有表结构和历史数据，仅用于历史保留与必要排查。
+- 当前不规划 `DROP TABLE project_resource_versions` 或清空历史数据的迁移。若未来确需删除，必须单独评估数据保留期限、备份方式和不可逆迁移授权。
 
 ## 附件对象键
 
