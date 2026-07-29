@@ -10,78 +10,106 @@ origin: docs/brainstorms/2026-07-28-web-desktop-shared-frontend-architecture.md
 
 ## 概述
 
-将当前由 `api/` 同时提供 Rust 领域逻辑、Askama 页面、静态脚本和 REST API 的形态，按 **Web-first** 顺序渐进演进：先把浏览器前端做成独立的 `web/` 模块，并逐 feature 迁移浏览器工作流；在至少一个完整业务 feature 经浏览器验证后，再提炼稳定的共享前端层；最后由 Electron 使用该共享层构建内置 renderer，并接入桌面专属能力和可选离线数据能力。
+将当前由 `api/` 同时提供 Rust 领域逻辑、Askama 页面、静态脚本和 REST API 的形态，按 **Web-first** 顺序渐进演进：先把浏览器前端做成独立 `web/` 模块，并逐 feature 迁移浏览器工作流；在至少一个完整业务 feature 经浏览器验证后，再提炼稳定的共享前端层；最后由 Electron 使用这套共享 UI 与 feature 逻辑构建内置 renderer，并把文件、通知、外链、窗口和托盘等系统能力放在 Desktop 宿主层。
 
-“前后端分离”在首期指代码、构建和接口契约分离，不等于立即把浏览器前端部署到不同 origin。首批 `web/` 构建产物应继续与 `api/` 同源交付，或由同源反向代理交付，以保留现有浏览器 Cookie、CSRF 和 SSE 行为。跨源 Web 部署、`app://` 桌面认证和离线同步均属于后续独立门槛，不能阻塞浏览器端迁移。
+Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览器验收的 Web feature 为功能基线：同一业务状态、REST/SSE 契约、操作结果、错误状态和路由语义应尽量复用；只有文件系统、原生系统通知、外链、窗口、托盘、凭证库和离线缓存等确有宿主差异的能力才由 Desktop adapter 处理。
 
-本计划不把“内置前端资源”误称为“离线业务数据”。桌面端的本地 Shell、已同步数据只读缓存和离线写入/双向同步是三个独立阶段，分别验收。
+“前后端分离”在首期指代码、构建和接口契约分离，不等于立即把浏览器前端部署到不同 origin。首批 `web/` 构建产物继续与 `api/` 同源交付，以保留 Cookie、CSRF 和 SSE 行为。跨源 Web 部署、`app://` 桌面认证和离线同步都是后续独立门槛，不阻塞浏览器迁移。
+
+本计划不把“内置前端资源”误称为“离线业务数据”。Desktop 的本地 Shell、在线功能对齐、已同步数据只读缓存和离线写入/双向同步是四个独立阶段，分别验收。
 
 ## 当前基线
 
 - `api/` 同时承担 Rust 领域规则、REST API、Askama 页面、`api/static/app.js`、`api/static/app.css` 和 `/web/*` 路由。
 - `desktop/src/main.mjs` 通过 `BrowserWindow.loadURL(webConfig.url)` 加载远端 Web 页面；`preload.cjs` 当前只暴露受限的原生通知桥。
 - `api/static/app.js` 仍含 `window.yuanceDesktop` 探测、同源相对请求、SSE 和 Electron 通知逻辑，不能直接复制为独立 renderer。
-- `api/src/domains` 是服务端权限、审计、业务规则和通知事实的唯一来源；前端不得复制这些规则。
-- `/api/v1` 已覆盖部分业务能力，但 `docs/openapi/yuance.openapi.json` 尚未覆盖所有 `/web/*` 交互、附件、SSE、通知语义和系统管理能力。
+- `api/src/domains/**` 是服务端权限、审计、业务规则和通知事实的唯一来源；前端不得复制这些规则。
+- `/api/v1` 已覆盖部分业务能力，但 `docs/openapi/yuance.openapi.json` 尚未覆盖全部 `/web/*` 交互、附件、SSE、通知语义和系统管理能力。
 - 当前浏览器会话使用 `HttpOnly; SameSite=Lax` session、refresh 和 CSRF Cookie；非 Bearer 写请求依赖 CSRF 校验，API 没有通用跨源 CORS 层。
 
 ## 需求追踪
 
 - R1：新增独立 `web/` 前端模块，先在浏览器中逐 feature 取代 Askama 页面实现。
-- R2：`api/` 收敛为 Rust 业务后端、REST/SSE、认证、文件和过渡期 Web 资源宿主，不再长期承担唯一的 HTML 页面实现。
+- R2：`api/` 收敛为 Rust 业务后端、REST/SSE、认证、文件和过渡期 Web 资源宿主，不再长期承担唯一 HTML 页面实现。
 - R3：浏览器迁移期保持同源资源交付和旧页面兼容，不因前端分离提前改变 Cookie、CSRF 或 SSE 信任模型。
 - R4：每个已迁移 Web feature 只能通过稳定 REST/SSE 契约工作，不解析 HTML、读取模板注入数据或拼接 `/web/*` 业务 URL。
-- R5：在经浏览器验证的 feature 基础上提炼 `api-client`、`app-core`、`ui` 和 `platform-contract`；不以未验证的 Electron 需求预设共享抽象。
-- R6：浏览器与 Electron 最终复用共享 feature/UI/API 源码，但保留各自独立的 composition root、路由历史、认证 transport 和平台适配器。
-- R7：桌面正式安装包加载受限 `app://` 内置 renderer，不依赖生产远端 `/web` URL。
-- R8：共享前端不直接依赖 Electron、Node.js、`ipcRenderer` 或 `window.yuanceDesktop`；桌面能力只经受限 adapter 暴露。
-- R9：通知目标、已读状态和访问校验以 REST/事件契约表达，不以 `/web/*` 展示 URL 作为跨宿主业务契约。
-- R10：离线能力分为内置 Shell、已同步数据只读缓存和可选离线写入同步三个阶段。
+- R5：新前端默认采用 JavaScript ESM/JSX；使用 JSDoc 和 `checkJs` 建立可检查的共享契约，不新增业务 `.ts` 或 `.tsx` 源文件。
+- R6：在经浏览器验证的 feature 基础上提炼 `api-client`、`app-core`、`ui` 和 `platform-contract`；不以未验证的 Electron 需求预设共享抽象。
+- R7：浏览器与 Electron 最终复用共享 feature/UI/API 源码，但保留各自独立的 composition root、路由历史、认证 transport 和平台适配器。
+- R8：桌面正式安装包加载受限 `app://` 内置 renderer，不依赖生产远端 `/web` URL。
+- R9：共享前端不直接依赖 Electron、Node.js、`ipcRenderer` 或 `window.yuanceDesktop`；桌面能力只经受限 adapter 暴露。
+- R10：通知目标、已读状态和访问校验以 REST/事件契约表达，不以 `/web/*` 展示 URL 作为跨宿主业务契约。
+- R11：Desktop 文件选择、上传、下载、保存和定位使用主进程签发的 capability；renderer 不取得原始本地路径，也不能请求任意 URL、读文件或写文件。
+- R12：Desktop 原生系统通知仅由受限 Desktop adapter 请求、主进程投递；浏览器 UI 只负责站内通知状态，不能承担 Electron 系统能力。
+- R13：离线能力分为在线功能对齐、已同步数据只读缓存和可选离线写入同步三个阶段。
 
 ## 交付原则
 
 - **先逻辑分离，后部署分离。** `web/` 可以独立开发、构建和测试，但首期生产资源保持 API 同源交付；只有明确重做 CORS、Cookie、CSRF 和 SSE 后才允许独立 origin 部署。
+- **JavaScript 优先，JSDoc 约束。** 新前端源码使用 `.js` 或 `.jsx`，以 `// @ts-check` / `checkJs`、JSDoc `@typedef`、`@param`、`@returns` 和 `import()` 类型表达公开契约；`tsc` 只作为无产物检查器，不能引入 `.ts` / `.tsx` 业务源文件。
 - **先浏览器验证，再共享提炼。** 在一个完整业务 feature 通过浏览器回归前，不创建完整的 `frontend/packages/**` 空壳，也不要求 Electron 同步实现。
+- **UI、feature 与平台能力分层。** `ui` 只渲染状态并发出用户意图；`app-core` 处理 feature use case、状态和 API 调用编排；Browser/Desktop adapter 才接触历史、文件、通知和系统能力。共享目录不得通过条件判断直接调用 Electron 或浏览器全局桥。
 - **按 feature 切换和回退。** 新旧入口并存；每个 feature 都要有旧路由、切换条件、回退路径和旧实现下线条件，禁止一次性重写所有 Askama 页面。
-- **业务规则只在服务端。** `api/src/domains` 保持权限、审计、状态约束和通知事实的唯一来源；客户端仅负责展示、输入校验、缓存和同步编排。
-- **桌面与离线单独设门。** 浏览器迁移不等待 `app://`、设备凭证、SQLite、附件缓存或冲突策略；但 Desktop 开始前必须完成相应安全设计和打包验证。
+- **业务规则只在服务端。** `api/src/domains/**` 保持权限、审计、状态约束和通知事实的唯一来源；客户端仅负责展示、输入校验、缓存和同步编排。
+- **Desktop 与离线单独设门。** 浏览器迁移不等待 `app://`、设备凭证、SQLite、附件缓存或冲突策略；Desktop 开始前必须完成安全设计和打包验证，离线能力则需额外批准。
 
-## 目标职责与构建方向
+## 目标职责、JavaScript 基线与构建方向
 
 ```text
 api/
   src/domains/                 # 业务规则、权限、审计、通知事实
   src/web/api/                 # REST、认证、SSE、后续同步接口
-  src/web/                     # 过渡期 Askama 路由与资源交付
+  src/web/                     # 过渡期 Askama 路由与 Web 资源交付
 
 web/
-  src/                         # 浏览器 composition root、feature、Browser adapter
-  package.json                 # 独立开发、构建、类型检查和浏览器测试
+  src/main.jsx                 # Browser composition root
+  src/platform/browser/**      # 浏览器历史、文件选择和站内呈现 adapter
+  src/features/**              # 首批未提取的浏览器 feature
+  jsconfig.json                # allowJs + checkJs + noEmit
+  vite.config.js               # 独立构建和同源开发代理
 
 frontend/
   packages/
-    api-client/                # 从稳定 Web 请求层提取的 REST/SSE client
-    app-core/                  # 从稳定 Web feature 提取的 use case、状态和路由协议
-    ui/                        # 从稳定 Web feature 提取的无宿主 UI
-    platform-contract/         # Browser/Desktop 都可实现的平台能力接口
+    api-client/src/**/*.js     # 从稳定 Web 请求层提取的 REST/SSE client
+    app-core/src/**/*.js       # use case、状态、路由语义、通知编排
+    ui/src/**/*.jsx            # 无宿主业务副作用的页面与组件
+    platform-contract/src/**   # JSDoc 定义的平台能力、事件与 capability 模型
 
 desktop/
-  src/main.mjs                 # Electron 主进程、窗口、协议、生命周期
-  src/preload.cjs              # 最小受信任 IPC surface
-  src/renderer/main.ts         # Desktop composition root，仅在 D1 创建
+  src/main.mjs                 # Electron 主进程、窗口、协议、受控系统操作
+  src/preload.cjs              # schema 校验后的最小 IPC surface
+  src/renderer/main.jsx        # Desktop composition root，仅在 D1 创建
+  src/renderer/platform/**     # Desktop adapter，仅在 D1/D2 创建
   src/agent/                   # 仅在离线阶段批准后创建
 ```
 
-`web/` 是首个实现宿主，不是 Electron renderer 的副本。W1-W3 中的代码可以先留在 `web/src/**`；W4 只提取已经在浏览器生产路径中被证明可复用的部分。提取完成后，两个宿主通过薄入口组装同一共享能力：
+`web/` 是首个实现宿主，不是 Electron renderer 的副本。W1-W3 中的代码可以先留在 `web/src/**`；W4 只提取已经在浏览器生产路径中被证明可复用的部分。Desktop renderer 和 Browser 分别构建，但它们的 feature/UI/API 源码来自同一共享包。
 
-```ts
-mountApp({ api, platform, router });
+```js
+// frontend/packages/app-core/src/mount-app.js
+// @ts-check
+
+/**
+ * @typedef {import('../../api-client/src/api-client.js').ApiClient} ApiClient
+ * @typedef {import('../../platform-contract/src/platform.js').PlatformCapabilities} PlatformCapabilities
+ * @typedef {import('./router.js').AppRouter} AppRouter
+ */
+
+/**
+ * @param {{ api: ApiClient, platform: PlatformCapabilities, router: AppRouter }} dependencies
+ */
+export function mountApp(dependencies) {
+  // 宿主只在此处组合 API、平台能力和路由。
+}
 ```
 
-- `web/src/main.ts` 注入 Browser API transport、Browser platform adapter 和浏览器路由。
-- `desktop/src/renderer/main.ts` 在 D1 才创建，注入 Desktop API transport、Desktop platform adapter 和桌面路由。
-- 宿主入口可以不同；共享 feature、组件、样式和契约必须来自同一份前端包。
-- Electron Builder 必须显式复制桌面 renderer 输出，不能依赖开发机存在的 `web/dist`。
+- `web/src/main.jsx` 注入 Browser API transport、Browser platform adapter 和浏览器路由。
+- `desktop/src/renderer/main.jsx` 在 D1 创建，注入 Desktop API transport、Desktop platform adapter 和桌面路由。
+- 所有跨包导出、REST/SSE DTO、React props、adapter 方法、IPC payload 和 capability 均要有 JSDoc；局部实现不要求为每个临时变量添加冗余注释。
+- `web/jsconfig.json`、共享包检查配置和 Desktop renderer 检查配置启用 `allowJs: true`、`checkJs: true`、`noEmit: true` 与 `jsx: react-jsx`；JSX runtime 与选定的 Vite + React 配置一致。CI 必须运行该检查、lint 和测试。
+- 静态检查脚本固定为可执行契约：W1 的 `web/package.json` 提供 `check:js`（`tsc -p jsconfig.json`）、`check:source`（断言 `web/src/**` 没有 `.ts` / `.tsx`）和串联二者与 lint 的 `check`。W4 的 `frontend/package.json` 声明 `packages/*` workspace，四个共享包各自提供相同的 `check:js`、`check:source`、`check` 和 `jsconfig.json`，由 `npm run --workspaces --if-present check` 聚合。D1 将现有 `desktop` 主进程语法检查拆为 `check:main`，新增 `check:renderer`（`tsc -p src/renderer/jsconfig.json` 加 renderer 源码后缀检查），再由 `check` 串联。根 `package.json` 的 `check:frontend` 随阶段扩展：W1 调用 `npm --prefix web run check`，W4 加入 `npm --prefix frontend run check`，D1 再加入 `npm --prefix desktop run check`；每个阶段的 CI 和打包前置步骤必须调用当阶段完整的聚合命令。
+- `tsc` 仅作为无产物 JavaScript/JSDoc 检查器，由相应 package 的开发依赖提供；它不编译或生成应用 TypeScript。禁止使用 `// @ts-nocheck`、无说明的 `@ts-ignore` 或本地 `.d.ts` 逃避共享契约检查；第三方依赖自身携带的声明可正常消费。
+- Electron Builder 必须显式复制 Desktop renderer 输出和其哈希 manifest，不能依赖开发机存在的 `web/dist`。
 
 ## 浏览器交付与兼容策略
 
@@ -90,27 +118,51 @@ mountApp({ api, platform, router });
 - 开发环境可使用受控 dev server/proxy，前提是 Cookie、CSRF、SSE、重定向和错误响应有集成测试；正式发布必须在与生产相同的 API 镜像中验证 SPA 入口、MIME、深链接、版本和缓存策略。
 - 新 Web 应用先使用隔离的迁移入口，例如 `/web/app/*`；旧 `/web/*` Askama 页面继续可用。迁移清单必须为每个 feature 声明 canonical URL 的当前所有者、切换条件、紧急回退行为和最终接管方式，不能只写“后续决定”。
 - 已迁移 feature 接管 canonical URL 时，直接打开旧书签或新 URL 都必须保留路径参数、查询参数和锚点。未认证回跳、浏览器刷新、前进/后退、旧通知和页面内链接必须按同一转换表工作；片段在服务端不可见时，由客户端在跳转前保留并恢复，`return_to` 仍只允许同源白名单路径。
-- 首批可保留现有 SSR 登录页：登录成功后进入新 Web 应用壳；新应用通过明确的 REST 会话检查和 CSRF 获取契约恢复会话。登录 UI 的完全迁移属于 W2 的后续切片，而不是 W1 的阻塞条件。
+- 首批可保留现有 SSR 登录页：登录成功后进入新 Web 应用壳；新应用通过明确 REST 会话检查和 CSRF 获取契约恢复会话。登录 UI 的完全迁移属于 W2 的后续切片，而不是 W1 的阻塞条件。
 - `api/static/app.js`、模板和 `/web/*` 只在对应 feature 切换、浏览器回归和回退窗口结束后删除或收缩；不得因新 Web 构建成功就全量删除。
 - 文档预览、PDF.js、OOXML vendor 和附件下载必须先脱离模板内联路径与 HTML partial 假设，再作为 Web feature 迁移；不能直接复制 `api/static/` 作为新应用产物。
 
-## 契约与平台边界
+## UI、业务逻辑与平台能力边界
+
+| 层 | 职责 | 可以依赖 | 禁止依赖 |
+|---|---|---|---|
+| `ui` | 页面、组件、样式、无障碍状态、受控输入、纯展示回调 | React/选定 UI 基础库、JSDoc props | `fetch`、`EventSource`、Electron、Node.js、preload、文件路径、业务权限判断 |
+| `app-core` | feature use case、状态、路由语义、加载/错误、通知编排、附件操作意图 | `api-client`、`platform-contract`、JSDoc DTO | Askama HTML、`window.yuanceDesktop`、`ipcRenderer`、原始 DOM/路径 |
+| `api-client` | REST/SSE、错误模型、认证 transport 接口、分页、重连 | `fetch` 抽象、契约 DTO | JSX、页面状态、Electron、业务页面 URL |
+| `platform-contract` | 文件、通知、外链、生命周期、路由历史等 JSDoc 接口 | 无宿主实现的值对象和类型 | Browser/Electron 具体 API、业务 feature |
+| Browser adapter | 浏览器历史、`File`、受控下载、站内消息呈现 | 浏览器 API、`platform-contract` | Electron bridge、Node.js |
+| Desktop adapter | 受限 preload 调用、窗口状态、系统通知、文件 capability、托盘/外链 | `platform-contract`、已声明的 bridge | 任意 IPC、任意 URL、原始本地路径 |
+| Electron main/preload | OS 文件对话框、受控传输、原生通知、窗口、凭证库与严格安全校验 | Electron 主进程 API、固定 endpoint/config | 业务页面逻辑、通用文件/HTTP 代理 |
+
+共享 feature 只发出平台意图，例如“选择一个待上传文件”“展示一条未读通知”“打开内部语义路由”。它不能依赖宿主检测分支来决定业务行为。Desktop 专属 UI 仅限窗口/系统能力所需的轻量状态；业务页面不能复制一套 Electron 版本。
 
 ### REST、事件与通知契约
 
 - 每个进入新 Web 的用户操作必须有 JSON REST、错误模型、分页和需要时的 SSE 契约，并纳入 OpenAPI 或配套事件契约。
 - 通知 DTO 不再以 `/web/messages/{id}/open` 等 HTML URL 表示业务跳转，而应包含通知 ID 与语义目标，例如工作项键和可选评论 ID。
 - 新增经权限校验的通知目标读取与幂等已读 REST 操作；旧 HTML 跳转可在迁移期保留为兼容层。
-- Web 与后续 Desktop 共享内部路由映射和服务端通知 ID 去重键。显示通知不自动标已读，用户点击后才调用幂等已读操作。
-- SSE 当前只能表达“刷新”信号，不能被当作离线同步协议；断线、Lagged 和重连的行为必须由 Web client 明确处理。
+- Web 与 Desktop 共享内部路由映射和服务端通知 ID 去重键。显示通知不自动标已读，用户点击后才调用幂等已读操作。
+- SSE 当前只能表达“刷新”信号，不能被当作离线同步协议；断线、`Lagged` 和重连的行为必须由 `api-client` / `app-core` 明确处理。
 
-### 桌面平台边界
+### 通知的宿主分工
 
-- `app-core` 只表达“有新通知且应提示”等业务意图，不决定 Electron 通知、浏览器通知或站内 toast。
-- 文件打开/定位必须使用主进程或 desktop agent 签发的 `LocalFileHandle`，不得让 renderer 传递任意本地路径。
-- Electron 主进程按 IPC 来源、句柄 TTL、当前用户、文件归属、允许根目录、URL allowlist 和参数长度再次校验。
-- 共享代码不能通过运行时检测 `window.yuanceDesktop` 选择行为；平台差异由宿主入口显式注入。
-- 现有 `desktopBridge()`、`notifyDesktopForNewItems()` 和 `initDesktopNativeNotifications()` 只服务旧 Askama 页面；在 D1 由 Desktop adapter 取代。
+1. 服务端 domain 创建通知事实和语义目标，SSE 只发出刷新信号。
+2. `app-core` 刷新通知列表、按服务端通知 ID 去重，并发出“需要呈现”的平台意图；它不调用浏览器或 Electron API。
+3. Browser adapter 只更新消息中心与站内提示，不调用 `window.Notification` 作为 Desktop 系统通知的替代品。未来若单独批准浏览器通知，也必须以独立 Browser adapter 和权限产品设计实现。
+4. Desktop adapter 根据窗口是否前台、最小化、用户偏好和操作系统允许状态，调用受限 preload 的 `notifications.present()`。
+5. 主进程验证 sender、通知 ID、标题/正文长度和内部路由 schema 后调用 Electron `Notification`。点击时仅恢复/聚焦窗口并向 renderer 发送受限语义路由或通知 ID；renderer 在用户实际打开后调用幂等已读 REST。
+6. 应用退出后不承诺 SSE 通知；当前不把它伪装成 APNs、FCM 或操作系统后台推送。
+
+### 文件 capability 与受控传输
+
+Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge 来访问本机文件。共享层使用 JSDoc 定义的 `DesktopFileCapability` 代表系统已批准的一次文件操作，避免与 Web `FileSystemFileHandle` 混淆。
+
+- capability 仅由主进程签发，renderer 只能持有不可猜测的 opaque ID 和展示用元数据，如文件名、大小、声明 MIME、用途和过期时间；不得返回真实路径、目录、文件系统错误细节或可用于枚举本机文件的信息。
+- capability 绑定当前用户、设备会话、顶层 `app://` sender、用途（上传/保存/定位）、目标资源、允许操作和短 TTL。登出、用户切换、权限撤销、窗口销毁、过期或一次性消费后必须失效，renderer 不能构造、续期或扩大它。
+- Desktop 上传流程为：共享 feature 请求选择文件 -> Desktop adapter 调用受限 preload -> 主进程显示系统文件对话框并签发 capability -> 服务端按用户、目标、文件元数据和大小限制签发上传授权 -> 主进程/受控传输服务从 capability 对应文件流式上传，并把受限进度事件回传 renderer。主进程不接受任意上传 URL、任意请求头或任意本地路径。
+- 浏览器上传仍由 Browser adapter 处理 `File` 与已定义的上传 REST/签名流程；它与 Desktop capability 是同一 feature 意图的两种宿主实现，不是两套业务规则。
+- 下载/保存必须先经系统保存对话框或应用受控缓存根；定位只允许针对主进程已经确认归属的文件。主进程不得提供泛化 `fetch(url)`、读文件或写文件 IPC。
+- 所有 capability、上传授权、重定向目标、MIME、文件大小和哈希校验都在主进程和服务端重复验证；日志、遥测和错误响应不得包含原始本地路径或短时签名 URL。
 
 ## 决策门槛
 
@@ -120,77 +172,80 @@ mountApp({ api, platform, router });
 
 | 决策 | 要求 | 对计划的影响 |
 |---|---|---|
-| 前端技术栈 | 选择 TypeScript/构建工具、路由、组件和测试基线；建议采用 TypeScript + Vite + React，最终以 W0 决策记录为准。 | 决定 `web/` 的目录、构建、测试和依赖管理。 |
-| 浏览器资源交付 | 首期明确采用同源交付，或在选择跨源时先完成 CORS/Cookie/CSRF/SSE 集成验证。 | 决定开发代理、生产静态资源、SPA 回退和会话行为。 |
+| 前端技术栈 | 固定 JavaScript ESM/JSX + JSDoc + `checkJs` + Vite + React 作为首期基线；不得把 TypeScript 再列为待选方案。 | 决定 `web/`、共享包、检查脚本和依赖管理。 |
+| JSDoc 规则 | 定义公开模块、REST/SSE DTO、组件 props、adapter、IPC payload 和 capability 的 JSDoc 覆盖规则；配置 `checkJs`、lint 与 `noEmit`。 | 防止 JavaScript 共享边界失去可检查契约。 |
+| 浏览器资源交付 | 首期明确采用同源交付；若未来选择跨源，必须先完成 CORS/Cookie/CSRF/SSE 集成验证。 | 决定开发代理、生产静态资源、SPA 回退和会话行为。 |
 | 首批迁移范围 | 确认新 Web 应用壳、消息中心和首个完整业务 feature；定义旧入口、回退和下线条件。 | 防止大爆炸式重写。 |
 | REST 契约基线 | 确认 OpenAPI/事件契约的维护方式、错误模型、CSRF 获取和未认证跳转行为。 | 决定 W1-W3 的 API 改动与测试。 |
 
-### D1 前必须确认的桌面门槛
+### D1 前必须确认的 Desktop 门槛
 
 | 决策 | 要求 | 对计划的影响 |
 |---|---|---|
-| 桌面认证 | 形成独立 device-session 协议和 OpenAPI/RFC：设备与用户绑定、受限 scope、短期 access token、refresh rotation 与重放检测、撤销/登出、设备丢失处置、服务端时间与失败状态；现有 PAT 明确不得作为桌面登录凭证。 | 决定 API transport、凭证存储、刷新、登出、CORS、CSRF、SSE 和负向测试。 |
+| 桌面认证 | 形成独立 device-session 协议和 OpenAPI/RFC：设备注册/批准、用户/设备绑定、受限 scope、短期 access token、refresh rotation 与重放检测、撤销/登出、设备丢失处置、服务端时间和失败状态；PAT 明确不得作为桌面登录凭证。 | 决定 API transport、凭证存储、刷新、登出、CORS、CSRF、SSE 和负向测试。 |
+| Electron 安全不变量 | 正式包固定 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`、`webviewTag: false`；默认拒绝权限，禁止未许可 `window.open`、导航和重定向。开发态不得放宽正式包的 IPC、导航和权限边界。 | 决定主进程、preload、CSP、构建和安装包测试。 |
+| 本地 renderer 安全 | 固定 `app://` origin、资源 manifest、深链接、CSP、`connect-src` endpoint allowlist、导航/重定向、顶层 frame、权限和 IPC sender 规则。 | 防止远端页面或非受信 frame 调用原生能力。 |
+| 文件 capability | 确认 `DesktopFileCapability` schema、发行者、绑定信息、TTL、失效条件、上传授权、保存/定位范围和隐私日志规则。 | 决定 D2 文件选择、上传、下载和定位实现。 |
+| 通知产品语义 | 明确投递类别、前台/最小化判定、设备偏好、显示与已读时机、目标缺失回退和退出后是否承诺通知。 | 决定 D2 Desktop adapter 和服务端通知契约。 |
 | 服务端配置 | 确认第一期仅支持官方服务端，或设计私有化/多服务器登记、TLS/私有 CA 和 endpoint allowlist。 | 禁止由任意远端页面 URL 决定 IPC 信任。 |
-| 本地 renderer 安全 | 固定 `app://` origin、CSP、资源 manifest、深链接、导航/重定向、`window.open`、权限和 IPC sender 规则。 | 决定主进程、preload、打包和安装包测试。 |
-| 通知产品语义 | 明确投递类别、前台/最小化判定、设备偏好、显示与已读时机、目标缺失回退和退出后是否承诺通知。 | 决定 Desktop adapter 与服务端通知契约。 |
 
-推荐：Desktop 使用按设备可撤销的短生命周期凭证，刷新凭证仅存操作系统凭证库，renderer 不持有长期凭证；应用存活且窗口非前台时才展示原生通知，点击后才标已读，应用退出后不承诺 SSE 通知。
+推荐：Desktop 使用按设备可撤销的短生命周期凭证，refresh 凭证只存操作系统凭证库；renderer 不持有长期凭证或通用授权头。应用存活且窗口非前台时才展示原生通知，用户点击后才标已读。
 
-### D2/D3 前必须确认的离线门槛
+### D3/D4 前必须确认的离线门槛
 
 | 决策 | 选项 | 对计划的影响 |
 |---|---|---|
-| 离线范围 | 内置 Shell / 已同步数据只读 / 完整离线写入 | 决定是否进入 D2、D3，以及是否需要 outbox 与冲突 UI。 |
+| 离线范围 | 内置 Shell / 已同步数据只读 / 完整离线写入 | 决定是否进入 D3、D4，以及是否需要 outbox 与冲突 UI。 |
 | 缓存同步 | 授权范围全量刷新 / 快照与稳定游标增量 | 决定初始同步、删除墓碑、权限撤销、重连和恢复语义。 |
 | 缓存数据与附件 | 数据集、附件下载策略、配额、加密、用户切换和登出清理 | 决定本地数据库、文件缓存和测试范围。 |
-| 冲突与附件同步 | 操作幂等、基线版本、实体冲突规则、内容哈希与续传 | D3 的前置条件，未确认时不得开始离线写入。 |
+| 冲突与附件同步 | 操作幂等、基线版本、实体冲突规则、内容哈希与续传 | D4 的前置条件，未确认时不得开始离线写入。 |
 
-推荐将“已同步数据只读缓存”作为 D2 的单独产品 Gate；离线写入仅在同步协议、冲突策略和附件策略确定后进入 D3。
+推荐将“已同步数据只读缓存”作为 D3 的单独产品 Gate；离线写入仅在同步协议、冲突策略和附件策略确定后进入 D4。
 
 ## 实施单元
 
-### W0：Web-first 边界、发布与回退基线
+### W0：Web-first 边界、JavaScript 基线与回退设计
 
-**目标：** 在不改动 Desktop 行为的前提下，确定浏览器端独立 `web/` 模块的交付方式、首批范围、兼容策略和可验证退出条件。
+**目标：** 在不改动 Desktop 行为的前提下，确定独立 `web/` 模块的 JavaScript/JSDoc 基线、首批范围、同源交付方式、兼容策略和可验证退出条件。
 
 **涉及文件：**
 
-- 修改：`docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md`，在 W0 中记录已确认的工具链、同源交付和首批迁移决策
+- 修改：`docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md`
 - 后续检查/修改：`api/src/web/router.rs`、`api/templates/**`、`api/static/**`、`docs/openapi/yuance.openapi.json`
 
 **实施方式：**
 
 - 建立 `/web/*` 页面、HTML partial、静态资源、表单写操作、REST、SSE、附件预览与旧路由的迁移清单。
-- 为每个首批 feature 记录：新入口、旧入口、canonical URL 当前所有者、路径参数、查询参数、锚点、未认证 `return_to`、页面内链接、旧通知、刷新/前进/后退行为、所需 REST/SSE、鉴权/CSRF 行为、浏览器验收、回退开关和旧实现下线条件。
-- 固定首期唯一生产链路：前端构建阶段 -> `web/dist` -> `api/Dockerfile` 多阶段构建 -> 最终 `yuance-api` 镜像静态目录 -> API 同源 `/web/app/*` 服务；同时明确入口/manifest/哈希资源的缓存头、SPA 回退边界、构建失败语义和镜像回滚行为。
-- 确认 `web/` 工具链、开发代理、生产同源资源交付、SPA 回退、版本/构建标识和浏览器测试基线。
+- 为每个首批 feature 记录：新入口、旧入口、canonical URL 当前所有者、路径参数、查询参数、锚点、未认证 `return_to`、页面内链接、旧通知、刷新/前进/后退行为、所需 REST/SSE、鉴权/CSRF 行为、Browser/ Desktop 验收、回退开关和旧实现下线条件。
+- 固定首期唯一生产链路：前端构建阶段 -> `web/dist` -> `api/Dockerfile` 多阶段构建 -> 最终 `yuance-api` 镜像静态目录 -> API 同源 `/web/app/*` 服务；明确入口/manifest/哈希资源缓存头、SPA 回退边界、构建失败语义和镜像回滚行为。
+- 固定 JavaScript ESM/JSX、JSDoc 约定、`jsconfig.json` 的 `allowJs` / `checkJs` / `noEmit` / `jsx: react-jsx` 配置，以及 `web`、`frontend`、`desktop` 的 `check:js` / `check:source` / `check` 脚本和根 `check:frontend` 聚合命令；不得创建应用 `.ts` / `.tsx` 源文件。
 - 明确 W0 不创建 Desktop renderer、不修改 Electron 认证、不引入 SQLite、缓存或同步。
 
 **验收：**
 
-- 迁移清单覆盖首批浏览器路径，并能追溯到具体 API 契约、canonical URL、参数/锚点转换和旧页面回退路径。
+- 迁移清单覆盖首批浏览器路径，并能追溯到具体 API 契约、canonical URL、参数/锚点转换、Browser/ Desktop 差异和旧页面回退路径。
+- JSDoc 覆盖范围、`web`/共享包/Desktop renderer 的 `check:js`、`check:source`、`check` 与根 `check:frontend` 命令、异常豁免规则和 CI 失败条件已确定；`tsc` 的角色仅为无产物 JavaScript 检查器。
 - W0 决策记录说明同源 Cookie、CSRF、SSE、未认证跳转、静态资源交付、缓存头、镜像构建和回滚的验证方式。
 - 后续 W1-W3 可以在不变更 `desktop/` 的情况下实施。
 
 ### W1：独立 Web 构建与首批 REST/SSE 契约
 
-**目标：** 建立独立浏览器前端的构建和同源交付通路，并只为首批 Web 切片补齐可消费的 API 契约。
+**目标：** 建立独立 JavaScript Web 前端的构建和同源交付通路，并只为首批 Web 切片补齐可消费的 API 契约。
 
 **涉及文件：**
 
-- 新增：`web/package.json`、`web/src/main.ts`、`web/src/**`
-- 修改：根 `package.json` / workspace 配置（按 W0 工具链决策）
-- 修改：`api/Dockerfile`、`scripts/build-api-image-amd64.sh`、`Makefile`、部署/CI 配置（将 Web 构建和版本标识纳入 API 镜像构建）
+- 新增：`web/package.json`、`web/jsconfig.json`、`web/vite.config.js`、`web/scripts/assert-js-only.mjs`、`web/src/main.jsx`、`web/src/**`
+- 修改：根 `package.json` / workspace 配置（新增 W1 范围的 `check:frontend` 聚合命令；W4/D1 按新模块扩展该命令）
+- 修改：`api/Dockerfile`、`scripts/build-api-image-amd64.sh`、`Makefile`、部署/CI 配置
 - 修改：`api/src/web/router.rs`、`api/src/platform/config.rs`、`api/Cargo.toml`（提供受控 SPA 资源服务、深链接回退和配置；以实际实现为准）
-- 修改：`api/src/web/api/mod.rs`
-- 修改：`api/src/domains/notifications.rs`（仅通知语义目标和已读能力）
+- 修改：`api/src/web/api/mod.rs`、`api/src/domains/notifications.rs`
 - 修改：`docs/openapi/yuance.openapi.json`、`docs/runbooks/production-deployment.md`
-- 测试：`api/tests/*_flow.rs`、Web 构建/契约测试、生产同款镜像 smoke test
+- 测试：`api/tests/*_flow.rs`、JavaScript/JSDoc 检查、Web 构建/契约测试、生产同款镜像 smoke test
 
 **实施方式：**
 
-- 让 `web/` 独立开发、构建、类型检查和测试；通过 `api/Dockerfile` 的前端构建阶段将 `web/dist` 复制进最终 API 镜像，再由 API 同源提供，不新增独立生产服务。
-- 为 `/web/app/*` 定义受控的静态资源服务：导航请求才回退到 SPA 入口，哈希资源、manifest 与资源 MIME 必须精确返回；入口 HTML/manifest 短缓存，哈希资源长期 `immutable` 缓存。
+- 让 `web/` 独立开发、构建、JSDoc 静态检查、lint 和测试；通过 `api/Dockerfile` 的前端构建阶段将 `web/dist` 复制进最终 API 镜像，再由 API 同源提供，不新增独立生产服务。
+- 为 `/web/app/*` 定义受控静态资源服务：仅导航请求回退到 SPA 入口，哈希资源、manifest 与资源 MIME 必须精确返回；入口 HTML/manifest 短缓存，哈希资源长期 `immutable` 缓存。
 - 建立隔离的 SPA 迁移入口和资源路径；旧 Askama `/web/*` 继续工作，不改变其默认行为。
 - 将首批新 Web 所需的会话检查、CSRF 获取、读写、登出、错误模型和 SSE 重连明确为 REST/事件契约。
 - 为通知新增语义目标读取与幂等单条/批量已读操作；保留旧 `/web/messages/{id}/open` 仅供旧页面兼容。
@@ -200,6 +255,7 @@ mountApp({ api, platform, router });
 
 - 新 Web 入口仅通过已定义 REST/SSE 完成会话检查、读取、写入、登出和实时刷新。
 - API 测试覆盖成功、未认证、无权限、CSRF 拒绝、分页和统一错误响应。
+- JSDoc/checkJs 检查、lint 和构建均通过：`npm --prefix web run check` 与 W1 范围的根 `npm run check:frontend` 必须以非零状态阻止构建；新增前端源文件不包含 `.ts` / `.tsx`。
 - 在正式同款 API 镜像中验证 `/web/app/*` 入口、带路径参数的深链接、资源 MIME、入口/哈希资源缓存头、构建版本和 manifest；缺失前端构建物或 manifest 时镜像构建必须失败，不能发布半套产物。
 - OpenAPI/事件契约覆盖已迁移交互；浏览器不会因 HTML 模板细节变化而失效。
 
@@ -209,16 +265,17 @@ mountApp({ api, platform, router });
 
 **涉及文件：**
 
-- Create/Modify: `web/src/**`
+- 新增/修改：`web/src/**`
 - 修改：`api/src/web/api/mod.rs`、`api/src/web/router.rs`（仅按 W1 契约）
 - 修改：`docs/openapi/yuance.openapi.json`
-- 测试：Browser E2E、认证/通知 API 测试
+- 测试：Browser E2E、认证/通知 API 测试、JSDoc/checkJs 检查
 
 **实施方式：**
 
-- 初期可保留 SSR 登录页；登录成功后进入新的 Web 应用壳，新应用经 REST 会话检查恢复用户和 CSRF 状态。
+- 初期保留 SSR 登录页；登录成功后进入新的 Web 应用壳，新应用经 REST 会话检查恢复用户和 CSRF 状态。
 - 迁移登出、全局导航、项目上下文、加载/错误/未认证处理、顶部状态和消息中心。
 - 通知点击由新 Web router 解析语义目标并调用幂等已读 API，不再访问 HTML 跳转路由。
+- Browser adapter 只承担站内消息中心和浏览器文件能力，不提供 Electron 系统通知或本机文件路径能力。
 - `api/static/app.js` 继续支撑旧 Askama 页面，W2 不删除旧 Electron bridge 逻辑。
 
 **验收：**
@@ -226,89 +283,119 @@ mountApp({ api, platform, router });
 - Browser E2E 覆盖登录衔接、会话刷新、登出、导航、通知列表、语义跳转和幂等已读。
 - 对已迁移路由覆盖直接打开新旧 URL、路径/查询/锚点保留、未认证登录回跳、刷新、前进/后退和紧急回退后的 URL 兼容。
 - 旧 Askama 登录页、消息中心和 `/web/messages/{id}/open` 兼容路径仍可用。
-- W2 不需要改动 Electron，也不把浏览器 Cookie transport 暴露成未来 Desktop 的默认实现。
+- W2 不需要改动 Electron，也不把浏览器 Cookie transport 或 `window.Notification` 暴露成未来 Desktop 的默认实现。
 
-### W3：浏览器端高频业务 Feature 逐步迁移
+### W3：浏览器端高频 Feature 逐步迁移
 
-**目标：** 以小且可回退的浏览器切片逐步迁移高频工作流，建立经真实使用验证的 Web 代码基础。
+**目标：** 以小且可回退的浏览器切片逐步迁移高频工作流，建立可作为 Desktop 功能基线的 Web feature。
 
 **涉及文件：**
 
-- Create/Modify: `web/src/features/**`、`web/src/**`
+- 新增/修改：`web/src/features/**`、`web/src/**`
 - 修改：`api/src/web/api/mod.rs`、`api/src/web/router.rs`（仅补齐当前 feature）
 - 修改：`docs/openapi/yuance.openapi.json`
-- 测试：对应 `api/tests/*_flow.rs`、Browser E2E、Web 单元/组件测试
+- 测试：对应 `api/tests/*_flow.rs`、Browser E2E、Web 单元/组件测试、JSDoc/checkJs 检查
 
 **实施方式：**
 
 - 建议迁移顺序：项目与当前项目上下文，工作项列表/详情，评论与附件，资料库与文档预览；低频系统管理页面不进入首批范围。
 - 每个 feature 先补齐 REST/SSE/附件契约、服务端权限测试和浏览器测试，再切换新入口；每次只切换一个可独立验收的行为集合。
 - 文档预览改用 API client、受控下载和前端资源路径，不依赖服务端模板、HTML partial 或旧 `/web/*/preview` 展示路由。
+- 每个 feature 的 UI 将渲染与 use case 分开：组件通过 props/回调呈现，feature controller/use case 通过 `app-core` 调用 API 和平台契约；不得在 JSX 中混入直接 `fetch`、SSE 或宿主判断。
 - 旧 Askama feature 直到权限、错误、分页、附件、实时刷新和回退窗口均通过后才下线。
 
 **验收：**
 
-- 每个已切换 feature 都有 API 契约、服务端集成测试、浏览器 E2E、新旧入口回退策略和下线条件。
+- 每个已切换 feature 都有 API 契约、服务端集成测试、Browser E2E、新旧入口回退策略和下线条件。
 - Browser E2E 对每个接管 canonical 路由的 feature 覆盖书签直达、路径参数、查询/锚点、未认证回跳、刷新、前进/后退、旧通知与页面内链接；回退后 URL 保持不变或按 W0 转换表转换。
-- 权限、审计、状态约束和通知创建仍只由 `api/src/domains/**` 决定。
-- 不引入客户端业务权限裁决、HTML 解析依赖或 Electron 特有代码。
+- 该 feature 的 Web 验收记录可直接作为 D2 功能对齐矩阵的基准。
+- 权限、审计、状态约束和通知创建仍只由 `api/src/domains/**` 决定；不引入客户端业务权限裁决、HTML 解析依赖或 Electron 特有代码。
 
-### W4：从已验证的 Web Feature 提炼共享前端层
+### W4：从已验证 Web Feature 提炼共享 JavaScript 层
 
-**目标：** 在至少一个完整业务 feature 已经浏览器回归和真实发布路径验证后，提取稳定共享代码，为 Desktop 接入做准备。
+**目标：** 在至少一个完整业务 feature 已经通过 Browser E2E 和真实发布路径验证后，提取稳定共享 JavaScript/JSDoc 代码，为 Desktop 使用同一套 UI 与逻辑做准备。
 
 **涉及文件：**
 
-- 新增：`frontend/packages/api-client/`
-- 新增：`frontend/packages/app-core/`
-- 新增：`frontend/packages/ui/`
-- 新增：`frontend/packages/platform-contract/`
-- 修改：`web/src/main.ts`、`web/src/**`、根 workspace 配置
-- 测试：package 单元测试、类型检查、Web 回归测试
+- 新增：`frontend/package.json`、`frontend/packages/api-client/{package.json,jsconfig.json,src/**}`、`frontend/packages/app-core/{package.json,jsconfig.json,src/**}`、`frontend/packages/ui/{package.json,jsconfig.json,src/**}`、`frontend/packages/platform-contract/{package.json,jsconfig.json,src/**}`、共享包 JSDoc/checkJs 配置、包级测试和边界检查配置
+- 修改：`web/src/main.jsx`、`web/src/**`、根 workspace 配置（将 `check:frontend` 扩展为 Web + 共享包）
+- 测试：共享 package 单元测试、JSDoc/checkJs、lint、Web 回归测试
 
 **实施方式：**
 
 - 仅移动已被 Web 证明稳定的 REST/SSE client、状态/use case、组件/样式和平台能力接口；保留 Web 宿主中的 Cookie transport、浏览器历史和资源交付配置。
-- 建立 `mountApp({ api, platform, router })`，但本单元不创建 Electron renderer，也不以 Electron 需求改变已验证 Web 行为。
-- `platform-contract` 只表达通知、外链、文件和生命周期等抽象能力；Browser adapter 可以是 no-op 或站内体验，不能泄漏 Node 能力。
+- `ui` 只导出组件和样式，不向 `api-client`、`platform-contract` 或宿主 bridge 发请求；`app-core` 只面向 API 与平台 JSDoc 契约，不能导入 Electron 或浏览器全局桥。
+- 建立 `mountApp({ api, platform, router })`，以 JSDoc 明确所有注入参数；本单元不创建 Electron renderer，也不以 Electron 需求改变已验证 Web 行为。
+- `platform-contract` 定义通知、文件、外链、生命周期和路由能力；Browser 和 Desktop 各自实现，禁止共享 package 通过 `window.yuanceDesktop`、UA 或环境变量分支决定行为。
 - 对共享目录增加静态规则，禁止 `electron`、Node.js、`ipcRenderer`、`window.yuanceDesktop`、原始本地路径和任意网络/文件系统访问。
 
 **验收：**
 
 - Web 行为、API 契约和 Browser E2E 在提取前后保持一致。
 - 至少一个完整业务 feature 通过共享包运行，而不是只有空应用壳。
-- 共享包可独立构建、类型检查和测试，且不含宿主特有依赖。
+- 共享包可独立构建，`npm --prefix frontend run check` 与 W4 范围的根 `npm run check:frontend` 都通过 JSDoc/checkJs、lint 和测试，且不含宿主特有依赖或 `.ts` / `.tsx` 源文件。
+- 共享 UI 与 feature 能被新的 Browser composition root 使用，无需读取 Askama HTML 或 Web 全局 bridge。
 
-### D1：Electron 本地 Renderer、认证与最小特权适配器
+### D1：Electron 安全宿主、设备认证与内置 Renderer
 
-**目标：** 在共享层稳定后，让正式 Electron 包以受限 `app://` 加载内置 renderer，并以明确的设备安全模型接入同一 REST/SSE 契约。
+**目标：** 建立正式 Electron 包的安全运行底座：`app://` 内置 JavaScript renderer、独立设备认证、最小 preload/IPC、凭证库和不可回退的 Electron 安全不变量。D1 只验证可安全挂载共享应用壳，不承担全量业务页面对齐。
 
 **涉及文件：**
 
-- 新增：`desktop/src/renderer/main.ts`、Desktop platform adapter
-- 修改：`desktop/src/main.mjs`、`desktop/src/preload.cjs`、`desktop/src/config.mjs`
-- 修改：`desktop/electron-builder.yml`、`desktop/package.json`、构建脚本和 GitHub Actions
-- 修改：`api/src/web/router.rs`、`api/src/web/api/mod.rs`、认证模块（仅按 D1 已确认模型）
-- 测试：`desktop/test/**`、打包安装包 smoke/E2E、认证 API 测试
+- 新增：`desktop/src/renderer/main.jsx`、`desktop/src/renderer/jsconfig.json`、`desktop/src/renderer/platform/**`（认证、生命周期和最小路由 adapter）
+- 修改：`desktop/src/main.mjs`、`desktop/src/preload.cjs`、`desktop/src/config.mjs`、`desktop/package.json`（将 `check` 拆为 `check:main` 与 `check:renderer` 后再聚合）
+- 修改：`desktop/electron-builder.yml`、`desktop/package.json`、构建脚本和 GitHub Actions（将根 `check:frontend` 扩展为 Web + 共享包 + Desktop renderer）
+- 修改：`api/src/web/router.rs`、`api/src/web/api/mod.rs`、认证模块、OpenAPI（仅按 D1 已确认模型）
+- 测试：`desktop/test/**`、打包安装包 smoke/E2E、认证 API 测试、JSDoc/checkJs 与 manifest 完整性测试
 
 **实施方式：**
 
-- 在开始代码改动前完成 D1 桌面门槛决策和设备会话协议：固定本地 renderer origin、远端 API endpoint、设备注册/批准、用户/设备绑定、scope、短期 access token、refresh rotation 与重放检测、撤销、登出、设备丢失处置、系统凭证库、服务端时间、SSE 和 IPC sender 校验；PAT 不得作为替代方案。
-- 正式包注册安全的 `app://` 协议，限制资源根、路径遍历、CSP、导航、重定向、窗口打开、权限请求和协议可访问路径；不使用不受控 `file://`。
-- Browser Cookie transport 不能默认复用到 `app://`。Desktop 采用已确认的独立 transport；renderer 不获得长期凭证，主进程/受限协议代理不得成为任意 URL 或任意请求的代理。
+- 在代码改动前完成 device-session 协议：固定本地 renderer origin、远端 API endpoint、设备注册/批准、用户/设备绑定、scope、短期 access token、refresh rotation 与重放检测、撤销、登出、设备丢失处置、系统凭证库、服务端时间、SSE 和 IPC sender 校验；PAT 不得作为替代方案。
+- 正式包注册安全 `app://` 协议，限制资源根、路径遍历、CSP、导航、重定向、窗口打开、权限请求和协议可访问路径；不使用不受控 `file://`。
+- 保持并测试 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`、`webviewTag: false`，默认拒绝权限；`connect-src` 只允许构建时或本地受控配置的 API endpoint。开发态与正式态隔离数据目录和品牌，但不得放宽正式的信任边界。
+- Browser Cookie transport 不能默认复用到 `app://`。Desktop 采用已确认的独立 transport；refresh 凭证仅保存在系统凭证库，renderer 不获得长期凭证、任意请求代理或读取通用授权头的能力。
 - 显式将 renderer 输出和哈希 manifest 打入安装包；保留开发态与正式态 `userData`、session、Cookie、缓存和 macOS Dock 图标隔离。
-- Desktop adapter 只通过受限 preload 请求通知、外链、文件选择/保存、`LocalFileHandle` 定位、托盘和更新能力；通知点击仅传递受限内部路由或通知 ID。
+- preload 只暴露 schema 校验后的最小 API；共享 feature 不读取全局 bridge，只有 Desktop adapter 可通过受控注入访问该能力。
 
 **验收：**
 
 - macOS、Windows、Linux 打包产物均包含 renderer，断网时能启动本地 Shell；不把这项验收表述为离线业务数据可用。
-- 打包态覆盖登录、刷新、读写、SSE、登出、CSP、SPA 深链接、导航/重定向拦截、IPC 拒绝路径和通知点击。
-- 设备会话负向测试覆盖错误服务器 endpoint、refresh 重放、设备撤销后的 REST/SSE 拒绝、用户切换、登出清理和系统凭证库不可用时的安全失败；renderer 不得获得长期凭证。
-- 浏览器与 Desktop 使用同一共享 feature/API 契约，Desktop 不加载生产 `/web` 页面，也不信任由远端页面配置决定的 IPC sender。
+- 打包态覆盖设备注册/登录、短期凭证刷新、已认证会话探针、受限 endpoint 的 SSE transport 建立/断开/拒绝路径、登出、CSP、SPA 深链接、导航/重定向拦截、内部路由和 renderer manifest；业务 feature 的读写与业务 SSE 行为只在 D2 对齐 E2E 中验收。
+- 负向测试覆盖错误服务器 endpoint、refresh 重放、设备撤销后的 REST/SSE 拒绝、用户切换、登出清理、系统凭证库不可用、伪造 IPC payload、非顶层或非 `app://` sender、路径穿越、未许可导航、`window.open` 和权限请求；renderer 不得获得长期凭证。
+- Desktop 不加载生产 `/web` 页面，不信任远端页面决定的 IPC sender，也不因为开发 server/DevTools 扩大正式包的 CSP、导航或 IPC 权限。
 
-### D2：可选离线只读缓存
+### D2：Desktop 功能对齐与系统集成
 
-**目标：** 让 Desktop 离线读取当前用户已经授权且已同步的数据，不实现离线写入。
+**目标：** 以 W3/W4 已验证的 Web feature 为基线，使用同一共享 UI、`app-core` 和 API 契约完成在线 Desktop 功能对齐；把文件和原生通知等额外系统行为落实在 Desktop adapter、preload 和主进程，而不是浏览器层或业务组件中。
+
+**涉及文件：**
+
+- 新增/修改：`desktop/src/renderer/platform/**`、Desktop feature composition、主进程受控文件/通知服务
+- 修改：`desktop/src/main.mjs`、`desktop/src/preload.cjs`、`desktop/src/renderer/main.jsx`
+- 修改：`frontend/packages/api-client/**`、`frontend/packages/app-core/**`、`frontend/packages/ui/**`、`frontend/packages/platform-contract/**`
+- 修改：`api/src/web/api/mod.rs`、相关 domain/OpenAPI（仅当 Web 已定义的契约缺口阻塞对齐）
+- 新增：Desktop/Web feature 对齐矩阵与配套 E2E、系统 integration 测试
+
+**实施方式：**
+
+- 为每个 Desktop feature 维护对齐矩阵：Web feature/路由、共享 UI/feature 模块、读写 API、权限与错误状态、SSE 行为、附件/预览、Desktop adapter 调用、允许的宿主差异、Browser E2E、Desktop E2E、回退与发布条件。只有通过 W3 的 feature 才能进入矩阵。
+- Desktop renderer 复用共享 UI 和 `app-core`；不能为 Desktop 复制业务页面、在 JSX 内写 Electron 条件分支，或绕过 API client 调用 HTML 路由。允许差异限于文件系统、原生通知、窗口/托盘、外链和受控下载/预览入口。
+- 完成消息中心和原生通知链路：共享逻辑发出通知呈现意图，Desktop adapter 按前台状态和用户偏好调用 preload，主进程投递系统通知并在点击后发送语义路由；不使用浏览器 `Notification` API 替代 Electron 系统通知，且接收 SSE 时不得自动标已读。
+- 完成文件选择、上传、下载、保存和定位链路：Desktop adapter 只接触 `DesktopFileCapability`，主进程负责系统对话框、capability 生命周期和受控流式传输；renderer 不看到路径，主进程不成为任意 HTTP 或文件系统代理。
+- 外链、预览、托盘和窗口行为均通过显式 platform contract；URL allowlist、路由 schema、文件大小/MIME/哈希限制和用户归属在 renderer、主进程和服务端按各自职责重复校验。
+- 每次只完成一个可独立验收的 feature 对齐单元；Desktop 不阻塞 Web 后续 feature 的浏览器发布，但未对齐 feature 不得宣称桌面可用。
+
+**验收：**
+
+- 对齐矩阵中的每个 feature 以同一服务端测试数据运行 Browser E2E 与打包态 Desktop E2E，验证核心读写、权限、错误、分页、SSE 刷新、语义路由和回退行为一致；允许差异必须明确列在矩阵中。
+- 创建回复、提及或指派后，后台/最小化 Desktop 收到一次且仅一次原生系统通知；点击后恢复并聚焦窗口、进入正确内部路由，并通过幂等 REST 标已读。前台窗口、重复 SSE、目标已失效和通知权限拒绝均有预期行为。
+- 文件上传验证系统选文件、超限/错误提示、取消、进度、上传确认和权限失败；伪造/过期/跨用户 capability、任意路径、任意 URL、重定向、MIME/大小/哈希不匹配均被拒绝，日志和 renderer 不泄漏路径或签名 URL。
+- 下载/保存/定位仅对当前用户授权的服务器对象和主进程受控文件有效；用户切换、登出、窗口销毁或 TTL 到期后 capability 全部失效。
+- Browser 与 Desktop 复用同一共享 feature/API 契约；Desktop 不加载远端 `/web` 页面，Browser 不包含 Electron bridge 或系统文件/通知实现。
+
+### D3：可选离线只读缓存
+
+**目标：** 让 Desktop 离线读取当前用户已授权且已同步的数据，不实现离线写入。
 
 **涉及文件：**
 
@@ -329,7 +416,7 @@ mountApp({ api, platform, router });
 - 用户切换、登出、权限撤销、缓存配额超限和网络切换不会泄漏旧用户数据。
 - 附件缓存遵守权限、配额和清理规则，未缓存附件不会伪装为可离线访问。
 
-### D3：可选离线写入与双向同步
+### D4：可选离线写入与双向同步
 
 **目标：** 在明确冲突策略后实现评论、编辑、状态变更和附件的 outbox 同步。
 
@@ -355,24 +442,27 @@ mountApp({ api, platform, router });
 ## 依赖关系与退出条件
 
 ```text
-W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3
+W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3 -> D4
 ```
 
 - W0 直接阻塞 W1，并通过 W1 传递约束后续 W2-W4；Desktop 与离线决定不阻塞浏览器迁移。
-- W1 的已定义契约是 W2 和每个 W3 feature 的前置条件。
+- W1 的已定义契约是 W2 和每个 W3 feature 的前置条件；W3 的 Browser E2E 是该 feature 进入 D2 对齐矩阵的前置条件。
 - W2 提供认证衔接、路由、错误和消息基线；W3 按 feature 独立发布、回退和下线。
 - W4 依赖至少一个完整业务 feature 的浏览器验收，不能以空壳或静态原型作为抽取依据。
-- D1 依赖 W4 和所有桌面安全门槛；在 D1 之前不改动 Electron 的业务实现。
-- D2 依赖 D1 与离线只读决策；D3 依赖 D2、同步协议和单独批准。
+- D1 依赖 W4 和全部 Desktop 安全门槛；在 D1 之前不改动 Electron 的业务实现。
+- D2 依赖 D1 与每个目标 feature 的 W3/W4 验收；D2 是在线 Desktop 功能可用的阶段，不是离线缓存阶段。
+- D3 依赖 D2 与离线只读决策；D4 依赖 D3、同步协议和单独批准。
 
 ## 范围边界
 
-- 不在 W1-W3 同时迁移所有服务端系统管理页面；优先高频工作流和桌面未来必需页面。
+- 不在 W1-W3 同时迁移所有服务端系统管理页面；优先高频工作流和 Desktop 未来必需页面。
 - 不在浏览器迁移期把 Web 与 API 改成跨源生产部署，除非先完成相应认证和安全验证。
 - 不让新 Web 或共享代码解析 Askama HTML、依赖 HTML partial 或调用 `/web/*` 作为业务 API。
 - 不因共享前端重构而删除现有 API 的服务端审计、权限、CSRF 和认证约束。
-- 不在未确定设备凭证、`app://`、CSP 和 IPC 信任模型前开始 D1。
-- 不在未确定缓存范围、同步基线和冲突策略前承诺 D2/D3 的离线能力。
+- 不在未确定设备凭证、`app://`、CSP、Electron 安全不变量、IPC 信任模型和文件 capability 前开始 D1/D2。
+- 不在未通过 Browser E2E 的 feature 上另起 Desktop 业务实现；Desktop 仅复用已验证 feature，并把系统差异限制在 adapter。
+- 不让 Browser 层伪装、模拟或直接承担 Desktop 原生通知、主机文件路径、任意文件系统访问或任意 HTTP 代理。
+- 不在未确定缓存范围、同步基线和冲突策略前承诺 D3/D4 离线能力。
 
 ## APK 与 OSS 分发结论
 
@@ -380,8 +470,8 @@ W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3
 
 - 在签名身份具备对象读取权限、Bucket Policy 与 OSS 配置允许访问的前提下，阿里云 OSS 可通过签名 GET URL 下载任意对象类型；APK 不是 OSS 的禁用类型。
 - 当前 `api/src/domains/files.rs` 已允许 `application/vnd.android.package-archive`。
-- 当前系统版本 API 已允许 `platform = android`，且 `api/tests/system_management_flow.rs` 覆盖了 APK 的“创建资产 -> 签名上传 -> 上传确认 -> 发布”流程。
-- 系统管理页对已上传 APK 提供受权限保护的下载入口；公开 `/web/downloads` 页面则被设计为“桌面端下载页”，只选择完整的三平台桌面版本：每个平台为 `universal`，或同时具备 `x64` 与 `arm64`，刻意不展示 Android。
+- 当前系统版本 API 已允许 `platform = android`，且 `api/tests/system_management_flow.rs` 覆盖 APK 的“创建资产 -> 签名上传 -> 上传确认 -> 发布”流程。
+- 系统管理页对已上传 APK 提供受权限保护的下载入口；公开 `/web/downloads` 页面被设计为“桌面端下载页”，只选择完整三平台桌面版本：每个平台为 `universal`，或同时具备 `x64` 与 `arm64`，刻意不展示 Android。
 - `GET /web/downloads/{release_id}/assets/{asset_id}` 只验证“已发布且已上传”，不按平台限制。因此已发布 APK 在知道 release/asset ID 时也会走短时 OSS 签名 URL，但当前没有面向普通用户的 Android 发现页面。
 
 ### 结论与处理原则
@@ -397,23 +487,27 @@ APK 上传完成后“不能下载”不是 OSS 的必然行为。应先区分�
 
 ## 验证矩阵
 
-- W0：迁移清单、决策记录、浏览器资源交付设计和旧页面回退路径审阅。
-- W1：Web 类型检查、构建、同源资源交付 smoke test、API/OpenAPI 契约测试、认证/CSRF/SSE 集成测试。
-- W2-W3：浏览器 E2E 覆盖登录衔接、会话刷新、导航、通知、权限、分页、错误、附件、预览、实时刷新和 feature 回退。
-- W4：共享 package 单元测试、类型检查、依赖边界静态检查，以及抽取前后的浏览器回归对比。
-- D1：`npm --prefix desktop test`、`npm --prefix desktop run check`、打包安装包的登录/SSE/通知/导航/IPC/CSP/深链接测试，以及 renderer manifest 完整性校验。
-- D2-D3：SQLite、缓存加密、用户切换、权限撤销、断网恢复、同步幂等、冲突和附件队列测试。
+- W0：迁移清单、JavaScript/JSDoc 基线、`checkJs` 配置、浏览器资源交付设计和旧页面回退路径审阅。
+- W1：JavaScript/JSDoc 静态检查、lint、Web 构建、同源资源交付 smoke test、API/OpenAPI 契约测试、认证/CSRF/SSE 集成测试。
+- W2-W3：Browser E2E 覆盖登录衔接、会话刷新、导航、通知、权限、分页、错误、附件、预览、实时刷新、feature 回退及 JSDoc 边界。
+- W4：共享 package 单元测试、JSDoc/checkJs、依赖边界静态检查，以及抽取前后的浏览器回归对比。
+- D1：`npm --prefix desktop test`、根 `npm run check:frontend`、`npm --prefix desktop run check`、打包安装包的设备认证/SSE transport/导航/IPC/CSP/深链接测试、Electron 安全不变量与 renderer manifest 完整性校验。
+- D2：同一服务端 fixture 下的 Browser/Desktop 功能对齐 E2E、系统通知端到端验收、文件 capability/上传/下载/保存/定位测试、伪造 IPC/capability/路径/URL 的负向测试。
+- D3-D4：SQLite、缓存加密、用户切换、权限撤销、断网恢复、同步幂等、冲突和附件队列测试。
 - 真实 OSS 验收：上传一个测试 APK，分别访问系统下载、无 Cookie 的公开下载入口与草稿/未上传拒绝路径；使用 `curl -I -L` 和 Android 浏览器记录 HTTP 状态、`Content-Type`、`Content-Disposition`、`x-oss-request-id` 与服务端持久化的文件哈希。
 - 每个提交前执行与变更范围匹配的聚焦测试、`git diff --check`，并在阶段完成时对照本计划复核。
 
 ## 风险
 
 - **同源交付被误解为未分离。** 首期同源只保留浏览器会话边界；`web/` 的代码、构建、测试和 REST 契约已独立。过早跨源会同时扩大 CORS、Cookie、CSRF 和 SSE 风险。
+- **JSDoc 边界被放松。** JavaScript 不等于无契约；若不强制 `checkJs`、导出类型和 IPC schema，跨包 API 会在 Web/Desktop 复用时漂移。
 - **API 契约覆盖不足。** 若 W1 未把 feature 交互、附件和通知语义补进契约，新 Web 会重新依赖 HTML 或出现隐式行为漂移。
 - **共享层提取过早。** 若在 W3 验证前建立完整共享包，Electron 假设会反向固化 Web 设计，后续仍需拆除宿主耦合。
-- **旧 Askama 页面被过早删除。** 每个 feature 必须以浏览器权限回归、数据一致性和回退窗口结束为删除条件，而非以新 Web 构建成功为条件。
-- **桌面认证与信任边界不同。** `app://` 不能默认复用浏览器 `SameSite=Lax` Cookie；D1 未收口设备凭证、endpoint、CSP、导航和 IPC sender 前不得开始桌面接入。
-- **离线 Shell 被误认为离线数据。** 打包 renderer 只保证无网络启动；D2 前必须明确缓存范围、密钥管理、用户隔离、撤权清理和一致性语义。
-- **离线写入不是缓存的自然延伸。** 缺少稳定游标/快照、墓碑、基线版本、幂等 operation ID、冲突策略和附件独立队列时不得开始 D3。
+- **Web/Desktop 功能漂移。** 若 D2 不以 W3 Browser E2E 和对齐矩阵为准，Desktop 容易形成第二套业务页面或遗漏错误、权限和实时状态。
+- **文件 capability 被弱化为路径传递。** 原始路径、泛化 IPC、任意 URL 上传或未绑定的 capability 会把主进程变成文件/网络代理并造成跨用户泄漏。
+- **系统通知重复或越权。** SSE 重连、前台状态和通知点击若未按通知 ID 去重与受限路由处理，会重复投递、错误标已读或打开任意地址。
+- **桌面认证与信任边界不同。** `app://` 不能默认复用浏览器 `SameSite=Lax` Cookie；D1 未收口设备凭证、endpoint、CSP、Electron 安全不变量、导航和 IPC sender 前不得开始桌面接入。
+- **离线 Shell 被误认为离线数据。** 打包 renderer 只保证无网络启动；D3 前必须明确缓存范围、密钥管理、用户隔离、撤权清理和一致性语义。
+- **离线写入不是缓存的自然延伸。** 缺少稳定游标/快照、墓碑、基线版本、幂等 operation ID、冲突策略和附件独立队列时不得开始 D4。
 - **APK 的浏览器下载成功不等于可以安装。** Android 的未知来源授权、应用签名和渠道策略应由移动端发布方案单独覆盖。
-- **公开版本资产一经发布即属于公开内容。** `release_id` 与 `asset_id` 不是访问控制或机密；短时 OSS 签名 URL 是有效期内的 bearer 凭证，不得写入审计详情、分析系统、错误上报或第三方跳转 Referer。若不接受该模型，必须在公开路由前增加鉴权与授权校验。
+- **公开版本资产一经发布即属于公开内容。** `release_id` 与 `asset_id` 不是访问控制或机密；短时 OSS 签名 URL 是有效期内 bearer 凭证，不得写入审计详情、分析系统、错误上报或第三方跳转 Referer。若不接受该模型，必须在公开路由前增加鉴权与授权校验。
