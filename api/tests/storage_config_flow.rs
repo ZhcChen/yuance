@@ -758,6 +758,96 @@ async fn file_object_metadata_uses_active_storage_config() {
 }
 
 #[tokio::test]
+async fn same_name_file_objects_use_distinct_server_generated_object_keys() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    storage::save_config(
+        &pool,
+        &test_settings(),
+        initialized.user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+            region: "test".to_string(),
+            bucket: "yuance-files".to_string(),
+            access_key_id: "AKIAUNIT5SECRETID".to_string(),
+            access_key_secret: "Unit5SecretValue2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .expect("storage config should save");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("active config query should work")
+        .expect("active config should exist");
+
+    let first = files::create_file_object(
+        &pool,
+        &config,
+        files::CreateFileObjectInput {
+            folder_id: None,
+            original_filename: "roadmap.pdf".to_string(),
+            content_type: "application/pdf".to_string(),
+            byte_size: 5,
+            created_by_user_id: initialized.user_id,
+        },
+    )
+    .await
+    .expect("first file object should create");
+    let second = files::create_file_object(
+        &pool,
+        &config,
+        files::CreateFileObjectInput {
+            folder_id: None,
+            original_filename: "roadmap.pdf".to_string(),
+            content_type: "application/pdf".to_string(),
+            byte_size: 6,
+            created_by_user_id: initialized.user_id,
+        },
+    )
+    .await
+    .expect("second file object should create");
+
+    assert_eq!(first.original_filename, "roadmap.pdf");
+    assert_eq!(second.original_filename, "roadmap.pdf");
+    assert_ne!(first.object_key, second.object_key);
+    assert!(first.object_key.starts_with("uploads/pending/"));
+    assert!(second.object_key.starts_with("uploads/pending/"));
+
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &first.object_key,
+        &first.content_type,
+        b"first".to_vec(),
+    )
+    .await
+    .expect("first object should write");
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &second.object_key,
+        &second.content_type,
+        b"second".to_vec(),
+    )
+    .await
+    .expect("second object should write");
+
+    let (_, first_content) =
+        storage::read_test_memory_object(&pool, &test_settings(), &first.object_key)
+            .await
+            .expect("first object should read")
+            .expect("first object should exist");
+    let (_, second_content) =
+        storage::read_test_memory_object(&pool, &test_settings(), &second.object_key)
+            .await
+            .expect("second object should read")
+            .expect("second object should exist");
+    assert_eq!(first_content, b"first");
+    assert_eq!(second_content, b"second");
+}
+
+#[tokio::test]
 async fn build_operator_returns_none_without_active_config() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;

@@ -42,9 +42,6 @@
       </nav>
       {% endif %}
       <a class="btn btn-secondary" href="/web/projects/{{ project.code }}?tab=library" data-smart-back data-smart-back-key="resource:{{ resource.id }}" data-fallback-url="/web/projects/{{ project.code }}?tab=library">返回资料库</a>
-      {% if has_selected_version %}
-      <a class="btn btn-secondary" href="{{ current_resource_url }}">返回当前版本</a>
-      {% endif %}
       {% if can_reset_resource_password %}
       <button class="btn btn-secondary" type="button" data-modal-open="project-resource-password-reset-modal">重置保险箱密码</button>
       {% endif %}
@@ -96,54 +93,6 @@
     </div>
   </section>
 
-  <section class="project-tabs-card resource-version-card">
-    <div class="project-tabs-head">
-      <div>
-        <p class="eyebrow">版本历史</p>
-        <h2>资料快照</h2>
-      </div>
-    </div>
-    {% if has_versions %}
-    <div class="resource-version-list">
-      {% for version in versions %}
-      <a class="resource-version-item {% if version.is_selected %}active{% endif %}" href="{{ version.url }}">
-        <div class="resource-version-item-head">
-          <strong>{{ version.version_label }}</strong>
-          <span>{{ version.created_at }}</span>
-        </div>
-        <div class="resource-version-item-meta">
-          <span>{{ version.category }}</span>
-          <span>编辑：{{ version.edited_by }}</span>
-        </div>
-        <div class="resource-version-item-title">{{ version.title }}</div>
-        {% if version.has_tags %}
-        <div class="resource-chip-row">
-          {% for tag in version.tags %}
-          <span class="resource-chip">#{{ tag }}</span>
-          {% endfor %}
-        </div>
-        {% endif %}
-        {% if version.has_related_work_item || version.has_related_cycle %}
-        <div class="resource-link-row">
-          {% if version.has_related_work_item %}
-          <span class="resource-link-chip">{{ version.related_work_item_label }}</span>
-          {% endif %}
-          {% if version.has_related_cycle %}
-          <span class="resource-link-chip">{{ version.related_cycle_label }}</span>
-          {% endif %}
-        </div>
-        {% endif %}
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-      <strong>暂无历史版本</strong>
-      <span>资料创建后会在这里保留版本快照。</span>
-    </div>
-    {% endif %}
-  </section>
-
   {% if resource.is_protected && !is_unlocked %}
   <section class="resource-lock-panel">
     <div class="resource-lock-card">
@@ -176,47 +125,16 @@
   <section class="project-tabs-card resource-content-card">
     <div class="project-tabs-head">
       <div>
-        <p class="eyebrow">{% if has_selected_version %}历史快照{% else %}资料正文{% endif %}</p>
-        <h2>{% if has_selected_version %}{{ selected_version.title }} · {{ selected_version.version_label }}{% else %}{{ resource.title }}{% endif %}</h2>
+        <p class="eyebrow">资料正文</p>
+        <h2>{{ resource.title }}</h2>
       </div>
       <div class="resource-detail-side">
-        {% if has_selected_version %}
-        <span>{{ selected_version.category }}</span>
-        <span>{{ selected_version.created_at }}</span>
-        <span>编辑：{{ selected_version.edited_by }}</span>
-        {% else %}
         <span>{{ resource.category }}</span>
         <span>{{ resource.updated_at }}</span>
-        {% endif %}
       </div>
     </div>
-    {% if has_selected_version %}
-    <div class="resource-version-preview-meta">
-      {% if selected_version.has_tags %}
-      <div class="resource-chip-row">
-        {% for tag in selected_version.tags %}
-        <span class="resource-chip">#{{ tag }}</span>
-        {% endfor %}
-      </div>
-      {% endif %}
-      {% if selected_version.has_related_work_item || selected_version.has_related_cycle %}
-      <div class="resource-link-row">
-        {% if selected_version.has_related_work_item %}
-        <a class="resource-link-chip" href="{{ selected_version.related_work_item_url }}">{{ selected_version.related_work_item_label }}</a>
-        {% endif %}
-        {% if selected_version.has_related_cycle %}
-        <a class="resource-link-chip" href="{{ selected_version.related_cycle_url }}">{{ selected_version.related_cycle_label }}</a>
-        {% endif %}
-      </div>
-      {% endif %}
-    </div>
-    {% endif %}
     <article class="resource-rich-body discussion-rich-body">
-      {% if has_selected_version %}
-      {{ selected_version.body_html|safe }}
-      {% else %}
       {{ resource.body_html|safe }}
-      {% endif %}
     </article>
   </section>
   {% endif %}

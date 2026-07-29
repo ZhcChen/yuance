@@ -165,10 +165,6 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::project_resource_detail_page),
         )
         .route(
-            "/web/projects/{project_key}/resources/{resource_id}/versions/{version_id}",
-            get(web::user::project_resource_version_page),
-        )
-        .route(
             "/web/projects/{project_key}/resources/{resource_id}/unlock",
             post(web::user::project_resource_unlock),
         )

@@ -3,7 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 
-use sqlx::{QueryBuilder, Row, Sqlite, SqlitePool, Transaction};
+use sqlx::{QueryBuilder, Sqlite, SqlitePool, Transaction};
 
 use crate::{
     domains::auth,
@@ -45,38 +45,6 @@ pub struct ProjectResourceCycleRelation {
     pub name: String,
     pub start_date: String,
     pub end_date: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectResourceVersionSummary {
-    pub id: i64,
-    pub resource_id: i64,
-    pub version_number: i64,
-    pub title: String,
-    pub category: String,
-    pub tags: Vec<String>,
-    pub related_work_item: Option<ProjectResourceWorkItemRelation>,
-    pub related_cycle: Option<ProjectResourceCycleRelation>,
-    pub edited_by_display_name: String,
-    pub created_at: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectResourceVersionDetail {
-    pub id: i64,
-    pub resource_id: i64,
-    pub version_number: i64,
-    pub title: String,
-    pub category: String,
-    pub body: String,
-    pub body_format: String,
-    pub body_html: String,
-    pub summary: String,
-    pub tags: Vec<String>,
-    pub related_work_item: Option<ProjectResourceWorkItemRelation>,
-    pub related_cycle: Option<ProjectResourceCycleRelation>,
-    pub edited_by_display_name: String,
-    pub created_at: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -171,22 +139,6 @@ struct NormalizedResourceTag {
     name: String,
     normalized_name: String,
 }
-
-#[derive(Debug, Clone)]
-struct ResourceVersionSnapshotInput {
-    resource_id: i64,
-    title: String,
-    category: String,
-    body: String,
-    body_format: String,
-    tags: Vec<String>,
-    related_work_item: Option<ProjectResourceWorkItemRelation>,
-    related_cycle: Option<ProjectResourceCycleRelation>,
-    edited_by_user_id: i64,
-    edited_by_display_name_snapshot: String,
-}
-
-type ResourceVersionRow = sqlx::sqlite::SqliteRow;
 
 type ResourceRow = (
     i64,
@@ -348,88 +300,6 @@ pub async fn list_project_resource_tags(
         .collect())
 }
 
-pub async fn list_resource_versions(
-    pool: &SqlitePool,
-    project_id: i64,
-    resource_id: i64,
-) -> AppResult<Vec<ProjectResourceVersionSummary>> {
-    let resource = get_project_resource(pool, project_id, resource_id).await?;
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            prv.id,
-            prv.resource_id,
-            prv.version_number,
-            prv.title,
-            prv.category,
-            prv.body,
-            prv.body_format,
-            prv.tags_json,
-            prv.related_work_item_key,
-            prv.related_work_item_type,
-            prv.related_work_item_title,
-            prv.related_cycle_id,
-            prv.related_cycle_name,
-            prv.related_cycle_start_date,
-            prv.related_cycle_end_date,
-            COALESCE(NULLIF(prv.edited_by_display_name_snapshot, ''), editor.display_name, '') AS edited_by_display_name,
-            prv.created_at
-        FROM project_resource_versions prv
-        LEFT JOIN users editor ON editor.id = prv.edited_by_user_id
-        WHERE prv.resource_id = ?1
-        ORDER BY prv.version_number DESC, prv.id DESC
-        "#,
-    )
-    .bind(resource.id)
-    .fetch_all(pool)
-    .await?;
-
-    rows.into_iter()
-        .map(resource_version_summary_from_row)
-        .collect()
-}
-
-pub async fn get_resource_version(
-    pool: &SqlitePool,
-    project_id: i64,
-    resource_id: i64,
-    version_id: i64,
-) -> AppResult<Option<ProjectResourceVersionDetail>> {
-    let resource = get_project_resource(pool, project_id, resource_id).await?;
-    let row = sqlx::query(
-        r#"
-        SELECT
-            prv.id,
-            prv.resource_id,
-            prv.version_number,
-            prv.title,
-            prv.category,
-            prv.body,
-            prv.body_format,
-            prv.tags_json,
-            prv.related_work_item_key,
-            prv.related_work_item_type,
-            prv.related_work_item_title,
-            prv.related_cycle_id,
-            prv.related_cycle_name,
-            prv.related_cycle_start_date,
-            prv.related_cycle_end_date,
-            COALESCE(NULLIF(prv.edited_by_display_name_snapshot, ''), editor.display_name, '') AS edited_by_display_name,
-            prv.created_at
-        FROM project_resource_versions prv
-        LEFT JOIN users editor ON editor.id = prv.edited_by_user_id
-        WHERE prv.resource_id = ?1
-          AND prv.id = ?2
-        "#,
-    )
-    .bind(resource.id)
-    .bind(version_id)
-    .fetch_optional(pool)
-    .await?;
-
-    row.map(resource_version_detail_from_row).transpose()
-}
-
 pub async fn get_resource(
     pool: &SqlitePool,
     resource_id: i64,
@@ -509,7 +379,6 @@ pub async fn create_resource(
         auth::hash_password(&input.access_password)?
     };
     let tags = normalize_resource_tags(&input.tags)?;
-    let version_tags = tags.iter().map(|tag| tag.name.clone()).collect::<Vec<_>>();
     let related_work_item_key =
         validate_optional_text(&input.related_work_item_key, "关联工作项", 40)?;
     let related_cycle_id = normalize_related_cycle_id(input.related_cycle_id)?;
@@ -588,34 +457,12 @@ pub async fn create_resource(
         &tags,
     )
     .await?;
-    let (related_work_item, related_cycle) = sync_resource_relations(
+    sync_resource_relations(
         &mut tx,
         input.project_id,
         resource_id,
         &related_work_item_key,
         related_cycle_id,
-    )
-    .await?;
-    record_resource_version_in_transaction(
-        &mut tx,
-        ResourceVersionSnapshotInput {
-            resource_id,
-            title: title.clone(),
-            category: category.to_string(),
-            body: prepared_body
-                .as_ref()
-                .map(|prepared| prepared.body.clone())
-                .unwrap_or_default(),
-            body_format: prepared_body
-                .as_ref()
-                .map(|prepared| prepared.body_format.clone())
-                .unwrap_or_else(|| RESOURCE_BODY_FORMAT_HTML.to_string()),
-            tags: version_tags,
-            related_work_item,
-            related_cycle,
-            edited_by_user_id: actor_user_id,
-            edited_by_display_name_snapshot: actor_display_name_snapshot.clone(),
-        },
     )
     .await?;
     record_project_activity_in_transaction(
@@ -667,7 +514,6 @@ pub async fn update_resource(
         _ => unreachable!("unsupported access password action"),
     };
     let tags = normalize_resource_tags(&input.tags)?;
-    let version_tags = tags.iter().map(|tag| tag.name.clone()).collect::<Vec<_>>();
     let related_work_item_key =
         validate_optional_text(&input.related_work_item_key, "关联工作项", 40)?;
     let related_cycle_id = normalize_related_cycle_id(input.related_cycle_id)?;
@@ -718,28 +564,12 @@ pub async fn update_resource(
         &tags,
     )
     .await?;
-    let (related_work_item, related_cycle) = sync_resource_relations(
+    sync_resource_relations(
         &mut tx,
         existing.project_id,
         resource_id,
         &related_work_item_key,
         related_cycle_id,
-    )
-    .await?;
-    record_resource_version_in_transaction(
-        &mut tx,
-        ResourceVersionSnapshotInput {
-            resource_id,
-            title: title.clone(),
-            category: category.to_string(),
-            body: prepared_body,
-            body_format: prepared_body_format,
-            tags: version_tags,
-            related_work_item,
-            related_cycle,
-            edited_by_user_id: actor_user_id,
-            edited_by_display_name_snapshot: actor_display_name_snapshot.clone(),
-        },
     )
     .await?;
     record_project_activity_in_transaction(
@@ -1041,116 +871,6 @@ fn resource_detail_from_row(row: ResourceRow) -> ProjectResourceDetail {
         created_at,
         updated_at,
     }
-}
-
-fn resource_version_summary_from_row(
-    row: ResourceVersionRow,
-) -> AppResult<ProjectResourceVersionSummary> {
-    Ok(ProjectResourceVersionSummary {
-        id: row.get("id"),
-        resource_id: row.get("resource_id"),
-        version_number: row.get("version_number"),
-        title: row.get("title"),
-        category: row.get("category"),
-        tags: deserialize_resource_version_tags(row.get::<String, _>("tags_json").as_str())?,
-        related_work_item: version_work_item_relation(
-            row.get::<String, _>("related_work_item_key").as_str(),
-            row.get::<String, _>("related_work_item_type").as_str(),
-            row.get::<String, _>("related_work_item_title").as_str(),
-        ),
-        related_cycle: version_cycle_relation(
-            row.get("related_cycle_id"),
-            row.get::<String, _>("related_cycle_name").as_str(),
-            row.get::<String, _>("related_cycle_start_date").as_str(),
-            row.get::<String, _>("related_cycle_end_date").as_str(),
-        ),
-        edited_by_display_name: row.get("edited_by_display_name"),
-        created_at: row.get("created_at"),
-    })
-}
-
-fn resource_version_detail_from_row(
-    row: ResourceVersionRow,
-) -> AppResult<ProjectResourceVersionDetail> {
-    let id: i64 = row.get("id");
-    let resource_id: i64 = row.get("resource_id");
-    let version_number: i64 = row.get("version_number");
-    let title: String = row.get("title");
-    let category: String = row.get("category");
-    let body: String = row.get("body");
-    let body_format: String = row.get("body_format");
-    let tags_json: String = row.get("tags_json");
-    let related_work_item_key: String = row.get("related_work_item_key");
-    let related_work_item_type: String = row.get("related_work_item_type");
-    let related_work_item_title: String = row.get("related_work_item_title");
-    let related_cycle_id: Option<i64> = row.get("related_cycle_id");
-    let related_cycle_name: String = row.get("related_cycle_name");
-    let related_cycle_start_date: String = row.get("related_cycle_start_date");
-    let related_cycle_end_date: String = row.get("related_cycle_end_date");
-    let edited_by_display_name: String = row.get("edited_by_display_name");
-    let created_at: String = row.get("created_at");
-    let body_html = resource_body_html_for_display(&body, &body_format);
-    let summary = compact_summary(&resource_plain_text(&body, &body_format));
-    Ok(ProjectResourceVersionDetail {
-        id,
-        resource_id,
-        version_number,
-        title,
-        category,
-        body,
-        body_format,
-        body_html,
-        summary,
-        tags: deserialize_resource_version_tags(&tags_json)?,
-        related_work_item: version_work_item_relation(
-            &related_work_item_key,
-            &related_work_item_type,
-            &related_work_item_title,
-        ),
-        related_cycle: version_cycle_relation(
-            related_cycle_id,
-            &related_cycle_name,
-            &related_cycle_start_date,
-            &related_cycle_end_date,
-        ),
-        edited_by_display_name,
-        created_at,
-    })
-}
-
-fn deserialize_resource_version_tags(tags_json: &str) -> AppResult<Vec<String>> {
-    serde_json::from_str::<Vec<String>>(tags_json)
-        .map_err(|_| AppError::BadRequest("资料版本标签数据损坏".to_string()))
-}
-
-fn version_work_item_relation(
-    item_key: &str,
-    item_type: &str,
-    title: &str,
-) -> Option<ProjectResourceWorkItemRelation> {
-    let item_key = item_key.trim();
-    if item_key.is_empty() {
-        return None;
-    }
-    Some(ProjectResourceWorkItemRelation {
-        item_key: item_key.to_string(),
-        item_type: item_type.trim().to_string(),
-        title: title.trim().to_string(),
-    })
-}
-
-fn version_cycle_relation(
-    cycle_id: Option<i64>,
-    name: &str,
-    start_date: &str,
-    end_date: &str,
-) -> Option<ProjectResourceCycleRelation> {
-    cycle_id.map(|id| ProjectResourceCycleRelation {
-        id,
-        name: name.trim().to_string(),
-        start_date: start_date.trim().to_string(),
-        end_date: end_date.trim().to_string(),
-    })
 }
 
 async fn populate_resource_summary_metadata(
@@ -1473,99 +1193,6 @@ async fn sync_resource_relations(
     }
 
     Ok((related_work_item, related_cycle))
-}
-
-async fn record_resource_version_in_transaction(
-    tx: &mut Transaction<'_, Sqlite>,
-    snapshot: ResourceVersionSnapshotInput,
-) -> AppResult<()> {
-    let version_number = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT COALESCE(MAX(version_number), 0) + 1
-        FROM project_resource_versions
-        WHERE resource_id = ?1
-        "#,
-    )
-    .bind(snapshot.resource_id)
-    .fetch_one(&mut **tx)
-    .await?;
-    let tags_json = serde_json::to_string(&snapshot.tags)
-        .map_err(|_| AppError::BadRequest("资料版本标签序列化失败".to_string()))?;
-    let related_work_item_key = snapshot
-        .related_work_item
-        .as_ref()
-        .map(|relation| relation.item_key.clone())
-        .unwrap_or_default();
-    let related_work_item_type = snapshot
-        .related_work_item
-        .as_ref()
-        .map(|relation| relation.item_type.clone())
-        .unwrap_or_default();
-    let related_work_item_title = snapshot
-        .related_work_item
-        .as_ref()
-        .map(|relation| relation.title.clone())
-        .unwrap_or_default();
-    let related_cycle_id = snapshot.related_cycle.as_ref().map(|relation| relation.id);
-    let related_cycle_name = snapshot
-        .related_cycle
-        .as_ref()
-        .map(|relation| relation.name.clone())
-        .unwrap_or_default();
-    let related_cycle_start_date = snapshot
-        .related_cycle
-        .as_ref()
-        .map(|relation| relation.start_date.clone())
-        .unwrap_or_default();
-    let related_cycle_end_date = snapshot
-        .related_cycle
-        .as_ref()
-        .map(|relation| relation.end_date.clone())
-        .unwrap_or_default();
-
-    sqlx::query(
-        r#"
-        INSERT INTO project_resource_versions (
-            resource_id,
-            version_number,
-            title,
-            category,
-            body,
-            body_format,
-            tags_json,
-            related_work_item_key,
-            related_work_item_type,
-            related_work_item_title,
-            related_cycle_id,
-            related_cycle_name,
-            related_cycle_start_date,
-            related_cycle_end_date,
-            edited_by_user_id,
-            edited_by_display_name_snapshot
-        )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
-        "#,
-    )
-    .bind(snapshot.resource_id)
-    .bind(version_number)
-    .bind(snapshot.title)
-    .bind(snapshot.category)
-    .bind(snapshot.body)
-    .bind(snapshot.body_format)
-    .bind(tags_json)
-    .bind(related_work_item_key)
-    .bind(related_work_item_type)
-    .bind(related_work_item_title)
-    .bind(related_cycle_id)
-    .bind(related_cycle_name)
-    .bind(related_cycle_start_date)
-    .bind(related_cycle_end_date)
-    .bind(snapshot.edited_by_user_id)
-    .bind(snapshot.edited_by_display_name_snapshot)
-    .execute(&mut **tx)
-    .await?;
-
-    Ok(())
 }
 
 async fn project_key_by_id(pool: &SqlitePool, project_id: i64) -> AppResult<String> {
