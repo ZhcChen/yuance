@@ -6,12 +6,19 @@ OUTPUT="${YUANCE_API_IMAGE_TAR:-dist/yuance-api-linux-amd64.tar}"
 PLATFORM="${YUANCE_API_PLATFORM:-linux/amd64}"
 RELEASE_VERSION="${YUANCE_RELEASE_VERSION:-$(date +%Y%m%d%H%M%S)}"
 
+if ! command -v npm >/dev/null 2>&1; then
+  echo "未找到 npm，无法执行前端构建前置检查。" >&2
+  exit 1
+fi
+
 if ! docker buildx version >/dev/null 2>&1; then
   echo "docker buildx 不可用，请先安装或启用 Docker Buildx。" >&2
   exit 1
 fi
 
 mkdir -p "$(dirname "$OUTPUT")"
+
+npm run check:frontend
 
 docker buildx build \
   --platform "$PLATFORM" \

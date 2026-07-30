@@ -1,6 +1,7 @@
 /target/
 /data/
 /dist/
+/web/dist/
 /desktop/dist/
 /desktop/release/
 /.context/

@@ -1340,6 +1340,7 @@ enum AttachmentPreviewStrategy {
 struct LoginTemplate {
     csrf_token: String,
     error_message: String,
+    return_to: String,
 }
 
 #[derive(Template)]
@@ -1552,8 +1553,16 @@ pub struct BootstrapForm {
 pub struct LoginForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
+    #[serde(default)]
+    return_to: String,
     username: String,
     password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LoginQuery {
+    #[serde(default)]
+    return_to: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5860,7 +5869,11 @@ pub async fn work_item_comment_attachment_preview_content(
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
 }
 
-pub async fn login(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
+pub async fn login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<LoginQuery>,
+) -> AppResult<Response> {
     if let Some(pool) = state.pool.as_ref()
         && bootstrap::bootstrap_required(pool).await?
     {
@@ -5877,12 +5890,14 @@ pub async fn login(State(state): State<AppState>, headers: HeaderMap) -> AppResu
     }
 
     let csrf_token = csrf::ensure_token(&headers);
+    let return_to = safe_web_return_to(&query.return_to).to_string();
     with_csrf_cookie(
         &state,
         &csrf_token,
         response::html(LoginTemplate {
             csrf_token: csrf_token.clone(),
             error_message: String::new(),
+            return_to,
         })?
         .into_response(),
     )
@@ -5931,6 +5946,7 @@ pub async fn login_submit(
                 response::html(LoginTemplate {
                     csrf_token: csrf_token.clone(),
                     error_message: message,
+                    return_to: safe_web_return_to(&form.return_to).to_string(),
                 })?
                 .into_response(),
             );
@@ -5950,7 +5966,12 @@ pub async fn login_submit(
         &request_context,
     )
     .await?;
-    redirect_with_session(&state, session, is_htmx(&headers))
+    redirect_with_session(
+        &state,
+        session,
+        is_htmx(&headers),
+        safe_web_return_to(&form.return_to),
+    )
 }
 
 pub async fn bootstrap(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
@@ -6013,7 +6034,7 @@ pub async fn bootstrap_init(
         state.settings.refresh_session_ttl_seconds()?,
     )
     .await?;
-    redirect_with_session(&state, session, is_htmx(&headers))
+    redirect_with_session(&state, session, is_htmx(&headers), "/web")
 }
 
 pub async fn logout(
@@ -8535,6 +8556,7 @@ fn redirect_with_session(
     state: &AppState,
     session: auth::IssuedSession,
     htmx: bool,
+    return_to: &str,
 ) -> AppResult<Response> {
     let cookie = auth::session_cookie_header_with_max_age(
         &session.raw_token,
@@ -8546,10 +8568,11 @@ fn redirect_with_session(
         state.settings.refresh_session_ttl_seconds()?,
         state.settings.env == "production",
     );
+    let safe_return_to = safe_web_return_to(return_to);
     let mut response = if htmx {
         StatusCode::NO_CONTENT.into_response()
     } else {
-        Redirect::to("/web").into_response()
+        Redirect::to(safe_return_to).into_response()
     };
     response
         .headers_mut()
@@ -8560,7 +8583,7 @@ fn redirect_with_session(
     if htmx {
         response
             .headers_mut()
-            .insert("HX-Redirect", "/web".parse()?);
+            .insert("HX-Redirect", safe_return_to.parse()?);
     }
     Ok(response)
 }

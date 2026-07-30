@@ -9,6 +9,7 @@ use axum::{
 };
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
+use std::{fs, path::{Path as StdPath, PathBuf}};
 
 use crate::{
     domains::auth,
@@ -65,6 +66,9 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/", get(root))
         .route("/web", get(web::user::dashboard))
+        .route("/web/app", get(static_web_app_entry))
+        .route("/web/app/", get(static_web_app_entry))
+        .route("/web/app/{*path}", get(static_web_app_asset))
         .route("/web/downloads", get(web::user::desktop_downloads_page))
         .route(
             "/web/downloads/{release_id}/assets/{asset_id}",
@@ -632,6 +636,18 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/v1/notifications", get(web::api::list_notifications))
         .route(
+            "/api/v1/notifications/read-all",
+            post(web::api::mark_all_notifications_read),
+        )
+        .route(
+            "/api/v1/notifications/{notification_id}/target",
+            get(web::api::get_notification_target),
+        )
+        .route(
+            "/api/v1/notifications/{notification_id}/read",
+            post(web::api::mark_notification_read),
+        )
+        .route(
             "/api/v1/work-items/{item_key}",
             get(web::api::get_work_item).patch(web::api::update_work_item),
         )
@@ -880,7 +896,12 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
     if headers.contains_key(header::AUTHORIZATION) {
         return false;
     }
-    if path.starts_with("/static/") || path == "/favicon.ico" || path == "/version.json" {
+    if path.starts_with("/static/")
+        || path == "/favicon.ico"
+        || path == "/version.json"
+        || path.starts_with("/web/app/assets/")
+        || path == "/web/app/manifest.json"
+    {
         return false;
     }
     !matches!(
@@ -1207,6 +1228,109 @@ fn escape_html(value: &str) -> String {
 
 async fn root() -> Redirect {
     Redirect::temporary("/web")
+}
+
+async fn static_web_app_entry(State(state): State<AppState>) -> Response {
+    serve_web_app_path(&state, "")
+}
+
+async fn static_web_app_asset(State(state): State<AppState>, Path(path): Path<String>) -> Response {
+    serve_web_app_path(&state, &path)
+}
+
+fn serve_web_app_path(state: &AppState, requested_path: &str) -> Response {
+    let dist_dir = state.settings.web_dist_dir();
+    if !dist_dir.is_dir() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                (
+                    header::CACHE_CONTROL,
+                    "no-store, max-age=0, must-revalidate",
+                ),
+            ],
+            "<!doctype html><html lang=\"zh-CN\"><body><main><h1>Web App 构建物缺失</h1><p>请先执行 npm --prefix web run build，或在镜像构建阶段生成 web/dist。</p></main></body></html>".to_string(),
+        )
+            .into_response();
+    }
+
+    let Some(normalized) = normalize_web_app_path(requested_path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    let is_navigation = normalized.is_empty()
+        || !normalized
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .contains('.');
+    let relative_path = if is_navigation {
+        "index.html".to_string()
+    } else {
+        normalized.clone()
+    };
+    let file_path = dist_dir.join(&relative_path);
+    if !file_path.is_file() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    let content = match fs::read(&file_path) {
+        Ok(content) => content,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+
+    let cache_control = if relative_path == "index.html" || relative_path == "manifest.json" {
+        "no-store, max-age=0, must-revalidate"
+    } else if relative_path.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-store, max-age=0, must-revalidate"
+    };
+
+    (
+        [
+            (header::CONTENT_TYPE, web_app_content_type(&relative_path)),
+            (header::CACHE_CONTROL, cache_control),
+        ],
+        content,
+    )
+        .into_response()
+}
+
+fn normalize_web_app_path(requested_path: &str) -> Option<String> {
+    let trimmed = requested_path.trim_matches('/');
+    if trimmed.is_empty() {
+        return Some(String::new());
+    }
+
+    let candidate = PathBuf::from(trimmed);
+    if candidate.components().any(|component| {
+        !matches!(component, std::path::Component::Normal(_))
+    }) {
+        return None;
+    }
+
+    Some(trimmed.to_string())
+}
+
+fn web_app_content_type(path: &str) -> &'static str {
+    match StdPath::new(path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+    {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" => "application/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    }
 }
 
 async fn static_app_css() -> impl IntoResponse {

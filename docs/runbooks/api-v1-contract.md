@@ -475,7 +475,10 @@ POST   /api/v1/work-items/{item_key}/comments/{comment_id}/publish
 ## 站内通知
 
 ```text
-GET /api/v1/notifications
+GET  /api/v1/notifications
+GET  /api/v1/notifications/{notification_id}/target
+POST /api/v1/notifications/{notification_id}/read
+POST /api/v1/notifications/read-all
 ```
 
 查询参数：
@@ -484,7 +487,23 @@ GET /api/v1/notifications
 limit=5
 ```
 
-返回当前登录用户的站内消息摘要和未读数量。消息包括被指派、被回复等工作项协作事件；`open_url` 指向对应消息打开入口。
+返回当前登录用户的站内消息摘要和未读数量。消息包括被指派、被回复等工作项协作事件；`open_url` 仍保留给旧 `/web/messages/{id}/open` 兼容链路，新 Web 应优先消费 `target` 语义目标。
+
+通知目标与已读的重要语义：
+
+- `GET /api/v1/notifications/{notification_id}/target` 返回当前通知的已读状态和语义目标，当前目标类型为 `work_item`，包含 `project_key`、`work_item_key` 和可选 `comment_id`。
+- `POST /api/v1/notifications/{notification_id}/read` 是幂等已读操作；Cookie session 需要 CSRF，PAT/Bearer 不需要。
+- `POST /api/v1/notifications/read-all` 会把当前用户全部未读消息标记为已读，并返回本次影响数量。
+- 新客户端不应把 `/web/messages/{id}/open` 当作业务协议；应使用通知 ID + 语义目标决定内部跳转。
+
+## 测试存储校验
+
+```text
+PUT /api/v1/test-storage/upload
+GET /api/v1/test-storage/download
+```
+
+以上接口仅用于当前测试存储链路与浏览器直传验收，不属于业务前台工作流。上传请求使用 query 中的签名 grant；下载请求返回受限测试对象内容。
 
 ## 附件与直传
 

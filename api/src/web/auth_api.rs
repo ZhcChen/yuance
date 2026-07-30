@@ -30,10 +30,12 @@ pub async fn csrf_token(
 
     let csrf_token = csrf::ensure_token(&headers);
     let secure = state.settings.env == "production";
+    let csrf_cookie = csrf::cookie_header(&csrf_token, secure);
 
     Ok((
-        AppendHeaders([
-            (header::SET_COOKIE, csrf::cookie_header(&csrf_token, secure)),
+        AppendHeaders(vec![
+            (header::CACHE_CONTROL, "private, no-store".to_string()),
+            (header::SET_COOKIE, csrf_cookie),
             (
                 HeaderName::from_static(csrf::CSRF_HEADER_NAME),
                 csrf_token.clone(),

@@ -1,0 +1,7 @@
+{
+  "name": "yuance",
+  "private": true,
+  "scripts": {
+    "check:frontend": "npm --prefix web run check"
+  }
+}

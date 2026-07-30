@@ -50,6 +50,80 @@ async fn login_page_sets_csrf_cookie_and_hidden_field() {
 }
 
 #[tokio::test]
+async fn login_page_preserves_safe_return_to_for_web_app() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/login?return_to=%2Fweb%2Fapp%2Fmessages%3Ftab%3Drecent")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("name=\"return_to\" value=\"/web/app/messages?tab=recent\""));
+}
+
+#[tokio::test]
+async fn login_submit_redirects_to_safe_return_to_when_present() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf(
+                    "username=admin&password=AdminPass2026%21&return_to=%2Fweb%2Fapp%2Fmessages%3Ftab%3Drecent",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/app/messages?tab=recent"
+    );
+}
+
+#[tokio::test]
+async fn login_submit_rejects_cross_origin_return_to() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/web/login")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .header(header::COOKIE, csrf_cookie())
+                .body(Body::from(with_csrf(
+                    "username=admin&password=AdminPass2026%21&return_to=https%3A%2F%2Fevil.example",
+                )))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/web");
+}
+
+#[tokio::test]
 async fn login_submit_rejects_missing_csrf() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;

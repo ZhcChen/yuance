@@ -258,6 +258,14 @@ pub struct WorkItemTypingSnapshotPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct NotificationTargetPayload {
+    pub kind: String,
+    pub project_key: String,
+    pub work_item_key: String,
+    pub comment_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct NotificationPayload {
     pub id: i64,
     pub kind: String,
@@ -267,12 +275,25 @@ pub struct NotificationPayload {
     pub created_at: String,
     pub read: bool,
     pub open_url: String,
+    pub target: Option<NotificationTargetPayload>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct NotificationFeedPayload {
     pub items: Vec<NotificationPayload>,
     pub unread_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NotificationTargetResultPayload {
+    pub notification_id: i64,
+    pub read: bool,
+    pub target: Option<NotificationTargetPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NotificationMarkAllReadPayload {
+    pub affected: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -339,11 +360,21 @@ fn default_notification_limit() -> i64 {
     5
 }
 
+fn no_store_json<T>(data: T) -> impl IntoResponse
+where
+    T: Serialize,
+{
+    (
+        AppendHeaders([(header::CACHE_CONTROL, "private, no-store")]),
+        json(data),
+    )
+}
+
 pub async fn list_notifications(
     State(state): State<AppState>,
     headers: HeaderMap,
     Query(query): Query<NotificationQuery>,
-) -> AppResult<axum::Json<ApiEnvelope<NotificationFeedPayload>>> {
+) -> AppResult<impl IntoResponse> {
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
@@ -353,16 +384,53 @@ pub async fn list_notifications(
         .map(notification_payload)
         .collect();
     let unread_count = notifications::unread_count(pool, user.id).await?;
-    Ok(json(NotificationFeedPayload {
+    Ok(no_store_json(NotificationFeedPayload {
         items,
         unread_count,
     }))
 }
 
+pub async fn get_notification_target(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(notification_id): Path<i64>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    let notification = notifications::get_for_user(pool, user.id, notification_id).await?;
+    Ok(no_store_json(notification_target_result_payload(notification)))
+}
+
+pub async fn mark_notification_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(notification_id): Path<i64>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    ensure_api_csrf(&headers)?;
+    let notification = notifications::mark_read(pool, user.id, notification_id).await?;
+    Ok(no_store_json(notification_target_result_payload(notification)))
+}
+
+pub async fn mark_all_notifications_read(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    ensure_api_csrf(&headers)?;
+    let affected = notifications::mark_all_read(pool, user.id).await?;
+    Ok(no_store_json(NotificationMarkAllReadPayload { affected }))
+}
+
 pub async fn get_topbar_status(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> AppResult<axum::Json<ApiEnvelope<TopbarStatusPayload>>> {
+) -> AppResult<impl IntoResponse> {
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -431,7 +499,7 @@ pub async fn get_topbar_status(
         }
     });
 
-    Ok(json(TopbarStatusPayload {
+    Ok(no_store_json(TopbarStatusPayload {
         requirements_count: work_item_counts.requirements,
         tasks_count: work_item_counts.tasks,
         bugs_count: work_item_counts.bugs,
@@ -469,10 +537,16 @@ pub async fn topbar_events(
         }
     };
 
-    Ok(Sse::new(stream).keep_alive(
-        KeepAlive::new()
-            .interval(std::time::Duration::from_secs(20))
-            .text("keep-alive"),
+    Ok((
+        AppendHeaders([
+            (header::CACHE_CONTROL, "private, no-store"),
+            (header::HeaderName::from_static("x-accel-buffering"), "no"),
+        ]),
+        Sse::new(stream).keep_alive(
+            KeepAlive::new()
+                .interval(std::time::Duration::from_secs(20))
+                .text("keep-alive"),
+        ),
     ))
 }
 
@@ -1341,7 +1415,8 @@ pub async fn login(
     let csrf_cookie = csrf::cookie_header(&csrf_token, state.settings.env == "production");
 
     Ok((
-        AppendHeaders([
+        AppendHeaders(vec![
+            (header::CACHE_CONTROL, "private, no-store".to_string()),
             (header::SET_COOKIE, cookie),
             (header::SET_COOKIE, refresh_cookie),
             (header::SET_COOKIE, csrf_cookie),
@@ -1356,10 +1431,10 @@ pub async fn login(
 pub async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,
-) -> AppResult<axum::Json<ApiEnvelope<AuthUserPayload>>> {
+) -> AppResult<impl IntoResponse> {
     let user = require_api_user(&state, &headers).await?;
 
-    Ok(json(auth_user_payload(user)))
+    Ok(no_store_json(auth_user_payload(user)))
 }
 
 pub async fn logout(
@@ -1395,7 +1470,8 @@ pub async fn logout(
         auth::clear_refresh_cookie_header(state.settings.env == "production");
 
     Ok((
-        AppendHeaders([
+        AppendHeaders(vec![
+            (header::CACHE_CONTROL, "private, no-store".to_string()),
             (header::SET_COOKIE, clear_cookie),
             (header::SET_COOKIE, clear_refresh_cookie),
         ]),
@@ -5160,6 +5236,8 @@ fn work_item_typing_snapshot_payload(
 }
 
 fn notification_payload(notification: notifications::NotificationSummary) -> NotificationPayload {
+    let target = notification_target_payload(&notification);
+    let read = !notification.read_at.is_empty();
     NotificationPayload {
         id: notification.id,
         kind: notification.kind,
@@ -5167,8 +5245,35 @@ fn notification_payload(notification: notifications::NotificationSummary) -> Not
         body: fallback_text(notification.body, "查看详情"),
         actor: fallback_text(notification.actor_display_name, "系统"),
         created_at: notification.created_at,
-        read: !notification.read_at.is_empty(),
+        read,
         open_url: format!("/web/messages/{}/open", notification.id),
+        target: Some(target),
+    }
+}
+
+fn notification_target_result_payload(
+    notification: notifications::NotificationSummary,
+) -> NotificationTargetResultPayload {
+    NotificationTargetResultPayload {
+        notification_id: notification.id,
+        read: !notification.read_at.is_empty(),
+        target: Some(notification_target_payload(&notification)),
+    }
+}
+
+fn notification_target_payload(
+    notification: &notifications::NotificationSummary,
+) -> NotificationTargetPayload {
+    NotificationTargetPayload {
+        kind: "work_item".to_string(),
+        project_key: notification
+            .work_item_key
+            .split('-')
+            .next()
+            .unwrap_or_default()
+            .to_string(),
+        work_item_key: notification.work_item_key.clone(),
+        comment_id: notification.comment_id,
     }
 }
 

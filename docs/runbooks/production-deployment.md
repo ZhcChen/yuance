@@ -37,7 +37,7 @@ API 端口：127.0.0.1:33033
 - SQLite 是唯一数据库。
 - 不部署 Redis；缓存使用进程内内存。
 - 不部署 PostgreSQL、NATS、Worker、独立前端或独立后台。
-- `/web`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
+- `/web`、`/web/app`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
 - 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览，DOC、PPT 走 legacy 纯前端预览。
@@ -61,6 +61,8 @@ YUANCE_API_PLATFORM=linux/amd64 \
 ```
 
 arm 开发机可以通过 Docker Buildx 构建 `linux/amd64`。这会使用跨架构构建，Rust 编译会比原生慢。
+
+该脚本会先执行根 `npm run check:frontend`，再通过 `api/Dockerfile` 的多阶段构建在镜像内生成 `web/dist` 并复制到最终 `yuance-api` 镜像的 `/app/web/dist`。
 
 ## 一键发布脚本
 
@@ -142,6 +144,10 @@ YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3
 YUANCE_DATA_DIR=/data
 YUANCE_API_BIND_IP=127.0.0.1
 YUANCE_API_PORT=33033
+YUANCE_WEB_DIST_DIR=/app/web/dist
+YUANCE_SSE_DRAIN_TIMEOUT=30s
+YUANCE_STOP_GRACE_PERIOD=45s
+YUANCE_MAX_RELEASE_WINDOW=10m
 ```
 
 ## 首次发布

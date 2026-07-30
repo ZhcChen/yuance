@@ -110,6 +110,7 @@
 
   <form class="auth-form" method="post" action="/web/login">
     <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+    <input type="hidden" name="return_to" value="{{ return_to }}">
     <div class="form-head">
       <span class="form-eyebrow">Welcome back</span>
       <h1>登录元策</h1>

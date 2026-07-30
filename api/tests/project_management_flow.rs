@@ -2579,6 +2579,213 @@ async fn work_item_assignment_and_reply_notifications_open_and_mark_read() {
 }
 
 #[tokio::test]
+async fn api_v1_notification_target_and_read_endpoints_follow_semantic_contract() {
+    let pool = test_pool().await;
+    let admin = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin.user_id)
+        .await
+        .expect("demo seed should apply");
+    let receiver = create_regular_user(&pool, "notify_api_reader", "通知 API 读取人").await;
+    projects::add_project_member(&pool, admin.user_id, "YCE", "notify_api_reader", "member")
+        .await
+        .expect("receiver should join project");
+
+    projects::handoff_work_item(
+        &pool,
+        admin.user_id,
+        "YCE-TASK-2",
+        projects::HandoffWorkItemInput {
+            status: "in_progress".to_string(),
+            assignee_username: "notify_api_reader".to_string(),
+            body: "请通过 API 查看通知语义目标".to_string(),
+            source_comment_id: None,
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("handoff should create notification");
+
+    let notice = notifications::list_for_user(&pool, receiver.user_id, true, 10)
+        .await
+        .expect("notifications should load")
+        .remove(0);
+    let work_item_id = sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+        .fetch_one(&pool)
+        .await
+        .expect("work item should exist");
+
+    sqlx::query(
+        r#"
+        INSERT INTO notifications (
+            recipient_user_id,
+            actor_user_id,
+            actor_display_name_snapshot,
+            kind,
+            work_item_id,
+            comment_id,
+            title,
+            body
+        )
+        VALUES (?1, ?2, '系统管理员', 'comment_mentioned', ?3, NULL, '第二条消息', '用于 read-all 校验')
+        "#,
+    )
+    .bind(receiver.user_id)
+    .bind(admin.user_id)
+    .bind(work_item_id)
+    .execute(&pool)
+    .await
+    .expect("second notification should insert");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let target_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/notifications/{}/target", notice.id))
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(target_response.status(), StatusCode::OK);
+    assert_eq!(
+        target_response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let target_body = response_body(target_response).await;
+    let target_payload: serde_json::Value =
+        serde_json::from_str(&target_body).expect("target response should be json");
+    let target_data = target_payload
+        .get("data")
+        .expect("target response should contain data");
+    assert_eq!(
+        target_data
+            .get("notification_id")
+            .and_then(|value| value.as_i64()),
+        Some(notice.id)
+    );
+    assert_eq!(
+        target_data.get("read").and_then(|value| value.as_bool()),
+        Some(false)
+    );
+    let target = target_data
+        .get("target")
+        .expect("target payload should contain target object");
+    assert_eq!(
+        target.get("work_item_key").and_then(|value| value.as_str()),
+        Some("YCE-TASK-2")
+    );
+    assert_eq!(
+        target.get("project_key").and_then(|value| value.as_str()),
+        Some("YCE")
+    );
+    assert_eq!(
+        target.get("kind").and_then(|value| value.as_str()),
+        Some("work_item")
+    );
+
+    let unauthorized_target_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/api/v1/notifications/{}/target", notice.id))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(unauthorized_target_response.status(), StatusCode::UNAUTHORIZED);
+
+    let missing_csrf_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/notifications/{}/read", notice.id))
+                .header(header::COOKIE, receiver.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(missing_csrf_response.status(), StatusCode::FORBIDDEN);
+
+    let read_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/api/v1/notifications/{}/read", notice.id))
+                .header(header::COOKIE, with_csrf_cookie(&receiver.cookie))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_response.status(), StatusCode::OK);
+    assert_eq!(
+        read_response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let read_body = response_body(read_response).await;
+    let read_payload: serde_json::Value =
+        serde_json::from_str(&read_body).expect("read response should be json");
+    let read_data = read_payload
+        .get("data")
+        .expect("read response should contain data");
+    assert_eq!(
+        read_data.get("read").and_then(|value| value.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        read_data
+            .get("target")
+            .and_then(|value| value.get("work_item_key"))
+            .and_then(|value| value.as_str()),
+        Some("YCE-TASK-2")
+    );
+    assert_eq!(
+        notifications::unread_count(&pool, receiver.user_id)
+            .await
+            .expect("unread count should load"),
+        1
+    );
+
+    let read_all_response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/notifications/read-all")
+                .header(header::COOKIE, with_csrf_cookie(&receiver.cookie))
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_all_response.status(), StatusCode::OK);
+    let read_all_body = response_body(read_all_response).await;
+    let read_all_payload: serde_json::Value =
+        serde_json::from_str(&read_all_body).expect("read-all response should be json");
+    assert_eq!(
+        read_all_payload
+            .get("data")
+            .and_then(|value| value.get("affected"))
+            .and_then(|value| value.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        notifications::unread_count(&pool, receiver.user_id)
+            .await
+            .expect("unread count should load"),
+        0
+    );
+}
+
+#[tokio::test]
 async fn web_messages_page_paginates_notifications_with_shared_controls() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

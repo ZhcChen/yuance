@@ -15,6 +15,9 @@ IMAGE_TAR="${YUANCE_API_IMAGE_TAR:-dist/yuance-api-linux-amd64.tar}"
 REMOTE_IMAGE_TAR="$REMOTE_RELEASE_DIR/$(basename "$IMAGE_TAR")"
 KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
+SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
+STOP_GRACE_PERIOD="${YUANCE_STOP_GRACE_PERIOD:-45s}"
+MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 SKIP_BUILD="${YUANCE_SKIP_LOCAL_BUILD:-0}"
 
 require_file() {
@@ -99,7 +102,7 @@ fi
 echo "远程 SHA256 校验通过。"
 
 run ssh "$REMOTE_HOST" \
-  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' sh -s" <<'REMOTE_SCRIPT'
+  "YUANCE_IMAGE='$IMAGE' YUANCE_REMOTE_IMAGE_TAR='$REMOTE_IMAGE_TAR' YUANCE_BACKEND_DIR='$REMOTE_BACKEND_DIR' YUANCE_KEEP_RELEASE_BACKUPS='$KEEP_RELEASE_BACKUPS' YUANCE_PRUNE_DANGLING_IMAGES='$PRUNE_DANGLING_IMAGES' YUANCE_SSE_DRAIN_TIMEOUT='$SSE_DRAIN_TIMEOUT' YUANCE_STOP_GRACE_PERIOD='$STOP_GRACE_PERIOD' YUANCE_MAX_RELEASE_WINDOW='$MAX_RELEASE_WINDOW' sh -s" <<'REMOTE_SCRIPT'
 set -eu
 
 IMAGE="${YUANCE_IMAGE:-yuance-api:latest}"
@@ -107,6 +110,9 @@ IMAGE_TAR="${YUANCE_REMOTE_IMAGE_TAR:?set YUANCE_REMOTE_IMAGE_TAR}"
 BACKEND_DIR="${YUANCE_BACKEND_DIR:?set YUANCE_BACKEND_DIR}"
 KEEP_RELEASE_BACKUPS="${YUANCE_KEEP_RELEASE_BACKUPS:-1}"
 PRUNE_DANGLING_IMAGES="${YUANCE_PRUNE_DANGLING_IMAGES:-0}"
+SSE_DRAIN_TIMEOUT="${YUANCE_SSE_DRAIN_TIMEOUT:-30s}"
+STOP_GRACE_PERIOD="${YUANCE_STOP_GRACE_PERIOD:-45s}"
+MAX_RELEASE_WINDOW="${YUANCE_MAX_RELEASE_WINDOW:-10m}"
 
 cd "$BACKEND_DIR"
 
@@ -141,10 +147,10 @@ cleanup_named_container() {
 
 run_timeout() {
   label="$1"
-  seconds="$2"
+  duration="$2"
   shift 2
   echo "==> $label"
-  timeout -k 30s "${seconds}s" "$@"
+  timeout -k 30s "$duration" "$@"
 }
 
 run_compose_maintenance() {
@@ -167,6 +173,9 @@ trap cleanup EXIT HUP INT TERM
 
 cleanup_transient_containers
 
+printf '发布约束: sse_drain_timeout=%s stop_grace_period=%s max_release_window=%s\n' \
+  "$SSE_DRAIN_TIMEOUT" "$STOP_GRACE_PERIOD" "$MAX_RELEASE_WINDOW"
+
 run_timeout "加载镜像 tar" 300 docker load -i "$IMAGE_TAR"
 
 run_timeout "SQLite 发布前备份" 300 ./scripts/00-backup-sqlite.sh
@@ -176,7 +185,7 @@ run_compose_maintenance "yuance-api-maintenance-$stamp"
 
 run_timeout "重建并启动 api 容器" 300 docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api
 run_timeout "Compose 状态" 60 docker compose --env-file .env -f compose.yaml ps
-run_timeout "健康检查" 120 ./scripts/90-healthcheck.sh
+run_timeout "健康检查" "$MAX_RELEASE_WINDOW" ./scripts/90-healthcheck.sh
 
 latest="$(docker image inspect "$IMAGE" --format '{{.Id}}')"
 running="$(docker inspect yuance-api --format '{{.Image}}')"

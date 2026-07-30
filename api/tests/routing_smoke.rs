@@ -3,6 +3,12 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
+use std::{
+    fs,
+    future::Future,
+    sync::{Mutex, OnceLock},
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tower::ServiceExt;
 use yuance_api::{
     platform::{config::Settings, db},
@@ -462,6 +468,107 @@ async fn static_app_js_redirects_api_unauthorized_to_login() {
     assert!(body.contains("USERNAME_INPUT_SELECTOR"));
     assert!(body.contains("function normalizeUsernameInput"));
     assert!(body.contains("compactUsernameValue(original)"));
+}
+
+#[tokio::test]
+async fn web_app_entry_serves_index_and_deep_links_without_cache() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/web/app/assets/index-abc123.js\"></script></body></html>",
+        )
+        .expect("index should write");
+        fs::write(dist_dir.join("manifest.json"), "{}")
+            .expect("manifest should write");
+        fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
+            .expect("asset should write");
+
+        let app = build_router(AppState::for_tests());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store, max-age=0, must-revalidate"
+        );
+        let body = response_body(response).await;
+        assert!(body.contains("/web/app/assets/index-abc123.js"));
+
+        let deep_link = app
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/messages/inbox")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(deep_link.status(), StatusCode::OK);
+        assert_eq!(response_body(deep_link).await, body);
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn web_app_assets_use_immutable_cache_and_missing_assets_404() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div></body></html>",
+        )
+        .expect("index should write");
+        fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
+            .expect("asset should write");
+
+        let app = build_router(AppState::for_tests());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/assets/index-abc123.js")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/javascript; charset=utf-8"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "public, max-age=31536000, immutable"
+        );
+
+        let missing = app
+            .oneshot(
+                Request::builder()
+                    .uri("/web/app/assets/missing.js")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    })
+    .await;
 }
 
 #[tokio::test]
@@ -973,4 +1080,40 @@ fn extract_contract_api_v1_paths(source: &str) -> Vec<String> {
     paths.sort();
     paths.dedup();
     paths
+}
+
+async fn with_web_dist_dir<F, Fut>(action: F)
+where
+    F: FnOnce(std::path::PathBuf) -> Fut,
+    Fut: Future<Output = ()>,
+{
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let dir = unique_temp_dir("yuance-web-dist");
+    let previous = std::env::var("YUANCE_WEB_DIST_DIR").ok();
+    unsafe {
+        std::env::set_var("YUANCE_WEB_DIST_DIR", &dir);
+    }
+
+    action(dir.clone()).await;
+
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("YUANCE_WEB_DIST_DIR", value),
+            None => std::env::remove_var("YUANCE_WEB_DIST_DIR"),
+        }
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should move forward")
+        .as_nanos();
+    std::env::temp_dir().join(format!("{prefix}-{nanos}"))
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    ENV_LOCK.get_or_init(|| Mutex::new(()))
 }

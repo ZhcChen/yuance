@@ -1,8 +1,19 @@
 # syntax=docker/dockerfile:1.7
 
+ARG NODE_IMAGE=node:22-bookworm
 ARG RUST_IMAGE=rust:1.94-bookworm
 ARG DEBIAN_IMAGE=debian:bookworm-slim
 ARG YUANCE_BUILD_RELEASE_VERSION=dev
+
+FROM ${NODE_IMAGE} AS web-builder
+
+WORKDIR /src/web
+
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+
+COPY web/ ./
+RUN npm run check && npm run build
 
 FROM ${RUST_IMAGE} AS builder
 
@@ -33,11 +44,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/target/release/yuance-api /app/yuance-api
+COPY --from=web-builder /src/web/dist /app/web/dist
 
 ENV YUANCE_HTTP_ADDR=0.0.0.0:33033 \
     YUANCE_DATABASE_URL=sqlite:///data/yuance.sqlite3 \
     YUANCE_DATA_DIR=/data \
-    YUANCE_RELEASE_VERSION=${YUANCE_BUILD_RELEASE_VERSION}
+    YUANCE_RELEASE_VERSION=${YUANCE_BUILD_RELEASE_VERSION} \
+    YUANCE_WEB_DIST_DIR=/app/web/dist
 
 EXPOSE 33033
 

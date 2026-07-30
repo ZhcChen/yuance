@@ -1,0 +1,93 @@
+name: Web Frontend
+
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - "api/src/web/**"
+      - "api/templates/**"
+      - "api/static/**"
+      - "docs/openapi/yuance.openapi.json"
+      - "docs/runbooks/api-v1-contract.md"
+      - "api/Dockerfile"
+      - "scripts/build-api-image-amd64.sh"
+      - "scripts/smoke-web-app-image.sh"
+      - "scripts/deploy-production.sh"
+      - "deploy/easy-deploy/production/backend/compose.yaml.example"
+      - "Makefile"
+      - "package.json"
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - "web/**"
+      - "api/src/web/**"
+      - "api/templates/**"
+      - "api/static/**"
+      - "docs/openapi/yuance.openapi.json"
+      - "docs/runbooks/api-v1-contract.md"
+      - "api/Dockerfile"
+      - "scripts/build-api-image-amd64.sh"
+      - "scripts/smoke-web-app-image.sh"
+      - "scripts/deploy-production.sh"
+      - "deploy/easy-deploy/production/backend/compose.yaml.example"
+      - "Makefile"
+      - "package.json"
+
+permissions:
+  contents: read
+
+jobs:
+  web-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install web dependencies
+        run: npm --prefix web ci
+
+      - name: Run frontend checks
+        run: npm run check:frontend
+
+      - name: Run route and auth contract tests
+        run: |
+          cargo test -p yuance-api --test routing_smoke
+          cargo test -p yuance-api --test auth_csrf_refresh_flow
+          cargo test -p yuance-api --test auth_security_flow api_auth_login_me_and_logout_flow_uses_json_contract
+          cargo test -p yuance-api --test project_management_flow api_v1_notification_target_and_read_endpoints_follow_semantic_contract
+          cargo test -p yuance-api --test project_management_flow work_item_assignment_and_reply_notifications_open_and_mark_read
+          cargo test -p yuance-api --test project_management_flow api_v1_topbar_status_returns_current_project_counts_and_project_badges
+          cargo test -p yuance-api --test project_management_flow api_v1_topbar_events_returns_sse_stream_for_authenticated_user
+
+      - name: Build web bundle
+        run: npm --prefix web run build
+
+      - name: Build production-like API image
+        run: sh ./scripts/build-api-image-amd64.sh
+
+      - name: Smoke production-like image
+        env:
+          YUANCE_WEB_SMOKE_ROOT: .artifacts/web-app-smoke
+        run: sh ./scripts/smoke-web-app-image.sh
+
+      - name: Upload smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-frontend-smoke-artifacts
+          path: |
+            .artifacts/web-app-smoke
+            web/dist
+          if-no-files-found: ignore

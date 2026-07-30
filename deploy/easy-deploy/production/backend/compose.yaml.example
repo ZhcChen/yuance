@@ -10,12 +10,16 @@ x-yuance-env: &yuance_env
   YUANCE_CACHE_SESSION_TTL: ${YUANCE_CACHE_SESSION_TTL:-5m}
   YUANCE_LOG_LEVEL: ${YUANCE_LOG_LEVEL:-info}
   YUANCE_SECURITY_MASTER_KEY: ${YUANCE_SECURITY_MASTER_KEY:?set YUANCE_SECURITY_MASTER_KEY}
+  YUANCE_WEB_DIST_DIR: ${YUANCE_WEB_DIST_DIR:-/app/web/dist}
+  YUANCE_SSE_DRAIN_TIMEOUT: ${YUANCE_SSE_DRAIN_TIMEOUT:-30s}
+  YUANCE_MAX_RELEASE_WINDOW: ${YUANCE_MAX_RELEASE_WINDOW:-10m}
 
 services:
   api:
     container_name: yuance-api
     image: ${YUANCE_API_IMAGE:-yuance-api:latest}
     restart: unless-stopped
+    stop_grace_period: ${YUANCE_STOP_GRACE_PERIOD:-45s}
     environment:
       <<: *yuance_env
     ports:

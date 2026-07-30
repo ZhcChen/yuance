@@ -909,6 +909,118 @@
         }
       }
     },
+    "/api/v1/notifications/read-all": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "幂等标记当前用户的全部通知为已读",
+        "security": [
+          {
+            "cookieSession": [],
+            "csrfHeader": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回本次标记影响的通知数量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationMarkAllReadEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notification_id}/target": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "读取通知的语义目标",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "通知当前的已读状态与语义目标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTargetResultEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/notifications/{notification_id}/read": {
+      "post": {
+        "tags": [
+          "notifications"
+        ],
+        "summary": "幂等标记单条通知为已读并返回语义目标",
+        "security": [
+          {
+            "cookieSession": [],
+            "csrfHeader": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "通知已读结果与语义目标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationTargetResultEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/v1/topbar/status": {
       "get": {
         "tags": [
@@ -1032,6 +1144,14 @@
       },
       "TokenId": {
         "name": "token_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "integer"
+        }
+      },
+      "NotificationId": {
+        "name": "notification_id",
         "in": "path",
         "required": true,
         "schema": {
@@ -1947,6 +2067,66 @@
           }
         }
       },
+      "NotificationTargetResultEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/NotificationTargetResult"
+          }
+        }
+      },
+      "NotificationTargetResult": {
+        "type": "object",
+        "properties": {
+          "notification_id": {
+            "type": "integer"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "NotificationMarkAllReadEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "affected": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "NotificationTarget": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["work_item"]
+          },
+          "project_key": {
+            "type": "string"
+          },
+          "work_item_key": {
+            "type": "string"
+          },
+          "comment_id": {
+            "type": ["integer", "null"]
+          }
+        }
+      },
       "Notification": {
         "type": "object",
         "properties": {
@@ -1974,6 +2154,16 @@
           "open_url": {
             "type": "string",
             "description": "当前仍指向 HTML 兼容路由 `/web/messages/{id}/open`；W2/W3 会迁到语义路由。"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       }

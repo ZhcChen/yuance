@@ -1,4 +1,4 @@
-use std::{env, net::SocketAddr, path::Path};
+use std::{env, net::SocketAddr, path::{Path, PathBuf}};
 
 use crate::platform::error::{AppError, AppResult};
 
@@ -60,6 +60,13 @@ impl Settings {
 
     pub fn refresh_session_ttl_seconds(&self) -> AppResult<i64> {
         parse_duration_seconds("YUANCE_REFRESH_SESSION_TTL", &self.refresh_session_ttl)
+    }
+
+    pub fn web_dist_dir(&self) -> PathBuf {
+        match env::var("YUANCE_WEB_DIST_DIR") {
+            Ok(value) if !value.trim().is_empty() => PathBuf::from(value.trim()),
+            _ => PathBuf::from("web/dist"),
+        }
     }
 }
 
@@ -182,6 +189,12 @@ mod tests {
                 .expect("refresh ttl should parse"),
             30 * 24 * 60 * 60
         );
+    }
+
+    #[test]
+    fn web_dist_dir_defaults_to_web_dist() {
+        let settings = settings_with_session_ttl("2h");
+        assert_eq!(settings.web_dist_dir(), PathBuf::from("web/dist"));
     }
 
     #[test]

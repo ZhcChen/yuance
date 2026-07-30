@@ -10,3 +10,6 @@ backups
 *.sqlite3-wal
 *.tar
 *.log
+web/node_modules
+web/dist
+desktop/node_modules
