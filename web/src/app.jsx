@@ -11,12 +11,14 @@ import {
   getWorkItem,
   getWorkItemComments,
   getWorkItems,
+  handoffWorkItem,
   logout,
   markAllNotificationsRead,
   markNotificationRead,
   openTopbarEvents,
   restorePendingReturnToHash,
   updateCurrentProject,
+  updateWorkItem,
 } from './lib/api.js';
 import { notificationTargetPath } from './lib/notification-target.js';
 import {
@@ -255,6 +257,41 @@ function workItemStatusLabel(status) {
   }
 }
 
+const WORK_ITEM_STATUS_OPTIONS = [
+  'open',
+  'in_progress',
+  'pending_confirmation',
+  'done',
+  'resolved',
+  'verified',
+  'closed',
+  'cancelled',
+];
+
+const WORK_ITEM_PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
+
+/** @param {AppWorkItemDetail} item */
+function workItemEditFormFromDetail(item) {
+  return {
+    title: item.title || '',
+    description: item.description || '',
+    status: item.status || 'open',
+    priority: item.priority || 'P2',
+    assigneeUsername: item.assignee_username || '',
+    dueDate: item.due_date || '',
+    parentItemKey: item.parent_item_key || '',
+  };
+}
+
+/** @param {AppWorkItemDetail} item */
+function workItemHandoffFormFromDetail(item) {
+  return {
+    status: item.status || 'open',
+    assigneeUsername: item.assignee_username || '',
+    body: '',
+  };
+}
+
 function isWorkItemListRouteId(routeId) {
   return routeId === 'requirements' || routeId === 'tasks' || routeId === 'bugs';
 }
@@ -280,7 +317,7 @@ function routeDescription(route) {
     case 'bugs':
       return '工作项列表已在浏览器壳中验证筛选、分页和详情跳转，旧版 SSR 页面仍可作为兼容回退。';
     case 'work-item-detail':
-      return '当前先复用既有工作项 REST 契约完成只读详情和评论浏览，写操作继续保留旧版页面。';
+      return '工作项详情已在浏览器壳中接入只读信息、评论浏览、核心字段编辑和推进并指派。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -339,6 +376,9 @@ export default function App() {
   const routeRef = useRef(route);
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
   const requestRef = useRef(0);
+  const workItemActionRef = useRef(0);
+  const workItemMutationRef = useRef(false);
+  const workItemMutationActionRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [releaseVersion, setReleaseVersion] = useState('');
@@ -350,6 +390,24 @@ export default function App() {
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
+  const [workItemFormKey, setWorkItemFormKey] = useState('');
+  const [workItemEditForm, setWorkItemEditForm] = useState({
+    title: '',
+    description: '',
+    status: 'open',
+    priority: 'P2',
+    assigneeUsername: '',
+    dueDate: '',
+    parentItemKey: '',
+  });
+  const [workItemHandoffForm, setWorkItemHandoffForm] = useState({
+    status: 'open',
+    assigneeUsername: '',
+    body: '',
+  });
+  const [workItemEditSubmitting, setWorkItemEditSubmitting] = useState(false);
+  const [workItemHandoffSubmitting, setWorkItemHandoffSubmitting] = useState(false);
+  const [workItemActionError, setWorkItemActionError] = useState('');
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -414,10 +472,14 @@ export default function App() {
   const legacyWorkItemDetailPath = workItemDetailRoute
     ? buildWorkItemDetailPath({ owner: 'web', itemKey: workItemDetailRoute.itemKey })
     : '';
+  const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
+    ? workItemDetail
+    : null;
   const detailBackPath = buildWorkItemListPath({
     owner: workItemOwner,
-    itemType: workItemDetail?.item_type || 'task',
+    itemType: activeWorkItemDetail?.item_type || 'task',
   });
+  const workItemMutationSubmitting = workItemEditSubmitting || workItemHandoffSubmitting;
 
   routeRef.current = route;
 
@@ -430,6 +492,17 @@ export default function App() {
     requestRef.current = requestId;
     if (mode === 'load') {
       setLoading(true);
+      if (targetRoute.id === 'work-item-detail') {
+        workItemActionRef.current += 1;
+        workItemMutationActionRef.current = 0;
+        workItemMutationRef.current = false;
+        setWorkItemEditSubmitting(false);
+        setWorkItemHandoffSubmitting(false);
+        setWorkItemDetail(null);
+        setWorkItemComments([]);
+        setWorkItemActionError('');
+        setWorkItemFormKey('');
+      }
     } else {
       setRefreshing(true);
     }
@@ -537,19 +610,29 @@ export default function App() {
             ? '任务列表 - 元策'
             : route.id === 'bugs'
               ? '缺陷列表 - 元策'
-              : route.id === 'work-item-detail' && workItemDetail && workItemDetail.key === route.itemKey
-                ? `${workItemDetail.key} · ${workItemDetail.title} - 元策`
+              : route.id === 'work-item-detail' && activeWorkItemDetail
+                ? `${activeWorkItemDetail.key} · ${activeWorkItemDetail.title} - 元策`
                 : route.id === 'work-item-detail'
                   ? '工作项详情 - 元策'
                   : route.id === 'unsupported'
                     ? '未迁移路由 - 元策'
                     : '元策浏览器工作台 - 元策';
     document.title = title;
-  }, [route, workItemDetail]);
+  }, [route, activeWorkItemDetail]);
 
   useEffect(() => {
     void loadRouteState(route, 'load');
   }, [route]);
+
+  useEffect(() => {
+    if (!activeWorkItemDetail || workItemFormKey === activeWorkItemDetail.key) {
+      return;
+    }
+    setWorkItemEditForm(workItemEditFormFromDetail(activeWorkItemDetail));
+    setWorkItemHandoffForm(workItemHandoffFormFromDetail(activeWorkItemDetail));
+    setWorkItemActionError('');
+    setWorkItemFormKey(activeWorkItemDetail.key);
+  }, [activeWorkItemDetail, workItemFormKey]);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -622,6 +705,174 @@ export default function App() {
       await loadRouteState(routeRef.current, 'refresh');
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error('切换当前项目失败。'));
+    }
+  }
+
+  /**
+   * @param {React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>} event
+   */
+  function changeWorkItemEditField(event) {
+    const { name, value } = event.currentTarget;
+    setWorkItemEditForm((current) => ({ ...current, [name]: value }));
+  }
+
+  /**
+   * @param {React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>} event
+   */
+  function changeWorkItemHandoffField(event) {
+    const { name, value } = event.currentTarget;
+    setWorkItemHandoffForm((current) => ({ ...current, [name]: value }));
+  }
+
+  /**
+   * @param {string} itemKey
+   * @param {number} [actionId]
+   */
+  function isCurrentWorkItemDetailRoute(itemKey, actionId) {
+    const currentRoute = routeRef.current;
+    return currentRoute.id === 'work-item-detail'
+      && currentRoute.itemKey === itemKey
+      && (actionId === undefined || workItemActionRef.current === actionId);
+  }
+
+  /**
+   * @param {AppWorkItemDetail} updated
+   * @param {string} successMessage
+   * @param {number} actionId
+   */
+  function applyWorkItemMutationResult(updated, successMessage, actionId) {
+    if (!isCurrentWorkItemDetailRoute(updated.key, actionId)) {
+      return false;
+    }
+    requestRef.current += 1;
+    setWorkItemDetail(updated);
+    setWorkItemEditForm(workItemEditFormFromDetail(updated));
+    setWorkItemHandoffForm(workItemHandoffFormFromDetail(updated));
+    setWorkItemFormKey(updated.key);
+    setStatusMessage(successMessage);
+    setRefreshing(false);
+    return true;
+  }
+
+  /**
+   * @param {number} actionId
+   * @param {(value: boolean) => void} setSubmitting
+   */
+  function clearWorkItemMutation(actionId, setSubmitting) {
+    if (workItemMutationActionRef.current !== actionId) {
+      return;
+    }
+    workItemMutationActionRef.current = 0;
+    workItemMutationRef.current = false;
+    setSubmitting(false);
+  }
+
+  /**
+   * @param {string} itemKey
+   * @param {string} actionLabel
+   * @param {number} actionId
+   */
+  async function refreshWorkItemCompanionState(itemKey, actionLabel, actionId) {
+    const [commentsResult, topbarResult] = await Promise.allSettled([
+      getWorkItemComments(itemKey),
+      getTopbarStatus(),
+    ]);
+    if (!isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+      return;
+    }
+    let failed = false;
+    if (commentsResult.status === 'fulfilled') {
+      setWorkItemComments(commentsResult.value);
+    } else {
+      failed = true;
+    }
+    if (topbarResult.status === 'fulfilled') {
+      setTopbar(topbarResult.value);
+    } else {
+      failed = true;
+    }
+    if (failed) {
+      setWorkItemActionError(`${actionLabel}，但评论或顶部状态刷新失败，请手动刷新。`);
+    }
+  }
+
+  /** @param {React.FormEvent<HTMLFormElement>} event */
+  async function submitWorkItemEdit(event) {
+    event.preventDefault();
+    if (!activeWorkItemDetail) {
+      return;
+    }
+    if (workItemMutationRef.current) {
+      return;
+    }
+
+    const title = workItemEditForm.title.trim();
+    if (!title) {
+      setWorkItemActionError('标题不能为空。');
+      return;
+    }
+
+    const itemKey = activeWorkItemDetail.key;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    setWorkItemEditSubmitting(true);
+    setWorkItemActionError('');
+    try {
+      const updated = await updateWorkItem(itemKey, {
+        title,
+        description: workItemEditForm.description,
+        status: workItemEditForm.status,
+        priority: workItemEditForm.priority,
+        assigneeUsername: workItemEditForm.assigneeUsername.trim(),
+        dueDate: workItemEditForm.dueDate,
+        parentItemKey: workItemEditForm.parentItemKey.trim(),
+      });
+      if (applyWorkItemMutationResult(updated, `${updated.key} 已保存。`, actionId)) {
+        await refreshWorkItemCompanionState(updated.key, '工作项已保存', actionId);
+      }
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('保存工作项失败。')));
+      }
+    } finally {
+      clearWorkItemMutation(actionId, setWorkItemEditSubmitting);
+    }
+  }
+
+  /** @param {React.FormEvent<HTMLFormElement>} event */
+  async function submitWorkItemHandoff(event) {
+    event.preventDefault();
+    if (!activeWorkItemDetail) {
+      return;
+    }
+    if (workItemMutationRef.current) {
+      return;
+    }
+
+    const itemKey = activeWorkItemDetail.key;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    setWorkItemHandoffSubmitting(true);
+    setWorkItemActionError('');
+    try {
+      const updated = await handoffWorkItem(itemKey, {
+        status: workItemHandoffForm.status,
+        assigneeUsername: workItemHandoffForm.assigneeUsername.trim(),
+        body: workItemHandoffForm.body,
+      });
+      if (applyWorkItemMutationResult(updated, `${updated.key} 已推进并指派。`, actionId)) {
+        await refreshWorkItemCompanionState(updated.key, '工作项已推进并指派', actionId);
+      }
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('推进并指派失败。')));
+      }
+    } finally {
+      clearWorkItemMutation(actionId, setWorkItemHandoffSubmitting);
     }
   }
 
@@ -1266,8 +1517,8 @@ export default function App() {
             <section className="shell-card shell-panel-wide work-item-detail-center" aria-labelledby="work-item-detail-title">
               <div className="shell-panel-header work-item-center-header">
                 <div>
-                  <h2 id="work-item-detail-title">{workItemDetail ? `${workItemDetail.key} · ${workItemDetail.title}` : route.itemKey}</h2>
-                  <p className="shell-muted">{workItemDetail ? `${workItemTypeLabel(workItemDetail.item_type)} · ${workItemDetail.project_key} · ${workItemDetail.project_name}` : '正在加载工作项详情。'}</p>
+                  <h2 id="work-item-detail-title">{activeWorkItemDetail ? `${activeWorkItemDetail.key} · ${activeWorkItemDetail.title}` : route.itemKey}</h2>
+                  <p className="shell-muted">{activeWorkItemDetail ? `${workItemTypeLabel(activeWorkItemDetail.item_type)} · ${activeWorkItemDetail.project_key} · ${activeWorkItemDetail.project_name}` : '正在加载工作项详情。'}</p>
                 </div>
                 <div className="shell-actions-inline">
                   <a className="shell-link" href={detailBackPath} onClick={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}>
@@ -1285,7 +1536,7 @@ export default function App() {
                 ].map((tab) => (
                   <a
                     key={tab.id}
-                    className={`message-tab ${workItemDetail?.item_type === (tab.id === 'requirements' ? 'requirement' : tab.id === 'bugs' ? 'bug' : 'task') ? 'active' : ''}`}
+                    className={`message-tab ${activeWorkItemDetail?.item_type === (tab.id === 'requirements' ? 'requirement' : tab.id === 'bugs' ? 'bug' : 'task') ? 'active' : ''}`}
                     href={tab.path}
                     onClick={(event) => handleNavigate(event, tab.path, `已切换到${tab.label}列表。`)}
                   >
@@ -1294,42 +1545,160 @@ export default function App() {
                 ))}
               </nav>
 
-              {workItemDetail ? (
+              {activeWorkItemDetail ? (
                 <>
                   <section className="work-item-detail-grid">
                     <article className="work-item-detail-panel">
                       <h3>描述</h3>
-                      <p className="work-item-detail-description">{workItemDetail.description || '暂无描述。'}</p>
+                      <p className="work-item-detail-description">{activeWorkItemDetail.description || '暂无描述。'}</p>
                     </article>
                     <article className="work-item-detail-panel">
                       <h3>关键信息</h3>
                       <dl className="work-item-detail-meta">
-                        <div><dt>状态</dt><dd>{workItemStatusLabel(workItemDetail.status)}</dd></div>
-                        <div><dt>优先级</dt><dd>{workItemDetail.priority || '未设置'}</dd></div>
-                        <div><dt>处理人</dt><dd>{workItemDetail.assignee || '未分配'}</dd></div>
-                        <div><dt>报告人</dt><dd>{workItemDetail.reporter || '未知'}</dd></div>
-                        <div><dt>截止日期</dt><dd>{workItemDetail.due_date || '未设置'}</dd></div>
-                        <div><dt>创建时间</dt><dd>{workItemDetail.created_at || '未知'}</dd></div>
-                        <div><dt>更新时间</dt><dd>{workItemDetail.updated_at || '未知'}</dd></div>
-                        <div><dt>所属项目</dt><dd>{workItemDetail.project_key} · {workItemDetail.project_name}</dd></div>
-                        {workItemDetail.parent_item_key ? (
+                        <div><dt>状态</dt><dd>{workItemStatusLabel(activeWorkItemDetail.status)}</dd></div>
+                        <div><dt>优先级</dt><dd>{activeWorkItemDetail.priority || '未设置'}</dd></div>
+                        <div><dt>处理人</dt><dd>{activeWorkItemDetail.assignee || '未分配'}</dd></div>
+                        <div><dt>报告人</dt><dd>{activeWorkItemDetail.reporter || '未知'}</dd></div>
+                        <div><dt>截止日期</dt><dd>{activeWorkItemDetail.due_date || '未设置'}</dd></div>
+                        <div><dt>创建时间</dt><dd>{activeWorkItemDetail.created_at || '未知'}</dd></div>
+                        <div><dt>更新时间</dt><dd>{activeWorkItemDetail.updated_at || '未知'}</dd></div>
+                        <div><dt>所属项目</dt><dd>{activeWorkItemDetail.project_key} · {activeWorkItemDetail.project_name}</dd></div>
+                        {activeWorkItemDetail.parent_item_key ? (
                           <div>
                             <dt>父级工作项</dt>
                             <dd>
                               <a
                                 className="shell-link"
-                                href={buildWorkItemDetailPath({ owner: workItemOwner, itemKey: workItemDetail.parent_item_key })}
-                                onClick={(event) => handleNavigate(event, buildWorkItemDetailPath({ owner: workItemOwner, itemKey: workItemDetail.parent_item_key }), `已打开 ${workItemDetail.parent_item_key}。`)}
+                                href={buildWorkItemDetailPath({ owner: workItemOwner, itemKey: activeWorkItemDetail.parent_item_key })}
+                                onClick={(event) => handleNavigate(event, buildWorkItemDetailPath({ owner: workItemOwner, itemKey: activeWorkItemDetail.parent_item_key }), `已打开 ${activeWorkItemDetail.parent_item_key}。`)}
                               >
-                                {workItemDetail.parent_item_key} · {workItemDetail.parent_title}
+                                {activeWorkItemDetail.parent_item_key} · {activeWorkItemDetail.parent_title}
                               </a>
                             </dd>
                           </div>
                         ) : null}
-                        {workItemDetail.deleted_at ? <div><dt>删除时间</dt><dd>{workItemDetail.deleted_at}</dd></div> : null}
+                        {activeWorkItemDetail.deleted_at ? <div><dt>删除时间</dt><dd>{activeWorkItemDetail.deleted_at}</dd></div> : null}
                       </dl>
                     </article>
                   </section>
+
+                  <section className="work-item-action-grid" aria-label="工作项写入操作">
+                    <article className="work-item-detail-panel">
+                      <h3>编辑工作项</h3>
+                      <form className="work-item-action-form" onSubmit={submitWorkItemEdit}>
+                        <label className="work-item-form-field work-item-form-field-wide">
+                          <span>标题</span>
+                          <input
+                            name="title"
+                            value={workItemEditForm.title}
+                            onChange={changeWorkItemEditField}
+                            required
+                          />
+                        </label>
+                        <label className="work-item-form-field work-item-form-field-wide">
+                          <span>描述</span>
+                          <textarea
+                            name="description"
+                            rows={4}
+                            value={workItemEditForm.description}
+                            onChange={changeWorkItemEditField}
+                          />
+                        </label>
+                        <label className="work-item-form-field">
+                          <span>状态</span>
+                          <select name="status" value={workItemEditForm.status} onChange={changeWorkItemEditField}>
+                            {WORK_ITEM_STATUS_OPTIONS.map((status) => (
+                              <option key={status} value={status}>{workItemStatusLabel(status)}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="work-item-form-field">
+                          <span>优先级</span>
+                          <select name="priority" value={workItemEditForm.priority} onChange={changeWorkItemEditField}>
+                            {WORK_ITEM_PRIORITY_OPTIONS.map((priority) => (
+                              <option key={priority} value={priority}>{priority}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="work-item-form-field">
+                          <span>处理人用户名</span>
+                          <input
+                            name="assigneeUsername"
+                            value={workItemEditForm.assigneeUsername}
+                            onChange={changeWorkItemEditField}
+                            placeholder="例如 yuance_admin"
+                          />
+                        </label>
+                        <label className="work-item-form-field">
+                          <span>截止日期</span>
+                          <input
+                            name="dueDate"
+                            type="date"
+                            value={workItemEditForm.dueDate}
+                            onChange={changeWorkItemEditField}
+                          />
+                        </label>
+                        {activeWorkItemDetail.item_type === 'task' ? (
+                          <label className="work-item-form-field work-item-form-field-wide">
+                            <span>父级工作项 Key</span>
+                            <input
+                              name="parentItemKey"
+                              value={workItemEditForm.parentItemKey}
+                              onChange={changeWorkItemEditField}
+                              placeholder="不关联可留空"
+                            />
+                          </label>
+                        ) : null}
+                        <div className="work-item-form-actions">
+                          <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
+                            {workItemEditSubmitting ? '保存中…' : '保存修改'}
+                          </button>
+                        </div>
+                      </form>
+                    </article>
+
+                    <article className="work-item-detail-panel">
+                      <h3>推进并指派</h3>
+                      <form className="work-item-action-form" onSubmit={submitWorkItemHandoff}>
+                        <label className="work-item-form-field">
+                          <span>目标状态</span>
+                          <select name="status" value={workItemHandoffForm.status} onChange={changeWorkItemHandoffField}>
+                            {WORK_ITEM_STATUS_OPTIONS.map((status) => (
+                              <option key={status} value={status}>{workItemStatusLabel(status)}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="work-item-form-field">
+                          <span>指派给用户名</span>
+                          <input
+                            name="assigneeUsername"
+                            value={workItemHandoffForm.assigneeUsername}
+                            onChange={changeWorkItemHandoffField}
+                            placeholder="例如 yuance_admin"
+                          />
+                        </label>
+                        <label className="work-item-form-field work-item-form-field-wide">
+                          <span>处理说明</span>
+                          <textarea
+                            name="body"
+                            rows={5}
+                            value={workItemHandoffForm.body}
+                            onChange={changeWorkItemHandoffField}
+                            placeholder="说明本次指派、处理进展或下一步"
+                          />
+                        </label>
+                        <div className="work-item-form-actions">
+                          <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
+                            {workItemHandoffSubmitting ? '提交中…' : '确认推进'}
+                          </button>
+                        </div>
+                      </form>
+                    </article>
+                  </section>
+
+                  {workItemActionError ? (
+                    <p className="work-item-action-error" role="alert">{workItemActionError}</p>
+                  ) : null}
 
                   <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
                     <div className="shell-panel-header">

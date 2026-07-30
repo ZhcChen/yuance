@@ -121,7 +121,7 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 - `web/test/api.test.mjs` 覆盖新增 client 的 URL、method、headers 和 body。
 - `npm --prefix web run test` 通过。
 
-- [ ] **Unit 2: 工作项详情编辑与推进并指派表单**
+- [x] **Unit 2: 工作项详情编辑与推进并指派表单**
 
 **Goal:** 在工作项详情页内接入核心字段编辑和 handoff 表单，提交成功后刷新详情、评论/流转记录和顶部状态，并显示明确成功/失败反馈。
 

@@ -510,6 +510,13 @@ h2 {
   margin-bottom: 16px;
 }
 
+.work-item-action-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
 .work-item-detail-panel,
 .work-item-comments-panel {
   border: 1px solid #e2e8f0;
@@ -528,6 +535,54 @@ h2 {
 .work-item-comment-body {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.work-item-action-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.work-item-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #475569;
+}
+
+.work-item-form-field-wide,
+.work-item-form-actions {
+  grid-column: 1 / -1;
+}
+
+.work-item-form-field input,
+.work-item-form-field select,
+.work-item-form-field textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 9px 10px;
+  color: #0f172a;
+  font: inherit;
+}
+
+.work-item-form-field textarea {
+  resize: vertical;
+}
+
+.work-item-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.work-item-action-error {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
 }
 
 .work-item-detail-meta {
@@ -624,6 +679,8 @@ h2 {
 
   .work-item-filter-bar,
   .work-item-detail-grid,
+  .work-item-action-grid,
+  .work-item-action-form,
   .work-item-detail-meta {
     grid-template-columns: 1fr;
   }
