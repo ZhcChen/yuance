@@ -53,6 +53,24 @@ export function buildMessagesPath({ owner = 'web', filter = DEFAULT_FILTER, page
   return query ? `${basePath}?${query}` : basePath;
 }
 
+export function buildProjectsPath({ owner = 'app', status = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof status === 'string' && status.trim() && status.trim() !== 'all') {
+    params.set('status', status.trim());
+  }
+  if (normalizedPage > DEFAULT_PAGE) {
+    params.set('page', String(normalizedPage));
+  }
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) {
+    params.set('per_page', String(normalizedPerPage));
+  }
+  const basePath = owner === 'app' ? '/web/app/projects' : '/web/projects';
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
 export function parseAppRoute(pathname = window.location.pathname, search = window.location.search) {
   const owner = normalizeOwner(pathname);
   const query = new URLSearchParams(search);
@@ -80,6 +98,19 @@ export function parseAppRoute(pathname = window.location.pathname, search = wind
       page,
       perPage,
       title: '消息中心',
+    };
+  }
+
+  if (pathname === '/web/projects' || pathname === '/web/app/projects') {
+    return {
+      id: 'projects',
+      owner,
+      pathname,
+      search,
+      status: (query.get('status') || '').trim(),
+      page,
+      perPage,
+      title: '项目列表',
     };
   }
 

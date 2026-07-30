@@ -6,15 +6,17 @@ import {
   getCurrentUser,
   getNotificationTarget,
   getNotifications,
+  getProjects,
   getTopbarStatus,
   logout,
   markAllNotificationsRead,
   markNotificationRead,
   openTopbarEvents,
   restorePendingReturnToHash,
+  updateCurrentProject,
 } from './lib/api.js';
 import { notificationTargetPath } from './lib/notification-target.js';
-import { buildHomePath, buildMessagesPath, parseAppRoute } from './lib/routes.js';
+import { buildHomePath, buildMessagesPath, buildProjectsPath, parseAppRoute } from './lib/routes.js';
 
 /**
  * @typedef AppUser
@@ -79,6 +81,23 @@ import { buildHomePath, buildMessagesPath, parseAppRoute } from './lib/routes.js
  * @property {number} total_pages
  */
 
+/**
+ * @typedef AppProject
+ * @property {string} key
+ * @property {string} name
+ * @property {string} status
+ * @property {string} owner
+ * @property {number} work_item_count
+ * @property {number} active_work_item_count
+ * @property {string} updated_at
+ */
+
+/**
+ * @typedef AppProjectPage
+ * @property {AppProject[]} items
+ * @property {{ page: number, per_page: number, total_items: number, total_pages: number }} pagination
+ */
+
 function formatTimestamp(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -117,11 +136,34 @@ function filterLabel(filter) {
   }
 }
 
+function projectStatusLabel(status) {
+  switch (status) {
+    case 'not_started':
+      return '未开始';
+    case 'in_progress':
+      return '进行中';
+    case 'acceptance':
+      return '验收中';
+    case 'completed':
+      return '已完成';
+    case 'on_hold':
+      return '已搁置';
+    case 'cancelled':
+      return '已取消';
+    case 'archived':
+      return '已归档';
+    default:
+      return '全部状态';
+  }
+}
+
 /** @param {ReturnType<typeof parseAppRoute>} route */
 function routeDescription(route) {
   switch (route.id) {
     case 'messages':
       return '通过 JSON 契约加载、筛选和处理通知，兼容旧 URL 与前进后退。';
+    case 'projects':
+      return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -131,7 +173,14 @@ function routeDescription(route) {
 
 /** @param {ReturnType<typeof parseAppRoute>} route */
 function routeEyebrow(route) {
-  return route.id === 'messages' ? 'Message Center' : 'Web App';
+  switch (route.id) {
+    case 'messages':
+      return 'Message Center';
+    case 'projects':
+      return 'Projects';
+    default:
+      return 'Web App';
+  }
 }
 
 /** @param {ReturnType<typeof parseAppRoute>} route */
@@ -175,13 +224,18 @@ export default function App() {
   const [topbar, setTopbar] = useState(/** @type {AppTopbarStatus | null} */ (null));
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
+  const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
 
   const currentProject = topbar?.current_project || null;
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
+  const projectsPath = route.id === 'projects'
+    ? buildProjectsPath({ owner: route.owner, status: route.status, page: route.page, perPage: route.perPage })
+    : buildProjectsPath({ owner: 'app' });
   const messageRoute = route.id === 'messages' ? route : null;
+  const projectRoute = route.id === 'projects' ? route : null;
   const messageFilter = /** @type {'all' | 'unread' | 'pending' | 'read'} */ (messageRoute ? messageRoute.filter : 'all');
   const previewItems = useMemo(() => (homeFeed?.items || []).slice(0, 8), [homeFeed]);
   const activeFeed = route.id === 'messages' ? messageFeed : homeFeed;
@@ -192,6 +246,12 @@ export default function App() {
     : 0;
   const pageRangeEnd = activeFeed && activeFeed.total_items > 0
     ? Math.min(activeFeed.page * activeFeed.per_page, activeFeed.total_items)
+    : 0;
+  const projectRangeStart = projectPage && projectPage.pagination.total_items > 0
+    ? (projectPage.pagination.page - 1) * projectPage.pagination.per_page + 1
+    : 0;
+  const projectRangeEnd = projectPage && projectPage.pagination.total_items > 0
+    ? Math.min(projectPage.pagination.page * projectPage.pagination.per_page, projectPage.pagination.total_items)
     : 0;
 
   routeRef.current = route;
@@ -210,16 +270,25 @@ export default function App() {
     }
 
     try {
-      const [nextUser, nextTopbar, nextFeed] = await Promise.all([
+      const [nextUser, nextTopbar, nextFeed, nextProjects] = await Promise.all([
         getCurrentUser(),
         getTopbarStatus(),
-        targetRoute.id === 'messages'
-          ? getNotifications({
-            filter: targetRoute.filter,
+        targetRoute.id === 'projects'
+          ? Promise.resolve(null)
+          : targetRoute.id === 'messages'
+            ? getNotifications({
+              filter: targetRoute.filter,
+              page: targetRoute.page,
+              perPage: targetRoute.perPage,
+            })
+            : getNotifications({ limit: 8 }),
+        targetRoute.id === 'projects'
+          ? getProjects({
+            status: targetRoute.status,
             page: targetRoute.page,
             perPage: targetRoute.perPage,
           })
-          : getNotifications({ limit: 8 }),
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -228,8 +297,11 @@ export default function App() {
       setTopbar(nextTopbar);
       if (targetRoute.id === 'messages') {
         setMessageFeed(nextFeed);
-      } else {
+      } else if (targetRoute.id !== 'projects') {
         setHomeFeed(nextFeed);
+      }
+      if (targetRoute.id === 'projects') {
+        setProjectPage(nextProjects);
       }
       restorePendingReturnToHash();
       setError(null);
@@ -268,9 +340,11 @@ export default function App() {
   useEffect(() => {
     const title = route.id === 'messages'
       ? '消息中心 - 元策'
-      : route.id === 'unsupported'
-        ? '未迁移路由 - 元策'
-        : '元策浏览器工作台 - 元策';
+      : route.id === 'projects'
+        ? '项目列表 - 元策'
+        : route.id === 'unsupported'
+          ? '未迁移路由 - 元策'
+          : '元策浏览器工作台 - 元策';
     document.title = title;
   }, [route]);
 
@@ -337,6 +411,17 @@ export default function App() {
     }
   }
 
+  /** @param {AppProject} project */
+  async function handleSetCurrentProject(project) {
+    try {
+      await updateCurrentProject(project.key);
+      setStatusMessage(`已切换当前项目到 ${project.key}。`);
+      await loadRouteState(routeRef.current, 'refresh');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught : new Error('切换当前项目失败。'));
+    }
+  }
+
   /** @param {React.MouseEvent<HTMLAnchorElement>} event @param {string} path @param {string} message */
   function handleNavigate(event, path, message) {
     event.preventDefault();
@@ -392,6 +477,52 @@ export default function App() {
     );
   }
 
+  /** @param {React.ChangeEvent<HTMLSelectElement>} event */
+  function changeProjectStatus(event) {
+    navigate(
+      buildProjectsPath({
+        owner: route.id === 'projects' ? route.owner : 'app',
+        status: event.target.value,
+        page: 1,
+        perPage: route.id === 'projects' ? route.perPage : 10,
+      }),
+      '已更新项目状态筛选。',
+    );
+  }
+
+  /** @param {number} nextPage */
+  function changeProjectPage(nextPage) {
+    if (route.id !== 'projects') {
+      return;
+    }
+    navigate(
+      buildProjectsPath({
+        owner: route.owner,
+        status: route.status,
+        page: nextPage,
+        perPage: route.perPage,
+      }),
+      `已切换到第 ${nextPage} 页。`,
+    );
+  }
+
+  /** @param {React.ChangeEvent<HTMLSelectElement>} event */
+  function changeProjectPageSize(event) {
+    if (route.id !== 'projects') {
+      return;
+    }
+    const nextPerPage = Number.parseInt(event.target.value, 10);
+    navigate(
+      buildProjectsPath({
+        owner: route.owner,
+        status: route.status,
+        page: 1,
+        perPage: nextPerPage,
+      }),
+      `项目列表每页切换为 ${nextPerPage} 条。`,
+    );
+  }
+
   if (loading) {
     return (
       <main className="app-shell" aria-busy="true">
@@ -430,8 +561,13 @@ export default function App() {
             消息中心
             {unreadCount > 0 ? <span className="app-nav-badge">{unreadCount}</span> : null}
           </a>
-          <a className="app-nav-link" href={currentProject ? `/web/projects/${currentProject.key}` : '/web/projects'}>
-            项目页
+          <a
+            className={`app-nav-link ${route.id === 'projects' ? 'active' : ''}`}
+            href={projectsPath}
+            aria-current={route.id === 'projects' ? 'page' : undefined}
+            onClick={(event) => handleNavigate(event, projectsPath, '已切换到项目列表。')}
+          >
+            项目列表
           </a>
           <a className="app-nav-link" href="/web/me">我的账号</a>
         </div>
@@ -459,11 +595,18 @@ export default function App() {
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
+          ) : route.id === 'projects' ? (
+            <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
+              返回工作台
+            </a>
           ) : (
             <a className="shell-link" href={messagesPath} onClick={(event) => handleNavigate(event, messagesPath, '已打开消息中心。')}>
               打开消息中心
             </a>
           )}
+          <a className="shell-link" href={currentProject ? `/web/projects/${currentProject.key}` : '/web/projects'}>
+            当前项目页
+          </a>
           <button className="shell-button shell-button-secondary" type="button" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
             {refreshing ? '刷新中…' : '刷新'}
           </button>
@@ -602,6 +745,103 @@ export default function App() {
                 </>
               ) : (
                 <p className="shell-empty">{emptyMessageTitle(route)}</p>
+              )}
+            </section>
+          ) : route.id === 'projects' ? (
+            <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-center-title">
+              <div className="shell-panel-header project-center-header">
+                <div>
+                  <h2 id="project-center-title">项目列表</h2>
+                  <p className="shell-muted">当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
+                </div>
+                <div className="shell-actions-inline">
+                  <label className="page-size-control">
+                    <span>状态</span>
+                    <select value={projectRoute?.status || ''} onChange={changeProjectStatus}>
+                      <option value="">全部</option>
+                      <option value="not_started">未开始</option>
+                      <option value="in_progress">进行中</option>
+                      <option value="acceptance">验收中</option>
+                      <option value="completed">已完成</option>
+                      <option value="on_hold">已搁置</option>
+                      <option value="cancelled">已取消</option>
+                      <option value="archived">已归档</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              {projectPage?.items?.length ? (
+                <>
+                  <ul className="project-list" aria-label="项目列表">
+                    {projectPage.items.map((project) => {
+                      const isCurrentProject = currentProject?.key === project.key;
+                      return (
+                        <li key={project.key} className={`project-row ${isCurrentProject ? 'current' : ''}`}>
+                          <div className="project-main">
+                            <div className="project-heading">
+                              <strong>{project.key} · {project.name}</strong>
+                              <span className="project-status-pill">{projectStatusLabel(project.status)}</span>
+                              {isCurrentProject ? <span className="notification-pill">当前项目</span> : null}
+                            </div>
+                            <p className="shell-muted">负责人 {project.owner || '未分配'} · 最近更新 {formatTimestamp(project.updated_at)}</p>
+                            <dl className="project-stats">
+                              <div><dt>总工作项</dt><dd>{project.work_item_count}</dd></div>
+                              <div><dt>进行中</dt><dd>{project.active_work_item_count}</dd></div>
+                            </dl>
+                          </div>
+                          <div className="project-actions">
+                            <a className="shell-link" href={`/web/projects/${project.key}`}>打开详情</a>
+                            <button
+                              className="shell-button shell-button-secondary"
+                              type="button"
+                              disabled={isCurrentProject}
+                              onClick={() => void handleSetCurrentProject(project)}
+                            >
+                              {isCurrentProject ? '当前项目' : '设为当前项目'}
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  <div className="message-pagination" aria-label="项目分页">
+                    <div className="message-pagination-meta">
+                      <strong>共 {projectPage.pagination.total_items} 个项目</strong>
+                      <span>当前显示 {projectRangeStart}-{projectRangeEnd}</span>
+                    </div>
+                    <div className="message-pagination-controls">
+                      <button
+                        className="shell-button shell-button-secondary"
+                        type="button"
+                        disabled={projectPage.pagination.page <= 1}
+                        onClick={() => changeProjectPage(projectPage.pagination.page - 1)}
+                      >
+                        上一页
+                      </button>
+                      <span className="shell-meta">第 {projectPage.pagination.page} / {projectPage.pagination.total_pages} 页</span>
+                      <button
+                        className="shell-button shell-button-secondary"
+                        type="button"
+                        disabled={projectPage.pagination.page >= projectPage.pagination.total_pages}
+                        onClick={() => changeProjectPage(projectPage.pagination.page + 1)}
+                      >
+                        下一页
+                      </button>
+                      <label className="page-size-control">
+                        <span>每页</span>
+                        <select value={String(projectPage.pagination.per_page)} onChange={changeProjectPageSize}>
+                          {[10, 20, 50].map((value) => (
+                            <option key={value} value={String(value)}>{value}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="shell-empty">当前筛选下没有项目。</p>
               )}
             </section>
           ) : (

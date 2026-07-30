@@ -196,6 +196,37 @@ export function getTopbarStatus() {
 }
 
 /**
+ * @param {{ status?: string, page?: number, perPage?: number }} [query]
+ * @returns {Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>}
+ */
+export function getProjects(query = {}) {
+  const params = new URLSearchParams();
+  if (typeof query.status === 'string' && query.status.trim() && query.status.trim() !== 'all') {
+    params.set('status', query.status.trim());
+  }
+  if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) {
+    params.set('page', String(query.page));
+  }
+  if (typeof query.perPage === 'number' && Number.isInteger(query.perPage) && query.perPage > 0) {
+    params.set('per_page', String(query.perPage));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  return fetchJson(`/api/v1/projects${suffix}`);
+}
+
+/** @param {string} projectKey @returns {Promise<{ key: string, name: string }>} */
+export async function updateCurrentProject(projectKey) {
+  await refreshCsrfToken();
+  return fetchJson('/api/v1/current-project', {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ project_key: projectKey }),
+  });
+}
+
+/**
  * @param {number | { limit?: number, filter?: string, page?: number, perPage?: number }} [query]
  * @returns {Promise<NotificationFeed>}
  */

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildHomePath, buildMessagesPath, parseAppRoute } from '../src/lib/routes.js';
+import { buildHomePath, buildMessagesPath, buildProjectsPath, parseAppRoute } from '../src/lib/routes.js';
 
 test('parseAppRoute recognizes browser shell home owners', () => {
   assert.deepEqual(parseAppRoute('/web', ''), {
@@ -48,6 +48,26 @@ test('parseAppRoute maps app-side unknown routes back to legacy fallback', () =>
       legacyPath: '/web/projects/YCE',
       title: '未迁移路由',
     },
+  );
+});
+
+test('parseAppRoute supports projects route and owner-aware builders', () => {
+  assert.deepEqual(
+    parseAppRoute('/web/app/projects', '?status=on_hold&page=2&per_page=20'),
+    {
+      id: 'projects',
+      owner: 'app',
+      pathname: '/web/app/projects',
+      search: '?status=on_hold&page=2&per_page=20',
+      status: 'on_hold',
+      page: 2,
+      perPage: 20,
+      title: '项目列表',
+    },
+  );
+  assert.equal(
+    buildProjectsPath({ owner: 'app', status: 'on_hold', page: 2, perPage: 20 }),
+    '/web/app/projects?status=on_hold&page=2&per_page=20',
   );
 });
 

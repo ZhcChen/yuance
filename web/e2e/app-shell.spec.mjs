@@ -36,6 +36,16 @@ test('browser shell supports root navigation and logout on /web owner route', as
   await expect(page).toHaveURL(/\/web\/login/);
 });
 
+test('project list can switch current project inside the app shell', async ({ page }) => {
+  await login(page, '/web/app/projects');
+
+  await expect(page).toHaveURL(/\/web\/app\/projects/);
+  await expect(page.getByRole('heading', { level: 1, name: '项目列表' })).toBeVisible();
+  await page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '设为当前项目' }).click();
+  await expect(page.getByText('OPS · 交付运维台')).toBeVisible();
+  await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
+});
+
 test('message center opens semantic target and unread filter becomes empty after read', async ({ page }) => {
   await login(page, '/web/messages?filter=unread');
 

@@ -312,6 +312,14 @@ h2 {
   box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
+.project-center {
+  background: #ffffff;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
 .message-tabs {
   display: flex;
   gap: 12px;
@@ -344,6 +352,79 @@ h2 {
 .message-row.unread {
   border-left: 3px solid #2563eb;
   padding-left: 12px;
+}
+
+.project-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.project-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 0;
+  border-bottom: 1px solid #eef2ff;
+}
+
+.project-row:last-child {
+  border-bottom: 0;
+}
+
+.project-row.current {
+  border-left: 3px solid #2563eb;
+  padding-left: 12px;
+}
+
+.project-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.project-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.project-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.project-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 140px));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.project-stats div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.project-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
 }
 
 .message-body {
@@ -402,7 +483,9 @@ h2 {
   .app-topbar,
   .shell-header,
   .shell-columns,
-  .message-pagination {
+  .message-pagination,
+  .project-row,
+  .project-actions {
     flex-direction: column;
     align-items: stretch;
   }
