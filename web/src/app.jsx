@@ -3,20 +3,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ApiError,
+  createWorkItemAttachment,
   createWorkItemComment,
+  createWorkItemCommentAttachment,
   getCurrentUser,
   getNotificationTarget,
   getNotifications,
   getProjects,
   getTopbarStatus,
   getWorkItem,
+  getWorkItemAttachmentDownloadUrl,
+  getWorkItemAttachmentUploadUrl,
+  getWorkItemAttachments,
+  getWorkItemCommentAttachmentDownloadUrl,
+  getWorkItemCommentAttachmentUploadUrl,
+  getWorkItemCommentAttachments,
   getWorkItemComments,
   getWorkItems,
   handoffWorkItem,
   logout,
   markAllNotificationsRead,
   markNotificationRead,
+  markWorkItemAttachmentUploaded,
+  markWorkItemCommentAttachmentUploaded,
   openTopbarEvents,
+  refreshCsrfToken,
   restorePendingReturnToHash,
   updateCurrentProject,
   updateWorkItem,
@@ -166,6 +177,38 @@ import {
  * @property {boolean} is_draft
  */
 
+/**
+ * @typedef AppAttachment
+ * @property {number} id
+ * @property {string} filename
+ * @property {string} content_type
+ * @property {number} byte_size
+ * @property {string} status
+ * @property {string} created_by
+ * @property {string} created_at
+ */
+
+/**
+ * @typedef AppSignedObjectRequest
+ * @property {string} method
+ * @property {string} url
+ * @property {Array<[string, string]>} headers
+ */
+
+/**
+ * @typedef AppAttachmentSignedUrl
+ * @property {AppAttachment} attachment
+ * @property {AppSignedObjectRequest} request
+ * @property {number} expires_in_seconds
+ */
+
+/**
+ * @typedef WorkItemAttachmentBundle
+ * @property {AppAttachment[]} attachments
+ * @property {Record<string, AppAttachment[]>} commentAttachments
+ * @property {boolean} loadFailed
+ */
+
 function formatTimestamp(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -177,6 +220,137 @@ function formatTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+/** @param {number} byteSize */
+function formatByteSize(byteSize) {
+  if (!Number.isFinite(byteSize) || byteSize <= 0) {
+    return '大小未知';
+  }
+  if (byteSize < 1024) {
+    return `${byteSize} B`;
+  }
+  const units = ['KB', 'MB', 'GB'];
+  let value = byteSize / 1024;
+  for (const unit of units) {
+    if (value < 1024 || unit === 'GB') {
+      return `${value.toFixed(value >= 10 ? 0 : 1)} ${unit}`;
+    }
+    value /= 1024;
+  }
+  return `${byteSize} B`;
+}
+
+/** @param {string} status */
+function attachmentStatusLabel(status) {
+  switch (status) {
+    case 'uploaded':
+      return '已上传';
+    case 'pending':
+      return '待上传';
+    case 'failed':
+      return '上传失败';
+    case 'deleted':
+      return '已归档';
+    default:
+      return status || '未知状态';
+  }
+}
+
+/** @param {AppAttachment} attachment */
+function attachmentIsUploaded(attachment) {
+  return attachment.status === 'uploaded';
+}
+
+/**
+ * @param {File} file
+ * @returns {{ originalFilename: string, contentType: string, byteSize: number }}
+ */
+function attachmentPayloadFromFile(file) {
+  return {
+    originalFilename: file.name || 'attachment.bin',
+    contentType: file.type || 'application/octet-stream',
+    byteSize: file.size,
+  };
+}
+
+/**
+ * @param {AppAttachment[]} attachments
+ * @param {AppAttachment} attachment
+ */
+function upsertAttachment(attachments, attachment) {
+  const nextAttachments = [...attachments];
+  const index = nextAttachments.findIndex((item) => item.id === attachment.id);
+  if (index >= 0) {
+    nextAttachments[index] = attachment;
+  } else {
+    nextAttachments.push(attachment);
+  }
+  return nextAttachments;
+}
+
+/**
+ * @param {AppSignedObjectRequest} request
+ * @param {File} file
+ * @returns {Promise<void>}
+ */
+async function uploadFileWithSignedRequest(request, file) {
+  if (!request?.url) {
+    throw new Error('上传签名缺少目标地址。');
+  }
+  const headers = new Headers();
+  let hasContentType = false;
+  for (const pair of request.headers || []) {
+    const [key, value] = pair;
+    const normalizedKey = String(key || '').toLowerCase();
+    if (!key || normalizedKey === 'host' || normalizedKey === 'content-length') {
+      continue;
+    }
+    if (normalizedKey === 'content-type') {
+      hasContentType = true;
+    }
+    headers.set(key, value);
+  }
+  if (!hasContentType && file.type) {
+    headers.set('content-type', file.type);
+  }
+  const url = new URL(request.url, window.location.href);
+  const method = (request.method || 'PUT').toUpperCase();
+  if (url.origin === window.location.origin && method !== 'GET' && method !== 'HEAD' && !headers.has('x-yuance-csrf-token')) {
+    const csrfToken = await refreshCsrfToken();
+    if (csrfToken) {
+      headers.set('x-yuance-csrf-token', csrfToken);
+    }
+  }
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: file,
+    credentials: url.origin === window.location.origin ? 'same-origin' : 'omit',
+  });
+  if (!response.ok) {
+    throw new Error(`对象存储上传失败：${response.status}`);
+  }
+}
+
+/** @param {AppSignedObjectRequest} request */
+function openSignedDownload(request) {
+  if (!request?.url) {
+    throw new Error('下载签名缺少目标地址。');
+  }
+  if ((request.method || 'GET').toUpperCase() !== 'GET') {
+    throw new Error('当前下载签名不是 GET 请求。');
+  }
+  if ((request.headers || []).length > 0) {
+    throw new Error('当前下载签名包含浏览器无法附带的请求头。');
+  }
+  const anchor = document.createElement('a');
+  anchor.href = new URL(request.url, window.location.href).toString();
+  anchor.target = '_blank';
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
 }
 
 /** @param {ApiError | Error | null} error */
@@ -294,6 +468,46 @@ function workItemHandoffFormFromDetail(item) {
   };
 }
 
+/**
+ * @param {string} itemKey
+ * @param {AppWorkItemComment[]} comments
+ * @param {Promise<AppAttachment[]>} [attachmentsPromise]
+ * @returns {Promise<WorkItemAttachmentBundle>}
+ */
+async function loadWorkItemAttachmentBundle(itemKey, comments, attachmentsPromise = getWorkItemAttachments(itemKey)) {
+  const [attachmentsResult, commentAttachmentsResult] = await Promise.allSettled([
+    attachmentsPromise,
+    Promise.allSettled(
+      comments
+        .filter((comment) => !comment.is_draft)
+        .map(async (comment) => {
+          const nextAttachments = await getWorkItemCommentAttachments(itemKey, comment.id);
+          return /** @type {[string, AppAttachment[]]} */ ([String(comment.id), nextAttachments]);
+        }),
+    ),
+  ]);
+  let loadFailed = false;
+  const attachments = attachmentsResult.status === 'fulfilled' ? attachmentsResult.value : [];
+  if (attachmentsResult.status === 'rejected') {
+    loadFailed = true;
+  }
+  /** @type {Record<string, AppAttachment[]>} */
+  const commentAttachments = {};
+  if (commentAttachmentsResult.status === 'fulfilled') {
+    for (const result of commentAttachmentsResult.value) {
+      if (result.status === 'fulfilled') {
+        const [commentId, nextAttachments] = result.value;
+        commentAttachments[commentId] = nextAttachments;
+      } else {
+        loadFailed = true;
+      }
+    }
+  } else {
+    loadFailed = true;
+  }
+  return { attachments, commentAttachments, loadFailed };
+}
+
 function isWorkItemListRouteId(routeId) {
   return routeId === 'requirements' || routeId === 'tasks' || routeId === 'bugs';
 }
@@ -383,6 +597,8 @@ export default function App() {
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
+  const workItemAttachmentActionRef = useRef(0);
+  const workItemAttachmentMutationRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [releaseVersion, setReleaseVersion] = useState('');
@@ -394,6 +610,8 @@ export default function App() {
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
+  const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
+  const [workItemCommentAttachments, setWorkItemCommentAttachments] = useState(/** @type {Record<string, AppAttachment[]>} */ ({}));
   const [workItemFormKey, setWorkItemFormKey] = useState('');
   const [workItemEditForm, setWorkItemEditForm] = useState({
     title: '',
@@ -418,6 +636,14 @@ export default function App() {
   const [workItemEditCommentBody, setWorkItemEditCommentBody] = useState('');
   const [workItemEditCommentSubmitting, setWorkItemEditCommentSubmitting] = useState(false);
   const [workItemCommentActionError, setWorkItemCommentActionError] = useState('');
+  const [workItemAttachmentActionError, setWorkItemAttachmentActionError] = useState('');
+  const [workItemAttachmentLoadWarning, setWorkItemAttachmentLoadWarning] = useState('');
+  const [workItemAttachmentStatus, setWorkItemAttachmentStatus] = useState('');
+  const [workItemAttachmentUploading, setWorkItemAttachmentUploading] = useState(false);
+  const [workItemAttachmentDownloadingId, setWorkItemAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
+  const [workItemCommentAttachmentUploadingId, setWorkItemCommentAttachmentUploadingId] = useState(/** @type {number | null} */ (null));
+  const [workItemCommentAttachmentDownloadingKey, setWorkItemCommentAttachmentDownloadingKey] = useState('');
+  const [workItemCommentAttachmentStatus, setWorkItemCommentAttachmentStatus] = useState(/** @type {Record<string, string>} */ ({}));
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -489,10 +715,12 @@ export default function App() {
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
   });
+  const workItemAttachmentSubmitting = workItemAttachmentUploading || workItemCommentAttachmentUploadingId !== null;
   const workItemMutationSubmitting = workItemEditSubmitting
     || workItemHandoffSubmitting
     || workItemCommentSubmitting
-    || workItemEditCommentSubmitting;
+    || workItemEditCommentSubmitting
+    || workItemAttachmentSubmitting;
 
   routeRef.current = route;
 
@@ -507,8 +735,10 @@ export default function App() {
       setLoading(true);
       if (targetRoute.id === 'work-item-detail') {
         workItemActionRef.current += 1;
+        workItemAttachmentActionRef.current += 1;
         workItemMutationActionRef.current = 0;
         workItemMutationRef.current = false;
+        workItemAttachmentMutationRef.current = false;
         setWorkItemEditSubmitting(false);
         setWorkItemHandoffSubmitting(false);
         setWorkItemDetail(null);
@@ -520,6 +750,16 @@ export default function App() {
         setWorkItemCommentActionError('');
         setWorkItemCommentSubmitting(false);
         setWorkItemEditCommentSubmitting(false);
+        setWorkItemAttachments([]);
+        setWorkItemCommentAttachments({});
+        setWorkItemAttachmentActionError('');
+        setWorkItemAttachmentLoadWarning('');
+        setWorkItemAttachmentStatus('');
+        setWorkItemAttachmentUploading(false);
+        setWorkItemAttachmentDownloadingId(null);
+        setWorkItemCommentAttachmentUploadingId(null);
+        setWorkItemCommentAttachmentDownloadingKey('');
+        setWorkItemCommentAttachmentStatus({});
         setWorkItemFormKey('');
       }
     } else {
@@ -558,10 +798,18 @@ export default function App() {
           })
           : Promise.resolve(null),
         targetRoute.id === 'work-item-detail'
-          ? Promise.all([
-            getWorkItem(String(targetRoute.itemKey || '')),
-            getWorkItemComments(String(targetRoute.itemKey || '')),
-          ]).then(([item, comments]) => ({ item, comments }))
+          ? (async () => {
+            const itemKey = String(targetRoute.itemKey || '');
+            const commentsPromise = getWorkItemComments(itemKey);
+            const attachmentsPromise = getWorkItemAttachments(itemKey);
+            void attachmentsPromise.catch(() => {});
+            const [item, comments, attachmentBundle] = await Promise.all([
+              getWorkItem(itemKey),
+              commentsPromise,
+              commentsPromise.then((comments) => loadWorkItemAttachmentBundle(itemKey, comments, attachmentsPromise)),
+            ]);
+            return { item, comments, attachmentBundle };
+          })()
           : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
@@ -583,6 +831,11 @@ export default function App() {
       if (targetRoute.id === 'work-item-detail') {
         setWorkItemDetail(nextWorkItemBundle?.item || null);
         setWorkItemComments(nextWorkItemBundle?.comments || []);
+        setWorkItemAttachments(nextWorkItemBundle?.attachmentBundle?.attachments || []);
+        setWorkItemCommentAttachments(nextWorkItemBundle?.attachmentBundle?.commentAttachments || {});
+        setWorkItemAttachmentLoadWarning(
+          nextWorkItemBundle?.attachmentBundle?.loadFailed ? '部分附件列表加载失败，请刷新重试。' : '',
+        );
       }
       restorePendingReturnToHash();
       setError(null);
@@ -803,6 +1056,17 @@ export default function App() {
   }
 
   /**
+   * @param {string} itemKey
+   * @param {number} actionId
+   */
+  function isCurrentWorkItemAttachmentRoute(itemKey, actionId) {
+    const currentRoute = routeRef.current;
+    return currentRoute.id === 'work-item-detail'
+      && currentRoute.itemKey === itemKey
+      && workItemAttachmentActionRef.current === actionId;
+  }
+
+  /**
    * @param {AppWorkItemDetail} updated
    * @param {string} successMessage
    * @param {number} actionId
@@ -869,7 +1133,7 @@ export default function App() {
     if (!activeWorkItemDetail) {
       return;
     }
-    if (workItemMutationRef.current) {
+    if (workItemMutationRef.current || workItemAttachmentMutationRef.current) {
       return;
     }
 
@@ -914,7 +1178,7 @@ export default function App() {
     if (!activeWorkItemDetail) {
       return;
     }
-    if (workItemMutationRef.current) {
+    if (workItemMutationRef.current || workItemAttachmentMutationRef.current) {
       return;
     }
 
@@ -949,7 +1213,7 @@ export default function App() {
     if (!activeWorkItemDetail) {
       return;
     }
-    if (workItemMutationRef.current) {
+    if (workItemMutationRef.current || workItemAttachmentMutationRef.current) {
       return;
     }
 
@@ -992,7 +1256,7 @@ export default function App() {
     if (!activeWorkItemDetail || workItemEditingCommentId === null) {
       return;
     }
-    if (workItemMutationRef.current) {
+    if (workItemMutationRef.current || workItemAttachmentMutationRef.current) {
       return;
     }
 
@@ -1032,6 +1296,275 @@ export default function App() {
       }
     } finally {
       clearWorkItemMutation(actionId, setWorkItemEditCommentSubmitting);
+    }
+  }
+
+  /**
+   * @param {string} itemKey
+   * @param {number} actionId
+   */
+  async function refreshWorkItemAttachmentList(itemKey, actionId) {
+    const refreshed = await getWorkItemAttachments(itemKey);
+    if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+      setWorkItemAttachments(refreshed);
+    }
+  }
+
+  /**
+   * @param {string} itemKey
+   * @param {number} commentId
+   * @param {number} actionId
+   */
+  async function refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId) {
+    const refreshed = await getWorkItemCommentAttachments(itemKey, commentId);
+    if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+      setWorkItemCommentAttachments((current) => ({
+        ...current,
+        [String(commentId)]: refreshed,
+      }));
+    }
+  }
+
+  /**
+   * @param {AppAttachment} attachment
+   */
+  async function downloadWorkItemAttachment(attachment) {
+    if (!activeWorkItemDetail || !attachmentIsUploaded(attachment)) {
+      return;
+    }
+    const itemKey = activeWorkItemDetail.key;
+    setWorkItemAttachmentDownloadingId(attachment.id);
+    setWorkItemAttachmentActionError('');
+    setWorkItemAttachmentStatus(`正在获取 ${attachment.filename || '附件'} 的下载链接。`);
+    try {
+      const signed = await getWorkItemAttachmentDownloadUrl(itemKey, attachment.id);
+      if (!isCurrentWorkItemDetailRoute(itemKey)) {
+        return;
+      }
+      openSignedDownload(signed.request);
+      setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载链接已打开。`);
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey)) {
+        setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('获取附件下载链接失败。')));
+        setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载失败。`);
+      }
+    } finally {
+      setWorkItemAttachmentDownloadingId((current) => (current === attachment.id ? null : current));
+    }
+  }
+
+  /**
+   * @param {number} commentId
+   * @param {AppAttachment} attachment
+   */
+  async function downloadWorkItemCommentAttachment(commentId, attachment) {
+    if (!activeWorkItemDetail || !attachmentIsUploaded(attachment)) {
+      return;
+    }
+    const itemKey = activeWorkItemDetail.key;
+    const busyKey = `${commentId}:${attachment.id}`;
+    setWorkItemCommentAttachmentDownloadingKey(busyKey);
+    setWorkItemAttachmentActionError('');
+    setWorkItemCommentAttachmentStatus((current) => ({
+      ...current,
+      [String(commentId)]: `正在获取 ${attachment.filename || '附件'} 的下载链接。`,
+    }));
+    try {
+      const signed = await getWorkItemCommentAttachmentDownloadUrl(itemKey, commentId, attachment.id);
+      if (!isCurrentWorkItemDetailRoute(itemKey)) {
+        return;
+      }
+      openSignedDownload(signed.request);
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${attachment.filename || '附件'} 下载链接已打开。`,
+      }));
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey)) {
+        setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('获取评论附件下载链接失败。')));
+        setWorkItemCommentAttachmentStatus((current) => ({
+          ...current,
+          [String(commentId)]: `${attachment.filename || '附件'} 下载失败。`,
+        }));
+      }
+    } finally {
+      setWorkItemCommentAttachmentDownloadingKey((current) => (current === busyKey ? '' : current));
+    }
+  }
+
+  /** @param {React.ChangeEvent<HTMLInputElement>} event */
+  async function uploadSelectedWorkItemAttachment(event) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!activeWorkItemDetail || !file || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
+      return;
+    }
+    if (!file.size || file.size <= 0) {
+      setWorkItemAttachmentActionError('请选择非空文件。');
+      setWorkItemAttachmentStatus(`${file.name || '附件'} 未上传。`);
+      return;
+    }
+
+    const itemKey = activeWorkItemDetail.key;
+    const filename = file.name || 'attachment.bin';
+    const actionId = workItemAttachmentActionRef.current + 1;
+    let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    workItemAttachmentActionRef.current = actionId;
+    workItemAttachmentMutationRef.current = true;
+    setWorkItemAttachmentUploading(true);
+    setWorkItemAttachmentActionError('');
+    setWorkItemAttachmentStatus(`${filename} 正在登记附件。`);
+    try {
+      const created = await createWorkItemAttachment(itemKey, attachmentPayloadFromFile(file));
+      createdAttachment = created;
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      setWorkItemAttachments((current) => upsertAttachment(current, created));
+      setWorkItemAttachmentStatus(`${filename} 正在获取上传签名。`);
+      const signed = await getWorkItemAttachmentUploadUrl(itemKey, created.id);
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      setWorkItemAttachmentStatus(`${filename} 正在上传到对象存储。`);
+      await uploadFileWithSignedRequest(signed.request, file);
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      setWorkItemAttachmentStatus(`${filename} 正在确认上传结果。`);
+      const uploaded = await markWorkItemAttachmentUploaded(itemKey, created.id);
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      requestRef.current += 1;
+      setRefreshing(false);
+      setWorkItemAttachments((current) => upsertAttachment(current, uploaded));
+      await refreshWorkItemAttachmentList(itemKey, actionId).catch(() => {});
+      setStatusMessage(`${itemKey} 附件已上传。`);
+      setWorkItemAttachmentStatus(`${filename} 上传完成。`);
+      input.value = '';
+    } catch (caught) {
+      if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        if (createdAttachment) {
+          const failedAttachment = /** @type {AppAttachment} */ ({ ...createdAttachment, status: 'failed' });
+          setWorkItemAttachments((current) => upsertAttachment(current, failedAttachment));
+        }
+        const message = errorMessage(caught instanceof Error ? caught : new Error('上传附件失败。'));
+        setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
+        setWorkItemAttachmentStatus(`${filename} 上传失败，请重试。`);
+        input.value = '';
+      }
+    } finally {
+      if (workItemAttachmentActionRef.current === actionId) {
+        workItemAttachmentMutationRef.current = false;
+        setWorkItemAttachmentUploading(false);
+      }
+    }
+  }
+
+  /**
+   * @param {number} commentId
+   * @param {React.ChangeEvent<HTMLInputElement>} event
+   */
+  async function uploadSelectedWorkItemCommentAttachment(commentId, event) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!activeWorkItemDetail || !file || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
+      return;
+    }
+    if (!file.size || file.size <= 0) {
+      setWorkItemAttachmentActionError('请选择非空文件。');
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${file.name || '附件'} 未上传。`,
+      }));
+      return;
+    }
+
+    const itemKey = activeWorkItemDetail.key;
+    const filename = file.name || 'attachment.bin';
+    const actionId = workItemAttachmentActionRef.current + 1;
+    let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    workItemAttachmentActionRef.current = actionId;
+    workItemAttachmentMutationRef.current = true;
+    setWorkItemCommentAttachmentUploadingId(commentId);
+    setWorkItemAttachmentActionError('');
+    setWorkItemCommentAttachmentStatus((current) => ({
+      ...current,
+      [String(commentId)]: `${filename} 正在登记附件。`,
+    }));
+    try {
+      const created = await createWorkItemCommentAttachment(itemKey, commentId, attachmentPayloadFromFile(file));
+      createdAttachment = created;
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      setWorkItemCommentAttachments((current) => ({
+        ...current,
+        [String(commentId)]: upsertAttachment(current[String(commentId)] || [], created),
+      }));
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${filename} 正在获取上传签名。`,
+      }));
+      const signed = await getWorkItemCommentAttachmentUploadUrl(itemKey, commentId, created.id);
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${filename} 正在上传到对象存储。`,
+      }));
+      await uploadFileWithSignedRequest(signed.request, file);
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${filename} 正在确认上传结果。`,
+      }));
+      const uploaded = await markWorkItemCommentAttachmentUploaded(itemKey, commentId, created.id);
+      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        return;
+      }
+      requestRef.current += 1;
+      setRefreshing(false);
+      setWorkItemCommentAttachments((current) => ({
+        ...current,
+        [String(commentId)]: upsertAttachment(current[String(commentId)] || [], uploaded),
+      }));
+      await refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId).catch(() => {});
+      setStatusMessage(`${itemKey} 评论附件已上传。`);
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${filename} 上传完成。`,
+      }));
+      input.value = '';
+    } catch (caught) {
+      if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+        if (createdAttachment) {
+          const failedAttachment = /** @type {AppAttachment} */ ({
+            ...createdAttachment,
+            status: 'failed',
+          });
+          setWorkItemCommentAttachments((current) => ({
+            ...current,
+            [String(commentId)]: upsertAttachment(current[String(commentId)] || [], failedAttachment),
+          }));
+        }
+        const message = errorMessage(caught instanceof Error ? caught : new Error('上传评论附件失败。'));
+        setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
+        setWorkItemCommentAttachmentStatus((current) => ({
+          ...current,
+          [String(commentId)]: `${filename} 上传失败，请重试。`,
+        }));
+        input.value = '';
+      }
+    } finally {
+      if (workItemAttachmentActionRef.current === actionId) {
+        workItemAttachmentMutationRef.current = false;
+        setWorkItemCommentAttachmentUploadingId(null);
+      }
     }
   }
 
@@ -1859,6 +2392,71 @@ export default function App() {
                     <p className="work-item-action-error" role="alert">{workItemActionError}</p>
                   ) : null}
 
+                  <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
+                    <div className="shell-panel-header">
+                      <h3 id="work-item-attachments-title">工作项附件</h3>
+                      <span className="shell-meta">共 {workItemAttachments.length} 个</span>
+                    </div>
+                    <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
+                      <label className="work-item-file-field">
+                        <span>上传工作项附件</span>
+                        <input
+                          type="file"
+                          onChange={(event) => void uploadSelectedWorkItemAttachment(event)}
+                          disabled={workItemAttachmentUploading || workItemMutationSubmitting}
+                        />
+                      </label>
+                      <p className="shell-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
+                    </form>
+                    {workItemAttachmentStatus ? (
+                      <p className="work-item-attachment-status" aria-live="polite">{workItemAttachmentStatus}</p>
+                    ) : null}
+                    {workItemAttachmentLoadWarning ? (
+                      <p className="work-item-attachment-warning" aria-live="polite">{workItemAttachmentLoadWarning}</p>
+                    ) : null}
+                    {workItemAttachmentActionError ? (
+                      <p className="work-item-action-error" role="alert">{workItemAttachmentActionError}</p>
+                    ) : null}
+                    {workItemAttachments.length ? (
+                      <ul className="work-item-attachment-list">
+                        {workItemAttachments.map((attachment) => (
+                          <li key={attachment.id} className={`work-item-attachment-row is-${attachment.status || 'unknown'}`}>
+                            <div className="work-item-attachment-main">
+                              <strong>{attachment.filename || '未命名附件'}</strong>
+                              <span className="shell-meta">
+                                {formatByteSize(attachment.byte_size)}
+                                {' · '}
+                                {attachment.content_type || 'application/octet-stream'}
+                                {' · '}
+                                {attachmentStatusLabel(attachment.status)}
+                              </span>
+                              <span className="shell-muted">
+                                {attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}
+                              </span>
+                            </div>
+                            <div className="work-item-attachment-actions">
+                              {attachmentIsUploaded(attachment) ? (
+                                <button
+                                  className="shell-button shell-button-secondary"
+                                  type="button"
+                                  aria-label={`下载附件 ${attachment.filename || attachment.id}`}
+                                  onClick={() => void downloadWorkItemAttachment(attachment)}
+                                  disabled={workItemAttachmentDownloadingId === attachment.id}
+                                >
+                                  {workItemAttachmentDownloadingId === attachment.id ? '打开中…' : '下载'}
+                                </button>
+                              ) : (
+                                <span className="attachment-action-hint">上传完成后可下载</span>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="shell-empty">当前没有工作项附件。</p>
+                    )}
+                  </section>
+
                   <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
                     <div className="shell-panel-header">
                       <h3 id="work-item-comments-title">评论与流转</h3>
@@ -1886,50 +2484,106 @@ export default function App() {
                     ) : null}
                     {workItemComments.length ? (
                       <ul className="work-item-comment-list">
-                        {workItemComments.map((comment) => (
-                          <li key={comment.id} id={`comment-${comment.id}`} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
-                            <div className="work-item-comment-heading">
-                              <strong>{comment.author}</strong>
-                              {comment.parent_comment_id ? <span className="shell-meta">回复 {comment.parent_author}</span> : null}
-                              {comment.is_flow ? <span className="project-status-pill">流转记录</span> : null}
-                              {comment.is_draft ? <span className="notification-pill">草稿</span> : null}
-                            </div>
-                            {workItemEditingCommentId === comment.id ? (
-                              <>
+                        {workItemComments.map((comment) => {
+                          const commentAttachments = workItemCommentAttachments[String(comment.id)] || [];
+                          const commentAttachmentStatus = workItemCommentAttachmentStatus[String(comment.id)] || '';
+                          const commentUploading = workItemCommentAttachmentUploadingId === comment.id;
+                          return (
+                            <li key={comment.id} id={`comment-${comment.id}`} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
+                              <div className="work-item-comment-heading">
+                                <strong>{comment.author}</strong>
+                                {comment.parent_comment_id ? <span className="shell-meta">回复 {comment.parent_author}</span> : null}
+                                {comment.is_flow ? <span className="project-status-pill">流转记录</span> : null}
+                                {comment.is_draft ? <span className="notification-pill">草稿</span> : null}
+                              </div>
+                              {workItemEditingCommentId === comment.id ? (
+                                <>
+                                  <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
+                                  <form className="work-item-comment-edit-form" onSubmit={submitWorkItemCommentEdit}>
+                                    <label className="work-item-form-field">
+                                      <span>编辑评论</span>
+                                      <textarea
+                                        ref={editCommentTextareaRef}
+                                        rows={4}
+                                        value={workItemEditCommentBody}
+                                        onChange={changeWorkItemEditComment}
+                                      />
+                                    </label>
+                                    <div className="work-item-form-actions work-item-comment-actions">
+                                      <button className="shell-button shell-button-secondary" type="button" onClick={cancelWorkItemCommentEdit} disabled={workItemMutationSubmitting}>
+                                        取消
+                                      </button>
+                                      <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
+                                        {workItemEditCommentSubmitting ? '保存中…' : '保存评论'}
+                                      </button>
+                                    </div>
+                                  </form>
+                                </>
+                              ) : (
                                 <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
-                                <form className="work-item-comment-edit-form" onSubmit={submitWorkItemCommentEdit}>
-                                  <label className="work-item-form-field">
-                                    <span>编辑评论</span>
-                                    <textarea
-                                      ref={editCommentTextareaRef}
-                                      rows={4}
-                                      value={workItemEditCommentBody}
-                                      onChange={changeWorkItemEditComment}
+                              )}
+                              {commentAttachments.length ? (
+                                <ul className="work-item-attachment-list work-item-comment-attachment-list" aria-label={`评论 ${comment.id} 附件`}>
+                                  {commentAttachments.map((attachment) => {
+                                    const busyKey = `${comment.id}:${attachment.id}`;
+                                    return (
+                                      <li key={attachment.id} className={`work-item-attachment-row is-${attachment.status || 'unknown'}`}>
+                                        <div className="work-item-attachment-main">
+                                          <strong>{attachment.filename || '未命名附件'}</strong>
+                                          <span className="shell-meta">
+                                            {formatByteSize(attachment.byte_size)}
+                                            {' · '}
+                                            {attachment.content_type || 'application/octet-stream'}
+                                            {' · '}
+                                            {attachmentStatusLabel(attachment.status)}
+                                          </span>
+                                        </div>
+                                        <div className="work-item-attachment-actions">
+                                          {attachmentIsUploaded(attachment) ? (
+                                            <button
+                                              className="shell-button shell-button-secondary"
+                                              type="button"
+                                              aria-label={`下载评论附件 ${attachment.filename || attachment.id}`}
+                                              onClick={() => void downloadWorkItemCommentAttachment(comment.id, attachment)}
+                                              disabled={workItemCommentAttachmentDownloadingKey === busyKey}
+                                            >
+                                              {workItemCommentAttachmentDownloadingKey === busyKey ? '打开中…' : '下载'}
+                                            </button>
+                                          ) : (
+                                            <span className="attachment-action-hint">上传完成后可下载</span>
+                                          )}
+                                        </div>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : null}
+                              {!comment.is_flow && !comment.is_draft ? (
+                                <form className="work-item-comment-attachment-upload" onSubmit={(event) => event.preventDefault()}>
+                                  <label className="work-item-file-field">
+                                    <span>上传评论附件</span>
+                                    <input
+                                      type="file"
+                                      onChange={(event) => void uploadSelectedWorkItemCommentAttachment(comment.id, event)}
+                                      disabled={commentUploading || workItemCommentAttachmentUploadingId !== null || workItemMutationSubmitting}
                                     />
                                   </label>
-                                  <div className="work-item-form-actions work-item-comment-actions">
-                                    <button className="shell-button shell-button-secondary" type="button" onClick={cancelWorkItemCommentEdit} disabled={workItemMutationSubmitting}>
-                                      取消
-                                    </button>
-                                    <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
-                                      {workItemEditCommentSubmitting ? '保存中…' : '保存评论'}
-                                    </button>
-                                  </div>
+                                  {commentAttachmentStatus ? (
+                                    <p className="work-item-attachment-status" aria-live="polite">{commentAttachmentStatus}</p>
+                                  ) : null}
                                 </form>
-                              </>
-                            ) : (
-                              <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
-                            )}
-                            <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
-                            {!comment.is_flow && !comment.is_draft && workItemEditingCommentId === null ? (
-                              <div className="work-item-comment-actions">
-                                <button className="shell-button shell-button-secondary" type="button" onClick={() => startWorkItemCommentEdit(comment)} disabled={workItemMutationSubmitting}>
-                                  编辑
-                                </button>
-                              </div>
-                            ) : null}
-                          </li>
-                        ))}
+                              ) : null}
+                              <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
+                              {!comment.is_flow && !comment.is_draft && workItemEditingCommentId === null ? (
+                                <div className="work-item-comment-actions">
+                                  <button className="shell-button shell-button-secondary" type="button" onClick={() => startWorkItemCommentEdit(comment)} disabled={workItemMutationSubmitting}>
+                                    编辑
+                                  </button>
+                                </div>
+                              ) : null}
+                            </li>
+                          );
+                        })}
                       </ul>
                     ) : (
                       <p className="shell-empty">当前没有评论或流转记录。</p>

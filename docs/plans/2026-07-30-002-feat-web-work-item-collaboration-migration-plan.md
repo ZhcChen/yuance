@@ -192,7 +192,7 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 - Browser E2E 覆盖新增与编辑评论。
 - 新评论/编辑评论不依赖旧 `/web/messages/{id}/open` 或旧详情 HTML。
 
-- [ ] **Unit 4: 附件列表、下载与上传入口**
+- [x] **Unit 4: 附件列表、下载与上传入口**
 
 **Goal:** 在工作项详情页展示工作项附件和评论附件，支持下载已上传附件，并提供最小可用上传入口。
 

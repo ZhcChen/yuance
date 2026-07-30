@@ -62,6 +62,19 @@ function workItemCommentFixture(overrides = {}) {
   };
 }
 
+function attachmentFixture(overrides = {}) {
+  return {
+    id: 801,
+    filename: 'spec.pdf',
+    content_type: 'application/pdf',
+    byte_size: 2048,
+    status: 'uploaded',
+    created_by: '系统管理员',
+    created_at: '2026-07-30T10:05:00Z',
+    ...overrides,
+  };
+}
+
 test('browser shell restores login return_to for direct /web/app/messages entry', async ({ page }) => {
   await login(page, '/web/app/messages?filter=unread');
 
@@ -814,6 +827,439 @@ test('work item comment creation preserves comment anchor route', async ({ page 
 
   await expect(page.getByText('锚点保持评论')).toBeVisible();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2#comment-901$/);
+});
+
+test('work item attachments can list download and upload for item and comments', async ({ page }) => {
+  const workItemAttachments = [
+    attachmentFixture(),
+    attachmentFixture({
+      id: 802,
+      filename: 'pending-dump.zip',
+      content_type: 'application/zip',
+      byte_size: 4096,
+      status: 'pending',
+    }),
+  ];
+  const commentAttachments = {
+    901: [
+      attachmentFixture({
+        id: 811,
+        filename: 'comment-log.txt',
+        content_type: 'text/plain',
+        byte_size: 512,
+      }),
+    ],
+    902: [],
+  };
+  const comments = [
+    workItemCommentFixture(),
+    workItemCommentFixture({
+      id: 902,
+      body: '另一条评论不应展示 901 的附件',
+    }),
+  ];
+  const downloadUrlRequests = [];
+  const workItemCreateRequests = [];
+  const commentCreateRequests = [];
+  const uploadStages = [];
+  let workItemAttachmentListGets = 0;
+  const commentAttachmentListGets = {};
+
+  await page.route('**/api/v1/test-storage/upload**', async (route) => {
+    expect(route.request().headers()['x-yuance-csrf-token']).toBeTruthy();
+    uploadStages.push(`put:${new URL(route.request().url()).searchParams.get('target')}`);
+    await route.fulfill({ status: 200, body: '' });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/download-url', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const attachmentId = Number(parts[parts.length - 2]);
+    downloadUrlRequests.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          attachment: workItemAttachments.find((attachment) => attachment.id === attachmentId),
+          request: {
+            method: 'GET',
+            url: `/signed-download/work-item-${attachmentId}`,
+            headers: [],
+          },
+          expires_in_seconds: 600,
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/upload-url', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const attachmentId = Number(parts[parts.length - 2]);
+    uploadStages.push(`sign:work-item:${attachmentId}`);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          attachment: workItemAttachments.find((attachment) => attachment.id === attachmentId),
+          request: {
+            method: 'PUT',
+            url: `/api/v1/test-storage/upload?target=work-item-${attachmentId}`,
+            headers: [['content-type', 'text/plain']],
+          },
+          expires_in_seconds: 600,
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/uploaded', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const attachmentId = Number(parts[parts.length - 2]);
+    uploadStages.push(`mark:work-item:${attachmentId}`);
+    const index = workItemAttachments.findIndex((attachment) => attachment.id === attachmentId);
+    workItemAttachments[index] = { ...workItemAttachments[index], status: 'uploaded' };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: workItemAttachments[index] }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      workItemCreateRequests.push(payload);
+      const created = attachmentFixture({
+        id: 803,
+        filename: payload.original_filename,
+        content_type: payload.content_type,
+        byte_size: payload.byte_size,
+        status: 'pending',
+      });
+      workItemAttachments.push(created);
+      uploadStages.push(`create:work-item:${created.id}`);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: created }),
+      });
+      return;
+    }
+    workItemAttachmentListGets += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: workItemAttachments }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/attachments/*/download-url', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const commentId = Number(parts[parts.indexOf('comments') + 1]);
+    const attachmentId = Number(parts[parts.length - 2]);
+    downloadUrlRequests.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          attachment: commentAttachments[commentId].find((attachment) => attachment.id === attachmentId),
+          request: {
+            method: 'GET',
+            url: `/signed-download/comment-${commentId}-${attachmentId}`,
+            headers: [],
+          },
+          expires_in_seconds: 600,
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/attachments/*/upload-url', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const commentId = Number(parts[parts.indexOf('comments') + 1]);
+    const attachmentId = Number(parts[parts.length - 2]);
+    uploadStages.push(`sign:comment:${commentId}:${attachmentId}`);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          attachment: commentAttachments[commentId].find((attachment) => attachment.id === attachmentId),
+          request: {
+            method: 'PUT',
+            url: `/api/v1/test-storage/upload?target=comment-${commentId}-${attachmentId}`,
+            headers: [['content-type', 'text/plain']],
+          },
+          expires_in_seconds: 600,
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/attachments/*/uploaded', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const commentId = Number(parts[parts.indexOf('comments') + 1]);
+    const attachmentId = Number(parts[parts.length - 2]);
+    uploadStages.push(`mark:comment:${commentId}:${attachmentId}`);
+    const index = commentAttachments[commentId].findIndex((attachment) => attachment.id === attachmentId);
+    commentAttachments[commentId][index] = { ...commentAttachments[commentId][index], status: 'uploaded' };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: commentAttachments[commentId][index] }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/attachments', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const commentId = Number(parts[parts.indexOf('comments') + 1]);
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      commentCreateRequests.push({ commentId, payload });
+      const created = attachmentFixture({
+        id: 812,
+        filename: payload.original_filename,
+        content_type: payload.content_type,
+        byte_size: payload.byte_size,
+        status: 'pending',
+      });
+      commentAttachments[commentId].push(created);
+      uploadStages.push(`create:comment:${commentId}:${created.id}`);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: created }),
+      });
+      return;
+    }
+    commentAttachmentListGets[commentId] = (commentAttachmentListGets[commentId] || 0) + 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: commentAttachments[commentId] || [] }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: comments }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: workItemDetailFixture() }),
+    });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await page.evaluate(() => {
+    window.__yuanceDownloadClicks = [];
+    HTMLAnchorElement.prototype.click = function click() {
+      window.__yuanceDownloadClicks.push(this.href);
+    };
+  });
+
+  const attachmentPanel = page.locator('.work-item-attachments-panel');
+  await expect(attachmentPanel).toContainText('spec.pdf');
+  await expect(attachmentPanel).toContainText('2.0 KB');
+  await expect(attachmentPanel).toContainText('已上传');
+  await expect(attachmentPanel).toContainText('pending-dump.zip');
+  await expect(attachmentPanel).toContainText('待上传');
+  await expect(attachmentPanel.getByRole('button', { name: '下载附件 pending-dump.zip' })).toHaveCount(0);
+
+  const comment901 = page.locator('#comment-901');
+  const comment902 = page.locator('#comment-902');
+  await expect(comment901).toContainText('comment-log.txt');
+  await expect(comment902).not.toContainText('comment-log.txt');
+
+  await attachmentPanel.getByRole('button', { name: '下载附件 spec.pdf' }).click();
+  await expect.poll(() => downloadUrlRequests.length).toBe(1);
+  await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/work-item-801');
+
+  await comment901.getByRole('button', { name: '下载评论附件 comment-log.txt' }).click();
+  await expect.poll(() => downloadUrlRequests.length).toBe(2);
+  expect(downloadUrlRequests[1]).toContain('/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/download-url');
+  await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[1] || '')).toContain('/signed-download/comment-901-811');
+
+  await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({
+    name: 'web-upload.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('hello from web'),
+  });
+  await expect.poll(() => workItemCreateRequests.length).toBe(1);
+  expect(workItemCreateRequests[0]).toMatchObject({
+    original_filename: 'web-upload.txt',
+    content_type: 'text/plain',
+    byte_size: 14,
+  });
+  expect(uploadStages.filter((stage) => stage.includes('work-item:803') || stage === 'put:work-item-803')).toEqual([
+    'create:work-item:803',
+    'sign:work-item:803',
+    'put:work-item-803',
+    'mark:work-item:803',
+  ]);
+  await expect.poll(() => workItemAttachmentListGets).toBeGreaterThan(1);
+  await expect(attachmentPanel).toContainText('web-upload.txt');
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 附件已上传。');
+
+  await comment901.getByLabel('上传评论附件').setInputFiles({
+    name: 'comment-upload.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('hello comment'),
+  });
+  await expect.poll(() => commentCreateRequests.length).toBe(1);
+  expect(commentCreateRequests[0]).toMatchObject({
+    commentId: 901,
+    payload: {
+      original_filename: 'comment-upload.txt',
+      content_type: 'text/plain',
+      byte_size: 13,
+    },
+  });
+  expect(uploadStages.filter((stage) => stage.includes('comment:901:812') || stage === 'put:comment-901-812')).toEqual([
+    'create:comment:901:812',
+    'sign:comment:901:812',
+    'put:comment-901-812',
+    'mark:comment:901:812',
+  ]);
+  await expect.poll(() => commentAttachmentListGets[901] || 0).toBeGreaterThan(1);
+  await expect(comment901).toContainText('comment-upload.txt');
+  await expect(comment902).not.toContainText('comment-upload.txt');
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论附件已上传。');
+});
+
+test('work item attachment upload failure keeps file context and marks row failed', async ({ page }) => {
+  const workItemAttachments = [];
+  const comments = [workItemCommentFixture()];
+  let uploadedRequestCount = 0;
+  let nextAttachmentId = 880;
+  let failNextUploadedMark = true;
+
+  await page.route('**/api/v1/test-storage/upload**', async (route) => {
+    expect(route.request().headers()['x-yuance-csrf-token']).toBeTruthy();
+    await route.fulfill({ status: 200, body: '' });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/upload-url', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const attachmentId = Number(parts[parts.length - 2]);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          attachment: workItemAttachments.find((attachment) => attachment.id === attachmentId),
+          request: {
+            method: 'PUT',
+            url: `/api/v1/test-storage/upload?target=work-item-${attachmentId}`,
+            headers: [['content-type', 'text/plain']],
+          },
+          expires_in_seconds: 600,
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/uploaded', async (route) => {
+    uploadedRequestCount += 1;
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const attachmentId = Number(parts[parts.length - 2]);
+    const index = workItemAttachments.findIndex((attachment) => attachment.id === attachmentId);
+    if (!failNextUploadedMark) {
+      workItemAttachments[index] = { ...workItemAttachments[index], status: 'uploaded' };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: workItemAttachments[index] }),
+      });
+      return;
+    }
+    failNextUploadedMark = false;
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: {
+          code: 'storage_verify_failed',
+          message: '服务端确认上传失败。',
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      const attachmentId = nextAttachmentId;
+      nextAttachmentId += 1;
+      const created = attachmentFixture({
+        id: attachmentId,
+        filename: payload.original_filename,
+        content_type: payload.content_type,
+        byte_size: payload.byte_size,
+        status: 'pending',
+      });
+      workItemAttachments.push(created);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: created }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: workItemAttachments }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/attachments', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [] }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: comments }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: workItemDetailFixture() }),
+    });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+
+  const attachmentPanel = page.locator('.work-item-attachments-panel');
+  await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({
+    name: 'broken-upload.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('broken'),
+  });
+
+  await expect.poll(() => uploadedRequestCount).toBe(1);
+  await expect(page.getByRole('alert')).toHaveText('broken-upload.txt 上传失败：服务端确认上传失败。');
+  await expect(attachmentPanel).toContainText('broken-upload.txt');
+  await expect(attachmentPanel).toContainText('上传失败');
+  await expect(attachmentPanel.getByLabel('上传工作项附件')).toBeEnabled();
+
+  await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({
+    name: 'broken-upload.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('broken'),
+  });
+  await expect.poll(() => uploadedRequestCount).toBe(2);
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 附件已上传。');
+  await expect(attachmentPanel).toContainText('已上传');
 });
 
 test('message center opens semantic target and unread filter becomes empty after read', async ({ page }) => {
