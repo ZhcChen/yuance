@@ -1,20 +1,24 @@
 # 项目工作流约束
 
 ## 工作模式
-- 本项目默认采用 Compound Engineering（CE）作为主工作流；同一项任务默认只采用一套主工作流，避免混用其他设计、计划或执行流程。
+- 本项目默认采用基于 `agent-light-workflow` 的 Compound Engineering（CE）/ Pi 适配版轻工作流；同一项任务默认只采用一套主工作流，避免混用其他设计、计划或执行流程。
 - 发生冲突时，依次遵循：用户明确指令、当前项目根目录规范、CE 工作流约定、全局默认行为。
 
 ## 工作流
 - 默认按 `brainstorm -> plan -> execute -> review -> compound` 推进
 - `brainstorm` 只在需求不清、范围未定、方案分叉或未知项较多时启用
 - 需求已清晰时，直接进入 `plan`
-- 项目内可通过 `.pi/prompts/` 使用 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound` 作为 Pi 工作流入口
+- `docs/prompts/*.md` 是给 Codex 复用的参考提示词，可直接复制或按任务改写，不代表隐藏命令或专用 runtime
+- 项目内可通过 `.pi/prompts/` 使用 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound` 作为 Pi 工作流入口；其语义应与 `docs/prompts/` 保持一致
 - 历史文档中的 `ce:brainstorm`、`ce:plan`、`ce:work`、`ce:review`、`ce:compound` 分别对应当前 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound`
 
 ## 产物约定
 - `docs/brainstorms/`：需求澄清与方案收敛
 - `docs/plans/`：执行计划
+- `docs/reviews/`：重要改动的复核与验证记录
 - `docs/solutions/`：问题沉淀与经验复用
+- `docs/prompts/`：Codex 可复制或改写的轻工作流参考提示词
+- `.pi/prompts/`：本项目 Pi 快捷入口提示词
 - CE 运行期中间产物：`.context/compound-engineering/`，不纳入版本控制
 - `docs/*/TEMPLATE.md` 只作结构参考；正式文档优先使用具体文件名，例如 `YYYY-MM-DD-short-name.md`
 
@@ -35,6 +39,7 @@
 ## Review
 - 改动完成后对照 plan 复核结果
 - 至少执行聚焦验证，并检查明显回归或范围漂移
+- 重要改动、跨模块改动或需要保留复核证据时，将结论写入 `docs/reviews/`
 
 ## Compound
 - 出现关键决策、复发坑点、有效排查路径或可复用模式时，写入 `docs/solutions/`
