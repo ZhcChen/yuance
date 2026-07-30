@@ -12,6 +12,12 @@ origin: 用户口头需求：继续评估并规划 doc/ppt 的纯前端离线预
 
 在当前“后端只负责鉴权与临时访问地址、前端负责文档解析渲染”的新预览架构基础上，新增一条**隔离的实验性 legacy 预览链路**，专门评估并接入旧版 `doc` / `ppt` 文件的站内纯前端预览能力。该方案不替换当前 `pdf/text/sheet/docx/pptx` 稳定链路，也不恢复任何服务端 Office 转换依赖。
 
+## 关联主线计划
+
+- 主线计划：`docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md`
+- 关系定位：本计划是主线计划下的“文档预览 / 附件体验”功能切片，负责把旧格式 `doc/ppt` 的实验性预览语义、入口矩阵和上线边界收口。
+- 执行边界：本计划不合并进 Web/Desktop 共享前端主线的 W1-W4 或 D1-D4 阶段，不创建 `web/`、`frontend/`、Desktop renderer、device-session、SQLite 或离线同步能力；完成后只在主线计划中记录该切片已收口。
+
 ## Problem Frame
 
 当前项目已经完成第一阶段纯前端预览收口：

@@ -2,7 +2,7 @@
 title: feat: Web 与 Electron 桌面端共享前端及离线演进
 status: active
 date: 2026-07-28
-updated: 2026-07-29
+updated: 2026-07-30
 origin: docs/brainstorms/2026-07-28-web-desktop-shared-frontend-architecture.md
 ---
 
@@ -26,6 +26,14 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 - `api/src/domains/**` 是服务端权限、审计、业务规则和通知事实的唯一来源；前端不得复制这些规则。
 - `/api/v1` 已覆盖部分业务能力，但 `docs/openapi/yuance.openapi.json` 尚未覆盖全部 `/web/*` 交互、附件、SSE、通知语义和系统管理能力。
 - 当前浏览器会话使用 `HttpOnly; SameSite=Lax` session、refresh 和 CSRF Cookie；非 Bearer 写请求依赖 CSRF 校验，API 没有通用跨源 CORS 层。
+
+## 当前活跃切片
+
+本计划作为 Web-first 与 Desktop 演进主线保留 `active`。具体功能切片继续独立成文，避免把长期架构计划变成执行日志。
+
+| 子计划 | 状态 | 归属边界 | 下一步 |
+|---|---|---|---|
+| `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | `in_progress` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步 | 完成 Unit 3/4 后标记子计划 `completed`，并在本节记录切片已收口 |
 
 ## 需求追踪
 
