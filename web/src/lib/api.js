@@ -25,6 +25,14 @@ export class ApiError extends Error {
 /** @typedef {{ key: string, item_type: string, title: string, status: string, priority: string, project_key: string, project_name: string, assignee: string, updated_at: string }} WorkItemSummary */
 /** @typedef {{ key: string, item_type: string, title: string, description: string, status: string, priority: string, project_key: string, project_name: string, parent_item_key: string, parent_title: string, assignee_username: string, assignee: string, reporter: string, due_date: string, created_at: string, updated_at: string, deleted_at: string }} WorkItemDetail */
 /** @typedef {{ id: number, parent_comment_id: number | null, parent_author: string, body: string, body_format: string, author: string, created_at: string, updated_at: string, is_flow: boolean, is_draft: boolean }} WorkItemComment */
+/** @typedef {{ id: number, filename: string, content_type: string, byte_size: number, status: string, created_by: string, created_at: string }} Attachment */
+/** @typedef {{ method: string, url: string, headers: Array<[string, string]> }} SignedObjectRequest */
+/** @typedef {{ attachment: Attachment, request: SignedObjectRequest, expires_in_seconds: number }} AttachmentSignedUrl */
+/** @typedef {{ title?: string, description?: string, status?: string, priority?: string, assigneeUsername?: string, dueDate?: string, parentItemKey?: string }} WorkItemUpdatePayload */
+/** @typedef {{ status: string, assigneeUsername: string, body: string, sourceCommentId?: number | null }} WorkItemHandoffPayload */
+/** @typedef {{ body: string, bodyFormat?: string, parentCommentId?: number | null }} CommentRequestPayload */
+/** @typedef {{ originalFilename: string, contentType: string, byteSize: number }} AttachmentCreatePayload */
+/** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
 
 const NO_STORE_HEADERS = {
   accept: 'application/json',
@@ -69,6 +77,118 @@ function apiErrorFromPayload(payload) {
     code: typeof code === 'string' ? code : 'request_failed',
     message: typeof message === 'string' && message.trim() ? message : '请求失败。',
   });
+}
+
+/** @param {string} itemKey */
+function workItemApiPath(itemKey) {
+  return `/api/v1/work-items/${encodeURIComponent(itemKey)}`;
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ */
+function workItemCommentApiPath(itemKey, commentId) {
+  return `${workItemApiPath(itemKey)}/comments/${encodeURIComponent(String(commentId))}`;
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} attachmentId
+ */
+function workItemAttachmentApiPath(itemKey, attachmentId) {
+  return `${workItemApiPath(itemKey)}/attachments/${encodeURIComponent(String(attachmentId))}`;
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {number} attachmentId
+ */
+function workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId) {
+  return `${workItemCommentApiPath(itemKey, commentId)}/attachments/${encodeURIComponent(String(attachmentId))}`;
+}
+
+/**
+ * @param {Record<string, unknown>} payload
+ * @returns {Record<string, unknown>}
+ */
+function omitUndefined(payload) {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  );
+}
+
+/**
+ * @param {CommentRequestPayload} payload
+ */
+function commentRequestBody(payload) {
+  return omitUndefined({
+    body: payload.body,
+    body_format: payload.bodyFormat ?? 'plain',
+    parent_comment_id: payload.parentCommentId,
+  });
+}
+
+/**
+ * @param {AttachmentCreatePayload} payload
+ */
+function attachmentCreateRequestBody(payload) {
+  return {
+    original_filename: payload.originalFilename,
+    content_type: payload.contentType,
+    byte_size: payload.byteSize,
+  };
+}
+
+/**
+ * @param {SignedUrlOptions} [query]
+ */
+function signedUrlSuffix(query = {}) {
+  const params = new URLSearchParams();
+  const expiresInSeconds = query.expiresInSeconds;
+  if (typeof expiresInSeconds === 'number' && Number.isInteger(expiresInSeconds) && expiresInSeconds > 0) {
+    params.set('expires_in_seconds', String(expiresInSeconds));
+  }
+  return params.size > 0 ? `?${params.toString()}` : '';
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {Attachment}
+ */
+function attachmentFromPayload(raw) {
+  const attachment = /** @type {Attachment} */ (raw || {});
+  return {
+    id: attachment.id,
+    filename: attachment.filename,
+    content_type: attachment.content_type,
+    byte_size: attachment.byte_size,
+    status: attachment.status,
+    created_by: attachment.created_by,
+    created_at: attachment.created_at,
+  };
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {Attachment[]}
+ */
+function attachmentsFromPayload(raw) {
+  return Array.isArray(raw) ? raw.map(attachmentFromPayload) : [];
+}
+
+/**
+ * @param {unknown} raw
+ * @returns {AttachmentSignedUrl}
+ */
+function attachmentSignedUrlFromPayload(raw) {
+  const payload = /** @type {AttachmentSignedUrl} */ (raw || {});
+  return {
+    attachment: attachmentFromPayload(payload.attachment),
+    request: payload.request,
+    expires_in_seconds: payload.expires_in_seconds,
+  };
 }
 
 export function redirectToLogin() {
@@ -265,12 +385,248 @@ export function getWorkItems(query = {}) {
 
 /** @param {string} itemKey @returns {Promise<WorkItemDetail>} */
 export function getWorkItem(itemKey) {
-  return fetchJson(`/api/v1/work-items/${encodeURIComponent(itemKey)}`);
+  return fetchJson(workItemApiPath(itemKey));
 }
 
 /** @param {string} itemKey @returns {Promise<WorkItemComment[]>} */
 export function getWorkItemComments(itemKey) {
-  return fetchJson(`/api/v1/work-items/${encodeURIComponent(itemKey)}/comments`);
+  return fetchJson(`${workItemApiPath(itemKey)}/comments`);
+}
+
+/**
+ * @param {string} itemKey
+ * @param {WorkItemUpdatePayload} payload
+ * @returns {Promise<WorkItemDetail>}
+ */
+export async function updateWorkItem(itemKey, payload) {
+  await refreshCsrfToken();
+  return fetchJson(workItemApiPath(itemKey), {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(omitUndefined({
+      title: payload.title,
+      description: payload.description,
+      status: payload.status,
+      priority: payload.priority,
+      assignee_username: payload.assigneeUsername,
+      due_date: payload.dueDate,
+      parent_item_key: payload.parentItemKey,
+    })),
+  });
+}
+
+/**
+ * @param {string} itemKey
+ * @param {WorkItemHandoffPayload} payload
+ * @returns {Promise<WorkItemDetail>}
+ */
+export async function handoffWorkItem(itemKey, payload) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemApiPath(itemKey)}/handoff`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(omitUndefined({
+      status: payload.status,
+      assignee_username: payload.assigneeUsername,
+      body: payload.body,
+      source_comment_id: payload.sourceCommentId,
+    })),
+  });
+}
+
+/**
+ * @param {string} itemKey
+ * @param {CommentRequestPayload} payload
+ * @returns {Promise<WorkItemComment>}
+ */
+export async function createWorkItemComment(itemKey, payload) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemApiPath(itemKey)}/comments`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(commentRequestBody(payload)),
+  });
+}
+
+/**
+ * @param {string} itemKey
+ * @param {CommentRequestPayload} payload
+ * @returns {Promise<WorkItemComment>}
+ */
+export async function createWorkItemCommentDraft(itemKey, payload) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemApiPath(itemKey)}/comments/draft`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(commentRequestBody(payload)),
+  });
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {CommentRequestPayload} payload
+ * @returns {Promise<WorkItemComment>}
+ */
+export async function updateWorkItemComment(itemKey, commentId, payload) {
+  await refreshCsrfToken();
+  return fetchJson(workItemCommentApiPath(itemKey, commentId), {
+    method: 'PATCH',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(commentRequestBody(payload)),
+  });
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {CommentRequestPayload} payload
+ * @returns {Promise<WorkItemComment>}
+ */
+export async function publishWorkItemCommentDraft(itemKey, commentId, payload) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemCommentApiPath(itemKey, commentId)}/publish`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(commentRequestBody(payload)),
+  });
+}
+
+/** @param {string} itemKey @returns {Promise<Attachment[]>} */
+export async function getWorkItemAttachments(itemKey) {
+  return attachmentsFromPayload(await fetchJson(`${workItemApiPath(itemKey)}/attachments`));
+}
+
+/**
+ * @param {string} itemKey
+ * @param {AttachmentCreatePayload} payload
+ * @returns {Promise<Attachment>}
+ */
+export async function createWorkItemAttachment(itemKey, payload) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemApiPath(itemKey)}/attachments`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(attachmentCreateRequestBody(payload)),
+  }).then(attachmentFromPayload);
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} attachmentId
+ * @param {SignedUrlOptions} [query]
+ * @returns {Promise<AttachmentSignedUrl>}
+ */
+export async function getWorkItemAttachmentUploadUrl(itemKey, attachmentId, query = {}) {
+  return attachmentSignedUrlFromPayload(await fetchJson(
+    `${workItemAttachmentApiPath(itemKey, attachmentId)}/upload-url${signedUrlSuffix(query)}`,
+  ));
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} attachmentId
+ * @returns {Promise<Attachment>}
+ */
+export async function markWorkItemAttachmentUploaded(itemKey, attachmentId) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemAttachmentApiPath(itemKey, attachmentId)}/uploaded`, {
+    method: 'POST',
+  }).then(attachmentFromPayload);
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} attachmentId
+ * @param {SignedUrlOptions} [query]
+ * @returns {Promise<AttachmentSignedUrl>}
+ */
+export async function getWorkItemAttachmentDownloadUrl(itemKey, attachmentId, query = {}) {
+  return attachmentSignedUrlFromPayload(await fetchJson(
+    `${workItemAttachmentApiPath(itemKey, attachmentId)}/download-url${signedUrlSuffix(query)}`,
+  ));
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @returns {Promise<Attachment[]>}
+ */
+export async function getWorkItemCommentAttachments(itemKey, commentId) {
+  return attachmentsFromPayload(await fetchJson(
+    `${workItemCommentApiPath(itemKey, commentId)}/attachments`,
+  ));
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {AttachmentCreatePayload} payload
+ * @returns {Promise<Attachment>}
+ */
+export async function createWorkItemCommentAttachment(itemKey, commentId, payload) {
+  await refreshCsrfToken();
+  return fetchJson(`${workItemCommentApiPath(itemKey, commentId)}/attachments`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(attachmentCreateRequestBody(payload)),
+  }).then(attachmentFromPayload);
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {number} attachmentId
+ * @param {SignedUrlOptions} [query]
+ * @returns {Promise<AttachmentSignedUrl>}
+ */
+export async function getWorkItemCommentAttachmentUploadUrl(itemKey, commentId, attachmentId, query = {}) {
+  return attachmentSignedUrlFromPayload(await fetchJson(
+    `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/upload-url${signedUrlSuffix(query)}`,
+  ));
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {number} attachmentId
+ * @returns {Promise<Attachment>}
+ */
+export async function markWorkItemCommentAttachmentUploaded(itemKey, commentId, attachmentId) {
+  await refreshCsrfToken();
+  return fetchJson(
+    `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/uploaded`,
+    { method: 'POST' },
+  ).then(attachmentFromPayload);
+}
+
+/**
+ * @param {string} itemKey
+ * @param {number} commentId
+ * @param {number} attachmentId
+ * @param {SignedUrlOptions} [query]
+ * @returns {Promise<AttachmentSignedUrl>}
+ */
+export async function getWorkItemCommentAttachmentDownloadUrl(itemKey, commentId, attachmentId, query = {}) {
+  return attachmentSignedUrlFromPayload(await fetchJson(
+    `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/download-url${signedUrlSuffix(query)}`,
+  ));
 }
 
 /**

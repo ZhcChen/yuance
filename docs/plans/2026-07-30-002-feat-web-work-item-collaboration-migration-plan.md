@@ -85,7 +85,7 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 
 ## 实施单元
 
-- [ ] **Unit 1: 前端 API client 与状态模型补齐**
+- [x] **Unit 1: 前端 API client 与状态模型补齐**
 
 **Goal:** 在 `web/src/lib/api.js` 中补齐工作项更新、handoff、评论创建/编辑、附件列表/登记/签名/完成/下载的 client 方法和 JSDoc DTO，为 UI 接入提供稳定边界。
 
@@ -172,7 +172,7 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 - Test: `web/e2e/app-shell.spec.mjs`
 
 **Approach:**
-- 首轮评论正文使用 plain text textarea，`body_format` 明确传递 `plain_text`；不处理内联附件节点。
+- 首轮评论正文使用 plain text textarea，`body_format` 明确传递后端支持的 `plain`；不处理内联附件节点。
 - 评论编辑入口只展示在非流转、非草稿评论上；服务端仍是最终作者/管理员权限裁决者。
 - 新增或编辑成功后刷新评论列表；失败时保留草稿输入并显示错误。
 
