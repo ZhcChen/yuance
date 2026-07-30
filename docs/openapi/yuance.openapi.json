@@ -30,6 +30,10 @@
       "description": "登录、当前用户与 Personal Access Token"
     },
     {
+      "name": "shell",
+      "description": "浏览器应用壳、顶部状态与实时刷新。"
+    },
+    {
       "name": "projects",
       "description": "项目、项目成员和当前项目上下文"
     },
@@ -164,15 +168,78 @@
         }
       }
     },
+    "/api/v1/auth/csrf": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "刷新当前 Cookie session 的 CSRF token",
+        "security": [
+          {
+            "cookieSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "返回可用于后续写请求的 CSRF token，并同步 Cookie/header",
+            "headers": {
+              "Set-Cookie": {
+                "description": "刷新 yuance_csrf Cookie。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "x-yuance-csrf-token": {
+                "description": "返回给浏览器内存 transport 的 CSRF token。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsrfTokenEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "退出当前 Cookie session",
+        "security": [
+          {
+            "cookieSession": [],
+            "csrfHeader": []
+          }
+        ],
         "responses": {
-          "204": {
-            "description": "退出成功"
+          "200": {
+            "description": "退出成功并清空 session / refresh Cookie",
+            "headers": {
+              "Set-Cookie": {
+                "description": "清理 yuance_session 与 yuance_refresh Cookie。",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutEnvelope"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Error"
@@ -809,6 +876,7 @@
           "notifications"
         ],
         "summary": "获取消息通知",
+        "description": "返回通知下拉所需的消息列表与未读数。单条/批量已读当前仍经 HTML 兼容路由处理，后续由独立 REST 契约接管。",
         "parameters": [
           {
             "name": "limit",
@@ -831,6 +899,65 @@
                 }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/topbar/status": {
+      "get": {
+        "tags": [
+          "shell"
+        ],
+        "summary": "获取浏览器应用壳顶部状态",
+        "responses": {
+          "200": {
+            "description": "顶部角标、当前项目与未读通知数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopbarStatusEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/api/v1/topbar/events": {
+      "get": {
+        "tags": [
+          "shell"
+        ],
+        "summary": "订阅顶部状态刷新事件",
+        "description": "`text/event-stream`。当前事件类型包含 `release-version`（版本字符串）和 `topbar`（`connected` / `refresh`）。Browser 通过同源 Cookie 建立连接；Desktop 后续改为受控 Bearer fetch-stream。",
+        "responses": {
+          "200": {
+            "description": "SSE 刷新事件流",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1113,6 +1240,19 @@
           }
         }
       },
+      "CsrfTokenEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "csrf_token": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
       "AuthUserEnvelope": {
         "type": "object",
         "properties": {
@@ -1135,6 +1275,19 @@
           },
           "is_super_admin": {
             "type": "boolean"
+          }
+        }
+      },
+      "LogoutEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "revoked": {
+                "type": "boolean"
+              }
+            }
           }
         }
       },
@@ -1709,6 +1862,72 @@
           }
         }
       },
+      "TopbarStatusEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TopbarStatus"
+          }
+        }
+      },
+      "TopbarStatus": {
+        "type": "object",
+        "properties": {
+          "requirements_count": {
+            "type": "integer"
+          },
+          "tasks_count": {
+            "type": "integer"
+          },
+          "bugs_count": {
+            "type": "integer"
+          },
+          "notifications_count": {
+            "type": "integer"
+          },
+          "project_badges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopbarProjectBadge"
+            }
+          },
+          "current_project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TopbarCurrentProject"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "TopbarProjectBadge": {
+        "type": "object",
+        "properties": {
+          "project_key": {
+            "type": "string"
+          },
+          "pending_count": {
+            "type": "integer"
+          }
+        }
+      },
+      "TopbarCurrentProject": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "pending_count": {
+            "type": "integer"
+          }
+        }
+      },
       "NotificationFeedEnvelope": {
         "type": "object",
         "properties": {
@@ -1753,7 +1972,8 @@
             "type": "boolean"
           },
           "open_url": {
-            "type": "string"
+            "type": "string",
+            "description": "当前仍指向 HTML 兼容路由 `/web/messages/{id}/open`；W2/W3 会迁到语义路由。"
           }
         }
       }
