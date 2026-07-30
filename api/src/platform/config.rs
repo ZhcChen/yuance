@@ -68,10 +68,24 @@ impl Settings {
             _ => PathBuf::from("web/dist"),
         }
     }
+
+    pub fn web_app_shell_v1_enabled(&self) -> bool {
+        env_flag_enabled("YUANCE_WEB_APP_SHELL_V1")
+    }
 }
 
 fn env_string(name: &str, default: &str) -> String {
     env::var(name).unwrap_or_else(|_| default.to_string())
+}
+
+fn env_flag_enabled(name: &str) -> bool {
+    matches!(
+        env::var(name)
+            .ok()
+            .map(|value| value.trim().to_ascii_lowercase()),
+        Some(value)
+            if matches!(value.as_str(), "1" | "true" | "enabled" | "on" | "yes")
+    )
 }
 
 fn parse_duration_seconds(name: &str, value: &str) -> AppResult<i64> {

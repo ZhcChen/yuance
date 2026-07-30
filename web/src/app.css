@@ -3,7 +3,7 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.5;
   color: #111827;
-  background: #f4f6fb;
+  background: #eef2f8;
 }
 
 * {
@@ -13,11 +13,13 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #f4f6fb;
+  background: #eef2f8;
 }
 
 button,
-a {
+a,
+input,
+select {
   font: inherit;
 }
 
@@ -25,16 +27,90 @@ button {
   cursor: pointer;
 }
 
-.app-shell {
-  min-height: 100vh;
-  padding: 32px;
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
+.app-shell {
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.app-topbar,
 .shell-header,
 .shell-grid,
-.shell-columns {
+.shell-columns,
+.shell-banner,
+.message-center {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+.app-topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.app-topbar-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.app-topbar-meta {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.app-nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: #334155;
+  text-decoration: none;
+}
+
+.app-nav-link.active {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.app-nav-badge {
+  display: inline-flex;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  align-items: center;
+  justify-content: center;
+  background: #1d4ed8;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.shell-live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .shell-header {
@@ -62,10 +138,10 @@ button {
 .shell-loading,
 .shell-banner {
   background: #ffffff;
-  border: 1px solid #d9e0ef;
+  border: 1px solid #d7deea;
   border-radius: 8px;
   padding: 20px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
 }
 
 .shell-panel-wide {
@@ -74,7 +150,7 @@ button {
 
 .shell-eyebrow {
   margin: 0 0 8px;
-  color: #4b5563;
+  color: #475569;
   font-size: 13px;
   text-transform: uppercase;
 }
@@ -82,13 +158,15 @@ button {
 h1,
 h2,
 p,
-dl {
+dl,
+ul {
   margin: 0;
 }
 
 h1 {
   font-size: 30px;
   line-height: 1.2;
+  outline: none;
 }
 
 h2 {
@@ -99,7 +177,8 @@ h2 {
 .shell-subtitle,
 .shell-muted,
 .shell-meta,
-.shell-empty {
+.shell-empty,
+.shell-copy {
   color: #6b7280;
 }
 
@@ -115,7 +194,9 @@ h2 {
 
 .shell-actions,
 .shell-actions-inline,
-.shell-panel-header {
+.shell-panel-header,
+.message-pagination-controls,
+.message-center-header {
   display: flex;
   gap: 12px;
   align-items: center;
@@ -126,7 +207,8 @@ h2 {
   justify-content: flex-end;
 }
 
-.shell-panel-header {
+.shell-panel-header,
+.message-center-header {
   justify-content: space-between;
   margin-bottom: 16px;
 }
@@ -137,21 +219,21 @@ h2 {
 }
 
 .shell-button {
+  min-height: 38px;
   border: 0;
   border-radius: 8px;
   background: #111827;
   color: #ffffff;
-  padding: 10px 14px;
+  padding: 0 14px;
 }
 
 .shell-button-secondary {
-  background: #e5e7eb;
+  background: #e2e8f0;
   color: #111827;
 }
 
 .shell-banner {
-  max-width: 1200px;
-  margin: 0 auto 16px;
+  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -172,14 +254,15 @@ h2 {
 }
 
 .badge-list,
-.notification-list {
+.notification-list,
+.message-list {
   list-style: none;
   padding: 0;
-  margin: 0;
 }
 
 .badge-row,
-.notification-row {
+.notification-row,
+.message-row {
   display: flex;
   justify-content: space-between;
   gap: 16px;
@@ -189,18 +272,21 @@ h2 {
 }
 
 .badge-row:last-child,
-.notification-row:last-child {
+.notification-row:last-child,
+.message-row:last-child {
   border-bottom: 0;
 }
 
-.notification-heading {
+.notification-heading,
+.message-heading {
   display: flex;
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
 }
 
-.notification-row p + p {
+.notification-row p + p,
+.message-body p + p {
   margin-top: 6px;
 }
 
@@ -218,29 +304,117 @@ h2 {
   font-weight: 600;
 }
 
+.message-center {
+  background: #ffffff;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.message-tabs {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.message-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+}
+
+.message-tab.active {
+  border-color: #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.message-tab strong {
+  min-width: 20px;
+}
+
+.message-row.unread {
+  border-left: 3px solid #2563eb;
+  padding-left: 12px;
+}
+
+.message-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.message-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.message-pagination {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #eef2ff;
+}
+
+.message-pagination-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.page-size-control {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #475569;
+}
+
+.page-size-control select {
+  min-height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0 10px;
+}
+
 @media (max-width: 960px) {
   .app-shell {
-    padding: 20px;
+    padding: 16px;
   }
 
+  .app-topbar,
   .shell-header,
+  .shell-columns,
+  .message-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .shell-grid,
   .shell-columns {
-    max-width: 100%;
-  }
-
-  .shell-header,
-  .shell-columns {
-    flex-direction: column;
     grid-template-columns: 1fr;
   }
 
-  .shell-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .shell-actions {
-    width: 100%;
+  .shell-actions,
+  .message-pagination-controls {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 }

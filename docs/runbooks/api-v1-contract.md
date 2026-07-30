@@ -485,9 +485,23 @@ POST /api/v1/notifications/read-all
 
 ```text
 limit=5
+filter=all|unread|pending|read
+page=1
+per_page=10
 ```
 
-返回当前登录用户的站内消息摘要和未读数量。消息包括被指派、被回复等工作项协作事件；`open_url` 仍保留给旧 `/web/messages/{id}/open` 兼容链路，新 Web 应优先消费 `target` 语义目标。
+`GET /api/v1/notifications` 同时服务通知下拉和浏览器消息中心，返回：
+
+- `items`：当前页通知摘要列表。
+- `unread_count`：当前用户全部未读数。
+- `pending_count`：当前用户全部待处理讨论数，仅统计未读的 `comment_replied` / `comment_mentioned`。
+- `filter`、`page`、`per_page`、`total_items`、`total_pages`：消息中心需要的筛选与分页元数据。
+
+兼容约定：
+
+- 只传 `limit` 时，会返回第 1 页窗口，并把 `limit` 视为 `per_page`，便于继续服务顶部通知下拉。
+- `filter=pending` 表示“未读讨论消息”；当前等价于服务端内部的 `pending_discussion` 过滤。
+- `open_url` 仍保留给旧 `/web/messages/{id}/open` 兼容链路，新 Web 应优先消费 `target` 语义目标。
 
 通知目标与已读的重要语义：
 

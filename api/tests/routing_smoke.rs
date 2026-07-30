@@ -524,6 +524,65 @@ async fn web_app_entry_serves_index_and_deep_links_without_cache() {
 }
 
 #[tokio::test]
+async fn web_shell_owner_serves_root_and_messages_from_same_app_entry() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/web/app/assets/index-abc123.js\"></script></body></html>",
+        )
+        .expect("index should write");
+        fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
+            .expect("asset should write");
+
+        let previous = std::env::var("YUANCE_WEB_APP_SHELL_V1").ok();
+        unsafe {
+            std::env::set_var("YUANCE_WEB_APP_SHELL_V1", "enabled");
+        }
+
+        let app = build_router(AppState::for_tests());
+        let root_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/web")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        let messages_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/web/messages?filter=unread&page=2&per_page=20")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var("YUANCE_WEB_APP_SHELL_V1", value),
+                None => std::env::remove_var("YUANCE_WEB_APP_SHELL_V1"),
+            }
+        }
+
+        assert_eq!(root_response.status(), StatusCode::OK);
+        assert_eq!(messages_response.status(), StatusCode::OK);
+        assert_eq!(
+            root_response.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store, max-age=0, must-revalidate"
+        );
+        assert_eq!(
+            response_body(messages_response).await,
+            response_body(root_response).await
+        );
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn web_app_assets_use_immutable_cache_and_missing_assets_404() {
     with_web_dist_dir(|dist_dir| async move {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");

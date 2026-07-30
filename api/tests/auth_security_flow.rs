@@ -3,6 +3,7 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
+use std::sync::{Mutex, OnceLock};
 use tower::ServiceExt;
 use yuance_api::{
     domains::{api_tokens, auth, bootstrap, projects},
@@ -121,6 +122,65 @@ async fn login_submit_rejects_cross_origin_return_to() {
 
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/web");
+}
+
+#[tokio::test]
+async fn message_open_redirects_unauthenticated_user_to_login_with_safe_return_to() {
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages/42/open")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fmessages%2F42%2Fopen"
+    );
+}
+
+#[tokio::test]
+async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let previous = std::env::var("YUANCE_WEB_APP_SHELL_V1").ok();
+    unsafe {
+        std::env::set_var("YUANCE_WEB_APP_SHELL_V1", "true");
+    }
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/messages?filter=unread&page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    unsafe {
+        match previous {
+            Some(value) => std::env::set_var("YUANCE_WEB_APP_SHELL_V1", value),
+            None => std::env::remove_var("YUANCE_WEB_APP_SHELL_V1"),
+        }
+    }
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fmessages%3Ffilter%3Dunread%26page%3D2%26per_page%3D20"
+    );
 }
 
 #[tokio::test]
@@ -1314,6 +1374,11 @@ fn test_settings() -> Settings {
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
     }
+}
+
+fn env_lock() -> &'static Mutex<()> {
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    ENV_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 fn csrf_cookie() -> String {

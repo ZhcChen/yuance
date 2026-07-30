@@ -2273,8 +2273,17 @@ pub struct AuditLogQuery {
 }
 
 pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> AppResult<Response> {
+    let csrf_token = csrf::ensure_token(&headers);
+    let web_app_owner_enabled = state.settings.web_app_shell_v1_enabled();
+
     let Some(pool) = state.pool.as_ref() else {
-        let csrf_token = csrf::ensure_token(&headers);
+        if web_app_owner_enabled {
+            return with_csrf_cookie(
+                &state,
+                &csrf_token,
+                crate::web::router::web_app_entry_response(&state),
+            );
+        }
         return with_csrf_cookie(
             &state,
             &csrf_token,
@@ -2302,8 +2311,20 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
     }
 
     let Some(user) = auth::user_from_headers(pool, &headers).await? else {
-        return login_redirect(&headers);
+        return if web_app_owner_enabled {
+            login_redirect_to(&headers, "/web")
+        } else {
+            login_redirect(&headers)
+        };
     };
+
+    if web_app_owner_enabled {
+        return with_csrf_cookie(
+            &state,
+            &csrf_token,
+            crate::web::router::web_app_entry_response(&state),
+        );
+    }
 
     let can_access_all_projects =
         user_can_access_all_projects(pool, user.id, user.is_super_admin).await?;
@@ -2317,7 +2338,6 @@ pub async fn dashboard(State(state): State<AppState>, headers: HeaderMap) -> App
     )
     .await?;
 
-    let csrf_token = csrf::ensure_token(&headers);
     with_csrf_cookie(
         &state,
         &csrf_token,
@@ -2737,12 +2757,32 @@ pub async fn messages_page(
     headers: HeaderMap,
     Query(query): Query<MessagesQuery>,
 ) -> AppResult<Response> {
+    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
+    let filter = MessageFilter::from_query(&query.filter, query.unread);
+    let return_to = message_page_url(filter, requested_pagination.page, requested_pagination.per_page);
+    let web_app_owner_enabled = state.settings.web_app_shell_v1_enabled();
+    let csrf_token = csrf::ensure_token(&headers);
+
+    if web_app_owner_enabled {
+        if let Some(pool) = state.pool.as_ref() {
+            if bootstrap::bootstrap_required(pool).await? {
+                return bootstrap_redirect(&headers);
+            }
+            if auth::user_from_headers(pool, &headers).await?.is_none() {
+                return login_redirect_to(&headers, &return_to);
+            }
+        }
+        return with_csrf_cookie(
+            &state,
+            &csrf_token,
+            crate::web::router::web_app_entry_response(&state),
+        );
+    }
+
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
-    let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
-    let filter = MessageFilter::from_query(&query.filter, query.unread);
     let (items, total_items, page_number, per_page, unread_count) = match context.pool {
         Some(pool) => {
             let total_items = notifications::count_for_user_filtered(
@@ -2858,14 +2898,16 @@ pub async fn message_open(
     headers: HeaderMap,
     Path(notification_id): Path<i64>,
 ) -> AppResult<Response> {
-    let context = match web_context_or_redirect(&state, &headers).await? {
-        Ok(context) => context,
-        Err(response) => return Ok(response),
+    let Some(pool) = state.pool.as_ref() else {
+        return login_redirect_to(&headers, &format!("/web/messages/{notification_id}/open"));
     };
-    let Some(pool) = context.pool else {
-        return Ok(Redirect::to("/web").into_response());
+    if bootstrap::bootstrap_required(pool).await? {
+        return bootstrap_redirect(&headers);
+    }
+    let Some(user) = auth::user_from_headers(pool, &headers).await? else {
+        return login_redirect_to(&headers, &format!("/web/messages/{notification_id}/open"));
     };
-    let notification = notifications::mark_read(pool, context.user_id, notification_id).await?;
+    let notification = notifications::mark_read(pool, user.id, notification_id).await?;
     let target = match notification.comment_id {
         Some(comment_id) => format!(
             "/web/work-items/{}#comment-{}",
@@ -8592,11 +8634,26 @@ fn login_redirect(headers: &HeaderMap) -> AppResult<Response> {
     redirect_for_web(headers, "/web/login")
 }
 
+fn login_redirect_to(headers: &HeaderMap, return_to: &str) -> AppResult<Response> {
+    let query = serde_urlencoded::to_string([("return_to", safe_web_return_to(return_to))])
+        .unwrap_or_else(|_| String::new());
+    let location = if query.is_empty() {
+        "/web/login".to_string()
+    } else {
+        format!("/web/login?{query}")
+    };
+    redirect_for_web_to(headers, &location)
+}
+
 fn bootstrap_redirect(headers: &HeaderMap) -> AppResult<Response> {
     redirect_for_web(headers, "/web/bootstrap")
 }
 
 fn redirect_for_web(headers: &HeaderMap, location: &'static str) -> AppResult<Response> {
+    redirect_for_web_to(headers, location)
+}
+
+fn redirect_for_web_to(headers: &HeaderMap, location: &str) -> AppResult<Response> {
     if is_htmx(headers) {
         let mut response = StatusCode::NO_CONTENT.into_response();
         response

@@ -1231,7 +1231,11 @@ async fn root() -> Redirect {
 }
 
 async fn static_web_app_entry(State(state): State<AppState>) -> Response {
-    serve_web_app_path(&state, "")
+    web_app_entry_response(&state)
+}
+
+pub fn web_app_entry_response(state: &AppState) -> Response {
+    serve_web_app_path(state, "")
 }
 
 async fn static_web_app_asset(State(state): State<AppState>, Path(path): Path<String>) -> Response {

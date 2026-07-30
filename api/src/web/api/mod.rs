@@ -282,6 +282,12 @@ pub struct NotificationPayload {
 pub struct NotificationFeedPayload {
     pub items: Vec<NotificationPayload>,
     pub unread_count: i64,
+    pub pending_count: i64,
+    pub filter: String,
+    pub page: i64,
+    pub per_page: i64,
+    pub total_items: i64,
+    pub total_pages: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -352,12 +358,32 @@ pub struct CreateApiTokenRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct NotificationQuery {
-    #[serde(default = "default_notification_limit")]
-    limit: i64,
+    #[serde(default)]
+    limit: Option<i64>,
+    #[serde(default)]
+    filter: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
 }
 
 fn default_notification_limit() -> i64 {
     5
+}
+
+fn notification_filter_from_query(
+    value: &str,
+) -> AppResult<(notifications::NotificationFilter, &'static str)> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "all" => Ok((notifications::NotificationFilter::All, "all")),
+        "unread" => Ok((notifications::NotificationFilter::Unread, "unread")),
+        "pending" | "pending_discussion" => {
+            Ok((notifications::NotificationFilter::PendingDiscussion, "pending"))
+        }
+        "read" => Ok((notifications::NotificationFilter::Read, "read")),
+        _ => Err(AppError::BadRequest("消息筛选条件无效".to_string())),
+    }
 }
 
 fn no_store_json<T>(data: T) -> impl IntoResponse
@@ -378,15 +404,43 @@ pub async fn list_notifications(
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
-    let items = notifications::list_for_user(pool, user.id, false, query.limit)
+
+    let (filter, filter_value) = notification_filter_from_query(&query.filter)?;
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.or(query.limit).unwrap_or(default_notification_limit());
+    if page < 1 {
+        return Err(AppError::BadRequest("页码不能小于 1".to_string()));
+    }
+    if !(1..=100).contains(&per_page) {
+        return Err(AppError::BadRequest(
+            "每页数量必须在 1-100 之间".to_string(),
+        ));
+    }
+
+    let total_items = notifications::count_for_user_filtered(pool, user.id, filter).await?;
+    let total_pages = total_pages(total_items, per_page);
+    let resolved_page = page.min(total_pages.max(1));
+    let items = notifications::list_for_user_page_filtered(pool, user.id, filter, resolved_page, per_page)
         .await?
         .into_iter()
         .map(notification_payload)
         .collect();
     let unread_count = notifications::unread_count(pool, user.id).await?;
+    let pending_count = notifications::count_for_user_filtered(
+        pool,
+        user.id,
+        notifications::NotificationFilter::PendingDiscussion,
+    )
+    .await?;
     Ok(no_store_json(NotificationFeedPayload {
         items,
         unread_count,
+        pending_count,
+        filter: filter_value.to_string(),
+        page: resolved_page,
+        per_page,
+        total_items,
+        total_pages,
     }))
 }
 
