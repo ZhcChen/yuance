@@ -49,6 +49,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 |---|---|---|---|---|
 | `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | 功能切片计划 | `completed` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步。 | 已收口：legacy `doc/ppt` 默认关闭，开启时统一实验性入口、降级页和 rollout 文档。 |
 | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` | W0 执行产物 | `completed` | 首批 Web-first 盘点、route-to-contract parity、回跳/缓存/rollout/CI 基线；服务于 W1/W2 输入。 | 不合并正文；后续 W1/W2 直接引用该基线，若 W0 决策变化再同步修订。 |
+| `docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` | W3 功能切片计划 | `active` | 工作项详情写入、handoff、评论与附件迁移；用于形成首个 Web 读写业务闭环。 | 按子计划执行；完成后回填 W3 状态，并据 Browser E2E 证据评估是否进入 W4。 |
 
 ### 阶段状态快照
 
@@ -57,7 +58,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | W0：Web-first 边界与契约基线 | `completed` | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` 已收口；首批 route-to-contract parity 与交付基线已形成。 | 只在 W0 决策变化时同步修订。 |
 | W1：独立 Web 构建与首批 REST/SSE 契约 | `completed`（基础闭环） | `web/package.json`、`web/jsconfig.json`、`web/vite.config.js`、根 `check:frontend`、`.github/workflows/web-frontend.yml`、`api/Dockerfile`、`scripts/smoke-web-app-image.sh`、`api/tests/routing_smoke.rs`。 | 后续只做硬化：完整 rollout 控制面、bundle budget、自动 axe gate、契约 breaking-change diff。 |
 | W2：浏览器应用壳、认证衔接与消息中心 | `completed`（首批壳与消息） | `web/src/app.jsx`、`web/src/lib/api.js`、`web/src/lib/routes.js`、`web/e2e/app-shell.spec.mjs`；登录 `return_to`、通知语义目标与幂等已读已有测试覆盖。 | 继续通过 W3 feature 切片扩展应用壳能力，不再重复建设壳。 |
-| W3：浏览器端高频 Feature 迁移 | `active` | 已有项目列表、工作项列表和只读工作项详情切片。 | 下一步建议进入“工作项详情写入、评论与附件迁移”子计划。 |
+| W3：浏览器端高频 Feature 迁移 | `active` | 已有项目列表、工作项列表和只读工作项详情切片；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已开始承接下一读写闭环。 | 执行“工作项详情写入、评论与附件迁移”子计划。 |
 | W4：共享 JavaScript 层提炼 | `pending` | 尚未创建 `frontend/packages/*`。 | 等一个完整业务 feature 的读写闭环通过 Browser E2E 后再启动。 |
 | D1 / D2：Electron 安全宿主与功能对齐 | `pending` | 当前 Desktop 仍以远端 Web 页面为主。 | D1 前必须先完成 device-session / `app://` / credential / file-transfer RFC。 |
 | G-DIST / D3 / D4：更新与离线能力 | `pending` | 未启动。 | 作为 D2 后独立 Gate 或离线专项，不阻塞 W3。 |
