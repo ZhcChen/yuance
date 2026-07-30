@@ -106,6 +106,7 @@ yuance_<domain>_<action>
 - `yuance_list_projects`
 - `yuance_get_work_item`
 - `yuance_create_work_item_comment`
+- `yuance_update_work_item_comment`
 
 不要随意重命名现有工具；如必须调整，先补兼容迁移说明。
 

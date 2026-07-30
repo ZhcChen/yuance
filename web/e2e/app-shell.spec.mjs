@@ -584,6 +584,7 @@ test('work item comments can create and edit plain comments', async ({ page }) =
     }
     const payload = route.request().postDataJSON();
     updateRequests.push({
+      url: route.request().url(),
       headers: route.request().headers(),
       payload,
     });
@@ -632,6 +633,7 @@ test('work item comments can create and edit plain comments', async ({ page }) =
 
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByText('初始可编辑评论')).toBeVisible();
+  await expect(page.locator('#comment-902').getByRole('button', { name: '编辑' })).toHaveCount(0);
 
   const newCommentInput = page.getByLabel('新增评论');
   await newCommentInput.fill('新增 Web 评论');
@@ -649,10 +651,13 @@ test('work item comments can create and edit plain comments', async ({ page }) =
 
   const newCommentRow = page.locator('#comment-903');
   await newCommentRow.getByRole('button', { name: '编辑' }).click();
+  await expect(newCommentRow.getByLabel('编辑评论')).toBeFocused();
+  await expect(page.locator('#comment-901').getByRole('button', { name: '编辑' })).toHaveCount(0);
   await newCommentRow.getByLabel('编辑评论').fill('编辑后的 Web 评论');
   await newCommentRow.getByRole('button', { name: '保存评论' }).click();
 
   await expect.poll(() => updateRequests.length).toBe(1);
+  expect(updateRequests[0].url).toContain('/api/v1/work-items/YCE-TASK-2/comments/903');
   expect(updateRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
   expect(updateRequests[0].payload).toMatchObject({
     body: '编辑后的 Web 评论',
@@ -661,6 +666,67 @@ test('work item comments can create and edit plain comments', async ({ page }) =
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论已更新。');
   await expect(page.getByText('编辑后的 Web 评论')).toBeVisible();
   await expect(page.getByText('新增 Web 评论')).toHaveCount(0);
+  await expect(newCommentRow.getByRole('button', { name: '编辑' })).toBeFocused();
+});
+
+test('work item comment mutation result is not rolled back by an older comments refresh', async ({ page }) => {
+  const originalComments = [workItemCommentFixture()];
+  const comments = [...originalComments];
+  let releaseOldComments = () => {};
+  const oldCommentsRelease = new Promise((resolve) => {
+    releaseOldComments = resolve;
+  });
+  let holdOldCommentsRefresh = false;
+  let oldCommentsRefreshHeld = false;
+
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    if (route.request().method() === 'POST') {
+      const created = workItemCommentFixture({
+        id: 905,
+        body: route.request().postDataJSON().body,
+        created_at: '2026-07-30T15:30:00Z',
+        updated_at: '2026-07-30T15:30:00Z',
+      });
+      comments.push(created);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: created }),
+      });
+      return;
+    }
+    if (holdOldCommentsRefresh && !oldCommentsRefreshHeld) {
+      oldCommentsRefreshHeld = true;
+      await oldCommentsRelease;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: originalComments }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: comments }),
+    });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await expect(page.getByText('初始可编辑评论')).toBeVisible();
+
+  holdOldCommentsRefresh = true;
+  await page.getByRole('button', { name: '刷新' }).click();
+  await expect.poll(() => oldCommentsRefreshHeld).toBe(true);
+
+  await page.getByLabel('新增评论').fill('旧刷新不能覆盖的评论');
+  await page.getByRole('button', { name: '发布评论' }).click();
+  await expect(page.getByText('旧刷新不能覆盖的评论')).toBeVisible();
+
+  releaseOldComments();
+
+  await expect(page.getByText('旧刷新不能覆盖的评论')).toBeVisible();
+  await expect(page.locator('#comment-905')).toBeVisible();
 });
 
 test('work item comment form keeps input on validation and edit errors', async ({ page }) => {
@@ -705,6 +771,7 @@ test('work item comment form keeps input on validation and edit errors', async (
 
   const commentRow = page.locator('#comment-901');
   await commentRow.getByRole('button', { name: '编辑' }).click();
+  await expect(commentRow.getByLabel('编辑评论')).toBeFocused();
   await commentRow.getByLabel('编辑评论').fill('服务端会拒绝的评论');
   await commentRow.getByRole('button', { name: '保存评论' }).click();
 

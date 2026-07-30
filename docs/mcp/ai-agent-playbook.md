@@ -69,6 +69,7 @@ docs/mcp/codex-cli-setup.md
 - `yuance_get_work_item`
 - `yuance_list_work_item_comments`
 - `yuance_create_work_item_comment`
+- `yuance_update_work_item_comment`
 - `yuance_handoff_work_item`
 - `yuance_list_project_resources`
 - `yuance_get_project_resource`

@@ -83,6 +83,7 @@ Codex CLI 启动 MCP server 时，同样直接读取当前进程环境中的：
 - `yuance_get_work_item`
 - `yuance_list_work_item_comments`
 - `yuance_create_work_item_comment`
+- `yuance_update_work_item_comment`
 - `yuance_handoff_work_item`：流转 / 指派工作项。
 - `yuance_list_project_resources`
 - `yuance_get_project_resource`

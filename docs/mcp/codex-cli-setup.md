@@ -273,6 +273,7 @@ Codex CLI 接入元策后，推荐始终按这个顺序工作：
 - 分析项目时先 `yuance_get_project`，再 `yuance_list_work_items`
 - 处理工作项时先 `yuance_get_work_item`，再 `yuance_list_work_item_comments`
 - 回复时优先用 `yuance_create_work_item_comment`
+- 编辑已有评论时用 `yuance_update_work_item_comment`
 - 流转或指派时用 `yuance_handoff_work_item`
 - 资料受保护时，先停下向用户要密码，再决定是否调用 `yuance_unlock_project_resource`
 

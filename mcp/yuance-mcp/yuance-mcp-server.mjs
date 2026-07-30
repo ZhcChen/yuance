@@ -228,6 +228,30 @@ registerTool(
 
 registerTool(
   server,
+  'yuance_update_work_item_comment',
+  {
+    title: '编辑工作项评论',
+    description: '编辑需求、任务或 Bug 下的一条非流转评论。需要 work_item:read 和 comment:write scope。',
+    inputSchema: {
+      item_key: z.string().min(1).describe('工作项编号。'),
+      comment_id: z.number().int().describe('评论 ID。'),
+      body: z.string().min(1).describe('新的评论正文，支持元策富文本 HTML 或 plain text。'),
+      body_format: z.string().optional().describe('正文格式，默认 html。'),
+      parent_comment_id: z.number().int().optional().describe('回复目标评论 ID；不修改父级时可留空。'),
+    },
+  },
+  ({ item_key, comment_id, body, body_format = 'html', parent_comment_id }) =>
+    yuanceRequest(
+      `/api/v1/work-items/${encodeURIComponent(item_key)}/comments/${encodeURIComponent(String(comment_id))}`,
+      {
+        method: 'PATCH',
+        body: { body, body_format, parent_comment_id },
+      },
+    ),
+);
+
+registerTool(
+  server,
   'yuance_handoff_work_item',
   {
     title: '流转工作项',

@@ -69,6 +69,7 @@ description: "Use when the user asks to analyze or operate the Yuance project th
 写入时遵守：
 
 - 评论使用 `yuance_create_work_item_comment`
+- 编辑已有评论使用 `yuance_update_work_item_comment`
 - 回复时传 `parent_comment_id`
 - 流转 / 指派使用 `yuance_handoff_work_item`
 - 不猜测 `comment_id`、`assignee_username`、目标状态

@@ -378,6 +378,7 @@ export default function App() {
   const routeRef = useRef(route);
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
   const newCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
+  const editCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const requestRef = useRef(0);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
@@ -666,6 +667,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (workItemEditingCommentId !== null) {
+      window.requestAnimationFrame(() => editCommentTextareaRef.current?.focus());
+    }
+  }, [workItemEditingCommentId]);
+
+  useEffect(() => {
     const close = openTopbarEvents({
       onRefresh: () => {
         void loadRouteState(routeRef.current, 'refresh');
@@ -763,10 +770,25 @@ export default function App() {
     setWorkItemCommentActionError('');
   }
 
+  /** @param {number} commentId */
+  function focusWorkItemCommentEditButton(commentId) {
+    window.requestAnimationFrame(() => {
+      const row = document.getElementById(`comment-${commentId}`);
+      const button = row?.querySelector('button');
+      if (button instanceof HTMLButtonElement) {
+        button.focus();
+      }
+    });
+  }
+
   function cancelWorkItemCommentEdit() {
+    const commentId = workItemEditingCommentId;
     setWorkItemEditingCommentId(null);
     setWorkItemEditCommentBody('');
     setWorkItemCommentActionError('');
+    if (commentId !== null) {
+      focusWorkItemCommentEditButton(commentId);
+    }
   }
 
   /**
@@ -948,6 +970,8 @@ export default function App() {
     try {
       const created = await createWorkItemComment(itemKey, { body, bodyFormat: 'plain' });
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        requestRef.current += 1;
+        setRefreshing(false);
         setWorkItemComments((current) => [...current, created]);
         setWorkItemNewCommentBody('');
         setStatusMessage(`${itemKey} 评论已发布。`);
@@ -991,12 +1015,15 @@ export default function App() {
     try {
       const updated = await updateWorkItemComment(itemKey, commentId, { body, bodyFormat: 'plain' });
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        requestRef.current += 1;
+        setRefreshing(false);
         setWorkItemComments((current) => current.map((comment) => (
           comment.id === updated.id ? updated : comment
         )));
         setWorkItemEditingCommentId(null);
         setWorkItemEditCommentBody('');
         setStatusMessage(`${itemKey} 评论已更新。`);
+        focusWorkItemCommentEditButton(updated.id);
         await refreshWorkItemCompanionState(itemKey, '评论已更新', actionId);
       }
     } catch (caught) {
@@ -1874,6 +1901,7 @@ export default function App() {
                                   <label className="work-item-form-field">
                                     <span>编辑评论</span>
                                     <textarea
+                                      ref={editCommentTextareaRef}
                                       rows={4}
                                       value={workItemEditCommentBody}
                                       onChange={changeWorkItemEditComment}
@@ -1893,7 +1921,7 @@ export default function App() {
                               <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
                             )}
                             <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
-                            {!comment.is_flow && !comment.is_draft && workItemEditingCommentId !== comment.id ? (
+                            {!comment.is_flow && !comment.is_draft && workItemEditingCommentId === null ? (
                               <div className="work-item-comment-actions">
                                 <button className="shell-button shell-button-secondary" type="button" onClick={() => startWorkItemCommentEdit(comment)} disabled={workItemMutationSubmitting}>
                                   编辑
