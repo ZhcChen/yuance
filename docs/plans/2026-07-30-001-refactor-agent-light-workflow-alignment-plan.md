@@ -66,9 +66,9 @@ date: 2026-07-30
 
 ### External References
 
-- `agent-light-workflow` README：原版定位是纯文档工作流 + 薄初始化脚本，不提供 Pi / harness 专用目录。
-- `agent-light-workflow/templates/project/AGENTS.md`：原版 `AGENTS.md` 结构包含工作流、产物目录、语言与路径、执行规则、Review、Compound、工作方式。
-- `agent-light-workflow/init.sh`：原版会创建 `docs/brainstorms`、`docs/plans`、`docs/reviews`、`docs/solutions`、`docs/prompts` 并写入模板。
+- `agent-light-workflow` README（`549e27a`）：原版定位是纯文档工作流 + 薄初始化脚本，不提供 Pi / harness 专用目录。
+- `agent-light-workflow/templates/project/AGENTS.md`（`549e27a`）：原版 `AGENTS.md` 结构包含工作流、产物目录、语言与路径、执行规则、Review、Compound、工作方式。
+- `agent-light-workflow/init.sh`（`549e27a`）：原版会创建 `docs/brainstorms`、`docs/plans`、`docs/reviews`、`docs/solutions`、`docs/prompts` 并写入模板。
 
 ## Key Technical Decisions
 
@@ -267,12 +267,15 @@ agent-light-workflow 原版兼容层
 - 已补齐 `docs/prompts/`、`docs/reviews/` 和四类 `TEMPLATE.md`。
 - 已修订 `AGENTS.md`，明确 `agent-light-workflow` 兼容层、Codex 参考提示词和 `.pi/prompts/` 快捷入口的职责边界。
 - 已完成结构自检和 `git diff --check` 聚焦验证。
+- 2026-07-30 跟进修正：外部 `agent-light-workflow` 引用固定到提交 `549e27a00a242e5a6792bb1e15a620af582a32ae`，避免上游 `main` 漂移影响历史计划含义。
+- 2026-07-30 跟进修正：明确 `AGENTS.md` 与 `docs/prompts/` 是工作流规则规范源，`.pi/prompts/` 作为快捷入口跟随同步。
+- 2026-07-30 跟进修正：Git 工作流从硬编码 `main` 调整为当前检出的协作分支，避免与当前 `dev` 分支实践冲突。
 
 ## Sources & References
 
-- External: `https://github.com/ZhcChen/agent-light-workflow`
-- External: `https://github.com/ZhcChen/agent-light-workflow/blob/main/templates/project/AGENTS.md`
-- External: `https://github.com/ZhcChen/agent-light-workflow/blob/main/init.sh`
+- External: `https://github.com/ZhcChen/agent-light-workflow/tree/549e27a00a242e5a6792bb1e15a620af582a32ae`
+- External: `https://github.com/ZhcChen/agent-light-workflow/blob/549e27a00a242e5a6792bb1e15a620af582a32ae/templates/project/AGENTS.md`
+- External: `https://github.com/ZhcChen/agent-light-workflow/blob/549e27a00a242e5a6792bb1e15a620af582a32ae/init.sh`
 - Related local workflow entry: `AGENTS.md`
 - Related local prompts: `.pi/prompts/`
 - Related local docs: `docs/brainstorms/`, `docs/plans/`, `docs/solutions/`

@@ -9,6 +9,12 @@
 
 两者共享同一工作流语义：`brainstorm -> plan -> execute -> review -> compound`。
 
+## 同步规则
+
+- 工作流规则的规范源是 `AGENTS.md` 与 `docs/prompts/`。
+- `.pi/prompts/` 是快捷入口，应跟随规范源同步，而不是另行定义一套流程。
+- 修改任一阶段提示词时，应同时检查同名的 `docs/prompts/*.md` 与 `.pi/prompts/*.md`，确保阶段目标、产物目录、停止条件和验证口径一致。
+
 ## 使用建议
 
 - 先根据当前任务挑一个最接近的阶段提示词。

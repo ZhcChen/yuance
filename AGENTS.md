@@ -10,6 +10,7 @@
 - 需求已清晰时，直接进入 `plan`
 - `docs/prompts/*.md` 是给 Codex 复用的参考提示词，可直接复制或按任务改写，不代表隐藏命令或专用 runtime
 - 项目内可通过 `.pi/prompts/` 使用 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound` 作为 Pi 工作流入口；其语义应与 `docs/prompts/` 保持一致
+- 工作流规则的规范源为 `AGENTS.md` 与 `docs/prompts/`；修改阶段提示词时，应同步检查 `.pi/prompts/`，避免快捷入口与 Codex 参考提示词漂移
 - 历史文档中的 `ce:brainstorm`、`ce:plan`、`ce:work`、`ce:review`、`ce:compound` 分别对应当前 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound`
 
 ## 产物约定
@@ -58,7 +59,7 @@
 
 ## Git 提交与推送
 
-- 默认直接在当前主分支开发；除非用户明确要求，不额外创建功能分支。
+- 默认直接在当前检出的协作分支开发；若当前分支已跟踪远端（例如 `dev`），提交后推送到该当前分支；除非用户明确要求，不额外创建功能分支。
 - 每完成一个小功能块、小修复或一个最小可解释闭环，默认立即提交并推送。
 - 及时提交和推送的核心目的，是降低因机器崩溃、终端异常或本地环境损坏导致代码丢失的风险。
 - 提交单位不是消息轮次，而是一个可以单独解释、单独回滚的小逻辑、小功能或小修复。
@@ -67,7 +68,8 @@
 - 提交前至少执行 `git diff --check`、`git diff --cached --check`、`git diff --cached`。
 - 只暂存本轮相关文件；默认不要直接使用 `git add .`。
 - 提交信息默认使用简体中文，建议前缀：`feat:`、`fix:`、`docs:`、`test:`、`chore:`、`refactor:`。
-- commit 成功后，默认立即执行 `git fetch origin`、`git rebase origin/main`、`git push origin main`，先同步远端，再完成推送。
+- commit 成功后，默认立即执行 `git fetch origin`；若工作区干净且当前分支有远端上游，先 `git rebase @{u}`，再 `git push origin HEAD` 推送当前分支。
 - 如果 `git push` 因远端已有新提交而被拒绝，默认不要强推；先同步远端并完成 `rebase`，处理完再推送。
-- 如果 `rebase` 过程中出现冲突，先解决冲突文件，再执行 `git add <file>` 和 `git rebase --continue`，完成后再 `git push origin main`。
+- 如果 `rebase` 过程中出现冲突，先解决冲突文件，再执行 `git add <file>` 和 `git rebase --continue`，完成后再 `git push origin HEAD`。
+- 如果工作区存在无关未提交改动导致无法安全 `rebase`，不要 stash 或回滚无关改动；可先推送当前分支并在回复中说明未执行 rebase 的原因。
 - 如果工作区存在无关改动，不回滚、不顺手整理、不混入本轮提交。
