@@ -27,13 +27,20 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 - `/api/v1` 已覆盖部分业务能力，但 `docs/openapi/yuance.openapi.json` 尚未覆盖全部 `/web/*` 交互、附件、SSE、通知语义和系统管理能力。
 - 当前浏览器会话使用 `HttpOnly; SameSite=Lax` session、refresh 和 CSRF Cookie；非 Bearer 写请求依赖 CSRF 校验，API 没有通用跨源 CORS 层。
 
-## 当前活跃切片
+## 计划索引与当前切片
 
-本计划作为 Web-first 与 Desktop 演进主线保留 `active`。具体功能切片继续独立成文，避免把长期架构计划变成执行日志。
+本计划作为 Web-first 与 Desktop 演进主线保留 `active`。具体功能切片和阶段执行产物继续独立成文，避免把长期架构计划变成执行日志。
 
-| 子计划 | 状态 | 归属边界 | 下一步 |
-|---|---|---|---|
-| `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | `in_progress` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步 | 完成 Unit 3/4 后标记子计划 `completed`，并在本节记录切片已收口 |
+2026-07-30 整理结论：
+
+- 不把子计划或 W0 执行产物的正文合并进本主线计划。
+- 本节是主线的唯一索引入口；子文档只在状态、归属边界或收口结果变化时同步更新到这里。
+- 主线继续管理 W0-W4、D1-D4、G-DIST 的阶段门槛；legacy `doc/ppt` 预览只作为“文档预览 / 附件体验”切片，不提前触发共享前端或 Desktop renderer 工作。
+
+| 文档 | 类型 | 状态 | 归属边界 | 下一步 / 收口方式 |
+|---|---|---|---|---|
+| `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | 功能切片计划 | `in_progress` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步。 | 完成 Unit 3/4 后标记子计划 `completed`，并在本节记录切片已收口。 |
+| `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` | W0 执行产物 | `completed` | 首批 Web-first 盘点、route-to-contract parity、回跳/缓存/rollout/CI 基线；服务于 W1/W2 输入。 | 不合并正文；后续 W1/W2 直接引用该基线，若 W0 决策变化再同步修订。 |
 
 ## 需求追踪
 

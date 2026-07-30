@@ -1,3 +1,11 @@
+---
+title: docs: Web-first W0 盘点与契约基线
+type: docs
+status: completed
+date: 2026-07-30
+origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
+---
+
 # 2026-07-30 Web-first W0 盘点与契约基线
 
 ## 目标
@@ -5,6 +13,13 @@
 本文件作为 `docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md` 的 W0 执行产物，完成首批浏览器切片的现状盘点、route-to-contract parity 基线和 W1/W2 的执行边界。
 
 本轮只覆盖首批切片：`登录衔接 -> /web 应用壳 -> 顶部状态 -> 消息中心`。不提前进入 Electron renderer、device-session、SQLite 或离线同步。
+
+## 归属关系
+
+- 上游主线：`docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md`
+- 文档类型：W0 执行产物与后续 W1/W2 输入，不是新的长期主线计划。
+- 整理结论：不把本文正文合并进主线计划；主线只记录索引、状态和归属边界。
+- 更新规则：只有 W0 的关键决策、契约基线或执行输入发生变化时才修订本文，并同步更新主线计划的索引表。
 
 ## 证据来源
 

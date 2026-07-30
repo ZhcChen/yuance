@@ -3,6 +3,7 @@ title: feat: legacy doc/ppt 实验性纯前端预览方案
 type: feat
 status: in_progress
 date: 2026-07-25
+updated: 2026-07-30
 origin: 用户口头需求：继续评估并规划 doc/ppt 的纯前端离线预览接入
 ---
 
@@ -17,6 +18,13 @@ origin: 用户口头需求：继续评估并规划 doc/ppt 的纯前端离线预
 - 主线计划：`docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md`
 - 关系定位：本计划是主线计划下的“文档预览 / 附件体验”功能切片，负责把旧格式 `doc/ppt` 的实验性预览语义、入口矩阵和上线边界收口。
 - 执行边界：本计划不合并进 Web/Desktop 共享前端主线的 W1-W4 或 D1-D4 阶段，不创建 `web/`、`frontend/`、Desktop renderer、device-session、SQLite 或离线同步能力；完成后只在主线计划中记录该切片已收口。
+
+## 2026-07-30 整理结论
+
+- 不把本计划正文并入 Web/Desktop 主线计划；主线只保留索引、归属边界和收口状态。
+- 本计划继续作为当前可执行切片，状态保持 `in_progress`，直到 Unit 3/4 完成并验证通过后再改为 `completed`。
+- 后续执行只围绕 legacy `doc/ppt` 预览开关、入口一致性、实验语义和 rollout 文档，不承接主线 W0-W4、D1-D4 的架构工作。
+- 若后续主线计划迁移“资料库与文档预览”到新 `web/` 模块，应把本计划的开关语义、降级页和 rollout 规则作为既有产品契约复用。
 
 ## Problem Frame
 
@@ -161,13 +169,12 @@ flowchart TB
 
 ## Implementation Status
 
-- 2026-07-25 当前执行结果：
-  - Unit 1：已完成
-  - Unit 2：已完成
-  - Unit 3：部分完成
-    - 已同步 `app.js` 的 `doc/ppt` 预览识别矩阵
-    - 仍需把“按钮是否展示”与 feature flag 做到完全一致
-  - Unit 4：未开始
+| Unit | 状态 | 当前判定 | 下一步 |
+|---|---|---|---|
+| Unit 1 | completed | 后端预览契约和 legacy preview type 已落地，但需要在后续执行中复核 feature flag 默认关闭语义是否与运行代码一致。 | Unit 3 前先用聚焦测试锁定默认关闭与开启两类行为。 |
+| Unit 2 | completed | legacy 前端模块已独立接入；继续保持与稳定 `pdf/text/sheet/docx/pptx` 预览链路隔离。 | Unit 3 验证关闭开关时不加载 legacy renderer。 |
+| Unit 3 | in_progress | `app.js` 的 `doc/ppt` 识别矩阵已有基础改动，但正文附件、资料附件、编辑态文件卡、右键菜单和服务端按钮展示仍需与 feature flag 完全一致。 | 下一步优先执行；补齐 UI 实验提示和入口矩阵测试。 |
+| Unit 4 | pending | 上线、授权、水印和灰度策略尚未形成独立 runbook；现有部署文档口径需与“默认关闭”策略对齐。 | Unit 3 验证通过后执行，新增 legacy rollout 手册并更新部署/验证文档。 |
 
 ## Implementation Units
 
