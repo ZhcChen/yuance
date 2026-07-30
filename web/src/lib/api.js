@@ -22,6 +22,9 @@ export class ApiError extends Error {
 /** @typedef {{ id: number, kind: string, title: string, body: string, actor: string, created_at: string, read: boolean, target: NotificationTarget | null }} NotificationItem */
 /** @typedef {{ items: NotificationItem[], unread_count: number, pending_count: number, filter: string, page: number, per_page: number, total_items: number, total_pages: number }} NotificationFeed */
 /** @typedef {{ notification_id: number, read: boolean, target: NotificationTarget | null }} NotificationTargetPayload */
+/** @typedef {{ key: string, item_type: string, title: string, status: string, priority: string, project_key: string, project_name: string, assignee: string, updated_at: string }} WorkItemSummary */
+/** @typedef {{ key: string, item_type: string, title: string, description: string, status: string, priority: string, project_key: string, project_name: string, parent_item_key: string, parent_title: string, assignee_username: string, assignee: string, reporter: string, due_date: string, created_at: string, updated_at: string, deleted_at: string }} WorkItemDetail */
+/** @typedef {{ id: number, parent_comment_id: number | null, parent_author: string, body: string, body_format: string, author: string, created_at: string, updated_at: string, is_flow: boolean, is_draft: boolean }} WorkItemComment */
 
 const NO_STORE_HEADERS = {
   accept: 'application/json',
@@ -224,6 +227,50 @@ export async function updateCurrentProject(projectKey) {
     },
     body: JSON.stringify({ project_key: projectKey }),
   });
+}
+
+/**
+ * @param {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, page?: number, perPage?: number }} [query]
+ * @returns {Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>}
+ */
+export function getWorkItems(query = {}) {
+  const params = new URLSearchParams();
+  if (typeof query.itemType === 'string' && query.itemType.trim()) {
+    params.set('item_type', query.itemType.trim());
+  }
+  if (typeof query.q === 'string' && query.q.trim()) {
+    params.set('q', query.q.trim());
+  }
+  if (typeof query.status === 'string' && query.status.trim()) {
+    params.set('status', query.status.trim());
+  }
+  if (typeof query.priority === 'string' && query.priority.trim()) {
+    params.set('priority', query.priority.trim().toUpperCase());
+  }
+  if (typeof query.assigneeUsername === 'string' && query.assigneeUsername.trim()) {
+    params.set('assignee_username', query.assigneeUsername.trim());
+  }
+  if (typeof query.projectKey === 'string' && query.projectKey.trim()) {
+    params.set('project_key', query.projectKey.trim().toUpperCase());
+  }
+  if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) {
+    params.set('page', String(query.page));
+  }
+  if (typeof query.perPage === 'number' && Number.isInteger(query.perPage) && query.perPage > 0) {
+    params.set('per_page', String(query.perPage));
+  }
+  const suffix = params.size > 0 ? `?${params.toString()}` : '';
+  return fetchJson(`/api/v1/work-items${suffix}`);
+}
+
+/** @param {string} itemKey @returns {Promise<WorkItemDetail>} */
+export function getWorkItem(itemKey) {
+  return fetchJson(`/api/v1/work-items/${encodeURIComponent(itemKey)}`);
+}
+
+/** @param {string} itemKey @returns {Promise<WorkItemComment[]>} */
+export function getWorkItemComments(itemKey) {
+  return fetchJson(`/api/v1/work-items/${encodeURIComponent(itemKey)}/comments`);
 }
 
 /**

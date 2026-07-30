@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildHomePath, buildMessagesPath, buildProjectsPath, parseAppRoute } from '../src/lib/routes.js';
+import { buildHomePath, buildMessagesPath, buildProjectsPath, buildWorkItemDetailPath, buildWorkItemListPath, parseAppRoute } from '../src/lib/routes.js';
 
 test('parseAppRoute recognizes browser shell home owners', () => {
   assert.deepEqual(parseAppRoute('/web', ''), {
@@ -68,6 +68,45 @@ test('parseAppRoute supports projects route and owner-aware builders', () => {
   assert.equal(
     buildProjectsPath({ owner: 'app', status: 'on_hold', page: 2, perPage: 20 }),
     '/web/app/projects?status=on_hold&page=2&per_page=20',
+  );
+});
+
+test('parseAppRoute supports work item list filters and detail routes', () => {
+  assert.deepEqual(
+    parseAppRoute('/web/app/tasks', '?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=p0&assignee_username=admin&page=2&per_page=20'),
+    {
+      id: 'tasks',
+      owner: 'app',
+      pathname: '/web/app/tasks',
+      search: '?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=p0&assignee_username=admin&page=2&per_page=20',
+      itemType: 'task',
+      q: '模型',
+      status: 'in_progress',
+      priority: 'P0',
+      assigneeUsername: 'admin',
+      page: 2,
+      perPage: 20,
+      title: '任务列表',
+    },
+  );
+  assert.deepEqual(
+    parseAppRoute('/web/app/work-items/YCE-TASK-2', ''),
+    {
+      id: 'work-item-detail',
+      owner: 'app',
+      pathname: '/web/app/work-items/YCE-TASK-2',
+      search: '',
+      itemKey: 'YCE-TASK-2',
+      title: '工作项详情',
+    },
+  );
+  assert.equal(
+    buildWorkItemListPath({ owner: 'app', itemType: 'task', q: '模型', status: 'in_progress', priority: 'p0', assigneeUsername: 'admin', page: 2, perPage: 20 }),
+    '/web/app/tasks?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=P0&assignee_username=admin&page=2&per_page=20',
+  );
+  assert.equal(
+    buildWorkItemDetailPath({ owner: 'app', itemKey: 'YCE-TASK-2', commentId: 42 }),
+    '/web/app/work-items/YCE-TASK-2#comment-42',
   );
 });
 

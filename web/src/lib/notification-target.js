@@ -1,5 +1,7 @@
 // @ts-check
 
+import { buildMessagesPath, buildWorkItemDetailPath } from './routes.js';
+
 /**
  * @typedef {'work_item'} NotificationTargetKind
  */
@@ -14,15 +16,16 @@
 
 /**
  * @param {NotificationTarget | null | undefined} target
+ * @param {'app' | 'web'} [owner]
  */
-export function notificationTargetPath(target) {
+export function notificationTargetPath(target, owner = 'web') {
   if (!target || target.kind !== 'work_item' || !target.work_item_key) {
-    return '/web/messages';
+    return buildMessagesPath({ owner });
   }
 
-  if (target.comment_id && Number.isInteger(target.comment_id)) {
-    return `/web/work-items/${target.work_item_key}#comment-${target.comment_id}`;
-  }
-
-  return `/web/work-items/${target.work_item_key}`;
+  return buildWorkItemDetailPath({
+    owner,
+    itemKey: target.work_item_key,
+    commentId: target.comment_id,
+  });
 }

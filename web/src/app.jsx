@@ -8,6 +8,9 @@ import {
   getNotifications,
   getProjects,
   getTopbarStatus,
+  getWorkItem,
+  getWorkItemComments,
+  getWorkItems,
   logout,
   markAllNotificationsRead,
   markNotificationRead,
@@ -16,7 +19,14 @@ import {
   updateCurrentProject,
 } from './lib/api.js';
 import { notificationTargetPath } from './lib/notification-target.js';
-import { buildHomePath, buildMessagesPath, buildProjectsPath, parseAppRoute } from './lib/routes.js';
+import {
+  buildHomePath,
+  buildMessagesPath,
+  buildProjectsPath,
+  buildWorkItemDetailPath,
+  buildWorkItemListPath,
+  parseAppRoute,
+} from './lib/routes.js';
 
 /**
  * @typedef AppUser
@@ -98,6 +108,60 @@ import { buildHomePath, buildMessagesPath, buildProjectsPath, parseAppRoute } fr
  * @property {{ page: number, per_page: number, total_items: number, total_pages: number }} pagination
  */
 
+/**
+ * @typedef AppWorkItem
+ * @property {string} key
+ * @property {string} item_type
+ * @property {string} title
+ * @property {string} status
+ * @property {string} priority
+ * @property {string} project_key
+ * @property {string} project_name
+ * @property {string} assignee
+ * @property {string} updated_at
+ */
+
+/**
+ * @typedef AppWorkItemPage
+ * @property {AppWorkItem[]} items
+ * @property {{ page: number, per_page: number, total_items: number, total_pages: number }} pagination
+ */
+
+/**
+ * @typedef AppWorkItemDetail
+ * @property {string} key
+ * @property {string} item_type
+ * @property {string} title
+ * @property {string} description
+ * @property {string} status
+ * @property {string} priority
+ * @property {string} project_key
+ * @property {string} project_name
+ * @property {string} parent_item_key
+ * @property {string} parent_title
+ * @property {string} assignee_username
+ * @property {string} assignee
+ * @property {string} reporter
+ * @property {string} due_date
+ * @property {string} created_at
+ * @property {string} updated_at
+ * @property {string} deleted_at
+ */
+
+/**
+ * @typedef AppWorkItemComment
+ * @property {number} id
+ * @property {number | null} parent_comment_id
+ * @property {string} parent_author
+ * @property {string} body
+ * @property {string} body_format
+ * @property {string} author
+ * @property {string} created_at
+ * @property {string} updated_at
+ * @property {boolean} is_flow
+ * @property {boolean} is_draft
+ */
+
 function formatTimestamp(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -157,6 +221,53 @@ function projectStatusLabel(status) {
   }
 }
 
+function workItemTypeLabel(itemType) {
+  switch (itemType) {
+    case 'requirement':
+      return '需求';
+    case 'bug':
+      return '缺陷';
+    default:
+      return '任务';
+  }
+}
+
+function workItemStatusLabel(status) {
+  switch (status) {
+    case 'open':
+      return '待处理';
+    case 'in_progress':
+      return '进行中';
+    case 'pending_confirmation':
+      return '待确认';
+    case 'done':
+      return '已完成';
+    case 'resolved':
+      return '已解决';
+    case 'verified':
+      return '已验证';
+    case 'closed':
+      return '已关闭';
+    case 'cancelled':
+      return '已取消';
+    default:
+      return status || '未知状态';
+  }
+}
+
+function isWorkItemListRouteId(routeId) {
+  return routeId === 'requirements' || routeId === 'tasks' || routeId === 'bugs';
+}
+
+/** @param {ReturnType<typeof parseAppRoute>} route */
+function workItemOwnerForRoute(route) {
+  return /** @type {'app' | 'web'} */ (
+    isWorkItemListRouteId(route.id) || route.id === 'work-item-detail'
+      ? route.owner
+      : 'app'
+  );
+}
+
 /** @param {ReturnType<typeof parseAppRoute>} route */
 function routeDescription(route) {
   switch (route.id) {
@@ -164,6 +275,12 @@ function routeDescription(route) {
       return '通过 JSON 契约加载、筛选和处理通知，兼容旧 URL 与前进后退。';
     case 'projects':
       return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
+    case 'requirements':
+    case 'tasks':
+    case 'bugs':
+      return '工作项列表已在浏览器壳中验证筛选、分页和详情跳转，旧版 SSR 页面仍可作为兼容回退。';
+    case 'work-item-detail':
+      return '当前先复用既有工作项 REST 契约完成只读详情和评论浏览，写操作继续保留旧版页面。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -178,6 +295,11 @@ function routeEyebrow(route) {
       return 'Message Center';
     case 'projects':
       return 'Projects';
+    case 'requirements':
+    case 'tasks':
+    case 'bugs':
+    case 'work-item-detail':
+      return 'Work Items';
     default:
       return 'Web App';
   }
@@ -225,6 +347,9 @@ export default function App() {
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
+  const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
+  const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
+  const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -236,6 +361,21 @@ export default function App() {
     : buildProjectsPath({ owner: 'app' });
   const messageRoute = route.id === 'messages' ? route : null;
   const projectRoute = route.id === 'projects' ? route : null;
+  const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
+  const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
+  const workItemOwner = workItemOwnerForRoute(route);
+  const workItemNavQuery = workItemListRoute
+    ? {
+      q: workItemListRoute.q,
+      status: workItemListRoute.status,
+      priority: workItemListRoute.priority,
+      assigneeUsername: workItemListRoute.assigneeUsername,
+      perPage: workItemListRoute.perPage,
+    }
+    : {};
+  const requirementsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'requirement', ...workItemNavQuery });
+  const tasksPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'task', ...workItemNavQuery });
+  const bugsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'bug', ...workItemNavQuery });
   const messageFilter = /** @type {'all' | 'unread' | 'pending' | 'read'} */ (messageRoute ? messageRoute.filter : 'all');
   const previewItems = useMemo(() => (homeFeed?.items || []).slice(0, 8), [homeFeed]);
   const activeFeed = route.id === 'messages' ? messageFeed : homeFeed;
@@ -253,6 +393,31 @@ export default function App() {
   const projectRangeEnd = projectPage && projectPage.pagination.total_items > 0
     ? Math.min(projectPage.pagination.page * projectPage.pagination.per_page, projectPage.pagination.total_items)
     : 0;
+  const workItemRangeStart = workItemPage && workItemPage.pagination.total_items > 0
+    ? (workItemPage.pagination.page - 1) * workItemPage.pagination.per_page + 1
+    : 0;
+  const workItemRangeEnd = workItemPage && workItemPage.pagination.total_items > 0
+    ? Math.min(workItemPage.pagination.page * workItemPage.pagination.per_page, workItemPage.pagination.total_items)
+    : 0;
+  const legacyWorkItemListPath = workItemListRoute
+    ? buildWorkItemListPath({
+      owner: 'web',
+      itemType: workItemListRoute.itemType,
+      q: workItemListRoute.q,
+      status: workItemListRoute.status,
+      priority: workItemListRoute.priority,
+      assigneeUsername: workItemListRoute.assigneeUsername,
+      page: workItemListRoute.page,
+      perPage: workItemListRoute.perPage,
+    })
+    : '';
+  const legacyWorkItemDetailPath = workItemDetailRoute
+    ? buildWorkItemDetailPath({ owner: 'web', itemKey: workItemDetailRoute.itemKey })
+    : '';
+  const detailBackPath = buildWorkItemListPath({
+    owner: workItemOwner,
+    itemType: workItemDetail?.item_type || 'task',
+  });
 
   routeRef.current = route;
 
@@ -270,10 +435,10 @@ export default function App() {
     }
 
     try {
-      const [nextUser, nextTopbar, nextFeed, nextProjects] = await Promise.all([
+      const [nextUser, nextTopbar, nextFeed, nextProjects, nextWorkItems, nextWorkItemBundle] = await Promise.all([
         getCurrentUser(),
         getTopbarStatus(),
-        targetRoute.id === 'projects'
+        targetRoute.id === 'projects' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? getNotifications({
@@ -289,6 +454,23 @@ export default function App() {
             perPage: targetRoute.perPage,
           })
           : Promise.resolve(null),
+        isWorkItemListRouteId(targetRoute.id)
+          ? getWorkItems({
+            itemType: targetRoute.itemType,
+            q: targetRoute.q,
+            status: targetRoute.status,
+            priority: targetRoute.priority,
+            assigneeUsername: targetRoute.assigneeUsername,
+            page: targetRoute.page,
+            perPage: targetRoute.perPage,
+          })
+          : Promise.resolve(null),
+        targetRoute.id === 'work-item-detail'
+          ? Promise.all([
+            getWorkItem(String(targetRoute.itemKey || '')),
+            getWorkItemComments(String(targetRoute.itemKey || '')),
+          ]).then(([item, comments]) => ({ item, comments }))
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -297,11 +479,18 @@ export default function App() {
       setTopbar(nextTopbar);
       if (targetRoute.id === 'messages') {
         setMessageFeed(nextFeed);
-      } else if (targetRoute.id !== 'projects') {
+      } else if (targetRoute.id === 'home') {
         setHomeFeed(nextFeed);
       }
       if (targetRoute.id === 'projects') {
         setProjectPage(nextProjects);
+      }
+      if (isWorkItemListRouteId(targetRoute.id)) {
+        setWorkItemPage(nextWorkItems);
+      }
+      if (targetRoute.id === 'work-item-detail') {
+        setWorkItemDetail(nextWorkItemBundle?.item || null);
+        setWorkItemComments(nextWorkItemBundle?.comments || []);
       }
       restorePendingReturnToHash();
       setError(null);
@@ -342,11 +531,21 @@ export default function App() {
       ? '消息中心 - 元策'
       : route.id === 'projects'
         ? '项目列表 - 元策'
-        : route.id === 'unsupported'
-          ? '未迁移路由 - 元策'
-          : '元策浏览器工作台 - 元策';
+        : route.id === 'requirements'
+          ? '需求列表 - 元策'
+          : route.id === 'tasks'
+            ? '任务列表 - 元策'
+            : route.id === 'bugs'
+              ? '缺陷列表 - 元策'
+              : route.id === 'work-item-detail' && workItemDetail && workItemDetail.key === route.itemKey
+                ? `${workItemDetail.key} · ${workItemDetail.title} - 元策`
+                : route.id === 'work-item-detail'
+                  ? '工作项详情 - 元策'
+                  : route.id === 'unsupported'
+                    ? '未迁移路由 - 元策'
+                    : '元策浏览器工作台 - 元策';
     document.title = title;
-  }, [route]);
+  }, [route, workItemDetail]);
 
   useEffect(() => {
     void loadRouteState(route, 'load');
@@ -394,8 +593,12 @@ export default function App() {
   async function handleOpenNotification(item) {
     try {
       const result = item.target ? await markNotificationRead(item.id) : await getNotificationTarget(item.id);
+      const target = result.target || item.target;
+      const owner = /** @type {'app' | 'web'} */ (
+        target ? workItemOwnerForRoute(routeRef.current) : routeRef.current.owner === 'app' ? 'app' : 'web'
+      );
       setStatusMessage('正在打开消息目标。');
-      window.location.assign(notificationTargetPath(result.target || item.target));
+      window.location.assign(notificationTargetPath(target, owner));
     } catch (_error) {
       window.location.assign(messagesPath);
     }
@@ -523,6 +726,79 @@ export default function App() {
     );
   }
 
+  /** @param {React.FormEvent<HTMLFormElement>} event */
+  function submitWorkItemFilters(event) {
+    event.preventDefault();
+    if (!workItemListRoute) {
+      return;
+    }
+    const formData = new FormData(event.currentTarget);
+    navigate(
+      buildWorkItemListPath({
+        owner: workItemOwner,
+        itemType: workItemListRoute.itemType,
+        q: String(formData.get('q') || ''),
+        status: String(formData.get('status') || ''),
+        priority: String(formData.get('priority') || ''),
+        assigneeUsername: String(formData.get('assignee_username') || ''),
+        page: 1,
+        perPage: workItemListRoute.perPage,
+      }),
+      '已更新工作项筛选。',
+    );
+  }
+
+  function resetWorkItemFilters() {
+    if (!workItemListRoute) {
+      return;
+    }
+    navigate(
+      buildWorkItemListPath({ owner: workItemOwner, itemType: workItemListRoute.itemType }),
+      '已重置工作项筛选。',
+    );
+  }
+
+  /** @param {number} nextPage */
+  function changeWorkItemPage(nextPage) {
+    if (!workItemListRoute) {
+      return;
+    }
+    navigate(
+      buildWorkItemListPath({
+        owner: workItemOwner,
+        itemType: workItemListRoute.itemType,
+        q: workItemListRoute.q,
+        status: workItemListRoute.status,
+        priority: workItemListRoute.priority,
+        assigneeUsername: workItemListRoute.assigneeUsername,
+        page: nextPage,
+        perPage: workItemListRoute.perPage,
+      }),
+      `已切换到第 ${nextPage} 页。`,
+    );
+  }
+
+  /** @param {React.ChangeEvent<HTMLSelectElement>} event */
+  function changeWorkItemPageSize(event) {
+    if (!workItemListRoute) {
+      return;
+    }
+    const nextPerPage = Number.parseInt(event.target.value, 10);
+    navigate(
+      buildWorkItemListPath({
+        owner: workItemOwner,
+        itemType: workItemListRoute.itemType,
+        q: workItemListRoute.q,
+        status: workItemListRoute.status,
+        priority: workItemListRoute.priority,
+        assigneeUsername: workItemListRoute.assigneeUsername,
+        page: 1,
+        perPage: nextPerPage,
+      }),
+      `工作项列表每页切换为 ${nextPerPage} 条。`,
+    );
+  }
+
   if (loading) {
     return (
       <main className="app-shell" aria-busy="true">
@@ -599,6 +875,10 @@ export default function App() {
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
+          ) : isWorkItemListRouteId(route.id) || route.id === 'work-item-detail' ? (
+            <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
+              返回工作台
+            </a>
           ) : (
             <a className="shell-link" href={messagesPath} onClick={(event) => handleNavigate(event, messagesPath, '已打开消息中心。')}>
               打开消息中心
@@ -638,6 +918,11 @@ export default function App() {
               <h2>当前项目</h2>
               <p className="shell-primary">{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
               <p className="shell-muted">待处理 {currentProject?.pending_count || 0}</p>
+              <div className="shell-actions-inline shell-compact-links">
+                <a className="shell-link" href={requirementsPath} onClick={(event) => handleNavigate(event, requirementsPath, '已打开需求列表。')}>需求</a>
+                <a className="shell-link" href={tasksPath} onClick={(event) => handleNavigate(event, tasksPath, '已打开任务列表。')}>任务</a>
+                <a className="shell-link" href={bugsPath} onClick={(event) => handleNavigate(event, bugsPath, '已打开缺陷列表。')}>缺陷</a>
+              </div>
             </article>
             <article className="shell-card shell-stats">
               <h2>我的待处理</h2>
@@ -842,6 +1127,237 @@ export default function App() {
                 </>
               ) : (
                 <p className="shell-empty">当前筛选下没有项目。</p>
+              )}
+            </section>
+          ) : isWorkItemListRouteId(route.id) ? (
+            <section className="shell-card shell-panel-wide work-item-center" aria-labelledby="work-item-center-title">
+              <div className="shell-panel-header work-item-center-header">
+                <div>
+                  <h2 id="work-item-center-title">{route.title}</h2>
+                  <p className="shell-muted">当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
+                </div>
+                <div className="shell-actions-inline">
+                  {route.owner === 'app' ? <a className="shell-link" href={legacyWorkItemListPath}>打开旧版列表</a> : null}
+                </div>
+              </div>
+
+              <nav className="message-tabs" aria-label="工作项类型导航">
+                {[
+                  { id: 'requirements', label: '需求', path: requirementsPath },
+                  { id: 'tasks', label: '任务', path: tasksPath },
+                  { id: 'bugs', label: '缺陷', path: bugsPath },
+                ].map((tab) => (
+                  <a
+                    key={tab.id}
+                    className={`message-tab ${route.id === tab.id ? 'active' : ''}`}
+                    href={tab.path}
+                    aria-current={route.id === tab.id ? 'page' : undefined}
+                    onClick={(event) => handleNavigate(event, tab.path, `已切换到${tab.label}列表。`)}
+                  >
+                    <span>{tab.label}</span>
+                  </a>
+                ))}
+              </nav>
+
+              <form className="work-item-filter-bar" onSubmit={submitWorkItemFilters}>
+                <label className="work-item-filter-field work-item-filter-keyword">
+                  <span>关键词</span>
+                  <input name="q" defaultValue={route.q} placeholder="标题或编号" />
+                </label>
+                <label className="work-item-filter-field">
+                  <span>状态</span>
+                  <select name="status" defaultValue={route.status}>
+                    <option value="">全部状态</option>
+                    <option value="open">待处理</option>
+                    <option value="in_progress">进行中</option>
+                    <option value="pending_confirmation">待确认</option>
+                    <option value="done">已完成</option>
+                    <option value="resolved">已解决</option>
+                    <option value="verified">已验证</option>
+                    <option value="closed">已关闭</option>
+                    <option value="cancelled">已取消</option>
+                  </select>
+                </label>
+                <label className="work-item-filter-field">
+                  <span>优先级</span>
+                  <select name="priority" defaultValue={route.priority}>
+                    <option value="">全部优先级</option>
+                    <option value="P0">P0</option>
+                    <option value="P1">P1</option>
+                    <option value="P2">P2</option>
+                    <option value="P3">P3</option>
+                  </select>
+                </label>
+                <label className="work-item-filter-field">
+                  <span>处理人</span>
+                  <input name="assignee_username" defaultValue={route.assigneeUsername} placeholder="用户名" />
+                </label>
+                <div className="work-item-filter-actions">
+                  <button className="shell-button" type="submit">筛选</button>
+                  <button className="shell-button shell-button-secondary" type="button" onClick={resetWorkItemFilters}>重置</button>
+                </div>
+              </form>
+
+              {workItemPage?.items?.length ? (
+                <>
+                  <ul className="work-item-list" aria-label={route.title}>
+                    {workItemPage.items.map((item) => {
+                      const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key });
+                      return (
+                        <li key={item.key} className="work-item-row">
+                          <div className="work-item-main">
+                            <div className="work-item-heading">
+                              <span className="message-kind">{workItemTypeLabel(item.item_type)}</span>
+                              <strong>{item.key} · {item.title}</strong>
+                              <span className="project-status-pill">{workItemStatusLabel(item.status)}</span>
+                              <span className="priority-pill">{item.priority || '未设置优先级'}</span>
+                            </div>
+                            <p className="shell-muted">{item.project_key} · {item.project_name} · 处理人 {item.assignee || '未分配'} · 最近更新 {formatTimestamp(item.updated_at)}</p>
+                          </div>
+                          <div className="project-actions">
+                            <a className="shell-link" href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开 ${item.key}。`)}>
+                              打开详情
+                            </a>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  <div className="message-pagination" aria-label="工作项分页">
+                    <div className="message-pagination-meta">
+                      <strong>共 {workItemPage.pagination.total_items} 条</strong>
+                      <span>当前显示 {workItemRangeStart}-{workItemRangeEnd}</span>
+                    </div>
+                    <div className="message-pagination-controls">
+                      <button
+                        className="shell-button shell-button-secondary"
+                        type="button"
+                        disabled={workItemPage.pagination.page <= 1}
+                        onClick={() => changeWorkItemPage(workItemPage.pagination.page - 1)}
+                      >
+                        上一页
+                      </button>
+                      <span className="shell-meta">第 {workItemPage.pagination.page} / {workItemPage.pagination.total_pages} 页</span>
+                      <button
+                        className="shell-button shell-button-secondary"
+                        type="button"
+                        disabled={workItemPage.pagination.page >= workItemPage.pagination.total_pages}
+                        onClick={() => changeWorkItemPage(workItemPage.pagination.page + 1)}
+                      >
+                        下一页
+                      </button>
+                      <label className="page-size-control">
+                        <span>每页</span>
+                        <select value={String(workItemPage.pagination.per_page)} onChange={changeWorkItemPageSize}>
+                          {[10, 20, 50].map((value) => (
+                            <option key={value} value={String(value)}>{value}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="shell-empty">当前筛选下没有{workItemTypeLabel(route.itemType)}。</p>
+              )}
+            </section>
+          ) : route.id === 'work-item-detail' ? (
+            <section className="shell-card shell-panel-wide work-item-detail-center" aria-labelledby="work-item-detail-title">
+              <div className="shell-panel-header work-item-center-header">
+                <div>
+                  <h2 id="work-item-detail-title">{workItemDetail ? `${workItemDetail.key} · ${workItemDetail.title}` : route.itemKey}</h2>
+                  <p className="shell-muted">{workItemDetail ? `${workItemTypeLabel(workItemDetail.item_type)} · ${workItemDetail.project_key} · ${workItemDetail.project_name}` : '正在加载工作项详情。'}</p>
+                </div>
+                <div className="shell-actions-inline">
+                  <a className="shell-link" href={detailBackPath} onClick={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}>
+                    返回列表
+                  </a>
+                  {route.owner === 'app' ? <a className="shell-link" href={legacyWorkItemDetailPath}>打开旧版详情</a> : null}
+                </div>
+              </div>
+
+              <nav className="message-tabs" aria-label="工作项类型导航">
+                {[
+                  { id: 'requirements', label: '需求', path: requirementsPath },
+                  { id: 'tasks', label: '任务', path: tasksPath },
+                  { id: 'bugs', label: '缺陷', path: bugsPath },
+                ].map((tab) => (
+                  <a
+                    key={tab.id}
+                    className={`message-tab ${workItemDetail?.item_type === (tab.id === 'requirements' ? 'requirement' : tab.id === 'bugs' ? 'bug' : 'task') ? 'active' : ''}`}
+                    href={tab.path}
+                    onClick={(event) => handleNavigate(event, tab.path, `已切换到${tab.label}列表。`)}
+                  >
+                    <span>{tab.label}</span>
+                  </a>
+                ))}
+              </nav>
+
+              {workItemDetail ? (
+                <>
+                  <section className="work-item-detail-grid">
+                    <article className="work-item-detail-panel">
+                      <h3>描述</h3>
+                      <p className="work-item-detail-description">{workItemDetail.description || '暂无描述。'}</p>
+                    </article>
+                    <article className="work-item-detail-panel">
+                      <h3>关键信息</h3>
+                      <dl className="work-item-detail-meta">
+                        <div><dt>状态</dt><dd>{workItemStatusLabel(workItemDetail.status)}</dd></div>
+                        <div><dt>优先级</dt><dd>{workItemDetail.priority || '未设置'}</dd></div>
+                        <div><dt>处理人</dt><dd>{workItemDetail.assignee || '未分配'}</dd></div>
+                        <div><dt>报告人</dt><dd>{workItemDetail.reporter || '未知'}</dd></div>
+                        <div><dt>截止日期</dt><dd>{workItemDetail.due_date || '未设置'}</dd></div>
+                        <div><dt>创建时间</dt><dd>{workItemDetail.created_at || '未知'}</dd></div>
+                        <div><dt>更新时间</dt><dd>{workItemDetail.updated_at || '未知'}</dd></div>
+                        <div><dt>所属项目</dt><dd>{workItemDetail.project_key} · {workItemDetail.project_name}</dd></div>
+                        {workItemDetail.parent_item_key ? (
+                          <div>
+                            <dt>父级工作项</dt>
+                            <dd>
+                              <a
+                                className="shell-link"
+                                href={buildWorkItemDetailPath({ owner: workItemOwner, itemKey: workItemDetail.parent_item_key })}
+                                onClick={(event) => handleNavigate(event, buildWorkItemDetailPath({ owner: workItemOwner, itemKey: workItemDetail.parent_item_key }), `已打开 ${workItemDetail.parent_item_key}。`)}
+                              >
+                                {workItemDetail.parent_item_key} · {workItemDetail.parent_title}
+                              </a>
+                            </dd>
+                          </div>
+                        ) : null}
+                        {workItemDetail.deleted_at ? <div><dt>删除时间</dt><dd>{workItemDetail.deleted_at}</dd></div> : null}
+                      </dl>
+                    </article>
+                  </section>
+
+                  <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
+                    <div className="shell-panel-header">
+                      <h3 id="work-item-comments-title">评论与流转</h3>
+                      <span className="shell-meta">共 {workItemComments.length} 条</span>
+                    </div>
+                    {workItemComments.length ? (
+                      <ul className="work-item-comment-list">
+                        {workItemComments.map((comment) => (
+                          <li key={comment.id} id={`comment-${comment.id}`} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
+                            <div className="work-item-comment-heading">
+                              <strong>{comment.author}</strong>
+                              {comment.parent_comment_id ? <span className="shell-meta">回复 {comment.parent_author}</span> : null}
+                              {comment.is_flow ? <span className="project-status-pill">流转记录</span> : null}
+                              {comment.is_draft ? <span className="notification-pill">草稿</span> : null}
+                            </div>
+                            <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
+                            <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="shell-empty">当前没有评论或流转记录。</p>
+                    )}
+                  </section>
+                </>
+              ) : (
+                <p className="shell-empty">工作项详情暂不可用。</p>
               )}
             </section>
           ) : (
