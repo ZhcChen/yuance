@@ -2,18 +2,14 @@
 
 这里的 `*.md` 文件不是 Codex 的内建命令，而是可直接复制、改写、粘贴给 Codex 的参考提示词资产。
 
-本项目同时保留 `.pi/prompts/`：
+本项目以 `docs/prompts/` 作为唯一的轻工作流提示词资产。旧快捷入口已清理，避免同一阶段提示词出现多份副本后发生漂移。
 
-- `docs/prompts/`：面向 Codex 原生协作，便于复制和改写。
-- `.pi/prompts/`：面向本项目 Pi 工作流入口，提供 `/brainstorm`、`/plan`、`/execute`、`/review`、`/compound` 快捷调用。
-
-两者共享同一工作流语义：`brainstorm -> plan -> execute -> review -> compound`。
+工作流语义：`brainstorm -> plan -> execute -> review -> compound`。
 
 ## 同步规则
 
 - 工作流规则的规范源是 `AGENTS.md` 与 `docs/prompts/`。
-- `.pi/prompts/` 是快捷入口，应跟随规范源同步，而不是另行定义一套流程。
-- 修改任一阶段提示词时，应同时检查同名的 `docs/prompts/*.md` 与 `.pi/prompts/*.md`，确保阶段目标、产物目录、停止条件和验证口径一致。
+- 修改阶段提示词时，只更新 `docs/prompts/*.md` 和必要的 `AGENTS.md` 入口说明，不另建平行提示词目录。
 
 ## 使用建议
 
@@ -45,10 +41,5 @@
 - `docs/prompts/execute.md`
 - `docs/prompts/review.md`
 - `docs/prompts/compound.md`
-- `.pi/prompts/brainstorm.md`
-- `.pi/prompts/plan.md`
-- `.pi/prompts/execute.md`
-- `.pi/prompts/review.md`
-- `.pi/prompts/compound.md`
 
 `docs/*/TEMPLATE.md` 只作结构参考，正式内容应写入同目录下的具体命名文件。
