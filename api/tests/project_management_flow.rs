@@ -11520,7 +11520,7 @@ async fn web_work_item_docx_preview_page_uses_frontend_preview_contract() {
 }
 
 #[tokio::test]
-async fn web_work_item_legacy_doc_preview_page_uses_frontend_preview_contract_by_default() {
+async fn web_work_item_legacy_doc_preview_page_degrades_when_flag_disabled() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -11578,14 +11578,153 @@ async fn web_work_item_legacy_doc_preview_page_uses_frontend_preview_contract_by
 
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
+    assert!(body.contains("旧格式实验性预览当前未开启，请下载原文件查看。"));
+    assert!(body.contains("实验性预览"));
+    assert!(body.contains("下载后查看"));
+    assert!(!body.contains("data-document-preview-root"));
+    assert!(!body.contains(r#"data-preview-type="legacy-doc""#));
+    assert!(!body.contains("data-preview-url=\""));
+}
+
+#[tokio::test]
+async fn web_work_item_legacy_doc_preview_page_uses_frontend_preview_contract_when_flag_enabled() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "legacy-preview.doc".to_string(),
+            content_type: "application/msword".to_string(),
+            byte_size: 1024,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: Some("登记工作项附件 legacy-preview.doc".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(
+        test_settings_with_legacy_preview_enabled(),
+        Some(pool),
+    ));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/preview",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
     assert!(body.contains("data-document-preview-root"));
     assert!(body.contains(r#"data-preview-type="legacy-doc""#));
+    assert!(body.contains(r#"data-preview-experimental="true""#));
     assert!(body.contains("实验性预览"));
     assert!(body.contains("data-preview-url=\""));
 }
 
 #[tokio::test]
-async fn web_work_item_detail_shows_legacy_doc_preview_button_by_default() {
+async fn web_work_item_legacy_ppt_preview_page_requires_feature_flag() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "legacy-preview.ppt",
+        "application/vnd.ms-powerpoint",
+        1536,
+    )
+    .await;
+
+    let disabled_app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let disabled_response = disabled_app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/preview",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(disabled_response.status(), StatusCode::OK);
+    let disabled_body = response_body(disabled_response).await;
+    assert!(disabled_body.contains("旧格式实验性预览当前未开启，请下载原文件查看。"));
+    assert!(disabled_body.contains("实验性预览"));
+    assert!(!disabled_body.contains("data-document-preview-root"));
+    assert!(!disabled_body.contains(r#"data-preview-type="legacy-ppt""#));
+    assert!(!disabled_body.contains("data-preview-url=\""));
+
+    let enabled_app = build_router(AppState::new(
+        test_settings_with_legacy_preview_enabled(),
+        Some(pool),
+    ));
+    let enabled_response = enabled_app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/work-items/YCE-TASK-2/attachments/{}/preview",
+                    attachment.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(enabled_response.status(), StatusCode::OK);
+    let enabled_body = response_body(enabled_response).await;
+    assert!(enabled_body.contains("data-document-preview-root"));
+    assert!(enabled_body.contains(r#"data-preview-type="legacy-ppt""#));
+    assert!(enabled_body.contains(r#"data-preview-experimental="true""#));
+    assert!(enabled_body.contains("实验性预览"));
+    assert!(enabled_body.contains("当前运行时会带可见水印"));
+    assert!(enabled_body.contains("data-preview-url=\""));
+}
+
+#[tokio::test]
+async fn web_work_item_detail_hides_legacy_doc_preview_button_by_default() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
@@ -11641,10 +11780,139 @@ async fn web_work_item_detail_shows_legacy_doc_preview_button_by_default() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = response_body(response).await;
     assert!(body.contains("legacy-hidden.doc"));
+    assert!(!body.contains(&format!(
+        r#"data-document-preview-url="/web/work-items/YCE-TASK-2/attachments/{}/preview""#,
+        attachment.id
+    )));
+}
+
+#[tokio::test]
+async fn web_work_item_detail_shows_legacy_doc_preview_button_when_flag_enabled() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: "legacy-visible.doc".to_string(),
+            content_type: "application/msword".to_string(),
+            byte_size: 1024,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: Some("登记工作项附件 legacy-visible.doc".to_string()),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    files::mark_attachment_uploaded(&pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(
+        test_settings_with_legacy_preview_enabled(),
+        Some(pool),
+    ));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("legacy-visible.doc"));
     assert!(body.contains(&format!(
         r#"data-document-preview-url="/web/work-items/YCE-TASK-2/attachments/{}/preview""#,
         attachment.id
     )));
+    assert!(body.contains(r#"data-document-preview-experimental="true""#));
+    assert!(body.contains("实验性预览"));
+}
+
+#[tokio::test]
+async fn web_work_item_detail_toggles_legacy_ppt_preview_button_by_flag() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "legacy-visible.ppt",
+        "application/vnd.ms-powerpoint",
+        1536,
+    )
+    .await;
+    let preview_attr = format!(
+        r#"data-document-preview-url="/web/work-items/YCE-TASK-2/attachments/{}/preview""#,
+        attachment.id
+    );
+
+    let disabled_app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let disabled_response = disabled_app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(disabled_response.status(), StatusCode::OK);
+    let disabled_body = response_body(disabled_response).await;
+    assert!(disabled_body.contains("legacy-visible.ppt"));
+    assert!(!disabled_body.contains(&preview_attr));
+
+    let enabled_app = build_router(AppState::new(
+        test_settings_with_legacy_preview_enabled(),
+        Some(pool),
+    ));
+    let enabled_response = enabled_app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(enabled_response.status(), StatusCode::OK);
+    let enabled_body = response_body(enabled_response).await;
+    assert!(enabled_body.contains("legacy-visible.ppt"));
+    assert!(enabled_body.contains(&preview_attr));
+    assert!(enabled_body.contains(r#"data-document-preview-experimental="true""#));
+    assert!(enabled_body.contains("实验性预览"));
 }
 
 #[tokio::test]
@@ -11709,6 +11977,86 @@ async fn web_work_item_detail_keeps_docx_preview_button_available() {
         r#"data-document-preview-url="/web/work-items/YCE-TASK-2/attachments/{}/preview""#,
         attachment.id
     )));
+}
+
+#[tokio::test]
+async fn web_work_item_stable_spreadsheet_and_pptx_preview_stay_available() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_active_storage_config(&pool, initialized.user_id).await;
+    let xls_attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "stable-sheet.xls",
+        "application/vnd.ms-excel",
+        2048,
+    )
+    .await;
+    let pptx_attachment = create_uploaded_work_item_attachment(
+        &pool,
+        &initialized,
+        "stable-slides.pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        4096,
+    )
+    .await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    for (attachment, preview_type) in [
+        (&xls_attachment, "spreadsheet"),
+        (&pptx_attachment, "pptx"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!(
+                        "/web/work-items/YCE-TASK-2/attachments/{}/preview",
+                        attachment.id
+                    ))
+                    .header(header::COOKIE, initialized.cookie.clone())
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_body(response).await;
+        assert!(body.contains("data-document-preview-root"));
+        assert!(body.contains(&format!(r#"data-preview-type="{preview_type}""#)));
+        assert!(body.contains(r#"data-preview-experimental="false""#));
+        assert!(body.contains("data-preview-url=\""));
+        assert!(!body.contains("旧格式实验性预览当前未开启"));
+    }
+
+    let detail_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/work-items/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(detail_response.status(), StatusCode::OK);
+    let detail_body = response_body(detail_response).await;
+    assert!(detail_body.contains("stable-sheet.xls"));
+    assert!(detail_body.contains(&format!(
+        r#"data-document-preview-url="/web/work-items/YCE-TASK-2/attachments/{}/preview""#,
+        xls_attachment.id
+    )));
+    assert!(detail_body.contains("stable-slides.pptx"));
+    assert!(detail_body.contains(&format!(
+        r#"data-document-preview-url="/web/work-items/YCE-TASK-2/attachments/{}/preview""#,
+        pptx_attachment.id
+    )));
+    assert!(!detail_body.contains(r#"data-document-preview-experimental="true""#));
 }
 
 #[tokio::test]
@@ -14957,6 +15305,49 @@ async fn write_test_object(
     Ok(())
 }
 
+async fn create_uploaded_work_item_attachment(
+    pool: &sqlx::SqlitePool,
+    initialized: &InitializedAdmin,
+    original_filename: &str,
+    content_type: &str,
+    byte_size: i64,
+) -> files::FileAttachmentSummary {
+    let item = projects::get_work_item_detail(pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let project = projects::get_project_detail(pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "work_item".to_string(),
+            target_id: item.id,
+            project_id: Some(project.id),
+            original_filename: original_filename.to_string(),
+            content_type: content_type.to_string(),
+            byte_size,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: Some(format!("登记工作项附件 {original_filename}")),
+        },
+    )
+    .await
+    .expect("attachment should create");
+    files::mark_attachment_uploaded(pool, attachment.id, "work_item", item.id)
+        .await
+        .expect("attachment should upload");
+    attachment
+}
+
 fn extract_json_string(body: &str, key: &str) -> String {
     let needle = format!("\"{key}\":\"");
     let start = body.find(&needle).expect("key should exist") + needle.len();
@@ -15010,5 +15401,12 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-2026".to_string(),
+        experimental_legacy_preview_enabled: false,
     }
+}
+
+fn test_settings_with_legacy_preview_enabled() -> Settings {
+    let mut settings = test_settings();
+    settings.experimental_legacy_preview_enabled = true;
+    settings
 }

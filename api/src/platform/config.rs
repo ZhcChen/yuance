@@ -14,6 +14,7 @@ pub struct Settings {
     pub log_level: String,
     pub env: String,
     pub security_master_key: String,
+    pub experimental_legacy_preview_enabled: bool,
 }
 
 impl Settings {
@@ -40,6 +41,9 @@ impl Settings {
             security_master_key: env_string(
                 "YUANCE_SECURITY_MASTER_KEY",
                 "change-me-32-byte-minimum",
+            ),
+            experimental_legacy_preview_enabled: env_flag_enabled(
+                "YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED",
             ),
         };
 
@@ -71,6 +75,10 @@ impl Settings {
 
     pub fn web_app_shell_v1_enabled(&self) -> bool {
         env_flag_enabled("YUANCE_WEB_APP_SHELL_V1")
+    }
+
+    pub fn experimental_legacy_preview_enabled(&self) -> bool {
+        self.experimental_legacy_preview_enabled
     }
 }
 
@@ -148,6 +156,7 @@ mod tests {
             log_level: "off".to_string(),
             env: "test".to_string(),
             security_master_key: "test-master-key-that-is-long-enough".to_string(),
+            experimental_legacy_preview_enabled: false,
         }
     }
 

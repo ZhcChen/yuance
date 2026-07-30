@@ -1,7 +1,7 @@
 ---
 title: feat: legacy doc/ppt 实验性纯前端预览方案
 type: feat
-status: in_progress
+status: completed
 date: 2026-07-25
 updated: 2026-07-30
 origin: 用户口头需求：继续评估并规划 doc/ppt 的纯前端离线预览接入
@@ -22,8 +22,8 @@ origin: 用户口头需求：继续评估并规划 doc/ppt 的纯前端离线预
 ## 2026-07-30 整理结论
 
 - 不把本计划正文并入 Web/Desktop 主线计划；主线只保留索引、归属边界和收口状态。
-- 本计划继续作为当前可执行切片，状态保持 `in_progress`，直到 Unit 3/4 完成并验证通过后再改为 `completed`。
-- 后续执行只围绕 legacy `doc/ppt` 预览开关、入口一致性、实验语义和 rollout 文档，不承接主线 W0-W4、D1-D4 的架构工作。
+- 本计划已作为“文档预览 / 附件体验”切片完成，状态归档为 `completed`。
+- 后续若继续调整，只围绕 legacy `doc/ppt` 预览开关、入口一致性、实验语义和 rollout 文档，不承接主线 W0-W4、D1-D4 的架构工作。
 - 若后续主线计划迁移“资料库与文档预览”到新 `web/` 模块，应把本计划的开关语义、降级页和 rollout 规则作为既有产品契约复用。
 
 ## Problem Frame
@@ -171,10 +171,10 @@ flowchart TB
 
 | Unit | 状态 | 当前判定 | 下一步 |
 |---|---|---|---|
-| Unit 1 | completed | 后端预览契约和 legacy preview type 已落地，但需要在后续执行中复核 feature flag 默认关闭语义是否与运行代码一致。 | Unit 3 前先用聚焦测试锁定默认关闭与开启两类行为。 |
-| Unit 2 | completed | legacy 前端模块已独立接入；继续保持与稳定 `pdf/text/sheet/docx/pptx` 预览链路隔离。 | Unit 3 验证关闭开关时不加载 legacy renderer。 |
-| Unit 3 | in_progress | `app.js` 的 `doc/ppt` 识别矩阵已有基础改动，但正文附件、资料附件、编辑态文件卡、右键菜单和服务端按钮展示仍需与 feature flag 完全一致。 | 下一步优先执行；补齐 UI 实验提示和入口矩阵测试。 |
-| Unit 4 | pending | 上线、授权、水印和灰度策略尚未形成独立 runbook；现有部署文档口径需与“默认关闭”策略对齐。 | Unit 3 验证通过后执行，新增 legacy rollout 手册并更新部署/验证文档。 |
+| Unit 1 | completed | 后端预览契约和 legacy preview type 已落地；`YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED` 已作为独立 Settings 开关，默认关闭。 | 已收口。 |
+| Unit 2 | completed | legacy 前端模块已独立接入；关闭开关时 `/preview` 不下发 legacy renderer 根节点和预览内容 URL。 | 已收口。 |
+| Unit 3 | completed | 正文附件、评论附件、资料正文、项目文件管理器、编辑态文件卡与右键菜单已按同一开关控制 legacy `doc/ppt` 入口；开启时统一展示“实验性预览”语义。 | 已收口。 |
+| Unit 4 | completed | 已更新前端预览验证清单、正式部署手册，并新增 legacy 灰度手册，明确默认关闭、授权/水印边界和回退方式。 | 已收口。 |
 
 ## Implementation Units
 
@@ -238,8 +238,8 @@ flowchart TB
 - 新增 `document-preview-legacy.mjs`：
   - 独立加载 legacy renderer
   - 统一处理加载中 / 解析失败 / 降级态
-- vendor 资源单独放在 `api/static/vendor/legacy-preview/` 下，避免污染当前 `pdfjs/ooxml/sheetjs` 资产结构。
-- 若渲染库要求额外 worker / wasm / css，也统一放进 legacy vendor 目录。
+- vendor 资源按格式分别放在 `api/static/vendor/legacy-doc/` 与 `api/static/vendor/legacy-ppt/` 下，避免污染当前 `pdfjs/ooxml/sheetjs` 资产结构。
+- 若渲染库要求额外 worker / wasm / css，也统一放进对应 legacy vendor 目录。
 
 **Patterns to follow:**
 - `api/static/document-preview.mjs` 当前 `pdf/text/spreadsheet/docx/pptx` 分流模式。
@@ -254,7 +254,7 @@ flowchart TB
 - 旧格式解析逻辑已从主预览栈隔离。
 - 关闭 legacy 开关时，不会加载对应静态资产。
 
-- [ ] **Unit 3: 文件卡、右键菜单与实验语义统一**
+- [x] **Unit 3: 文件卡、右键菜单与实验语义统一**
 
 **Goal:** 让正文附件、编辑态文件卡、右键菜单与 `/preview` 页对 `doc/ppt` 的表达一致。
 
@@ -289,7 +289,7 @@ flowchart TB
 **Verification:**
 - 正文文件卡、资料附件、右键菜单、预览页的 `doc/ppt` 语义一致。
 
-- [ ] **Unit 4: 风险控制、授权评估与上线策略文档**
+- [x] **Unit 4: 风险控制、授权评估与上线策略文档**
 
 **Goal:** 把 legacy 预览的上线前提、授权边界和灰度策略文档化，避免直接当成稳定能力发布。
 
@@ -373,6 +373,30 @@ flowchart TB
 - `cargo test --test project_management_flow -- --nocapture`
 - `node --check api/static/document-preview.mjs`
 - `git diff --check`
+
+## Completion Notes
+
+- 2026-07-30 完成 Unit 3/4 收口：
+  - `doc/ppt` legacy 预览入口由 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED` 独立控制，默认关闭。
+  - 开关关闭时，正文附件、评论附件、项目文件管理器和右键菜单不展示 legacy 预览入口；直接访问 `/preview` 显示下载降级页。
+  - 开关开启时，legacy 入口统一显示“实验性预览”，预览页带 `data-preview-experimental="true"`。
+  - 部署与验证文档已明确默认关闭、灰度开启、水印/授权边界和快速回退方式。
+- 本轮验证：
+  - `node --check api/static/app.js`
+  - `cargo test -p yuance-api legacy_document_preview_entries_require_feature_flag`
+  - `cargo test -p yuance-api web_work_item_legacy_doc_preview_page_degrades_when_flag_disabled`
+  - `cargo test -p yuance-api web_work_item_legacy_doc_preview_page_uses_frontend_preview_contract_when_flag_enabled`
+  - `cargo test -p yuance-api web_work_item_legacy_ppt_preview_page_requires_feature_flag`
+  - `cargo test -p yuance-api web_work_item_detail_hides_legacy_doc_preview_button_by_default`
+  - `cargo test -p yuance-api web_work_item_detail_shows_legacy_doc_preview_button_when_flag_enabled`
+  - `cargo test -p yuance-api web_work_item_detail_toggles_legacy_ppt_preview_button_by_flag`
+  - `cargo test -p yuance-api web_work_item_docx_preview_page_uses_frontend_preview_contract`
+  - `cargo test -p yuance-api web_work_item_detail_keeps_docx_preview_button_available`
+  - `cargo test -p yuance-api web_work_item_stable_spreadsheet_and_pptx_preview_stay_available`
+  - `cargo test -p yuance-api static_legacy_document_preview_module_is_served`
+  - `cargo test -p yuance-api static_legacy_doc_bundle_is_served_for_document_preview`
+  - `cargo test -p yuance-api static_legacy_ppt_manifest_and_font_assets_are_served`
+  - `cargo check -p yuance-api`
 
 ## Notes
 

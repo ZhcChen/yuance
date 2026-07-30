@@ -40,7 +40,7 @@ API 端口：127.0.0.1:33033
 - `/web`、`/web/app`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
-- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览，DOC、PPT 走 legacy 纯前端预览。
+- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览。DOC、PPT 属于 legacy 实验性纯前端预览，默认关闭，灰度验证时才开启 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true`。
 
 ## 本地构建镜像 tar
 
@@ -132,7 +132,8 @@ YUANCE_SECURITY_MASTER_KEY
 
 - 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
 - PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 统一走站内前端离线预览。
-- DOC、PPT 也走站内前端 legacy 预览链路，不需要额外环境变量开关；复杂版式兼容性有限，PPT 当前运行时会带可见水印。
+- DOC、PPT 只有在 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true` 时才展示实验性预览入口；关闭时 `/preview` 页面友好降级为下载。
+- DOC、PPT 复杂版式兼容性有限，PPT 当前运行时会带可见水印；该能力不得按稳定预览能力默认发布。
 - 文档预览页只负责生成临时可访问地址，实际解析与渲染全部由浏览器完成。
 - 如果当前仍使用测试内存存储，文档预览页会自动回退到同源读取，不依赖外部文档服务。
 
@@ -149,6 +150,14 @@ YUANCE_SSE_DRAIN_TIMEOUT=30s
 YUANCE_STOP_GRACE_PERIOD=45s
 YUANCE_MAX_RELEASE_WINDOW=10m
 ```
+
+legacy `doc/ppt` 实验预览为可选项，默认不写入或保持关闭：
+
+```text
+YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=false
+```
+
+只有完成 `docs/runbooks/legacy-document-preview-rollout.md` 的灰度前检查后，才允许在指定环境临时设置为 `true`。
 
 ## 首次发布
 

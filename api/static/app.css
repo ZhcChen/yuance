@@ -1343,6 +1343,14 @@ body {
   --attachment-file-icon-text: #b45309;
 }
 
+.rich-attachment--file[data-experimental-preview="legacy-document"] {
+  border-color: rgb(245 158 11 / 30%);
+}
+
+.rich-attachment--file[data-experimental-preview="legacy-document"] [data-rich-attachment-status] {
+  color: #b45309;
+}
+
 .rich-attachment-menu {
   position: fixed;
   z-index: 2200;
@@ -1840,6 +1848,19 @@ body {
   color: var(--muted);
   font-size: 11px;
   line-height: 16px;
+}
+
+.attachment-document-preview-experimental {
+  border-color: rgb(245 158 11 / 28%);
+  background: rgb(255 251 235 / 88%);
+  color: #92400e;
+}
+
+.attachment-document-preview-experimental:hover,
+.attachment-document-preview-experimental:focus-visible {
+  border-color: rgb(245 158 11 / 42%);
+  background: rgb(254 243 199 / 92%);
+  color: #78350f;
 }
 
 .form-note {

@@ -369,6 +369,7 @@ struct AttachmentView {
     is_previewable_image: bool,
     is_previewable_video: bool,
     is_previewable_document: bool,
+    is_experimental_document_preview: bool,
     byte_size: String,
     status_code: String,
     status: String,
@@ -1033,6 +1034,7 @@ struct ProjectDetailTemplate {
     can_manage_project: bool,
     can_manage_work_items: bool,
     active_tab: &'static str,
+    experimental_legacy_preview_enabled: bool,
 }
 
 #[derive(Template)]
@@ -1061,6 +1063,7 @@ struct ProjectResourceDetailTemplate {
     can_reset_resource_password: bool,
     is_unlocked: bool,
     unlock_error: String,
+    experimental_legacy_preview_enabled: bool,
 }
 
 #[derive(Template)]
@@ -1247,6 +1250,7 @@ struct WorkItemDetailTemplate {
     can_close_work_item: bool,
     can_reopen_work_item: bool,
     can_restore_work_items: bool,
+    experimental_legacy_preview_enabled: bool,
 }
 
 #[derive(Template)]
@@ -1261,6 +1265,7 @@ struct WorkItemDetailPartialTemplate {
     discussion_count: usize,
     has_comments: bool,
     can_manage_work_items: bool,
+    experimental_legacy_preview_enabled: bool,
 }
 
 #[derive(Template)]
@@ -3313,6 +3318,9 @@ pub async fn project_detail_page(
             can_manage_project,
             can_manage_work_items,
             active_tab: project_detail_tab(Some(query.tab.as_str())),
+            experimental_legacy_preview_enabled: state
+                .settings
+                .experimental_legacy_preview_enabled(),
         })?
         .into_response(),
     )
@@ -3977,6 +3985,7 @@ pub async fn project_attachment_preview(
         let navigation = document_preview_navigation(
             files::list_attachments(pool, "project", project.id).await?,
             attachment.id,
+            state.settings.experimental_legacy_preview_enabled(),
             |sibling_id| format!("/web/projects/{project_key}/attachments/{sibling_id}/preview"),
         );
 
@@ -4159,6 +4168,9 @@ async fn render_project_resource_detail_response(
             can_reset_resource_password: context.is_super_admin,
             is_unlocked,
             unlock_error,
+            experimental_legacy_preview_enabled: state
+                .settings
+                .experimental_legacy_preview_enabled(),
         })?
         .into_response(),
     )
@@ -4575,6 +4587,7 @@ pub async fn project_resource_attachment_preview(
         let navigation = document_preview_navigation(
             files::list_attachments(pool, "project_resource", resource.id).await?,
             attachment.id,
+            state.settings.experimental_legacy_preview_enabled(),
             |sibling_id| {
                 format!(
                     "/web/projects/{project_key}/resources/{resource_id}/attachments/{sibling_id}/preview{access_suffix}"
@@ -4932,6 +4945,7 @@ pub async fn work_item_detail_page(
         &item_key,
         context.user_id,
         context.can_access_all_projects,
+        state.settings.experimental_legacy_preview_enabled(),
     )
     .await?
     else {
@@ -4964,10 +4978,11 @@ pub async fn work_item_detail_page(
     } else {
         Vec::new()
     };
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
     let attachments = files::list_attachments(pool, "work_item", item.id)
         .await?
         .into_iter()
-        .map(attachment_from_summary)
+        .map(|attachment| attachment_from_summary(attachment, legacy_preview_enabled))
         .collect::<Vec<_>>();
     let project = projects::get_project_detail(pool, &item.project_key)
         .await?
@@ -5032,6 +5047,7 @@ pub async fn work_item_detail_page(
             can_close_work_item,
             can_reopen_work_item,
             can_restore_work_items,
+            experimental_legacy_preview_enabled: legacy_preview_enabled,
             has_flow_history: !flow_history_records.is_empty(),
             flow_history_records,
             flow_history_pagination,
@@ -5128,7 +5144,11 @@ pub async fn work_item_status_update(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5176,7 +5196,11 @@ pub async fn work_item_handoff(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5238,7 +5262,11 @@ pub async fn work_item_update(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5372,7 +5400,11 @@ pub async fn work_item_restore(
     };
     if let Some(pool) = context.pool {
         ensure_manage_permission(pool, &headers, context.user_id, "work_item.manage").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5418,7 +5450,11 @@ pub async fn work_item_comment_create(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5473,7 +5509,11 @@ pub async fn work_item_comment_update(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5529,7 +5569,11 @@ pub async fn work_item_attachment_create(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5596,7 +5640,11 @@ pub async fn work_item_attachment_download(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5637,7 +5685,11 @@ pub async fn work_item_attachment_preview(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5656,6 +5708,7 @@ pub async fn work_item_attachment_preview(
         let navigation = document_preview_navigation(
             files::list_attachments(pool, "work_item", item.id).await?,
             attachment.id,
+            state.settings.experimental_legacy_preview_enabled(),
             |sibling_id| format!("/web/work-items/{item_key}/attachments/{sibling_id}/preview"),
         );
 
@@ -5693,7 +5746,11 @@ pub async fn work_item_attachment_preview_content(
     };
     if let Some(pool) = context.pool {
         ensure_view_permission(pool, &headers, context.user_id, "work_item.view").await?;
-        let Some((item, _comments)) = load_work_item_detail(pool, &item_key)
+        let Some((item, _comments)) = load_work_item_detail(
+            pool,
+            &item_key,
+            state.settings.experimental_legacy_preview_enabled(),
+        )
         .await?
         else {
             return Ok(StatusCode::NOT_FOUND.into_response());
@@ -5850,6 +5907,7 @@ pub async fn work_item_comment_attachment_preview(
         let navigation = document_preview_navigation(
             files::list_attachments(pool, "comment", comment.id).await?,
             attachment.id,
+            state.settings.experimental_legacy_preview_enabled(),
             |sibling_id| {
                 format!(
                     "/web/work-items/{item_key}/comments/{comment_id}/attachments/{sibling_id}/preview"
@@ -8129,6 +8187,7 @@ pub async fn work_item_detail_partial(
         &item_key,
         user.id,
         can_access_all_projects,
+        state.settings.experimental_legacy_preview_enabled(),
     )
     .await?
     else {
@@ -8164,6 +8223,7 @@ pub async fn work_item_detail_partial(
         status_options,
         comments,
         can_manage_work_items,
+        experimental_legacy_preview_enabled: state.settings.experimental_legacy_preview_enabled(),
     })
     .map(IntoResponse::into_response)
 }
@@ -9956,12 +10016,20 @@ fn discussion_mention_options_json(
     serde_json::to_string(&options).unwrap_or_else(|_| "[]".to_string())
 }
 
-fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> AttachmentView {
+fn attachment_from_summary(
+    attachment: files::FileAttachmentSummary,
+    legacy_preview_enabled: bool,
+) -> AttachmentView {
     let (status, status_tone) = attachment_status_label(&attachment.status);
     let is_previewable_image = is_previewable_image_content_type(&attachment.content_type);
     let is_previewable_video = is_previewable_video_content_type(&attachment.content_type);
-    let is_previewable_document =
-        is_previewable_document_attachment(&attachment.original_filename, &attachment.content_type);
+    let preview_strategy =
+        attachment_preview_strategy(&attachment.original_filename, &attachment.content_type);
+    let is_experimental_document_preview =
+        preview_strategy.is_some_and(is_experimental_preview_strategy);
+    let is_previewable_document = preview_strategy.is_some_and(|strategy| {
+        is_document_preview_entry_enabled(strategy, legacy_preview_enabled)
+    });
     AttachmentView {
         id: attachment.id,
         filename: attachment.original_filename,
@@ -9969,6 +10037,7 @@ fn attachment_from_summary(attachment: files::FileAttachmentSummary) -> Attachme
         is_previewable_image,
         is_previewable_video,
         is_previewable_document,
+        is_experimental_document_preview,
         byte_size: format_byte_size(attachment.byte_size),
         status_code: attachment.status,
         status: status.to_string(),
@@ -10278,6 +10347,7 @@ fn comment_from_summary_with_permission(
 fn comment_with_attachments(
     mut comment: WorkItemComment,
     attachments: Vec<files::FileAttachmentSummary>,
+    legacy_preview_enabled: bool,
 ) -> WorkItemComment {
     let inline_attachment_ids = projects::work_item_comment_inline_attachment_ids(
         comment.id,
@@ -10287,7 +10357,7 @@ fn comment_with_attachments(
     comment.attachments = attachments
         .into_iter()
         .filter(|attachment| !inline_attachment_ids.contains(&attachment.id))
-        .map(attachment_from_summary)
+        .map(|attachment| attachment_from_summary(attachment, legacy_preview_enabled))
         .collect::<Vec<_>>();
     comment.has_attachments = !comment.attachments.is_empty();
     comment
@@ -11365,14 +11435,20 @@ async fn attachment_document_preview_response(
     )
     .await?;
 
-    let resolved_preview_content_url = resolve_attachment_preview_content_url(
-        state,
-        pool,
-        actor_user_id,
-        &attachment,
-        preview_content_url,
-    )
-    .await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let resolved_preview_content_url =
+        if attachment_preview_content_enabled(&attachment, legacy_preview_enabled) {
+            resolve_attachment_preview_content_url(
+                state,
+                pool,
+                actor_user_id,
+                &attachment,
+                preview_content_url,
+            )
+            .await?
+        } else {
+            String::new()
+        };
 
     let template = build_document_preview_template(
         attachment,
@@ -11381,6 +11457,7 @@ async fn attachment_document_preview_response(
         navigation,
         resolved_preview_content_url,
         download_url.to_string(),
+        legacy_preview_enabled,
     )
     .await?;
     Ok(response::html(template)?.into_response())
@@ -11418,6 +11495,7 @@ async fn build_document_preview_template(
     navigation: DocumentPreviewNavigation,
     preview_content_url: String,
     download_url: String,
+    legacy_preview_enabled: bool,
 ) -> AppResult<DocumentPreviewTemplate> {
     let title = attachment.original_filename.clone();
     if attachment.status == "deleted" {
@@ -11453,6 +11531,16 @@ async fn build_document_preview_template(
             "当前文件类型暂不支持文档预览。".to_string(),
         ));
     };
+    if !is_document_preview_entry_enabled(strategy, legacy_preview_enabled) {
+        return Ok(document_preview_error_template(
+            title,
+            source_url,
+            source_label,
+            navigation,
+            download_url,
+            "旧格式实验性预览当前未开启，请下载原文件查看。".to_string(),
+        ));
+    }
     let Some(file_type) =
         attachment_preview_file_type(&attachment.original_filename, &attachment.content_type)
     else {
@@ -11648,13 +11736,21 @@ async fn attachment_document_preview_content_response(
             "附件尚未上传完成，请稍后再试".to_string(),
         ));
     }
-    let Some(_strategy) =
+    let Some(strategy) =
         attachment_preview_strategy(&attachment.original_filename, &attachment.content_type)
     else {
         return Err(AppError::BadRequest(
             "当前文件类型暂不支持文档预览".to_string(),
         ));
     };
+    if !is_document_preview_entry_enabled(
+        strategy,
+        state.settings.experimental_legacy_preview_enabled(),
+    ) {
+        return Err(AppError::BadRequest(
+            "旧格式实验性预览当前未开启，请下载原文件查看".to_string(),
+        ));
+    }
 
     let mut signed = storage::presign_download_url(
         pool,
@@ -11677,6 +11773,7 @@ async fn attachment_document_preview_content_response(
 fn document_preview_navigation<F>(
     attachments: Vec<files::FileAttachmentSummary>,
     current_attachment_id: i64,
+    legacy_preview_enabled: bool,
     url_for_attachment: F,
 ) -> DocumentPreviewNavigation
 where
@@ -11689,6 +11786,7 @@ where
                 && is_previewable_document_attachment(
                     &attachment.original_filename,
                     &attachment.content_type,
+                    legacy_preview_enabled,
                 )
         })
         .collect::<Vec<_>>();
@@ -12114,6 +12212,7 @@ fn ensure_comment_accepts_attachments(comment: &projects::WorkItemCommentSummary
 async fn load_work_item_detail(
     pool: &SqlitePool,
     item_key: &str,
+    legacy_preview_enabled: bool,
 ) -> AppResult<Option<(WorkItemDetailView, Vec<WorkItemComment>)>> {
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
@@ -12122,7 +12221,11 @@ async fn load_work_item_detail(
     let mut comments = Vec::new();
     for comment in projects::list_work_item_comments(pool, item.id).await? {
         let attachments = files::list_attachments(pool, "comment", comment.id).await?;
-        comments.push(comment_with_attachments(comment_from_summary(comment), attachments));
+        comments.push(comment_with_attachments(
+            comment_from_summary(comment),
+            attachments,
+            legacy_preview_enabled,
+        ));
     }
     promote_primary_post_to_description(&mut item, &mut comments);
 
@@ -12134,6 +12237,7 @@ async fn load_work_item_detail_for_user(
     item_key: &str,
     user_id: i64,
     _can_access_all_projects: bool,
+    legacy_preview_enabled: bool,
 ) -> AppResult<Option<(WorkItemDetailView, Vec<WorkItemComment>)>> {
     let Some(item) = projects::get_work_item_detail(pool, item_key).await? else {
         return Ok(None);
@@ -12156,6 +12260,7 @@ async fn load_work_item_detail_for_user(
         comments.push(comment_with_attachments(
             comment_from_summary_with_permission(comment, can_manage),
             attachments,
+            legacy_preview_enabled,
         ));
     }
     promote_primary_post_to_description(&mut item, &mut comments);
@@ -13758,8 +13863,32 @@ fn is_previewable_video_content_type(content_type: &str) -> bool {
     )
 }
 
-fn is_previewable_document_attachment(filename: &str, content_type: &str) -> bool {
-    attachment_preview_strategy(filename, content_type).is_some()
+fn is_previewable_document_attachment(
+    filename: &str,
+    content_type: &str,
+    legacy_preview_enabled: bool,
+) -> bool {
+    attachment_preview_strategy(filename, content_type)
+        .is_some_and(|strategy| is_document_preview_entry_enabled(strategy, legacy_preview_enabled))
+}
+
+fn attachment_preview_content_enabled(
+    attachment: &files::FileAttachmentSummary,
+    legacy_preview_enabled: bool,
+) -> bool {
+    attachment.status == "uploaded"
+        && is_previewable_document_attachment(
+            &attachment.original_filename,
+            &attachment.content_type,
+            legacy_preview_enabled,
+        )
+}
+
+fn is_document_preview_entry_enabled(
+    strategy: AttachmentPreviewStrategy,
+    legacy_preview_enabled: bool,
+) -> bool {
+    !is_experimental_preview_strategy(strategy) || legacy_preview_enabled
 }
 
 fn attachment_preview_strategy(
@@ -14545,6 +14674,9 @@ fn render_sample_project_detail(state: &AppState, context: WebContext<'_>) -> Ap
             can_manage_project: true,
             can_manage_work_items: true,
             active_tab: "info",
+            experimental_legacy_preview_enabled: state
+                .settings
+                .experimental_legacy_preview_enabled(),
         })?
         .into_response(),
     )
@@ -14686,6 +14818,9 @@ fn render_sample_work_item_detail_page(
             can_close_work_item: true,
             can_reopen_work_item: false,
             can_restore_work_items: true,
+            experimental_legacy_preview_enabled: state
+                .settings
+                .experimental_legacy_preview_enabled(),
         })?
         .into_response(),
     )
@@ -14766,6 +14901,7 @@ fn sample_work_item_detail_partial() -> AppResult<WorkItemDetailPartialTemplate>
         discussion_count: 1,
         has_comments: true,
         can_manage_work_items: true,
+        experimental_legacy_preview_enabled: false,
     })
 }
 
@@ -14995,5 +15131,34 @@ mod tests {
             attachment_preview_strategy("旧版课件.ppt", "application/vnd.ms-powerpoint"),
             Some(AttachmentPreviewStrategy::LegacyPpt)
         );
+    }
+
+    #[test]
+    fn legacy_document_preview_entries_require_feature_flag() {
+        assert!(!is_previewable_document_attachment(
+            "旧版文档.doc",
+            "application/msword",
+            false
+        ));
+        assert!(!is_previewable_document_attachment(
+            "旧版课件.ppt",
+            "application/vnd.ms-powerpoint",
+            false
+        ));
+        assert!(is_previewable_document_attachment(
+            "旧版文档.doc",
+            "application/msword",
+            true
+        ));
+        assert!(is_previewable_document_attachment(
+            "旧版课件.ppt",
+            "application/vnd.ms-powerpoint",
+            true
+        ));
+        assert!(is_previewable_document_attachment(
+            "新版文档.docx",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            false
+        ));
     }
 }

@@ -3608,6 +3608,46 @@
     }
   }
 
+  function isLegacyDocumentFileType(fileType) {
+    return fileType === "doc" || fileType === "ppt";
+  }
+
+  function experimentalLegacyPreviewEnabled() {
+    return Boolean(
+      document.querySelector("[data-experimental-legacy-preview-enabled='true']")
+    );
+  }
+
+  function documentPreviewCapability(filename, contentType) {
+    var fileType = previewableDocumentFileType(filename, contentType);
+    var isExperimental = isLegacyDocumentFileType(fileType);
+    return {
+      fileType: fileType,
+      previewable: Boolean(fileType) && (!isExperimental || experimentalLegacyPreviewEnabled()),
+      experimental: isExperimental,
+    };
+  }
+
+  function documentPreviewButtonLabel(filename, contentType) {
+    return documentPreviewCapability(filename, contentType).experimental
+      ? "实验性预览"
+      : "预览文档";
+  }
+
+  function richAttachmentStatusText(filename, contentType, statusText) {
+    var fileBadge = fileVisualBadge(filename, contentType);
+    var capability = documentPreviewCapability(filename, contentType);
+    var pieces = [];
+    if (fileBadge) {
+      pieces.push(fileBadge);
+    }
+    if (capability.previewable && capability.experimental) {
+      pieces.push("实验性预览");
+    }
+    pieces.push(statusText);
+    return pieces.join(" · ");
+  }
+
   function fileVisualKind(filename, contentType) {
     var extension = previewableDocumentFileType(filename, contentType) || normalizedFileExtension(filename);
     if (["doc", "docx", "odt", "rtf"].indexOf(extension) >= 0) {
@@ -3662,7 +3702,7 @@
   }
 
   function isPreviewableDocumentFile(filename, contentType) {
-    return Boolean(previewableDocumentFileType(filename, contentType));
+    return documentPreviewCapability(filename, contentType).previewable;
   }
 
   function documentPreviewUrlFromSource(source) {
@@ -5521,6 +5561,10 @@
       node.dataset.fileKind = fileKind;
       node.dataset.fileExt = fileBadge;
     }
+    var previewCapability = documentPreviewCapability(filename, contentType);
+    if (!isImage && !isVideo && previewCapability.previewable && previewCapability.experimental) {
+      node.dataset.experimentalPreview = "legacy-document";
+    }
 
     var media = document.createElement("span");
     media.className = "rich-attachment-media";
@@ -5553,7 +5597,7 @@
     var status = document.createElement("span");
     status.dataset.richAttachmentStatus = "";
     status.textContent = attachmentOptions.statusText
-      || ((fileBadge ? fileBadge + " · " : "") + "准备上传");
+      || richAttachmentStatusText(filename, contentType, "准备上传");
     main.append(name, status);
 
     var actions = document.createElement("span");
@@ -5615,9 +5659,9 @@
       uploadState: "uploading",
       statusText:
         (kind === "file"
-          ? (fileVisualBadge(file.name || "", file.type || "") + " · ")
-          : "")
-        + "准备上传 · " + formatFileSize(file.size),
+          ? richAttachmentStatusText(file.name || "", file.type || "", "准备上传")
+          : "准备上传")
+        + " · " + formatFileSize(file.size),
       overlayText: "准备上传",
       percent: 0,
     });
@@ -5662,7 +5706,9 @@
       attachmentId: attachment.dataset.yuanceAttachmentId || "",
       align: attachment.dataset.yuanceAlign || "left",
       uploadState: "uploaded",
-      statusText: "已附加",
+      statusText: kind === "file"
+        ? richAttachmentStatusText(filename || "附件", contentType, "已附加")
+        : "已附加",
       overlayText: "已附加",
       percent: 100,
     });
@@ -9181,11 +9227,13 @@
     }
     var previewMode = "";
     var documentPreviewUrl = "";
+    var documentPreview = { previewable: false, experimental: false };
     if (kind === "image" || kind === "video") {
       previewMode = "media";
     } else if (kind === "file") {
       documentPreviewUrl = documentPreviewUrlFromSource(source);
-      if (documentPreviewUrl && isPreviewableDocumentFile(title, "")) {
+      documentPreview = documentPreviewCapability(title, "");
+      if (documentPreviewUrl && documentPreview.previewable) {
         previewMode = "document";
       }
     }
@@ -9194,6 +9242,7 @@
       previewable: previewMode !== "",
       previewMode: previewMode,
       documentPreviewUrl: documentPreviewUrl,
+      isExperimentalDocumentPreview: documentPreview.experimental && documentPreview.previewable,
       source: source,
       title: String(title || "附件").replace(/\s+/g, " ").trim(),
     };
@@ -9535,6 +9584,9 @@
     }
     if (preview) {
       preview.hidden = !meta.previewable;
+      preview.innerHTML = meta.isExperimentalDocumentPreview
+        ? "<span>实验性预览</span><em>旧格式兼容性有限</em>"
+        : "<span>预览</span><em>查看图片 / 视频 / 文档</em>";
     }
     menu.hidden = false;
     menu.classList.add("open");
@@ -11084,14 +11136,19 @@
     }
 
     function renderDocumentPreviewAction(source, filename, contentType) {
-      if (!isPreviewableDocumentFile(filename, contentType)) {
+      var capability = documentPreviewCapability(filename, contentType);
+      if (!capability.previewable) {
         return "";
       }
       var previewUrl = documentPreviewUrlFromSource(source);
       if (!previewUrl) {
         return "";
       }
-      return '<button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="' + escapeHtml(previewUrl) + '" data-document-preview-title="' + escapeHtml(filename || "文件预览") + '">预览文档</button>';
+      var buttonClass = "btn btn-sm btn-secondary" + (capability.experimental ? " attachment-document-preview-experimental" : "");
+      var experimentalAttr = capability.experimental
+        ? ' data-document-preview-experimental="true" title="旧格式实验性预览，复杂版式兼容性可能有限"'
+        : "";
+      return '<button class="' + buttonClass + '" type="button" data-document-preview-url="' + escapeHtml(previewUrl) + '" data-document-preview-title="' + escapeHtml(filename || "文件预览") + '"' + experimentalAttr + '>' + documentPreviewButtonLabel(filename, contentType) + '</button>';
     }
 
     function renderFolderContent(payload) {

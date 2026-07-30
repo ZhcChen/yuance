@@ -3,7 +3,7 @@
 {% block title %}{{ project.name }} - 元策{% endblock %}
 
 {% block content %}
-<section class="page-stack" data-project-key="{{ project.code }}">
+<section class="page-stack" data-project-key="{{ project.code }}" data-experimental-legacy-preview-enabled="{% if experimental_legacy_preview_enabled %}true{% else %}false{% endif %}">
   <section class="page-hero detail-hero">
     <div>
       <p class="eyebrow">项目 / {{ project.code }}</p>

@@ -1,4 +1,4 @@
-<section class="work-item-description" aria-labelledby="work-item-description-title">
+<section class="work-item-description" aria-labelledby="work-item-description-title" data-experimental-legacy-preview-enabled="{% if experimental_legacy_preview_enabled %}true{% else %}false{% endif %}">
   <h2 id="work-item-description-title" class="sr-only">详情说明</h2>
   <div class="content-section-head work-item-description-head">
     <div class="work-item-publisher">
@@ -98,7 +98,7 @@
               </div>
               {% if attachment.status_code == "uploaded" %}
               {% if attachment.is_previewable_document %}
-              <button class="btn btn-sm btn-secondary" type="button" data-document-preview-url="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/preview" data-document-preview-title="{{ attachment.filename }}">预览文档</button>
+              <button class="btn btn-sm btn-secondary{% if attachment.is_experimental_document_preview %} attachment-document-preview-experimental{% endif %}" type="button" data-document-preview-url="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/preview" data-document-preview-title="{{ attachment.filename }}" {% if attachment.is_experimental_document_preview %}data-document-preview-experimental="true" title="旧格式实验性预览，复杂版式兼容性可能有限"{% endif %}>{% if attachment.is_experimental_document_preview %}实验性预览{% else %}预览文档{% endif %}</button>
               {% endif %}
               <a class="btn btn-sm btn-secondary" href="/web/work-items/{{ item.key }}/comments/{{ comment.id }}/attachments/{{ attachment.id }}/download" target="_blank" rel="noopener">下载</a>
               {% else %}

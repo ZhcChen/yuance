@@ -3,7 +3,7 @@
 {% block title %}{{ resource.title }} - {{ project.name }} - 元策{% endblock %}
 
 {% block content %}
-<section class="page-stack resource-detail-page" data-project-key="{{ project.code }}" data-resource-id="{{ resource.id }}">
+<section class="page-stack resource-detail-page" data-project-key="{{ project.code }}" data-resource-id="{{ resource.id }}" data-experimental-legacy-preview-enabled="{% if experimental_legacy_preview_enabled %}true{% else %}false{% endif %}">
   <section class="page-hero detail-hero resource-hero">
     <div>
       <p class="eyebrow">资料库 / {{ project.code }}</p>
