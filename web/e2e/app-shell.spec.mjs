@@ -46,6 +46,22 @@ function workItemDetailFixture(overrides = {}) {
   };
 }
 
+function workItemCommentFixture(overrides = {}) {
+  return {
+    id: 901,
+    parent_comment_id: null,
+    parent_author: '',
+    body: '初始可编辑评论',
+    body_format: 'plain',
+    author: '系统管理员',
+    created_at: '2026-07-30T10:00:00Z',
+    updated_at: '2026-07-30T10:00:00Z',
+    is_flow: false,
+    is_draft: false,
+    ...overrides,
+  };
+}
+
 test('browser shell restores login return_to for direct /web/app/messages entry', async ({ page }) => {
   await login(page, '/web/app/messages?filter=unread');
 
@@ -547,6 +563,190 @@ test('work item edit form keeps input on validation and server errors', async ({
   await expect(page.getByRole('alert')).toHaveText('服务端拒绝推进。');
   await expect(handoffForm.getByLabel('处理说明')).toHaveValue('失败后仍保留的推进说明');
   await expect(handoffForm.getByRole('button', { name: '确认推进' })).toBeEnabled();
+});
+
+test('work item comments can create and edit plain comments', async ({ page }) => {
+  const createRequests = [];
+  const updateRequests = [];
+  const comments = [
+    workItemCommentFixture(),
+    workItemCommentFixture({
+      id: 902,
+      body: '已有流转记录',
+      is_flow: true,
+    }),
+  ];
+
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    const payload = route.request().postDataJSON();
+    updateRequests.push({
+      headers: route.request().headers(),
+      payload,
+    });
+    const updated = workItemCommentFixture({
+      id: 903,
+      body: payload.body,
+      updated_at: '2026-07-30T15:10:00Z',
+    });
+    const index = comments.findIndex((comment) => comment.id === 903);
+    if (index >= 0) {
+      comments[index] = updated;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: updated }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      createRequests.push({
+        headers: route.request().headers(),
+        payload,
+      });
+      const created = workItemCommentFixture({
+        id: 903,
+        body: payload.body,
+        created_at: '2026-07-30T15:00:00Z',
+        updated_at: '2026-07-30T15:00:00Z',
+      });
+      comments.push(created);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: created }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: comments }),
+    });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await expect(page.getByText('初始可编辑评论')).toBeVisible();
+
+  const newCommentInput = page.getByLabel('新增评论');
+  await newCommentInput.fill('新增 Web 评论');
+  await page.getByRole('button', { name: '发布评论' }).click();
+
+  await expect.poll(() => createRequests.length).toBe(1);
+  expect(createRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
+  expect(createRequests[0].payload).toMatchObject({
+    body: '新增 Web 评论',
+    body_format: 'plain',
+  });
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论已发布。');
+  await expect(page.getByText('新增 Web 评论')).toBeVisible();
+  await expect(newCommentInput).toHaveValue('');
+
+  const newCommentRow = page.locator('#comment-903');
+  await newCommentRow.getByRole('button', { name: '编辑' }).click();
+  await newCommentRow.getByLabel('编辑评论').fill('编辑后的 Web 评论');
+  await newCommentRow.getByRole('button', { name: '保存评论' }).click();
+
+  await expect.poll(() => updateRequests.length).toBe(1);
+  expect(updateRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
+  expect(updateRequests[0].payload).toMatchObject({
+    body: '编辑后的 Web 评论',
+    body_format: 'plain',
+  });
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论已更新。');
+  await expect(page.getByText('编辑后的 Web 评论')).toBeVisible();
+  await expect(page.getByText('新增 Web 评论')).toHaveCount(0);
+});
+
+test('work item comment form keeps input on validation and edit errors', async ({ page }) => {
+  let postCount = 0;
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error: {
+          code: 'forbidden',
+          message: '不能编辑这条评论。',
+        },
+      }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    if (route.request().method() === 'POST') {
+      postCount += 1;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: [workItemCommentFixture()] }),
+    });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+
+  const newCommentInput = page.getByLabel('新增评论');
+  await newCommentInput.fill('   ');
+  await page.getByRole('button', { name: '发布评论' }).click();
+
+  await expect(page.getByRole('alert')).toHaveText('评论内容不能为空。');
+  await expect.poll(() => postCount).toBe(0);
+  await expect(newCommentInput).toBeFocused();
+  await expect(newCommentInput).toHaveValue('   ');
+
+  const commentRow = page.locator('#comment-901');
+  await commentRow.getByRole('button', { name: '编辑' }).click();
+  await commentRow.getByLabel('编辑评论').fill('服务端会拒绝的评论');
+  await commentRow.getByRole('button', { name: '保存评论' }).click();
+
+  await expect(page.getByRole('alert')).toHaveText('不能编辑这条评论。');
+  await expect(commentRow.getByLabel('编辑评论')).toHaveValue('服务端会拒绝的评论');
+  await expect(page.locator('.work-item-comment-body', { hasText: '初始可编辑评论' })).toBeVisible();
+  await expect(commentRow.getByRole('button', { name: '保存评论' })).toBeEnabled();
+});
+
+test('work item comment creation preserves comment anchor route', async ({ page }) => {
+  const comments = [workItemCommentFixture()];
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    if (route.request().method() === 'POST') {
+      const created = workItemCommentFixture({
+        id: 904,
+        body: route.request().postDataJSON().body,
+        created_at: '2026-07-30T15:20:00Z',
+        updated_at: '2026-07-30T15:20:00Z',
+      });
+      comments.push(created);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ data: created }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: comments }),
+    });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2#comment-901');
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2#comment-901$/);
+
+  await page.getByLabel('新增评论').fill('锚点保持评论');
+  await page.getByRole('button', { name: '发布评论' }).click();
+
+  await expect(page.getByText('锚点保持评论')).toBeVisible();
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2#comment-901$/);
 });
 
 test('message center opens semantic target and unread filter becomes empty after read', async ({ page }) => {

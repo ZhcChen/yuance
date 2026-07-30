@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ApiError,
+  createWorkItemComment,
   getCurrentUser,
   getNotificationTarget,
   getNotifications,
@@ -19,6 +20,7 @@ import {
   restorePendingReturnToHash,
   updateCurrentProject,
   updateWorkItem,
+  updateWorkItemComment,
 } from './lib/api.js';
 import { notificationTargetPath } from './lib/notification-target.js';
 import {
@@ -375,6 +377,7 @@ export default function App() {
   const [route, setRoute] = useState(() => parseAppRoute());
   const routeRef = useRef(route);
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
+  const newCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const requestRef = useRef(0);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
@@ -408,6 +411,12 @@ export default function App() {
   const [workItemEditSubmitting, setWorkItemEditSubmitting] = useState(false);
   const [workItemHandoffSubmitting, setWorkItemHandoffSubmitting] = useState(false);
   const [workItemActionError, setWorkItemActionError] = useState('');
+  const [workItemNewCommentBody, setWorkItemNewCommentBody] = useState('');
+  const [workItemCommentSubmitting, setWorkItemCommentSubmitting] = useState(false);
+  const [workItemEditingCommentId, setWorkItemEditingCommentId] = useState(/** @type {number | null} */ (null));
+  const [workItemEditCommentBody, setWorkItemEditCommentBody] = useState('');
+  const [workItemEditCommentSubmitting, setWorkItemEditCommentSubmitting] = useState(false);
+  const [workItemCommentActionError, setWorkItemCommentActionError] = useState('');
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -479,7 +488,10 @@ export default function App() {
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
   });
-  const workItemMutationSubmitting = workItemEditSubmitting || workItemHandoffSubmitting;
+  const workItemMutationSubmitting = workItemEditSubmitting
+    || workItemHandoffSubmitting
+    || workItemCommentSubmitting
+    || workItemEditCommentSubmitting;
 
   routeRef.current = route;
 
@@ -501,6 +513,12 @@ export default function App() {
         setWorkItemDetail(null);
         setWorkItemComments([]);
         setWorkItemActionError('');
+        setWorkItemNewCommentBody('');
+        setWorkItemEditingCommentId(null);
+        setWorkItemEditCommentBody('');
+        setWorkItemCommentActionError('');
+        setWorkItemCommentSubmitting(false);
+        setWorkItemEditCommentSubmitting(false);
         setWorkItemFormKey('');
       }
     } else {
@@ -631,6 +649,10 @@ export default function App() {
     setWorkItemEditForm(workItemEditFormFromDetail(activeWorkItemDetail));
     setWorkItemHandoffForm(workItemHandoffFormFromDetail(activeWorkItemDetail));
     setWorkItemActionError('');
+    setWorkItemNewCommentBody('');
+    setWorkItemEditingCommentId(null);
+    setWorkItemEditCommentBody('');
+    setWorkItemCommentActionError('');
     setWorkItemFormKey(activeWorkItemDetail.key);
   }, [activeWorkItemDetail, workItemFormKey]);
 
@@ -722,6 +744,29 @@ export default function App() {
   function changeWorkItemHandoffField(event) {
     const { name, value } = event.currentTarget;
     setWorkItemHandoffForm((current) => ({ ...current, [name]: value }));
+  }
+
+  /** @param {React.ChangeEvent<HTMLTextAreaElement>} event */
+  function changeWorkItemNewComment(event) {
+    setWorkItemNewCommentBody(event.currentTarget.value);
+  }
+
+  /** @param {React.ChangeEvent<HTMLTextAreaElement>} event */
+  function changeWorkItemEditComment(event) {
+    setWorkItemEditCommentBody(event.currentTarget.value);
+  }
+
+  /** @param {AppWorkItemComment} comment */
+  function startWorkItemCommentEdit(comment) {
+    setWorkItemEditingCommentId(comment.id);
+    setWorkItemEditCommentBody(comment.body || '');
+    setWorkItemCommentActionError('');
+  }
+
+  function cancelWorkItemCommentEdit() {
+    setWorkItemEditingCommentId(null);
+    setWorkItemEditCommentBody('');
+    setWorkItemCommentActionError('');
   }
 
   /**
@@ -873,6 +918,93 @@ export default function App() {
       }
     } finally {
       clearWorkItemMutation(actionId, setWorkItemHandoffSubmitting);
+    }
+  }
+
+  /** @param {React.FormEvent<HTMLFormElement>} event */
+  async function submitWorkItemComment(event) {
+    event.preventDefault();
+    if (!activeWorkItemDetail) {
+      return;
+    }
+    if (workItemMutationRef.current) {
+      return;
+    }
+
+    const body = workItemNewCommentBody.trim();
+    if (!body) {
+      setWorkItemCommentActionError('评论内容不能为空。');
+      window.requestAnimationFrame(() => newCommentTextareaRef.current?.focus());
+      return;
+    }
+
+    const itemKey = activeWorkItemDetail.key;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    setWorkItemCommentSubmitting(true);
+    setWorkItemCommentActionError('');
+    try {
+      const created = await createWorkItemComment(itemKey, { body, bodyFormat: 'plain' });
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemComments((current) => [...current, created]);
+        setWorkItemNewCommentBody('');
+        setStatusMessage(`${itemKey} 评论已发布。`);
+        await refreshWorkItemCompanionState(itemKey, '评论已发布', actionId);
+      }
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('发布评论失败。')));
+      }
+    } finally {
+      clearWorkItemMutation(actionId, setWorkItemCommentSubmitting);
+    }
+  }
+
+  /** @param {React.FormEvent<HTMLFormElement>} event */
+  async function submitWorkItemCommentEdit(event) {
+    event.preventDefault();
+    if (!activeWorkItemDetail || workItemEditingCommentId === null) {
+      return;
+    }
+    if (workItemMutationRef.current) {
+      return;
+    }
+
+    const body = workItemEditCommentBody.trim();
+    if (!body) {
+      setWorkItemCommentActionError('评论内容不能为空。');
+      const textarea = event.currentTarget.querySelector('textarea');
+      window.requestAnimationFrame(() => textarea?.focus());
+      return;
+    }
+
+    const itemKey = activeWorkItemDetail.key;
+    const commentId = workItemEditingCommentId;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    setWorkItemEditCommentSubmitting(true);
+    setWorkItemCommentActionError('');
+    try {
+      const updated = await updateWorkItemComment(itemKey, commentId, { body, bodyFormat: 'plain' });
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemComments((current) => current.map((comment) => (
+          comment.id === updated.id ? updated : comment
+        )));
+        setWorkItemEditingCommentId(null);
+        setWorkItemEditCommentBody('');
+        setStatusMessage(`${itemKey} 评论已更新。`);
+        await refreshWorkItemCompanionState(itemKey, '评论已更新', actionId);
+      }
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('编辑评论失败。')));
+      }
+    } finally {
+      clearWorkItemMutation(actionId, setWorkItemEditCommentSubmitting);
     }
   }
 
@@ -1705,6 +1837,26 @@ export default function App() {
                       <h3 id="work-item-comments-title">评论与流转</h3>
                       <span className="shell-meta">共 {workItemComments.length} 条</span>
                     </div>
+                    <form className="work-item-comment-form" onSubmit={submitWorkItemComment}>
+                      <label className="work-item-form-field">
+                        <span>新增评论</span>
+                        <textarea
+                          ref={newCommentTextareaRef}
+                          rows={4}
+                          value={workItemNewCommentBody}
+                          onChange={changeWorkItemNewComment}
+                          placeholder="输入一条普通评论"
+                        />
+                      </label>
+                      <div className="work-item-form-actions">
+                        <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
+                          {workItemCommentSubmitting ? '发布中…' : '发布评论'}
+                        </button>
+                      </div>
+                    </form>
+                    {workItemCommentActionError ? (
+                      <p className="work-item-action-error" role="alert">{workItemCommentActionError}</p>
+                    ) : null}
                     {workItemComments.length ? (
                       <ul className="work-item-comment-list">
                         {workItemComments.map((comment) => (
@@ -1715,8 +1867,39 @@ export default function App() {
                               {comment.is_flow ? <span className="project-status-pill">流转记录</span> : null}
                               {comment.is_draft ? <span className="notification-pill">草稿</span> : null}
                             </div>
-                            <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
+                            {workItemEditingCommentId === comment.id ? (
+                              <>
+                                <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
+                                <form className="work-item-comment-edit-form" onSubmit={submitWorkItemCommentEdit}>
+                                  <label className="work-item-form-field">
+                                    <span>编辑评论</span>
+                                    <textarea
+                                      rows={4}
+                                      value={workItemEditCommentBody}
+                                      onChange={changeWorkItemEditComment}
+                                    />
+                                  </label>
+                                  <div className="work-item-form-actions work-item-comment-actions">
+                                    <button className="shell-button shell-button-secondary" type="button" onClick={cancelWorkItemCommentEdit} disabled={workItemMutationSubmitting}>
+                                      取消
+                                    </button>
+                                    <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
+                                      {workItemEditCommentSubmitting ? '保存中…' : '保存评论'}
+                                    </button>
+                                  </div>
+                                </form>
+                              </>
+                            ) : (
+                              <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
+                            )}
                             <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
+                            {!comment.is_flow && !comment.is_draft && workItemEditingCommentId !== comment.id ? (
+                              <div className="work-item-comment-actions">
+                                <button className="shell-button shell-button-secondary" type="button" onClick={() => startWorkItemCommentEdit(comment)} disabled={workItemMutationSubmitting}>
+                                  编辑
+                                </button>
+                              </div>
+                            ) : null}
                           </li>
                         ))}
                       </ul>

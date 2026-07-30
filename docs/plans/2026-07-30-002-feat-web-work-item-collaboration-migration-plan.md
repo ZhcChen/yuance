@@ -157,7 +157,7 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 - Browser E2E 能在新 Web 壳完成编辑和 handoff，不跳转旧版详情。
 - `npm --prefix web run check` 通过。
 
-- [ ] **Unit 3: 评论新增与编辑闭环**
+- [x] **Unit 3: 评论新增与编辑闭环**
 
 **Goal:** 在新工作项详情页内支持发布普通评论和编辑非流转评论，提交后刷新评论列表并保留锚点/焦点语义。
 

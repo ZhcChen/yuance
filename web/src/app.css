@@ -484,6 +484,10 @@ h2 {
   border-bottom: 1px solid #eef2ff;
 }
 
+.work-item-comment-row {
+  flex-direction: column;
+}
+
 .work-item-row:last-child,
 .work-item-comment-row:last-child {
   border-bottom: 0;
@@ -543,6 +547,18 @@ h2 {
   gap: 12px;
 }
 
+.work-item-comment-form,
+.work-item-comment-edit-form {
+  display: grid;
+  gap: 12px;
+}
+
+.work-item-comment-form {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
 .work-item-form-field {
   display: flex;
   flex-direction: column;
@@ -574,6 +590,13 @@ h2 {
 .work-item-form-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.work-item-comment-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .work-item-action-error {
