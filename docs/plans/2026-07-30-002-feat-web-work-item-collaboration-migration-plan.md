@@ -1,7 +1,7 @@
 ---
 title: feat: Web 工作项协作闭环迁移
 type: feat
-status: active
+status: completed
 date: 2026-07-30
 origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 ---
@@ -14,9 +14,11 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 
 该闭环完成并通过 Browser E2E 后，才具备进入 W4 共享 JavaScript 层提炼的业务 feature 基线。当前不提前抽 `frontend/packages/*`，也不把 Desktop renderer 或离线能力纳入本切片。
 
+2026-07-30 收口结果：Unit 1-4 已完成并推送；工作项详情已在新 `web/` 应用壳内形成编辑、推进并指派、评论新增/编辑、工作项附件与评论附件列表/下载/上传的首个读写业务闭环。验证证据包括 `npm --prefix web run check`、`npm --prefix web run test:e2e -- --grep "attachment"` 和 `npm --prefix web run test:e2e` 通过。W4 不在本切片内直接启动，但主线计划可基于该闭环开始评估共享 JavaScript 层提炼。
+
 ## 问题框架
 
-`web/src/app.jsx` 目前已经覆盖应用壳、消息中心、项目列表、工作项列表和只读工作项详情，但工作项详情仍把写操作留给旧版 Askama 页面。主线计划要求 W4 必须等待一个完整业务 feature 的读写闭环通过浏览器验证；因此 W3 下一步应优先补齐工作项协作写入能力，而不是继续扩展应用壳或提前做共享包抽象。
+本计划启动时，`web/src/app.jsx` 已经覆盖应用壳、消息中心、项目列表、工作项列表和只读工作项详情，但工作项详情仍把写操作留给旧版 Askama 页面。收口后，新 Web 工作项详情已补齐核心写入、handoff、评论和附件闭环，达到 W4 可开始评估共享层提炼的首个业务 feature 基线；后续仍需通过独立计划处理富文本高级体验、预览、旧版详情下线和其他高频 feature 迁移。
 
 本轮代码事实显示，后端 REST 契约大部分已经存在：`PATCH /api/v1/work-items/{item_key}`、`POST /api/v1/work-items/{item_key}/handoff`、评论创建/编辑/草稿/发布，以及工作项附件和评论附件的登记、签名上传、上传完成、下载 URL 等路由已经在 `api/src/web/router.rs` 注册，并在 `api/src/web/api/mod.rs` 实现。前端应优先消费这些既有契约，避免重复建设后端。
 
@@ -229,7 +231,7 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 - Browser E2E 至少覆盖附件列表和下载入口；上传若环境具备测试存储，则覆盖完整四段式流程。
 - 附件流程不把签名 URL 写入 localStorage 或持久 DOM 状态。
 
-- [ ] **Unit 5: 收口验证、状态回填与 W4 门槛复核**
+- [x] **Unit 5: 收口验证、状态回填与 W4 门槛复核**
 
 **Goal:** 完成本切片的质量检查、计划状态回填和 W4 是否可启动的证据复核。
 

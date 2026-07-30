@@ -33,7 +33,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 - `api/Dockerfile`、`scripts/build-api-image-amd64.sh`、`scripts/smoke-web-app-image.sh` 与 `.github/workflows/web-frontend.yml` 已覆盖前端构建、同源 `/web/app/*` 交付、Playwright E2E 和生产同款镜像 smoke。
 - `api/src/web/router.rs` 已提供 `/web/app/*` 入口、SPA fallback、manifest/哈希资源缓存头和缺失资源 404 行为。
 - `api/src/web/user/mod.rs` 已通过 `YUANCE_WEB_APP_SHELL_V1` 控制 `/web`、`/web/messages` 等入口的 Web app owner；这是当前实现中的简化 rollout 形态，不等同于完整持久 assignment / audit / kill switch 控制面。
-- `web/src/app.jsx` 已覆盖浏览器应用壳、顶部状态、消息中心、项目列表、工作项列表与只读工作项详情；写入、富文本评论、附件、资料库和文档预览仍属于 W3 后续切片。
+- `web/src/app.jsx` 已覆盖浏览器应用壳、顶部状态、消息中心、项目列表、工作项列表和工作项协作首个读写闭环：详情编辑、推进并指派、普通评论新增/编辑、工作项附件与评论附件列表/下载/上传。富文本评论高级体验、资料库和文档预览仍属于 W3 后续切片。
 
 ## 计划索引与当前切片
 
@@ -49,7 +49,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 |---|---|---|---|---|
 | `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | 功能切片计划 | `completed` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步。 | 已收口：legacy `doc/ppt` 默认关闭，开启时统一实验性入口、降级页和 rollout 文档。 |
 | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` | W0 执行产物 | `completed` | 首批 Web-first 盘点、route-to-contract parity、回跳/缓存/rollout/CI 基线；服务于 W1/W2 输入。 | 不合并正文；后续 W1/W2 直接引用该基线，若 W0 决策变化再同步修订。 |
-| `docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` | W3 功能切片计划 | `active` | 工作项详情写入、handoff、评论与附件迁移；用于形成首个 Web 读写业务闭环。 | 按子计划执行；完成后回填 W3 状态，并据 Browser E2E 证据评估是否进入 W4。 |
+| `docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` | W3 功能切片计划 | `completed` | 工作项详情写入、handoff、评论与附件迁移；已形成首个 Web 读写业务闭环。 | 已收口：Browser E2E 覆盖编辑、handoff、评论和附件四段式上传/下载；可作为 W4 共享层提炼评估输入。 |
 
 ### 阶段状态快照
 
@@ -58,8 +58,8 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | W0：Web-first 边界与契约基线 | `completed` | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` 已收口；首批 route-to-contract parity 与交付基线已形成。 | 只在 W0 决策变化时同步修订。 |
 | W1：独立 Web 构建与首批 REST/SSE 契约 | `completed`（基础闭环） | `web/package.json`、`web/jsconfig.json`、`web/vite.config.js`、根 `check:frontend`、`.github/workflows/web-frontend.yml`、`api/Dockerfile`、`scripts/smoke-web-app-image.sh`、`api/tests/routing_smoke.rs`。 | 后续只做硬化：完整 rollout 控制面、bundle budget、自动 axe gate、契约 breaking-change diff。 |
 | W2：浏览器应用壳、认证衔接与消息中心 | `completed`（首批壳与消息） | `web/src/app.jsx`、`web/src/lib/api.js`、`web/src/lib/routes.js`、`web/e2e/app-shell.spec.mjs`；登录 `return_to`、通知语义目标与幂等已读已有测试覆盖。 | 继续通过 W3 feature 切片扩展应用壳能力，不再重复建设壳。 |
-| W3：浏览器端高频 Feature 迁移 | `active` | 已有项目列表、工作项列表和只读工作项详情切片；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已开始承接下一读写闭环。 | 执行“工作项详情写入、评论与附件迁移”子计划。 |
-| W4：共享 JavaScript 层提炼 | `pending` | 尚未创建 `frontend/packages/*`。 | 等一个完整业务 feature 的读写闭环通过 Browser E2E 后再启动。 |
+| W3：浏览器端高频 Feature 迁移 | `active`（首个读写闭环已完成） | 项目列表、工作项列表、工作项详情协作闭环已接入；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已收口。 | 继续按独立切片迁移资料库、项目详情、文档预览等高频 feature；不阻塞 W4 评估。 |
+| W4：共享 JavaScript 层提炼 | `pending`（可开始评估） | 尚未创建 `frontend/packages/*`；工作项协作闭环已提供首个可评估 feature 基线。 | 先制定 W4 提炼子计划/RFC，确认抽取边界、包依赖图和迁移顺序后再创建共享 workspace。 |
 | D1 / D2：Electron 安全宿主与功能对齐 | `pending` | 当前 Desktop 仍以远端 Web 页面为主。 | D1 前必须先完成 device-session / `app://` / credential / file-transfer RFC。 |
 | G-DIST / D3 / D4：更新与离线能力 | `pending` | 未启动。 | 作为 D2 后独立 Gate 或离线专项，不阻塞 W3。 |
 
@@ -71,7 +71,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | 消息中心 | 已接入 | JSON 列表、过滤、语义目标、单条/批量已读、通知打开后跳转工作项。 | `/web/messages/{id}/open` 仍作为旧兼容层。 | 等更多工作项详情能力迁入后再评估旧 HTML 跳转下线。 |
 | 项目列表 / 当前项目 | 已接入 | 项目列表分页、状态筛选、切换当前项目。 | 项目详情、成员、周期、资料等仍在旧页面。 | 若需要继续迁移项目域，优先切项目详情只读页。 |
 | 工作项列表 | 部分接入 | 需求/任务/Bug 列表、筛选、分页、打开只读详情。 | 保存筛选、批量操作、创建/编辑 modal 等仍在旧页面。 | 下一切片前先盘点写操作 API 契约缺口。 |
-| 工作项详情 | 部分接入 | 只读基础字段、父子项链接、评论/流转展示、旧版详情回退入口。 | 编辑、推进并指派、富文本回复、附件上传/预览、实时讨论深度交互仍在旧页面。 | 推荐作为 W3 下一子计划主目标，补齐读写闭环后再考虑 W4。 |
+| 工作项详情 | 首个读写闭环已完成 | 基础字段、父子项链接、编辑核心字段、推进并指派、普通评论新增/编辑、工作项附件与评论附件列表/下载/上传、旧版详情回退入口。 | 富文本回复、正文内附件节点、图片/文档预览、拖拽粘贴上传、实时讨论深度交互仍在旧页面或专项计划。 | 作为 W4 共享层提炼的首个候选 feature；旧版详情下线需另行制定回退窗口和高级体验补齐计划。 |
 | 资料库 | 未迁移 | 暂无。 | 资料列表、资料详情、受保护资料、正文附件和文件管理器仍在旧页面。 | 工作项闭环完成后再作为独立 W3 子计划。 |
 | 文档预览 | 未迁移到新 Web | 暂无新 `web/` 预览宿主。 | 仍由 `/web/*/preview`、`api/static/document-preview*.mjs` 和旧页面文件卡入口承载。 | 资料库迁移时同步设计 API client、资源路径与降级策略。 |
 
@@ -433,15 +433,15 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W3：浏览器端高频 Feature 逐步迁移
 
-**当前状态：** `active`（已进入读路径迁移，下一步补完整业务写入闭环）
+**当前状态：** `active`（首个工作项协作读写闭环已完成，后续继续迁移其他高频 feature）
 
 **已落地：**
 
 - 项目列表：`web/src/app.jsx` 已显示项目列表、分页信息、状态筛选和当前项目切换。
 - 工作项列表：已覆盖需求/任务/Bug 列表、筛选和打开详情路径。
-- 工作项详情：已覆盖只读基础字段、父项链接、评论/流转展示和旧版详情回退入口。
+- 工作项详情：已覆盖只读基础字段、父项链接、编辑核心字段、推进并指派、普通评论新增/编辑、工作项附件与评论附件列表/下载/上传和旧版详情回退入口。
 
-**下一推荐切片：** 工作项详情写入、评论与附件迁移。该切片应补齐状态推进/指派、富文本回复、评论附件、工作项附件、权限错误、CSRF 重试、实时刷新和旧详情回退；完成后它才算一个可支撑 W4 抽取的完整业务 feature 候选。
+**下一推荐切片：** W4 共享 JavaScript 层提炼评估，或继续以独立 W3 子计划迁移资料库 / 项目详情 / 文档预览。工作项协作闭环已可支撑 W4 评估，但富文本回复、正文内附件节点、预览、高级上传与旧版详情下线仍需后续专项补齐。
 
 **目标：** 以小且可回退的浏览器切片逐步迁移高频工作流，建立可作为 Desktop 功能基线的 Web feature。
 
@@ -471,9 +471,9 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W4：从已验证 Web Feature 提炼共享 JavaScript 层
 
-**当前状态：** `pending`
+**当前状态：** `pending`（可开始评估）
 
-**启动门槛：** 不以“应用壳 + 只读列表/详情”启动共享包抽取。至少等待一个完整业务 feature 的读写闭环通过 Browser E2E、权限/错误/回退验证和真实发布路径后，再创建 `frontend/packages/*`。推荐候选是 W3 的“工作项详情写入、评论与附件迁移”完成后的工作项协作闭环。
+**启动门槛：** 不以“应用壳 + 只读列表/详情”启动共享包抽取。工作项协作闭环已经通过 Browser E2E 覆盖编辑、handoff、评论和附件上传/下载，可作为 W4 的首个评估输入。正式创建 `frontend/packages/*` 前仍需先制定 W4 子计划/RFC，明确抽取边界、包依赖图、保留在 Browser 宿主内的 Cookie/CSRF transport、以及不纳入本轮的富文本/预览/离线能力。
 
 **目标：** 在至少一个完整业务 feature 已经通过 Browser E2E 和真实发布路径验证后，提取稳定共享 JavaScript/JSDoc 代码，为 Desktop 使用同一套 UI 与逻辑做准备。
 
