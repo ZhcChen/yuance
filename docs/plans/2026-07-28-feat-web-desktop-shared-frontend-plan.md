@@ -27,6 +27,14 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 - `/api/v1` 已覆盖部分业务能力，但 `docs/openapi/yuance.openapi.json` 尚未覆盖全部 `/web/*` 交互、附件、SSE、通知语义和系统管理能力。
 - 当前浏览器会话使用 `HttpOnly; SameSite=Lax` session、refresh 和 CSRF Cookie；非 Bearer 写请求依赖 CSRF 校验，API 没有通用跨源 CORS 层。
 
+2026-07-30 执行校准后，仓库已经具备第一批 Web-first 实现基础：
+
+- `web/` 已落地 JavaScript ESM/JSX + Vite + React + JSDoc/checkJs 工程，根 `package.json` 已提供 W1 范围的 `check:frontend`。
+- `api/Dockerfile`、`scripts/build-api-image-amd64.sh`、`scripts/smoke-web-app-image.sh` 与 `.github/workflows/web-frontend.yml` 已覆盖前端构建、同源 `/web/app/*` 交付、Playwright E2E 和生产同款镜像 smoke。
+- `api/src/web/router.rs` 已提供 `/web/app/*` 入口、SPA fallback、manifest/哈希资源缓存头和缺失资源 404 行为。
+- `api/src/web/user/mod.rs` 已通过 `YUANCE_WEB_APP_SHELL_V1` 控制 `/web`、`/web/messages` 等入口的 Web app owner；这是当前实现中的简化 rollout 形态，不等同于完整持久 assignment / audit / kill switch 控制面。
+- `web/src/app.jsx` 已覆盖浏览器应用壳、顶部状态、消息中心、项目列表、工作项列表与只读工作项详情；写入、富文本评论、附件、资料库和文档预览仍属于 W3 后续切片。
+
 ## 计划索引与当前切片
 
 本计划作为 Web-first 与 Desktop 演进主线保留 `active`。具体功能切片和阶段执行产物继续独立成文，避免把长期架构计划变成执行日志。
@@ -41,6 +49,30 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 |---|---|---|---|---|
 | `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | 功能切片计划 | `completed` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步。 | 已收口：legacy `doc/ppt` 默认关闭，开启时统一实验性入口、降级页和 rollout 文档。 |
 | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` | W0 执行产物 | `completed` | 首批 Web-first 盘点、route-to-contract parity、回跳/缓存/rollout/CI 基线；服务于 W1/W2 输入。 | 不合并正文；后续 W1/W2 直接引用该基线，若 W0 决策变化再同步修订。 |
+
+### 阶段状态快照
+
+| 阶段 | 当前状态 | 已落地证据 | 下一步 |
+|---|---|---|---|
+| W0：Web-first 边界与契约基线 | `completed` | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` 已收口；首批 route-to-contract parity 与交付基线已形成。 | 只在 W0 决策变化时同步修订。 |
+| W1：独立 Web 构建与首批 REST/SSE 契约 | `completed`（基础闭环） | `web/package.json`、`web/jsconfig.json`、`web/vite.config.js`、根 `check:frontend`、`.github/workflows/web-frontend.yml`、`api/Dockerfile`、`scripts/smoke-web-app-image.sh`、`api/tests/routing_smoke.rs`。 | 后续只做硬化：完整 rollout 控制面、bundle budget、自动 axe gate、契约 breaking-change diff。 |
+| W2：浏览器应用壳、认证衔接与消息中心 | `completed`（首批壳与消息） | `web/src/app.jsx`、`web/src/lib/api.js`、`web/src/lib/routes.js`、`web/e2e/app-shell.spec.mjs`；登录 `return_to`、通知语义目标与幂等已读已有测试覆盖。 | 继续通过 W3 feature 切片扩展应用壳能力，不再重复建设壳。 |
+| W3：浏览器端高频 Feature 迁移 | `active` | 已有项目列表、工作项列表和只读工作项详情切片。 | 下一步建议进入“工作项详情写入、评论与附件迁移”子计划。 |
+| W4：共享 JavaScript 层提炼 | `pending` | 尚未创建 `frontend/packages/*`。 | 等一个完整业务 feature 的读写闭环通过 Browser E2E 后再启动。 |
+| D1 / D2：Electron 安全宿主与功能对齐 | `pending` | 当前 Desktop 仍以远端 Web 页面为主。 | D1 前必须先完成 device-session / `app://` / credential / file-transfer RFC。 |
+| G-DIST / D3 / D4：更新与离线能力 | `pending` | 未启动。 | 作为 D2 后独立 Gate 或离线专项，不阻塞 W3。 |
+
+### W3 Feature 迁移矩阵
+
+| Feature | 当前状态 | 新 Web 覆盖 | 仍依赖旧 Askama / 静态脚本 | 下一步 |
+|---|---|---|---|---|
+| 浏览器应用壳 / 顶部状态 | 已接入 | 会话检查、顶部状态、SSE 刷新、登出和基础导航。 | 旧 Askama 页面仍由 `api/static/app.js` 支撑。 | 作为后续 feature 的宿主基线维护。 |
+| 消息中心 | 已接入 | JSON 列表、过滤、语义目标、单条/批量已读、通知打开后跳转工作项。 | `/web/messages/{id}/open` 仍作为旧兼容层。 | 等更多工作项详情能力迁入后再评估旧 HTML 跳转下线。 |
+| 项目列表 / 当前项目 | 已接入 | 项目列表分页、状态筛选、切换当前项目。 | 项目详情、成员、周期、资料等仍在旧页面。 | 若需要继续迁移项目域，优先切项目详情只读页。 |
+| 工作项列表 | 部分接入 | 需求/任务/Bug 列表、筛选、分页、打开只读详情。 | 保存筛选、批量操作、创建/编辑 modal 等仍在旧页面。 | 下一切片前先盘点写操作 API 契约缺口。 |
+| 工作项详情 | 部分接入 | 只读基础字段、父子项链接、评论/流转展示、旧版详情回退入口。 | 编辑、推进并指派、富文本回复、附件上传/预览、实时讨论深度交互仍在旧页面。 | 推荐作为 W3 下一子计划主目标，补齐读写闭环后再考虑 W4。 |
+| 资料库 | 未迁移 | 暂无。 | 资料列表、资料详情、受保护资料、正文附件和文件管理器仍在旧页面。 | 工作项闭环完成后再作为独立 W3 子计划。 |
+| 文档预览 | 未迁移到新 Web | 暂无新 `web/` 预览宿主。 | 仍由 `/web/*/preview`、`api/static/document-preview*.mjs` 和旧页面文件卡入口承载。 | 资料库迁移时同步设计 API client、资源路径与降级策略。 |
 
 ## 需求追踪
 
@@ -304,6 +336,21 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W1：独立 Web 构建与首批 REST/SSE 契约
 
+**当前状态：** `completed`（基础闭环已落地，硬化项继续随 W3 推进）
+
+**已落地：**
+
+- 独立 `web/` 工程、JSDoc/checkJs、lint、单元测试、Playwright E2E 与根 `check:frontend`。
+- `/web/app/*` 同源交付、SPA fallback、manifest、哈希资源缓存、缺失资源 404 和生产同款镜像 smoke。
+- 首批 REST/SSE 契约：会话检查、CSRF 获取、登出、顶部状态、顶部 SSE、通知列表、通知语义目标、单条/批量已读。
+- W1 范围 CI：`.github/workflows/web-frontend.yml` 已在相关路径变更时执行前端检查、Rust 契约测试、Web build、Playwright 和镜像 smoke。
+
+**后续硬化项：**
+
+- 当前 `YUANCE_WEB_APP_SHELL_V1` 是环境级 owner 开关，不是完整持久 rollout assignment / audit / kill switch 控制面；后续放量前需补服务端持久规则、粘滞 assignment、审计和指标。
+- 当前有 E2E 与 smoke，但未强制 bundle size budget、自动 axe gate 和契约 breaking-change diff；这些作为 W3 放量前的硬化项处理。
+- 部署脚本和 compose 已显式记录 `sse_drain_timeout`、`stop_grace_period`、`max_release_window`，但当前发布仍以单副本强制替换为主；完整受控 SSE drain 或多副本共享事件/rollout 后端仍是后续运维硬化项。
+
 **目标：** 建立独立 JavaScript Web 前端的构建和同源交付通路，并只为首批 Web 切片补齐可消费的 API 契约。
 
 **涉及文件：**
@@ -342,6 +389,21 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W2：仅浏览器的应用壳、认证衔接与消息中心
 
+**当前状态：** `completed`（首批应用壳与消息中心已落地）
+
+**已落地：**
+
+- SSR 登录页继续保留，新 Web 通过 REST 会话检查和 CSRF 契约恢复登录态。
+- 安全 `return_to` 已覆盖 `/web/app/*`、旧消息入口和登录失败/成功链路；hash 片段由浏览器 session state 恢复。
+- 浏览器应用壳已覆盖登出、导航、顶部状态、消息中心、通知语义目标跳转和幂等已读。
+- `web/e2e/app-shell.spec.mjs` 覆盖直接进入 `/web/app/messages`、`/web` owner 路由登出、消息中心语义跳转和项目切换。
+
+**剩余边界：**
+
+- `/web/messages/{id}/open` 仍作为旧页面兼容层保留，不能视为新客户端契约。
+- `api/static/app.js` 继续支撑未迁移 Askama 页面和旧 Electron 通知桥；W2 不删除该逻辑。
+- 当前新壳已经开始承载 W3 的项目列表、工作项列表和只读详情，但写入闭环仍归 W3 后续切片。
+
 **目标：** 在浏览器中迁移跨页面基础体验，验证新 Web 的认证恢复、路由、加载/错误状态和通知语义，不要求 Electron 同步接入。
 
 **涉及文件：**
@@ -370,6 +432,16 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W3：浏览器端高频 Feature 逐步迁移
 
+**当前状态：** `active`（已进入读路径迁移，下一步补完整业务写入闭环）
+
+**已落地：**
+
+- 项目列表：`web/src/app.jsx` 已显示项目列表、分页信息、状态筛选和当前项目切换。
+- 工作项列表：已覆盖需求/任务/Bug 列表、筛选和打开详情路径。
+- 工作项详情：已覆盖只读基础字段、父项链接、评论/流转展示和旧版详情回退入口。
+
+**下一推荐切片：** 工作项详情写入、评论与附件迁移。该切片应补齐状态推进/指派、富文本回复、评论附件、工作项附件、权限错误、CSRF 重试、实时刷新和旧详情回退；完成后它才算一个可支撑 W4 抽取的完整业务 feature 候选。
+
 **目标：** 以小且可回退的浏览器切片逐步迁移高频工作流，建立可作为 Desktop 功能基线的 Web feature。
 
 **涉及文件：**
@@ -397,6 +469,10 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - Browser E2E 与自动 axe 扫描、键盘/焦点人工路径、bundle diff 和代表性网络/设备性能预算共同通过；同一 rollout 的错误率、关键任务完成率和支持信号满足 W0 放量条件。
 
 ### W4：从已验证 Web Feature 提炼共享 JavaScript 层
+
+**当前状态：** `pending`
+
+**启动门槛：** 不以“应用壳 + 只读列表/详情”启动共享包抽取。至少等待一个完整业务 feature 的读写闭环通过 Browser E2E、权限/错误/回退验证和真实发布路径后，再创建 `frontend/packages/*`。推荐候选是 W3 的“工作项详情写入、评论与附件迁移”完成后的工作项协作闭环。
 
 **目标：** 在至少一个完整业务 feature 已经通过 Browser E2E 和真实发布路径验证后，提取稳定共享 JavaScript/JSDoc 代码，为 Desktop 使用同一套 UI 与逻辑做准备。
 
@@ -590,26 +666,14 @@ W0 -> W1 -> W2 -> W3 (按 feature 多次迭代) -> W4 -> D1 -> D2 -> D3 -> D4
 - 不把 D1 的打包资源、ad-hoc/未签名制品、`app://` 或手工下载误称为生产发行信任链或自动更新；自动更新只在 `G-DIST` Gate 后启用。
 - D1 不支持未定义的自定义协议、通用外部深链接、TLS 错误绕过或 renderer 侧凭证/代理降级；相关能力必须有独立 RFC 与打包态负向测试。
 
-## APK 与 OSS 分发结论
+## 移动端 / APK 分发边界
 
-### 当前事实
+APK 与 OSS 下载问题不属于本 Web/Desktop 共享前端主线的实施范围。相关排查口径与产品边界已迁出到 `docs/solutions/2026-07-30-apk-oss-download-boundary.md`。
 
-- 在签名身份具备对象读取权限、Bucket Policy 与 OSS 配置允许访问的前提下，阿里云 OSS 可通过签名 GET URL 下载任意对象类型；APK 不是 OSS 的禁用类型。
-- 当前 `api/src/domains/files.rs` 已允许 `application/vnd.android.package-archive`。
-- 当前系统版本 API 已允许 `platform = android`，且 `api/tests/system_management_flow.rs` 覆盖 APK 的“创建资产 -> 签名上传 -> 上传确认 -> 发布”流程。
-- 系统管理页对已上传 APK 提供受权限保护的下载入口；公开 `/web/downloads` 页面被设计为“桌面端下载页”，只选择完整三平台桌面版本：每个平台为 `universal`，或同时具备 `x64` 与 `arm64`，刻意不展示 Android。
-- `GET /web/downloads/{release_id}/assets/{asset_id}` 只验证“已发布且已上传”，不按平台限制。因此已发布 APK 在知道 release/asset ID 时也会走短时 OSS 签名 URL，但当前没有面向普通用户的 Android 发现页面。
+本主线仅保留两条约束：
 
-### 结论与处理原则
-
-APK 上传完成后“不能下载”不是 OSS 的必然行为。应先区分：
-
-1. 上传失败：检查浏览器直传的 CORS、签名请求头、Content-Type 和 OSS 返回 XML。
-2. 已上传但页面看不到：这是当前公开页面仅支持桌面端的产品边界，不是 OSS 下载失败。
-3. 点击后 302/403：检查签名是否过期、Bucket/Endpoint 是否匹配、对象是否存在、RAM 权限，以及 OSS 防盗链 Referer 规则。
-4. 返回 200 但手机不安装：这是 Android 浏览器/系统对未知来源 APK、下载权限或签名包的安全限制，不是 OSS 读取失败。
-
-移动端公开分发需要在明确接受“已发布资产公开可下载”这一模型后单独实施：新增 `/web/mobile-downloads` 或统一下载页、按 Android/iOS 平台显式筛选资产、通过 OSS 对象元数据或已签名的响应参数设置 `Content-Disposition: attachment`、展示由服务端对已上传字节计算并持久化的 SHA-256 与版本说明，并补齐 APK 的真实 OSS 验收测试。发布前还应校验目标平台允许的文件格式；Android 至少校验 CI 产物签名清单，条件具备时校验 APK package name、versionCode 与允许的签名证书。不得仅因为公开桌面页未显示 APK 就把问题归因于 OSS。
+- D1/D2 的 Desktop 发行与下载信任链继续以桌面制品、release manifest、签名/哈希和撤回控制面为核心，不因 APK 能上传到 OSS 而扩展为移动端公开分发。
+- 若后续要面向普通用户公开 Android/iOS 下载，需要单独创建移动端下载页或统一下载页计划，并明确“已发布资产公开可下载”的授权模型。
 
 ## 验证矩阵
 
@@ -621,7 +685,7 @@ APK 上传完成后“不能下载”不是 OSS 的必然行为。应先区分�
 - D2：同一服务端 fixture 下的 Browser/Desktop 功能对齐 E2E、系统通知端到端验收、文件 capability/上传/下载/保存/定位测试、伪造 IPC/capability/路径/URL 的负向测试，以及大附件、后台、断网、休眠、低配置设备的资源/降级/无障碍验证。
 - G-DIST：支持平台的 stable/beta 渠道、D1 release manifest/撤回/N-1/release-health 控制面、签名 metadata/信任根/密钥轮换与撤销/rollback protection、升级/取消/暂停/回退/最低版本/schema compatibility manifest、用户数据兼容与不支持平台人工升级 E2E。
 - D3-D4：一致 snapshot/staging-to-active generation/cursor 过期、authorization epoch、SQLite/WAL/临时介质/备份数据保护、受保护资料范围、schema 迁移、强杀 checkpoint 恢复、`pending -> verified -> available` 附件状态机与数据库/文件对账、版本化 digest/AEAD、离线授权租约/墙钟回拨、`OfflineStatus`/`SyncOperationStatus`、用户/endpoint 切换、断网恢复、撤权/角色变更后的同 key 无副作用且无历史响应泄漏、同 key 不同 fingerprint `409`、operation conflict matrix、attachment-operation 依赖/确认丢失/GC、同步幂等/审计原子性和附件队列测试。
-- 真实 OSS 验收：上传一个测试 APK，分别访问系统下载、无 Cookie 的公开下载入口与草稿/未上传拒绝路径；使用 `curl -I -L` 和 Android 浏览器记录 HTTP 状态、`Content-Type`、`Content-Disposition`、`x-oss-request-id` 与服务端持久化的文件哈希。
+- 移动端/APK OSS 验收：不作为本主线阶段门槛；相关排查口径见 `docs/solutions/2026-07-30-apk-oss-download-boundary.md`。
 - 每个提交前执行与变更范围匹配的聚焦测试、`git diff --check`，并在阶段完成时对照本计划复核。
 
 ## 风险
@@ -636,8 +700,7 @@ APK 上传完成后“不能下载”不是 OSS 的必然行为。应先区分�
 - **桌面认证与信任边界不同。** `app://` 不能默认复用浏览器 `SameSite=Lax` Cookie；D1 未收口设备凭证、endpoint、CSP、Electron 安全不变量、导航和 IPC sender 前不得开始桌面接入。
 - **离线 Shell 被误认为离线数据。** 打包 renderer 只保证无网络启动；D3 前必须明确缓存范围、密钥管理、用户隔离、撤权清理和一致性语义。
 - **离线写入不是缓存的自然延伸。** 缺少稳定游标/快照、墓碑、基线版本、幂等 operation ID、冲突策略和附件独立队列时不得开始 D4。
-- **APK 的浏览器下载成功不等于可以安装。** Android 的未知来源授权、应用签名和渠道策略应由移动端发布方案单独覆盖。
-- **公开版本资产一经发布即属于公开内容。** `release_id` 与 `asset_id` 不是访问控制或机密；短时 OSS 签名 URL 是有效期内 bearer 凭证，不得写入审计详情、分析系统、错误上报或第三方跳转 Referer。若不接受该模型，必须在公开路由前增加鉴权与授权校验。
+- **移动端分发议题污染主线。** APK/OSS 可下载性、Android 安装限制和移动端公开入口属于系统版本分发或移动端专项，不应混入 Web-first / Desktop renderer 阶段门槛；本计划只保留链接和边界约束。
 - **契约或发行回滚不兼容。** 服务端 DTO/事件、已安装 Desktop、renderer revision、签名制品和 updater channel 若没有 N/N-1/最低版本规则，单独回滚任一方都会让用户无法认证或写入；发布 Gate 必须先验证兼容矩阵。
 - **设备认证与网络降级。** 若把系统浏览器授权、refresh rotation、Desktop SSE、代理/TLS 或单实例逻辑留给各 renderer 自由实现，会造成凭证泄漏、重放、登录循环或以证书错误绕过恢复连接。
 - **诊断和灰度泄漏。** 没有字段 allowlist、服务端粘滞 rollout、量化回退阈值和支持流程，既无法定位迁移事故，也可能把 token、路径或项目内容发送到日志/遥测。
