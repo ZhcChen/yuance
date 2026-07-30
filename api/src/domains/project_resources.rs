@@ -449,14 +449,7 @@ pub async fn create_resource(
         .await?;
     }
 
-    sync_resource_tags(
-        &mut tx,
-        input.project_id,
-        actor_user_id,
-        resource_id,
-        &tags,
-    )
-    .await?;
+    sync_resource_tags(&mut tx, input.project_id, actor_user_id, resource_id, &tags).await?;
     sync_resource_relations(
         &mut tx,
         input.project_id,
@@ -877,7 +870,10 @@ async fn populate_resource_summary_metadata(
     pool: &SqlitePool,
     resources: &mut [ProjectResourceSummary],
 ) -> AppResult<()> {
-    let resource_ids = resources.iter().map(|resource| resource.id).collect::<Vec<_>>();
+    let resource_ids = resources
+        .iter()
+        .map(|resource| resource.id)
+        .collect::<Vec<_>>();
     let tags_map = load_resource_tags_map(pool, &resource_ids).await?;
     let work_item_map = load_resource_work_item_relations_map(pool, &resource_ids).await?;
     let cycle_map = load_resource_cycle_relations_map(pool, &resource_ids).await?;
@@ -1377,7 +1373,10 @@ fn normalize_status_filter(status: &str) -> AppResult<String> {
 }
 
 fn normalize_tag_filter(tag: &str) -> AppResult<String> {
-    match normalize_resource_tags(&[tag.to_string()])?.into_iter().next() {
+    match normalize_resource_tags(&[tag.to_string()])?
+        .into_iter()
+        .next()
+    {
         Some(tag) => Ok(tag.normalized_name),
         None => Ok(String::new()),
     }

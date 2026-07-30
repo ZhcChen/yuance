@@ -1017,7 +1017,9 @@ async fn api_project_resources_can_filter_by_tag() {
     let items = payload["data"].as_array().expect("data should be an array");
     assert_eq!(items.len(), 1, "{body}");
     assert_eq!(items[0]["title"], "支付联调资料");
-    let tags = items[0]["tags"].as_array().expect("tags should be an array");
+    let tags = items[0]["tags"]
+        .as_array()
+        .expect("tags should be an array");
     assert!(tags.iter().any(|tag| tag == "支付"));
     assert!(tags.iter().any(|tag| tag == "联调"));
     assert_eq!(items[0]["related_work_item"]["key"], "YCE-TASK-2");
@@ -1084,7 +1086,11 @@ async fn api_project_resources_reject_cross_project_relations() {
         .expect("router should respond");
     let cross_item_status = cross_item_response.status();
     let cross_item_body = response_body(cross_item_response).await;
-    assert_eq!(cross_item_status, StatusCode::BAD_REQUEST, "{cross_item_body}");
+    assert_eq!(
+        cross_item_status,
+        StatusCode::BAD_REQUEST,
+        "{cross_item_body}"
+    );
     assert!(cross_item_body.contains("关联工作项不存在，或不属于当前项目"));
 
     let cross_cycle_response = app
@@ -1105,7 +1111,11 @@ async fn api_project_resources_reject_cross_project_relations() {
         .expect("router should respond");
     let cross_cycle_status = cross_cycle_response.status();
     let cross_cycle_body = response_body(cross_cycle_response).await;
-    assert_eq!(cross_cycle_status, StatusCode::BAD_REQUEST, "{cross_cycle_body}");
+    assert_eq!(
+        cross_cycle_status,
+        StatusCode::BAD_REQUEST,
+        "{cross_cycle_body}"
+    );
     assert!(cross_cycle_body.contains("关联周期不存在，或不属于当前项目"));
 }
 
@@ -3001,9 +3011,15 @@ async fn web_messages_page_filters_pending_discussions_and_drops_read_items() {
         .await
         .expect("demo seed should apply");
     let receiver = create_regular_user(&pool, "message_pending_owner", "待处理消息负责人").await;
-    projects::add_project_member(&pool, admin.user_id, "YCE", "message_pending_owner", "member")
-        .await
-        .expect("receiver should join project");
+    projects::add_project_member(
+        &pool,
+        admin.user_id,
+        "YCE",
+        "message_pending_owner",
+        "member",
+    )
+    .await
+    .expect("receiver should join project");
     let work_item_id =
         sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
             .fetch_one(&pool)
@@ -3097,7 +3113,12 @@ async fn web_messages_page_filters_pending_discussions_and_drops_read_items() {
     let refreshed_pending_body = response_body(refreshed_pending_response).await;
     assert!(refreshed_pending_body.contains("回复消息"));
     assert!(!refreshed_pending_body.contains("提及消息"));
-    assert_eq!(refreshed_pending_body.matches("class=\"message-row").count(), 1);
+    assert_eq!(
+        refreshed_pending_body
+            .matches("class=\"message-row")
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -3207,11 +3228,7 @@ async fn work_item_comment_mentions_reject_non_project_members() {
     .await
     .expect_err("non-member mention should fail");
 
-    assert!(
-        error.to_string().contains("不是当前项目成员"),
-        "{}",
-        error
-    );
+    assert!(error.to_string().contains("不是当前项目成员"), "{}", error);
 }
 
 #[tokio::test]
@@ -3251,12 +3268,16 @@ async fn work_item_reply_mentions_deduplicate_reply_notification_for_same_target
     let admin_notifications = notifications::list_for_user(&pool, admin.user_id, true, 10)
         .await
         .expect("admin notifications should load");
-    assert!(admin_notifications.iter().any(|item| {
-        item.kind == "comment_mentioned" && item.comment_id == Some(reply.id)
-    }));
-    assert!(!admin_notifications.iter().any(|item| {
-        item.kind == "comment_replied" && item.comment_id == Some(reply.id)
-    }));
+    assert!(
+        admin_notifications
+            .iter()
+            .any(|item| { item.kind == "comment_mentioned" && item.comment_id == Some(reply.id) })
+    );
+    assert!(
+        !admin_notifications
+            .iter()
+            .any(|item| { item.kind == "comment_replied" && item.comment_id == Some(reply.id) })
+    );
 }
 
 #[tokio::test]
@@ -4124,9 +4145,15 @@ async fn web_dashboard_renders_pending_discussion_panel_without_assignments() {
         .await
         .expect("demo seed should apply");
     let receiver = create_regular_user(&pool, "dashboard_pending_owner", "工作台讨论负责人").await;
-    projects::add_project_member(&pool, admin.user_id, "YCE", "dashboard_pending_owner", "member")
-        .await
-        .expect("receiver should join project");
+    projects::add_project_member(
+        &pool,
+        admin.user_id,
+        "YCE",
+        "dashboard_pending_owner",
+        "member",
+    )
+    .await
+    .expect("receiver should join project");
     let work_item_id =
         sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
             .fetch_one(&pool)
@@ -4886,9 +4913,15 @@ async fn web_work_item_saved_view_rejects_duplicate_names_and_isolated_per_user(
         .await
         .expect("demo seed should apply");
     let member = create_regular_user(&pool, "saved_view_member", "视图成员").await;
-    projects::add_project_member(&pool, initialized.user_id, "YCE", "saved_view_member", "member")
-        .await
-        .expect("member should join project");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "saved_view_member",
+        "member",
+    )
+    .await
+    .expect("member should join project");
     projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
         .await
         .expect("admin should select YCE");
@@ -4942,15 +4975,10 @@ async fn web_work_item_saved_view_rejects_duplicate_names_and_isolated_per_user(
     .await
     .expect("admin saved view should persist");
 
-    let member_views = projects::list_work_item_saved_views_for_user(
-        &pool,
-        member.user_id,
-        false,
-        "YCE",
-        "task",
-    )
-    .await
-    .expect("member views should load");
+    let member_views =
+        projects::list_work_item_saved_views_for_user(&pool, member.user_id, false, "YCE", "task")
+            .await
+            .expect("member views should load");
     assert!(member_views.is_empty());
 
     let forbidden_rename_response = app
@@ -4978,9 +5006,15 @@ async fn web_work_item_batch_update_can_assign_tasks_and_render_controls() {
         .await
         .expect("demo seed should apply");
     let _member = create_regular_user(&pool, "batch_task_owner", "批量任务处理人").await;
-    projects::add_project_member(&pool, initialized.user_id, "YCE", "batch_task_owner", "member")
-        .await
-        .expect("member should join project");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "batch_task_owner",
+        "member",
+    )
+    .await
+    .expect("member should join project");
     projects::set_current_project_for_user(&pool, initialized.user_id, true, "YCE")
         .await
         .expect("admin should select YCE");
@@ -9829,7 +9863,10 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
             .unwrap(),
         "nosniff"
     );
-    assert_eq!(response_bytes(direct_download_response).await, vec![b'a'; 2048]);
+    assert_eq!(
+        response_bytes(direct_download_response).await,
+        vec![b'a'; 2048]
+    );
 
     let upload_url_response = app
         .oneshot(
@@ -11445,9 +11482,8 @@ async fn web_work_item_docx_preview_page_uses_frontend_preview_contract() {
             target_id: item.id,
             project_id: Some(project.id),
             original_filename: "frontend-preview.docx".to_string(),
-            content_type:
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    .to_string(),
+            content_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                .to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
             created_by_display_name_snapshot: String::new(),
@@ -11640,9 +11676,8 @@ async fn web_work_item_detail_keeps_docx_preview_button_available() {
             target_id: item.id,
             project_id: Some(project.id),
             original_filename: "always-visible.docx".to_string(),
-            content_type:
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    .to_string(),
+            content_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                .to_string(),
             byte_size: 2048,
             created_by_user_id: initialized.user_id,
             created_by_display_name_snapshot: String::new(),
@@ -14151,10 +14186,7 @@ async fn project_cycles_can_be_managed_from_web_and_link_work_items() {
     assert!(cycle_page_body.contains("列表视图"));
     assert!(cycle_page_body.contains("路线图视图"));
     assert!(cycle_page_body.contains("2026-07 核心交付"));
-    assert!(cycle_page_body.contains(&format!(
-        r#"href="/web/projects/YCE/cycles/{}""#,
-        cycle.id
-    )));
+    assert!(cycle_page_body.contains(&format!(r#"href="/web/projects/YCE/cycles/{}""#, cycle.id)));
     assert!(!cycle_page_body.contains("周期总数"));
 
     let cycle_detail_response = app
@@ -14324,9 +14356,15 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
     )
     .await
     .expect("open requirement should create");
-    projects::set_work_item_cycle(&pool, initialized.user_id, &open_requirement.item_key, Some(cycle.id), "")
-        .await
-        .expect("open requirement should bind cycle");
+    projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        &open_requirement.item_key,
+        Some(cycle.id),
+        "",
+    )
+    .await
+    .expect("open requirement should bind cycle");
 
     let in_progress_task = projects::create_work_item(
         &pool,
@@ -14345,9 +14383,15 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
     )
     .await
     .expect("task should create");
-    projects::set_work_item_cycle(&pool, initialized.user_id, &in_progress_task.item_key, Some(cycle.id), "")
-        .await
-        .expect("task should bind cycle");
+    projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        &in_progress_task.item_key,
+        Some(cycle.id),
+        "",
+    )
+    .await
+    .expect("task should bind cycle");
     projects::update_work_item(
         &pool,
         initialized.user_id,
@@ -14383,9 +14427,15 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
     )
     .await
     .expect("bug should create");
-    projects::set_work_item_cycle(&pool, initialized.user_id, &pending_bug.item_key, Some(cycle.id), "")
-        .await
-        .expect("bug should bind cycle");
+    projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        &pending_bug.item_key,
+        Some(cycle.id),
+        "",
+    )
+    .await
+    .expect("bug should bind cycle");
     projects::update_work_item(
         &pool,
         initialized.user_id,
@@ -14421,9 +14471,15 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
     )
     .await
     .expect("completed task should create");
-    projects::set_work_item_cycle(&pool, initialized.user_id, &completed_task.item_key, Some(cycle.id), "")
-        .await
-        .expect("completed task should bind cycle");
+    projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        &completed_task.item_key,
+        Some(cycle.id),
+        "",
+    )
+    .await
+    .expect("completed task should bind cycle");
     projects::update_work_item(
         &pool,
         initialized.user_id,
@@ -14476,9 +14532,15 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
     )
     .await
     .expect("unassigned task should create");
-    projects::set_work_item_cycle(&pool, initialized.user_id, &unassigned_task.item_key, Some(cycle.id), "")
-        .await
-        .expect("unassigned task should bind cycle");
+    projects::set_work_item_cycle(
+        &pool,
+        initialized.user_id,
+        &unassigned_task.item_key,
+        Some(cycle.id),
+        "",
+    )
+    .await
+    .expect("unassigned task should bind cycle");
     projects::update_work_item(
         &pool,
         initialized.user_id,
@@ -14534,9 +14596,10 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
         cycle.id
     )));
 
-    let reviewer_items = projects::count_pending_assigned_work_items(&pool, reviewer.user_id, false, Some("YCE"))
-        .await
-        .expect("reviewer counts should load");
+    let reviewer_items =
+        projects::count_pending_assigned_work_items(&pool, reviewer.user_id, false, Some("YCE"))
+            .await
+            .expect("reviewer counts should load");
     assert_eq!(reviewer_items.tasks, 1);
     assert_eq!(reviewer_items.bugs, 1);
 }

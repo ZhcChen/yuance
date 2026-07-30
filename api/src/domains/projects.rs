@@ -823,8 +823,9 @@ pub async fn list_work_item_saved_views_for_user(
     project_key: &str,
     item_type: &str,
 ) -> AppResult<Vec<WorkItemSavedView>> {
-    let scope = resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
-        .await?;
+    let scope =
+        resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
+            .await?;
     let rows = sqlx::query_as::<
         _,
         (
@@ -925,8 +926,9 @@ pub async fn get_default_work_item_saved_view_for_user(
     project_key: &str,
     item_type: &str,
 ) -> AppResult<Option<WorkItemSavedView>> {
-    let views = list_work_item_saved_views_for_user(pool, user_id, is_super_admin, project_key, item_type)
-        .await?;
+    let views =
+        list_work_item_saved_views_for_user(pool, user_id, is_super_admin, project_key, item_type)
+            .await?;
     Ok(views.into_iter().find(|view| view.is_default))
 }
 
@@ -942,7 +944,11 @@ pub async fn create_work_item_saved_view(
         resolve_work_item_saved_view_scope(pool, user_id, is_super_admin, project_key, item_type)
             .await?;
     let name = validate_name(&input.name, "视图名称", 40)?;
-    let filter = canonicalize_work_item_saved_view_filter(scope.project_key.as_str(), &scope.item_type, input.filter)?;
+    let filter = canonicalize_work_item_saved_view_filter(
+        scope.project_key.as_str(),
+        &scope.item_type,
+        input.filter,
+    )?;
     let pagination = normalize_pagination(Pagination {
         page: 1,
         per_page: input.per_page,
@@ -972,7 +978,8 @@ pub async fn create_work_item_saved_view(
 
     let mut tx = pool.begin().await?;
     if input.is_default {
-        clear_default_work_item_saved_views(&mut tx, user_id, scope.project_id, &scope.item_type).await?;
+        clear_default_work_item_saved_views(&mut tx, user_id, scope.project_id, &scope.item_type)
+            .await?;
     }
     let insert_result = sqlx::query_scalar::<_, i64>(
         r#"
@@ -1077,13 +1084,8 @@ pub async fn set_default_work_item_saved_view(
     }
 
     let mut tx = pool.begin().await?;
-    clear_default_work_item_saved_views(
-        &mut tx,
-        user_id,
-        current.project_id,
-        &current.item_type,
-    )
-    .await?;
+    clear_default_work_item_saved_views(&mut tx, user_id, current.project_id, &current.item_type)
+        .await?;
     sqlx::query(
         r#"
         UPDATE work_item_saved_views
@@ -1109,13 +1111,11 @@ pub async fn delete_work_item_saved_view(
     user_id: i64,
     saved_view_id: i64,
 ) -> AppResult<()> {
-    let result = sqlx::query(
-        "DELETE FROM work_item_saved_views WHERE id = ?1 AND user_id = ?2",
-    )
-    .bind(saved_view_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM work_item_saved_views WHERE id = ?1 AND user_id = ?2")
+        .bind(saved_view_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("保存视图不存在".to_string()));
     }
@@ -4237,17 +4237,16 @@ pub async fn batch_update_work_items(
         "assignee" => {
             let assignee_user_id =
                 resolve_project_member_user_id(pool, project.id, &input.assignee_username).await?;
-            let (assignee_username, assignee_display_name) =
-                sqlx::query_as::<_, (String, String)>(
-                    r#"
+            let (assignee_username, assignee_display_name) = sqlx::query_as::<_, (String, String)>(
+                r#"
                     SELECT u.username, u.display_name
                     FROM users u
                     WHERE u.id = ?1
                     "#,
-                )
-                .bind(assignee_user_id)
-                .fetch_one(pool)
-                .await?;
+            )
+            .bind(assignee_user_id)
+            .fetch_one(pool)
+            .await?;
             for item in &items {
                 if item.assignee_user_id == Some(assignee_user_id) {
                     return Err(AppError::BadRequest(format!(
@@ -4592,23 +4591,23 @@ pub async fn batch_update_work_items(
                 .execute(&mut *tx)
                 .await?;
 
-                let (activity_action, activity_summary) = if item.cycle_id.is_none() && cycle_id.is_some()
-                {
-                    (
-                        "work_item.cycle.linked",
-                        format!("批量将工作项 {} 关联到周期 {}", item.item_key, cycle_name),
-                    )
-                } else if item.cycle_id.is_some() && cycle_id.is_none() {
-                    (
-                        "work_item.cycle.unlinked",
-                        format!("批量取消工作项 {} 的周期关联", item.item_key),
-                    )
-                } else {
-                    (
-                        "work_item.cycle.updated",
-                        format!("批量调整工作项 {} 的所属周期", item.item_key),
-                    )
-                };
+                let (activity_action, activity_summary) =
+                    if item.cycle_id.is_none() && cycle_id.is_some() {
+                        (
+                            "work_item.cycle.linked",
+                            format!("批量将工作项 {} 关联到周期 {}", item.item_key, cycle_name),
+                        )
+                    } else if item.cycle_id.is_some() && cycle_id.is_none() {
+                        (
+                            "work_item.cycle.unlinked",
+                            format!("批量取消工作项 {} 的周期关联", item.item_key),
+                        )
+                    } else {
+                        (
+                            "work_item.cycle.updated",
+                            format!("批量调整工作项 {} 的所属周期", item.item_key),
+                        )
+                    };
                 sqlx::query(
                     r#"
                     INSERT INTO project_activities (
@@ -6504,9 +6503,7 @@ fn normalize_work_item_filter(filter: WorkItemListFilter) -> AppResult<Normalize
                 .map_err(|_| AppError::BadRequest("周期不能为空且必须是数字".to_string()))
                 .and_then(|parsed| {
                     if parsed <= 0 {
-                        Err(AppError::BadRequest(
-                            "周期不能为空且必须是数字".to_string(),
-                        ))
+                        Err(AppError::BadRequest("周期不能为空且必须是数字".to_string()))
                     } else {
                         Ok(parsed)
                     }
@@ -6808,7 +6805,9 @@ async fn ensure_work_item_saved_view_cycle_in_scope(
     .fetch_one(pool)
     .await?;
     if count == 0 {
-        return Err(AppError::BadRequest("周期不存在或不属于当前项目".to_string()));
+        return Err(AppError::BadRequest(
+            "周期不存在或不属于当前项目".to_string(),
+        ));
     }
     Ok(())
 }
@@ -6911,13 +6910,13 @@ async fn get_work_item_saved_view_by_id(
         return Ok(None);
     };
     let cycle_name = match cycle_id {
-        Some(cycle_id) => sqlx::query_scalar::<_, String>(
-            "SELECT name FROM project_cycles WHERE id = ?1",
-        )
-        .bind(cycle_id)
-        .fetch_optional(pool)
-        .await?
-        .unwrap_or_default(),
+        Some(cycle_id) => {
+            sqlx::query_scalar::<_, String>("SELECT name FROM project_cycles WHERE id = ?1")
+                .bind(cycle_id)
+                .fetch_optional(pool)
+                .await?
+                .unwrap_or_default()
+        }
         None => String::new(),
     };
 
@@ -7259,10 +7258,7 @@ async fn resolve_project_mention_targets(
         .fetch_all(pool)
         .await?
         .into_iter()
-        .map(|(user_id, username, _display_name)| WorkItemMentionTarget {
-            user_id,
-            username,
-        })
+        .map(|(user_id, username, _display_name)| WorkItemMentionTarget { user_id, username })
         .collect::<Vec<_>>();
     let missing = usernames
         .iter()
@@ -8087,21 +8083,13 @@ pub fn normalize_work_item_status(status: &str) -> AppResult<&'static str> {
     validate_work_item_status(status)
 }
 
-fn ensure_work_item_status_supported_for_type(
-    item_type: &str,
-    status: &str,
-) -> AppResult<()> {
+fn ensure_work_item_status_supported_for_type(item_type: &str, status: &str) -> AppResult<()> {
     let item_type = validate_work_item_type(item_type)?;
     let status = validate_work_item_status(status)?;
     let allowed = match item_type {
         "bug" => matches!(
             status,
-            "open"
-                | "in_progress"
-                | "pending_confirmation"
-                | "resolved"
-                | "verified"
-                | "closed"
+            "open" | "in_progress" | "pending_confirmation" | "resolved" | "verified" | "closed"
         ),
         "requirement" | "task" => matches!(
             status,
@@ -8170,9 +8158,7 @@ fn normalize_batch_work_item_keys(item_keys: Vec<String>) -> AppResult<Vec<Strin
         }
     }
     if normalized.is_empty() {
-        return Err(AppError::BadRequest(
-            "请至少选择一个工作项".to_string(),
-        ));
+        return Err(AppError::BadRequest("请至少选择一个工作项".to_string()));
     }
     if normalized.len() > 100 {
         return Err(AppError::BadRequest(

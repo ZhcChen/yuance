@@ -47,7 +47,7 @@
       {% endif %}
       {% if can_manage_resources && is_unlocked %}
       <button class="btn btn-secondary" type="button" data-modal-open="project-resource-edit-modal">编辑资料</button>
-      <form class="inline-form" method="post" action="{{ resource.archive_url }}" data-confirm-submit-form data-confirm-title="归档资料" data-confirm-message="确认归档资料「{{ resource.title }}」？归档后不会删除历史内容。" data-confirm-action="归档">
+      <form class="inline-form" method="post" action="{{ resource.archive_url }}" data-confirm-submit-form data-confirm-title="归档资料" data-confirm-message="确认归档资料「{{ resource.title }}」？归档后将停止编辑和附件操作。" data-confirm-action="归档">
         <input type="hidden" name="_csrf" value="{{ csrf_token }}">
         <button class="btn btn-secondary" type="submit">归档</button>
       </form>
