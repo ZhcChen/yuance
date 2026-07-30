@@ -1,7 +1,7 @@
 ---
 title: feat: Flutter 多端 app 模块规划
 type: plan
-status: active
+status: completed
 date: 2026-07-23
 origin: 用户口头需求：新增 app 模块，使用 Flutter 支持 Windows / macOS / Linux / Android / iOS
 ---
@@ -125,3 +125,8 @@ app/
 - Unit 3：落地工作台 / 项目 / 工作项 / 消息最小业务流。
 - Unit 4：接入版本管理查询与安装包下载能力。
 - Unit 5：补 GitHub Actions 多平台构建与产物汇总。
+
+## Completion Notes
+
+- 本文档是规划型产物，已完成 Flutter 多端 app 模块的第一阶段技术规划。
+- 当前未创建 `app/` Flutter 工程；若未来恢复 Flutter 客户端实施，应基于本规划另开具体执行计划。

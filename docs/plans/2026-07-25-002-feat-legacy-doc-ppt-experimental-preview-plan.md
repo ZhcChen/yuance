@@ -1,7 +1,7 @@
 ---
 title: feat: legacy doc/ppt 实验性纯前端预览方案
 type: feat
-status: active
+status: in_progress
 date: 2026-07-25
 origin: 用户口头需求：继续评估并规划 doc/ppt 的纯前端离线预览接入
 ---

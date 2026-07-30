@@ -1,7 +1,7 @@
 ---
 date: 2026-07-25
 topic: super-admin-resource-password-reset
-status: active
+status: completed
 origin: user-request
 ---
 
@@ -109,7 +109,7 @@ origin: user-request
 
 ## 实施单元
 
-- [ ] Unit 1：资料库密码重置领域能力
+- [x] Unit 1：资料库密码重置领域能力
   - 目标：为资料库增加独立的保险箱密码重置入口，不依赖资料编辑。
   - 文件：
     - `api/src/domains/project_resources.rs`
@@ -127,7 +127,7 @@ origin: user-request
   - 验证信号：
     - 数据库中的 `access_password_hash` 按动作正确变化
 
-- [ ] Unit 2：Web 侧超管重置路由与页面状态
+- [x] Unit 2：Web 侧超管重置路由与页面状态
   - 目标：在资料详情页增加超管专用保险箱密码重置提交流程。
   - 文件：
     - `api/src/web/router.rs`
@@ -154,7 +154,7 @@ origin: user-request
   - 验证信号：
     - 审计日志存在 `project_resource.password.reset`
 
-- [ ] Unit 3：资料详情页重置入口与弹窗交互
+- [x] Unit 3：资料详情页重置入口与弹窗交互
   - 目标：在锁定态与正常详情态提供统一的超管重置入口。
   - 文件：
     - `api/templates/web/projects/resource_detail.html`
@@ -173,7 +173,7 @@ origin: user-request
   - 验证信号：
     - 页面结构稳定，锁定态不再只有“输入密码解锁”单一路径
 
-- [ ] Unit 4：回归测试与文档同步
+- [x] Unit 4：回归测试与文档同步
   - 目标：覆盖超管重置资料密码的关键回归场景。
   - 文件：
     - `api/tests/project_management_flow.rs`
@@ -207,3 +207,8 @@ origin: user-request
 - 超管执行 `clear` 后，资料正文和附件可正常访问。
 - 超管执行 `set` 后，旧密码不可用，新密码可正常解锁。
 - 审计日志中存在独立的资料密码重置记录。
+
+## 完成记录
+
+- 已落地 `project_resources::reset_resource_access_password`、Web 重置路由、资料详情页超管入口与弹窗、审计日志动作 `project_resource.password.reset`。
+- `api/tests/project_management_flow.rs` 已覆盖超管重置、非超管拒绝、旧密码失效、新密码生效和审计记录。
