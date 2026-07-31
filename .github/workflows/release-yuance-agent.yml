@@ -1,0 +1,268 @@
+name: Release Yuance Agent
+
+on:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "yuance-agent-v*.*.*"
+  pull_request:
+    paths:
+      - ".github/workflows/release-yuance-agent.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "skills/yuance-agent/**"
+      - "tools/yuance-agent-cli/**"
+      - "scripts/install-codex-skill.*"
+      - "scripts/test-install-codex-skill.*"
+      - "scripts/validate-yuance-agent-release.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-yuance-agent-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate tag and versions
+        shell: bash
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            tag="$REF_NAME"
+          else
+            version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' tools/yuance-agent-cli/Cargo.toml | head -1)"
+            tag="yuance-agent-v${version}"
+          fi
+          scripts/validate-yuance-agent-release.sh "$tag"
+
+  quality:
+    name: Rust and Bash quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt -p yuance-agent -- --check
+
+      - name: Run Clippy
+        run: cargo clippy -p yuance-agent --all-targets -- -D warnings
+
+      - name: Run CLI tests
+        run: cargo test -p yuance-agent
+
+      - name: Run Bash installer tests
+        run: bash scripts/test-install-codex-skill.sh
+
+  quality-windows:
+    name: PowerShell installer quality
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust 1.94
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Run PowerShell installer tests
+        shell: pwsh
+        run: ./scripts/test-install-codex-skill.ps1
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [validate, quality, quality-windows]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            archive: tar.gz
+            binary: yuance-agent
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+            binary: yuance-agent
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            archive: tar.gz
+            binary: yuance-agent
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            archive: tar.gz
+            binary: yuance-agent
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+            binary: yuance-agent.exe
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            archive: zip
+            binary: yuance-agent.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust 1.94 target
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'linux-musl')
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+
+      - name: Build release CLI
+        run: cargo build --release -p yuance-agent --target ${{ matrix.target }}
+
+      - name: Smoke test CLI on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+
+      - name: Smoke test CLI on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+
+      - name: Assemble Unix Skill package
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' tools/yuance-agent-cli/Cargo.toml | head -1)"
+          package=".artifacts/package/yuance-agent"
+          mkdir -p "$package/agents" "$package/references" "$package/scripts" .artifacts/release
+          cp skills/yuance-agent/SKILL.md "$package/SKILL.md"
+          cp skills/yuance-agent/agents/openai.yaml "$package/agents/openai.yaml"
+          cp skills/yuance-agent/references/*.md "$package/references/"
+          cp "target/$TARGET/release/$BINARY" "$package/scripts/yuance-agent"
+          chmod +x "$package/scripts/yuance-agent"
+          tar -czf ".artifacts/release/yuance-agent-v${version}-${TARGET}.tar.gz" -C .artifacts/package yuance-agent
+
+      - name: Verify Unix package layout
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' tools/yuance-agent-cli/Cargo.toml | head -1)"
+          archive=".artifacts/release/yuance-agent-v${version}-${TARGET}.tar.gz"
+          verify=".artifacts/verify"
+          mkdir -p "$verify"
+          tar -xzf "$archive" -C "$verify"
+          test -x "$verify/yuance-agent/scripts/yuance-agent"
+          cmp "$verify/yuance-agent/SKILL.md" skills/yuance-agent/SKILL.md
+
+      - name: Assemble Windows Skill package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          BINARY: ${{ matrix.binary }}
+        run: |
+          $version = (Select-String -Path tools/yuance-agent-cli/Cargo.toml -Pattern '^version = "([^"]+)"$').Matches[0].Groups[1].Value
+          $package = ".artifacts/package/yuance-agent"
+          New-Item -ItemType Directory -Path "$package/agents", "$package/references", "$package/scripts", ".artifacts/release" -Force | Out-Null
+          Copy-Item skills/yuance-agent/SKILL.md "$package/SKILL.md"
+          Copy-Item skills/yuance-agent/agents/openai.yaml "$package/agents/openai.yaml"
+          Copy-Item skills/yuance-agent/references/*.md "$package/references/"
+          Copy-Item "target/$env:TARGET/release/$env:BINARY" "$package/scripts/yuance-agent.exe"
+          Compress-Archive -Path $package -DestinationPath ".artifacts/release/yuance-agent-v$version-$env:TARGET.zip"
+
+      - name: Verify Windows package layout
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          $version = (Select-String -Path tools/yuance-agent-cli/Cargo.toml -Pattern '^version = "([^"]+)"$').Matches[0].Groups[1].Value
+          $archive = ".artifacts/release/yuance-agent-v$version-$env:TARGET.zip"
+          $verify = ".artifacts/verify"
+          Expand-Archive -LiteralPath $archive -DestinationPath $verify
+          if (-not (Test-Path -LiteralPath "$verify/yuance-agent/scripts/yuance-agent.exe" -PathType Leaf)) {
+            throw "Windows 发布包缺少 CLI"
+          }
+          if ((Get-FileHash "$verify/yuance-agent/SKILL.md").Hash -ne (Get-FileHash "skills/yuance-agent/SKILL.md").Hash) {
+            throw "Windows 发布包 SKILL.md 与源码不一致"
+          }
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v6
+        with:
+          name: yuance-agent-${{ matrix.target }}
+          path: .artifacts/release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download release assets
+        uses: actions/download-artifact@v8
+        with:
+          path: .artifacts/publish
+          merge-multiple: true
+
+      - name: Validate six platform assets
+        run: scripts/validate-yuance-agent-release.sh "${{ github.ref_name }}" .artifacts/publish
+
+      - name: Generate SHA256SUMS
+        working-directory: .artifacts/publish
+        run: |
+          find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
+            | LC_ALL=C sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  \./#  #' > SHA256SUMS
+          test "$(wc -l < SHA256SUMS | tr -d ' ')" = "6"
+
+      - name: Attest release archives
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            .artifacts/publish/*.tar.gz
+            .artifacts/publish/*.zip
+
+      - name: Create or update Agent Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" .artifacts/publish/* --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$RELEASE_TAG" --title "元策 Agent $RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$RELEASE_TAG" .artifacts/publish/* \
+              --title "元策 Agent $RELEASE_TAG" --generate-notes --repo "$GITHUB_REPOSITORY"
+          fi
