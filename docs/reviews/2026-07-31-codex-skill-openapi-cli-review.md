@@ -4,7 +4,7 @@
 
 ## 结论
 
-Rust CLI、Codex Skill、安装器、MCP 迁移和六平台 Release 已形成可回放闭环。`yuance-agent-v0.1.0` 已正式发布，六个平台资产、`SHA256SUMS`、GitHub artifact attestation 和固定版本真实安装均验证通过。
+Rust CLI、Codex Skill、安装器、MCP 迁移和六平台 Release 已形成可回放闭环。当前修复版 `yuance-agent-v0.1.1` 已正式发布，默认安装目录已从错误的 `~/.agents/skills` 修正为 Codex 实际使用的 `~/.codex/skills`；六个平台资产、`SHA256SUMS`、GitHub artifact attestation 和固定版本真实安装均验证通过。
 
 当前结论为**有条件通过**。代码、发布链路和受限 PAT 读写闭环没有已知阻断缺陷，但以下一项需要有效的本机 Codex 凭证才能完成，不能以静态测试替代：
 
@@ -12,30 +12,30 @@ Rust CLI、Codex Skill、安装器、MCP 迁移和六平台 Release 已形成可
 
 ## Release 证据
 
-- Release：<https://github.com/ZhcChen/yuance/releases/tag/yuance-agent-v0.1.0>
-- 成功工作流：<https://github.com/ZhcChen/yuance/actions/runs/30606563801>
-- 标签提交：`d63e7e07fedddfce1c391dfb8aee3b91032c2f6e`
-- 发布时间：`2026-07-31T05:27:30Z`
+- Release：<https://github.com/ZhcChen/yuance/releases/tag/yuance-agent-v0.1.1>
+- 成功工作流：<https://github.com/ZhcChen/yuance/actions/runs/30608039449>
+- 标签提交：`828f3344e7567897c977a4cc3b19878fe00e5d10`
+- 发布时间：`2026-07-31T06:00:19Z`
 - Release 状态：非草稿、非 prerelease。
 
 发布资产共七个：
 
 ```text
 SHA256SUMS
-yuance-agent-v0.1.0-aarch64-apple-darwin.tar.gz
-yuance-agent-v0.1.0-x86_64-apple-darwin.tar.gz
-yuance-agent-v0.1.0-aarch64-unknown-linux-musl.tar.gz
-yuance-agent-v0.1.0-x86_64-unknown-linux-musl.tar.gz
-yuance-agent-v0.1.0-aarch64-pc-windows-msvc.zip
-yuance-agent-v0.1.0-x86_64-pc-windows-msvc.zip
+yuance-agent-v0.1.1-aarch64-apple-darwin.tar.gz
+yuance-agent-v0.1.1-x86_64-apple-darwin.tar.gz
+yuance-agent-v0.1.1-aarch64-unknown-linux-musl.tar.gz
+yuance-agent-v0.1.1-x86_64-unknown-linux-musl.tar.gz
+yuance-agent-v0.1.1-aarch64-pc-windows-msvc.zip
+yuance-agent-v0.1.1-x86_64-pc-windows-msvc.zip
 ```
 
 发布后重新下载全部资产并执行了以下验证：
 
 - `shasum -a 256 -c SHA256SUMS`：六个压缩包全部通过。
-- `scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.0 <assets-dir>`：六个平台目录结构、可执行文件和 Skill 源文件一致性通过。
+- `scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.1 <assets-dir>`：六个平台目录结构、可执行文件和 Skill 源文件一致性通过。
 - `gh attestation verify <archive> --repo ZhcChen/yuance`：六个压缩包全部通过 provenance 验证。
-- macOS ARM64 使用固定标签 Raw 安装脚本真实安装，`doctor --installation` 返回 `version=0.1.0`、`target=aarch64-macos`。
+- macOS ARM64 使用固定标签 Raw 安装脚本安装到隔离 `CODEX_HOME`，文件位于 `skills/yuance-agent`，`doctor --installation` 返回 `version=0.1.1`、`target=aarch64-macos`。
 - 未配置 Token 时执行 `projects list` 返回退出码 `2`，结构化错误码为 `missing_api_token`。
 
 ## CI 与本地门禁
@@ -49,7 +49,7 @@ cargo test -p yuance-agent
 cargo test -p yuance-api --test routing_smoke
 bash scripts/test-install-codex-skill.sh
 bash scripts/test-yuance-agent-real-api.sh
-scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.0
+scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.1 <assets-dir>
 git diff --check
 旧 MCP 实现路径、初始化标题和工具名前缀扫描（排除 docs/plans/**，预期无匹配）
 ```
@@ -80,6 +80,8 @@ Windows CI 的 `PowerShell installer quality` 已通过首次安装、升级、�
 ## 失败与修复记录
 
 首次标签运行 <https://github.com/ZhcChen/yuance/actions/runs/30606201605> 在聚合阶段发现 Windows checkout 将 `SKILL.md` 转为 CRLF，导致 Windows 包与标签源码字节不一致。没有放宽校验，而是在 `d63e7e0` 增加 `.gitattributes`，将发布包文本固定为 LF。标签在 Release 尚未创建时从 `0e16a73` 更新到 `d63e7e0`，重跑后六平台严格一致性校验通过。
+
+`v0.1.0` 首版安装器把未设置 `CODEX_HOME` 的默认目录误写为 `~/.agents/skills/yuance-agent`，当前 Codex 无法从该位置发现 Skill。`828f334` 将 Bash、PowerShell、在线页面和 runbook 统一修正为 `~/.codex/skills/yuance-agent`，并发布 `v0.1.1`；`dec51b2` 进一步为 PowerShell 增加默认目录和旧目录禁止写入断言，Windows CI 已通过。
 
 独立 Codex review 两次尝试均因本机 Codex 凭证 `401 invalid_api_key` 中断，没有将该尝试计为独立复核证据。本轮由当前会话完成安装安全、凭证处理、API 契约、删除范围和发布流程复核，独立性覆盖仍是残余风险。
 
