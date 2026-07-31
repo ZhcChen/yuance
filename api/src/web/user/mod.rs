@@ -7950,7 +7950,7 @@ async fn work_item_list_page(
         Vec::new()
     };
     let current_view_url = work_item_page_url(meta.active, &filters, page_number, per_page);
-    let clear_default_url = format!("/web/{}?clear_default=1", meta.active);
+    let clear_default_url = format!("/web/{}?clear_default=true", meta.active);
     let show_batch_selection = can_manage_work_items && !items.is_empty();
 
     let csrf_token = context.csrf_token.clone();
@@ -13170,7 +13170,7 @@ fn work_item_page_url(
         push_query_param(&mut params, "sort", &filters.sort_by);
     }
     if filters.clear_default {
-        params.push("clear_default=1".to_string());
+        params.push("clear_default=true".to_string());
     }
     if page > 1 {
         params.push(format!("page={page}"));

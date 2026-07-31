@@ -4605,6 +4605,23 @@ async fn web_work_item_saved_view_can_apply_default_filters_and_be_managed() {
     assert!(default_body.contains("YCE-TASK-2"));
     assert!(!default_body.contains("YCE-TASK-1"));
 
+    let reset_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks?clear_default=true&per_page=1")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(reset_response.status(), StatusCode::OK);
+    let reset_body = response_body(reset_response).await;
+    assert!(reset_body.contains("共 2 条"));
+    assert!(reset_body.contains("clear_default=true"));
+    assert!(!reset_body.contains("clear_default=1"));
+
     let rename_response = app
         .clone()
         .oneshot(
