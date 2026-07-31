@@ -9,8 +9,10 @@ $ReleaseDir = Join-Path $TempDir "release fixture"
 $InstallDir = Join-Path $TempDir "install root/yuance-agent"
 $TokenSentinel = "yuance_pat_must_not_be_printed"
 $LegacyCodexHome = Join-Path $TempDir "legacy codex"
+$DefaultHome = Join-Path $TempDir "default home"
 $OriginalApiToken = $env:YUANCE_API_TOKEN
 $OriginalCodexHome = $env:CODEX_HOME
+$OriginalHome = $HOME
 
 function Assert-Equal([string]$Actual, [string]$Expected) {
     if ($Actual -ne $Expected) {
@@ -55,6 +57,14 @@ try {
         Assert-Equal $detected $mapping[1]
     }
     Remove-Item Env:YUANCE_AGENT_TEST_ARCH -ErrorAction SilentlyContinue
+
+    New-TestRelease "0.1.1" "default"
+    Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
+    Set-Variable -Name HOME -Value $DefaultHome -Force
+    & $Installer -ReleaseDir $ReleaseDir | Out-Null
+    if (-not (Test-Path -LiteralPath (Join-Path $DefaultHome ".codex/skills/yuance-agent/SKILL.md") -PathType Leaf)) { throw "未安装到 Codex 默认 Skill 目录" }
+    if (Test-Path -LiteralPath (Join-Path $DefaultHome ".agents/skills/yuance-agent")) { throw "不应再写入旧的 .agents Skill 目录" }
+    Set-Variable -Name HOME -Value $OriginalHome -Force
 
     New-TestRelease "0.1.1" "initial"
     $env:YUANCE_API_TOKEN = $TokenSentinel
@@ -105,6 +115,7 @@ try {
     Write-Output "PowerShell 安装器测试通过。"
 } finally {
     Remove-Item Env:YUANCE_AGENT_TEST_ARCH -ErrorAction SilentlyContinue
+    Set-Variable -Name HOME -Value $OriginalHome -Force
     if ($null -eq $OriginalApiToken) { Remove-Item Env:YUANCE_API_TOKEN -ErrorAction SilentlyContinue } else { $env:YUANCE_API_TOKEN = $OriginalApiToken }
     if ($null -eq $OriginalCodexHome) { Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue } else { $env:CODEX_HOME = $OriginalCodexHome }
     Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
