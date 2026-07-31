@@ -16,6 +16,8 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 
 2026-07-31 执行记录：Unit 1-2 已完成。`frontend/` workspace 已创建，四个共享 package、JS/JSDoc 检查、source 后缀检查、package boundary 检查、基础 package tests 和 CI 路径接入已落地；根 `npm run check:frontend` 已覆盖 `web` 与 `frontend` 并通过。提交前审阅已补齐相对路径跨包 deep import、Node/Browser 宿主全局、CommonJS 源文件、package manifest 漂移和 package root exports 的边界验证。
 
+2026-07-31 执行记录：Unit 3 已完成。`ApiError`、错误 payload 映射、注入式 `createApiClient()`、工作项/评论/附件、通知、topbar 与基础 auth/project client 已进入 `frontend/packages/api-client`；Browser Cookie/CSRF、401 登录跳转、`return_to` hash 恢复和 `EventSource` 继续留在 `web/src/lib/api.js`。`web` 已通过本地 package dependency 回接共享 `api-client`，现有 Web API transport 测试保持通过。
+
 ## 问题框架
 
 当前 `web/src/app.jsx` 已经承载应用壳、消息中心、项目列表、工作项列表和工作项详情协作闭环。`web/src/lib/api.js`、`web/src/lib/routes.js` 和 `web/src/lib/notification-target.js` 已形成第一批可复用的 REST client、路由语义和通知目标映射，但这些代码仍与浏览器宿主能力混在一起：
@@ -235,7 +237,7 @@ flowchart TB
 - 根前端聚合检查包含 `web` 与 `frontend` 两部分。
 - 共享包骨架没有宿主特有依赖、`.ts` / `.tsx` 源文件、循环依赖或 deep import。
 
-- [ ] **Unit 3: 提取纯 API client、DTO 与错误模型**
+- [x] **Unit 3: 提取纯 API client、DTO 与错误模型**
 
 **Goal:** 将 `web/src/lib/api.js` 中与宿主无关的 REST path、DTO JSDoc、错误模型和工作项/通知 client 移入 `frontend/packages/api-client`，并让 Browser transport 继续掌管 Cookie/CSRF/登录跳转。
 

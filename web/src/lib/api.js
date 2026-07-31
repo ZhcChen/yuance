@@ -1,18 +1,12 @@
 // @ts-check
 
-/** @typedef {{ code?: string, message: string, status?: number }} ApiErrorOptions */
+import {
+  ApiError,
+  apiErrorFromPayload,
+  createApiClient,
+} from '@yuance/frontend-api-client';
 
-export class ApiError extends Error {
-  /**
-   * @param {ApiErrorOptions} options
-   */
-  constructor(options) {
-    super(options.message);
-    this.name = 'ApiError';
-    this.code = options.code || 'request_failed';
-    this.status = options.status || 500;
-  }
-}
+export { ApiError };
 
 /** @typedef {{ id: number, username: string, display_name: string, is_super_admin: boolean }} AuthUser */
 /** @typedef {{ project_key: string, pending_count: number }} TopbarProjectBadge */
@@ -61,134 +55,6 @@ function syncCsrfTokenFromResponse(headers, payload) {
     return csrfToken;
   }
   return '';
-}
-
-/**
- * @param {unknown} payload
- */
-function apiErrorFromPayload(payload) {
-  const code = payload && typeof payload === 'object'
-    ? /** @type {{ error?: { code?: string, message?: string } }} */ (payload).error?.code
-    : undefined;
-  const message = payload && typeof payload === 'object'
-    ? /** @type {{ error?: { code?: string, message?: string } }} */ (payload).error?.message
-    : undefined;
-  return new ApiError({
-    code: typeof code === 'string' ? code : 'request_failed',
-    message: typeof message === 'string' && message.trim() ? message : '请求失败。',
-  });
-}
-
-/** @param {string} itemKey */
-function workItemApiPath(itemKey) {
-  return `/api/v1/work-items/${encodeURIComponent(itemKey)}`;
-}
-
-/**
- * @param {string} itemKey
- * @param {number} commentId
- */
-function workItemCommentApiPath(itemKey, commentId) {
-  return `${workItemApiPath(itemKey)}/comments/${encodeURIComponent(String(commentId))}`;
-}
-
-/**
- * @param {string} itemKey
- * @param {number} attachmentId
- */
-function workItemAttachmentApiPath(itemKey, attachmentId) {
-  return `${workItemApiPath(itemKey)}/attachments/${encodeURIComponent(String(attachmentId))}`;
-}
-
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {number} attachmentId
- */
-function workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId) {
-  return `${workItemCommentApiPath(itemKey, commentId)}/attachments/${encodeURIComponent(String(attachmentId))}`;
-}
-
-/**
- * @param {Record<string, unknown>} payload
- * @returns {Record<string, unknown>}
- */
-function omitUndefined(payload) {
-  return Object.fromEntries(
-    Object.entries(payload).filter(([, value]) => value !== undefined),
-  );
-}
-
-/**
- * @param {CommentRequestPayload} payload
- */
-function commentRequestBody(payload) {
-  return omitUndefined({
-    body: payload.body,
-    body_format: payload.bodyFormat ?? 'plain',
-    parent_comment_id: payload.parentCommentId,
-  });
-}
-
-/**
- * @param {AttachmentCreatePayload} payload
- */
-function attachmentCreateRequestBody(payload) {
-  return {
-    original_filename: payload.originalFilename,
-    content_type: payload.contentType,
-    byte_size: payload.byteSize,
-  };
-}
-
-/**
- * @param {SignedUrlOptions} [query]
- */
-function signedUrlSuffix(query = {}) {
-  const params = new URLSearchParams();
-  const expiresInSeconds = query.expiresInSeconds;
-  if (typeof expiresInSeconds === 'number' && Number.isInteger(expiresInSeconds) && expiresInSeconds > 0) {
-    params.set('expires_in_seconds', String(expiresInSeconds));
-  }
-  return params.size > 0 ? `?${params.toString()}` : '';
-}
-
-/**
- * @param {unknown} raw
- * @returns {Attachment}
- */
-function attachmentFromPayload(raw) {
-  const attachment = /** @type {Attachment} */ (raw || {});
-  return {
-    id: attachment.id,
-    filename: attachment.filename,
-    content_type: attachment.content_type,
-    byte_size: attachment.byte_size,
-    status: attachment.status,
-    created_by: attachment.created_by,
-    created_at: attachment.created_at,
-  };
-}
-
-/**
- * @param {unknown} raw
- * @returns {Attachment[]}
- */
-function attachmentsFromPayload(raw) {
-  return Array.isArray(raw) ? raw.map(attachmentFromPayload) : [];
-}
-
-/**
- * @param {unknown} raw
- * @returns {AttachmentSignedUrl}
- */
-function attachmentSignedUrlFromPayload(raw) {
-  const payload = /** @type {AttachmentSignedUrl} */ (raw || {});
-  return {
-    attachment: attachmentFromPayload(payload.attachment),
-    request: payload.request,
-    expires_in_seconds: payload.expires_in_seconds,
-  };
 }
 
 export function redirectToLogin() {
@@ -308,385 +174,68 @@ export async function fetchJson(url, options = {}) {
   return payload.data;
 }
 
-/** @returns {Promise<AuthUser>} */
-export function getCurrentUser() {
-  return fetchJson('/api/v1/auth/me');
-}
+const apiClient = createApiClient({
+  request: fetchJson,
+  prepareWrite: async () => {
+    await refreshCsrfToken();
+  },
+});
 
-/** @returns {Promise<TopbarStatus>} */
-export function getTopbarStatus() {
-  return fetchJson('/api/v1/topbar/status');
-}
+export const getCurrentUser = /** @type {() => Promise<AuthUser>} */ (apiClient.getCurrentUser);
 
-/**
- * @param {{ status?: string, page?: number, perPage?: number }} [query]
- * @returns {Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>}
- */
-export function getProjects(query = {}) {
-  const params = new URLSearchParams();
-  if (typeof query.status === 'string' && query.status.trim() && query.status.trim() !== 'all') {
-    params.set('status', query.status.trim());
-  }
-  if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) {
-    params.set('page', String(query.page));
-  }
-  if (typeof query.perPage === 'number' && Number.isInteger(query.perPage) && query.perPage > 0) {
-    params.set('per_page', String(query.perPage));
-  }
-  const suffix = params.size > 0 ? `?${params.toString()}` : '';
-  return fetchJson(`/api/v1/projects${suffix}`);
-}
+export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiClient.getTopbarStatus);
 
-/** @param {string} projectKey @returns {Promise<{ key: string, name: string }>} */
-export async function updateCurrentProject(projectKey) {
-  await refreshCsrfToken();
-  return fetchJson('/api/v1/current-project', {
-    method: 'PATCH',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ project_key: projectKey }),
-  });
-}
+export const getProjects = /** @type {(query?: { status?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
 
-/**
- * @param {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, page?: number, perPage?: number }} [query]
- * @returns {Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>}
- */
-export function getWorkItems(query = {}) {
-  const params = new URLSearchParams();
-  if (typeof query.itemType === 'string' && query.itemType.trim()) {
-    params.set('item_type', query.itemType.trim());
-  }
-  if (typeof query.q === 'string' && query.q.trim()) {
-    params.set('q', query.q.trim());
-  }
-  if (typeof query.status === 'string' && query.status.trim()) {
-    params.set('status', query.status.trim());
-  }
-  if (typeof query.priority === 'string' && query.priority.trim()) {
-    params.set('priority', query.priority.trim().toUpperCase());
-  }
-  if (typeof query.assigneeUsername === 'string' && query.assigneeUsername.trim()) {
-    params.set('assignee_username', query.assigneeUsername.trim());
-  }
-  if (typeof query.projectKey === 'string' && query.projectKey.trim()) {
-    params.set('project_key', query.projectKey.trim().toUpperCase());
-  }
-  if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) {
-    params.set('page', String(query.page));
-  }
-  if (typeof query.perPage === 'number' && Number.isInteger(query.perPage) && query.perPage > 0) {
-    params.set('per_page', String(query.perPage));
-  }
-  const suffix = params.size > 0 ? `?${params.toString()}` : '';
-  return fetchJson(`/api/v1/work-items${suffix}`);
-}
+export const updateCurrentProject = /** @type {(projectKey: string) => Promise<{ key: string, name: string }>} */ (apiClient.updateCurrentProject);
 
-/** @param {string} itemKey @returns {Promise<WorkItemDetail>} */
-export function getWorkItem(itemKey) {
-  return fetchJson(workItemApiPath(itemKey));
-}
+export const getWorkItems = /** @type {(query?: { itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, page?: number, perPage?: number }) => Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getWorkItems);
 
-/** @param {string} itemKey @returns {Promise<WorkItemComment[]>} */
-export function getWorkItemComments(itemKey) {
-  return fetchJson(`${workItemApiPath(itemKey)}/comments`);
-}
+export const getWorkItem = /** @type {(itemKey: string) => Promise<WorkItemDetail>} */ (apiClient.getWorkItem);
 
-/**
- * @param {string} itemKey
- * @param {WorkItemUpdatePayload} payload
- * @returns {Promise<WorkItemDetail>}
- */
-export async function updateWorkItem(itemKey, payload) {
-  await refreshCsrfToken();
-  return fetchJson(workItemApiPath(itemKey), {
-    method: 'PATCH',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(omitUndefined({
-      title: payload.title,
-      description: payload.description,
-      status: payload.status,
-      priority: payload.priority,
-      assignee_username: payload.assigneeUsername,
-      due_date: payload.dueDate,
-      parent_item_key: payload.parentItemKey,
-    })),
-  });
-}
+export const getWorkItemComments = /** @type {(itemKey: string) => Promise<WorkItemComment[]>} */ (apiClient.getWorkItemComments);
 
-/**
- * @param {string} itemKey
- * @param {WorkItemHandoffPayload} payload
- * @returns {Promise<WorkItemDetail>}
- */
-export async function handoffWorkItem(itemKey, payload) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemApiPath(itemKey)}/handoff`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(omitUndefined({
-      status: payload.status,
-      assignee_username: payload.assigneeUsername,
-      body: payload.body,
-      source_comment_id: payload.sourceCommentId,
-    })),
-  });
-}
+export const updateWorkItem = /** @type {(itemKey: string, payload: WorkItemUpdatePayload) => Promise<WorkItemDetail>} */ (apiClient.updateWorkItem);
 
-/**
- * @param {string} itemKey
- * @param {CommentRequestPayload} payload
- * @returns {Promise<WorkItemComment>}
- */
-export async function createWorkItemComment(itemKey, payload) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemApiPath(itemKey)}/comments`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(commentRequestBody(payload)),
-  });
-}
+export const handoffWorkItem = /** @type {(itemKey: string, payload: WorkItemHandoffPayload) => Promise<WorkItemDetail>} */ (apiClient.handoffWorkItem);
 
-/**
- * @param {string} itemKey
- * @param {CommentRequestPayload} payload
- * @returns {Promise<WorkItemComment>}
- */
-export async function createWorkItemCommentDraft(itemKey, payload) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemApiPath(itemKey)}/comments/draft`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(commentRequestBody(payload)),
-  });
-}
+export const createWorkItemComment = /** @type {(itemKey: string, payload: CommentRequestPayload) => Promise<WorkItemComment>} */ (apiClient.createWorkItemComment);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {CommentRequestPayload} payload
- * @returns {Promise<WorkItemComment>}
- */
-export async function updateWorkItemComment(itemKey, commentId, payload) {
-  await refreshCsrfToken();
-  return fetchJson(workItemCommentApiPath(itemKey, commentId), {
-    method: 'PATCH',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(commentRequestBody(payload)),
-  });
-}
+export const createWorkItemCommentDraft = /** @type {(itemKey: string, payload: CommentRequestPayload) => Promise<WorkItemComment>} */ (apiClient.createWorkItemCommentDraft);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {CommentRequestPayload} payload
- * @returns {Promise<WorkItemComment>}
- */
-export async function publishWorkItemCommentDraft(itemKey, commentId, payload) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemCommentApiPath(itemKey, commentId)}/publish`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(commentRequestBody(payload)),
-  });
-}
+export const updateWorkItemComment = /** @type {(itemKey: string, commentId: number, payload: CommentRequestPayload) => Promise<WorkItemComment>} */ (apiClient.updateWorkItemComment);
 
-/** @param {string} itemKey @returns {Promise<Attachment[]>} */
-export async function getWorkItemAttachments(itemKey) {
-  return attachmentsFromPayload(await fetchJson(`${workItemApiPath(itemKey)}/attachments`));
-}
+export const publishWorkItemCommentDraft = /** @type {(itemKey: string, commentId: number, payload: CommentRequestPayload) => Promise<WorkItemComment>} */ (apiClient.publishWorkItemCommentDraft);
 
-/**
- * @param {string} itemKey
- * @param {AttachmentCreatePayload} payload
- * @returns {Promise<Attachment>}
- */
-export async function createWorkItemAttachment(itemKey, payload) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemApiPath(itemKey)}/attachments`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(attachmentCreateRequestBody(payload)),
-  }).then(attachmentFromPayload);
-}
+export const getWorkItemAttachments = /** @type {(itemKey: string) => Promise<Attachment[]>} */ (apiClient.getWorkItemAttachments);
 
-/**
- * @param {string} itemKey
- * @param {number} attachmentId
- * @param {SignedUrlOptions} [query]
- * @returns {Promise<AttachmentSignedUrl>}
- */
-export async function getWorkItemAttachmentUploadUrl(itemKey, attachmentId, query = {}) {
-  return attachmentSignedUrlFromPayload(await fetchJson(
-    `${workItemAttachmentApiPath(itemKey, attachmentId)}/upload-url${signedUrlSuffix(query)}`,
-  ));
-}
+export const createWorkItemAttachment = /** @type {(itemKey: string, payload: AttachmentCreatePayload) => Promise<Attachment>} */ (apiClient.createWorkItemAttachment);
 
-/**
- * @param {string} itemKey
- * @param {number} attachmentId
- * @returns {Promise<Attachment>}
- */
-export async function markWorkItemAttachmentUploaded(itemKey, attachmentId) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemAttachmentApiPath(itemKey, attachmentId)}/uploaded`, {
-    method: 'POST',
-  }).then(attachmentFromPayload);
-}
+export const getWorkItemAttachmentUploadUrl = /** @type {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemAttachmentUploadUrl);
 
-/**
- * @param {string} itemKey
- * @param {number} attachmentId
- * @param {SignedUrlOptions} [query]
- * @returns {Promise<AttachmentSignedUrl>}
- */
-export async function getWorkItemAttachmentDownloadUrl(itemKey, attachmentId, query = {}) {
-  return attachmentSignedUrlFromPayload(await fetchJson(
-    `${workItemAttachmentApiPath(itemKey, attachmentId)}/download-url${signedUrlSuffix(query)}`,
-  ));
-}
+export const markWorkItemAttachmentUploaded = /** @type {(itemKey: string, attachmentId: number) => Promise<Attachment>} */ (apiClient.markWorkItemAttachmentUploaded);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @returns {Promise<Attachment[]>}
- */
-export async function getWorkItemCommentAttachments(itemKey, commentId) {
-  return attachmentsFromPayload(await fetchJson(
-    `${workItemCommentApiPath(itemKey, commentId)}/attachments`,
-  ));
-}
+export const getWorkItemAttachmentDownloadUrl = /** @type {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemAttachmentDownloadUrl);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {AttachmentCreatePayload} payload
- * @returns {Promise<Attachment>}
- */
-export async function createWorkItemCommentAttachment(itemKey, commentId, payload) {
-  await refreshCsrfToken();
-  return fetchJson(`${workItemCommentApiPath(itemKey, commentId)}/attachments`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(attachmentCreateRequestBody(payload)),
-  }).then(attachmentFromPayload);
-}
+export const getWorkItemCommentAttachments = /** @type {(itemKey: string, commentId: number) => Promise<Attachment[]>} */ (apiClient.getWorkItemCommentAttachments);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {number} attachmentId
- * @param {SignedUrlOptions} [query]
- * @returns {Promise<AttachmentSignedUrl>}
- */
-export async function getWorkItemCommentAttachmentUploadUrl(itemKey, commentId, attachmentId, query = {}) {
-  return attachmentSignedUrlFromPayload(await fetchJson(
-    `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/upload-url${signedUrlSuffix(query)}`,
-  ));
-}
+export const createWorkItemCommentAttachment = /** @type {(itemKey: string, commentId: number, payload: AttachmentCreatePayload) => Promise<Attachment>} */ (apiClient.createWorkItemCommentAttachment);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {number} attachmentId
- * @returns {Promise<Attachment>}
- */
-export async function markWorkItemCommentAttachmentUploaded(itemKey, commentId, attachmentId) {
-  await refreshCsrfToken();
-  return fetchJson(
-    `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/uploaded`,
-    { method: 'POST' },
-  ).then(attachmentFromPayload);
-}
+export const getWorkItemCommentAttachmentUploadUrl = /** @type {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemCommentAttachmentUploadUrl);
 
-/**
- * @param {string} itemKey
- * @param {number} commentId
- * @param {number} attachmentId
- * @param {SignedUrlOptions} [query]
- * @returns {Promise<AttachmentSignedUrl>}
- */
-export async function getWorkItemCommentAttachmentDownloadUrl(itemKey, commentId, attachmentId, query = {}) {
-  return attachmentSignedUrlFromPayload(await fetchJson(
-    `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/download-url${signedUrlSuffix(query)}`,
-  ));
-}
+export const markWorkItemCommentAttachmentUploaded = /** @type {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} */ (apiClient.markWorkItemCommentAttachmentUploaded);
 
-/**
- * @param {number | { limit?: number, filter?: string, page?: number, perPage?: number }} [query]
- * @returns {Promise<NotificationFeed>}
- */
-export function getNotifications(query = {}) {
-  const params = new URLSearchParams();
-  if (typeof query === 'number') {
-    params.set('limit', String(query));
-  } else {
-    const limit = query.limit;
-    const filter = query.filter;
-    const page = query.page;
-    const perPage = query.perPage;
-    if (typeof limit === 'number' && Number.isInteger(limit) && limit > 0) {
-      params.set('limit', String(limit));
-    }
-    if (typeof filter === 'string' && filter.trim()) {
-      params.set('filter', filter.trim());
-    }
-    if (typeof page === 'number' && Number.isInteger(page) && page > 0) {
-      params.set('page', String(page));
-    }
-    if (typeof perPage === 'number' && Number.isInteger(perPage) && perPage > 0) {
-      params.set('per_page', String(perPage));
-    }
-  }
-  const suffix = params.size > 0 ? `?${params.toString()}` : '';
-  return fetchJson(`/api/v1/notifications${suffix}`);
-}
+export const getWorkItemCommentAttachmentDownloadUrl = /** @type {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemCommentAttachmentDownloadUrl);
 
-/** @param {number} notificationId @returns {Promise<NotificationTargetPayload>} */
-export function getNotificationTarget(notificationId) {
-  return fetchJson(`/api/v1/notifications/${notificationId}/target`);
-}
+export const getNotifications = /** @type {(query?: number | { limit?: number, filter?: string, page?: number, perPage?: number }) => Promise<NotificationFeed>} */ (apiClient.getNotifications);
 
-/** @param {number} notificationId @returns {Promise<NotificationTargetPayload>} */
-export async function markNotificationRead(notificationId) {
-  await refreshCsrfToken();
-  return fetchJson(`/api/v1/notifications/${notificationId}/read`, {
-    method: 'POST',
-  });
-}
+export const getNotificationTarget = /** @type {(notificationId: number) => Promise<NotificationTargetPayload>} */ (apiClient.getNotificationTarget);
 
-/** @returns {Promise<{ affected: number }>} */
-export async function markAllNotificationsRead() {
-  await refreshCsrfToken();
-  return fetchJson('/api/v1/notifications/read-all', {
-    method: 'POST',
-  });
-}
+export const markNotificationRead = /** @type {(notificationId: number) => Promise<NotificationTargetPayload>} */ (apiClient.markNotificationRead);
 
-/** @returns {Promise<{ revoked: boolean }>} */
-export async function logout() {
-  await refreshCsrfToken();
-  return fetchJson('/api/v1/auth/logout', {
-    method: 'POST',
-  });
-}
+export const markAllNotificationsRead = /** @type {() => Promise<{ affected: number }>} */ (apiClient.markAllNotificationsRead);
+
+export const logout = /** @type {() => Promise<{ revoked: boolean }>} */ (apiClient.logout);
 
 /**
  * @param {{ onRefresh: () => void, onReleaseVersion?: (version: string) => void }} callbacks

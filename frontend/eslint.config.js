@@ -37,6 +37,9 @@ export default [
           jsx: true,
         },
       },
+      globals: {
+        URLSearchParams: 'readonly',
+      },
     },
     rules: commonRules,
   },
