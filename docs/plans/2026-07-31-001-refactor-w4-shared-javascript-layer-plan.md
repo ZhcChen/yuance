@@ -14,6 +14,8 @@ origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 
 W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次性搬到 `frontend/`。本阶段只抽取已经由浏览器生产路径验证过的工作项协作、通知语义和路由能力；Cookie/CSRF transport、浏览器历史、`File`、`EventSource`、DOM 下载和同源资源交付继续留在 Browser 宿主内。
 
+2026-07-31 执行记录：Unit 1-2 已完成。`frontend/` workspace 已创建，四个共享 package、JS/JSDoc 检查、source 后缀检查、package boundary 检查、基础 package tests 和 CI 路径接入已落地；根 `npm run check:frontend` 已覆盖 `web` 与 `frontend` 并通过。提交前审阅已补齐相对路径跨包 deep import、Node/Browser 宿主全局、CommonJS 源文件、package manifest 漂移和 package root exports 的边界验证。
+
 ## 问题框架
 
 当前 `web/src/app.jsx` 已经承载应用壳、消息中心、项目列表、工作项列表和工作项详情协作闭环。`web/src/lib/api.js`、`web/src/lib/routes.js` 和 `web/src/lib/notification-target.js` 已形成第一批可复用的 REST client、路由语义和通知目标映射，但这些代码仍与浏览器宿主能力混在一起：
@@ -143,7 +145,7 @@ flowchart TB
 
 ## Implementation Units
 
-- [ ] **Unit 1: W4 抽取边界与包依赖图冻结**
+- [x] **Unit 1: W4 抽取边界与包依赖图冻结**
 
 **Goal:** 在代码改动前冻结共享/宿主边界、包依赖图、导出面、import 规则和迁移顺序，避免后续把 Browser 副作用带入共享包。
 
@@ -180,7 +182,7 @@ flowchart TB
 - 计划中列出的包依赖图、宿主留存清单、迁移顺序和不纳入范围与主线 W4 门槛一致。
 - 后续单元可从该边界直接执行，不需要重新决策是否启动 Desktop 或跨源认证。
 
-- [ ] **Unit 2: 搭建 `frontend/` workspace 与边界检查骨架**
+- [x] **Unit 2: 搭建 `frontend/` workspace 与边界检查骨架**
 
 **Goal:** 创建共享 workspace、四个 package 骨架、JSDoc/checkJs/lint/test 聚合和基础边界检查，使后续代码迁移有可执行质量门槛。
 

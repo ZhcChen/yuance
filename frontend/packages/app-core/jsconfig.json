@@ -1,0 +1,11 @@
+{
+  "extends": "../../jsconfig.base.json",
+  "compilerOptions": {
+    "maxNodeModuleJsDepth": 0
+  },
+  "include": [
+    "src/**/*.js",
+    "test/**/*.mjs"
+  ],
+  "exclude": ["dist", "node_modules", "../../node_modules"]
+}

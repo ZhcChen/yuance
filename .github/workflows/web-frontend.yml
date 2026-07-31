@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "web/**"
+      - "frontend/**"
       - "api/src/web/**"
       - "api/templates/**"
       - "api/static/**"
@@ -18,12 +19,14 @@ on:
       - "deploy/easy-deploy/production/backend/compose.yaml.example"
       - "Makefile"
       - "package.json"
+      - "frontend/package-lock.json"
   push:
     branches:
       - main
       - dev
     paths:
       - "web/**"
+      - "frontend/**"
       - "api/src/web/**"
       - "api/templates/**"
       - "api/static/**"
@@ -38,6 +41,7 @@ on:
       - "deploy/easy-deploy/production/backend/compose.yaml.example"
       - "Makefile"
       - "package.json"
+      - "frontend/package-lock.json"
 
 permissions:
   contents: read
@@ -54,7 +58,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: |
+            web/package-lock.json
+            frontend/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -64,6 +70,9 @@ jobs:
 
       - name: Install web dependencies
         run: npm --prefix web ci
+
+      - name: Install shared frontend dependencies
+        run: npm --prefix frontend ci
 
       - name: Run frontend checks
         run: npm run check:frontend
