@@ -9,56 +9,49 @@
     <img src="https://img.shields.io/badge/%E9%AB%98%E6%80%A7%E8%83%BD-Rust%20%2B%20Axum-c2410c?style=flat-square" alt="高性能 Rust 与 Axum">
     <img src="https://img.shields.io/badge/Rust-1.94-000000?style=flat-square&amp;logo=rust" alt="Rust 1.94">
   </p>
+  <p>
+    <a href="#核心功能">核心功能</a> ·
+    <a href="#项目结构">项目结构</a> ·
+    <a href="#文档入口">文档入口</a>
+  </p>
 </div>
 
 元策（yuance）第一版采用 Rust 单体服务交付，在保持部署简单的同时，为企业研发团队提供聚焦核心协作流程的项目管理能力。
 
-## 当前技术边界
+## 核心功能
 
-- 多模块仓库，当前只有 `api` 模块。
-- Rust + Axum + Askama。
-- SQLite 作为主存储。
-- 不引入 Redis，缓存使用进程内内存。
-- 页面统一走 `/web`，系统管理嵌入 `/web/system/*`。
-- JSON API 统一走 `/api`。
-- 默认端口：`127.0.0.1:33033`。
+| | 能力 | 说明 |
+|:--:|---|---|
+| 🏢 | 项目与成员 | 管理项目空间、成员关系与项目范围权限 |
+| 🧩 | 研发工作项 | 统一管理需求、任务和 Bug，支持层级、优先级与截止日期 |
+| 🔄 | 协作流转 | 支持状态流转、处理人指派、交接上下文与操作记录 |
+| 💬 | 讨论与通知 | 提供富文本评论、回复、实时讨论和工作项通知 |
+| 📎 | 资料与附件 | 管理项目资料，支持文件上传及常见文档在线预览 |
+| 📊 | 进度洞察 | 提供项目看板、个人视图、周期管理与进度分析 |
+| 🤖 | AI 协作 | 通过 OpenAPI 与 Codex Skill 查询和操作项目工作项 |
+| 🖥️ | 多端体验 | 提供 Web 工作台与桌面客户端发布能力 |
 
-## 本地启动
+## 项目结构
 
-```bash
-cp api/.env.example api/.env
-make api-migrate-up
-make api-run
-```
+| 目录 | 用途 |
+|---|---|
+| [`api/`](api/) | Rust API、Web 页面、数据库迁移、模板与静态资源 |
+| [`frontend/`](frontend/) | Web 与桌面端共享的前端工程 |
+| [`desktop/`](desktop/) | Electron 桌面客户端及发布工具 |
+| [`skills/yuance-agent/`](skills/yuance-agent/) | 面向 Codex 的元策协作 Skill |
+| [`tools/yuance-agent-cli/`](tools/yuance-agent-cli/) | Skill 内置的 Rust OpenAPI CLI |
+| [`docs/`](docs/) | 需求、计划、复核、运行手册与工程规范 |
+| [`deploy/`](deploy/) | 正式环境部署模板 |
 
-访问：
+## 文档入口
 
-```text
-http://127.0.0.1:33033/web
-```
+| | 文档 | 内容 |
+|:--:|---|---|
+| 🚀 | [本地开发与启动](api/README.md) | 环境准备、常用命令、迁移与本地初始化 |
+| 📦 | [正式环境部署](docs/runbooks/production-deployment.md) | 构建、发布、健康检查与回滚流程 |
+| 🔌 | [API v1 契约](docs/runbooks/api-v1-contract.md) | 鉴权、分页、项目上下文与接口约定 |
+| 🤖 | [Codex Skill 安装](docs/runbooks/yuance-agent-codex-installation.md) | 跨平台安装、凭证配置与升级方式 |
+| 🖥️ | [桌面端发布](docs/runbooks/desktop-release-publication.md) | 桌面客户端构建与发布流程 |
+| 📐 | [工程规范](docs/standards/) | Git、数据访问、UI 与运行配置约定 |
 
-开发 / 测试环境后续可通过 `make api-seed-local-admin` 创建固定超级管理员。生产环境不得执行该 seed。
-
-## 正式环境部署
-
-当前正式环境复用参考项目 qfy-sc 的测试服务器别名 `qfy-sc-test`，但元策部署口径是 `production`。服务器只运行 Docker Compose，不允许源码编译或镜像构建。
-部署方式对齐 qfy-sc 测试环境：本地构建 `linux/amd64` 镜像 tar，上传到服务器后 `docker load`，再由服务器 Compose 重建容器；不依赖 easy-deploy 平台。
-
-本地构建 x86 镜像 tar：
-
-```bash
-make api-image-amd64
-```
-
-部署模板和完整服务器命令见：
-
-```text
-deploy/easy-deploy/production/
-docs/runbooks/production-deployment.md
-```
-
-部署模板校验：
-
-```bash
-make deploy-validate
-```
+核心技术栈：**Rust · Axum · Askama · SQLite · TypeScript · Electron**
