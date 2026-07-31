@@ -6,9 +6,7 @@
 
 Rust CLI、Codex Skill、安装器、MCP 迁移和六平台 Release 已形成可回放闭环。当前修复版 `yuance-agent-v0.1.1` 已正式发布，默认安装目录已从错误的 `~/.agents/skills` 修正为 Codex 实际使用的 `~/.codex/skills`；六个平台资产、`SHA256SUMS`、GitHub artifact attestation 和固定版本真实安装均验证通过。
 
-当前结论为**有条件通过**。代码、发布链路和受限 PAT 读写闭环没有已知阻断缺陷，但以下一项需要有效的本机 Codex 凭证才能完成，不能以静态测试替代：
-
-- 独立 `codex exec` 会话因本机 Codex 凭证返回 `401 invalid_api_key`，尚未完成全新会话中的 Skill 触发和误触发验证。
+当前结论为**通过**。代码、发布链路、受限 PAT 读写闭环和全新 Codex 会话行为门禁均已完成，没有已知阻断缺陷。
 
 ## Release 证据
 
@@ -75,7 +73,7 @@ Windows CI 的 `PowerShell installer quality` 已通过首次安装、升级、�
 | R11-R12 | MCP 实现与现行文档删除、迁移 runbook、历史计划排除扫描 | 通过 |
 | AE1-AE3、AE5-AE8 的可自动化部分 | 安装器测试、CI、真实 Release 安装、结构化缺 Token 错误 | 通过 |
 | AE4 与受限 PAT 验收 | 真实 API/CLI 二进制、单项目 PAT、完整读写与 401/403 回放 | 通过 |
-| 全新 Codex 会话行为门禁 | 子会话认证失败，未获得模型响应 | 阻塞 |
+| 全新 Codex 会话行为门禁 | 显式触发、隐式触发、缺参阻塞、普通任务误触发控制和不支持能力边界 | 通过 |
 
 ## 失败与修复记录
 
@@ -83,14 +81,16 @@ Windows CI 的 `PowerShell installer quality` 已通过首次安装、升级、�
 
 `v0.1.0` 首版安装器把未设置 `CODEX_HOME` 的默认目录误写为 `~/.agents/skills/yuance-agent`，当前 Codex 无法从该位置发现 Skill。`828f334` 将 Bash、PowerShell、在线页面和 runbook 统一修正为 `~/.codex/skills/yuance-agent`，并发布 `v0.1.1`；`dec51b2` 进一步为 PowerShell 增加默认目录和旧目录禁止写入断言，Windows CI 已通过。
 
-独立 Codex review 两次尝试均因本机 Codex 凭证 `401 invalid_api_key` 中断，没有将该尝试计为独立复核证据。本轮由当前会话完成安装安全、凭证处理、API 契约、删除范围和发布流程复核，独立性覆盖仍是残余风险。
+独立 Codex review 前两次尝试曾因本机凭证 `401 invalid_api_key` 中断。凭证恢复后，在仓库外 `/tmp` 目录以五个全新 `codex exec` 会话重新验证：
 
-## 剩余验收步骤
+- 显式要求使用元策时加载 `yuance-agent`，从 Skill 位置解析 CLI，未配置 PAT 时不发起网络请求。
+- 未点名 Skill、但要求查询元策项目 Bug 时自动加载 Skill，并按项目详情、显式项目范围、Bug 类型和分页组织查询。
+- 评论请求缺少目标和正文时停止执行，只要求补充 `ITEM_KEY` 与评论正文。
+- 普通 Rust 函数任务直接回答，没有读取或提及元策 Skill。
+- 删除工作项请求被识别为首版不支持能力，没有猜测命令或访问未声明端点。
 
-1. 修复本机 Codex 登录凭证，在仓库外临时项目启动全新会话，验证直接触发、隐式触发、缺参阻塞、普通代码任务误触发控制和不支持能力边界。
-
-上述步骤完成前，不将 U7 和计划 Definition of Done 标记为完全完成。
+至此 U7 和计划 Definition of Done 全部满足。
 
 ## 清理确认
 
-发布资产、安装目录和失败尝试均位于系统临时目录并已移入 Trash；仓库未新增二进制、`target/` 或下载资产。长期未跟踪的 `web/` 不属于本计划，未读取、修改或提交。
+发布验收使用的临时资产和隔离安装目录已移入 Trash；`~/.codex/skills/yuance-agent` 保留已验证的 `v0.1.1` 正式安装。仓库未新增二进制、`target/` 或下载资产。长期未跟踪的 `web/` 不属于本计划，未读取、修改或提交。
