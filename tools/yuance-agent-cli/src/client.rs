@@ -1,6 +1,7 @@
 use std::{env, time::Duration};
 
 use reqwest::{Client, Method, Url, header};
+use serde::Serialize;
 use serde_json::Value;
 
 use crate::{error::AgentError, models::ApiErrorEnvelope};
@@ -94,17 +95,44 @@ impl ApiClient {
     }
 
     pub async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value, AgentError> {
-        self.request(Method::GET, path, query, None).await
+        let url = self.url(path)?;
+        self.request::<Value>(Method::GET, url, query, None).await
     }
 
-    pub async fn request(
+    pub async fn get_segments(
+        &self,
+        segments: &[&str],
+        query: &[(&str, &str)],
+    ) -> Result<Value, AgentError> {
+        let url = self.url_segments(segments)?;
+        self.request::<Value>(Method::GET, url, query, None).await
+    }
+
+    pub async fn post_segments<T: Serialize + ?Sized>(
+        &self,
+        segments: &[&str],
+        body: &T,
+    ) -> Result<Value, AgentError> {
+        let url = self.url_segments(segments)?;
+        self.request(Method::POST, url, &[], Some(body)).await
+    }
+
+    pub async fn patch_segments<T: Serialize + ?Sized>(
+        &self,
+        segments: &[&str],
+        body: &T,
+    ) -> Result<Value, AgentError> {
+        let url = self.url_segments(segments)?;
+        self.request(Method::PATCH, url, &[], Some(body)).await
+    }
+
+    async fn request<T: Serialize + ?Sized>(
         &self,
         method: Method,
-        path: &str,
+        mut url: Url,
         query: &[(&str, &str)],
-        body: Option<&Value>,
+        body: Option<&T>,
     ) -> Result<Value, AgentError> {
-        let mut url = self.url(path)?;
         if !query.is_empty() {
             url.query_pairs_mut().extend_pairs(query.iter().copied());
         }
@@ -151,6 +179,18 @@ impl ApiClient {
                 code: "invalid_request_path",
                 message: "请求路径无效".to_string(),
             })
+    }
+
+    fn url_segments(&self, segments: &[&str]) -> Result<Url, AgentError> {
+        let mut url = self.base_url.clone();
+        let mut path = url.path_segments_mut().map_err(|_| AgentError::Config {
+            code: "invalid_request_path",
+            message: "请求路径无效".to_string(),
+        })?;
+        path.pop_if_empty();
+        path.extend(segments);
+        drop(path);
+        Ok(url)
     }
 }
 
