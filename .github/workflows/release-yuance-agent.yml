@@ -71,6 +71,9 @@ jobs:
       - name: Run Bash installer tests
         run: bash scripts/test-install-codex-skill.sh
 
+      - name: Run real API CLI flow
+        run: bash scripts/test-yuance-agent-real-api.sh
+
   quality-windows:
     name: PowerShell installer quality
     runs-on: windows-latest

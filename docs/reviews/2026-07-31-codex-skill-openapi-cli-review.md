@@ -6,9 +6,8 @@
 
 Rust CLI、Codex Skill、安装器、MCP 迁移和六平台 Release 已形成可回放闭环。`yuance-agent-v0.1.0` 已正式发布，六个平台资产、`SHA256SUMS`、GitHub artifact attestation 和固定版本真实安装均验证通过。
 
-当前结论为**有条件通过**。代码与发布链路没有已知阻断缺陷，但以下两项需要外部凭证才能完成，不能以模拟结果替代：
+当前结论为**有条件通过**。代码、发布链路和受限 PAT 读写闭环没有已知阻断缺陷，但以下一项需要有效的本机 Codex 凭证才能完成，不能以静态测试替代：
 
-- 当前环境没有受限测试 `YUANCE_API_TOKEN`，尚未对正式服务执行项目查询和工作项写入闭环。
 - 独立 `codex exec` 会话因本机 Codex 凭证返回 `401 invalid_api_key`，尚未完成全新会话中的 Skill 触发和误触发验证。
 
 ## Release 证据
@@ -49,12 +48,20 @@ cargo clippy -p yuance-agent --all-targets -- -D warnings
 cargo test -p yuance-agent
 cargo test -p yuance-api --test routing_smoke
 bash scripts/test-install-codex-skill.sh
+bash scripts/test-yuance-agent-real-api.sh
 scripts/validate-yuance-agent-release.sh yuance-agent-v0.1.0
 git diff --check
-rg -n "mcp/yuance-mcp|MCP 初始化|yuance_list_" --glob '!docs/plans/**' .
+旧 MCP 实现路径、初始化标题和工具名前缀扫描（排除 docs/plans/**，预期无匹配）
 ```
 
 Windows CI 的 `PowerShell installer quality` 已通过首次安装、升级、校验失败和回滚测试。六个平台 build job 均完成编译、`--version`、包布局验证和 artifact 上传；Windows ARM64 也在原生 runner 上通过运行验证。
+
+`scripts/test-yuance-agent-real-api.sh` 构建并启动真实 `yuance-api` 与 `yuance-agent` 二进制，使用临时文件 SQLite 和三个仅限单项目的 PAT，完成以下运行验证：
+
+- Token 只能列出授权项目，跨项目写入返回结构化 `403`。
+- 项目查询、Bug 创建、详情读取、评论、回复、元数据更新和 handoff 全部成功。
+- 只读 Token 写入返回退出码 `11` 和结构化 `403`。
+- 删除 Token 后查询返回退出码 `10` 和结构化 `401`。
 
 计划中的 `cargo fmt --all -- --check` 仍会报告本功能开始前已存在的 API 格式差异。为避免大范围无关格式 churn，本次没有执行 `cargo fmt --all` 写入；CLI 自身的格式门禁在本地和 CI 均通过。
 
@@ -67,7 +74,7 @@ Windows CI 的 `PowerShell installer quality` 已通过首次安装、升级、�
 | R7-R10 | Bash/PowerShell 安装器、六平台 workflow、Release 资产与 attestation | 通过 |
 | R11-R12 | MCP 实现与现行文档删除、迁移 runbook、历史计划排除扫描 | 通过 |
 | AE1-AE3、AE5-AE8 的可自动化部分 | 安装器测试、CI、真实 Release 安装、结构化缺 Token 错误 | 通过 |
-| AE4 与受限 PAT 验收 | 正式服务读写需要测试 PAT | 阻塞 |
+| AE4 与受限 PAT 验收 | 真实 API/CLI 二进制、单项目 PAT、完整读写与 401/403 回放 | 通过 |
 | 全新 Codex 会话行为门禁 | 子会话认证失败，未获得模型响应 | 阻塞 |
 
 ## 失败与修复记录
@@ -78,8 +85,7 @@ Windows CI 的 `PowerShell installer quality` 已通过首次安装、升级、�
 
 ## 剩余验收步骤
 
-1. 提供只读、写入和已撤销三类测试 PAT，在测试项目回放查询、创建、详情、评论、回复、更新和 handoff，并验证 `401`、`403` 不重试。
-2. 修复本机 Codex 登录凭证，在仓库外临时项目启动全新会话，验证直接触发、隐式触发、缺参阻塞、普通代码任务误触发控制和不支持能力边界。
+1. 修复本机 Codex 登录凭证，在仓库外临时项目启动全新会话，验证直接触发、隐式触发、缺参阻塞、普通代码任务误触发控制和不支持能力边界。
 
 上述步骤完成前，不将 U7 和计划 Definition of Done 标记为完全完成。
 
