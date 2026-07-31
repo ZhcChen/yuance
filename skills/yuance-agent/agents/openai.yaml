@@ -1,0 +1,4 @@
+interface:
+  display_name: "元策项目协作"
+  short_description: "通过元策 OpenAPI 分析和处理项目、需求、任务与 Bug"
+  default_prompt: "使用 $yuance-agent 分析指定项目的工作项，并在写入前确认上下文。"
