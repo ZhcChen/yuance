@@ -18,6 +18,8 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 
 2026-07-31 执行记录：Unit 3 已完成。`ApiError`、错误 payload 映射、注入式 `createApiClient()`、工作项/评论/附件、通知、topbar 与基础 auth/project client 已进入 `frontend/packages/api-client`；Browser Cookie/CSRF、401 登录跳转、`return_to` hash 恢复和 `EventSource` 继续留在 `web/src/lib/api.js`。`web` 已通过本地 package dependency 回接共享 `api-client`，现有 Web API transport 测试保持通过。
 
+2026-07-31 执行记录：Unit 4 第一小闭环已完成。纯路由 builder/parser 与通知 target 映射已进入 `frontend/packages/app-core`，并新增 package 单元测试；`web/src/lib/routes.js` 仅保留 `window.location` 默认参数 wrapper，`web/src/lib/notification-target.js` 改为公开 re-export。工作项协作 use case 编排尚未提取，Unit 4 暂不勾选完成。
+
 ## 问题框架
 
 当前 `web/src/app.jsx` 已经承载应用壳、消息中心、项目列表、工作项列表和工作项详情协作闭环。`web/src/lib/api.js`、`web/src/lib/routes.js` 和 `web/src/lib/notification-target.js` 已形成第一批可复用的 REST client、路由语义和通知目标映射，但这些代码仍与浏览器宿主能力混在一起：

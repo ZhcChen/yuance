@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@yuance/frontend-api-client": "file:../frontend/packages/api-client",
+    "@yuance/frontend-app-core": "file:../frontend/packages/app-core",
+    "@yuance/frontend-platform-contract": "file:../frontend/packages/platform-contract",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
   },
