@@ -21,9 +21,16 @@ fn skill_uses_self_contained_cli_and_one_level_references() {
     assert!(skill.contains("<skill-dir>/scripts/yuance-agent"));
     assert!(skill.contains("<skill-dir>\\scripts\\yuance-agent.exe"));
 
-    for forbidden in ["docs/", "tools/", "/Users/", "mcp/", "yuance_list_"] {
+    let forbidden = [
+        "docs/".to_string(),
+        "tools/".to_string(),
+        "/Users/".to_string(),
+        "mcp/".to_string(),
+        ["yuance_", "list_"].concat(),
+    ];
+    for forbidden in forbidden {
         assert!(
-            !package_text().contains(forbidden),
+            !package_text().contains(&forbidden),
             "Skill package contains repository coupling: {forbidden}"
         );
     }

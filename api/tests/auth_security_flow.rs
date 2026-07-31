@@ -744,7 +744,7 @@ async fn api_personal_access_tokens_create_list_revoke_and_authenticate() {
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(
-                    r#"{"name":"MCP 测试","scopes":["project:read"],"project_scope":"all"}"#,
+                    r#"{"name":"Agent 测试","scopes":["project:read"],"project_scope":"all"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -760,7 +760,7 @@ async fn api_personal_access_tokens_create_list_revoke_and_authenticate() {
         .expect("raw token should be returned once")
         .to_string();
     assert!(raw_token.starts_with("yuance_pat_"));
-    assert_eq!(created["data"]["token"]["name"], "MCP 测试");
+    assert_eq!(created["data"]["token"]["name"], "Agent 测试");
 
     let list_response = app
         .clone()
@@ -776,7 +776,7 @@ async fn api_personal_access_tokens_create_list_revoke_and_authenticate() {
 
     assert_eq!(list_response.status(), StatusCode::OK);
     let list_body = response_body(list_response).await;
-    assert!(list_body.contains("MCP 测试"));
+    assert!(list_body.contains("Agent 测试"));
     assert!(!list_body.contains(&raw_token));
 
     let projects_response = app
@@ -931,7 +931,7 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(with_csrf(
-                    "name=MCP%20UI&project_scope_projects=all&scopes=project%3Aread&scopes=work_item%3Aread",
+                    "name=Agent%20UI&project_scope_projects=all&scopes=project%3Aread&scopes=work_item%3Aread",
                 )))
                 .expect("request should build"),
         )
@@ -942,12 +942,12 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
     let create_body = response_body(create_response).await;
     assert!(create_body.contains("点击复制"));
     assert!(create_body.contains("yuance_pat_"));
-    assert!(create_body.contains("MCP UI"));
+    assert!(create_body.contains("Agent UI"));
     assert!(create_body.contains("Token 名称（归属人）"));
     assert!(create_body.contains("全部项目（含后续新增）"));
 
     let scoped_body = format!(
-        "name=MCP%20Scoped&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread",
+        "name=Agent%20Scoped&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread",
         project_a.project_key, project_b.project_key
     );
     let scoped_response = app
@@ -965,7 +965,7 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
 
     assert_eq!(scoped_response.status(), StatusCode::OK);
     let scoped_page = response_body(scoped_response).await;
-    assert!(scoped_page.contains("MCP Scoped"));
+    assert!(scoped_page.contains("Agent Scoped"));
     assert!(scoped_page.contains(&format!(
         "{}、{}",
         project_a.project_key, project_b.project_key
@@ -976,7 +976,7 @@ async fn me_page_creates_api_token_and_renders_plaintext_once() {
         SELECT project_scope
         FROM api_tokens
         WHERE user_id = ?1
-          AND name = 'MCP Scoped'
+          AND name = 'Agent Scoped'
         "#,
     )
     .bind(initialized.user_id)
@@ -1030,7 +1030,7 @@ async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(with_csrf(&format!(
-                    "name=MCP%20Editable&project_scope_projects={}&scopes=project%3Aread&scopes=resource%3Aread&expires_at=2026-12-31",
+                    "name=Agent%20Editable&project_scope_projects={}&scopes=project%3Aread&scopes=resource%3Aread&expires_at=2026-12-31",
                     project_a.project_key
                 ))))
                 .expect("request should build"),
@@ -1044,7 +1044,7 @@ async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
         SELECT id
         FROM api_tokens
         WHERE user_id = ?1
-          AND name = 'MCP Editable'
+          AND name = 'Agent Editable'
         ORDER BY id DESC
         LIMIT 1
         "#,
@@ -1063,7 +1063,7 @@ async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(with_csrf(&format!(
-                    "name=MCP%20Updated&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread&scopes=work_item%3Awrite&scopes=notification%3Aread",
+                    "name=Agent%20Updated&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread&scopes=work_item%3Awrite&scopes=notification%3Aread",
                     project_a.project_key, project_b.project_key
                 ))))
                 .expect("request should build"),
@@ -1087,7 +1087,7 @@ async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
     .fetch_one(&pool)
     .await
     .expect("updated token should load");
-    assert_eq!(stored.0, "MCP Updated");
+    assert_eq!(stored.0, "Agent Updated");
     assert_eq!(
         stored.2,
         format!("{},{}", project_a.project_key, project_b.project_key)
@@ -1123,7 +1123,7 @@ async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
     assert_eq!(page_response.status(), StatusCode::OK);
     let page_body = response_body(page_response).await;
     assert!(page_body.contains("编辑访问 Token"));
-    assert!(page_body.contains("MCP Updated"));
+    assert!(page_body.contains("Agent Updated"));
     assert!(page_body.contains("工作项写入"));
     assert!(page_body.contains("消息读取"));
     assert!(page_body.contains(&format!(r#"action="/web/me/api-tokens/{token_id}/edit""#)));

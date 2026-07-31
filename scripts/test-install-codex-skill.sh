@@ -7,6 +7,7 @@ TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/yuance-agent-installer-test.XXXXXX")"
 RELEASE_DIR="$TEMP_DIR/release fixture"
 INSTALL_DIR="$TEMP_DIR/install root/yuance-agent"
 TOKEN_SENTINEL="yuance_pat_must_not_be_printed"
+LEGACY_CODEX_HOME="$TEMP_DIR/legacy codex"
 
 cleanup() {
   rm -rf "$TEMP_DIR"
@@ -77,12 +78,16 @@ for mapping in \
 done
 
 create_release "0.1.0" "initial"
-output="$(YUANCE_API_TOKEN="$TOKEN_SENTINEL" "$INSTALLER" --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" 2>&1)"
+mkdir -p "$LEGACY_CODEX_HOME"
+printf '[mcp_servers.yuance]\ncommand = "node"\n\n[mcp_servers.other]\ncommand = "other"\n' >"$LEGACY_CODEX_HOME/config.toml"
+output="$(CODEX_HOME="$LEGACY_CODEX_HOME" YUANCE_API_TOKEN="$TOKEN_SENTINEL" "$INSTALLER" --release-dir "$RELEASE_DIR" --install-dir "$INSTALL_DIR" 2>&1)"
 [[ -f "$INSTALL_DIR/SKILL.md" ]] || fail "首次安装缺少 SKILL.md"
 [[ -x "$INSTALL_DIR/scripts/yuance-agent" ]] || fail "首次安装缺少可执行 CLI"
 assert_eq "$(cat "$INSTALL_DIR/fixture-marker.txt")" "initial"
 [[ "$output" != *"$TOKEN_SENTINEL"* ]] || fail "安装输出泄露 Token"
 [[ "$output" == *"YUANCE_API_TOKEN"* ]] || fail "安装输出缺少后续配置说明"
+[[ "$output" == *"检测到旧版元策接入"* ]] || fail "安装输出缺少旧版迁移提示"
+grep -q '^\[mcp_servers.other\]' "$LEGACY_CODEX_HOME/config.toml" || fail "安装器修改了其他旧配置"
 
 create_release "0.1.1" "upgraded"
 YUANCE_AGENT_VERSION="0.1.1" YUANCE_AGENT_RELEASE_DIR="$RELEASE_DIR" \

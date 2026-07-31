@@ -8,6 +8,9 @@ $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("yuance-agent-installer-
 $ReleaseDir = Join-Path $TempDir "release fixture"
 $InstallDir = Join-Path $TempDir "install root/yuance-agent"
 $TokenSentinel = "yuance_pat_must_not_be_printed"
+$LegacyCodexHome = Join-Path $TempDir "legacy codex"
+$OriginalApiToken = $env:YUANCE_API_TOKEN
+$OriginalCodexHome = $env:CODEX_HOME
 
 function Assert-Equal([string]$Actual, [string]$Expected) {
     if ($Actual -ne $Expected) {
@@ -55,11 +58,16 @@ try {
 
     New-TestRelease "0.1.0" "initial"
     $env:YUANCE_API_TOKEN = $TokenSentinel
+    $env:CODEX_HOME = $LegacyCodexHome
+    New-Item -ItemType Directory -Path $LegacyCodexHome | Out-Null
+    "[mcp_servers.yuance]`ncommand = `"node`"`n`n[mcp_servers.other]`ncommand = `"other`"" | Set-Content -LiteralPath (Join-Path $LegacyCodexHome "config.toml")
     $output = (& $Installer -ReleaseDir $ReleaseDir -InstallDir $InstallDir 3>&1 | Out-String)
     if (-not (Test-Path -LiteralPath (Join-Path $InstallDir "SKILL.md") -PathType Leaf)) { throw "首次安装缺少 SKILL.md" }
     Assert-Equal (Get-Content -LiteralPath (Join-Path $InstallDir "fixture-marker.txt") -Raw) "initial"
     if ($output.Contains($TokenSentinel)) { throw "安装输出泄露 Token" }
     if (-not $output.Contains("YUANCE_API_TOKEN")) { throw "安装输出缺少后续配置说明" }
+    if (-not $output.Contains("检测到旧版元策接入")) { throw "安装输出缺少旧版迁移提示" }
+    if (-not (Select-String -LiteralPath (Join-Path $LegacyCodexHome "config.toml") -Pattern '^\[mcp_servers\.other\]' -Quiet)) { throw "安装器修改了其他旧配置" }
 
     New-TestRelease "0.1.1" "upgraded"
     & $Installer -Version "0.1.1" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
@@ -97,6 +105,7 @@ try {
     Write-Output "PowerShell 安装器测试通过。"
 } finally {
     Remove-Item Env:YUANCE_AGENT_TEST_ARCH -ErrorAction SilentlyContinue
-    Remove-Item Env:YUANCE_API_TOKEN -ErrorAction SilentlyContinue
+    if ($null -eq $OriginalApiToken) { Remove-Item Env:YUANCE_API_TOKEN -ErrorAction SilentlyContinue } else { $env:YUANCE_API_TOKEN = $OriginalApiToken }
+    if ($null -eq $OriginalCodexHome) { Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue } else { $env:CODEX_HOME = $OriginalCodexHome }
     Remove-Item -LiteralPath $TempDir -Recurse -Force -ErrorAction SilentlyContinue
 }

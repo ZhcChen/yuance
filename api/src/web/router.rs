@@ -1421,7 +1421,7 @@ async fn api_docs() -> impl IntoResponse {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OpenAPI 与 MCP - 元策</title>
+  <title>OpenAPI 与 Codex Skill - 元策</title>
   <style>
     :root {
       color-scheme: light;
@@ -1508,21 +1508,25 @@ async fn api_docs() -> impl IntoResponse {
       color: #344054;
       background: #eef2f8;
     }
-    .mcp-panel {
+    .agent-panel {
       display: grid;
       gap: 12px;
       align-content: start;
     }
-    .mcp-step {
+    .setup-step {
       padding: 14px 16px;
       border: 1px solid var(--border);
       border-radius: 18px;
       background: rgba(248, 250, 252, .82);
     }
-    .mcp-step strong {
+    .setup-step strong {
       display: block;
       margin-bottom: 4px;
       font-size: 14px;
+    }
+    .setup-step code {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     code {
       padding: 2px 6px;
@@ -1546,27 +1550,27 @@ async fn api_docs() -> impl IntoResponse {
   <section class="hero">
     <div class="hero-card">
       <div>
-        <p class="eyebrow">OpenAPI · MCP for AI Agents</p>
+        <p class="eyebrow">OpenAPI · Codex Skill</p>
         <h1>元策 API 文档</h1>
-        <p>这里提供标准 OpenAPI 契约与 Scalar 在线文档。AI Agent 可基于 MCP 初始化指南克隆开源仓库，复制本地 MCP server，并通过 Personal Access Token 安全访问元策数据。</p>
+        <p>这里提供标准 OpenAPI 契约与 Scalar 在线文档。Codex 可通过预编译的元策 Skill 和 Personal Access Token 安全访问项目、工作项与评论，无需 Node.js 或 Rust toolchain。</p>
         <div class="actions">
           <a class="btn btn-primary" href="/api/openapi.json">下载 OpenAPI JSON</a>
-          <a class="btn btn-secondary" href="https://github.com/ZhcChen/yuance/blob/main/docs/mcp/ai-mcp-setup.md">查看 MCP 初始化指南</a>
+          <a class="btn btn-secondary" href="https://github.com/ZhcChen/yuance/blob/main/docs/runbooks/yuance-agent-codex-installation.md">查看 Codex Skill 指南</a>
           <a class="btn btn-secondary" href="/web/me">创建访问 Token</a>
         </div>
       </div>
-      <div class="mcp-panel" aria-label="MCP 初始化摘要">
-        <div class="mcp-step">
-          <strong>1. 克隆开源仓库</strong>
-          <p><code>git clone https://github.com/ZhcChen/yuance.git</code></p>
+      <div class="agent-panel" aria-label="Codex Skill 安装摘要">
+        <div class="setup-step">
+          <strong>1. macOS / Linux 安装</strong>
+          <p><code>curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.0/scripts/install-codex-skill.sh | bash</code></p>
         </div>
-        <div class="mcp-step">
-          <strong>2. 复制 MCP 脚本并安装依赖</strong>
-          <p><code>cp -R mcp/yuance-mcp ~/.yuance-mcp</code> 后执行 <code>npm install</code>。</p>
+        <div class="setup-step">
+          <strong>2. Windows PowerShell 安装</strong>
+          <p><code>irm https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.0/scripts/install-codex-skill.ps1 | iex</code></p>
         </div>
-        <div class="mcp-step">
-          <strong>3. 配置 MCP client</strong>
-          <p>使用 <code>node ~/.yuance-mcp/yuance-mcp-server.mjs</code>，并设置 <code>YUANCE_BASE_URL</code> 与 <code>YUANCE_API_TOKEN</code>。</p>
+        <div class="setup-step">
+          <strong>3. 配置访问凭证</strong>
+          <p>在 Codex 运行环境设置 <code>YUANCE_API_TOKEN</code>；仅在覆盖默认正式环境时设置 <code>YUANCE_BASE_URL</code>。</p>
         </div>
       </div>
     </div>
@@ -1581,7 +1585,7 @@ async fn api_docs() -> impl IntoResponse {
       hideDownloadButton: false,
       metaData: {
         title: '元策 API',
-        description: 'OpenAPI 与 MCP for AI Agents'
+        description: 'OpenAPI 与 Codex Skill for AI Agents'
       }
     });
   </script>

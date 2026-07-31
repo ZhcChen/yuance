@@ -175,3 +175,9 @@ backup_dir=""
 
 printf '已安装 yuance-agent v%s 到 %s\n' "$version" "$install_dir"
 printf '后续请在运行 Codex 的环境中配置 YUANCE_API_TOKEN；需要自定义服务时再配置 YUANCE_BASE_URL。\n'
+
+legacy_config="${CODEX_HOME:-$HOME/.codex}/config.toml"
+if [[ -d "$HOME/.yuance-mcp" ]] || { [[ -f "$legacy_config" ]] && grep -q '^\[mcp_servers\.yuance\]' "$legacy_config"; }; then
+  printf '检测到旧版元策接入。请按迁移指南仅清理 yuance 配置与旧目录，安装器不会自动修改：\n' >&2
+  printf 'https://github.com/ZhcChen/yuance/blob/yuance-agent-v%s/docs/runbooks/yuance-agent-codex-installation.md\n' "$version" >&2
+fi

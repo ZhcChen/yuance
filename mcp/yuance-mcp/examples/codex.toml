@@ -1,4 +1,0 @@
-[mcp_servers.yuance]
-command = "node"
-args = ["/Users/your-user/.yuance-mcp/yuance-mcp-server.mjs"]
-startup_timeout_sec = 60.0

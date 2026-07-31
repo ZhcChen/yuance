@@ -142,6 +142,13 @@ try {
 
     Write-Output "已安装 yuance-agent v$Version 到 $InstallDir"
     Write-Output "后续请在运行 Codex 的环境中配置 YUANCE_API_TOKEN；需要自定义服务时再配置 YUANCE_BASE_URL。"
+    $legacyConfigRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+    $legacyConfig = Join-Path $legacyConfigRoot "config.toml"
+    $legacyDirectory = Join-Path $HOME ".yuance-mcp"
+    $legacyTable = (Test-Path -LiteralPath $legacyConfig -PathType Leaf) -and (Select-String -LiteralPath $legacyConfig -Pattern '^\[mcp_servers\.yuance\]' -Quiet)
+    if ((Test-Path -LiteralPath $legacyDirectory -PathType Container) -or $legacyTable) {
+        Write-Warning "检测到旧版元策接入。请按迁移指南仅清理 yuance 配置与旧目录；安装器不会自动修改：https://github.com/ZhcChen/yuance/blob/yuance-agent-v$Version/docs/runbooks/yuance-agent-codex-installation.md"
+    }
 } finally {
     if (Test-Path -LiteralPath $tempDir) {
         Remove-Item -LiteralPath $tempDir -Recurse -Force

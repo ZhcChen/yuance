@@ -6002,7 +6002,7 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
                 .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
                 .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                 .body(Body::from(
-                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=MCP%20Delete&project_scope_projects=all&scopes=project%3Aread",
+                    "_csrf=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&name=Agent%20Delete&project_scope_projects=all&scopes=project%3Aread",
                 ))
                 .expect("request should build"),
         )
@@ -6029,7 +6029,7 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
         SELECT id
         FROM api_tokens
         WHERE user_id = ?1
-          AND name = 'MCP Delete'
+          AND name = 'Agent Delete'
         ORDER BY id DESC
         LIMIT 1
         "#,
@@ -6129,7 +6129,7 @@ async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
         .expect("router should respond");
     assert_eq!(page_response.status(), StatusCode::OK);
     let page_body = response_body(page_response).await;
-    assert!(!page_body.contains("MCP Delete"));
+    assert!(!page_body.contains("Agent Delete"));
 }
 
 #[tokio::test]
