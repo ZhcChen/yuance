@@ -4,23 +4,23 @@
 
 ## 安装
 
-正式安装命令固定到 `yuance-agent-v0.1.0` 标签，避免执行 `main` 上尚未发布的脚本。
+正式安装命令固定到 `yuance-agent-v0.1.1` 标签，避免执行 `main` 上尚未发布的脚本。
 
 macOS / Linux：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.0/scripts/install-codex-skill.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.1/scripts/install-codex-skill.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
-Invoke-RestMethod https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.0/scripts/install-codex-skill.ps1 | Invoke-Expression
+Invoke-RestMethod https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.1/scripts/install-codex-skill.ps1 | Invoke-Expression
 ```
 
 默认安装位置：
 
-- 未设置 `CODEX_HOME`：`~/.agents/skills/yuance-agent`
+- 未设置 `CODEX_HOME`：`~/.codex/skills/yuance-agent`
 - 已设置 `CODEX_HOME`：`$CODEX_HOME/skills/yuance-agent`
 
 安装器下载与当前系统、CPU 匹配的完整 Skill 包，校验 `SHA256SUMS`，执行离线自检后再替换旧版本。下载、校验、解压或自检失败时保留旧版本。
@@ -60,14 +60,14 @@ CLI 默认连接 `https://yuance.quanxinfu.com`。只有私有部署或测试环
 离线安装验证不需要 Token：
 
 ```bash
-~/.agents/skills/yuance-agent/scripts/yuance-agent doctor --installation
+~/.codex/skills/yuance-agent/scripts/yuance-agent doctor --installation
 ```
 
 配置 Token 后执行联网验证：
 
 ```bash
-~/.agents/skills/yuance-agent/scripts/yuance-agent doctor
-~/.agents/skills/yuance-agent/scripts/yuance-agent projects list --per-page 5
+~/.codex/skills/yuance-agent/scripts/yuance-agent doctor
+~/.codex/skills/yuance-agent/scripts/yuance-agent projects list --per-page 5
 ```
 
 使用 `CODEX_HOME` 或 Windows 时，替换为实际安装目录及 `yuance-agent.exe`。
@@ -90,11 +90,11 @@ CLI 默认连接 `https://yuance.quanxinfu.com`。只有私有部署或测试环
 安装历史版本时显式指定版本：
 
 ```bash
-YUANCE_AGENT_VERSION=0.1.0 bash install-codex-skill.sh
+YUANCE_AGENT_VERSION=0.1.1 bash install-codex-skill.sh
 ```
 
 ```powershell
-$env:YUANCE_AGENT_VERSION = "0.1.0"
+$env:YUANCE_AGENT_VERSION = "0.1.1"
 ./install-codex-skill.ps1
 ```
 

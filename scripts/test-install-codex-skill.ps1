@@ -56,7 +56,7 @@ try {
     }
     Remove-Item Env:YUANCE_AGENT_TEST_ARCH -ErrorAction SilentlyContinue
 
-    New-TestRelease "0.1.0" "initial"
+    New-TestRelease "0.1.1" "initial"
     $env:YUANCE_API_TOKEN = $TokenSentinel
     $env:CODEX_HOME = $LegacyCodexHome
     New-Item -ItemType Directory -Path $LegacyCodexHome | Out-Null
@@ -69,33 +69,33 @@ try {
     if (-not $output.Contains("检测到旧版元策接入")) { throw "安装输出缺少旧版迁移提示" }
     if (-not (Select-String -LiteralPath (Join-Path $LegacyCodexHome "config.toml") -Pattern '^\[mcp_servers\.other\]' -Quiet)) { throw "安装器修改了其他旧配置" }
 
-    New-TestRelease "0.1.1" "upgraded"
-    & $Installer -Version "0.1.1" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
+    New-TestRelease "0.1.2" "upgraded"
+    & $Installer -Version "0.1.2" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
     Assert-Equal (Get-Content -LiteralPath (Join-Path $InstallDir "fixture-marker.txt") -Raw) "upgraded"
 
-    New-TestRelease "0.1.1" "checksum-failure"
+    New-TestRelease "0.1.2" "checksum-failure"
     $currentTarget = (& $Installer -DetectOnly).Trim()
-    Add-Content -LiteralPath (Join-Path $ReleaseDir "yuance-agent-v0.1.1-$currentTarget.zip") -Value "tampered"
+    Add-Content -LiteralPath (Join-Path $ReleaseDir "yuance-agent-v0.1.2-$currentTarget.zip") -Value "tampered"
     try {
-        & $Installer -Version "0.1.1" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
+        & $Installer -Version "0.1.2" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
         throw "校验和错误时安装器意外成功"
     } catch {
         if ($_.Exception.Message -eq "校验和错误时安装器意外成功") { throw }
     }
     Assert-Equal (Get-Content -LiteralPath (Join-Path $InstallDir "fixture-marker.txt") -Raw) "upgraded"
 
-    New-TestRelease "0.1.1" "missing" "missing-binary"
+    New-TestRelease "0.1.2" "missing" "missing-binary"
     try {
-        & $Installer -Version "0.1.1" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
+        & $Installer -Version "0.1.2" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
         throw "发布包缺文件时安装器意外成功"
     } catch {
         if ($_.Exception.Message -eq "发布包缺文件时安装器意外成功") { throw }
     }
     Assert-Equal (Get-Content -LiteralPath (Join-Path $InstallDir "fixture-marker.txt") -Raw) "upgraded"
 
-    New-TestRelease "0.1.1" "self-check" "self-check-fails"
+    New-TestRelease "0.1.2" "self-check" "self-check-fails"
     try {
-        & $Installer -Version "0.1.1" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
+        & $Installer -Version "0.1.2" -ReleaseDir $ReleaseDir -InstallDir $InstallDir | Out-Null
         throw "离线自检失败时安装器意外成功"
     } catch {
         if ($_.Exception.Message -eq "离线自检失败时安装器意外成功") { throw }

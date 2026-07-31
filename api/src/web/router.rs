@@ -1562,11 +1562,11 @@ async fn api_docs() -> impl IntoResponse {
       <div class="agent-panel" aria-label="Codex Skill 安装摘要">
         <div class="setup-step">
           <strong>1. macOS / Linux 安装</strong>
-          <p><code>curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.0/scripts/install-codex-skill.sh | bash</code></p>
+          <p><code>curl -fsSL https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.1/scripts/install-codex-skill.sh | bash</code></p>
         </div>
         <div class="setup-step">
           <strong>2. Windows PowerShell 安装</strong>
-          <p><code>irm https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.0/scripts/install-codex-skill.ps1 | iex</code></p>
+          <p><code>irm https://raw.githubusercontent.com/ZhcChen/yuance/yuance-agent-v0.1.1/scripts/install-codex-skill.ps1 | iex</code></p>
         </div>
         <div class="setup-step">
           <strong>3. 配置访问凭证</strong>

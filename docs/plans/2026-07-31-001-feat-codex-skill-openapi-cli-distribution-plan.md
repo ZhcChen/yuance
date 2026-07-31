@@ -124,7 +124,7 @@ Product Contract 由本轮会话直接建立，无独立上游 requirements-only
 - KTD2. **移除现有 MCP，不保留兼容路径。** `(session-settled: user-directed — chosen over retaining MCP as an optional compatibility layer: Skill + CLI 形成唯一外部 AI 接入口径。)` 历史计划继续保留，运行实现和现行说明全部迁移。
 - KTD3. **源码进入 Git，二进制进入 GitHub Releases。** `(session-settled: user-approved — chosen over committing compiled binaries: Release 资产可按版本回滚且不会持续膨胀 Git 历史。)`
 - KTD4. **发布包是完整且不可拆分的 Skill 快照。** 每个平台压缩包同时包含 `SKILL.md`、`agents/openai.yaml`、references 和 `scripts/yuance-agent[.exe]`，避免安装时从 `main` 混入不同版本文件。
-- KTD5. **采用 Codex 用户级 Skill 目录。** 默认安装到 `~/.agents/skills/yuance-agent`；设置 `CODEX_HOME` 时使用其 `skills/yuance-agent`；安装器另提供显式目录覆盖。单次安装只写一个位置，避免同名 Skill 重复出现。
+- KTD5. **采用 Codex 用户级 Skill 目录。** 默认安装到 `~/.codex/skills/yuance-agent`；设置 `CODEX_HOME` 时使用其 `skills/yuance-agent`；安装器另提供显式目录覆盖。单次安装只写一个位置，避免同名 Skill 重复出现。`v0.1.1` 修正了首版误用 `~/.agents/skills` 导致当前 Codex 无法发现 Skill 的问题。
 - KTD6. **CLI 保持领域命令而非开放任意 HTTP 请求。** 命令层只暴露计划内项目、工作项和评论操作，防止 Skill 绕过行为边界调用未审查端点。
 - KTD7. **业务命令机器输出保持 API envelope。** 业务命令和 doctor 的 stdout 只输出 JSON 成功 envelope；失败时 stderr 只输出 JSON 错误 envelope 和必要诊断。标准 `--help` 和 `--version` 保持文本输出。日志不得包含 Authorization header、Token 或完整请求体中的敏感字段。
 - KTD8. **发布矩阵沿用仓库已有原生 runner。** macOS Intel/ARM64、Linux x64/ARM64、Windows x64/ARM64 分别在对应 runner 构建。Windows x64 完成完整运行验证；Windows ARM64 首版至少完成编译和 `--version` 冒烟验证。

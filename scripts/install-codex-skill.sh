@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_VERSION="0.1.0"
+DEFAULT_VERSION="0.1.1"
 REPOSITORY="ZhcChen/yuance"
 
 version="${YUANCE_AGENT_VERSION:-$DEFAULT_VERSION}"
@@ -13,7 +13,7 @@ usage() {
   cat <<'EOF'
 用法: install-codex-skill.sh [选项]
 
-  --version <SEMVER>      安装指定版本，默认 0.1.0
+  --version <SEMVER>      安装指定版本，默认 0.1.1
   --install-dir <PATH>    覆盖 Skill 安装目录
   --release-dir <PATH>    从本地 Release fixture 安装（测试/开发通道）
   --detect-only           只输出当前平台对应的 Rust target
@@ -84,7 +84,7 @@ if [[ -z "$install_dir" ]]; then
   if [[ -n "${CODEX_HOME:-}" ]]; then
     install_dir="$CODEX_HOME/skills/yuance-agent"
   else
-    install_dir="$HOME/.agents/skills/yuance-agent"
+    install_dir="$HOME/.codex/skills/yuance-agent"
   fi
 fi
 [[ "$install_dir" != "/" ]] || fail "安装目录不能是根目录"

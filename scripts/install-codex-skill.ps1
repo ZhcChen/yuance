@@ -7,7 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$DefaultVersion = "0.1.0"
+$DefaultVersion = "0.1.1"
 $Repository = "ZhcChen/yuance"
 
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -50,7 +50,7 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     if ($env:CODEX_HOME) {
         $InstallDir = Join-Path $env:CODEX_HOME "skills/yuance-agent"
     } else {
-        $InstallDir = Join-Path $HOME ".agents/skills/yuance-agent"
+        $InstallDir = Join-Path $HOME ".codex/skills/yuance-agent"
     }
 }
 $InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
