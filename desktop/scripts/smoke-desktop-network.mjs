@@ -14,6 +14,8 @@ export async function smokeDesktopNetwork(inputPath, { platform = process.platfo
   await buildRealApi();
   const fixture = await startRealApiFixture();
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-network-"));
+  const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
+  await fs.mkdir(outputDirectory, { recursive: true });
   try {
     const session = await fixture.bootstrapAdmin();
     const executable = await findUnpackedExecutable(inputPath, platform);
@@ -25,14 +27,21 @@ export async function smokeDesktopNetwork(inputPath, { platform = process.platfo
     if (authorize.kind !== "yuance-desktop-network-authorized" || authorize.status !== "authenticated") throw new Error("packaged authorization did not complete");
     const report = await runPhase(executable, "verify", fixture.origin, profile, platform);
     assertDesktopNetworkSmokeReport(report);
-    const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
-    await fs.mkdir(outputDirectory, { recursive: true });
     const outputPath = path.join(outputDirectory, "desktop-network-smoke.json");
     await fs.writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
     return Object.freeze({ executable, report, outputPath });
   } finally {
-    await fixture.stop();
-    await fs.rm(profile, { recursive: true, force: true });
+    try {
+      await fixture.stop({ beforeRemove: async ({ logPath }) => {
+        const log = await fs.readFile(logPath, "utf8");
+        assertCredentialFreeText(log, "API fixture log");
+        await fs.writeFile(path.join(outputDirectory, "desktop-network-api.log"), log, { mode: 0o600 });
+      } });
+    } finally {
+      await fs.rm(profile, { recursive: true, force: true });
+      const cleanup = Object.freeze({ kind: "yuance-desktop-network-cleanup", apiProcess: "stopped", profile: "removed" });
+      await fs.writeFile(path.join(outputDirectory, "desktop-network-cleanup.json"), `${JSON.stringify(cleanup, null, 2)}\n`, { mode: 0o600 });
+    }
   }
 }
 
@@ -82,6 +91,10 @@ export function assertDesktopNetworkSmokeReport(report) {
     throw new Error(`packaged network smoke invariant failed: ${JSON.stringify(report)}`);
   }
   return report;
+}
+
+function assertCredentialFreeText(value, label) {
+  if (CREDENTIAL_PATTERN.test(value)) throw new Error(`${label} contains credential material`);
 }
 
 if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {

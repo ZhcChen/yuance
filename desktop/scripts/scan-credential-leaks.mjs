@@ -5,6 +5,7 @@ import process from "node:process";
 const DEFAULT_ROOTS = [
   { root: "src", required: true },
   { root: "scripts", required: true },
+  { root: "test/support", required: true },
   { root: "test/fixtures", required: false },
   { root: "dist", required: false },
 ];

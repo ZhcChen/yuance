@@ -51,12 +51,16 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         const csrfToken = response.headers.get("x-yuance-csrf-token") || (await response.json()).data?.csrf_token;
         return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken });
       },
-      async stop() {
+      async stop({ beforeRemove = async () => {} } = {}) {
         if (stopped) return;
         stopped = true;
-        await stopChild(child);
-        await endStream(logStream);
-        await fs.rm(root, { recursive: true, force: true });
+        try {
+          await stopChild(child);
+          await endStream(logStream);
+          await beforeRemove(Object.freeze({ root, logPath }));
+        } finally {
+          await fs.rm(root, { recursive: true, force: true });
+        }
       },
     });
   } catch (error) {

@@ -74,6 +74,10 @@ jobs:
       - name: Install desktop dependencies
         run: npm --prefix desktop ci
 
+      - name: Install Linux secure storage runtime
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
+
       - name: Run focused Device API tests
         run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_sse_authorization_flow
 
@@ -87,9 +91,6 @@ jobs:
       - name: Run Linux desktop tests
         if: runner.os == 'Linux'
         run: xvfb-run -a npm --prefix desktop test
-
-      - name: Scan credential artifacts
-        run: npm --prefix desktop run scan:credential-leaks
 
       - name: Build unpacked desktop app
         run: npm --prefix desktop run pack:dir
@@ -107,13 +108,44 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a npm --prefix desktop run smoke:app-protocol -- dist
 
-      - name: Scan unpacked credential artifacts
-        run: npm --prefix desktop run scan:credential-leaks -- dist
+      - name: Smoke unpacked desktop network
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:desktop-network -- dist
+
+      - name: Smoke Linux unpacked desktop network
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
+            xvfb-run -a npm --prefix desktop run smoke:desktop-network -- dist
+          '
+
+      - name: Scan source, fixture, report, ASAR, and unpacked artifacts
+        run: npm --prefix desktop run scan:credential-leaks
+
+      - name: Verify desktop network cleanup evidence
+        run: npm --prefix desktop run verify:desktop-network-artifacts
 
       - name: Verify native safeStorage boundary
         if: runner.os != 'Linux'
         run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
 
-      - name: Verify Linux safeStorage fail-closed boundary
+      - name: Verify Linux secure safeStorage boundary
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm --prefix desktop run smoke:safe-storage && xvfb-run -a npm --prefix desktop run smoke:single-instance
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
+            xvfb-run -a npm --prefix desktop run smoke:safe-storage
+            xvfb-run -a npm --prefix desktop run smoke:single-instance
+          '
+
+      - name: Upload desktop network verification
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-network-verification-${{ matrix.os }}
+          path: desktop/dist/verification/
+          if-no-files-found: warn
+          retention-days: 14
