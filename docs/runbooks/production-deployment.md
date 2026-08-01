@@ -40,6 +40,7 @@ API 端口：127.0.0.1:33033
 - `/web`、`/web/app`、`/api`、静态资源、迁移和 seed 都由 `yuance-api` 二进制提供。
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
+- 必须显式配置并保持 `YUANCE_SERVER_INSTANCE_ID` 稳定；它绑定 Desktop device credential，变更后现有设备必须重新授权。
 - 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览。DOC、PPT 属于 legacy 实验性纯前端预览，默认关闭，灰度验证时才开启 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true`。
 
 ## 本地构建镜像 tar
@@ -126,6 +127,7 @@ mkdir -p data backups
 ```text
 YUANCE_SESSION_SECRET
 YUANCE_SECURITY_MASTER_KEY
+YUANCE_SERVER_INSTANCE_ID
 ```
 
 说明：
@@ -149,7 +151,16 @@ YUANCE_WEB_DIST_DIR=/app/web/dist
 YUANCE_SSE_DRAIN_TIMEOUT=30s
 YUANCE_STOP_GRACE_PERIOD=45s
 YUANCE_MAX_RELEASE_WINDOW=10m
+YUANCE_SERVER_INSTANCE_ID=<稳定且唯一的生产实例标识>
+YUANCE_DEVICE_AUTHORIZATION_TTL=10m
+YUANCE_DEVICE_ACCESS_TTL=15m
+YUANCE_DEVICE_REFRESH_SLIDING_TTL=30d
+YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL=90d
+YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
+YUANCE_DEVICE_POLL_INTERVAL=5s
 ```
+
+Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。当前 D1 首个切片只建立持久化与契约基础，尚未开放设备授权 HTTP 路由。
 
 legacy `doc/ppt` 实验预览为可选项，默认不写入或保持关闭：
 

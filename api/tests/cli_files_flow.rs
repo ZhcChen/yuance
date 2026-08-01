@@ -557,6 +557,7 @@ fn settings(root: &Path, database_url: &str) -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "cli-test-master-key-2026".to_string(),
+        device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
     }
 }

@@ -1112,6 +1112,12 @@
         "bearerFormat": "Personal Access Token",
         "description": "使用个人中心创建的 yuance_pat_* token。"
       },
+      "deviceAccess": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Yuance Device Access Token",
+        "description": "使用 yuance_dat_* 短期设备 access token。首个 D1 切片只允许显式登记的 device probe/logout/设备管理接口；普通业务 API 默认拒绝。"
+      },
       "cookieSession": {
         "type": "apiKey",
         "in": "cookie",
@@ -1283,6 +1289,51 @@
       }
     },
     "schemas": {
+      "DeviceAuthorizationStatus": {
+        "type": "string",
+        "enum": ["pending", "approved", "denied", "expired", "consumed"]
+      },
+      "DeviceCredentialMetadata": {
+        "type": "object",
+        "description": "服务端在设备认证响应中返回的元数据；opaque token 本身不包含可由客户端声明或解码的 claims。",
+        "required": [
+          "token_type",
+          "issuer",
+          "audience",
+          "device_id",
+          "family_id",
+          "generation",
+          "authorization_version"
+        ],
+        "properties": {
+          "token_type": {
+            "type": "string",
+            "const": "Bearer"
+          },
+          "issuer": {
+            "type": "string",
+            "const": "yuance-device-session"
+          },
+          "audience": {
+            "type": "string",
+            "enum": ["yuance-api", "yuance-device-refresh"]
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "family_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "authorization_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
       "Envelope": {
         "type": "object",
         "required": [

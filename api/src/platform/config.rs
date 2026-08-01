@@ -1,4 +1,8 @@
-use std::{env, net::SocketAddr, path::{Path, PathBuf}};
+use std::{
+    env,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+};
 
 use crate::platform::error::{AppError, AppResult};
 
@@ -14,7 +18,43 @@ pub struct Settings {
     pub log_level: String,
     pub env: String,
     pub security_master_key: String,
+    pub device_sessions: DeviceSessionSettings,
     pub experimental_legacy_preview_enabled: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct DeviceSessionSettings {
+    pub server_instance_id: String,
+    pub authorization_ttl: String,
+    pub access_ttl: String,
+    pub refresh_sliding_ttl: String,
+    pub refresh_absolute_ttl: String,
+    pub idempotency_ttl: String,
+    pub poll_interval: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeviceSessionDurations {
+    pub authorization_ttl_seconds: i64,
+    pub access_ttl_seconds: i64,
+    pub refresh_sliding_ttl_seconds: i64,
+    pub refresh_absolute_ttl_seconds: i64,
+    pub idempotency_ttl_seconds: i64,
+    pub poll_interval_seconds: i64,
+}
+
+impl Default for DeviceSessionSettings {
+    fn default() -> Self {
+        Self {
+            server_instance_id: "local-development".to_string(),
+            authorization_ttl: "10m".to_string(),
+            access_ttl: "15m".to_string(),
+            refresh_sliding_ttl: "30d".to_string(),
+            refresh_absolute_ttl: "90d".to_string(),
+            idempotency_ttl: "24h".to_string(),
+            poll_interval: "5s".to_string(),
+        }
+    }
 }
 
 impl Settings {
@@ -28,6 +68,12 @@ impl Settings {
 
     pub fn from_env() -> AppResult<Self> {
         let http_addr = env_string("YUANCE_HTTP_ADDR", "127.0.0.1:33033").parse()?;
+        let env = normalize_environment(&env_string("YUANCE_ENV", "development"));
+        let default_server_instance_id = if env == "production" {
+            ""
+        } else {
+            "local-development"
+        };
         let settings = Self {
             http_addr,
             database_url: env_string("YUANCE_DATABASE_URL", "sqlite://data/yuance.sqlite3"),
@@ -37,11 +83,25 @@ impl Settings {
             refresh_session_ttl: env_string("YUANCE_REFRESH_SESSION_TTL", "30d"),
             cache_session_ttl: env_string("YUANCE_CACHE_SESSION_TTL", "5m"),
             log_level: env_string("YUANCE_LOG_LEVEL", "info"),
-            env: env_string("YUANCE_ENV", "development"),
+            env,
             security_master_key: env_string(
                 "YUANCE_SECURITY_MASTER_KEY",
                 "change-me-32-byte-minimum",
             ),
+            device_sessions: DeviceSessionSettings {
+                server_instance_id: env_string(
+                    "YUANCE_SERVER_INSTANCE_ID",
+                    default_server_instance_id,
+                )
+                .trim()
+                .to_string(),
+                authorization_ttl: env_string("YUANCE_DEVICE_AUTHORIZATION_TTL", "10m"),
+                access_ttl: env_string("YUANCE_DEVICE_ACCESS_TTL", "15m"),
+                refresh_sliding_ttl: env_string("YUANCE_DEVICE_REFRESH_SLIDING_TTL", "30d"),
+                refresh_absolute_ttl: env_string("YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL", "90d"),
+                idempotency_ttl: env_string("YUANCE_DEVICE_IDEMPOTENCY_TTL", "24h"),
+                poll_interval: env_string("YUANCE_DEVICE_POLL_INTERVAL", "5s"),
+            },
             experimental_legacy_preview_enabled: env_flag_enabled(
                 "YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED",
             ),
@@ -50,6 +110,7 @@ impl Settings {
         if settings.env.trim().is_empty() {
             return Err(AppError::Config("YUANCE_ENV 不能为空".to_string()));
         }
+        settings.device_sessions.validate(&settings.env)?;
 
         Ok(settings)
     }
@@ -82,8 +143,103 @@ impl Settings {
     }
 }
 
+impl DeviceSessionSettings {
+    pub fn validate(&self, environment: &str) -> AppResult<DeviceSessionDurations> {
+        validate_server_instance_id(&self.server_instance_id, environment)?;
+
+        let durations = DeviceSessionDurations {
+            authorization_ttl_seconds: parse_duration_seconds(
+                "YUANCE_DEVICE_AUTHORIZATION_TTL",
+                &self.authorization_ttl,
+            )?,
+            access_ttl_seconds: parse_duration_seconds(
+                "YUANCE_DEVICE_ACCESS_TTL",
+                &self.access_ttl,
+            )?,
+            refresh_sliding_ttl_seconds: parse_duration_seconds(
+                "YUANCE_DEVICE_REFRESH_SLIDING_TTL",
+                &self.refresh_sliding_ttl,
+            )?,
+            refresh_absolute_ttl_seconds: parse_duration_seconds(
+                "YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL",
+                &self.refresh_absolute_ttl,
+            )?,
+            idempotency_ttl_seconds: parse_duration_seconds(
+                "YUANCE_DEVICE_IDEMPOTENCY_TTL",
+                &self.idempotency_ttl,
+            )?,
+            poll_interval_seconds: parse_duration_seconds(
+                "YUANCE_DEVICE_POLL_INTERVAL",
+                &self.poll_interval,
+            )?,
+        };
+
+        validate_duration_range(
+            "YUANCE_DEVICE_AUTHORIZATION_TTL",
+            durations.authorization_ttl_seconds,
+            5 * 60,
+            15 * 60,
+        )?;
+        validate_duration_range(
+            "YUANCE_DEVICE_ACCESS_TTL",
+            durations.access_ttl_seconds,
+            60,
+            60 * 60,
+        )?;
+        validate_duration_range(
+            "YUANCE_DEVICE_POLL_INTERVAL",
+            durations.poll_interval_seconds,
+            2,
+            15,
+        )?;
+        if durations.refresh_sliding_ttl_seconds < durations.access_ttl_seconds {
+            return Err(AppError::Config(
+                "YUANCE_DEVICE_REFRESH_SLIDING_TTL 不能短于 YUANCE_DEVICE_ACCESS_TTL".to_string(),
+            ));
+        }
+        validate_duration_range(
+            "YUANCE_DEVICE_REFRESH_SLIDING_TTL",
+            durations.refresh_sliding_ttl_seconds,
+            24 * 60 * 60,
+            30 * 24 * 60 * 60,
+        )?;
+        validate_duration_range(
+            "YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL",
+            durations.refresh_absolute_ttl_seconds,
+            24 * 60 * 60,
+            180 * 24 * 60 * 60,
+        )?;
+        validate_duration_range(
+            "YUANCE_DEVICE_IDEMPOTENCY_TTL",
+            durations.idempotency_ttl_seconds,
+            60 * 60,
+            7 * 24 * 60 * 60,
+        )?;
+        if durations.refresh_absolute_ttl_seconds < durations.refresh_sliding_ttl_seconds {
+            return Err(AppError::Config(
+                "YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL 不能短于 YUANCE_DEVICE_REFRESH_SLIDING_TTL"
+                    .to_string(),
+            ));
+        }
+        if durations.idempotency_ttl_seconds < durations.authorization_ttl_seconds
+            || durations.idempotency_ttl_seconds > durations.refresh_sliding_ttl_seconds
+        {
+            return Err(AppError::Config(
+                "YUANCE_DEVICE_IDEMPOTENCY_TTL 必须不短于 authorization TTL 且不长于 refresh sliding TTL"
+                    .to_string(),
+            ));
+        }
+
+        Ok(durations)
+    }
+}
+
 fn env_string(name: &str, default: &str) -> String {
     env::var(name).unwrap_or_else(|_| default.to_string())
+}
+
+fn normalize_environment(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
 }
 
 fn env_flag_enabled(name: &str) -> bool {
@@ -138,6 +294,40 @@ fn parse_duration_seconds(name: &str, value: &str) -> AppResult<i64> {
         .ok_or_else(|| AppError::Config(format!("{name} 数值过大")))
 }
 
+fn validate_server_instance_id(value: &str, environment: &str) -> AppResult<()> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(AppError::Config(
+            "YUANCE_SERVER_INSTANCE_ID 不能为空".to_string(),
+        ));
+    }
+    if value.len() > 128
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(AppError::Config(
+            "YUANCE_SERVER_INSTANCE_ID 只能包含字母、数字、中划线和下划线，且不能超过 128 个字符"
+                .to_string(),
+        ));
+    }
+    if environment == "production" && value == "local-development" {
+        return Err(AppError::Config(
+            "生产环境必须显式配置 YUANCE_SERVER_INSTANCE_ID".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_duration_range(name: &str, value: i64, minimum: i64, maximum: i64) -> AppResult<()> {
+    if !(minimum..=maximum).contains(&value) {
+        return Err(AppError::Config(format!(
+            "{name} 必须在 {minimum}-{maximum} 秒之间"
+        )));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -156,6 +346,7 @@ mod tests {
             log_level: "off".to_string(),
             env: "test".to_string(),
             security_master_key: "test-master-key-that-is-long-enough".to_string(),
+            device_sessions: DeviceSessionSettings::default(),
             experimental_legacy_preview_enabled: false,
         }
     }
@@ -231,6 +422,80 @@ mod tests {
         for env in ["production", "staging", ""] {
             settings.env = env.to_string();
             assert!(!settings.allows_local_seed());
+        }
+    }
+
+    #[test]
+    fn device_session_defaults_are_valid_for_local_runtime() {
+        assert_eq!(
+            DeviceSessionSettings::default()
+                .validate("test")
+                .expect("defaults should validate"),
+            DeviceSessionDurations {
+                authorization_ttl_seconds: 600,
+                access_ttl_seconds: 900,
+                refresh_sliding_ttl_seconds: 30 * 24 * 60 * 60,
+                refresh_absolute_ttl_seconds: 90 * 24 * 60 * 60,
+                idempotency_ttl_seconds: 24 * 60 * 60,
+                poll_interval_seconds: 5,
+            }
+        );
+    }
+
+    #[test]
+    fn device_session_settings_reject_unsafe_relationships() {
+        let cases = [
+            ("authorization_ttl", "2m"),
+            ("access_ttl", "2h"),
+            ("poll_interval", "1s"),
+            ("refresh_sliding_ttl", "10m"),
+            ("refresh_sliding_ttl", "31d"),
+            ("refresh_absolute_ttl", "1d"),
+            ("refresh_absolute_ttl", "181d"),
+            ("idempotency_ttl", "1m"),
+            ("idempotency_ttl", "8d"),
+        ];
+
+        for (field, value) in cases {
+            let mut settings = DeviceSessionSettings::default();
+            match field {
+                "authorization_ttl" => settings.authorization_ttl = value.to_string(),
+                "access_ttl" => settings.access_ttl = value.to_string(),
+                "poll_interval" => settings.poll_interval = value.to_string(),
+                "refresh_sliding_ttl" => settings.refresh_sliding_ttl = value.to_string(),
+                "refresh_absolute_ttl" => settings.refresh_absolute_ttl = value.to_string(),
+                "idempotency_ttl" => settings.idempotency_ttl = value.to_string(),
+                _ => unreachable!(),
+            }
+            assert!(
+                settings.validate("test").is_err(),
+                "{field}={value} should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn production_rejects_local_or_invalid_server_identity() {
+        for server_instance_id in ["", "local-development", "contains spaces", "bad/path"] {
+            let settings = DeviceSessionSettings {
+                server_instance_id: server_instance_id.to_string(),
+                ..DeviceSessionSettings::default()
+            };
+            assert!(settings.validate("production").is_err());
+        }
+    }
+
+    #[test]
+    fn environment_names_are_normalized_before_security_checks() {
+        for raw_environment in ["production", "Production", "PRODUCTION", " production "] {
+            let normalized = normalize_environment(raw_environment);
+            assert_eq!(normalized, "production");
+            assert!(
+                DeviceSessionSettings::default()
+                    .validate(&normalized)
+                    .is_err(),
+                "{raw_environment:?} must use production safeguards"
+            );
         }
     }
 }

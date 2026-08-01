@@ -93,7 +93,10 @@ mkdir -p data backups
 ```text
 YUANCE_SESSION_SECRET
 YUANCE_SECURITY_MASTER_KEY
+YUANCE_SERVER_INSTANCE_ID
 ```
+
+`YUANCE_SERVER_INSTANCE_ID` 使用当前生产实例长期稳定的唯一标识，例如 `yuance-production-primary`；变更后已批准的 Desktop device credential 必须重新授权。
 
 生成随机值示例：
 

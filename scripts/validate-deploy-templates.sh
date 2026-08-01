@@ -82,6 +82,7 @@ if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; 
     cd "$BACKEND_DIR"
     YUANCE_SESSION_SECRET="validate-session-secret-change-before-deploy" \
     YUANCE_SECURITY_MASTER_KEY="validate-security-master-key-change-before-deploy" \
+    YUANCE_SERVER_INSTANCE_ID="validate-production-instance" \
       docker compose --env-file .env.example -f compose.yaml.example config >/dev/null
   )
 else

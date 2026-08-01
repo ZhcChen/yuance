@@ -858,7 +858,7 @@ async fn logout_revokes_session_and_clears_cookies() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
+        "/web/login?return_to=%2Fweb"
     );
 }
 
@@ -1373,6 +1373,7 @@ fn test_settings() -> Settings {
         log_level: "off".to_string(),
         env: "test".to_string(),
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
+        device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
     }
 }
