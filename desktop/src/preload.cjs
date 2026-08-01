@@ -1,15 +1,66 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("yuanceDesktop", Object.freeze({
-  notify(payload) {
-    return ipcRenderer.invoke("yuance:notify", payload);
-  },
-  onNotificationClick(callback) {
-    if (typeof callback !== "function") {
-      return () => {};
+const HOST_STATE_CHANNEL = "yuance:host-state";
+const NOTIFICATION_CLICK_CHANNEL = "yuance:notification-click";
+const PUBLIC_HOST_STATES = new Set([
+  "starting",
+  "unauthenticated",
+  "authorizing",
+  "authenticated",
+  "locked",
+  "reauthorization_required",
+  "fatal",
+]);
+let hostStateSnapshot = Object.freeze({ status: "starting" });
+const hostStateSubscribers = new Set();
+
+function normalizeHostState(value) {
+  const status = value && typeof value === "object" ? value.status : undefined;
+  return Object.freeze({ status: PUBLIC_HOST_STATES.has(status) ? status : "fatal" });
+}
+
+ipcRenderer.on(HOST_STATE_CHANNEL, (_event, value) => {
+  hostStateSnapshot = normalizeHostState(value);
+  for (const callback of [...hostStateSubscribers]) {
+    try {
+      callback(hostStateSnapshot);
+    } catch (_error) {
+      // One renderer subscriber must not prevent other subscribers from receiving state.
     }
-    const listener = (_event, targetPath) => callback(targetPath);
-    ipcRenderer.on("yuance:notification-click", listener);
-    return () => ipcRenderer.removeListener("yuance:notification-click", listener);
-  },
-}));
+  }
+});
+
+const bridge = Object.freeze({
+  schemaVersion: 1,
+  hostState: Object.freeze({
+    getSnapshot() {
+      return hostStateSnapshot;
+    },
+    subscribe(callback) {
+      if (typeof callback !== "function") return () => {};
+      hostStateSubscribers.add(callback);
+      try {
+        callback(hostStateSnapshot);
+      } catch (error) {
+        hostStateSubscribers.delete(callback);
+        throw error;
+      }
+      return () => hostStateSubscribers.delete(callback);
+    },
+  }),
+  notifications: Object.freeze({
+    show(payload) {
+      return ipcRenderer.invoke("yuance:notify", payload);
+    },
+    onClick(callback) {
+      if (typeof callback !== "function") {
+        return () => {};
+      }
+      const listener = (_event, targetPath) => callback(targetPath);
+      ipcRenderer.on(NOTIFICATION_CLICK_CHANNEL, listener);
+      return () => ipcRenderer.removeListener(NOTIFICATION_CLICK_CHANNEL, listener);
+    },
+  }),
+});
+
+contextBridge.exposeInMainWorld("yuanceDesktop", bridge);

@@ -35,6 +35,12 @@ import {
   createPendingRevocationStore,
 } from "./auth/credential-coordinator.mjs";
 import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
+import { createHostStatePublisher } from "./ipc/host-state.mjs";
+import {
+  createIpcSenderPolicy,
+  createRendererReadinessTracker,
+  parseNotificationPayload,
+} from "./ipc/sender-policy.mjs";
 import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
 import {
   browserWindowWebPreferences,
@@ -63,6 +69,13 @@ const rendererTarget = resolveRendererTarget({
 const activeNotifications = new Set();
 let mainWindow = null;
 let credentialStoreForProfile = null;
+const hostStatePublisher = createHostStatePublisher();
+const rendererReadiness = createRendererReadinessTracker(rendererTarget);
+const assertTrustedIpcSender = createIpcSenderPolicy({
+  getMainWindow: () => mainWindow,
+  isNavigationPending: rendererReadiness.isPending,
+  rendererTarget,
+});
 
 function resolveCurrentPngBrandIconPath() {
   return resolvePngBrandIconPath({
@@ -118,6 +131,7 @@ function handleNavigation(event) {
 }
 
 function createMainWindow() {
+  rendererReadiness.reset();
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -150,7 +164,22 @@ function createMainWindow() {
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
     callback(false);
   });
+  window.webContents.on("did-start-navigation", (event) => {
+    rendererReadiness.didStart(event);
+  });
+  window.webContents.on("did-finish-load", () => {
+    if (rendererReadiness.didCommit(window.webContents.getURL())) {
+      hostStatePublisher.publishTo(window);
+    }
+  });
+  window.webContents.on("did-fail-load", (_event, _code, _description, _url, isMainFrame) => {
+    if (isMainFrame) rendererReadiness.didCancelOrFail();
+  });
+  window.webContents.on("render-process-gone", () => {
+    rendererReadiness.reset();
+  });
   window.on("closed", () => {
+    rendererReadiness.reset();
     if (mainWindow === window) {
       mainWindow = null;
     }
@@ -165,14 +194,15 @@ function createMainWindow() {
 }
 
 function notifyFromRenderer(event, payload) {
-  if (!isTrustedRendererUrl(event.sender.getURL(), rendererTarget)) {
-    throw new Error("Untrusted renderer attempted to create a native notification.");
-  }
+  assertTrustedIpcSender(event);
   if (!Notification.isSupported() || (mainWindow && mainWindow.isFocused())) {
     return { shown: false };
   }
 
-  const notificationPayload = normalizeNotificationPayload(payload, rendererTarget.origin);
+  const notificationPayload = normalizeNotificationPayload(
+    parseNotificationPayload(payload),
+    rendererTarget.origin,
+  );
   const notification = new Notification({
     title: notificationPayload.title,
     body: notificationPayload.body,
