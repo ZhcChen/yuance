@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  createWorkItemComment as createWorkItemCommentUseCase,
+  handoffWorkItem as handoffWorkItemUseCase,
+  saveWorkItem,
+  updateWorkItemComment as updateWorkItemCommentUseCase,
+} from '@yuance/frontend-app-core';
+import {
   ApiError,
   createWorkItemAttachment,
   createWorkItemComment,
@@ -42,6 +48,13 @@ import {
   buildWorkItemListPath,
   parseAppRoute,
 } from './lib/routes.js';
+
+const WORK_ITEM_COLLABORATION_API = {
+  createWorkItemComment,
+  handoffWorkItem,
+  updateWorkItem,
+  updateWorkItemComment,
+};
 
 /**
  * @typedef AppUser
@@ -1151,18 +1164,32 @@ export default function App() {
     setWorkItemEditSubmitting(true);
     setWorkItemActionError('');
     try {
-      const updated = await updateWorkItem(itemKey, {
-        title,
-        description: workItemEditForm.description,
-        status: workItemEditForm.status,
-        priority: workItemEditForm.priority,
-        assigneeUsername: workItemEditForm.assigneeUsername.trim(),
-        dueDate: workItemEditForm.dueDate,
-        parentItemKey: workItemEditForm.parentItemKey.trim(),
+      await saveWorkItem({
+        api: WORK_ITEM_COLLABORATION_API,
+        itemKey,
+        payload: {
+          title,
+          description: workItemEditForm.description,
+          status: workItemEditForm.status,
+          priority: workItemEditForm.priority,
+          assigneeUsername: workItemEditForm.assigneeUsername.trim(),
+          dueDate: workItemEditForm.dueDate,
+          parentItemKey: workItemEditForm.parentItemKey.trim(),
+        },
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
+          onCommitted: (updated) => applyWorkItemMutationResult(
+            updated,
+            `${updated.key} 已保存。`,
+            actionId,
+          ),
+          refreshCompanion: (updated) => refreshWorkItemCompanionState(
+            updated.key,
+            '工作项已保存',
+            actionId,
+          ),
+        },
       });
-      if (applyWorkItemMutationResult(updated, `${updated.key} 已保存。`, actionId)) {
-        await refreshWorkItemCompanionState(updated.key, '工作项已保存', actionId);
-      }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('保存工作项失败。')));
@@ -1190,14 +1217,28 @@ export default function App() {
     setWorkItemHandoffSubmitting(true);
     setWorkItemActionError('');
     try {
-      const updated = await handoffWorkItem(itemKey, {
-        status: workItemHandoffForm.status,
-        assigneeUsername: workItemHandoffForm.assigneeUsername.trim(),
-        body: workItemHandoffForm.body,
+      await handoffWorkItemUseCase({
+        api: WORK_ITEM_COLLABORATION_API,
+        itemKey,
+        payload: {
+          status: workItemHandoffForm.status,
+          assigneeUsername: workItemHandoffForm.assigneeUsername.trim(),
+          body: workItemHandoffForm.body,
+        },
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
+          onCommitted: (updated) => applyWorkItemMutationResult(
+            updated,
+            `${updated.key} 已推进并指派。`,
+            actionId,
+          ),
+          refreshCompanion: (updated) => refreshWorkItemCompanionState(
+            updated.key,
+            '工作项已推进并指派',
+            actionId,
+          ),
+        },
       });
-      if (applyWorkItemMutationResult(updated, `${updated.key} 已推进并指派。`, actionId)) {
-        await refreshWorkItemCompanionState(updated.key, '工作项已推进并指派', actionId);
-      }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('推进并指派失败。')));
@@ -1232,15 +1273,26 @@ export default function App() {
     setWorkItemCommentSubmitting(true);
     setWorkItemCommentActionError('');
     try {
-      const created = await createWorkItemComment(itemKey, { body, bodyFormat: 'plain' });
-      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
-        requestRef.current += 1;
-        setRefreshing(false);
-        setWorkItemComments((current) => [...current, created]);
-        setWorkItemNewCommentBody('');
-        setStatusMessage(`${itemKey} 评论已发布。`);
-        await refreshWorkItemCompanionState(itemKey, '评论已发布', actionId);
-      }
+      await createWorkItemCommentUseCase({
+        api: WORK_ITEM_COLLABORATION_API,
+        itemKey,
+        payload: { body, bodyFormat: 'plain' },
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
+          onCommitted: (created) => {
+            requestRef.current += 1;
+            setRefreshing(false);
+            setWorkItemComments((current) => [...current, created]);
+            setWorkItemNewCommentBody('');
+            setStatusMessage(`${itemKey} 评论已发布。`);
+          },
+          refreshCompanion: () => refreshWorkItemCompanionState(
+            itemKey,
+            '评论已发布',
+            actionId,
+          ),
+        },
+      });
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('发布评论失败。')));
@@ -1277,19 +1329,31 @@ export default function App() {
     setWorkItemEditCommentSubmitting(true);
     setWorkItemCommentActionError('');
     try {
-      const updated = await updateWorkItemComment(itemKey, commentId, { body, bodyFormat: 'plain' });
-      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
-        requestRef.current += 1;
-        setRefreshing(false);
-        setWorkItemComments((current) => current.map((comment) => (
-          comment.id === updated.id ? updated : comment
-        )));
-        setWorkItemEditingCommentId(null);
-        setWorkItemEditCommentBody('');
-        setStatusMessage(`${itemKey} 评论已更新。`);
-        focusWorkItemCommentEditButton(updated.id);
-        await refreshWorkItemCompanionState(itemKey, '评论已更新', actionId);
-      }
+      await updateWorkItemCommentUseCase({
+        api: WORK_ITEM_COLLABORATION_API,
+        itemKey,
+        commentId,
+        payload: { body, bodyFormat: 'plain' },
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
+          onCommitted: (updated) => {
+            requestRef.current += 1;
+            setRefreshing(false);
+            setWorkItemComments((current) => current.map((comment) => (
+              comment.id === updated.id ? updated : comment
+            )));
+            setWorkItemEditingCommentId(null);
+            setWorkItemEditCommentBody('');
+            setStatusMessage(`${itemKey} 评论已更新。`);
+            focusWorkItemCommentEditButton(updated.id);
+          },
+          refreshCompanion: () => refreshWorkItemCompanionState(
+            itemKey,
+            '评论已更新',
+            actionId,
+          ),
+        },
+      });
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('编辑评论失败。')));

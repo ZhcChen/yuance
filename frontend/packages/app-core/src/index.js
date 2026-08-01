@@ -10,3 +10,9 @@ export {
   buildWorkItemListPath,
   parseAppRoute,
 } from './routes.js';
+export {
+  createWorkItemComment,
+  handoffWorkItem,
+  saveWorkItem,
+  updateWorkItemComment,
+} from './work-item-collaboration.js';
