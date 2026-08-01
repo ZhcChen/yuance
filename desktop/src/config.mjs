@@ -52,6 +52,16 @@ export function resolveWebUrl(rawUrl = process.env.YUANCE_DESKTOP_WEB_URL) {
   };
 }
 
+export function resolveDeviceAuthEndpoint({
+  isDevRuntime,
+  rawUrl = process.env.YUANCE_DESKTOP_WEB_URL,
+} = {}) {
+  if (!isDevRuntime) {
+    return new URL(DEFAULT_WEB_URL).origin;
+  }
+  return resolveWebUrl(rawUrl).origin;
+}
+
 export function isTrustedAppUrl(value, appOrigin) {
   try {
     return new URL(value).origin === appOrigin;

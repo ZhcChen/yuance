@@ -14,6 +14,7 @@ import {
   PRODUCTION_APP_DISPLAY_NAME,
   PRODUCTION_APP_USER_MODEL_ID,
   resolveDesktopAppIdentity,
+  resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
   resolveWebUrl,
   safeNotificationTarget,
@@ -54,6 +55,23 @@ test("normalizes a local development Web URL", () => {
     url: "http://127.0.0.1:33033/web",
     origin: "http://127.0.0.1:33033",
   });
+});
+
+test("ignores endpoint environment overrides for production device auth profiles", () => {
+  assert.equal(
+    resolveDeviceAuthEndpoint({
+      isDevRuntime: false,
+      rawUrl: "https://attacker.example/web",
+    }),
+    "https://yuance.quanxinfu.com",
+  );
+  assert.equal(
+    resolveDeviceAuthEndpoint({
+      isDevRuntime: true,
+      rawUrl: "http://127.0.0.1:33033/web",
+    }),
+    "http://127.0.0.1:33033",
+  );
 });
 
 test("rejects unsupported application URLs", () => {
@@ -103,6 +121,20 @@ test("configures development storage and maximizes the startup window", () => {
   assert.match(mainSource, /window\.maximize\(\);/);
   assert.doesNotMatch(mainSource, /fullscreen: true/);
   assert.match(mainSource, /applyRuntimeBrandIcon\(\);/);
+});
+
+test("acquires the OS single-instance lock before the ready lifecycle", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  const lockIndex = mainSource.indexOf("app.requestSingleInstanceLock()");
+  const readyIndex = mainSource.indexOf("app.whenReady()", lockIndex);
+  assert.ok(lockIndex >= 0);
+  assert.ok(readyIndex > lockIndex);
+  assert.match(mainSource, /if \(!hasSingleInstanceLock\) \{\s*app\.quit\(\);/);
+  assert.match(mainSource, /app\.on\("second-instance", \(\) => revealWindow\("\/web"\)\)/);
+  assert.ok(
+    mainSource.indexOf("initializeCredentialStoreFactory();") >
+      mainSource.indexOf("if (!hasSingleInstanceLock)"),
+  );
 });
 
 test("allows only HTTP(S) external links", () => {

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Notification, ipcMain, nativeImage, shell } from "electron";
+import { app, BrowserWindow, Notification, ipcMain, nativeImage, safeStorage, shell } from "electron";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,8 @@ import {
   resolveDevelopmentDataPaths,
   resolveWebUrl,
 } from "./config.mjs";
+import { createProfileCredentialStore } from "./auth/credential-store.mjs";
+import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDevRuntime = isDevelopmentRuntime({
@@ -25,6 +28,7 @@ const appIdentity = resolveDesktopAppIdentity(isDevRuntime);
 const webConfig = resolveWebUrl();
 const activeNotifications = new Set();
 let mainWindow = null;
+let credentialStoreForProfile = null;
 
 function resolveCurrentPngBrandIconPath() {
   return resolvePngBrandIconPath({
@@ -139,6 +143,18 @@ function notifyFromRenderer(event, payload) {
   return { shown: true };
 }
 
+function initializeCredentialStoreFactory() {
+  const userDataPath = app.getPath("userData");
+  credentialStoreForProfile = (profile) =>
+    createProfileCredentialStore({
+      safeStorage,
+      fs,
+      userDataPath,
+      profile,
+      platform: process.platform,
+    });
+}
+
 app.setName(appIdentity.displayName);
 app.setAppUserModelId(appIdentity.appUserModelId);
 if (isDevRuntime) {
@@ -146,17 +162,51 @@ if (isDevRuntime) {
   app.setPath("userData", developmentDataPaths.userData);
   app.setPath("sessionData", developmentDataPaths.sessionData);
 }
-ipcMain.handle("yuance:notify", notifyFromRenderer);
-
-app.whenReady().then(() => {
-  applyRuntimeBrandIcon();
-  mainWindow = createMainWindow();
-  app.on("activate", () => {
-    if (!mainWindow) {
-      mainWindow = createMainWindow();
+const isSafeStorageSmoke = !app.isPackaged && process.argv.includes("--safe-storage-smoke");
+const singleInstanceProbe = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--single-instance-lock-probe="))
+  : undefined;
+if (singleInstanceProbe) {
+  const markerPath = singleInstanceProbe.slice(singleInstanceProbe.indexOf("=") + 1);
+  const hasProbeLock = app.requestSingleInstanceLock();
+  if (!hasProbeLock) {
+    app.exit(2);
+  } else {
+    app.whenReady().then(async () => {
+      await fs.writeFile(markerPath, "acquired", { mode: 0o600 });
+      if (!process.argv.includes("--hold-lock-probe")) app.exit(0);
+    });
+  }
+} else if (isSafeStorageSmoke) {
+  app.whenReady().then(async () => {
+    try {
+      const result = await runSafeStorageSmoke({ safeStorage });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+      app.exit(0);
+    } catch (error) {
+      process.stderr.write(`safeStorage smoke failed: ${error.message}\n`);
+      app.exit(1);
     }
   });
-});
+} else {
+  ipcMain.handle("yuance:notify", notifyFromRenderer);
+  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!hasSingleInstanceLock) {
+    app.quit();
+  } else {
+    app.on("second-instance", () => revealWindow("/web"));
+    app.whenReady().then(() => {
+      initializeCredentialStoreFactory();
+      applyRuntimeBrandIcon();
+      mainWindow = createMainWindow();
+      app.on("activate", () => {
+        if (!mainWindow) {
+          mainWindow = createMainWindow();
+        }
+      });
+    });
+  }
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

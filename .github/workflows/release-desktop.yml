@@ -100,6 +100,14 @@ jobs:
       - name: Run desktop tests
         run: npm --prefix desktop test
 
+      - name: Verify native safeStorage boundary
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
+
+      - name: Verify Linux safeStorage fail-closed boundary
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:safe-storage && xvfb-run -a npm --prefix desktop run smoke:single-instance
+
       - name: Build installer
         run: npm --prefix desktop run dist:ci -- ${{ matrix.platform.target }} ${{ matrix.platform.arch_flag }}
         env:
