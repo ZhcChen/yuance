@@ -14,10 +14,12 @@ const profile = createDesktopProfile({
 });
 
 function jsonResponse(body, options = {}) {
-  return new Response(JSON.stringify(body), {
+  const response = new Response(JSON.stringify(body), {
     status: options.status ?? 200,
     headers: { "content-type": "application/json", ...(options.headers ?? {}) },
   });
+  if (options.url) Object.defineProperty(response, "url", { value: options.url });
+  return response;
 }
 
 function credentialData(overrides = {}) {
@@ -93,7 +95,7 @@ test("server-controlled error messages do not enter public errors", async () => 
         code: "temporarily_unavailable",
         message: "yuance_dat_secret https://internal.example Cookie=session",
       },
-    }, { status: 503 }),
+    }, { status: 503, url: `${profile.origin}/api/v1/device-session` }),
   });
   await assert.rejects(client.probe("yuance_dat_test"), (error) => {
     const publicError = `${error.message}\n${error.stack}\n${JSON.stringify(error)}`;
@@ -116,7 +118,7 @@ test("uses fixed trusted paths, manual redirects, no-store, and no ambient crede
         expires_in: 600,
         interval: 5,
         server_instance_id: "server-1",
-      } }, { status: 201 });
+      } }, { status: 201, url });
     },
   });
 
@@ -179,12 +181,14 @@ test("times out requests and never follows same-origin or cross-origin redirects
 });
 
 test("timeout also aborts a response body that stalls after headers", async () => {
+  const stalledResponse = new Response(new ReadableStream({ start() {} }), {
+    headers: { "content-type": "application/json" },
+  });
+  Object.defineProperty(stalledResponse, "url", { value: `${profile.origin}/api/v1/device-session` });
   const client = createDeviceAuthClient({
     profile,
     timeoutMs: 5,
-    fetchImpl: async () => new Response(new ReadableStream({ start() {} }), {
-      headers: { "content-type": "application/json" },
-    }),
+    fetchImpl: async () => stalledResponse,
   });
   await assert.rejects(
     client.probe("yuance_dat_access"),
@@ -204,12 +208,13 @@ test("polling respects initial interval and the greater Retry-After hint", async
         return jsonResponse({ error: { code: "authorization_pending", message: "pending", retry_after: 7 } }, {
           status: 400,
           headers: { "retry-after": "9" },
+          url: `${profile.origin}/api/v1/device-authorizations/exchange`,
         });
       }
       return jsonResponse({ data: credentialData({
         access: { ...credentialData().access, generation: 0 },
         refresh: { ...credentialData().refresh, generation: 0 },
-      }) });
+      }) }, { url: `${profile.origin}/api/v1/device-authorizations/exchange` });
     },
   });
 
@@ -233,7 +238,7 @@ test("validates credential metadata and refuses PAT/Cookie token shapes", async 
   ]) {
     const client = createDeviceAuthClient({
       profile,
-      fetchImpl: async () => jsonResponse({ data: credentialData(mutation) }),
+      fetchImpl: async () => jsonResponse({ data: credentialData(mutation) }, { url: `${profile.origin}/api/v1/device-sessions/refresh` }),
     });
     await assert.rejects(
       client.refresh({
@@ -248,7 +253,7 @@ test("validates credential metadata and refuses PAT/Cookie token shapes", async 
 test("initial exchange rejects a non-zero credential generation", async () => {
   const client = createDeviceAuthClient({
     profile,
-    fetchImpl: async () => jsonResponse({ data: credentialData() }),
+    fetchImpl: async () => jsonResponse({ data: credentialData() }, { url: `${profile.origin}/api/v1/device-authorizations/exchange` }),
   });
 
   await assert.rejects(
@@ -267,7 +272,7 @@ test("sends device access only to probe/logout and validates the response URL", 
     profile,
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
-      return jsonResponse({ data: { revoked: true, family_id: "family-1" } });
+      return jsonResponse({ data: { revoked: true, family_id: "family-1" } }, { url });
     },
   });
   await client.logout("yuance_dat_access");

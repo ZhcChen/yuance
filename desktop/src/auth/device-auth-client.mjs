@@ -1,4 +1,6 @@
 import { createProfileKey } from "./profile.mjs";
+import { parseJsonResponse } from "../network/response-contract.mjs";
+import { isTrustedSessionFetch } from "../network/network-session.mjs";
 
 const PATHS = Object.freeze({
   start: "/api/v1/device-authorizations",
@@ -8,7 +10,6 @@ const PATHS = Object.freeze({
   logout: "/api/v1/device-session/logout",
 });
 const VERIFICATION_PATH = "/web/device-authorization";
-const JSON_CONTENT_TYPE = /^application\/json(?:\s*;|$)/iu;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu;
 const SECURITY_ERROR_CODES = new Set([
   "device_revoked",
@@ -77,28 +78,15 @@ export function createDeviceAuthClient({
       throw new DeviceAuthProtocolError("network_error", "Device auth request failed");
     }
     try {
-      if (response.redirected || (response.status >= 300 && response.status < 400)) {
-        throw new DeviceAuthProtocolError("redirect_not_allowed", "Device auth redirects are not allowed", {
-          status: response.status,
-        });
-      }
-      if (response.url && response.url !== url) {
-        throw new DeviceAuthProtocolError("response_origin_mismatch", "Device auth response URL changed");
-      }
-      const contentType = response.headers.get("content-type") || "";
-      if (!JSON_CONTENT_TYPE.test(contentType)) {
-        throw new DeviceAuthProtocolError("invalid_content_type", "Device auth response must be JSON", {
-          status: response.status,
-        });
-      }
-      const parsed = await readJsonResponse(response, maxResponseBytes, controller.signal);
-      if (!response.ok) throw responseError(response, parsed);
-      if (!isPlainObject(parsed) || !isPlainObject(parsed.data)) {
-        throw new DeviceAuthProtocolError("invalid_response", "Device auth response envelope is invalid");
-      }
-      return parsed.data;
+      return await parseJsonResponse(response, {
+        expectedUrl: url,
+        maxResponseBytes,
+        signal: controller.signal,
+        errorFactory: deviceAuthResponseError,
+        allowEmptyUrl: isTrustedSessionFetch(fetchImpl),
+      });
     } catch (error) {
-      if (controller.signal.aborted && !(error instanceof DeviceAuthProtocolError)) {
+      if (controller.signal.aborted && (!(error instanceof DeviceAuthProtocolError) || error.code === "request_aborted")) {
         throw new DeviceAuthProtocolError("request_timeout", "Device auth response timed out");
       }
       throw error;
@@ -225,68 +213,12 @@ export function createDeviceAuthClient({
   return Object.freeze({ startAuthorization, exchangeAuthorization, pollAuthorization, refresh, probe, logout });
 }
 
-async function readJsonResponse(response, maxResponseBytes, signal) {
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > maxResponseBytes) {
-    throw new DeviceAuthProtocolError("response_too_large", "Device auth response is too large");
-  }
-  const chunks = [];
-  let length = 0;
-  const reader = response.body?.getReader();
-  if (reader) {
-    while (true) {
-      if (signal.aborted) {
-        await reader.cancel().catch(() => {});
-        throw signal.reason ?? new Error("aborted");
-      }
-      const { done, value } = await abortableRead(reader, signal);
-      if (signal.aborted) throw signal.reason ?? new Error("aborted");
-      if (done) break;
-      length += value.byteLength;
-      if (length > maxResponseBytes) {
-        await reader.cancel().catch(() => {});
-        throw new DeviceAuthProtocolError("response_too_large", "Device auth response is too large");
-      }
-      chunks.push(value);
-    }
-  }
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  } catch (error) {
-    throw new DeviceAuthProtocolError("invalid_json", "Device auth response is invalid JSON");
-  }
-}
-
-async function abortableRead(reader, signal) {
-  if (signal.aborted) throw signal.reason ?? new Error("aborted");
-  let onAbort;
-  const aborted = new Promise((_resolve, reject) => {
-    onAbort = () => {
-      reader.cancel().catch(() => {});
-      reject(signal.reason ?? new Error("aborted"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-  try {
-    return await Promise.race([reader.read(), aborted]);
-  } finally {
-    signal.removeEventListener("abort", onAbort);
-  }
-}
-
-function responseError(response, body) {
+function deviceAuthResponseError(code, message, { status, body, response } = {}) {
   const error = isPlainObject(body?.error) ? body.error : {};
-  const code = typeof error.code === "string" ? error.code : "device_auth_error";
   const bodyRetry = positiveIntegerOrUndefined(error.retry_after);
-  const headerRetry = parseRetryAfter(response.headers.get("retry-after"));
-  return new DeviceAuthProtocolError(code, "Device auth request failed", {
-    status: response.status,
+  const headerRetry = parseRetryAfter(response?.headers.get("retry-after"));
+  return new DeviceAuthProtocolError(code, message === "Request failed" ? "Device auth request failed" : message, {
+    status,
     retryAfterSeconds: Math.max(bodyRetry ?? 0, headerRetry ?? 0) || undefined,
   });
 }

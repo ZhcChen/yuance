@@ -148,6 +148,11 @@ test("authorization, logout, retry, and disposal are semantic and single-runtime
     openExternal: coordinator.authorizeInputs[0].openExternal,
     onUserCode: coordinator.authorizeInputs[0].onUserCode,
   });
+  const preRefreshEpoch = runtime.networkEpoch();
+  assert.equal(await runtime.refreshAccess(preRefreshEpoch), true);
+  assert.ok(runtime.networkEpoch() > preRefreshEpoch);
+  assert.equal(await runtime.refreshAccess(preRefreshEpoch), false);
+  assert.equal(coordinator.refreshCalls, 1);
   await runtime.logout();
   await runtime.retryPendingRevocation();
   runtime.dispose();
@@ -184,6 +189,7 @@ function fakeCoordinator({ status = "unauthenticated" } = {}) {
     unsubscribeCalls: 0,
     authorizeInputs: [],
     lockReasons: [],
+    refreshCalls: 0,
     snapshot: () => snapshot,
     subscribe(callback) {
       listener = callback;
@@ -192,6 +198,7 @@ function fakeCoordinator({ status = "unauthenticated" } = {}) {
     },
     async initialize() { this.initializeCalls += 1; return snapshot; },
     async getAccessToken() { return "yuance_dat_runtime-secret"; },
+    async refresh() { this.refreshCalls += 1; return "yuance_dat_rotated-secret"; },
     async authorize(input) { this.authorizeInputs.push(input); return snapshot; },
     async logout() { return snapshot; },
     async retryPendingRevocation() { return snapshot; },

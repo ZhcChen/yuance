@@ -31,14 +31,14 @@ test("client and coordinator integration authorizes, refreshes, and logs out", a
           expires_in: 600,
           interval: 2,
           server_instance_id: profile.serverInstanceId,
-        } }, 201);
+        } }, 201, url);
       }
       if (path === "/api/v1/device-authorizations/exchange") {
         exchangeAttempts += 1;
         if (exchangeAttempts === 1) {
-          return json({ error: { code: "authorization_pending", message: "pending", retry_after: 2 } }, 400);
+          return json({ error: { code: "authorization_pending", message: "pending", retry_after: 2 } }, 400, url);
         }
-        return json({ data: credentials(0) });
+        return json({ data: credentials(0) }, 200, url);
       }
       if (path === "/api/v1/device-session") {
         return json({ data: {
@@ -51,13 +51,13 @@ test("client and coordinator integration authorizes, refreshes, and logs out", a
           authorization_version: 1,
           access_expires_at: new Date(now + 1_000).toISOString(),
           server_instance_id: profile.serverInstanceId,
-        } });
+        } }, 200, url);
       }
       if (path === "/api/v1/device-sessions/refresh") {
-        return json({ data: credentials(1) });
+        return json({ data: credentials(1) }, 200, url);
       }
       if (path === "/api/v1/device-session/logout") {
-        return json({ data: { revoked: true, family_id: "family-1" } });
+        return json({ data: { revoked: true, family_id: "family-1" } }, 200, url);
       }
       throw new Error(`unexpected request: ${path}`);
     },
@@ -131,11 +131,13 @@ function credentials(generation) {
   };
 }
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
+function json(body, status = 200, url) {
+  const response = new Response(JSON.stringify(body), {
     status,
     headers: { "content-type": "application/json", "cache-control": "private, no-store" },
   });
+  Object.defineProperty(response, "url", { value: url });
+  return response;
 }
 
 function memoryCredentialStore() {

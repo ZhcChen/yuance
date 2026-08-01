@@ -139,6 +139,15 @@ export function createCredentialRuntime({
     return result;
   }
 
+  async function refreshAccess(expectedEpoch) {
+    requireUsable();
+    if (!Number.isSafeInteger(expectedEpoch) || expectedEpoch !== epoch) return false;
+    invalidateNetwork("refreshing", "access_expired");
+    await coordinator.refresh();
+    requireUsable();
+    return true;
+  }
+
   function logout() {
     requireUsable();
     const state = coordinator.snapshot();
@@ -199,6 +208,7 @@ export function createCredentialRuntime({
     initialize,
     authorize,
     withAccessLease,
+    refreshAccess,
     logout,
     retryPendingRevocation,
     discardLocalSession,
