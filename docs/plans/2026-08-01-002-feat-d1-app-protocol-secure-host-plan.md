@@ -28,15 +28,16 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 ## 需求追踪
 
 - R1. 正式态窗口只加载固定 origin `app://yuance/` 的 standard、secure 自定义协议和打包内 renderer；scheme privilege 在 Electron ready 前注册，正式窗口不得接受其他 host；不加载生产 `/web`，不使用 `file://`，也不允许任意目录作为资源根。
-- R2. 协议只服务构建 manifest 中的 regular files，规范化 URL/path 后拒绝 traversal、编码绕过、反斜杠、NUL、目录、symlink 和 manifest 外资源；未知 SPA path 只回退受信 `index.html`，静态资源缺失保持 404。
-- R3. HTML 响应强制设置收敛的 CSP 和安全响应头。正式态 `default-src 'self'`，脚本不允许 inline/eval，`object-src 'none'`、`base-uri 'none'`、`frame-ancestors 'none'`，本切片 `connect-src 'none'`。
+- R2. 协议只接受 `GET`/`HEAD` 且只服务构建 manifest 中的 regular files，规范化 URL/path 后拒绝异常 authority、request body、traversal、编码绕过、反斜杠、NUL、目录、symlink 和 manifest 外资源；只有显式应用路由 allowlist 才回退受信 `index.html`，静态资源、`/api`、`/.well-known` 和保留前缀缺失保持 404。
+- R3. HTML 响应强制设置收敛的 CSP 和安全响应头。正式态至少固定 `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`，不允许 inline script、eval、外部 CDN 或本切片未批准的网络能力。
 - R4. BrowserWindow 保持 `contextIsolation: true`、`sandbox: true`、`nodeIntegration: false`、`webSecurity: true`、`webviewTag: false`；权限、webview、非受信导航、redirect 和 `window.open` 默认拒绝。
-- R5. preload 只暴露版本化、冻结、schema 校验后的最小 bridge；每个 IPC handler 同时校验顶层 frame、未销毁 sender、固定 `app://` origin 与当前主窗口 webContents，不以 renderer 传入 URL 判断信任。
+- R5. preload 只暴露版本化、冻结、schema 校验后的最小 bridge；每个 IPC handler 同时校验 `event.sender === mainWindow.webContents`、`event.senderFrame === event.sender.mainFrame`、未销毁 sender、固定 `app://yuance` authority 和规范化 route allowlist，不以 `event.sender.getURL()` 或 renderer 传入 URL 代替 `event.senderFrame.url` 判断信任。现有通知 handler 与新增 handler 使用同一 sender policy。
 - R6. Desktop renderer 复用共享 UI/app-core，通过 Desktop composition root 注入 router、认证状态和暂不联网的明确 adapter；共享 package 不读取 `window.yuanceDesktop`，renderer 不获得 credential、通用 fetch 代理或文件路径。
 - R7. renderer 提供启动、未认证、认证中、已认证但业务网络未启用、locked/reauthorization-required 和不可恢复启动错误状态；本切片不在 renderer 内收集密码，也不伪装业务功能已经可用。
-- R8. 开发态可使用独立 renderer dev server，但必须使用独立 `userData`/session，显式 allowlist loopback origin；正式构建路径不得读取环境变量切换 renderer origin或自动打开 DevTools。
-- R9. renderer 产物和资源 manifest 必须进入安装包，构建后验证 hash、路径和 CSP；断网时三平台均可启动本地 Shell，但不宣称离线业务数据可用。
+- R8. 开发态可使用独立 renderer dev server，但必须使用独立 `userData`、`sessionData` 和 Electron partition，显式 allowlist loopback origin；`app.isPackaged` 是不可被 channel 或环境变量覆盖的最终安全边界，打包应用无条件使用 `app://yuance/`，channel 只影响品牌/发行标识，不能切换 renderer origin、安全策略、数据目录或自动打开 DevTools。
+- R9. renderer build 完成后按最终输出字节生成资源 manifest，manifest 与产物进入 ASAR；bundle verifier 必须从实际 `app.asar` 读取并复算 hash、字节数、路径和 CSP。三平台先启动 `electron-builder --dir` 产生的 unpacked executable 完成真实 Shell smoke，再构建 DMG/NSIS/AppImage；本切片不把安装、升级、卸载冒充为已验证，也不宣称离线业务数据可用。
 - R10. 当前远端 Web 壳保留为开发兼容/回退路径，只能由显式开发模式启用；正式态违反 `app://` 不变量必须 fail closed，不回退远端页面。
+- R11. 正式态外链只允许规范化、无 userinfo 的 HTTPS URL 并交给系统浏览器；HTTP 只可在开发态对显式 loopback host/port 开放。主进程、renderer 和导航层均不得借外链策略发起隐式网络请求。
 
 ## 范围边界
 
@@ -71,11 +72,11 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 
 ### 技术决策
 
-1. 使用 Electron `protocol.handle` 处理固定 `app://yuance/` origin，并在 `ready` 前通过 `protocol.registerSchemesAsPrivileged` 声明 `standard`、`secure` 和构建所需的最小 privilege；不启用 service worker 或绕过 CSP。协议 handler 只从构建生成的 manifest 映射资源，不将 URL pathname 直接拼接文件系统路径。
+1. 使用 Electron `protocol.handle` 处理固定 `app://yuance/` origin，并在模块顶层、`app.ready` 前通过 `protocol.registerSchemesAsPrivileged` 只声明 `standard: true`、`secure: true` 及确有构建证据时的 `supportFetchAPI: true`；不得启用 `bypassCSP` 或 `allowServiceWorkers`。ready 后再注册 handler；handler 只从构建生成的 manifest 映射资源，不将 URL pathname 直接拼接文件系统路径。
 2. renderer 独立构建，不直接复用 Web 的入口。共享的是 package、use case 和 UI；Browser Cookie/EventSource/history 与 Desktop 状态/路由 adapter 保持分离。
 3. CSP 由协议响应统一注入，构建产物不得依赖 inline script、eval 或外部 CDN。本切片不联网，因此 `connect-src 'none'`；D1-B 必须显式修改并验证 endpoint allowlist 后才能开放。
-4. IPC 信任采用主进程持有的窗口身份与 frame URL 双重校验。`app://` origin 只是必要条件，不是充分条件；subframe、旧窗口、导航中的 sender 和非当前窗口全部拒绝。
-5. 正式态 fail closed：manifest 缺失/篡改、入口不存在、CSP 无法注入或协议注册失败时展示主进程生成的最小错误窗口或退出，不回退远端 Web。
+4. IPC 信任采用主进程持有的窗口身份、顶层 frame 身份、固定 authority 和 route allowlist 联合校验。`app://` origin 只是必要条件，不是充分条件；subframe、旧窗口、导航中的 sender 和非当前窗口全部拒绝，SPA route 不要求 pathname 固定为 `/`。
+5. 正式态 fail closed：manifest 缺失/篡改、入口不存在、CSP 无法注入或协议注册失败时使用原生 dialog 报告最小错误后退出，不创建带 preload 的旁路错误页面，也不回退远端 Web。
 
 ## 实施阶段与执行单元
 
@@ -92,10 +93,10 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 
 **测试场景：**
 
-1. `app://yuance/`、已登记静态资源和无扩展 SPA route 分别映射正确入口；其他 host、userinfo、port、query 驱动资源选择和 fragment 驱动资源选择均不改变映射，缺失带扩展资源返回 404。
+1. `app://yuance/`、已登记静态资源和 allowlist 内 SPA route 分别映射正确入口；其他 host、userinfo、port、query/fragment 驱动资源选择、`/api`、`/.well-known`、保留前缀和非 allowlist 无扩展路径均返回受控错误。
 2. `..`、percent/double encoding、反斜杠、NUL、绝对路径、目录和 manifest 外文件全部拒绝。
-3. MIME、CSP、`X-Content-Type-Options`、cache policy 与 HTML/asset 差异正确；正式 CSP 不含 `unsafe-inline`、`unsafe-eval` 或网络 origin。
-4. manifest 重复路径、非法 hash、symlink/非 regular file、入口缺失和根目录越界导致构建或启动失败。
+3. 只允许 `GET`/`HEAD`；POST/其他 method、request body 与异常 authority 拒绝。MIME、完整 CSP、`X-Content-Type-Options`、cache policy 与 HTML/asset 差异正确。
+4. manifest 在 renderer build 后生成并覆盖最终输出字节；源输出目录中的重复路径、非法 hash、symlink/非 regular file、入口缺失和根目录越界导致构建失败。运行期以 manifest key + hash 为准，不依赖 ASAR 内 `realpath` 语义。
 
 **完成标准：** 协议决策可在 Node 测试中验证，handler 没有 renderer 可控的文件系统路径拼接。
 
@@ -139,8 +140,8 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 **测试场景：**
 
 1. 正式态只选择 `app://yuance/`；其他 `app://` host、环境变量、远端配置和 renderer 参数不能切换正式入口。
-2. 开发态仅接受明确 allowlist 的 loopback dev origin，并继续隔离 `userData`/session；非 loopback HTTP 与任意 file URL 拒绝。
-3. 顶层/子 frame 导航、同 scheme 非法 host、redirect、`window.open`、webview attach 和所有 permission 请求按矩阵拒绝；允许的 HTTPS 外链只交给系统浏览器。
+2. 开发态仅接受明确 allowlist 的 loopback dev origin，并隔离 `userData`、`sessionData` 和 Electron partition；打包态即使设置 `YUANCE_DESKTOP_CHANNEL=dev`、renderer URL 或其他环境变量也仍加载 `app://yuance/`。
+3. 顶层/子 frame 导航、同 scheme 非法 host、redirect、`window.open`、webview attach 和所有 permission 请求按矩阵拒绝；正式态仅允许规范化、无 userinfo 的 HTTPS 外链交给系统浏览器，拒绝普通 HTTP、混淆 hostname 和非策略端口，开发态 HTTP 仅限显式 loopback host/port。
 4. BrowserWindow 安全不变量逐项断言，生产构建不能启用 DevTools 自动打开或禁用 web security。
 
 **完成标准：** 正式态 `loadURL` 只接收固定 `app://` 入口，协议初始化失败不会回退远端页面。
@@ -160,9 +161,9 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 **测试场景：**
 
 1. bridge 对象冻结且带 schema version，只暴露状态快照、状态订阅和本切片批准的有限命令；无 token、header、URL、文件路径、任意 channel invoke。
-2. handler 拒绝 subframe、非当前主窗口、已销毁/替换 webContents、非固定 host/path 和导航过渡中的 sender。
+2. handler 通过 `event.sender`、`event.senderFrame === event.sender.mainFrame` 和 `event.senderFrame.url` 联合校验，拒绝 subframe、非当前主窗口、已销毁/替换 webContents、非法 authority、非 allowlist SPA route 和导航过渡中的 sender；不得使用固定 `/` pathname 破坏 SPA 路由。
 3. payload 拒绝未知字段、超长字符串、错误类型和原型污染键；返回值只含 allowlist 字段。
-4. 窗口销毁、renderer reload 和订阅取消后 listener 全部清理，不重复推送或泄漏旧账户状态。
+4. 窗口销毁、renderer reload 和订阅取消后 listener 全部清理，不重复推送或泄漏旧账户状态；现有 `yuance:notify`、通知点击和第二实例 route 同步迁移到语义路由与同一 sender policy，不再保留 `/web` 假设。
 
 **完成标准：** preload 合约有独立 schema/负向测试，renderer 无法构造通用主进程调用。
 
@@ -203,12 +204,12 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 
 **测试场景：**
 
-1. macOS、Windows、Linux bundle 都包含 renderer、manifest 和 preload，且不包含 source map、dev URL、测试 fixture 或未登记可执行脚本。
-2. manifest 缺项、hash/字节数不符、额外 HTML/JS、入口丢失或 CSP 漂移使构建 Gate 失败。
-3. 禁网环境启动正式 bundle，加载 `app://` Shell 并保持 `connect-src 'none'`；网络请求尝试被阻止并有非敏感诊断。
+1. macOS、Windows、Linux bundle 都包含 renderer、manifest 和 preload，且 renderer 输出目录不包含 source map、dev URL、测试 fixture 或 manifest 外 HTML/JS；主进程和 preload 的已登记 JS 不属于该“额外资源”判定。
+2. verifier 从实际 `app.asar` 读取 renderer 字节；manifest 缺项、hash/字节数不符、renderer 额外 HTML/JS、入口丢失或 CSP 漂移使构建 Gate 失败。
+3. 每个平台先以 `electron-builder --dir` 生成 unpacked app，启动其原生 executable 并加载 `app://` Shell；通过 session/webRequest 或测试代理记录外部请求并断言为零，注入的网络请求必须 fail closed。GitHub-hosted runner 不强制伪造全局断网环境。
 4. credential 泄漏扫描继续覆盖构建产物；现有 safeStorage、single-instance 和 device-auth headless 验证不回归。
 
-**完成标准：** 三平台 CI 对同一正式构建执行本地 Shell smoke 与 bundle verifier，不能通过远端 Web 回退制造假阳性。
+**完成标准：** 三平台 CI 对 unpacked executable 执行本地 Shell smoke 和 `app.asar` bundle verifier，再分别构建 DMG、NSIS、AppImage 并验证内容；安装、升级、卸载仍属于 G-DIST。Linux 使用 `xvfb-run` 和既有 sandbox 策略，Windows/macOS 明确启动 unpacked app 而不是源码目录 Electron，不能通过远端 Web 回退制造假阳性。
 
 ### Unit 7：端到端安全复核与计划收口
 
@@ -223,10 +224,10 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 
 **测试场景：**
 
-1. 真实 Electron 进程启动 `app://`，断言主 frame URL、CSP、无远端请求、SPA route、reload 和构建资源加载。
+1. 真实 Electron unpacked executable 启动 `app://yuance/`，断言主 frame URL、完整 CSP、外部请求计数为零、SPA route、reload 和 ASAR 资源加载。
 2. 注入 traversal、非 manifest 资源、恶意导航、redirect、subframe IPC、`window.open`、permission 和伪造 payload，全部得到受控拒绝。
 3. 真实 coordinator 的 unauthenticated、authenticated、locked、revoked 与重启恢复状态在 renderer 正确切换，renderer/capture 输出无 credential。
-4. 开发态仍可显式启动独立 dev renderer；正式态忽略 dev 配置，且两者数据目录、session 与信任规则互不污染。
+4. 开发态仍可显式启动独立 dev renderer；正式态在 channel/env 注入下仍忽略 dev 配置，且两者 `userData`、`sessionData`、partition 与信任规则互不污染。
 
 **完成标准：** 聚焦测试、根前端检查、Desktop 全量测试、credential 扫描、三平台 CI 和实际 bundle smoke 全部通过；review 记录平台证据和可接受残留项。
 
@@ -257,7 +258,7 @@ CI 必须覆盖 macOS、Windows、Linux 的正式 bundle verifier 与 Electron `
 
 ## 风险与控制
 
-- **协议被当作文件代理。** 只允许 manifest 映射，并同时验证规范化路径、realpath、文件类型与 hash。
+- **协议被当作文件代理。** 构建前验证源输出的规范化路径、文件类型与 symlink，运行期只允许 manifest 映射并复核 ASAR 内最终字节 hash，不依赖 ASAR 内 `realpath`。
 - **`app://` origin 被过度信任。** IPC 还必须绑定当前主窗口和顶层 frame，导航状态变化时 fail closed。
 - **共享层被 Desktop bridge 污染。** bridge 仅由 Desktop adapter 使用，共享 UI/use case 只依赖平台 contract。
 - **CSP 为后续网络提前放宽。** 本切片固定 `connect-src 'none'`；D1-B 以独立 plan 和测试修改。
