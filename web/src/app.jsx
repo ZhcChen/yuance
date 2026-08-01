@@ -12,10 +12,9 @@ import {
   uploadWorkItemCommentAttachment,
 } from '@yuance/frontend-app-core';
 import {
+  WorkItemComments,
   WorkItemAttachments,
   attachmentIsUploaded,
-  attachmentStatusLabel,
-  formatByteSize,
 } from '@yuance/frontend-ui';
 import {
   ApiError,
@@ -2438,138 +2437,30 @@ export default function App() {
                     onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
                   />
 
-                  <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
-                    <div className="shell-panel-header">
-                      <h3 id="work-item-comments-title">评论与流转</h3>
-                      <span className="shell-meta">共 {workItemComments.length} 条</span>
-                    </div>
-                    <form className="work-item-comment-form" onSubmit={submitWorkItemComment}>
-                      <label className="work-item-form-field">
-                        <span>新增评论</span>
-                        <textarea
-                          ref={newCommentTextareaRef}
-                          rows={4}
-                          value={workItemNewCommentBody}
-                          onChange={changeWorkItemNewComment}
-                          placeholder="输入一条普通评论"
-                        />
-                      </label>
-                      <div className="work-item-form-actions">
-                        <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
-                          {workItemCommentSubmitting ? '发布中…' : '发布评论'}
-                        </button>
-                      </div>
-                    </form>
-                    {workItemCommentActionError ? (
-                      <p className="work-item-action-error" role="alert">{workItemCommentActionError}</p>
-                    ) : null}
-                    {workItemComments.length ? (
-                      <ul className="work-item-comment-list">
-                        {workItemComments.map((comment) => {
-                          const commentAttachments = workItemCommentAttachments[String(comment.id)] || [];
-                          const commentAttachmentStatus = workItemCommentAttachmentStatus[String(comment.id)] || '';
-                          const commentUploading = workItemCommentAttachmentUploadingId === comment.id;
-                          return (
-                            <li key={comment.id} id={`comment-${comment.id}`} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
-                              <div className="work-item-comment-heading">
-                                <strong>{comment.author}</strong>
-                                {comment.parent_comment_id ? <span className="shell-meta">回复 {comment.parent_author}</span> : null}
-                                {comment.is_flow ? <span className="project-status-pill">流转记录</span> : null}
-                                {comment.is_draft ? <span className="notification-pill">草稿</span> : null}
-                              </div>
-                              {workItemEditingCommentId === comment.id ? (
-                                <>
-                                  <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
-                                  <form className="work-item-comment-edit-form" onSubmit={submitWorkItemCommentEdit}>
-                                    <label className="work-item-form-field">
-                                      <span>编辑评论</span>
-                                      <textarea
-                                        ref={editCommentTextareaRef}
-                                        rows={4}
-                                        value={workItemEditCommentBody}
-                                        onChange={changeWorkItemEditComment}
-                                      />
-                                    </label>
-                                    <div className="work-item-form-actions work-item-comment-actions">
-                                      <button className="shell-button shell-button-secondary" type="button" onClick={cancelWorkItemCommentEdit} disabled={workItemMutationSubmitting}>
-                                        取消
-                                      </button>
-                                      <button className="shell-button" type="submit" disabled={workItemMutationSubmitting}>
-                                        {workItemEditCommentSubmitting ? '保存中…' : '保存评论'}
-                                      </button>
-                                    </div>
-                                  </form>
-                                </>
-                              ) : (
-                                <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
-                              )}
-                              {commentAttachments.length ? (
-                                <ul className="work-item-attachment-list work-item-comment-attachment-list" aria-label={`评论 ${comment.id} 附件`}>
-                                  {commentAttachments.map((attachment) => {
-                                    const busyKey = `${comment.id}:${attachment.id}`;
-                                    return (
-                                      <li key={attachment.id} className={`work-item-attachment-row is-${attachment.status || 'unknown'}`}>
-                                        <div className="work-item-attachment-main">
-                                          <strong>{attachment.filename || '未命名附件'}</strong>
-                                          <span className="shell-meta">
-                                            {formatByteSize(attachment.byte_size)}
-                                            {' · '}
-                                            {attachment.content_type || 'application/octet-stream'}
-                                            {' · '}
-                                            {attachmentStatusLabel(attachment.status)}
-                                          </span>
-                                        </div>
-                                        <div className="work-item-attachment-actions">
-                                          {attachmentIsUploaded(attachment) ? (
-                                            <button
-                                              className="shell-button shell-button-secondary"
-                                              type="button"
-                                              aria-label={`下载评论附件 ${attachment.filename || attachment.id}`}
-                                              onClick={() => void downloadWorkItemCommentAttachment(comment.id, attachment)}
-                                              disabled={workItemCommentAttachmentDownloadingKey === busyKey}
-                                            >
-                                              {workItemCommentAttachmentDownloadingKey === busyKey ? '打开中…' : '下载'}
-                                            </button>
-                                          ) : (
-                                            <span className="attachment-action-hint">上传完成后可下载</span>
-                                          )}
-                                        </div>
-                                      </li>
-                                    );
-                                  })}
-                                </ul>
-                              ) : null}
-                              {!comment.is_flow && !comment.is_draft ? (
-                                <form className="work-item-comment-attachment-upload" onSubmit={(event) => event.preventDefault()}>
-                                  <label className="work-item-file-field">
-                                    <span>上传评论附件</span>
-                                    <input
-                                      type="file"
-                                      onChange={(event) => void uploadSelectedWorkItemCommentAttachment(comment.id, event)}
-                                      disabled={commentUploading || workItemCommentAttachmentUploadingId !== null || workItemMutationSubmitting}
-                                    />
-                                  </label>
-                                  {commentAttachmentStatus ? (
-                                    <p className="work-item-attachment-status" aria-live="polite">{commentAttachmentStatus}</p>
-                                  ) : null}
-                                </form>
-                              ) : null}
-                              <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
-                              {!comment.is_flow && !comment.is_draft && workItemEditingCommentId === null ? (
-                                <div className="work-item-comment-actions">
-                                  <button className="shell-button shell-button-secondary" type="button" onClick={() => startWorkItemCommentEdit(comment)} disabled={workItemMutationSubmitting}>
-                                    编辑
-                                  </button>
-                                </div>
-                              ) : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    ) : (
-                      <p className="shell-empty">当前没有评论或流转记录。</p>
-                    )}
-                  </section>
+                  <WorkItemComments
+                    comments={workItemComments}
+                    attachmentsByComment={workItemCommentAttachments}
+                    attachmentStatusByComment={workItemCommentAttachmentStatus}
+                    uploadingCommentId={workItemCommentAttachmentUploadingId}
+                    downloadingKey={workItemCommentAttachmentDownloadingKey}
+                    mutationBusy={workItemMutationSubmitting}
+                    editingCommentId={workItemEditingCommentId}
+                    newCommentBody={workItemNewCommentBody}
+                    editCommentBody={workItemEditCommentBody}
+                    commentSubmitting={workItemCommentSubmitting}
+                    editSubmitting={workItemEditCommentSubmitting}
+                    error={workItemCommentActionError}
+                    newCommentTextareaRef={newCommentTextareaRef}
+                    editCommentTextareaRef={editCommentTextareaRef}
+                    onSubmitNew={submitWorkItemComment}
+                    onChangeNew={changeWorkItemNewComment}
+                    onSubmitEdit={submitWorkItemCommentEdit}
+                    onChangeEdit={changeWorkItemEditComment}
+                    onCancelEdit={cancelWorkItemCommentEdit}
+                    onStartEdit={startWorkItemCommentEdit}
+                    onUploadAttachment={(commentId, event) => void uploadSelectedWorkItemCommentAttachment(commentId, event)}
+                    onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
+                  />
                 </>
               ) : (
                 <p className="shell-empty">工作项详情暂不可用。</p>
