@@ -1,0 +1,6 @@
+{
+  "name": "yuance-power-lifecycle-fixture",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs"
+}

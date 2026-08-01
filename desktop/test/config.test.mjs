@@ -218,7 +218,6 @@ test("binds the SSE network epoch to credentials, window, power, and quit lifecy
   assert.match(mainSource, /onReauthorizationRequired: \(\) => runtime\.discardLocalSession\(\)/u);
   assert.match(mainSource, /onNetworkInvalidated: \(\) => coordinator\?\.invalidate\(\)/u);
   assert.match(mainSource, /window\.on\("closed", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
-  assert.match(mainSource, /powerMonitor\.on\("suspend", \(\) => networkCoordinator\?\.suspend\(\)\)/u);
-  assert.match(mainSource, /powerMonitor\.on\("resume", \(\) => networkCoordinator\?\.resume\(\)\)/u);
+  assert.match(mainSource, /bindNetworkPowerLifecycle\(\{[\s\S]*powerEvents: powerMonitor,[\s\S]*getCoordinator: \(\) => networkCoordinator/u);
   assert.match(mainSource, /app\.on\("before-quit", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
 });

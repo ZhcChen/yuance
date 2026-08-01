@@ -43,6 +43,7 @@ import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
 import { enrollDesktop } from "./network/enrollment-client.mjs";
 import { createTrustedNetworkSession } from "./network/network-session.mjs";
 import { createNetworkCoordinator } from "./network/network-coordinator.mjs";
+import { bindNetworkPowerLifecycle } from "./network/power-lifecycle.mjs";
 import { createRestTransport } from "./network/rest-transport.mjs";
 import { createSseClient } from "./network/sse-client.mjs";
 import {
@@ -91,6 +92,7 @@ let credentialRuntimeGeneration = 0;
 const hostStatePublisher = createHostStatePublisher();
 const networkStatePublisher = createNetworkStatePublisher();
 let disposeAuthCommands = () => {};
+let disposeNetworkPowerLifecycle = () => {};
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
 const assertTrustedIpcSender = createIpcSenderPolicy({
   getMainWindow: () => mainWindow,
@@ -731,8 +733,10 @@ if (singleInstanceProbe) {
         }
         applyRuntimeBrandIcon();
         mainWindow = createMainWindow();
-        powerMonitor.on("suspend", () => networkCoordinator?.suspend());
-        powerMonitor.on("resume", () => networkCoordinator?.resume());
+        disposeNetworkPowerLifecycle = bindNetworkPowerLifecycle({
+          powerEvents: powerMonitor,
+          getCoordinator: () => networkCoordinator,
+        });
         if (appProtocolSmoke) {
           hostStatePublisher.update({ status: "unauthenticated" });
         } else {
@@ -768,6 +772,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   credentialRuntimeGeneration += 1;
+  disposeNetworkPowerLifecycle();
+  disposeNetworkPowerLifecycle = () => {};
   networkCoordinator?.stop();
   networkCoordinator = null;
   disposeAuthCommands();
