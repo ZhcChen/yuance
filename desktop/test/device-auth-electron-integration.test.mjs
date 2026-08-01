@@ -130,7 +130,8 @@ function credentials(generation) {
 
 function runElectron(args, extraEnv = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(electron, [".", ...args], {
+    const runtimeArgs = [".", ...args, ...(process.platform === "linux" ? ["--no-sandbox"] : [])];
+    const child = spawn(electron, runtimeArgs, {
       cwd: new URL("..", import.meta.url),
       env: { ...process.env, ...extraEnv },
       stdio: ["ignore", "pipe", "pipe"],

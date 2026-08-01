@@ -5,9 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const scanner = new URL("../scripts/scan-credential-leaks.mjs", import.meta.url);
+const scannerPath = fileURLToPath(scanner);
 
 test("credential leak scanner accepts clean artifacts and rejects complete credentials", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-leak-scan-"));
@@ -15,17 +17,17 @@ test("credential leak scanner accepts clean artifacts and rejects complete crede
   const artifact = path.join(directory, "app.asar");
 
   await fs.writeFile(artifact, "runtime artifact without credentials");
-  const clean = await execFileAsync(process.execPath, [scanner.pathname, directory]);
+  const clean = await execFileAsync(process.execPath, [scannerPath, directory]);
   assert.match(clean.stdout, /credential leak scan passed/);
 
   await fs.writeFile(artifact, "yuance_drt_fixture-refresh-token-value-0123456789");
   await assert.rejects(
-    execFileAsync(process.execPath, [scanner.pathname, directory]),
+    execFileAsync(process.execPath, [scannerPath, directory]),
     (error) => error.code === 1 && /device refresh token/.test(error.stderr),
   );
 
   await assert.rejects(
-    execFileAsync(process.execPath, [scanner.pathname, path.join(directory, "missing")]),
+    execFileAsync(process.execPath, [scannerPath, path.join(directory, "missing")]),
     (error) => error.code === 1 && /scan root is missing/.test(error.stderr),
   );
 });

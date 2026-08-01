@@ -36,6 +36,7 @@ try {
 function launch(markerPath, hold) {
   const args = [".", `--single-instance-lock-probe=${markerPath}`];
   if (hold) args.push("--hold-lock-probe");
+  if (process.platform === "linux") args.push("--no-sandbox");
   return spawn(electron, args, {
     cwd: new URL("..", import.meta.url),
     stdio: ["ignore", "pipe", "pipe"],

@@ -621,7 +621,8 @@ test("pending authorization store encrypts secrets and binds them to the profile
     encryptString: (value) => Buffer.from(`encrypted:${value}`),
     decryptString: (value) => value.toString().slice("encrypted:".length),
   };
-  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform: "darwin" });
+  const platform = process.platform === "win32" ? "win32" : "darwin";
+  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform });
   const authorization = {
     phase: "started", codeVerifier: "secret-verifier", codeChallenge: "challenge",
     exchangeTransactionId: "550e8400-e29b-41d4-a716-446655440000",
@@ -637,7 +638,7 @@ test("pending authorization store encrypts secrets and binds them to the profile
   assert.equal(disk.includes("secret-device-code"), false);
 
   const wrongProfile = createPendingAuthorizationStore({
-    safeStorage, fs, filePath, profile: { ...profile, serverInstanceId: "other-server" }, platform: "darwin",
+    safeStorage, fs, filePath, profile: { ...profile, serverInstanceId: "other-server" }, platform,
   });
   assert.deepEqual(await wrongProfile.load(), { status: "locked", reason: "profile_mismatch" });
   assert.deepEqual(await store.remove(), { status: "removed" });
@@ -653,7 +654,8 @@ test("pending authorization store recovers a backup left between atomic renames"
     encryptString: (value) => Buffer.from(`encrypted:${value}`),
     decryptString: (value) => value.toString().slice("encrypted:".length),
   };
-  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform: "darwin" });
+  const platform = process.platform === "win32" ? "win32" : "darwin";
+  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform });
   const authorization = {
     phase: "prepared", codeVerifier: "verifier", codeChallenge: "challenge",
     exchangeTransactionId: "550e8400-e29b-41d4-a716-446655440000",
@@ -693,7 +695,8 @@ test("pending authorization removal tombstone prevents backup revival", async (t
     encryptString: (value) => Buffer.from(`encrypted:${value}`),
     decryptString: (value) => value.toString().slice("encrypted:".length),
   };
-  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform: "darwin" });
+  const platform = process.platform === "win32" ? "win32" : "darwin";
+  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform });
   const authorization = {
     phase: "prepared", codeVerifier: "verifier", codeChallenge: "challenge",
     exchangeTransactionId: "550e8400-e29b-41d4-a716-446655440000",

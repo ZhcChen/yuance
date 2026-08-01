@@ -49,7 +49,7 @@ async function fixture(t, options = {}) {
       fs: options.fs ?? fs,
       filePath,
       profileIdentity: options.profileIdentity ?? profile,
-      platform: options.platform ?? "darwin",
+      platform: options.platform ?? process.platform,
       randomBytes: () => Buffer.alloc(12, options.nonce ?? 1),
     }),
   };
@@ -101,6 +101,7 @@ test("rejects Linux basic_text without plaintext fallback", async (t) => {
 });
 
 test("allows Linux only with an available secure backend", async (t) => {
+  if (process.platform === "win32") t.skip("POSIX atomic storage is covered by Linux CI");
   const { store } = await fixture(t, { platform: "linux" });
   assert.deepEqual(await store.save(credential), { status: "saved" });
   assert.deepEqual(await store.load(), { status: "available", credential });
@@ -201,7 +202,7 @@ test("strictly binds decrypted credentials to the current profile", async (t) =>
     fs,
     filePath,
     profileIdentity: { ...profile, serverInstanceId: "server-2" },
-    platform: "darwin",
+    platform: process.platform,
   });
   assert.deepEqual(await otherProfileStore.load(), {
     status: "locked",
@@ -246,7 +247,7 @@ test("preserves the last confirmed record when a temporary write fails", async (
     },
   };
   const failingStore = createCredentialStore({
-    safeStorage: safeStorage(), fs: failingFs, filePath, profileIdentity: profile, platform: "darwin",
+    safeStorage: safeStorage(), fs: failingFs, filePath, profileIdentity: profile, platform: process.platform,
     randomBytes: () => Buffer.alloc(12, 4),
   });
   assert.deepEqual(await failingStore.save({ ...credential, generation: 4 }), {
@@ -256,6 +257,7 @@ test("preserves the last confirmed record when a temporary write fails", async (
 });
 
 test("restores the last confirmed record when post-rename directory fsync fails", async (t) => {
+  if (process.platform === "win32") t.skip("directory fsync is a POSIX durability boundary");
   const { store, filePath } = await fixture(t);
   await store.save(credential);
   let directorySyncs = 0;
@@ -287,6 +289,7 @@ test("restores the last confirmed record when post-rename directory fsync fails"
 });
 
 test("uses owner-only POSIX permissions and leaves no transaction artifacts", async (t) => {
+  if (process.platform === "win32") t.skip("POSIX permissions are covered by macOS and Linux CI");
   const { store, filePath } = await fixture(t, { platform: "linux" });
   await store.save(credential);
   assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);

@@ -296,7 +296,7 @@ if (singleInstanceProbe) {
           action: headlessAction || "authorize",
           openExternal: !process.argv.includes("--no-open-external"),
         });
-        app.exit(0);
+        app.quit();
       } catch (error) {
         process.stderr.write(`device auth headless failed: ${error.message}\n`);
         app.exit(1);
