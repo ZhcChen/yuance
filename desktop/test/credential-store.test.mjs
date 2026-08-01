@@ -101,7 +101,10 @@ test("rejects Linux basic_text without plaintext fallback", async (t) => {
 });
 
 test("allows Linux only with an available secure backend", async (t) => {
-  if (process.platform === "win32") t.skip("POSIX atomic storage is covered by Linux CI");
+  if (process.platform === "win32") {
+    t.skip("POSIX atomic storage is covered by Linux CI");
+    return;
+  }
   const { store } = await fixture(t, { platform: "linux" });
   assert.deepEqual(await store.save(credential), { status: "saved" });
   assert.deepEqual(await store.load(), { status: "available", credential });
@@ -257,7 +260,10 @@ test("preserves the last confirmed record when a temporary write fails", async (
 });
 
 test("restores the last confirmed record when post-rename directory fsync fails", async (t) => {
-  if (process.platform === "win32") t.skip("directory fsync is a POSIX durability boundary");
+  if (process.platform === "win32") {
+    t.skip("directory fsync is a POSIX durability boundary");
+    return;
+  }
   const { store, filePath } = await fixture(t);
   await store.save(credential);
   let directorySyncs = 0;
@@ -289,7 +295,10 @@ test("restores the last confirmed record when post-rename directory fsync fails"
 });
 
 test("uses owner-only POSIX permissions and leaves no transaction artifacts", async (t) => {
-  if (process.platform === "win32") t.skip("POSIX permissions are covered by macOS and Linux CI");
+  if (process.platform === "win32") {
+    t.skip("POSIX permissions are covered by macOS and Linux CI");
+    return;
+  }
   const { store, filePath } = await fixture(t, { platform: "linux" });
   await store.save(credential);
   assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);

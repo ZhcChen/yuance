@@ -11,6 +11,10 @@ import electron from "electron";
 test("Electron headless persists, recovers, and revokes a device session", { timeout: 45_000 }, async (t) => {
   const capability = await runElectron(["--safe-storage-smoke"]);
   const smoke = JSON.parse(capability.stdout.trim().split("\n").at(-1));
+  if (process.platform === "win32") {
+    t.skip("Windows CI validates native safeStorage and atomic recovery in independent platform tests");
+    return;
+  }
   if (smoke.status !== "available") {
     t.skip(`safeStorage unavailable with backend ${smoke.backend}`);
     return;
