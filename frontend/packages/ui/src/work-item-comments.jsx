@@ -74,9 +74,9 @@ export function WorkItemComments(props) {
 
   return (
     <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
-      <div className="shell-panel-header">
+      <div className="yuance-ui-panel-header">
         <h3 id="work-item-comments-title">评论与流转</h3>
-        <span className="shell-meta">共 {comments.length} 条</span>
+        <span className="yuance-ui-meta">共 {comments.length} 条</span>
       </div>
       <form className="work-item-comment-form" onSubmit={onSubmitNew}>
         <label className="work-item-form-field">
@@ -84,7 +84,7 @@ export function WorkItemComments(props) {
           <textarea ref={newCommentTextareaRef} rows={4} value={newCommentBody} onChange={onChangeNew} placeholder="输入一条普通评论" />
         </label>
         <div className="work-item-form-actions">
-          <button className="shell-button" type="submit" disabled={mutationBusy}>{commentSubmitting ? '发布中…' : '发布评论'}</button>
+          <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{commentSubmitting ? '发布中…' : '发布评论'}</button>
         </div>
       </form>
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
@@ -98,9 +98,9 @@ export function WorkItemComments(props) {
               <li key={comment.id} id={`comment-${comment.id}`} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
                 <div className="work-item-comment-heading">
                   <strong>{comment.author}</strong>
-                  {comment.parent_comment_id ? <span className="shell-meta">回复 {comment.parent_author}</span> : null}
-                  {comment.is_flow ? <span className="project-status-pill">流转记录</span> : null}
-                  {comment.is_draft ? <span className="notification-pill">草稿</span> : null}
+                  {comment.parent_comment_id ? <span className="yuance-ui-meta">回复 {comment.parent_author}</span> : null}
+                  {comment.is_flow ? <span className="yuance-ui-pill yuance-ui-pill-status">流转记录</span> : null}
+                  {comment.is_draft ? <span className="yuance-ui-pill yuance-ui-pill-draft">草稿</span> : null}
                 </div>
                 {editingCommentId === comment.id ? (
                   <>
@@ -111,8 +111,8 @@ export function WorkItemComments(props) {
                         <textarea ref={editCommentTextareaRef} rows={4} value={editCommentBody} onChange={onChangeEdit} />
                       </label>
                       <div className="work-item-form-actions work-item-comment-actions">
-                        <button className="shell-button shell-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
-                        <button className="shell-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
+                        <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
+                        <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
                       </div>
                     </form>
                   </>
@@ -140,17 +140,17 @@ export function WorkItemComments(props) {
                     {attachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{attachmentStatus}</p> : null}
                   </form>
                 ) : null}
-                <p className="shell-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
+                <p className="yuance-ui-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
                 {!comment.is_flow && !comment.is_draft && editingCommentId === null ? (
                   <div className="work-item-comment-actions">
-                    <button className="shell-button shell-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button>
+                    <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button>
                   </div>
                 ) : null}
               </li>
             );
           })}
         </ul>
-      ) : <p className="shell-empty">当前没有评论或流转记录。</p>}
+      ) : <p className="yuance-ui-empty">当前没有评论或流转记录。</p>}
     </section>
   );
 }

@@ -25,15 +25,15 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
         <li key={attachment.id} className={`work-item-attachment-row is-${attachment.status || 'unknown'}`}>
           <div className="work-item-attachment-main">
             <strong>{attachment.filename || '未命名附件'}</strong>
-            <span className="shell-meta">
+            <span className="yuance-ui-meta">
               {formatByteSize(attachment.byte_size)} · {attachment.content_type || 'application/octet-stream'} · {attachmentStatusLabel(attachment.status)}
             </span>
-            {showCreator ? <span className="shell-muted">{attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}</span> : null}
+            {showCreator ? <span className="yuance-ui-muted">{attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}</span> : null}
           </div>
           <div className="work-item-attachment-actions">
             {attachmentIsUploaded(attachment) ? (
               <button
-                className="shell-button shell-button-secondary"
+                className="yuance-ui-button yuance-ui-button-secondary"
                 type="button"
                 aria-label={`下载${downloadLabel} ${attachment.filename || attachment.id}`}
                 onClick={() => onDownload(attachment)}
@@ -55,23 +55,23 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
 export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, onUpload, onDownload }) {
   return (
     <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
-      <div className="shell-panel-header">
+      <div className="yuance-ui-panel-header">
         <h3 id="work-item-attachments-title">工作项附件</h3>
-        <span className="shell-meta">共 {attachments.length} 个</span>
+        <span className="yuance-ui-meta">共 {attachments.length} 个</span>
       </div>
       <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
         <label className="work-item-file-field">
           <span>上传工作项附件</span>
           <input type="file" onChange={onUpload} disabled={uploading || mutationBusy} />
         </label>
-        <p className="shell-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
+        <p className="yuance-ui-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
       </form>
       {status ? <p className="work-item-attachment-status" aria-live="polite">{status}</p> : null}
       {warning ? <p className="work-item-attachment-warning" aria-live="polite">{warning}</p> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {attachments.length ? (
         <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} onDownload={onDownload} showCreator />
-      ) : <p className="shell-empty">当前没有工作项附件。</p>}
+      ) : <p className="yuance-ui-empty">当前没有工作项附件。</p>}
     </section>
   );
 }
