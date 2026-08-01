@@ -1129,10 +1129,11 @@ test('work item attachments can list download and upload for item and comments',
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论附件已上传。');
 });
 
-test('work item attachment upload failure keeps file context and marks row failed', async ({ page }) => {
+test('work item attachment confirmation failure keeps pending file context', async ({ page }) => {
   const workItemAttachments = [];
   const comments = [workItemCommentFixture()];
   let uploadedRequestCount = 0;
+  let attachmentListGetCount = 0;
   let nextAttachmentId = 880;
   let failNextUploadedMark = true;
 
@@ -1205,6 +1206,7 @@ test('work item attachment upload failure keeps file context and marks row faile
       });
       return;
     }
+    attachmentListGetCount += 1;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1247,9 +1249,12 @@ test('work item attachment upload failure keeps file context and marks row faile
   });
 
   await expect.poll(() => uploadedRequestCount).toBe(1);
-  await expect(page.getByRole('alert')).toHaveText('broken-upload.txt 上传失败：服务端确认上传失败。');
+  await expect.poll(() => attachmentListGetCount).toBeGreaterThan(1);
+  await expect(page.getByRole('alert')).toHaveText('broken-upload.txt 已上传，但服务端确认失败，请手动刷新后检查。');
   await expect(attachmentPanel).toContainText('broken-upload.txt');
-  await expect(attachmentPanel).toContainText('上传失败');
+  await expect(attachmentPanel).toContainText('待上传');
+  await expect(attachmentPanel).not.toContainText('上传失败');
+  await expect(attachmentPanel).toContainText('broken-upload.txt 上传结果待确认。');
   await expect(attachmentPanel.getByLabel('上传工作项附件')).toBeEnabled();
 
   await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({

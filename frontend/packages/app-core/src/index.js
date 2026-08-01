@@ -12,7 +12,11 @@ export {
 } from './routes.js';
 export {
   createWorkItemComment,
+  downloadWorkItemAttachment,
+  downloadWorkItemCommentAttachment,
   handoffWorkItem,
   saveWorkItem,
   updateWorkItemComment,
+  uploadWorkItemAttachment,
+  uploadWorkItemCommentAttachment,
 } from './work-item-collaboration.js';

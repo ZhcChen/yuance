@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createWorkItemComment as createWorkItemCommentUseCase,
+  downloadWorkItemAttachment as downloadWorkItemAttachmentUseCase,
+  downloadWorkItemCommentAttachment as downloadWorkItemCommentAttachmentUseCase,
   handoffWorkItem as handoffWorkItemUseCase,
   saveWorkItem,
   updateWorkItemComment as updateWorkItemCommentUseCase,
+  uploadWorkItemAttachment,
+  uploadWorkItemCommentAttachment,
 } from '@yuance/frontend-app-core';
 import {
   ApiError,
@@ -48,13 +52,24 @@ import {
   buildWorkItemListPath,
   parseAppRoute,
 } from './lib/routes.js';
+import { createBrowserFilePlatform } from './platform/browser/files.js';
 
 const WORK_ITEM_COLLABORATION_API = {
+  createWorkItemAttachment,
   createWorkItemComment,
+  createWorkItemCommentAttachment,
+  getWorkItemAttachmentDownloadUrl,
+  getWorkItemAttachmentUploadUrl,
+  getWorkItemCommentAttachmentDownloadUrl,
+  getWorkItemCommentAttachmentUploadUrl,
   handoffWorkItem,
+  markWorkItemAttachmentUploaded,
+  markWorkItemCommentAttachmentUploaded,
   updateWorkItem,
   updateWorkItemComment,
 };
+
+const BROWSER_FILE_PLATFORM = createBrowserFilePlatform({ refreshCsrfToken });
 
 /**
  * @typedef AppUser
@@ -202,20 +217,6 @@ const WORK_ITEM_COLLABORATION_API = {
  */
 
 /**
- * @typedef AppSignedObjectRequest
- * @property {string} method
- * @property {string} url
- * @property {Array<[string, string]>} headers
- */
-
-/**
- * @typedef AppAttachmentSignedUrl
- * @property {AppAttachment} attachment
- * @property {AppSignedObjectRequest} request
- * @property {number} expires_in_seconds
- */
-
-/**
  * @typedef WorkItemAttachmentBundle
  * @property {AppAttachment[]} attachments
  * @property {Record<string, AppAttachment[]>} commentAttachments
@@ -276,18 +277,6 @@ function attachmentIsUploaded(attachment) {
 }
 
 /**
- * @param {File} file
- * @returns {{ originalFilename: string, contentType: string, byteSize: number }}
- */
-function attachmentPayloadFromFile(file) {
-  return {
-    originalFilename: file.name || 'attachment.bin',
-    contentType: file.type || 'application/octet-stream',
-    byteSize: file.size,
-  };
-}
-
-/**
  * @param {AppAttachment[]} attachments
  * @param {AppAttachment} attachment
  */
@@ -300,70 +289,6 @@ function upsertAttachment(attachments, attachment) {
     nextAttachments.push(attachment);
   }
   return nextAttachments;
-}
-
-/**
- * @param {AppSignedObjectRequest} request
- * @param {File} file
- * @returns {Promise<void>}
- */
-async function uploadFileWithSignedRequest(request, file) {
-  if (!request?.url) {
-    throw new Error('上传签名缺少目标地址。');
-  }
-  const headers = new Headers();
-  let hasContentType = false;
-  for (const pair of request.headers || []) {
-    const [key, value] = pair;
-    const normalizedKey = String(key || '').toLowerCase();
-    if (!key || normalizedKey === 'host' || normalizedKey === 'content-length') {
-      continue;
-    }
-    if (normalizedKey === 'content-type') {
-      hasContentType = true;
-    }
-    headers.set(key, value);
-  }
-  if (!hasContentType && file.type) {
-    headers.set('content-type', file.type);
-  }
-  const url = new URL(request.url, window.location.href);
-  const method = (request.method || 'PUT').toUpperCase();
-  if (url.origin === window.location.origin && method !== 'GET' && method !== 'HEAD' && !headers.has('x-yuance-csrf-token')) {
-    const csrfToken = await refreshCsrfToken();
-    if (csrfToken) {
-      headers.set('x-yuance-csrf-token', csrfToken);
-    }
-  }
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: file,
-    credentials: url.origin === window.location.origin ? 'same-origin' : 'omit',
-  });
-  if (!response.ok) {
-    throw new Error(`对象存储上传失败：${response.status}`);
-  }
-}
-
-/** @param {AppSignedObjectRequest} request */
-function openSignedDownload(request) {
-  if (!request?.url) {
-    throw new Error('下载签名缺少目标地址。');
-  }
-  if ((request.method || 'GET').toUpperCase() !== 'GET') {
-    throw new Error('当前下载签名不是 GET 请求。');
-  }
-  if ((request.headers || []).length > 0) {
-    throw new Error('当前下载签名包含浏览器无法附带的请求头。');
-  }
-  const anchor = document.createElement('a');
-  anchor.href = new URL(request.url, window.location.href).toString();
-  anchor.target = '_blank';
-  anchor.rel = 'noopener';
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
 }
 
 /** @param {ApiError | Error | null} error */
@@ -1372,6 +1297,7 @@ export default function App() {
     if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
       setWorkItemAttachments(refreshed);
     }
+    return refreshed;
   }
 
   /**
@@ -1387,6 +1313,7 @@ export default function App() {
         [String(commentId)]: refreshed,
       }));
     }
+    return refreshed;
   }
 
   /**
@@ -1401,12 +1328,17 @@ export default function App() {
     setWorkItemAttachmentActionError('');
     setWorkItemAttachmentStatus(`正在获取 ${attachment.filename || '附件'} 的下载链接。`);
     try {
-      const signed = await getWorkItemAttachmentDownloadUrl(itemKey, attachment.id);
-      if (!isCurrentWorkItemDetailRoute(itemKey)) {
-        return;
+      const opened = await downloadWorkItemAttachmentUseCase({
+        api: WORK_ITEM_COLLABORATION_API,
+        platform: BROWSER_FILE_PLATFORM,
+        itemKey,
+        attachmentId: attachment.id,
+        suggestedFilename: attachment.filename,
+        isCurrent: () => isCurrentWorkItemDetailRoute(itemKey),
+      });
+      if (opened) {
+        setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载链接已打开。`);
       }
-      openSignedDownload(signed.request);
-      setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载链接已打开。`);
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey)) {
         setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('获取附件下载链接失败。')));
@@ -1434,15 +1366,21 @@ export default function App() {
       [String(commentId)]: `正在获取 ${attachment.filename || '附件'} 的下载链接。`,
     }));
     try {
-      const signed = await getWorkItemCommentAttachmentDownloadUrl(itemKey, commentId, attachment.id);
-      if (!isCurrentWorkItemDetailRoute(itemKey)) {
-        return;
+      const opened = await downloadWorkItemCommentAttachmentUseCase({
+        api: WORK_ITEM_COLLABORATION_API,
+        platform: BROWSER_FILE_PLATFORM,
+        itemKey,
+        commentId,
+        attachmentId: attachment.id,
+        suggestedFilename: attachment.filename,
+        isCurrent: () => isCurrentWorkItemDetailRoute(itemKey),
+      });
+      if (opened) {
+        setWorkItemCommentAttachmentStatus((current) => ({
+          ...current,
+          [String(commentId)]: `${attachment.filename || '附件'} 下载链接已打开。`,
+        }));
       }
-      openSignedDownload(signed.request);
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${attachment.filename || '附件'} 下载链接已打开。`,
-      }));
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey)) {
         setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('获取评论附件下载链接失败。')));
@@ -1473,49 +1411,80 @@ export default function App() {
     const filename = file.name || 'attachment.bin';
     const actionId = workItemAttachmentActionRef.current + 1;
     let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
     workItemAttachmentActionRef.current = actionId;
     workItemAttachmentMutationRef.current = true;
     setWorkItemAttachmentUploading(true);
     setWorkItemAttachmentActionError('');
     setWorkItemAttachmentStatus(`${filename} 正在登记附件。`);
     try {
-      const created = await createWorkItemAttachment(itemKey, attachmentPayloadFromFile(file));
-      createdAttachment = created;
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
+      const result = await uploadWorkItemAttachment({
+        api: WORK_ITEM_COLLABORATION_API,
+        platform: BROWSER_FILE_PLATFORM,
+        itemKey,
+        file: BROWSER_FILE_PLATFORM.selectFile(file),
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
+          onStage: (stage) => {
+            uploadStage = stage;
+            const messages = {
+              registering: `${filename} 正在登记附件。`,
+              signing: `${filename} 正在获取上传签名。`,
+              uploading: `${filename} 正在上传到对象存储。`,
+              confirming: `${filename} 正在确认上传结果。`,
+            };
+            setWorkItemAttachmentStatus(messages[stage]);
+          },
+          onCreated: (created) => {
+            createdAttachment = created;
+            setWorkItemAttachments((current) => upsertAttachment(current, created));
+          },
+          onUploaded: (uploaded) => {
+            requestRef.current += 1;
+            setRefreshing(false);
+            setWorkItemAttachments((current) => upsertAttachment(current, uploaded));
+          },
+          refresh: async () => { await refreshWorkItemAttachmentList(itemKey, actionId); },
+        },
+      });
+      if (result.completed) {
+        setStatusMessage(`${itemKey} 附件已上传。`);
+        setWorkItemAttachmentStatus(`${filename} 上传完成。`);
+        if (result.refreshError) {
+          setWorkItemAttachmentActionError('附件已上传，但列表刷新失败，请手动刷新。');
+        }
+        input.value = '';
       }
-      setWorkItemAttachments((current) => upsertAttachment(current, created));
-      setWorkItemAttachmentStatus(`${filename} 正在获取上传签名。`);
-      const signed = await getWorkItemAttachmentUploadUrl(itemKey, created.id);
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
-      }
-      setWorkItemAttachmentStatus(`${filename} 正在上传到对象存储。`);
-      await uploadFileWithSignedRequest(signed.request, file);
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
-      }
-      setWorkItemAttachmentStatus(`${filename} 正在确认上传结果。`);
-      const uploaded = await markWorkItemAttachmentUploaded(itemKey, created.id);
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
-      }
-      requestRef.current += 1;
-      setRefreshing(false);
-      setWorkItemAttachments((current) => upsertAttachment(current, uploaded));
-      await refreshWorkItemAttachmentList(itemKey, actionId).catch(() => {});
-      setStatusMessage(`${itemKey} 附件已上传。`);
-      setWorkItemAttachmentStatus(`${filename} 上传完成。`);
-      input.value = '';
     } catch (caught) {
       if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        if (createdAttachment) {
+        if (uploadStage === 'confirming') {
+          let confirmedByRefresh = false;
+          try {
+            const refreshed = await refreshWorkItemAttachmentList(itemKey, actionId);
+            confirmedByRefresh = refreshed.some((attachment) => (
+              attachment.id === createdAttachment?.id && attachment.status === 'uploaded'
+            ));
+          } catch {
+            // The upload has completed; retain the locally known pending state when confirmation cannot be resolved.
+          }
+          if (confirmedByRefresh) {
+            setStatusMessage(`${itemKey} 附件已上传。`);
+            setWorkItemAttachmentStatus(`${filename} 上传完成。`);
+          } else {
+            setWorkItemAttachmentActionError(`${filename} 已上传，但服务端确认失败，请手动刷新后检查。`);
+            setWorkItemAttachmentStatus(`${filename} 上传结果待确认。`);
+          }
+        } else if (createdAttachment) {
           const failedAttachment = /** @type {AppAttachment} */ ({ ...createdAttachment, status: 'failed' });
           setWorkItemAttachments((current) => upsertAttachment(current, failedAttachment));
+          const message = errorMessage(caught instanceof Error ? caught : new Error('上传附件失败。'));
+          setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
+          setWorkItemAttachmentStatus(`${filename} 上传失败，请重试。`);
+        } else {
+          const message = errorMessage(caught instanceof Error ? caught : new Error('上传附件失败。'));
+          setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
+          setWorkItemAttachmentStatus(`${filename} 上传失败，请重试。`);
         }
-        const message = errorMessage(caught instanceof Error ? caught : new Error('上传附件失败。'));
-        setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
-        setWorkItemAttachmentStatus(`${filename} 上传失败，请重试。`);
         input.value = '';
       }
     } finally {
@@ -1549,6 +1518,7 @@ export default function App() {
     const filename = file.name || 'attachment.bin';
     const actionId = workItemAttachmentActionRef.current + 1;
     let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
     workItemAttachmentActionRef.current = actionId;
     workItemAttachmentMutationRef.current = true;
     setWorkItemCommentAttachmentUploadingId(commentId);
@@ -1558,55 +1528,82 @@ export default function App() {
       [String(commentId)]: `${filename} 正在登记附件。`,
     }));
     try {
-      const created = await createWorkItemCommentAttachment(itemKey, commentId, attachmentPayloadFromFile(file));
-      createdAttachment = created;
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
+      const result = await uploadWorkItemCommentAttachment({
+        api: WORK_ITEM_COLLABORATION_API,
+        platform: BROWSER_FILE_PLATFORM,
+        itemKey,
+        commentId,
+        file: BROWSER_FILE_PLATFORM.selectFile(file),
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
+          onStage: (stage) => {
+            uploadStage = stage;
+            const labels = {
+              registering: '正在登记附件。',
+              signing: '正在获取上传签名。',
+              uploading: '正在上传到对象存储。',
+              confirming: '正在确认上传结果。',
+            };
+            setWorkItemCommentAttachmentStatus((current) => ({
+              ...current,
+              [String(commentId)]: `${filename} ${labels[stage]}`,
+            }));
+          },
+          onCreated: (created) => {
+            createdAttachment = created;
+            setWorkItemCommentAttachments((current) => ({
+              ...current,
+              [String(commentId)]: upsertAttachment(current[String(commentId)] || [], created),
+            }));
+          },
+          onUploaded: (uploaded) => {
+            requestRef.current += 1;
+            setRefreshing(false);
+            setWorkItemCommentAttachments((current) => ({
+              ...current,
+              [String(commentId)]: upsertAttachment(current[String(commentId)] || [], uploaded),
+            }));
+          },
+          refresh: async () => { await refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId); },
+        },
+      });
+      if (result.completed) {
+        setStatusMessage(`${itemKey} 评论附件已上传。`);
+        setWorkItemCommentAttachmentStatus((current) => ({
+          ...current,
+          [String(commentId)]: `${filename} 上传完成。`,
+        }));
+        if (result.refreshError) {
+          setWorkItemAttachmentActionError('评论附件已上传，但列表刷新失败，请手动刷新。');
+        }
+        input.value = '';
       }
-      setWorkItemCommentAttachments((current) => ({
-        ...current,
-        [String(commentId)]: upsertAttachment(current[String(commentId)] || [], created),
-      }));
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${filename} 正在获取上传签名。`,
-      }));
-      const signed = await getWorkItemCommentAttachmentUploadUrl(itemKey, commentId, created.id);
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
-      }
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${filename} 正在上传到对象存储。`,
-      }));
-      await uploadFileWithSignedRequest(signed.request, file);
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
-      }
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${filename} 正在确认上传结果。`,
-      }));
-      const uploaded = await markWorkItemCommentAttachmentUploaded(itemKey, commentId, created.id);
-      if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        return;
-      }
-      requestRef.current += 1;
-      setRefreshing(false);
-      setWorkItemCommentAttachments((current) => ({
-        ...current,
-        [String(commentId)]: upsertAttachment(current[String(commentId)] || [], uploaded),
-      }));
-      await refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId).catch(() => {});
-      setStatusMessage(`${itemKey} 评论附件已上传。`);
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${filename} 上传完成。`,
-      }));
-      input.value = '';
     } catch (caught) {
       if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
-        if (createdAttachment) {
+        if (uploadStage === 'confirming') {
+          let confirmedByRefresh = false;
+          try {
+            const refreshed = await refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId);
+            confirmedByRefresh = refreshed.some((attachment) => (
+              attachment.id === createdAttachment?.id && attachment.status === 'uploaded'
+            ));
+          } catch {
+            // The upload has completed; retain the locally known pending state when confirmation cannot be resolved.
+          }
+          if (confirmedByRefresh) {
+            setStatusMessage(`${itemKey} 评论附件已上传。`);
+            setWorkItemCommentAttachmentStatus((current) => ({
+              ...current,
+              [String(commentId)]: `${filename} 上传完成。`,
+            }));
+          } else {
+            setWorkItemAttachmentActionError(`${filename} 已上传，但服务端确认失败，请手动刷新后检查。`);
+            setWorkItemCommentAttachmentStatus((current) => ({
+              ...current,
+              [String(commentId)]: `${filename} 上传结果待确认。`,
+            }));
+          }
+        } else if (createdAttachment) {
           const failedAttachment = /** @type {AppAttachment} */ ({
             ...createdAttachment,
             status: 'failed',
@@ -1615,13 +1612,20 @@ export default function App() {
             ...current,
             [String(commentId)]: upsertAttachment(current[String(commentId)] || [], failedAttachment),
           }));
+          const message = errorMessage(caught instanceof Error ? caught : new Error('上传评论附件失败。'));
+          setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
+          setWorkItemCommentAttachmentStatus((current) => ({
+            ...current,
+            [String(commentId)]: `${filename} 上传失败，请重试。`,
+          }));
+        } else {
+          const message = errorMessage(caught instanceof Error ? caught : new Error('上传评论附件失败。'));
+          setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
+          setWorkItemCommentAttachmentStatus((current) => ({
+            ...current,
+            [String(commentId)]: `${filename} 上传失败，请重试。`,
+          }));
         }
-        const message = errorMessage(caught instanceof Error ? caught : new Error('上传评论附件失败。'));
-        setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
-        setWorkItemCommentAttachmentStatus((current) => ({
-          ...current,
-          [String(commentId)]: `${filename} 上传失败，请重试。`,
-        }));
         input.value = '';
       }
     } finally {

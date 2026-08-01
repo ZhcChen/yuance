@@ -1,6 +1,7 @@
 // @ts-check
 
 /** @typedef {import('./work-items.js').CommentRequestPayload} CommentRequestPayload */
+/** @typedef {import('./work-items.js').AttachmentCreatePayload} AttachmentCreatePayload */
 /** @typedef {import('./work-items.js').WorkItemHandoffPayload} WorkItemHandoffPayload */
 /** @typedef {import('./work-items.js').WorkItemUpdatePayload} WorkItemUpdatePayload */
 
