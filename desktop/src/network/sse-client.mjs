@@ -97,7 +97,7 @@ export function createSseClient({
 function validateResponse(response, expectedUrl, maxHeaderBytes) {
   if (!response || typeof response.status !== "number") throw new TypeError("response is required");
   if (response.redirected || (response.status >= 300 && response.status < 400)) throw contract("redirect_not_allowed", "SSE redirects are not allowed", response.status);
-  if (!response.url || response.url !== expectedUrl) throw contract("response_url_mismatch", "SSE response URL changed", response.status);
+  if (response.url && response.url !== expectedUrl) throw contract("response_url_mismatch", "SSE response URL changed", response.status);
   let headerBytes = 0;
   for (const [name, value] of response.headers) headerBytes += Buffer.byteLength(name, "utf8") + Buffer.byteLength(value, "utf8");
   if (headerBytes > maxHeaderBytes) throw contract("headers_too_large", "SSE response headers are too large", response.status);

@@ -30,6 +30,11 @@ test("uses fixed request fields and rejects redirect, final URL, status and cont
   }
 });
 
+test("accepts Electron streaming responses with an empty URL while rejecting non-empty drift", async () => {
+  const client = createSseClient({ profile, fetchImpl: await trustedFetch(() => sseResponse([], { url: "" })) });
+  assert.deepEqual(await client.subscribe({ accessToken: "yuance_dat_valid", signal: new AbortController().signal }), { reason: "eof", retryHint: undefined });
+});
+
 test("enforces normalized header, parser buffer, event and rate limits", async () => {
   const cases = [
     [{ maxHeaderBytes: 8 }, sseResponse([], { headers: { "x-long": "0123456789" } }), "headers_too_large"],

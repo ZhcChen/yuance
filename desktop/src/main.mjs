@@ -70,6 +70,12 @@ const rendererTarget = resolveRendererTarget({
   rawDevServerUrl: process.env.YUANCE_DESKTOP_RENDERER_URL,
 });
 const appProtocolSmoke = app.isPackaged && process.argv.includes("--app-protocol-smoke");
+const desktopNetworkSmokePhase = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-network-smoke-phase="))?.split("=", 2)[1]
+  : undefined;
+const desktopNetworkSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-network-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
 const appProtocolSmokeResponses = [];
@@ -437,6 +443,95 @@ async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", o
   process.stdout.write(`${JSON.stringify({ status: result.status })}\n`);
 }
 
+async function runDesktopNetworkSmoke() {
+  if (!["authorize", "verify"].includes(desktopNetworkSmokePhase) || !desktopNetworkSmokeOrigin) {
+    throw new Error("packaged network smoke arguments are invalid");
+  }
+  const origin = new URL(desktopNetworkSmokeOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") {
+    throw new Error("packaged network smoke origin must be an exact loopback HTTP origin");
+  }
+  writeDesktopNetworkSmokeStage("ready");
+  const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
+  writeDesktopNetworkSmokeStage("session-created");
+  const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
+  writeDesktopNetworkSmokeStage("enrolled");
+  let activeController;
+  const authStates = [];
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile, fetchImpl: network.fetch, safeStorage, fs,
+    userDataPath: app.getPath("userData"), platform: process.platform,
+    installationId: () => installationId(app.getPath("userData")),
+    deviceName: "Yuance Packaged Network Smoke", clientVersion: app.getVersion(),
+    onNetworkInvalidated: () => activeController?.abort(),
+    onPublicState: (state) => authStates.push(state.status),
+  });
+  const initialized = await runtime.initialize();
+  writeDesktopNetworkSmokeStage("credential-initialized");
+  if (desktopNetworkSmokePhase === "authorize") {
+    if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial smoke state: ${initialized.status}`);
+    await runtime.authorize({
+      openExternal: async () => {},
+      onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-user-code", userCode })}\n`),
+    });
+    process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-authorized", status: runtime.snapshot().status })}\n`);
+    return;
+  }
+  if (initialized.status !== "authenticated") throw new Error(`packaged credential recovery failed: ${initialized.status}`);
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const sse = createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch });
+  await rest.execute("session.probe", {});
+  const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; });
+  await runtime.refreshAccess(first.epoch);
+  await first.completion;
+  await rest.execute("session.probe", {});
+  const second = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; });
+  const revokeStartedAt = performance.now();
+  await runtime.logout();
+  await second.completion;
+  const revokeResponseToEofMs = performance.now() - revokeStartedAt;
+  if (revokeResponseToEofMs >= 5_000) throw new Error("packaged revoke-to-EOF deadline exceeded");
+  process.stdout.write(`${JSON.stringify({
+    kind: "yuance-desktop-network-smoke", recovered: true, probe: true, firstStream: true,
+    rotated: true, secondStream: true, loggedOut: true, revokeResponseToEofMs: Math.round(revokeResponseToEofMs),
+    publicAuthStates: authStates,
+  })}\n`);
+}
+
+function writeDesktopNetworkSmokeStage(stage) {
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-stage", stage })}\n`);
+}
+
+async function openSmokeStream(runtime, sse, setController) {
+  const controller = new AbortController();
+  setController(controller);
+  let connectedResolve;
+  let connectedReject;
+  const connected = new Promise((resolve, reject) => { connectedResolve = resolve; connectedReject = reject; });
+  let epoch;
+  const completion = runtime.withAccessLease(({ accessToken, epoch: leaseEpoch }) => {
+    epoch = leaseEpoch;
+    return sse.subscribe({ accessToken, signal: controller.signal, onControl: (event) => {
+      if (event.type === "connected") connectedResolve();
+    } });
+  }).catch((error) => {
+    if (controller.signal.aborted) return;
+    connectedReject(error);
+    return;
+  });
+  await waitForSmokeConnected(connected);
+  return Object.freeze({ epoch, completion });
+}
+
+async function waitForSmokeConnected(connected) {
+  let timer;
+  try {
+    await Promise.race([connected, new Promise((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("packaged SSE connect timed out")), 5_000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
 async function initializeDesktopCredentialRuntime() {
   const generation = ++credentialRuntimeGeneration;
   const mode = isDevRuntime ? "development" : "production";
@@ -503,7 +598,7 @@ async function initializeDesktopCredentialRuntime() {
   }
 }
 
-app.setName(appIdentity.displayName);
+app.setName(desktopNetworkSmokePhase ? `${appIdentity.displayName} Network Smoke` : appIdentity.displayName);
 app.setAppUserModelId(appIdentity.appUserModelId);
 if (isDevRuntime) {
   const developmentDataPaths = resolveDevelopmentDataPaths(app.getPath("appData"));
@@ -578,6 +673,15 @@ if (singleInstanceProbe) {
       }
     });
   }
+} else if (desktopNetworkSmokePhase) {
+  const smokeProfile = process.argv.find((value) => value.startsWith("--desktop-network-smoke-profile="))?.split("=", 2)[1];
+  if (!smokeProfile || !path.isAbsolute(smokeProfile)) throw new Error("packaged network smoke profile must be absolute");
+  app.setPath("userData", smokeProfile);
+  app.setPath("sessionData", path.join(smokeProfile, "Session Data"));
+  app.whenReady().then(async () => {
+    try { await runDesktopNetworkSmoke(); app.quit(); }
+    catch (error) { process.stderr.write(`desktop network smoke failed: ${error.message}\n`); app.exit(1); }
+  });
 } else {
   ipcMain.handle("yuance:notify", notifyFromRenderer);
   disposeAuthCommands = registerAuthCommandHandlers({
