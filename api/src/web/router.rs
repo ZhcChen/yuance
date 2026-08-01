@@ -191,6 +191,10 @@ pub fn build_router(state: AppState) -> Router {
             "/web/me/api-tokens/{token_id}/delete",
             post(web::user::me_api_token_delete),
         )
+        .route(
+            "/web/me/device-sessions/{family_id}/revoke",
+            post(web::user::me_device_session_revoke),
+        )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
         .route(
@@ -525,6 +529,14 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/v1/device-authorizations/exchange",
             post(web::device_auth::exchange_authorization),
+        )
+        .route(
+            "/api/v1/device-session",
+            get(web::device_auth::probe_device_session),
+        )
+        .route(
+            "/api/v1/device-session/logout",
+            post(web::device_auth::logout_device_session),
         )
         .route("/api/v1/auth/me", get(web::api::me))
         .route("/api/v1/auth/csrf", get(web::auth_api::csrf_token))
@@ -878,26 +890,37 @@ async fn device_auth_boundary_middleware(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    let (global_limit, peer_limit, reject_credentials, browser_response) = match path {
-        "/api/v1/device-authorizations" => (120, 20, true, false),
-        "/api/v1/device-authorizations/exchange" => (600, 120, true, false),
+    let is_browser_device_revoke = path.starts_with("/web/me/device-sessions/")
+        && path.ends_with("/revoke");
+    let boundary = match path {
+        "/api/v1/device-authorizations" => (120, 20, true, true, false),
+        "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
+        "/api/v1/device-session" | "/api/v1/device-session/logout" => {
+            (1200, 120, true, false, false)
+        }
         "/web/device-authorization"
         | "/web/device-authorization/approve"
-        | "/web/device-authorization/deny" => (600, 30, false, true),
+        | "/web/device-authorization/deny" => (600, 30, false, false, true),
+        _ if is_browser_device_revoke => (600, 30, false, false, true),
         _ => return next.run(request).await,
     };
-    if reject_credentials
-        && (request.headers().contains_key(header::COOKIE)
-            || request.headers().contains_key(header::AUTHORIZATION))
+    let (global_limit, peer_limit, reject_cookie, reject_authorization, browser_response) = boundary;
+    if (reject_cookie && request.headers().contains_key(header::COOKIE))
+        || (reject_authorization && request.headers().contains_key(header::AUTHORIZATION))
     {
         return web::device_auth::credential_not_allowed_response();
     }
     let client_ip = trusted_client_ip(&request, &state.device_auth_limiter.trusted_proxy_networks);
     let peer = client_ip.map_or_else(|| "unknown".to_string(), |ip| ip.to_string());
+    let rate_limit_path = if is_browser_device_revoke {
+        "/web/me/device-sessions/{family_id}/revoke"
+    } else {
+        path
+    };
     if !state.device_auth_limiter.allow_pair(
-        format!("peer:{peer}:{path}"),
+        format!("peer:{peer}:{rate_limit_path}"),
         peer_limit,
-        format!("global:{path}"),
+        format!("global:{rate_limit_path}"),
         global_limit,
     ) {
         return if browser_response {
@@ -1111,6 +1134,8 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
             | "/api/v1/auth/login"
             | "/api/v1/device-authorizations"
             | "/api/v1/device-authorizations/exchange"
+            | "/api/v1/device-session"
+            | "/api/v1/device-session/logout"
             | "/api/v1/bootstrap/init"
     )
 }

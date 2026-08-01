@@ -9264,6 +9264,21 @@ select option {
   overscroll-behavior-x: contain;
 }
 
+.device-session-table {
+  min-width: 760px;
+  table-layout: fixed;
+}
+
+.device-session-table th:first-child,
+.device-session-table td:first-child {
+  width: 24%;
+}
+
+.device-session-table th:last-child,
+.device-session-table td:last-child {
+  width: 92px;
+}
+
 .api-token-table {
   min-width: 1180px;
 }

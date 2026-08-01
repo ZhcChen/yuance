@@ -74,6 +74,60 @@
 
   <section class="detail-grid me-detail-grid">
     <div class="detail-main">
+      <section class="panel device-session-panel">
+        <div class="panel-head">
+          <div>
+            <h2>已授权设备</h2>
+            <p>Desktop 设备会话使用独立短期 access 与可轮换 refresh 凭证，不会复用 Browser Cookie 或 Personal Access Token。</p>
+          </div>
+        </div>
+        {% if has_device_families %}
+        <div class="table-wrap">
+          <table class="data-table device-session-table">
+            <thead>
+              <tr>
+                <th>设备</th>
+                <th>平台</th>
+                <th>凭证代次</th>
+                <th>最近使用</th>
+                <th>状态</th>
+                <th class="table-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for device in device_families %}
+              <tr>
+                <td>
+                  <strong>{{ device.device_name }}</strong>
+                  <p class="muted-text">授权于 {{ device.created_at }}</p>
+                </td>
+                <td>{{ device.platform }} · {{ device.client_version }}</td>
+                <td>Generation {{ device.generation }}</td>
+                <td>{{ device.last_seen_at }}</td>
+                <td><span class="status status-{{ device.status_tone }}">{{ device.status }}</span></td>
+                <td class="table-actions">
+                  {% if device.can_revoke %}
+                  <form method="post" action="/web/me/device-sessions/{{ device.family_id }}/revoke" data-confirm-submit-form data-confirm-title="撤销设备会话" data-confirm-message="撤销后该设备必须重新通过 Browser 批准，当前 access 与 refresh 凭证会立即失效。" data-confirm-action="撤销">
+                    <input type="hidden" name="_csrf" value="{{ csrf_token }}">
+                    <button class="btn btn-sm btn-danger" type="submit">撤销</button>
+                  </form>
+                  {% else %}
+                  <span class="muted-text">不可操作</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="empty-state">
+          <strong>暂无已授权设备</strong>
+          <span>Desktop 完成 Browser 批准后，设备会话会显示在这里。</span>
+        </div>
+        {% endif %}
+      </section>
+
       <section class="panel api-token-panel">
         <div class="panel-head">
           <div>

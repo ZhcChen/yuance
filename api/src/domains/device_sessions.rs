@@ -51,6 +51,14 @@ pub enum DeviceSessionError {
     AuthorizationConsumed,
     #[error("批准设备授权的用户不可用")]
     UserInactive,
+    #[error("device access token 无效")]
+    InvalidAccessToken,
+    #[error("device access token 已过期")]
+    AccessExpired,
+    #[error("设备已撤销")]
+    DeviceRevoked,
+    #[error("设备会话已撤销")]
+    FamilyRevoked,
     #[error("exchange transaction 与已消费授权不匹配")]
     ExchangeTransactionMismatch,
     #[error("幂等恢复结果已过期")]
@@ -76,6 +84,10 @@ impl DeviceSessionError {
             Self::AuthorizationExpired => "authorization_expired",
             Self::AuthorizationConsumed => "authorization_consumed",
             Self::UserInactive => "user_inactive",
+            Self::InvalidAccessToken => "invalid_device_access",
+            Self::AccessExpired => "device_access_expired",
+            Self::DeviceRevoked => "device_revoked",
+            Self::FamilyRevoked => "device_session_revoked",
             Self::ExchangeTransactionMismatch => "exchange_transaction_mismatch",
             Self::IdempotencyExpired => "idempotency_expired",
             Self::InvalidState(_) => "invalid_state",
@@ -178,6 +190,34 @@ pub struct InitialDeviceCredentials {
     pub refresh_expires_at: DateTime<Utc>,
     pub refresh_absolute_expires_at: DateTime<Utc>,
     pub server_instance_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuthenticatedDeviceAccess {
+    pub access_session_id: String,
+    pub user_id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub is_super_admin: bool,
+    pub device_id: String,
+    pub family_id: String,
+    pub generation: i64,
+    pub authorization_version: i64,
+    pub access_expires_at: DateTime<Utc>,
+    pub server_instance_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeviceFamilySummary {
+    pub family_id: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub platform: String,
+    pub client_version: String,
+    pub family_status: String,
+    pub generation: i64,
+    pub last_seen_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 pub async fn start_authorization(
@@ -385,6 +425,253 @@ pub async fn erase_expired_exchange_results(
     .execute(pool)
     .await?
     .rows_affected())
+}
+
+pub async fn authenticate_access_token(
+    pool: &SqlitePool,
+    raw_token: &str,
+    server_instance_id: &str,
+    now: DateTime<Utc>,
+    client_ip: &str,
+    user_agent: &str,
+) -> DeviceSessionResult<AuthenticatedDeviceAccess> {
+    if !is_device_access_token(raw_token) {
+        return Err(DeviceSessionError::InvalidAccessToken);
+    }
+    let token_hash = hash_device_token(raw_token);
+    let exists = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM device_access_sessions WHERE access_token_hash = ?1 AND server_instance_id = ?2",
+    )
+    .bind(&token_hash)
+    .bind(server_instance_id)
+    .fetch_one(pool)
+    .await?;
+    if exists == 0 {
+        return Err(DeviceSessionError::InvalidAccessToken);
+    }
+
+    let mut transaction = begin_immediate(pool).await?;
+    let result = authenticate_access_in_transaction(
+        &mut transaction,
+        &token_hash,
+        server_instance_id,
+        now,
+        client_ip,
+        user_agent,
+    )
+    .await;
+    finish_transaction(transaction, transaction_should_commit(&result)).await?;
+    result
+}
+
+async fn authenticate_access_in_transaction(
+    connection: &mut SqliteConnection,
+    token_hash: &str,
+    server_instance_id: &str,
+    now: DateTime<Utc>,
+    client_ip: &str,
+    user_agent: &str,
+) -> DeviceSessionResult<AuthenticatedDeviceAccess> {
+    let row = sqlx::query(
+        r#"
+        SELECT access.id AS access_id, access.user_id, access.device_id, access.family_id,
+               access.generation, access.authorization_version AS access_version,
+               access.expires_at, access.session_status, access.server_instance_id,
+               family.family_status, device.device_status,
+               device.authorization_version AS device_version,
+               user.username, user.display_name, user.is_super_admin, user.status AS user_status
+        FROM device_access_sessions access
+        JOIN device_credential_families family ON family.id = access.family_id
+        JOIN devices device ON device.id = access.device_id
+        JOIN users user ON user.id = access.user_id
+        WHERE access.access_token_hash = ?1 AND access.server_instance_id = ?2
+        "#,
+    )
+    .bind(token_hash)
+    .bind(server_instance_id)
+    .fetch_optional(&mut *connection)
+    .await?
+    .ok_or(DeviceSessionError::InvalidAccessToken)?;
+
+    if row.get::<String, _>("user_status") != "active" {
+        return Err(DeviceSessionError::UserInactive);
+    }
+    if row.get::<String, _>("device_status") != "active" {
+        return Err(DeviceSessionError::DeviceRevoked);
+    }
+    if row.get::<String, _>("family_status") != "active" {
+        return Err(DeviceSessionError::FamilyRevoked);
+    }
+    if row.get::<String, _>("session_status") != "active" {
+        return Err(DeviceSessionError::InvalidAccessToken);
+    }
+    let expires_at = parse_timestamp(row.get("expires_at"))?;
+    if expires_at <= now {
+        sqlx::query(
+            "UPDATE device_access_sessions SET session_status = 'expired', updated_at = ?1 WHERE id = ?2 AND session_status = 'active'",
+        )
+        .bind(timestamp(now))
+        .bind(row.get::<String, _>("access_id"))
+        .execute(&mut *connection)
+        .await?;
+        return Err(DeviceSessionError::AccessExpired);
+    }
+    let access_version = row.get::<i64, _>("access_version");
+    if access_version != row.get::<i64, _>("device_version") {
+        return Err(DeviceSessionError::InvalidAccessToken);
+    }
+
+    let access_session_id = row.get::<String, _>("access_id");
+    let device_id = row.get::<String, _>("device_id");
+    let now_value = timestamp(now);
+    sqlx::query(
+        "UPDATE device_access_sessions SET last_seen_at = ?1, updated_at = ?1 WHERE id = ?2 AND session_status = 'active'",
+    )
+    .bind(&now_value)
+    .bind(&access_session_id)
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        "UPDATE devices SET last_seen_at = ?1, last_ip = ?2, user_agent = ?3, updated_at = ?1 WHERE id = ?4 AND device_status = 'active'",
+    )
+    .bind(&now_value)
+    .bind(truncate_metadata(client_ip, 80))
+    .bind(truncate_metadata(user_agent, 256))
+    .bind(&device_id)
+    .execute(&mut *connection)
+    .await?;
+
+    Ok(AuthenticatedDeviceAccess {
+        access_session_id,
+        user_id: row.get("user_id"),
+        username: row.get("username"),
+        display_name: row.get("display_name"),
+        is_super_admin: row.get::<i64, _>("is_super_admin") != 0,
+        device_id,
+        family_id: row.get("family_id"),
+        generation: row.get("generation"),
+        authorization_version: access_version,
+        access_expires_at: expires_at,
+        server_instance_id: row.get("server_instance_id"),
+    })
+}
+
+pub async fn list_device_families_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    server_instance_id: &str,
+) -> DeviceSessionResult<Vec<DeviceFamilySummary>> {
+    let rows = sqlx::query(
+        r#"
+        SELECT family.id AS family_id, device.id AS device_id, device.device_name,
+               device.platform, device.client_version, family.family_status,
+               COALESCE(MAX(access.generation), 0) AS generation,
+               device.last_seen_at, family.created_at
+        FROM device_credential_families family
+        JOIN devices device ON device.id = family.device_id
+        LEFT JOIN device_access_sessions access ON access.family_id = family.id
+        WHERE family.user_id = ?1 AND family.server_instance_id = ?2
+        GROUP BY family.id, device.id
+        ORDER BY device.last_seen_at DESC, family.created_at DESC
+        "#,
+    )
+    .bind(user_id)
+    .bind(server_instance_id)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(DeviceFamilySummary {
+                family_id: row.get("family_id"),
+                device_id: row.get("device_id"),
+                device_name: row.get("device_name"),
+                platform: row.get("platform"),
+                client_version: row.get("client_version"),
+                family_status: row.get("family_status"),
+                generation: row.get("generation"),
+                last_seen_at: parse_timestamp(row.get("last_seen_at"))?,
+                created_at: parse_timestamp(row.get("created_at"))?,
+            })
+        })
+        .collect()
+}
+
+pub async fn revoke_family_for_user(
+    pool: &SqlitePool,
+    user_id: i64,
+    family_id: &str,
+    now: DateTime<Utc>,
+    reason: &str,
+) -> DeviceSessionResult<()> {
+    let mut transaction = begin_immediate(pool).await?;
+    let result =
+        revoke_family_in_transaction(&mut transaction, user_id, family_id, now, reason).await;
+    finish_transaction(transaction, transaction_should_commit(&result)).await?;
+    result
+}
+
+async fn revoke_family_in_transaction(
+    connection: &mut SqliteConnection,
+    user_id: i64,
+    family_id: &str,
+    now: DateTime<Utc>,
+    reason: &str,
+) -> DeviceSessionResult<()> {
+    let now_value = timestamp(now);
+    let reason = truncate_metadata(reason, 128);
+    let updated = sqlx::query(
+        r#"
+        UPDATE device_credential_families
+        SET family_status = 'revoked', authorization_version = authorization_version + 1,
+            revoked_at = ?1, revoke_reason = ?2, updated_at = ?1
+        WHERE id = ?3 AND user_id = ?4 AND family_status = 'active'
+        "#,
+    )
+    .bind(&now_value)
+    .bind(&reason)
+    .bind(family_id)
+    .bind(user_id)
+    .execute(&mut *connection)
+    .await?;
+    if updated.rows_affected() != 1 {
+        let owned = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM device_credential_families WHERE id = ?1 AND user_id = ?2",
+        )
+        .bind(family_id)
+        .bind(user_id)
+        .fetch_one(&mut *connection)
+        .await?;
+        return Err(if owned == 0 {
+            DeviceSessionError::InvalidRequest("设备会话不存在".to_string())
+        } else {
+            DeviceSessionError::FamilyRevoked
+        });
+    }
+    sqlx::query(
+        r#"
+        UPDATE device_access_sessions
+        SET session_status = 'revoked', revoked_at = ?1, revoke_reason = ?2, updated_at = ?1
+        WHERE family_id = ?3 AND session_status = 'active'
+        "#,
+    )
+    .bind(&now_value)
+    .bind(&reason)
+    .bind(family_id)
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        r#"
+        UPDATE device_refresh_credentials
+        SET credential_status = 'revoked', revoked_at = ?1, revoke_reason = ?2, updated_at = ?1
+        WHERE family_id = ?3 AND credential_status IN ('active', 'rotated')
+        "#,
+    )
+    .bind(&now_value)
+    .bind(&reason)
+    .bind(family_id)
+    .execute(connection)
+    .await?;
+    Ok(())
 }
 
 async fn prepare_authorization_capacity(
@@ -1158,6 +1445,10 @@ fn validate_metadata(field: &str, value: &str, min: usize, max: usize) -> Device
     Ok(())
 }
 
+fn truncate_metadata(value: &str, max_chars: usize) -> String {
+    value.trim().chars().take(max_chars).collect()
+}
+
 fn validate_policy(policy: &DeviceSessionPolicy) -> DeviceSessionResult<()> {
     if policy.server_instance_id.trim().is_empty()
         || policy.authorization_ttl_seconds <= 0
@@ -1596,6 +1887,184 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error.code(), "idempotency_expired");
+    }
+
+    #[tokio::test]
+    async fn access_authentication_lists_and_revokes_the_bound_family() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let user_id = insert_user(&pool, "active").await;
+        let (started, verifier) = start(&pool, now).await;
+        approve_authorization(&pool, &started.authorization_id, user_id, now)
+            .await
+            .unwrap();
+        let issued = exchange_authorization(
+            &pool,
+            MASTER_KEY,
+            &policy(),
+            ExchangeAuthorizationInput {
+                device_code: started.device_code,
+                code_verifier: verifier,
+                exchange_transaction_id: Uuid::new_v4().to_string(),
+            },
+            now,
+        )
+        .await
+        .unwrap();
+
+        let authenticated = authenticate_access_token(
+            &pool,
+            &issued.access_token,
+            &policy().server_instance_id,
+            now + Duration::seconds(1),
+            "192.0.2.10",
+            "Device Client/0.1",
+        )
+        .await
+        .unwrap();
+        assert_eq!(authenticated.user_id, user_id);
+        assert_eq!(authenticated.device_id, issued.device_id);
+        assert_eq!(authenticated.family_id, issued.family_id);
+        assert_eq!(authenticated.generation, 0);
+        let metadata = sqlx::query_as::<_, (String, String)>(
+            "SELECT last_ip, user_agent FROM devices WHERE id = ?1",
+        )
+        .bind(&issued.device_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(metadata.0, "192.0.2.10");
+        assert_eq!(metadata.1, "Device Client/0.1");
+
+        let families = list_device_families_for_user(&pool, user_id, &policy().server_instance_id)
+            .await
+            .unwrap();
+        assert_eq!(families.len(), 1);
+        assert_eq!(families[0].family_id, issued.family_id);
+        assert_eq!(families[0].family_status, "active");
+
+        revoke_family_for_user(
+            &pool,
+            user_id,
+            &issued.family_id,
+            now + Duration::seconds(2),
+            "user_logout",
+        )
+        .await
+        .unwrap();
+        let statuses = sqlx::query_as::<_, (String, String, String)>(
+            r#"
+            SELECT family.family_status, access.session_status, refresh.credential_status
+            FROM device_credential_families family
+            JOIN device_access_sessions access ON access.family_id = family.id
+            JOIN device_refresh_credentials refresh ON refresh.family_id = family.id
+            WHERE family.id = ?1
+            "#,
+        )
+        .bind(&issued.family_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            statuses,
+            ("revoked".into(), "revoked".into(), "revoked".into())
+        );
+        let error = authenticate_access_token(
+            &pool,
+            &issued.access_token,
+            &policy().server_instance_id,
+            now + Duration::seconds(3),
+            "",
+            "",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "device_session_revoked");
+    }
+
+    #[tokio::test]
+    async fn access_authentication_rejects_wrong_binding_expiry_and_inactive_user() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let user_id = insert_user(&pool, "active").await;
+        let (started, verifier) = start(&pool, now).await;
+        approve_authorization(&pool, &started.authorization_id, user_id, now)
+            .await
+            .unwrap();
+        let issued = exchange_authorization(
+            &pool,
+            MASTER_KEY,
+            &policy(),
+            ExchangeAuthorizationInput {
+                device_code: started.device_code,
+                code_verifier: verifier,
+                exchange_transaction_id: Uuid::new_v4().to_string(),
+            },
+            now,
+        )
+        .await
+        .unwrap();
+
+        for (token, server_instance_id) in [
+            (
+                issued.refresh_token.as_str(),
+                policy().server_instance_id.as_str(),
+            ),
+            (issued.access_token.as_str(), "other-server"),
+        ] {
+            let error = authenticate_access_token(&pool, token, server_instance_id, now, "", "")
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), "invalid_device_access");
+        }
+
+        sqlx::query("UPDATE users SET status = 'disabled' WHERE id = ?1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let error = authenticate_access_token(
+            &pool,
+            &issued.access_token,
+            &policy().server_instance_id,
+            now,
+            "",
+            "",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "user_inactive");
+
+        sqlx::query("UPDATE users SET status = 'active' WHERE id = ?1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE device_access_sessions SET expires_at = ?1 WHERE family_id = ?2")
+            .bind(timestamp(now - Duration::seconds(1)))
+            .bind(&issued.family_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let error = authenticate_access_token(
+            &pool,
+            &issued.access_token,
+            &policy().server_instance_id,
+            now,
+            "",
+            "",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code(), "device_access_expired");
+        let status: String = sqlx::query_scalar(
+            "SELECT session_status FROM device_access_sessions WHERE family_id = ?1",
+        )
+        .bind(&issued.family_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "expired");
     }
 
     #[tokio::test]

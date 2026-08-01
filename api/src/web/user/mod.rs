@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use askama::Template;
 use axum::{
     Form,
-    extract::{Path, Query, RawForm, State},
+    extract::{Extension, Path, Query, RawForm, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -15,13 +15,14 @@ use crate::{
     domains::{
         api_tokens, audit, auth,
         bootstrap::{self, BootstrapInitInput},
-        files, notifications, project_resources, projects, rbac, storage, system_api_tokens,
-        system_releases, users,
+        device_sessions, files, notifications, project_resources, projects, rbac, storage,
+        system_api_tokens, system_releases, users,
     },
     platform::error::{AppError, AppResult},
     platform::{crypto, security::csrf},
     web::{
-        audit_context, response, router::AppState,
+        audit_context, response,
+        router::{AppState, DeviceAuthClientIp},
         test_storage::bind_test_storage_download_grant,
     },
 };
@@ -711,6 +712,20 @@ struct ApiTokenView {
 }
 
 #[derive(Debug, Clone)]
+struct DeviceFamilyView {
+    family_id: String,
+    device_name: String,
+    platform: String,
+    client_version: String,
+    generation: i64,
+    last_seen_at: String,
+    created_at: String,
+    status: &'static str,
+    status_tone: &'static str,
+    can_revoke: bool,
+}
+
+#[derive(Debug, Clone)]
 struct ApiTokenScopeOptionView {
     key: &'static str,
     label: &'static str,
@@ -959,6 +974,8 @@ struct MeTemplate {
     projects: Vec<ProjectRow>,
     api_tokens: Vec<ApiTokenView>,
     has_api_tokens: bool,
+    device_families: Vec<DeviceFamilyView>,
+    has_device_families: bool,
     api_token_active_count: usize,
     api_token_limit: i64,
     can_create_api_token: bool,
@@ -2087,6 +2104,12 @@ pub struct MeApiTokenDeleteForm {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MeDeviceFamilyRevokeForm {
+    #[serde(default, rename = "_csrf")]
+    csrf_token: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MeApiTokenUpdateForm {
     #[serde(default, rename = "_csrf")]
     csrf_token: String,
@@ -2385,7 +2408,7 @@ async fn render_me_response(
         .as_ref()
         .map(|token| token.raw_token.clone())
         .unwrap_or_default();
-    let (profile, projects, assigned_items, api_tokens) = match context.pool {
+    let (profile, projects, assigned_items, api_tokens, device_families) = match context.pool {
         Some(pool) => {
             let Some(profile) = users::get_user_summary(pool, context.user_id).await? else {
                 return login_redirect(headers);
@@ -2433,18 +2456,30 @@ async fn render_me_response(
                 )
             })
             .collect::<Vec<_>>();
+            let device_families = device_sessions::list_device_families_for_user(
+                pool,
+                context.user_id,
+                &state.settings.device_sessions.server_instance_id,
+            )
+            .await
+            .map_err(device_session_app_error)?
+            .into_iter()
+            .map(device_family_view)
+            .collect::<Vec<_>>();
 
             (
                 user_profile_from_summary(profile),
                 projects,
                 assigned_items,
                 api_tokens,
+                device_families,
             )
         }
         None => (
             sample_user_profile(),
             sample_projects(),
             sample_work_items(None),
+            Vec::new(),
             Vec::new(),
         ),
     };
@@ -2467,10 +2502,12 @@ async fn render_me_response(
             topbar_project_options: context.topbar_project_options,
             has_projects: !projects.is_empty(),
             has_api_tokens: !api_tokens.is_empty(),
+            has_device_families: !device_families.is_empty(),
             api_token_active_count,
             api_token_limit: api_tokens::MAX_ACTIVE_TOKENS_PER_USER,
             can_create_api_token,
             api_tokens,
+            device_families,
             profile,
             summary,
             projects,
@@ -2666,6 +2703,60 @@ pub async fn me_api_token_delete(
         .await?;
     }
 
+    Ok(Redirect::to("/web/me").into_response())
+}
+
+pub(crate) async fn me_device_session_revoke(
+    State(state): State<AppState>,
+    Extension(DeviceAuthClientIp(client_ip)): Extension<DeviceAuthClientIp>,
+    headers: HeaderMap,
+    Path(family_id): Path<String>,
+    Form(form): Form<MeDeviceFamilyRevokeForm>,
+) -> AppResult<Response> {
+    if headers.contains_key(header::AUTHORIZATION) {
+        return Err(AppError::Forbidden(
+            "Bearer 凭证不能管理 Browser 设备会话".to_string(),
+        ));
+    }
+    csrf::verify(&headers, &form.csrf_token)?;
+    let context = match web_context_or_redirect(&state, &headers).await? {
+        Ok(context) => context,
+        Err(response) => return Ok(response),
+    };
+    if let Some(pool) = context.pool {
+        let revoked_now = match device_sessions::revoke_family_for_user(
+            pool,
+            context.user_id,
+            &family_id,
+            Utc::now(),
+            "user_revoke",
+        )
+        .await
+        {
+            Ok(()) => true,
+            Err(device_sessions::DeviceSessionError::InvalidRequest(_)) => {
+                return Err(AppError::NotFound("设备会话不存在".to_string()));
+            }
+            Err(device_sessions::DeviceSessionError::FamilyRevoked) => false,
+            Err(device_sessions::DeviceSessionError::StorageFailure(error)) => {
+                return Err(AppError::Database(error));
+            }
+            Err(error) => return Err(AppError::Conflict(error.to_string())),
+        };
+        if revoked_now && let Err(error) = audit::record_with_context(
+            pool,
+            Some(context.user_id),
+            "device_session.revoke",
+            "device_credential_family",
+            &family_id,
+            r#"{"source":"web"}"#,
+            &audit_context::from_headers_with_client_ip(&headers, client_ip),
+        )
+        .await
+        {
+            tracing::warn!(%error, "failed to record device session revocation audit");
+        }
+    }
     Ok(Redirect::to("/web/me").into_response())
 }
 
@@ -11902,6 +11993,39 @@ fn api_token_view(
         status,
         status_tone,
         is_revoked,
+    }
+}
+
+fn device_family_view(family: device_sessions::DeviceFamilySummary) -> DeviceFamilyView {
+    let (status, status_tone, can_revoke) = match family.family_status.as_str() {
+        "active" => ("可用", "success", true),
+        "expired" => ("已过期", "warning", false),
+        _ => ("已撤销", "danger", false),
+    };
+    DeviceFamilyView {
+        family_id: family.family_id,
+        device_name: family.device_name,
+        platform: family.platform,
+        client_version: family.client_version,
+        generation: family.generation,
+        last_seen_at: display_timestamp(family.last_seen_at.to_rfc3339()),
+        created_at: display_timestamp(family.created_at.to_rfc3339()),
+        status,
+        status_tone,
+        can_revoke,
+    }
+}
+
+fn device_session_app_error(error: device_sessions::DeviceSessionError) -> AppError {
+    match error {
+        device_sessions::DeviceSessionError::StorageFailure(error) => AppError::Database(error),
+        device_sessions::DeviceSessionError::InvalidRequest(message) => {
+            AppError::BadRequest(message)
+        }
+        device_sessions::DeviceSessionError::CryptoFailure => {
+            AppError::Crypto("设备会话敏感数据处理失败".to_string())
+        }
+        error => AppError::Conflict(error.to_string()),
     }
 }
 

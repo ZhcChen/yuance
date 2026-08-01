@@ -357,6 +357,86 @@
         }
       }
     },
+    "/api/v1/device-session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "探测当前设备会话",
+        "description": "校验短期 device access token，并返回当前 user/device/family/generation、access 到期时间和 authorization version。不会返回 access、refresh 或 token hint。",
+        "security": [
+          {
+            "deviceAccess": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "设备会话有效",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSessionProbeEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          }
+        }
+      }
+    },
+    "/api/v1/device-session/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "注销当前设备会话",
+        "description": "使用当前 device access token 原子撤销绑定的 credential family 及其 access/refresh credential。此操作不接受 Cookie、PAT、system token 或 device refresh token。",
+        "security": [
+          {
+            "deviceAccess": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前 credential family 已撤销",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSessionLogoutEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          }
+        }
+      }
+    },
     "/api/v1/me/tokens": {
       "get": {
         "tags": [
@@ -1334,6 +1414,21 @@
           }
         }
       },
+      "DeviceSessionError": {
+        "description": "设备 access 无效、已过期、已撤销，或设备会话服务暂时不可用",
+        "headers": {
+          "Cache-Control": {
+            "$ref": "#/components/headers/SensitiveNoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/DeviceAuthorizationErrorEnvelope"
+            }
+          }
+        }
+      },
       "DeviceAuthorizationRateLimited": {
         "description": "设备授权请求过于频繁",
         "headers": {
@@ -1641,6 +1736,92 @@
           }
         }
       },
+      "DeviceSessionProbeEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "user_id",
+              "username",
+              "display_name",
+              "device_id",
+              "family_id",
+              "generation",
+              "authorization_version",
+              "access_expires_at",
+              "server_instance_id"
+            ],
+            "properties": {
+              "user_id": {
+                "type": "integer"
+              },
+              "username": {
+                "type": "string"
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "device_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "family_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "authorization_version": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "access_expires_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "server_instance_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "DeviceSessionLogoutEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revoked",
+              "family_id"
+            ],
+            "properties": {
+              "revoked": {
+                "type": "boolean",
+                "const": true
+              },
+              "family_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      },
       "DeviceAuthorizationErrorCode": {
         "type": "string",
         "enum": [
@@ -1648,6 +1829,11 @@
           "credential_not_allowed",
           "rate_limited",
           "device_authorization_unavailable",
+          "device_session_unavailable",
+          "invalid_device_access",
+          "device_access_expired",
+          "device_revoked",
+          "device_session_revoked",
           "invalid_code_challenge",
           "invalid_device_code",
           "invalid_code_verifier",

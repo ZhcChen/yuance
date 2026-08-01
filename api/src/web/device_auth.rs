@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    domains::{audit, auth, device_sessions},
+    domains::{api_tokens, audit, auth, device_sessions},
     platform::{error::AppResult, security::csrf},
     web::{
         audit_context,
@@ -68,6 +68,25 @@ pub struct ExchangedAuthorizationPayload {
     refresh_expires_in: i64,
     access: CredentialMetadataPayload,
     refresh: CredentialMetadataPayload,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceSessionProbePayload {
+    user_id: i64,
+    username: String,
+    display_name: String,
+    device_id: String,
+    family_id: String,
+    generation: i64,
+    authorization_version: i64,
+    access_expires_at: String,
+    server_instance_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceSessionLogoutPayload {
+    revoked: bool,
+    family_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -294,6 +313,123 @@ pub(crate) async fn exchange_authorization(
     )
 }
 
+pub(crate) async fn probe_device_session(
+    State(state): State<AppState>,
+    Extension(client_ip): Extension<DeviceAuthClientIp>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(_permit) = state.try_device_auth_permit() else {
+        return rate_limited_response(1);
+    };
+    let context = device_audit_context(&headers, client_ip);
+    let access = match require_device_access(&state, &headers, &context).await {
+        Ok(access) => access,
+        Err(response) => return response,
+    };
+    no_store(
+        Json(ApiEnvelope {
+            data: DeviceSessionProbePayload {
+                user_id: access.user_id,
+                username: access.username,
+                display_name: access.display_name,
+                device_id: access.device_id,
+                family_id: access.family_id,
+                generation: access.generation,
+                authorization_version: access.authorization_version,
+                access_expires_at: access.access_expires_at.to_rfc3339(),
+                server_instance_id: access.server_instance_id,
+            },
+        })
+        .into_response(),
+    )
+}
+
+pub(crate) async fn logout_device_session(
+    State(state): State<AppState>,
+    Extension(client_ip): Extension<DeviceAuthClientIp>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(_permit) = state.try_device_auth_permit() else {
+        return rate_limited_response(1);
+    };
+    let context = device_audit_context(&headers, client_ip);
+    let access = match require_device_access(&state, &headers, &context).await {
+        Ok(access) => access,
+        Err(response) => return response,
+    };
+    let pool = match state.pool() {
+        Ok(pool) => pool,
+        Err(error) => return no_store(error.into_response()),
+    };
+    match device_sessions::revoke_family_for_user(
+        pool,
+        access.user_id,
+        &access.family_id,
+        Utc::now(),
+        "device_logout",
+    )
+    .await
+    {
+        Ok(()) | Err(device_sessions::DeviceSessionError::FamilyRevoked) => {}
+        Err(error) => return device_access_error(error),
+    }
+    if let Err(error) = audit::record_with_context(
+        pool,
+        Some(access.user_id),
+        "device_session.logout",
+        "device_credential_family",
+        &access.family_id,
+        &serde_json::json!({"server_instance_id": state.settings.device_sessions.server_instance_id}).to_string(),
+        &context,
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to record device session logout audit");
+    }
+    no_store(
+        Json(ApiEnvelope {
+            data: DeviceSessionLogoutPayload {
+                revoked: true,
+                family_id: access.family_id,
+            },
+        })
+        .into_response(),
+    )
+}
+
+async fn require_device_access(
+    state: &AppState,
+    headers: &HeaderMap,
+    context: &audit::AuditContext,
+) -> Result<device_sessions::AuthenticatedDeviceAccess, Response> {
+    if headers.contains_key(header::COOKIE) {
+        return Err(credential_not_allowed_response());
+    }
+    if headers.get_all(header::AUTHORIZATION).iter().count() != 1 {
+        return Err(device_access_error(
+            device_sessions::DeviceSessionError::InvalidAccessToken,
+        ));
+    }
+    let Some(raw_token) = api_tokens::bearer_token(headers) else {
+        return Err(device_access_error(
+            device_sessions::DeviceSessionError::InvalidAccessToken,
+        ));
+    };
+    let pool = state
+        .pool()
+        .map_err(|error| no_store(error.into_response()))?;
+    device_sessions::authenticate_access_token(
+        pool,
+        &raw_token,
+        &state.settings.device_sessions.server_instance_id,
+        Utc::now(),
+        &context.ip,
+        &context.user_agent,
+    )
+    .await
+    .map_err(device_access_error)
+}
+
 pub async fn authorization_page(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -427,9 +563,7 @@ fn device_audit_context(
     headers: &HeaderMap,
     DeviceAuthClientIp(client_ip): DeviceAuthClientIp,
 ) -> audit::AuditContext {
-    let mut context = audit_context::from_headers(headers);
-    context.ip = client_ip.map_or_else(String::new, |ip| ip.to_string());
-    context
+    audit_context::from_headers_with_client_ip(headers, client_ip)
 }
 
 fn device_policy(state: &AppState) -> AppResult<device_sessions::DeviceSessionPolicy> {
@@ -520,6 +654,37 @@ fn domain_error(error: device_sessions::DeviceSessionError) -> Response {
         other => other.code(),
     };
     protocol_error(status, code, error.to_string(), error.retry_after_seconds())
+}
+
+fn device_access_error(error: device_sessions::DeviceSessionError) -> Response {
+    use device_sessions::DeviceSessionError as Error;
+    match &error {
+        Error::InvalidAccessToken
+        | Error::AccessExpired
+        | Error::DeviceRevoked
+        | Error::FamilyRevoked
+        | Error::UserInactive => protocol_error(
+            StatusCode::UNAUTHORIZED,
+            error.code(),
+            error.to_string(),
+            None,
+        ),
+        Error::StorageFailure(_) | Error::InvalidState(_) | Error::CryptoFailure => {
+            tracing::error!(error_code = error.code(), %error, "device access operation failed");
+            protocol_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "device_session_unavailable",
+                "设备会话服务暂时不可用".to_string(),
+                None,
+            )
+        }
+        _ => protocol_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_device_request",
+            error.to_string(),
+            None,
+        ),
+    }
 }
 
 fn json_rejection(error: JsonRejection) -> Response {

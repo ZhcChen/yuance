@@ -357,7 +357,7 @@ fn device_token_contracts_are_namespaced_and_bind_recovery_context() {
 }
 
 #[test]
-fn openapi_publishes_only_registered_device_session_paths() {
+fn openapi_publishes_registered_device_session_paths_and_security() {
     let document: serde_json::Value =
         serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
             .expect("OpenAPI document should parse");
@@ -378,6 +378,31 @@ fn openapi_publishes_only_registered_device_session_paths() {
         document["paths"]["/api/v1/device-authorizations/exchange"]["post"]["security"],
         serde_json::json!([])
     );
+    for (path, method) in [
+        ("/api/v1/device-session", "get"),
+        ("/api/v1/device-session/logout", "post"),
+    ] {
+        assert_eq!(
+            document["paths"][path][method]["security"],
+            serde_json::json!([{"deviceAccess": []}])
+        );
+        assert_eq!(
+            document["paths"][path][method]["responses"]["401"]["$ref"],
+            "#/components/responses/DeviceSessionError"
+        );
+    }
+    let error_codes = document["components"]["schemas"]["DeviceAuthorizationErrorCode"]["enum"]
+        .as_array()
+        .expect("device error codes should be an array");
+    for code in [
+        "invalid_device_access",
+        "device_access_expired",
+        "device_revoked",
+        "device_session_revoked",
+        "device_session_unavailable",
+    ] {
+        assert!(error_codes.iter().any(|value| value == code));
+    }
     assert!(
         document["paths"]
             .get("/api/v1/device-sessions/refresh")

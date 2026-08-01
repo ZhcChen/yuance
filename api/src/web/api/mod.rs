@@ -13,7 +13,7 @@ use std::convert::Infallible;
 
 use crate::{
     domains::{
-        api_tokens, audit, auth, bootstrap, database_stats, files, notifications,
+        api_tokens, audit, auth, bootstrap, database_stats, device_sessions, files, notifications,
         project_resources, projects, rbac, storage, system_api_tokens, system_releases, users,
     },
     platform::{
@@ -4395,7 +4395,12 @@ async fn require_api_user(state: &AppState, headers: &HeaderMap) -> AppResult<au
 
 async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResult<ApiPrincipal> {
     let pool = state.pool()?;
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+    if let Some(raw_token) = single_bearer_token(headers)? {
+        if device_sessions::is_device_access_token(&raw_token) {
+            return Err(AppError::Forbidden(
+                "设备 access token 未授权访问此业务 API".to_string(),
+            ));
+        }
         let authenticated = api_tokens::authenticated_token_from_bearer_token(pool, &raw_token)
             .await?
             .ok_or(AppError::Unauthorized)?;
@@ -4420,7 +4425,7 @@ async fn require_system_release_api_principal(
     headers: &HeaderMap,
 ) -> AppResult<SystemReleaseApiPrincipal> {
     let pool = state.pool()?;
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+    if let Some(raw_token) = single_bearer_token(headers)? {
         if !system_api_tokens::is_system_token(&raw_token) {
             return Err(AppError::Forbidden(
                 "系统版本管理接口仅支持系统访问 Token 或浏览器登录会话".to_string(),
@@ -4444,7 +4449,7 @@ async fn require_test_storage_upload_actor_user_id(
     headers: &HeaderMap,
 ) -> AppResult<i64> {
     let pool = state.pool()?;
-    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+    if let Some(raw_token) = single_bearer_token(headers)? {
         if let Some(authenticated) =
             system_api_tokens::authenticated_token_from_bearer_token(pool, &raw_token).await?
         {
@@ -4452,6 +4457,15 @@ async fn require_test_storage_upload_actor_user_id(
         }
     }
     Ok(require_api_user(state, headers).await?.id)
+}
+
+fn single_bearer_token(headers: &HeaderMap) -> AppResult<Option<String>> {
+    if headers.get_all(header::AUTHORIZATION).iter().count() > 1 {
+        return Err(AppError::Forbidden(
+            "请求只能携带一个 Authorization 凭证".to_string(),
+        ));
+    }
+    Ok(api_tokens::bearer_token(headers))
 }
 
 async fn ensure_system_release_api_permission(

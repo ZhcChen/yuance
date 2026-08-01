@@ -73,6 +73,8 @@ GET  /api/v1/auth/csrf
 POST /api/v1/auth/logout
 POST /api/v1/device-authorizations
 POST /api/v1/device-authorizations/exchange
+GET  /api/v1/device-session
+POST /api/v1/device-session/logout
 GET  /api/v1/me/tokens
 POST /api/v1/me/tokens
 DELETE /api/v1/me/tokens/{token_id}
@@ -107,6 +109,12 @@ DELETE /api/v1/me/tokens/{token_id}
 `POST /api/v1/device-authorizations` 使用 S256 PKCE challenge 发起短期设备授权；用户在系统浏览器的 `/web/device-authorization` 页面通过现有 Cookie session 与 CSRF 批准或拒绝。Desktop 随后调用 `POST /api/v1/device-authorizations/exchange`，提交 `device_code`、`code_verifier` 和预持久化的 `exchange_transaction_id`。
 
 两个 JSON 端点都不接受 Cookie 或 `Authorization` header；发现 ambient credential 时在解析 body 前返回 `401 credential_not_allowed`，不会回退到 Cookie、PAT 或 device bearer。成功和错误响应均为 `Cache-Control: private, no-store`。轮询必须遵守响应中的 `interval` 与 `Retry-After`；同一 transaction 可以恢复相同的 generation 0 credential，不同 transaction 不能消费已完成授权。
+
+`GET /api/v1/device-session` 与 `POST /api/v1/device-session/logout` 只接受 `Authorization: Bearer yuance_dat_*`。probe 返回 user/device/family/generation、access 到期时间和 authorization version，不返回任何 token；logout 原子撤销当前 credential family 及其 access/refresh。Cookie、PAT、system token、device refresh 或混合凭证均不允许进入这两个端点。device access 默认不能访问其他 `/api/v1/**` 业务 API，后续 D2 只能按 method + path + feature 显式登记。
+
+设备会话 logout 与 Browser 撤销先原子提交 family/access/refresh 的撤销状态，再以 best-effort 写入审计；审计写入失败会记录服务端告警，但不会回滚或恢复已经撤销的凭证。若后续要求撤销与审计具备同一提交保证，应采用 transaction outbox，而不是在审计失败时重新开放凭证。
+
+当前用户可在 `/web/me` 查看并撤销自己的 Desktop credential family；该操作必须使用 Browser Cookie + CSRF，不能由 PAT 或 device access 代替。
 
 ## Personal Access Token
 
