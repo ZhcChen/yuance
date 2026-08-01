@@ -26,7 +26,6 @@ CREATE TABLE device_authorizations (
     exchange_result_expires_at TEXT,
     poll_interval_seconds INTEGER NOT NULL CHECK (poll_interval_seconds BETWEEN 2 AND 15),
     next_poll_at TEXT NOT NULL DEFAULT (datetime('now')),
-    failed_user_code_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_user_code_attempts >= 0),
     expires_at TEXT NOT NULL,
     approved_at TEXT,
     denied_at TEXT,
@@ -34,18 +33,25 @@ CREATE TABLE device_authorizations (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     CHECK (
-        (authorization_status IN ('approved', 'consumed'))
-        = (approved_user_id IS NOT NULL AND approved_at IS NOT NULL)
+        (approved_user_id IS NULL) = (approved_at IS NULL)
+    ),
+    CHECK (
+        authorization_status NOT IN ('approved', 'consumed')
+        OR approved_user_id IS NOT NULL
+    ),
+    CHECK (
+        authorization_status NOT IN ('pending', 'denied')
+        OR approved_user_id IS NULL
     ),
     CHECK ((authorization_status = 'denied') = (denied_at IS NOT NULL)),
     CHECK ((authorization_status = 'consumed') = (consumed_at IS NOT NULL)),
     CHECK (
-        (exchange_result_ciphertext <> '')
-        = (
-            authorization_status = 'consumed'
-            AND exchange_transaction_id IS NOT NULL
-            AND exchange_result_expires_at IS NOT NULL
-        )
+        (authorization_status = 'consumed')
+        = (exchange_transaction_id IS NOT NULL AND exchange_result_expires_at IS NOT NULL)
+    ),
+    CHECK (
+        exchange_result_ciphertext = ''
+        OR authorization_status = 'consumed'
     )
 );
 
@@ -79,6 +85,8 @@ CREATE INDEX idx_devices_user_status ON devices (user_id, device_status);
 
 CREATE TABLE device_credential_families (
     id TEXT PRIMARY KEY,
+    authorization_id TEXT NOT NULL UNIQUE
+        REFERENCES device_authorizations (id) ON DELETE RESTRICT,
     device_id TEXT NOT NULL REFERENCES devices (id) ON DELETE RESTRICT,
     user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE RESTRICT,
     server_instance_id TEXT NOT NULL,
@@ -102,6 +110,8 @@ CREATE INDEX idx_device_credential_families_user_status
 ON device_credential_families (user_id, family_status);
 CREATE INDEX idx_device_credential_families_device_status
 ON device_credential_families (device_id, family_status);
+CREATE INDEX idx_device_credential_families_authorization
+ON device_credential_families (authorization_id);
 
 CREATE TABLE device_access_sessions (
     id TEXT PRIMARY KEY,

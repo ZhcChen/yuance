@@ -31,9 +31,10 @@ date: 2026-06-30
 }
 ```
 
-- 认证：支持 Web Cookie session 和 Personal Access Token。
+- 认证：支持 Web Cookie session、Personal Access Token 和独立的设备会话凭证。
   - 浏览器 Web 调用默认使用 `yuance_session` Cookie。
   - MCP / 外部脚本建议使用 `Authorization: Bearer yuance_pat_xxx`。
+  - Desktop 设备授权使用独立的 `yuance_dat_` access 与 `yuance_drt_` refresh namespace；当前尚未向 device access 开放业务 API，且设备凭证不能作为 PAT 使用。
 - CSRF：所有会改变状态的 Cookie API 必须提供 CSRF。
   - 登录和初始化成功响应会设置 `yuance_csrf` cookie，并在 JSON 中返回 `csrf_token`。
   - 后续写请求传 `x-yuance-csrf-token: <csrf_token>`。
@@ -70,6 +71,8 @@ POST /api/v1/auth/login
 GET  /api/v1/auth/me
 GET  /api/v1/auth/csrf
 POST /api/v1/auth/logout
+POST /api/v1/device-authorizations
+POST /api/v1/device-authorizations/exchange
 GET  /api/v1/me/tokens
 POST /api/v1/me/tokens
 DELETE /api/v1/me/tokens/{token_id}
@@ -98,6 +101,12 @@ DELETE /api/v1/me/tokens/{token_id}
 登录成功返回当前用户和 CSRF token，并设置 session cookie。
 
 `GET /api/v1/auth/csrf` 可在现有登录态下显式获取最新 CSRF token，适用于长会话页面刷新写操作前的 token 同步。
+
+### Desktop 设备授权
+
+`POST /api/v1/device-authorizations` 使用 S256 PKCE challenge 发起短期设备授权；用户在系统浏览器的 `/web/device-authorization` 页面通过现有 Cookie session 与 CSRF 批准或拒绝。Desktop 随后调用 `POST /api/v1/device-authorizations/exchange`，提交 `device_code`、`code_verifier` 和预持久化的 `exchange_transaction_id`。
+
+两个 JSON 端点都不接受 Cookie 或 `Authorization` header；发现 ambient credential 时在解析 body 前返回 `401 credential_not_allowed`，不会回退到 Cookie、PAT 或 device bearer。成功和错误响应均为 `Cache-Control: private, no-store`。轮询必须遵守响应中的 `interval` 与 `Retry-After`；同一 transaction 可以恢复相同的 generation 0 credential，不同 transaction 不能消费已完成授权。
 
 ## Personal Access Token
 

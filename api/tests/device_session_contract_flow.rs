@@ -1,4 +1,5 @@
 use sqlx::SqlitePool;
+use uuid::Uuid;
 use yuance_api::{
     domains::device_sessions::{
         DEVICE_ACCESS_AUDIENCE, DEVICE_ACCESS_ISSUER, DEVICE_ACCESS_TOKEN_PREFIX,
@@ -219,6 +220,25 @@ async fn device_session_schema_rejects_invalid_states_and_cross_family_reference
     insert_family(&pool, "family-1", "device-1", user_id)
         .await
         .expect("family should insert");
+
+    let family_without_authorization = sqlx::query(
+        r#"
+        INSERT INTO device_credential_families (
+            id, device_id, user_id, server_instance_id,
+            refresh_sliding_expires_at, refresh_absolute_expires_at
+        ) VALUES (
+            'family-without-authorization', 'device-1', ?1, 'test-server',
+            datetime('now', '+30 days'), datetime('now', '+90 days')
+        )
+        "#,
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await;
+    assert!(
+        family_without_authorization.is_err(),
+        "every credential family must trace to one authorization"
+    );
     insert_refresh(&pool, "refresh-1", "family-1", "device-1", user_id, 0)
         .await
         .expect("refresh should insert");
@@ -337,7 +357,7 @@ fn device_token_contracts_are_namespaced_and_bind_recovery_context() {
 }
 
 #[test]
-fn openapi_freezes_device_components_without_advertising_unregistered_paths() {
+fn openapi_publishes_only_registered_device_session_paths() {
     let document: serde_json::Value =
         serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
             .expect("OpenAPI document should parse");
@@ -350,10 +370,13 @@ fn openapi_freezes_device_components_without_advertising_unregistered_paths() {
         document["components"]["schemas"]["DeviceAuthorizationStatus"]["enum"],
         serde_json::json!(["pending", "approved", "denied", "expired", "consumed"])
     );
-    assert!(
-        document["paths"]
-            .get("/api/v1/device-authorizations")
-            .is_none()
+    assert_eq!(
+        document["paths"]["/api/v1/device-authorizations"]["post"]["security"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        document["paths"]["/api/v1/device-authorizations/exchange"]["post"]["security"],
+        serde_json::json!([])
     );
     assert!(
         document["paths"]
@@ -425,18 +448,41 @@ async fn insert_family(
     device_id: &str,
     user_id: i64,
 ) -> Result<sqlx::sqlite::SqliteQueryResult, sqlx::Error> {
+    let authorization_id = format!("authorization-{id}");
+    sqlx::query(
+        r#"
+        INSERT INTO device_authorizations (
+            id, device_code_hash, user_code_hash, code_challenge,
+            server_instance_id, installation_id, device_name, platform,
+            client_version, authorization_status, approved_user_id,
+            exchange_transaction_id, exchange_result_expires_at,
+            poll_interval_seconds, expires_at, approved_at, consumed_at
+        ) VALUES (
+            ?1, ?1 || '-device-hash', ?1 || '-user-hash', 'challenge',
+            'test-server', ?1 || '-installation', 'Test Device', 'test',
+            '0.1.0', 'consumed', ?2, ?3, datetime('now', '+1 day'),
+            5, datetime('now', '+10 minutes'), datetime('now'), datetime('now')
+        )
+        "#,
+    )
+    .bind(&authorization_id)
+    .bind(user_id)
+    .bind(Uuid::new_v4().to_string())
+    .execute(pool)
+    .await?;
     sqlx::query(
         r#"
         INSERT INTO device_credential_families (
-            id, device_id, user_id, server_instance_id,
+            id, authorization_id, device_id, user_id, server_instance_id,
             refresh_sliding_expires_at, refresh_absolute_expires_at
         ) VALUES (
-            ?1, ?2, ?3, 'test-server',
+            ?1, ?2, ?3, ?4, 'test-server',
             datetime('now', '+30 days'), datetime('now', '+90 days')
         )
         "#,
     )
     .bind(id)
+    .bind(authorization_id)
     .bind(device_id)
     .bind(user_id)
     .execute(pool)

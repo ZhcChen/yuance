@@ -25,6 +25,7 @@ pub struct Settings {
 #[derive(Clone, Debug)]
 pub struct DeviceSessionSettings {
     pub server_instance_id: String,
+    pub trusted_proxy_cidrs: String,
     pub authorization_ttl: String,
     pub access_ttl: String,
     pub refresh_sliding_ttl: String,
@@ -47,6 +48,7 @@ impl Default for DeviceSessionSettings {
     fn default() -> Self {
         Self {
             server_instance_id: "local-development".to_string(),
+            trusted_proxy_cidrs: "127.0.0.0/8".to_string(),
             authorization_ttl: "10m".to_string(),
             access_ttl: "15m".to_string(),
             refresh_sliding_ttl: "30d".to_string(),
@@ -95,6 +97,7 @@ impl Settings {
                 )
                 .trim()
                 .to_string(),
+                trusted_proxy_cidrs: env_string("YUANCE_DEVICE_TRUSTED_PROXY_CIDRS", "127.0.0.0/8"),
                 authorization_ttl: env_string("YUANCE_DEVICE_AUTHORIZATION_TTL", "10m"),
                 access_ttl: env_string("YUANCE_DEVICE_ACCESS_TTL", "15m"),
                 refresh_sliding_ttl: env_string("YUANCE_DEVICE_REFRESH_SLIDING_TTL", "30d"),
@@ -146,6 +149,7 @@ impl Settings {
 impl DeviceSessionSettings {
     pub fn validate(&self, environment: &str) -> AppResult<DeviceSessionDurations> {
         validate_server_instance_id(&self.server_instance_id, environment)?;
+        self.trusted_proxy_networks()?;
 
         let durations = DeviceSessionDurations {
             authorization_ttl_seconds: parse_duration_seconds(
@@ -231,6 +235,21 @@ impl DeviceSessionSettings {
         }
 
         Ok(durations)
+    }
+
+    pub fn trusted_proxy_networks(&self) -> AppResult<Vec<ipnet::IpNet>> {
+        self.trusted_proxy_cidrs
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                value.parse::<ipnet::IpNet>().map_err(|_| {
+                    AppError::Config(format!(
+                        "YUANCE_DEVICE_TRUSTED_PROXY_CIDRS 包含无效 CIDR：{value}"
+                    ))
+                })
+            })
+            .collect()
     }
 }
 
@@ -483,6 +502,42 @@ mod tests {
             };
             assert!(settings.validate("production").is_err());
         }
+    }
+
+    #[test]
+    fn trusted_proxy_cidrs_accept_explicit_networks_and_empty_configuration() {
+        let mut settings = DeviceSessionSettings {
+            trusted_proxy_cidrs: "127.0.0.0/8, 172.16.0.0/12".to_string(),
+            ..DeviceSessionSettings::default()
+        };
+        let networks = settings
+            .trusted_proxy_networks()
+            .expect("valid CIDRs should parse");
+        assert_eq!(networks.len(), 2);
+        let loopback: std::net::IpAddr = "127.0.0.1".parse().unwrap();
+        let docker_peer: std::net::IpAddr = "172.17.0.1".parse().unwrap();
+        assert!(networks[0].contains(&loopback));
+        assert!(networks[1].contains(&docker_peer));
+
+        settings.trusted_proxy_cidrs.clear();
+        assert!(settings.trusted_proxy_networks().unwrap().is_empty());
+        assert!(settings.validate("test").is_ok());
+    }
+
+    #[test]
+    fn trusted_proxy_cidrs_reject_invalid_networks() {
+        let settings = DeviceSessionSettings {
+            trusted_proxy_cidrs: "127.0.0.0/8,not-a-cidr".to_string(),
+            ..DeviceSessionSettings::default()
+        };
+        let error = settings
+            .validate("test")
+            .expect_err("invalid trusted proxy CIDR should fail startup validation");
+        assert!(
+            error
+                .to_string()
+                .contains("YUANCE_DEVICE_TRUSTED_PROXY_CIDRS")
+        );
     }
 
     #[test]

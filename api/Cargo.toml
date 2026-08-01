@@ -12,14 +12,16 @@ askama = "0.16.0"
 axum = "0.8.9"
 aes-gcm = "0.10.3"
 base64 = "0.22.1"
-chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.6.1", features = ["derive", "env"] }
 csv = "1.4.0"
 dotenvy = "0.15.7"
 hex = "0.4.3"
 hkdf = "0.12.4"
+hmac = "0.12.1"
 http = "1.4.2"
 include_dir = "0.7.4"
+ipnet = "2.11.0"
 jsonwebtoken = { version = "10.4.0", default-features = false, features = ["rust_crypto"] }
 opendal = { version = "0.57.0", features = ["services-memory", "services-oss"] }
 rand_core = { version = "0.6.4", features = ["getrandom"] }

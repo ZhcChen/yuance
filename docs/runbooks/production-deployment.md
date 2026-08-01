@@ -152,6 +152,7 @@ YUANCE_SSE_DRAIN_TIMEOUT=30s
 YUANCE_STOP_GRACE_PERIOD=45s
 YUANCE_MAX_RELEASE_WINDOW=10m
 YUANCE_SERVER_INSTANCE_ID=<稳定且唯一的生产实例标识>
+YUANCE_DEVICE_TRUSTED_PROXY_CIDRS=127.0.0.0/8,172.16.0.0/12
 YUANCE_DEVICE_AUTHORIZATION_TTL=10m
 YUANCE_DEVICE_ACCESS_TTL=15m
 YUANCE_DEVICE_REFRESH_SLIDING_TTL=30d
@@ -160,7 +161,7 @@ YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
 YUANCE_DEVICE_POLL_INTERVAL=5s
 ```
 
-Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。当前 D1 首个切片只建立持久化与契约基础，尚未开放设备授权 HTTP 路由。
+Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。设备授权发起、Browser 批准/拒绝和凭证交换路由已经开放，均受凭证边界、速率限制和 `private, no-store` 约束。
 
 legacy `doc/ppt` 实验预览为可选项，默认不写入或保持关闭：
 

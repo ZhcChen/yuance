@@ -9,7 +9,15 @@ use axum::{
 };
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
-use std::{fs, path::{Path as StdPath, PathBuf}};
+use std::{
+    collections::{HashMap, VecDeque},
+    fs,
+    net::{IpAddr, SocketAddr},
+    path::{Path as StdPath, PathBuf},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+use tokio::sync::Semaphore;
 
 use crate::{
     domains::auth,
@@ -29,11 +37,17 @@ static LEGACY_PPT_VENDOR_DIR: Dir<'_> =
 pub struct AppState {
     pub settings: Settings,
     pub pool: Option<sqlx::SqlitePool>,
+    device_auth_limiter: Arc<DeviceAuthLimiter>,
 }
 
 impl AppState {
     pub fn new(settings: Settings, pool: Option<sqlx::SqlitePool>) -> Self {
-        Self { settings, pool }
+        let device_auth_limiter = Arc::new(DeviceAuthLimiter::new(&settings));
+        Self {
+            settings,
+            pool,
+            device_auth_limiter,
+        }
     }
 
     pub fn for_tests() -> Self {
@@ -53,6 +67,7 @@ impl AppState {
                 experimental_legacy_preview_enabled: false,
             },
             pool: None,
+            device_auth_limiter: Arc::new(DeviceAuthLimiter::default()),
         }
     }
 
@@ -61,10 +76,86 @@ impl AppState {
             crate::platform::error::AppError::Config("SQLite pool is not configured".to_string())
         })
     }
+
+    pub(crate) fn try_device_auth_permit(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.device_auth_limiter
+            .concurrency
+            .clone()
+            .try_acquire_owned()
+            .ok()
+    }
+}
+
+#[derive(Debug)]
+struct DeviceAuthLimiter {
+    attempts: Mutex<HashMap<String, VecDeque<Instant>>>,
+    concurrency: Arc<Semaphore>,
+    trusted_proxy_networks: Vec<ipnet::IpNet>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DeviceAuthClientIp(pub Option<IpAddr>);
+
+impl Default for DeviceAuthLimiter {
+    fn default() -> Self {
+        Self {
+            attempts: Mutex::new(HashMap::new()),
+            concurrency: Arc::new(Semaphore::new(16)),
+            trusted_proxy_networks: vec!["127.0.0.0/8".parse().expect("loopback CIDR is valid")],
+        }
+    }
+}
+
+impl DeviceAuthLimiter {
+    fn new(settings: &Settings) -> Self {
+        Self {
+            trusted_proxy_networks: settings
+                .device_sessions
+                .trusted_proxy_networks()
+                .unwrap_or_default(),
+            ..Self::default()
+        }
+    }
+
+    fn allow_pair(
+        &self,
+        peer_key: String,
+        peer_limit: usize,
+        global_key: String,
+        global_limit: usize,
+    ) -> bool {
+        let now = Instant::now();
+        let cutoff = now - Duration::from_secs(60);
+        let Ok(mut attempts) = self.attempts.lock() else {
+            return false;
+        };
+        for key in [&peer_key, &global_key] {
+            let bucket = attempts.entry(key.clone()).or_default();
+            while bucket.front().is_some_and(|attempt| *attempt <= cutoff) {
+                bucket.pop_front();
+            }
+        }
+        if attempts
+            .get(&peer_key)
+            .is_some_and(|bucket| bucket.len() >= peer_limit)
+            || attempts
+                .get(&global_key)
+                .is_some_and(|bucket| bucket.len() >= global_limit)
+        {
+            return false;
+        }
+        attempts.entry(peer_key).or_default().push_back(now);
+        attempts.entry(global_key).or_default().push_back(now);
+        if attempts.len() > 4096 {
+            attempts.retain(|_, bucket| bucket.back().is_some_and(|attempt| *attempt > cutoff));
+        }
+        true
+    }
 }
 
 pub fn build_router(state: AppState) -> Router {
     let middleware_state = state.clone();
+    let device_boundary_state = state.clone();
     Router::new()
         .route("/", get(root))
         .route("/web", get(web::user::dashboard))
@@ -77,6 +168,18 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::desktop_download_asset),
         )
         .route("/web/me", get(web::user::me_page))
+        .route(
+            "/web/device-authorization",
+            get(web::device_auth::authorization_page),
+        )
+        .route(
+            "/web/device-authorization/approve",
+            post(web::device_auth::approve_authorization),
+        )
+        .route(
+            "/web/device-authorization/deny",
+            post(web::device_auth::deny_authorization),
+        )
         .route("/web/me/profile", post(web::user::me_profile_update))
         .route("/web/me/password", post(web::user::me_password_update))
         .route("/web/me/api-tokens", post(web::user::me_api_token_create))
@@ -415,6 +518,14 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/readyz", get(web::api::readyz))
         .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
         .route("/api/v1/auth/login", post(web::api::login))
+        .route(
+            "/api/v1/device-authorizations",
+            post(web::device_auth::start_authorization),
+        )
+        .route(
+            "/api/v1/device-authorizations/exchange",
+            post(web::device_auth::exchange_authorization),
+        )
         .route("/api/v1/auth/me", get(web::api::me))
         .route("/api/v1/auth/csrf", get(web::auth_api::csrf_token))
         .route("/api/v1/auth/logout", post(web::api::logout))
@@ -754,7 +865,88 @@ pub fn build_router(state: AppState) -> Router {
             middleware_state,
             session_refresh_middleware,
         ))
+        .layer(axum::middleware::from_fn_with_state(
+            device_boundary_state,
+            device_auth_boundary_middleware,
+        ))
         .with_state(state)
+}
+
+async fn device_auth_boundary_middleware(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    let (global_limit, peer_limit, reject_credentials, browser_response) = match path {
+        "/api/v1/device-authorizations" => (120, 20, true, false),
+        "/api/v1/device-authorizations/exchange" => (600, 120, true, false),
+        "/web/device-authorization"
+        | "/web/device-authorization/approve"
+        | "/web/device-authorization/deny" => (600, 30, false, true),
+        _ => return next.run(request).await,
+    };
+    if reject_credentials
+        && (request.headers().contains_key(header::COOKIE)
+            || request.headers().contains_key(header::AUTHORIZATION))
+    {
+        return web::device_auth::credential_not_allowed_response();
+    }
+    let client_ip = trusted_client_ip(&request, &state.device_auth_limiter.trusted_proxy_networks);
+    let peer = client_ip.map_or_else(|| "unknown".to_string(), |ip| ip.to_string());
+    if !state.device_auth_limiter.allow_pair(
+        format!("peer:{peer}:{path}"),
+        peer_limit,
+        format!("global:{path}"),
+        global_limit,
+    ) {
+        return if browser_response {
+            web::device_auth::browser_rate_limited_response()
+        } else {
+            web::device_auth::rate_limited_response(60)
+        };
+    }
+    request
+        .extensions_mut()
+        .insert(DeviceAuthClientIp(client_ip));
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("private, no-store"),
+    );
+    response
+}
+
+fn trusted_client_ip(request: &Request, trusted_proxies: &[ipnet::IpNet]) -> Option<IpAddr> {
+    let direct_peer = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<SocketAddr>>()?
+        .0
+        .ip();
+    if !trusted_proxies
+        .iter()
+        .any(|network| network.contains(&direct_peer))
+    {
+        return Some(direct_peer);
+    }
+    request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| {
+            let forwarded = value
+                .split(',')
+                .map(str::trim)
+                .map(str::parse::<IpAddr>)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?;
+            forwarded.into_iter().rev().find(|address| {
+                !trusted_proxies
+                    .iter()
+                    .any(|network| network.contains(address))
+            })
+        })
+        .or(Some(direct_peer))
 }
 
 async fn session_refresh_middleware(
@@ -917,6 +1109,8 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
             | "/api/readyz"
             | "/api/v1/bootstrap/status"
             | "/api/v1/auth/login"
+            | "/api/v1/device-authorizations"
+            | "/api/v1/device-authorizations/exchange"
             | "/api/v1/bootstrap/init"
     )
 }
