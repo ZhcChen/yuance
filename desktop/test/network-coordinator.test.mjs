@@ -13,10 +13,11 @@ test("runs one stream, publishes online, probes EOF and reconnects with bounded 
 });
 
 test("security failure stops reconnecting and requires reauthorization", async () => {
-  const streams = []; const coordinator = createNetworkCoordinator({ credentialRuntime: runtime(), sseClient: client(streams), probe: async () => {}, minRetryMs: 1, maxRetryMs: 2 });
+  const streams = []; const invalidations = []; const coordinator = createNetworkCoordinator({ credentialRuntime: runtime(), sseClient: client(streams), probe: async () => {}, onReauthorizationRequired: async (code) => invalidations.push(code), minRetryMs: 1, maxRetryMs: 2 });
   coordinator.start(); await until(() => streams.length === 1); streams[0].fail(Object.assign(new Error("revoked"), { code: "device_revoked" }));
   await until(() => coordinator.snapshot().status === "reauthorization_required");
   await new Promise((resolve) => setTimeout(resolve, 5)); assert.equal(streams.length, 1);
+  assert.deepEqual(invalidations, ["device_revoked"]);
 });
 
 test("an unauthorized handshake is probed before it is classified as revocation", async () => {

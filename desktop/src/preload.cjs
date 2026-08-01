@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 const HOST_STATE_CHANNEL = "yuance:host-state";
 const NOTIFICATION_CLICK_CHANNEL = "yuance:notification-click";
+const NETWORK_STATE_CHANNEL = "yuance:network-state";
 const PUBLIC_HOST_STATES = new Set([
   "starting",
   "unauthenticated",
@@ -13,6 +14,11 @@ const PUBLIC_HOST_STATES = new Set([
 ]);
 let hostStateSnapshot = Object.freeze({ status: "starting" });
 const hostStateSubscribers = new Set();
+const PUBLIC_NETWORK_STATES = new Set([
+  "idle", "connecting", "online", "offline", "suspended", "reauthorization_required", "fatal",
+]);
+let networkStateSnapshot = Object.freeze({ status: "idle" });
+const networkStateSubscribers = new Set();
 
 function normalizeHostState(value) {
   const status = value && typeof value === "object" ? value.status : undefined;
@@ -30,8 +36,21 @@ ipcRenderer.on(HOST_STATE_CHANNEL, (_event, value) => {
   }
 });
 
+ipcRenderer.on(NETWORK_STATE_CHANNEL, (_event, value) => {
+  const status = value && typeof value === "object" ? value.status : undefined;
+  networkStateSnapshot = Object.freeze({ status: PUBLIC_NETWORK_STATES.has(status) ? status : "fatal" });
+  for (const callback of [...networkStateSubscribers]) {
+    try { callback(networkStateSnapshot); } catch (_error) {}
+  }
+});
+
 const bridge = Object.freeze({
-  schemaVersion: 1,
+  schemaVersion: 2,
+  auth: Object.freeze({
+    authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
+    retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
+    logout() { return ipcRenderer.invoke("yuance:auth-logout"); },
+  }),
   hostState: Object.freeze({
     getSnapshot() {
       return hostStateSnapshot;
@@ -46,6 +65,16 @@ const bridge = Object.freeze({
         throw error;
       }
       return () => hostStateSubscribers.delete(callback);
+    },
+  }),
+  network: Object.freeze({
+    getSnapshot() { return networkStateSnapshot; },
+    subscribe(callback) {
+      if (typeof callback !== "function") return () => {};
+      networkStateSubscribers.add(callback);
+      try { callback(networkStateSnapshot); }
+      catch (error) { networkStateSubscribers.delete(callback); throw error; }
+      return () => networkStateSubscribers.delete(callback);
     },
   }),
   notifications: Object.freeze({

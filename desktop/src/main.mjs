@@ -32,6 +32,8 @@ import { loadOrCreateInstallationId } from "./auth/installation-id.mjs";
 import { createCredentialRuntime } from "./auth/credential-runtime.mjs";
 import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
 import { createHostStatePublisher } from "./ipc/host-state.mjs";
+import { registerAuthCommandHandlers } from "./ipc/auth-commands.mjs";
+import { createNetworkStatePublisher } from "./ipc/network-state.mjs";
 import {
   createIpcSenderPolicy,
   createRendererReadinessTracker,
@@ -81,6 +83,8 @@ let credentialRuntime = null;
 let networkCoordinator = null;
 let credentialRuntimeGeneration = 0;
 const hostStatePublisher = createHostStatePublisher();
+const networkStatePublisher = createNetworkStatePublisher();
+let disposeAuthCommands = () => {};
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
 const assertTrustedIpcSender = createIpcSenderPolicy({
   getMainWindow: () => mainWindow,
@@ -194,6 +198,7 @@ function createMainWindow() {
   window.webContents.on("did-finish-load", () => {
     if (rendererReadiness.didCommit(window.webContents.getURL())) {
       hostStatePublisher.publishTo(window);
+      networkStatePublisher.publishTo(window);
       if (appProtocolSmoke) {
         runAppProtocolSmoke(window).catch((error) => {
           process.stderr.write(`app protocol smoke failed: ${error.message}\n`, () => app.exit(1));
@@ -471,6 +476,11 @@ async function initializeDesktopCredentialRuntime() {
     credentialRuntime: runtime,
     sseClient: createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch }),
     probe: () => restTransport.execute("session.probe", {}),
+    onState: (state) => {
+      networkStatePublisher.update(state);
+      networkStatePublisher.publishTo(mainWindow);
+    },
+    onReauthorizationRequired: () => runtime.discardLocalSession(),
   });
   credentialRuntime = runtime;
   networkCoordinator = coordinator;
@@ -570,6 +580,13 @@ if (singleInstanceProbe) {
   }
 } else {
   ipcMain.handle("yuance:notify", notifyFromRenderer);
+  disposeAuthCommands = registerAuthCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    getRuntime: () => credentialRuntime,
+    getNetworkCoordinator: () => networkCoordinator,
+    openExternal: (verificationUrl) => shell.openExternal(verificationUrl),
+  });
   const hasSingleInstanceLock = app.requestSingleInstanceLock();
   if (!hasSingleInstanceLock) {
     app.quit();
@@ -649,6 +666,7 @@ app.on("before-quit", () => {
   credentialRuntimeGeneration += 1;
   networkCoordinator?.stop();
   networkCoordinator = null;
+  disposeAuthCommands();
   credentialRuntime?.dispose();
   credentialRuntime = null;
 });

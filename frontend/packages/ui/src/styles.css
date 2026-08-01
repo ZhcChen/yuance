@@ -54,6 +54,11 @@
 .host-status-fatal { background: #b53d3d; }
 .host-status-label { margin: 0 0 8px; font-weight: 600; }
 .host-status-panel h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0; }
+.host-status-context { margin: 12px 0 0; color: #42524d; font-size: 14px; }
+.host-status-actions { display: flex; gap: 10px; margin-top: 24px; }
+.host-status-actions button { min-height: 38px; border: 1px solid #176a56; border-radius: 6px; padding: 0 16px; background: #176a56; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.host-status-actions button:disabled { cursor: wait; opacity: .6; }
+.host-status-actions .host-status-secondary { border-color: #aebbb7; background: transparent; color: #34443f; }
 
 .yuance-ui-muted,
 .yuance-ui-meta,

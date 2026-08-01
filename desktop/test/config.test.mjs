@@ -215,6 +215,7 @@ test("binds the SSE network epoch to credentials, window, power, and quit lifecy
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /createSseClient\(\{ profile: enrolled\.profile, fetchImpl: network\.fetch \}\)/u);
   assert.match(mainSource, /probe: \(\) => restTransport\.execute\("session\.probe", \{\}\)/u);
+  assert.match(mainSource, /onReauthorizationRequired: \(\) => runtime\.discardLocalSession\(\)/u);
   assert.match(mainSource, /onNetworkInvalidated: \(\) => coordinator\?\.invalidate\(\)/u);
   assert.match(mainSource, /window\.on\("closed", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
   assert.match(mainSource, /powerMonitor\.on\("suspend", \(\) => networkCoordinator\?\.suspend\(\)\)/u);

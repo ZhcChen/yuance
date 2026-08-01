@@ -41,16 +41,39 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 1);
+  assert.equal(bridge.schemaVersion, 2);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.notifications), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["hostState", "notifications", "schemaVersion"]);
+  assert.equal(Object.isFrozen(bridge.auth), true);
+  assert.equal(Object.isFrozen(bridge.network), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "hostState", "network", "notifications", "schemaVersion"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   await bridge.notifications.show({ title: "更新" });
   assert.deepEqual(invocations, [["yuance:notify", { title: "更新" }]]);
+});
+
+test("auth bridge exposes only parameter-free semantic commands", async () => {
+  const { bridge, invocations } = await executePreload();
+  assert.deepEqual(Object.keys(bridge.auth).sort(), ["authorize", "logout", "retry"]);
+  await bridge.auth.authorize(); await bridge.auth.retry(); await bridge.auth.logout();
+  assert.deepEqual(invocations, [
+    ["yuance:auth-authorize", undefined],
+    ["yuance:auth-retry", undefined],
+    ["yuance:auth-logout", undefined],
+  ]);
+});
+
+test("network bridge publishes only normalized status snapshots", async () => {
+  const { bridge, listeners } = await executePreload(); const values = [];
+  const unsubscribe = bridge.network.subscribe((value) => values.push(value));
+  listeners.get("yuance:network-state")({}, { status: "online", token: "secret", endpoint: "https://secret" });
+  listeners.get("yuance:network-state")({}, { status: "unknown" });
+  assert.deepEqual(values.map((value) => value.status), ["idle", "online", "fatal"]);
+  assert.deepEqual(Object.keys(bridge.network.getSnapshot()), ["status"]);
+  assert.equal(bridge.network.getSnapshot().status, "fatal"); unsubscribe();
 });
 
 test("host state subscriptions receive sanitized snapshots and unsubscribe cleanly", async () => {

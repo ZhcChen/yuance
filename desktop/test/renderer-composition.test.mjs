@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createDesktopAuthState, normalizePublicAuthState } from "../src/renderer/platform/auth-state.js";
+import { createDesktopNetworkState, normalizePublicNetworkState } from "../src/renderer/platform/network-state.js";
 import { createDesktopRouter, normalizeDesktopRoute } from "../src/renderer/platform/router.js";
 import { createUnavailableFileAdapter, createUnavailableNetworkAdapter } from "../src/renderer/platform/unavailable.js";
 
@@ -19,6 +20,7 @@ test("normalizes every public auth state and fails closed for unknown values", (
 
 test("auth adapter normalizes snapshots and subscriptions", () => {
   /** @type {((state: unknown) => void) | undefined} */
+  /** @type {((state: unknown) => void) | undefined} */
   let listener;
   const values = [];
   const auth = createDesktopAuthState({
@@ -32,6 +34,25 @@ test("auth adapter normalizes snapshots and subscriptions", () => {
   assert.deepEqual(values, [{ status: "locked" }]);
   unsubscribe();
   assert.equal(listener, undefined);
+});
+
+test("auth commands and network state adapters remain semantic and fail closed", async () => {
+  const calls = [];
+  const auth = createDesktopAuthState({}, {
+    authorize: async () => calls.push("authorize"), retry: async () => calls.push("retry"), logout: async () => calls.push("logout"),
+  });
+  await auth.authorize(); await auth.retry(); await auth.logout();
+  assert.deepEqual(calls, ["authorize", "retry", "logout"]);
+  await assert.rejects(createDesktopAuthState().authorize(), /unavailable/);
+  assert.deepEqual(normalizePublicNetworkState({ status: "online", token: "secret" }), { status: "online" });
+  assert.deepEqual(createDesktopNetworkState().getSnapshot(), { status: "fatal" });
+  /** @type {((state: unknown) => void) | undefined} */
+  let listener;
+  const network = createDesktopNetworkState({ getSnapshot: () => ({ status: "offline" }), subscribe(callback) { listener = callback; return () => { listener = undefined; }; } });
+  assert.deepEqual(network.getSnapshot(), { status: "offline" });
+  const values = []; const unsubscribe = network.subscribe((value) => values.push(value));
+  assert.ok(listener);
+  listener({ status: "online", endpoint: "secret" }); assert.deepEqual(values, [{ status: "online" }]); unsubscribe();
 });
 
 test("desktop router accepts semantic paths and rejects absolute or encoded paths", () => {
@@ -68,10 +89,12 @@ test("network and file adapters fail closed", () => {
 
 test("renderer composition uses shared components and contracts without Browser transports", async () => {
   const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/renderer");
-  const files = ["main.jsx", "app.jsx", "platform/auth-state.js", "platform/router.js", "platform/unavailable.js"];
+  const files = ["main.jsx", "app.jsx", "platform/auth-state.js", "platform/network-state.js", "platform/router.js", "platform/unavailable.js"];
   const source = (await Promise.all(files.map((file) => fs.readFile(path.join(sourceRoot, file), "utf8")))).join("\n");
   assert.match(source, /normalizeHostAuthState/);
   assert.match(source, /defineRouterCapabilities/);
   assert.match(source, /HostStatusShell/);
+  assert.match(source, /services\.auth\.authorize/);
+  assert.match(source, /services\.network\.subscribe/);
   assert.doesNotMatch(source, /document\.cookie|EventSource|fetch\s*\(|localStorage|sessionStorage/);
 });

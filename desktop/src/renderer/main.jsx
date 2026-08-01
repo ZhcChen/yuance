@@ -4,18 +4,19 @@ import ReactDOM from "react-dom/client";
 
 import DesktopApp from "./app.jsx";
 import { createDesktopAuthState } from "./platform/auth-state.js";
+import { createDesktopNetworkState } from "./platform/network-state.js";
 import { createDesktopRouter } from "./platform/router.js";
-import { createUnavailableFileAdapter, createUnavailableNetworkAdapter } from "./platform/unavailable.js";
+import { createUnavailableFileAdapter } from "./platform/unavailable.js";
 import "./app.css";
 
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing Desktop renderer root.");
 
-const bridge = globalThis.yuanceDesktop?.hostState;
+const bridge = globalThis.yuanceDesktop;
 const services = Object.freeze({
-  auth: createDesktopAuthState(bridge),
+  auth: createDesktopAuthState(bridge?.hostState, bridge?.auth),
   router: createDesktopRouter(),
-  network: createUnavailableNetworkAdapter(),
+  network: createDesktopNetworkState(bridge?.network),
   files: createUnavailableFileAdapter(),
 });
 

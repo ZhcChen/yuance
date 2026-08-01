@@ -10,6 +10,7 @@ export function createNetworkCoordinator({
   sseClient,
   probe,
   onState = () => {},
+  onReauthorizationRequired = async () => {},
   now = Date.now,
   random = Math.random,
   sleep = delay,
@@ -20,6 +21,7 @@ export function createNetworkCoordinator({
   if (!credentialRuntime || typeof credentialRuntime.withAccessLease !== "function" || typeof credentialRuntime.refreshAccess !== "function") throw new TypeError("credentialRuntime is required");
   if (!sseClient || typeof sseClient.subscribe !== "function") throw new TypeError("sseClient is required");
   if (typeof probe !== "function" || typeof onState !== "function") throw new TypeError("network observers are required");
+  if (typeof onReauthorizationRequired !== "function") throw new TypeError("reauthorization observer is required");
   if (typeof sleep !== "function") throw new TypeError("sleep is required");
   for (const value of [minRetryMs, maxRetryMs, expirySkewMs]) if (!Number.isSafeInteger(value) || value < 0) throw new TypeError("retry settings are invalid");
   if (minRetryMs < 1 || maxRetryMs < minRetryMs) throw new TypeError("retry range is invalid");
@@ -87,6 +89,7 @@ export function createNetworkCoordinator({
           catch (probeError) { error = probeError; }
         }
         if (SECURITY_CODES.has(error?.code) || error?.securityFailure === true) {
+          try { await onReauthorizationRequired(error?.code); } catch {}
           publish("reauthorization_required"); return;
         }
       }
