@@ -1,8 +1,9 @@
 ---
 title: feat: D1 app protocol 安全宿主
 type: feat
-status: ready
+status: completed
 date: 2026-08-01
+updated: 2026-08-02
 origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 depends_on: docs/plans/2026-08-01-001-feat-d1-device-session-credential-plan.md
 ---
@@ -226,7 +227,7 @@ W4 已形成 `frontend/packages/api-client`、`app-core`、`ui` 和 `platform-co
 
 1. 真实 Electron unpacked executable 启动 `app://yuance/`，断言主 frame URL、完整 CSP、外部请求计数为零、SPA route、reload 和 ASAR 资源加载。
 2. 注入 traversal、非 manifest 资源、恶意导航、redirect、subframe IPC、`window.open`、permission 和伪造 payload，全部得到受控拒绝。
-3. 真实 coordinator 的 unauthenticated、authenticated、locked、revoked 与重启恢复状态在 renderer 正确切换，renderer/capture 输出无 credential。
+3. 真实 coordinator 的 unauthenticated、authenticated、locked、revoked 与重启恢复继续由 coordinator/Electron integration 覆盖；由于本切片明确不实现 endpoint enrollment，正式 renderer 只端到端证明无可信 profile 时保持 unauthenticated。D1-B 建立受信 enrollment 后再补 authenticated/locked/revoked 的 renderer 联动，不以测试后门伪造状态；renderer/capture 输出不得含 credential。
 4. 开发态仍可显式启动独立 dev renderer；正式态在 channel/env 注入下仍忽略 dev 配置，且两者 `userData`、`sessionData`、partition 与信任规则互不污染。
 
 **完成标准：** 聚焦测试、根前端检查、Desktop 全量测试、credential 扫描、三平台 CI 和实际 bundle smoke 全部通过；review 记录平台证据和可接受残留项。
