@@ -2,9 +2,10 @@
 
 import {
   ApiError,
-  apiErrorFromPayload,
   createApiClient,
 } from '@yuance/frontend-api-client';
+import { createBrowserApiTransport } from '../platform/browser/api-transport.js';
+import { createBrowserEvents } from '../platform/browser/events.js';
 
 export { ApiError };
 
@@ -28,151 +29,13 @@ export { ApiError };
 /** @typedef {{ originalFilename: string, contentType: string, byteSize: number }} AttachmentCreatePayload */
 /** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
 
-const NO_STORE_HEADERS = {
-  accept: 'application/json',
-};
+const browserApiTransport = createBrowserApiTransport();
+const browserEvents = createBrowserEvents();
 
-const RETURN_TO_HASH_KEY = 'yuance-web-return-to-hash';
-
-let csrfToken = '';
-let csrfRefreshPromise = null;
-
-/**
- * @param {Headers} headers
- * @param {unknown} payload
- */
-function syncCsrfTokenFromResponse(headers, payload) {
-  const headerToken = headers.get('x-yuance-csrf-token');
-  if (typeof headerToken === 'string' && headerToken.trim()) {
-    csrfToken = headerToken.trim();
-    return csrfToken;
-  }
-  const payloadToken = payload && typeof payload === 'object'
-    ? /** @type {{ data?: { csrf_token?: string } }} */ (payload).data?.csrf_token
-    : '';
-  if (typeof payloadToken === 'string' && payloadToken.trim()) {
-    csrfToken = payloadToken.trim();
-    return csrfToken;
-  }
-  return '';
-}
-
-export function redirectToLogin() {
-  if (window.location.pathname === '/web/login') {
-    return;
-  }
-  const returnTo = `${window.location.pathname}${window.location.search}`;
-  if (window.location.hash) {
-    window.sessionStorage.setItem(
-      RETURN_TO_HASH_KEY,
-      JSON.stringify({ returnTo, hash: window.location.hash }),
-    );
-  }
-  const query = new URLSearchParams({ return_to: returnTo });
-  window.location.assign(`/web/login?${query.toString()}`);
-}
-
-export function restorePendingReturnToHash() {
-  if (window.location.hash) {
-    return;
-  }
-  const rawValue = window.sessionStorage.getItem(RETURN_TO_HASH_KEY);
-  if (!rawValue) {
-    return;
-  }
-
-  try {
-    const payload = JSON.parse(rawValue);
-    const currentPath = `${window.location.pathname}${window.location.search}`;
-    if (
-      payload
-      && typeof payload.returnTo === 'string'
-      && typeof payload.hash === 'string'
-      && payload.hash.startsWith('#')
-      && payload.returnTo === currentPath
-    ) {
-      window.sessionStorage.removeItem(RETURN_TO_HASH_KEY);
-      window.history.replaceState(null, '', `${currentPath}${payload.hash}`);
-      return;
-    }
-  } catch (_error) {
-    // Ignore corrupted browser-only state and fall through to cleanup.
-  }
-
-  window.sessionStorage.removeItem(RETURN_TO_HASH_KEY);
-}
-
-export async function refreshCsrfToken() {
-  if (csrfRefreshPromise) {
-    return csrfRefreshPromise;
-  }
-
-  csrfRefreshPromise = (async () => {
-    const response = await fetch('/api/v1/auth/csrf', {
-      credentials: 'same-origin',
-      headers: NO_STORE_HEADERS,
-    });
-    const payload = await response.json().catch(() => ({}));
-    syncCsrfTokenFromResponse(response.headers, payload);
-    if (response.status === 401) {
-      redirectToLogin();
-      throw new ApiError({ code: 'unauthorized', message: '登录已失效。', status: 401 });
-    }
-    if (!response.ok) {
-      throw apiErrorFromPayload(payload);
-    }
-    return csrfToken;
-  })();
-
-  try {
-    return await csrfRefreshPromise;
-  } finally {
-    csrfRefreshPromise = null;
-  }
-}
-
-/**
- * @param {string} url
- * @param {RequestInit & { skipCsrfRetry?: boolean }} [options]
- */
-export async function fetchJson(url, options = {}) {
-  const method = (options.method || 'GET').toUpperCase();
-  const headers = new Headers(options.headers || {});
-  headers.set('accept', headers.get('accept') || 'application/json');
-  if (method !== 'GET' && method !== 'HEAD' && csrfToken) {
-    headers.set('x-yuance-csrf-token', csrfToken);
-  }
-
-  const response = await fetch(url, {
-    ...options,
-    credentials: options.credentials || 'same-origin',
-    headers,
-  });
-  const payload = await response.json().catch(() => ({}));
-  syncCsrfTokenFromResponse(response.headers, payload);
-
-  if (response.status === 401) {
-    redirectToLogin();
-    throw new ApiError({ code: 'unauthorized', message: '登录已失效。', status: 401 });
-  }
-
-  if (!response.ok) {
-    const error = apiErrorFromPayload(payload);
-    error.status = response.status;
-    if (
-      method !== 'GET'
-      && method !== 'HEAD'
-      && options.skipCsrfRetry !== true
-      && (error.message.includes('CSRF token') || error.code === 'forbidden')
-    ) {
-      await refreshCsrfToken();
-      return fetchJson(url, { ...options, skipCsrfRetry: true });
-    }
-    throw error;
-  }
-
-  return payload.data;
-}
+export const redirectToLogin = browserApiTransport.redirectToLogin;
+export const restorePendingReturnToHash = browserApiTransport.restorePendingReturnToHash;
+export const refreshCsrfToken = browserApiTransport.refreshCsrfToken;
+export const fetchJson = browserApiTransport.request;
 
 const apiClient = createApiClient({
   request: fetchJson,
@@ -241,17 +104,5 @@ export const logout = /** @type {() => Promise<{ revoked: boolean }>} */ (apiCli
  * @param {{ onRefresh: () => void, onReleaseVersion?: (version: string) => void }} callbacks
  */
 export function openTopbarEvents(callbacks) {
-  const source = new EventSource('/api/v1/topbar/events', { withCredentials: true });
-  source.addEventListener('release-version', (event) => {
-    if (typeof callbacks.onReleaseVersion === 'function') {
-      callbacks.onReleaseVersion(event.data);
-    }
-  });
-  source.addEventListener('topbar', () => {
-    callbacks.onRefresh();
-  });
-  source.onerror = () => {
-    // Browser EventSource will handle retries. The UI will refresh on the next signal.
-  };
-  return () => source.close();
+  return browserEvents.openTopbarEvents(callbacks);
 }
