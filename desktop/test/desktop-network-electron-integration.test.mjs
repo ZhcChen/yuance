@@ -35,6 +35,8 @@ test("packaged smoke source restricts endpoint override to exact loopback HTTP",
   assert.match(source, /origin\.pathname !== "\/"/u);
   assert.doesNotMatch(source, /desktopNetworkSmokeOrigin\s*=\s*process\.env/u);
   assert.match(source, /desktopNetworkSmokePhase \? `\$\{appIdentity\.displayName\} Network Smoke`/u);
+  const runner = await fs.readFile(new URL("../scripts/smoke-desktop-network.mjs", import.meta.url), "utf8");
+  assert.match(runner, /platform === "linux" \? \["--no-sandbox", "--password-store=gnome-libsecret"\]/u);
 });
 
 test("packaged smoke preserves only scanned logs and records cleanup", async () => {

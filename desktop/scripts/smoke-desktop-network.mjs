@@ -47,7 +47,12 @@ export async function smokeDesktopNetwork(inputPath, { platform = process.platfo
 
 function runPhase(executable, phase, origin, profile, platform, onReport = async () => {}) {
   return new Promise((resolve, reject) => {
-    const args = [`--desktop-network-smoke-phase=${phase}`, `--desktop-network-smoke-origin=${origin}`, `--desktop-network-smoke-profile=${profile}`, ...(platform === "linux" ? ["--no-sandbox"] : [])];
+    const args = [
+      `--desktop-network-smoke-phase=${phase}`,
+      `--desktop-network-smoke-origin=${origin}`,
+      `--desktop-network-smoke-profile=${profile}`,
+      ...(platform === "linux" ? ["--no-sandbox", "--password-store=gnome-libsecret"] : []),
+    ];
     const child = spawn(executable, args, { cwd: path.dirname(executable), env: process.env, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = ""; let stderr = ""; let report; let settled = false; let sideEffect = Promise.resolve(); const reportKinds = [];
     const finish = (callback) => {

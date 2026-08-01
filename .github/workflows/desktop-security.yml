@@ -137,7 +137,7 @@ jobs:
         run: |
           dbus-run-session -- bash -euo pipefail -c '
             eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop run smoke:safe-storage
+            xvfb-run -a npm --prefix desktop run smoke:safe-storage -- --password-store=gnome-libsecret
             xvfb-run -a npm --prefix desktop run smoke:single-instance
           '
 
