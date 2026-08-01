@@ -1,3 +1,60 @@
+.host-status-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: 64px 1fr;
+}
+
+.host-status-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 24px;
+  border-bottom: 1px solid #d9e0de;
+  background: #ffffff;
+}
+
+.host-status-brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 6px;
+  color: #ffffff;
+  background: #16745b;
+  font-weight: 700;
+}
+
+.host-status-brand-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.host-status-brand-copy strong { font-size: 17px; }
+.host-status-brand-copy span,
+.host-status-label { color: #66736f; font-size: 12px; }
+
+.host-status-panel {
+  width: min(560px, calc(100% - 48px));
+  margin: auto;
+  padding: 32px 0;
+}
+
+.host-status-indicator {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin-bottom: 20px;
+  background: #8a9692;
+}
+
+.host-status-authenticated { background: #16745b; }
+.host-status-locked,
+.host-status-reauthorization_required,
+.host-status-fatal { background: #b53d3d; }
+.host-status-label { margin: 0 0 8px; font-weight: 600; }
+.host-status-panel h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0; }
+
 .yuance-ui-muted,
 .yuance-ui-meta,
 .yuance-ui-empty {

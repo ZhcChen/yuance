@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { isAllowedAppRoute, isCanonicalAppPathname } from "../routes/app-route.mjs";
 import { validateResourceManifest } from "./resource-manifest.mjs";
 
 export const APP_SCHEME = "app";
@@ -20,12 +21,6 @@ export const APP_CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join("; ");
 
-const SPA_ROUTE_PREFIXES = Object.freeze([
-  "/auth",
-  "/messages",
-  "/projects",
-  "/work-items",
-]);
 const RESERVED_ROUTE_PREFIXES = Object.freeze(["/api", "/.well-known"]);
 const MIME_TYPES = Object.freeze({
   ".css": "text/css; charset=utf-8",
@@ -68,25 +63,10 @@ function matchesPrefix(pathname, prefix) {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
-function isCanonicalPathname(pathname) {
-  if (
-    !pathname.startsWith("/") ||
-    pathname.includes("%") ||
-    pathname.includes("\\") ||
-    pathname.includes("\0") ||
-    pathname.includes("\u2044") ||
-    pathname.includes("\u2215") ||
-    pathname.includes("\uff0f") ||
-    (pathname !== "/" && pathname.slice(1).split("/").some((segment) => !segment || segment === "." || segment === ".."))
-  ) return false;
-  return true;
-}
-
 function isSpaRoute(pathname) {
-  if (pathname === "/") return true;
   if (RESERVED_ROUTE_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix))) return false;
   if (path.posix.extname(pathname)) return false;
-  return SPA_ROUTE_PREFIXES.some((prefix) => matchesPrefix(pathname, prefix));
+  return isAllowedAppRoute(pathname);
 }
 
 function responseHeaders(resourcePath, resource) {
@@ -132,7 +112,7 @@ export function resolveAppProtocolRequest(request, manifestInput) {
   ) {
     return errorResult(403, "invalid_authority");
   }
-  if (!isCanonicalPathname(url.pathname)) return errorResult(400, "invalid_pathname");
+  if (!isCanonicalAppPathname(url.pathname)) return errorResult(400, "invalid_pathname");
 
   const resourcePath = manifest.files[url.pathname]
     ? url.pathname

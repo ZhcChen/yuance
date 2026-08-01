@@ -73,6 +73,8 @@ test("rejects non-canonical SPA path variants", () => {
     "app://yuance/projects/%61dmin",
     "app://yuance/projects/%3f/value",
     "app://yuance/projects/%EF%BC%8Fadmin",
+    "app://yuance/projects/%E9%A1%B9%E7%9B%AE",
+    "app://yuance/projects/%0Aadmin",
   ]) {
     assert.equal(resolveAppProtocolRequest({ method: "GET", url }, manifest).status, 400, url);
   }

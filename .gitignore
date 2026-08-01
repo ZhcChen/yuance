@@ -3,6 +3,7 @@
 /dist/
 /web/dist/
 /desktop/dist/
+/desktop/renderer-dist/
 /desktop/release/
 /.context/
 node_modules/
