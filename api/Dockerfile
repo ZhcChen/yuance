@@ -7,6 +7,11 @@ ARG YUANCE_BUILD_RELEASE_VERSION=dev
 
 FROM ${NODE_IMAGE} AS web-builder
 
+COPY frontend/packages/api-client /src/frontend/packages/api-client
+COPY frontend/packages/app-core /src/frontend/packages/app-core
+COPY frontend/packages/platform-contract /src/frontend/packages/platform-contract
+COPY frontend/packages/ui /src/frontend/packages/ui
+
 WORKDIR /src/web
 
 COPY web/package.json web/package-lock.json ./

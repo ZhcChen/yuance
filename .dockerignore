@@ -12,4 +12,7 @@ backups
 *.log
 web/node_modules
 web/dist
+frontend/node_modules
+frontend/packages/*/node_modules
+frontend/packages/*/dist
 desktop/node_modules
