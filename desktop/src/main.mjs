@@ -43,7 +43,6 @@ import {
   parseNotificationPayload,
 } from "./ipc/sender-policy.mjs";
 import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
-import { APP_ORIGIN } from "./protocol/app-protocol.mjs";
 import {
   browserWindowWebPreferences,
   decideNavigation,
@@ -71,7 +70,11 @@ const rendererTarget = resolveRendererTarget({
 const appProtocolSmoke = app.isPackaged && process.argv.includes("--app-protocol-smoke");
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
+const appProtocolSmokeResponses = [];
+let appProtocolSmokePermissionChecks = 0;
 let appProtocolSmokeDataPath;
+let appProtocolSmokeInitialRenderer;
+let appProtocolSmokePhase = "initial";
 const activeNotifications = new Set();
 let mainWindow = null;
 let credentialStoreForProfile = null;
@@ -82,6 +85,14 @@ const assertTrustedIpcSender = createIpcSenderPolicy({
   isNavigationPending: rendererReadiness.isPending,
   rendererTarget,
 });
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function settleWithin(promise, timeoutMs) {
+  return Promise.race([promise, delay(timeoutMs)]);
+}
 
 function resolveCurrentPngBrandIconPath() {
   return resolvePngBrandIconPath({
@@ -168,7 +179,10 @@ function createMainWindow() {
     openExternalIfSafe(url);
     return { action: "deny" };
   });
-  window.webContents.session.setPermissionCheckHandler(() => false);
+  window.webContents.session.setPermissionCheckHandler(() => {
+    if (appProtocolSmoke) appProtocolSmokePermissionChecks += 1;
+    return false;
+  });
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
     callback(false);
   });
@@ -179,19 +193,9 @@ function createMainWindow() {
     if (rendererReadiness.didCommit(window.webContents.getURL())) {
       hostStatePublisher.publishTo(window);
       if (appProtocolSmoke) {
-        setTimeout(async () => {
-          const result = {
-            kind: "yuance-app-protocol-smoke",
-            url: window.webContents.getURL(),
-            hostState: hostStatePublisher.snapshot().status,
-            externalRequestCount: appProtocolSmokeRequests.length,
-          };
-          if (appProtocolSmokeDataPath) {
-            await fs.rm(appProtocolSmokeDataPath, { recursive: true, force: true }).catch(() => {});
-          }
-          await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result)}\n`, resolve));
-          app.exit(result.externalRequestCount === 0 ? 0 : 1);
-        }, APP_PROTOCOL_SMOKE_STABILITY_MS);
+        runAppProtocolSmoke(window).catch((error) => {
+          process.stderr.write(`app protocol smoke failed: ${error.message}\n`, () => app.exit(1));
+        });
       }
     }
   });
@@ -217,6 +221,134 @@ function createMainWindow() {
     }
   });
   return window;
+}
+
+async function rendererSmokeSnapshot(window) {
+  return window.webContents.executeJavaScript(`(async () => {
+    const resourceUrls = performance.getEntriesByType("resource").map((entry) => entry.name);
+    const bridge = window.yuanceDesktop;
+    const frame = document.createElement("iframe");
+    frame.id = "yuance-smoke-subframe";
+    frame.hidden = true;
+    document.body.append(frame);
+    const subframeBridgeExposed = Boolean(frame.contentWindow && frame.contentWindow.yuanceDesktop);
+    let invalidPayloadRejected = false;
+    try {
+      await bridge.notifications.show({ title: "smoke", unexpected: true });
+    } catch (_error) {
+      invalidPayloadRejected = true;
+    }
+    const permissionResult = await Promise.race([
+      navigator.permissions.query({ name: "geolocation" }).then((result) => result.state, () => "error"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 500)),
+    ]);
+    const networkProbeRejected = await fetch("https://127.0.0.1:9/yuance-smoke", {
+      cache: "no-store",
+      credentials: "omit",
+    }).then(() => false, () => true);
+    return {
+      url: location.href,
+      title: document.title,
+      bodyText: document.body.innerText,
+      bridgeSchemaVersion: bridge.schemaVersion,
+      bridgeState: bridge.hostState.getSnapshot().status,
+      resourceUrls,
+      subframeBridgeExposed,
+      invalidPayloadRejected,
+      permissionResult,
+      networkProbeRejected,
+      windowOpenDenied: window.open("app://other/") === null,
+    };
+  })()`);
+}
+
+async function probeAppProtocolStatus(url) {
+  const probeWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      webSecurity: true,
+      webviewTag: false,
+      partition: rendererTarget.partition,
+    },
+  });
+  const webContentsId = probeWindow.webContents.id;
+  try {
+    await settleWithin(probeWindow.loadURL(url).catch(() => {}), 500);
+    await delay(50);
+    return appProtocolSmokeResponses.findLast((entry) => entry.webContentsId === webContentsId)?.statusCode ?? 0;
+  } finally {
+    if (!probeWindow.isDestroyed()) probeWindow.destroy();
+  }
+}
+
+async function finishAppProtocolSmoke(window) {
+  const renderer = await rendererSmokeSnapshot(window);
+  const subframe = window.webContents.mainFrame.frames.find((frame) => frame !== window.webContents.mainFrame);
+  const subframeObserved = Boolean(subframe);
+  let subframeIpcRejected = false;
+  try {
+    assertTrustedIpcSender({ sender: window.webContents, senderFrame: subframe });
+  } catch (error) {
+    subframeIpcRejected = error.message === "Untrusted renderer IPC sender.";
+  }
+  await window.webContents.executeJavaScript('document.querySelector("#yuance-smoke-subframe")?.remove()');
+  await settleWithin(window.webContents.executeJavaScript('location.href = "app://other/"'), 500);
+  await delay(100);
+  const navigationDenied = window.webContents.getURL() === "app://yuance/projects/smoke";
+  const protocolStatuses = {
+    missing: await probeAppProtocolStatus("app://yuance/assets/missing.js"),
+    traversal: await probeAppProtocolStatus("app://yuance/%252e%252e/index.html"),
+    wrongHost: await probeAppProtocolStatus("app://other/"),
+  };
+  await delay(APP_PROTOCOL_SMOKE_STABILITY_MS);
+  const documentResponse = appProtocolSmokeResponses.find((entry) => entry.url === "app://yuance/");
+  const result = {
+    kind: "yuance-app-protocol-smoke",
+    url: renderer.url,
+    hostState: hostStatePublisher.snapshot().status,
+    externalRequestCount: appProtocolSmokeRequests.length,
+    csp: documentResponse?.csp || "",
+    initialRenderer: appProtocolSmokeInitialRenderer,
+    reloadedRenderer: renderer,
+    navigationDenied,
+    permissionCheckCount: appProtocolSmokePermissionChecks,
+    subframeObserved,
+    subframeIpcRejected,
+    protocolStatuses,
+    resourceResponses: [...new Set(
+      appProtocolSmokeResponses
+        .filter((entry) => entry.url.startsWith("app://yuance/assets/") && entry.statusCode === 200)
+        .map((entry) => entry.url),
+    )],
+    runtime: {
+      isPackaged: app.isPackaged,
+      rendererKind: rendererTarget.kind,
+      partition: rendererTarget.partition,
+      isolatedProfile: app.getPath("userData") === appProtocolSmokeDataPath
+        && app.getPath("sessionData") === path.join(appProtocolSmokeDataPath, "Session Data"),
+    },
+  };
+  if (appProtocolSmokeDataPath) {
+    await fs.rm(appProtocolSmokeDataPath, { recursive: true, force: true }).catch(() => {});
+  }
+  await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result)}\n`, resolve));
+  app.exit(result.externalRequestCount === 0 ? 0 : 1);
+}
+
+async function runAppProtocolSmoke(window) {
+  if (appProtocolSmokePhase === "initial") {
+    appProtocolSmokePhase = "reloading";
+    appProtocolSmokeInitialRenderer = await rendererSmokeSnapshot(window);
+    await window.webContents.executeJavaScript('history.pushState({}, "", "/projects/smoke")');
+    window.webContents.reload();
+    return;
+  }
+  if (appProtocolSmokePhase !== "reloading") return;
+  appProtocolSmokePhase = "finishing";
+  await finishAppProtocolSmoke(window);
 }
 
 function notifyFromRenderer(event, payload) {
@@ -417,12 +549,23 @@ if (singleInstanceProbe) {
           });
           if (appProtocolSmoke) {
             rendererSession.webRequest.onBeforeRequest((details, callback) => {
-              if (!details.url.startsWith(`${APP_ORIGIN}/`)) {
+              if (!details.url.startsWith("app:") && !details.url.startsWith("about:")) {
                 appProtocolSmokeRequests.push(details.url);
                 callback({ cancel: true });
                 return;
               }
-              callback({});
+              callback({ cancel: !details.url.startsWith("app:") && !details.url.startsWith("about:") });
+            });
+            rendererSession.webRequest.onHeadersReceived((details, callback) => {
+              appProtocolSmokeResponses.push({
+                webContentsId: details.webContentsId,
+                url: details.url,
+                statusCode: details.statusCode,
+                csp: details.responseHeaders?.["Content-Security-Policy"]?.[0]
+                  || details.responseHeaders?.["content-security-policy"]?.[0]
+                  || "",
+              });
+              callback({ responseHeaders: details.responseHeaders });
             });
           }
         }

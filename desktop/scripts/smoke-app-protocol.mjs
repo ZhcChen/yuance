@@ -3,6 +3,50 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+const EXPECTED_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const CREDENTIAL_PATTERN = /Authorization|Bearer\s|yuance_(?:dat|drt|dc)_|refresh_token|access_token/iu;
+
+export function assertAppProtocolSmokeReport(report) {
+  if (
+    report?.kind !== "yuance-app-protocol-smoke" ||
+    report.url !== "app://yuance/projects/smoke" ||
+    report.hostState !== "unauthenticated" ||
+    report.externalRequestCount !== 0 ||
+    report.csp !== EXPECTED_CSP ||
+    report.initialRenderer?.url !== "app://yuance/" ||
+    report.reloadedRenderer?.url !== "app://yuance/projects/smoke" ||
+    report.initialRenderer?.bridgeState !== "unauthenticated" ||
+    report.reloadedRenderer?.bridgeState !== "unauthenticated" ||
+    report.reloadedRenderer?.bridgeSchemaVersion !== 1 ||
+    report.reloadedRenderer?.title !== "元策" ||
+    !report.reloadedRenderer?.bodyText?.includes("需要登录") ||
+    report.reloadedRenderer?.subframeBridgeExposed !== false ||
+    report.reloadedRenderer?.invalidPayloadRejected !== true ||
+    report.reloadedRenderer?.permissionResult !== "denied" ||
+    report.reloadedRenderer?.networkProbeRejected !== true ||
+    report.reloadedRenderer?.windowOpenDenied !== true ||
+    report.navigationDenied !== true ||
+    !(report.permissionCheckCount > 0) ||
+    report.subframeObserved !== true ||
+    report.subframeIpcRejected !== true ||
+    report.protocolStatuses?.missing !== 404 ||
+    report.protocolStatuses?.traversal !== 400 ||
+    report.protocolStatuses?.wrongHost !== 403 ||
+    report.runtime?.isPackaged !== true ||
+    report.runtime?.rendererKind !== "app-protocol" ||
+    report.runtime?.partition !== "persist:yuance" ||
+    report.runtime?.isolatedProfile !== true ||
+    !Array.isArray(report.resourceResponses) ||
+    !report.resourceResponses.every((url) => url.startsWith("app://yuance/assets/")) ||
+    !report.resourceResponses.some((url) => url.endsWith(".js")) ||
+    !report.resourceResponses.some((url) => url.endsWith(".css")) ||
+    CREDENTIAL_PATTERN.test(JSON.stringify(report))
+  ) {
+    throw new Error(`Unpacked app smoke invariant failed: ${JSON.stringify(report)}`);
+  }
+  return report;
+}
+
 async function listFiles(root) {
   const pending = [root];
   const files = [];
@@ -63,13 +107,7 @@ export async function smokeAppProtocol(inputPath, { platform = process.platform,
   const reportLine = stdout.split(/\r?\n/u).find((line) => line.includes('"kind":"yuance-app-protocol-smoke"'));
   if (!reportLine) throw new Error(`Unpacked app smoke report is missing: ${stderr || stdout}`);
   const report = JSON.parse(reportLine);
-  if (
-    report.url !== "app://yuance/" ||
-    report.hostState !== "unauthenticated" ||
-    report.externalRequestCount !== 0
-  ) {
-    throw new Error(`Unpacked app smoke invariant failed: ${JSON.stringify(report)}`);
-  }
+  assertAppProtocolSmokeReport(report);
   return Object.freeze({ executable, report });
 }
 
