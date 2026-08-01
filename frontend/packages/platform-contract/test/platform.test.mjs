@@ -1,0 +1,110 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  defineDownloadCapabilities,
+  defineFileCapabilities,
+  definePlatformCapabilities,
+  defineRouterCapabilities,
+  defineStatusCapabilities,
+  defineTransferCapabilities,
+} from '@yuance/frontend-platform-contract';
+
+/** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
+/** @typedef {import('@yuance/frontend-platform-contract').PlatformCapabilities} RootPlatformCapabilities */
+/** @typedef {import('@yuance/frontend-platform-contract').SignedTransferCapability} SignedTransferCapability */
+
+test('platform capability definitions preserve injected adapters', () => {
+  const files = defineFileCapabilities({
+    chooseFile: async () => null,
+    uploadSignedRequest: async () => {},
+  });
+  const downloads = defineDownloadCapabilities({
+    downloadSignedRequest: async () => {},
+  });
+  const transfers = defineTransferCapabilities({
+    authorizeSignedRequest: (request) => /** @type {SignedTransferCapability} */ (request),
+  });
+  const router = defineRouterCapabilities({
+    currentPath: () => '/work-items',
+    navigate: () => {},
+  });
+  const status = defineStatusCapabilities({ report: () => {} });
+
+  const platform = definePlatformCapabilities({ files, downloads, transfers, router, status });
+
+  assert.equal(platform.files, files);
+  assert.equal(platform.downloads, downloads);
+  assert.equal(platform.transfers, transfers);
+  assert.equal(platform.router, router);
+  assert.equal(platform.status, status);
+});
+
+test('platform capability definitions reject missing operations', () => {
+  assert.throws(
+    () => defineFileCapabilities({ chooseFile: async () => null }),
+    /uploadSignedRequest/,
+  );
+  assert.throws(
+    () => defineDownloadCapabilities({}),
+    /downloadSignedRequest/,
+  );
+  assert.throws(
+    () => defineTransferCapabilities({}),
+    /authorizeSignedRequest/,
+  );
+  assert.throws(
+    () => defineRouterCapabilities({ currentPath: () => '/work-items' }),
+    /navigate/,
+  );
+  assert.throws(
+    () => defineStatusCapabilities({}),
+    /report/,
+  );
+  assert.throws(
+    () => definePlatformCapabilities(/** @type {never} */ ({
+      files: {},
+      downloads: {},
+      transfers: {},
+      router: {},
+      status: {},
+    })),
+    /chooseFile/,
+  );
+  assert.throws(
+    () => definePlatformCapabilities(/** @type {never} */ (null)),
+    /must be an object/,
+  );
+});
+
+test('package root exposes the platform capability type', () => {
+  const operation = async () => {};
+  const currentPath = () => '/work-items';
+  const navigate = () => {};
+  const report = () => {};
+  const chooseFile = async () => null;
+  /** @type {RootPlatformCapabilities} */
+  const platform = {
+    files: { chooseFile, uploadSignedRequest: operation },
+    downloads: { downloadSignedRequest: operation },
+    transfers: {
+      authorizeSignedRequest: (request) => /** @type {SignedTransferCapability} */ (request),
+    },
+    router: { currentPath, navigate },
+    status: { report },
+  };
+
+  assert.equal(platform.router.currentPath(), '/work-items');
+});
+
+test('opaque capabilities cannot be constructed as plain objects', () => {
+  /** @param {FileCapability} _capability */
+  const acceptFileCapability = (_capability) => {};
+  /** @param {SignedTransferCapability} _capability */
+  const acceptTransferCapability = (_capability) => {};
+
+  // @ts-expect-error host-issued file capabilities are intentionally opaque
+  acceptFileCapability({});
+  // @ts-expect-error host-authorized transfer capabilities are intentionally opaque
+  acceptTransferCapability({});
+});
