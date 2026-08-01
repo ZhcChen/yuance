@@ -1,5 +1,7 @@
 import path from "node:path";
 
+import { isAllowedAppRoute } from "./routes/app-route.mjs";
+
 export const DEFAULT_WEB_URL = "https://yuance.quanxinfu.com/web";
 export const DEFAULT_NOTIFICATION_TITLE = "元策";
 export const PRODUCTION_APP_DISPLAY_NAME = "元策";
@@ -7,8 +9,8 @@ export const DEVELOPMENT_APP_DISPLAY_NAME = "元策 Dev";
 export const PRODUCTION_APP_USER_MODEL_ID = "com.quanxinfu.yuance";
 export const DEVELOPMENT_APP_USER_MODEL_ID = "com.quanxinfu.yuance.dev";
 
-export function isDevelopmentRuntime({ isPackaged, channel } = {}) {
-  return !isPackaged || String(channel || "").trim().toLowerCase() === "dev";
+export function isDevelopmentRuntime({ isPackaged } = {}) {
+  return !isPackaged;
 }
 
 export function resolveDesktopAppIdentity(isDevRuntime) {
@@ -64,23 +66,38 @@ export function resolveDeviceAuthEndpoint({
 
 export function isTrustedAppUrl(value, appOrigin) {
   try {
-    return new URL(value).origin === appOrigin;
+    const target = new URL(value);
+    const expected = new URL(appOrigin);
+    return (
+      target.protocol === expected.protocol &&
+      target.hostname === expected.hostname &&
+      target.port === expected.port &&
+      !target.username &&
+      !target.password
+    );
   } catch (_error) {
     return false;
   }
 }
 
 export function safeNotificationTarget(value, appOrigin) {
-  const fallback = "/web/messages";
+  const fallback = "/messages";
   try {
     const target = new URL(value, appOrigin);
+    const expected = new URL(appOrigin);
     if (
-      target.origin !== appOrigin ||
-      !(target.pathname === "/web" || target.pathname.startsWith("/web/"))
+      target.protocol !== expected.protocol ||
+      target.hostname !== expected.hostname ||
+      target.port !== expected.port ||
+      target.username ||
+      target.password ||
+      target.search ||
+      target.hash ||
+      !isAllowedAppRoute(target.pathname)
     ) {
       return fallback;
     }
-    return `${target.pathname}${target.search}${target.hash}`;
+    return target.pathname;
   } catch (_error) {
     return fallback;
   }
@@ -98,13 +115,4 @@ export function normalizeNotificationPayload(payload, appOrigin) {
     body: normalizeText(value.body, "你有一条新的消息。", 240),
     targetPath: safeNotificationTarget(value.targetPath, appOrigin),
   };
-}
-
-export function isSafeExternalUrl(value) {
-  try {
-    const target = new URL(value);
-    return target.protocol === "https:" || target.protocol === "http:";
-  } catch (_error) {
-    return false;
-  }
 }

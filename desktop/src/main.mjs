@@ -1,4 +1,15 @@
-import { app, BrowserWindow, Notification, ipcMain, nativeImage, safeStorage, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Notification,
+  ipcMain,
+  nativeImage,
+  protocol,
+  safeStorage,
+  session,
+  shell,
+} from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,13 +20,10 @@ import {
 } from "./branding.mjs";
 import {
   isDevelopmentRuntime,
-  isSafeExternalUrl,
-  isTrustedAppUrl,
   normalizeNotificationPayload,
   resolveDesktopAppIdentity,
   resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
-  resolveWebUrl,
 } from "./config.mjs";
 import { createProfileCredentialStore } from "./auth/credential-store.mjs";
 import { createDesktopProfile } from "./auth/profile.mjs";
@@ -27,14 +35,31 @@ import {
   createPendingRevocationStore,
 } from "./auth/credential-coordinator.mjs";
 import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
+import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
+import {
+  browserWindowWebPreferences,
+  decideNavigation,
+  isTrustedRendererUrl,
+  normalizeSafeExternalUrl,
+  resolveRendererTarget,
+} from "./window/security-policy.mjs";
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "app",
+    privileges: { standard: true, secure: true },
+  },
+]);
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const isDevRuntime = isDevelopmentRuntime({
   isPackaged: app.isPackaged,
-  channel: process.env.YUANCE_DESKTOP_CHANNEL,
 });
 const appIdentity = resolveDesktopAppIdentity(isDevRuntime);
-const webConfig = resolveWebUrl();
+const rendererTarget = resolveRendererTarget({
+  isPackaged: app.isPackaged,
+  rawDevServerUrl: process.env.YUANCE_DESKTOP_RENDERER_URL,
+});
 const activeNotifications = new Set();
 let mainWindow = null;
 let credentialStoreForProfile = null;
@@ -60,10 +85,12 @@ function applyRuntimeBrandIcon() {
 }
 
 function openExternalIfSafe(value) {
-  if (!isSafeExternalUrl(value)) {
-    return false;
-  }
-  shell.openExternal(value).catch(() => {});
+  const safeUrl = normalizeSafeExternalUrl(value, {
+    isDevelopment: isDevRuntime,
+    devOrigin: rendererTarget.kind === "dev-server" ? rendererTarget.origin : undefined,
+  });
+  if (!safeUrl) return false;
+  shell.openExternal(safeUrl).catch(() => {});
   return true;
 }
 
@@ -79,12 +106,15 @@ function revealWindow(targetPath) {
   mainWindow.webContents.send("yuance:notification-click", targetPath);
 }
 
-function handleInAppNavigation(event, targetUrl) {
-  if (isTrustedAppUrl(targetUrl, webConfig.origin)) {
-    return;
-  }
+function handleNavigation(event) {
+  const decision = decideNavigation({
+    url: event.url,
+    isMainFrame: event.isMainFrame,
+    rendererTarget,
+  });
+  if (decision.action === "allow") return;
   event.preventDefault();
-  openExternalIfSafe(targetUrl);
+  if (decision.action === "external") openExternalIfSafe(event.url);
 }
 
 function createMainWindow() {
@@ -96,21 +126,21 @@ function createMainWindow() {
     show: false,
     backgroundColor: "#f4f7f8",
     title: appIdentity.displayName,
-    webPreferences: {
-      preload: path.join(moduleDir, "preload.cjs"),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-      webviewTag: false,
-    },
+    webPreferences: browserWindowWebPreferences({
+      preloadPath: path.join(moduleDir, "preload.cjs"),
+      partition: rendererTarget.partition,
+    }),
   });
 
   window.once("ready-to-show", () => {
     window.maximize();
     window.show();
   });
-  window.webContents.on("will-navigate", handleInAppNavigation);
-  window.webContents.on("will-redirect", handleInAppNavigation);
+  window.webContents.on("will-navigate", handleNavigation);
+  window.webContents.on("will-redirect", handleNavigation);
+  window.webContents.on("will-frame-navigate", (event) => {
+    if (!event.isMainFrame) handleNavigation(event);
+  });
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
   window.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfSafe(url);
@@ -125,21 +155,24 @@ function createMainWindow() {
       mainWindow = null;
     }
   });
-  window.loadURL(webConfig.url).catch((error) => {
-    console.error("Failed to load Yuance web application:", error);
+  window.loadURL(rendererTarget.url).catch((error) => {
+    console.error("Failed to load Yuance renderer:", error);
+    if (!window.isDestroyed()) window.destroy();
+    dialog.showErrorBox("元策无法启动", "应用界面加载失败，请重新启动或重新安装后再试。");
+    app.quit();
   });
   return window;
 }
 
 function notifyFromRenderer(event, payload) {
-  if (!isTrustedAppUrl(event.sender.getURL(), webConfig.origin)) {
+  if (!isTrustedRendererUrl(event.sender.getURL(), rendererTarget)) {
     throw new Error("Untrusted renderer attempted to create a native notification.");
   }
   if (!Notification.isSupported() || (mainWindow && mainWindow.isFocused())) {
     return { shown: false };
   }
 
-  const notificationPayload = normalizeNotificationPayload(payload, webConfig.origin);
+  const notificationPayload = normalizeNotificationPayload(payload, rendererTarget.origin);
   const notification = new Notification({
     title: notificationPayload.title,
     body: notificationPayload.body,
@@ -309,11 +342,27 @@ if (singleInstanceProbe) {
   if (!hasSingleInstanceLock) {
     app.quit();
   } else {
-    app.on("second-instance", () => revealWindow("/web"));
-    app.whenReady().then(() => {
-      initializeCredentialStoreFactory();
-      applyRuntimeBrandIcon();
-      mainWindow = createMainWindow();
+    app.on("second-instance", () => revealWindow("/"));
+    app.whenReady().then(async () => {
+      try {
+        if (rendererTarget.kind === "app-protocol") {
+          const rendererRoot = path.join(moduleDir, "..", "renderer-dist");
+          await registerAppProtocol({
+            protocol: session.fromPartition(rendererTarget.partition).protocol,
+            fs,
+            rendererRoot,
+            manifestPath: path.join(rendererRoot, "resource-manifest.json"),
+          });
+        }
+        initializeCredentialStoreFactory();
+        applyRuntimeBrandIcon();
+        mainWindow = createMainWindow();
+      } catch (error) {
+        console.error("Failed to initialize Yuance renderer:", error);
+        dialog.showErrorBox("元策无法启动", "应用资源校验失败，请重新安装后再试。");
+        app.quit();
+        return;
+      }
       app.on("activate", () => {
         if (!mainWindow) {
           mainWindow = createMainWindow();

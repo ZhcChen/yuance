@@ -7,7 +7,6 @@ import {
   DEVELOPMENT_APP_DISPLAY_NAME,
   DEVELOPMENT_APP_USER_MODEL_ID,
   DEFAULT_WEB_URL,
-  isSafeExternalUrl,
   isDevelopmentRuntime,
   isTrustedAppUrl,
   normalizeNotificationPayload,
@@ -22,7 +21,7 @@ import {
 
 test("separates development and packaged runtime identities", () => {
   assert.equal(isDevelopmentRuntime({ isPackaged: false }), true);
-  assert.equal(isDevelopmentRuntime({ isPackaged: true, channel: "dev" }), true);
+  assert.equal(isDevelopmentRuntime({ isPackaged: true, channel: "dev" }), false);
   assert.equal(isDevelopmentRuntime({ isPackaged: true }), false);
   assert.deepEqual(resolveDesktopAppIdentity(true), {
     displayName: DEVELOPMENT_APP_DISPLAY_NAME,
@@ -82,36 +81,44 @@ test("accepts only the configured Web origin", () => {
   const origin = "https://yuance.quanxinfu.com";
   assert.equal(isTrustedAppUrl("https://yuance.quanxinfu.com/web", origin), true);
   assert.equal(isTrustedAppUrl("https://example.com/web", origin), false);
+  assert.equal(isTrustedAppUrl("app://other/messages", "app://yuance"), false);
 });
 
-test("limits notification navigation to internal Web paths", () => {
-  const origin = "https://yuance.quanxinfu.com";
+test("limits notification navigation to canonical app routes", () => {
+  const origin = "app://yuance";
   assert.equal(
-    safeNotificationTarget("/web/messages/42/open", origin),
-    "/web/messages/42/open",
+    safeNotificationTarget("/messages/42", origin),
+    "/messages/42",
   );
-  assert.equal(safeNotificationTarget("https://example.com", origin), "/web/messages");
-  assert.equal(safeNotificationTarget("/api/v1/projects", origin), "/web/messages");
+  assert.equal(safeNotificationTarget("https://example.com", origin), "/messages");
+  assert.equal(safeNotificationTarget("/api/v1/projects", origin), "/messages");
+  assert.equal(safeNotificationTarget("/messages/42?next=/projects", origin), "/messages");
+  assert.equal(
+    safeNotificationTarget("/projects/p-1", "http://127.0.0.1:4273"),
+    "/projects/p-1",
+  );
 });
 
 test("normalizes native notification payloads", () => {
   assert.deepEqual(
     normalizeNotificationPayload(
-      { title: "  新评论\n", body: "查看任务讨论", targetPath: "/web/messages/42/open" },
-      "https://yuance.quanxinfu.com",
+      { title: "  新评论\n", body: "查看任务讨论", targetPath: "/messages/42" },
+      "app://yuance",
     ),
     {
       title: "新评论",
       body: "查看任务讨论",
-      targetPath: "/web/messages/42/open",
+      targetPath: "/messages/42",
     },
   );
 });
 
 test("intercepts both direct navigations and server redirects", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
-  assert.match(mainSource, /webContents\.on\("will-navigate", handleInAppNavigation\)/);
-  assert.match(mainSource, /webContents\.on\("will-redirect", handleInAppNavigation\)/);
+  assert.match(mainSource, /webContents\.on\("will-navigate", handleNavigation\)/);
+  assert.match(mainSource, /webContents\.on\("will-redirect", handleNavigation\)/);
+  assert.match(mainSource, /webContents\.on\("will-frame-navigate"/);
+  assert.match(mainSource, /if \(!event\.isMainFrame\) handleNavigation\(event\)/);
 });
 
 test("configures development storage and maximizes the startup window", () => {
@@ -130,15 +137,19 @@ test("acquires the OS single-instance lock before the ready lifecycle", () => {
   assert.ok(lockIndex >= 0);
   assert.ok(readyIndex > lockIndex);
   assert.match(mainSource, /if \(!hasSingleInstanceLock\) \{\s*app\.quit\(\);/);
-  assert.match(mainSource, /app\.on\("second-instance", \(\) => revealWindow\("\/web"\)\)/);
+  assert.match(mainSource, /app\.on\("second-instance", \(\) => revealWindow\("\/"\)\)/);
   assert.ok(
     mainSource.indexOf("initializeCredentialStoreFactory();") >
       mainSource.indexOf("if (!hasSingleInstanceLock)"),
   );
 });
 
-test("allows only HTTP(S) external links", () => {
-  assert.equal(isSafeExternalUrl("https://yuance.quanxinfu.com/web/downloads"), true);
-  assert.equal(isSafeExternalUrl("mailto:team@example.com"), false);
-  assert.equal(isSafeExternalUrl("javascript:alert(1)"), false);
+test("registers the privileged app scheme before the ready lifecycle", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  const registrationIndex = mainSource.indexOf("protocol.registerSchemesAsPrivileged");
+  const readyIndex = mainSource.indexOf("app.whenReady()");
+  assert.ok(registrationIndex >= 0);
+  assert.ok(readyIndex > registrationIndex);
+  assert.match(mainSource, /standard: true, secure: true/);
+  assert.doesNotMatch(mainSource, /supportFetchAPI|bypassCSP|allowServiceWorkers/);
 });
