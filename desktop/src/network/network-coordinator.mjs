@@ -12,6 +12,7 @@ export function createNetworkCoordinator({
   onState = () => {},
   now = Date.now,
   random = Math.random,
+  sleep = delay,
   minRetryMs = 1_000,
   maxRetryMs = 30_000,
   expirySkewMs = 30_000,
@@ -19,6 +20,7 @@ export function createNetworkCoordinator({
   if (!credentialRuntime || typeof credentialRuntime.withAccessLease !== "function" || typeof credentialRuntime.refreshAccess !== "function") throw new TypeError("credentialRuntime is required");
   if (!sseClient || typeof sseClient.subscribe !== "function") throw new TypeError("sseClient is required");
   if (typeof probe !== "function" || typeof onState !== "function") throw new TypeError("network observers are required");
+  if (typeof sleep !== "function") throw new TypeError("sleep is required");
   for (const value of [minRetryMs, maxRetryMs, expirySkewMs]) if (!Number.isSafeInteger(value) || value < 0) throw new TypeError("retry settings are invalid");
   if (minRetryMs < 1 || maxRetryMs < minRetryMs) throw new TypeError("retry range is invalid");
 
@@ -61,7 +63,7 @@ export function createNetworkCoordinator({
       try {
         const outcome = await credentialRuntime.withAccessLease(async ({ accessToken, accessExpiresAt, epoch }) => {
           const expiryDelay = Math.max(0, Date.parse(accessExpiresAt) - now() - expirySkewMs);
-          const expiry = delay(expiryDelay, controller.signal).then(() => ({ reason: "access_expiring", epoch }));
+          const expiry = sleep(expiryDelay, controller.signal).then(() => ({ reason: "access_expiring", epoch }));
           const stream = sseClient.subscribe({
             accessToken,
             signal: controller.signal,
@@ -96,7 +98,7 @@ export function createNetworkCoordinator({
       retryHint = undefined;
       const wait = Math.max(minRetryMs, Math.floor(base * (0.5 + random() * 0.5)));
       controller = new AbortController();
-      try { await delay(wait, controller.signal); } catch { return; }
+      try { await sleep(wait, controller.signal); } catch { return; }
     }
   }
 

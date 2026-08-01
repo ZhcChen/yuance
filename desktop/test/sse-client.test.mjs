@@ -43,6 +43,16 @@ test("enforces normalized header, parser buffer, event and rate limits", async (
   }
 });
 
+test("enforces the production 32 KiB header, 128 KiB buffer, 64 KiB event, and 120 per 10s defaults", async () => {
+  const oversized = [
+    [sseResponse([], { headers: { "x-padding": "x".repeat(33 * 1024) } }), "headers_too_large"],
+    [sseResponse([new TextEncoder().encode(`data: ${"x".repeat(128 * 1024)}`)]), "buffer_too_large"],
+    [sseResponse([new TextEncoder().encode(`data: ${"x".repeat(64 * 1024)}\n\n`)]), "event_too_large"],
+    [sseResponse([new TextEncoder().encode("data: x\n\n".repeat(121))]), "event_rate_exceeded"],
+  ];
+  for (const [response, code] of oversized) await rejectsStream(response, {}, code);
+});
+
 test("fails closed for invalid UTF-8", async () => {
   await rejectsStream(sseResponse([Uint8Array.of(0xc3, 0x28)]), {}, "invalid_utf8");
 });

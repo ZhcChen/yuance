@@ -46,8 +46,25 @@ test("invalidate, suspend and stop abort active work; resume creates a fresh epo
   coordinator.resume(); await until(() => streams.length === 2); coordinator.invalidate(); assert.equal(streams[1].signal.aborted, true); assert.equal(coordinator.snapshot().status, "idle"); coordinator.stop();
 });
 
+test("clamps server retry hints and treats probe timeout as an offline retry", async () => {
+  const streams = []; const waits = []; let probes = 0;
+  const coordinator = createNetworkCoordinator({ credentialRuntime: runtime(), sseClient: client(streams), probe: async () => { probes += 1; throw Object.assign(new Error("timeout"), { code: "request_timeout" }); }, minRetryMs: 10, maxRetryMs: 20, random: () => 1, sleep: async (ms, signal) => {
+    if (ms > 100) return new Promise((_resolve, reject) => signal.addEventListener("abort", reject, { once: true }));
+    waits.push(ms);
+  } });
+  coordinator.start(); await until(() => streams.length === 1); streams[0].retry(1_000_000); streams[0].end();
+  await until(() => streams.length === 2); assert.equal(probes, 1); assert.deepEqual(waits, [20]); coordinator.stop();
+});
+
+test("late control events after invalidation are never published", async () => {
+  const streams = []; const states = [];
+  const coordinator = createNetworkCoordinator({ credentialRuntime: runtime(), sseClient: client(streams), probe: async () => {}, onState: (value) => states.push(value.status), minRetryMs: 1, maxRetryMs: 2 });
+  coordinator.start(); await until(() => streams.length === 1); coordinator.invalidate(); streams[0].connect();
+  await new Promise((resolve) => setImmediate(resolve)); assert.equal(states.at(-1), "idle"); assert.equal(states.includes("online"), false);
+});
+
 function runtime({ expiresAt = new Date(Date.now() + 60_000).toISOString() } = {}) {
   return { epoch: 1, leaseCalls: 0, refreshCalls: 0, async withAccessLease(operation) { this.leaseCalls += 1; return operation({ accessToken: `yuance_dat_${this.epoch}`, accessExpiresAt: expiresAt, epoch: this.epoch }); }, async refreshAccess(epoch) { if (epoch !== this.epoch) return false; this.refreshCalls += 1; this.epoch += 1; return true; } };
 }
-function client(streams) { return { subscribe({ signal, onControl }) { return new Promise((resolve, reject) => streams.push({ signal, connect: () => onControl({ type: "connected" }), end: () => resolve({ reason: "eof" }), fail: reject })); } }; }
+function client(streams) { return { subscribe({ signal, onControl, onRetry }) { return new Promise((resolve, reject) => streams.push({ signal, connect: () => onControl({ type: "connected" }), retry: onRetry, end: () => resolve({ reason: "eof" }), fail: reject })); } }; }
 async function until(predicate) { for (let index = 0; index < 100; index += 1) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 1)); } throw new Error("condition not reached"); }
