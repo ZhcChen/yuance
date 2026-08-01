@@ -8,11 +8,23 @@ on:
       - dev
     paths:
       - "desktop/**"
+      - "api/**"
+      - "docs/openapi/**"
+      - "frontend/packages/app-core/**"
+      - "frontend/packages/platform-contract/**"
+      - "frontend/packages/ui/**"
+      - "frontend/package-lock.json"
       - ".github/workflows/desktop-security.yml"
       - ".github/workflows/release-desktop.yml"
   pull_request:
     paths:
       - "desktop/**"
+      - "api/**"
+      - "docs/openapi/**"
+      - "frontend/packages/app-core/**"
+      - "frontend/packages/platform-contract/**"
+      - "frontend/packages/ui/**"
+      - "frontend/package-lock.json"
       - ".github/workflows/desktop-security.yml"
       - ".github/workflows/release-desktop.yml"
 
@@ -48,11 +60,22 @@ jobs:
             frontend/package-lock.json
             desktop/package-lock.json
 
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: api
+
       - name: Install shared frontend dependencies
         run: npm --prefix frontend ci
 
       - name: Install desktop dependencies
         run: npm --prefix desktop ci
+
+      - name: Run focused Device API tests
+        run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_sse_authorization_flow
 
       - name: Run desktop checks
         run: npm --prefix desktop run check
