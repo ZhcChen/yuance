@@ -1,7 +1,7 @@
 ---
 title: "feat: D1 Desktop Network 与 SSE 安全边界"
 type: feat
-status: ready
+status: completed
 date: 2026-08-02
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
@@ -370,7 +370,8 @@ Unit 1 先冻结 wire contract 和 Device control plane。Unit 2-3 建立 endpoi
 | 实际 bundle | `npm --prefix desktop run verify:bundle -- <staging>` | ASAR、CSP、renderer 与 network policy绑定通过 |
 | 协议 smoke | `npm --prefix desktop run smoke:app-protocol -- <staging>` | D1-A `app://`、导航、IPC 和零 renderer 外部请求不回归 |
 | 网络 smoke | `npm --prefix desktop run smoke:desktop-network -- <staging>` | 真实 enrollment/auth/REST/SSE/revoke/restart 闭环通过 |
-| Deadline 报告 | `desktop/dist/verification/desktop-network-smoke.json` | 撤销事务 commit 与 graceful shutdown signal 到 EOF 均小于 5000ms |
+| Deadline 自动测试 | `cargo test --manifest-path api/Cargo.toml --test device_sse_authorization_flow` | Rust 单调时钟证明撤销事务调用和 graceful shutdown signal 到 EOF 均小于 5000ms |
+| Deadline 端到端报告 | `desktop/dist/verification/desktop-network-smoke.json` | 正式包记录 revoke HTTP response 到 EOF 小于 5000ms，作为跨进程辅助证据 |
 | 三平台 CI | `.github/workflows/desktop-security.yml` | macOS、Windows、Linux 对同类 unpacked bundle Gate 全部通过 |
 
 验证 fixture 必须使用每个平台本地启动的临时 API、测试专用 Electron session、loopback proxy/PAC 和错误证书 HTTPS 服务，不访问生产服务，也不修改 OS proxy 或 trust store。TLS 负向测试必须证明错误证书不会被应用层 bypass；proxy/PAC、407、同源/跨源 redirect 均由真实 Electron session integration 自动化验证。正式 bundle 另通过源码/运行期断言证明未调用 `setProxy`、`setCertificateVerifyProc` 或 `certificate-error` bypass；系统 proxy/PAC 和有效证书链的正确实现归属 Chromium/OS，不由本项目伪造。
