@@ -210,3 +210,14 @@ test("creates the starting Shell before one asynchronous credential runtime", ()
   assert.match(mainSource, /enrollDesktop\(\{ origin, mode, fetchImpl: network\.fetch \}\)/u);
   assert.doesNotMatch(mainSource, /globalThis\.fetch/u);
 });
+
+test("binds the SSE network epoch to credentials, window, power, and quit lifecycle", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(mainSource, /createSseClient\(\{ profile: enrolled\.profile, fetchImpl: network\.fetch \}\)/u);
+  assert.match(mainSource, /probe: \(\) => restTransport\.execute\("session\.probe", \{\}\)/u);
+  assert.match(mainSource, /onNetworkInvalidated: \(\) => coordinator\?\.invalidate\(\)/u);
+  assert.match(mainSource, /window\.on\("closed", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
+  assert.match(mainSource, /powerMonitor\.on\("suspend", \(\) => networkCoordinator\?\.suspend\(\)\)/u);
+  assert.match(mainSource, /powerMonitor\.on\("resume", \(\) => networkCoordinator\?\.resume\(\)\)/u);
+  assert.match(mainSource, /app\.on\("before-quit", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
+});

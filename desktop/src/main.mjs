@@ -6,6 +6,7 @@ import {
   ipcMain,
   nativeImage,
   protocol,
+  powerMonitor,
   safeStorage,
   session,
   shell,
@@ -39,6 +40,9 @@ import {
 import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
 import { enrollDesktop } from "./network/enrollment-client.mjs";
 import { createTrustedNetworkSession } from "./network/network-session.mjs";
+import { createNetworkCoordinator } from "./network/network-coordinator.mjs";
+import { createRestTransport } from "./network/rest-transport.mjs";
+import { createSseClient } from "./network/sse-client.mjs";
 import {
   browserWindowWebPreferences,
   decideNavigation,
@@ -74,6 +78,7 @@ let appProtocolSmokePhase = "initial";
 const activeNotifications = new Set();
 let mainWindow = null;
 let credentialRuntime = null;
+let networkCoordinator = null;
 let credentialRuntimeGeneration = 0;
 const hostStatePublisher = createHostStatePublisher();
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
@@ -206,6 +211,7 @@ function createMainWindow() {
     rendererReadiness.reset();
     if (mainWindow === window) {
       mainWindow = null;
+      networkCoordinator?.stop();
     }
   });
   window.loadURL(rendererTarget.url).catch((error) => {
@@ -438,6 +444,7 @@ async function initializeDesktopCredentialRuntime() {
   const enrolled = await enrollDesktop({ origin, mode, fetchImpl: network.fetch });
   if (generation !== credentialRuntimeGeneration) return;
   const userDataPath = app.getPath("userData");
+  let coordinator;
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
@@ -448,15 +455,42 @@ async function initializeDesktopCredentialRuntime() {
     installationId: () => installationId(userDataPath),
     deviceName: `${appIdentity.displayName} (${process.platform})`,
     clientVersion: app.getVersion(),
-    onNetworkInvalidated: () => {},
+    onNetworkInvalidated: () => coordinator?.invalidate(),
     onPublicState: (state) => {
       hostStatePublisher.update(state);
       hostStatePublisher.publishTo(mainWindow);
+      if (state.status === "authenticated") coordinator?.start();
     },
   });
+  const restTransport = createRestTransport({
+    profile: enrolled.profile,
+    credentialRuntime: runtime,
+    fetchImpl: network.fetch,
+  });
+  coordinator = createNetworkCoordinator({
+    credentialRuntime: runtime,
+    sseClient: createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch }),
+    probe: () => restTransport.execute("session.probe", {}),
+  });
   credentialRuntime = runtime;
-  await runtime.initialize();
-  if (generation !== credentialRuntimeGeneration) runtime.dispose();
+  networkCoordinator = coordinator;
+  let initialized;
+  try { initialized = await runtime.initialize(); }
+  catch (error) {
+    coordinator.stop();
+    runtime.dispose();
+    if (credentialRuntime === runtime) credentialRuntime = null;
+    if (networkCoordinator === coordinator) networkCoordinator = null;
+    throw error;
+  }
+  if (generation !== credentialRuntimeGeneration) {
+    coordinator.stop();
+    runtime.dispose();
+    if (credentialRuntime === runtime) credentialRuntime = null;
+    if (networkCoordinator === coordinator) networkCoordinator = null;
+  } else if (initialized.status === "authenticated") {
+    coordinator.start();
+  }
 }
 
 app.setName(appIdentity.displayName);
@@ -576,6 +610,8 @@ if (singleInstanceProbe) {
         }
         applyRuntimeBrandIcon();
         mainWindow = createMainWindow();
+        powerMonitor.on("suspend", () => networkCoordinator?.suspend());
+        powerMonitor.on("resume", () => networkCoordinator?.resume());
         if (appProtocolSmoke) {
           hostStatePublisher.update({ status: "unauthenticated" });
         } else {
@@ -596,6 +632,7 @@ if (singleInstanceProbe) {
       app.on("activate", () => {
         if (!mainWindow) {
           mainWindow = createMainWindow();
+          networkCoordinator?.start();
         }
       });
     });
@@ -610,6 +647,8 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   credentialRuntimeGeneration += 1;
+  networkCoordinator?.stop();
+  networkCoordinator = null;
   credentialRuntime?.dispose();
   credentialRuntime = null;
 });
