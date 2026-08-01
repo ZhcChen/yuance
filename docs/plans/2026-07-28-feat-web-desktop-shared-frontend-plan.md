@@ -51,7 +51,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` | W0 执行产物 | `completed` | 首批 Web-first 盘点、route-to-contract parity、回跳/缓存/rollout/CI 基线；服务于 W1/W2 输入。 | 不合并正文；后续 W1/W2 直接引用该基线，若 W0 决策变化再同步修订。 |
 | `docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` | W3 功能切片计划 | `completed` | 工作项详情写入、handoff、评论与附件迁移；已形成首个 Web 读写业务闭环。 | 已收口：Browser E2E 覆盖编辑、handoff、评论和附件四段式上传/下载；可作为 W4 共享层提炼评估输入。 |
 | `docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` | W4 重构子计划/RFC | `completed` | 四个共享 package、工作项协作 use case/UI、Browser adapters 与 composition root 已完成并通过 Browser E2E 和生产镜像 smoke。 | 已收口；下一切片只规划 D1 device-session/credential RFC，不直接启动 renderer、`app://` 或其他 D1 子域。 |
-| `docs/plans/2026-08-01-001-feat-d1-device-session-credential-plan.md` | D1 设备认证子计划/RFC | `active` | Browser 批准、device session、可恢复 refresh rotation、撤销和 Desktop 主进程安全凭证存储；不包含 renderer、SSE、文件或发行。 | 实现与本地验证已完成，等待三平台 Desktop Security workflow 后收口；下一切片只规划 `app://` 安全宿主。 |
+| `docs/plans/2026-08-01-001-feat-d1-device-session-credential-plan.md` | D1 设备认证子计划/RFC | `completed` | Browser 批准、device session、可恢复 refresh rotation、撤销、Desktop 主进程安全凭证存储与 Electron headless 集成已完成；不包含 renderer、SSE、文件或发行。 | 已由 API 全量、本机构建扫描和三平台 Desktop Security workflow 收口；下一切片只规划 `app://` 安全宿主。 |
 
 ### 阶段状态快照
 
@@ -62,7 +62,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | W2：浏览器应用壳、认证衔接与消息中心 | `completed`（首批壳与消息） | `web/src/app.jsx`、`web/src/lib/api.js`、`web/src/lib/routes.js`、`web/e2e/app-shell.spec.mjs`；登录 `return_to`、通知语义目标与幂等已读已有测试覆盖。 | 继续通过 W3 feature 切片扩展应用壳能力，不再重复建设壳。 |
 | W3：浏览器端高频 Feature 迁移 | `active`（首个读写闭环已完成） | 项目列表、工作项列表、工作项详情协作闭环已接入；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已收口。 | 资料库、项目详情和文档预览继续 pending；当前不并行新建 W3 子计划。 |
 | W4：共享 JavaScript 层提炼 | `completed` | 四个共享 package、公开 exports、Browser adapters、composition root、边界测试、19 项 Browser E2E 与生产镜像 smoke 已通过。 | 作为 D1 RFC 和后续 W3 feature 的共享边界基线维护。 |
-| D1 / D2：Electron 安全宿主与功能对齐 | `active`（设备认证基础待 CI 收口） | Browser 批准、独立 device session、可恢复 refresh rotation、撤销、安全凭证存储、主进程 coordinator 和真实 Electron headless integration 已落地；当前 Desktop 仍以远端 Web 页面为主。 | 先通过 macOS/Windows/Linux Desktop Security workflow；随后只规划 `app://` 安全宿主。 |
+| D1 / D2：Electron 安全宿主与功能对齐 | `active`（设备认证基础已完成） | Browser 批准、独立 device session、可恢复 refresh rotation、撤销、安全凭证存储、主进程 coordinator 和 Electron headless integration 已落地并通过三平台安全 Gate；当前 Desktop 仍以远端 Web 页面为主。 | 下一切片只规划 `app://` 安全宿主；Desktop SSE、file-transfer 和发行 Gate 继续保持独立。 |
 | G-DIST / D3 / D4：更新与离线能力 | `pending` | 未启动。 | 作为 D2 后独立 Gate 或离线专项，不阻塞 W3。 |
 
 ### W3 Feature 迁移矩阵

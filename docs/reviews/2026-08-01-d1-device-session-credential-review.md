@@ -1,7 +1,7 @@
 ---
 title: D1 设备会话与 Desktop 凭证收口复核
 type: review
-status: draft
+status: accepted
 date: 2026-08-01
 ---
 
@@ -17,9 +17,9 @@ date: 2026-08-01
 - Browser Cookie 回归：`auth_csrf_refresh_flow` 与 `auth_security_flow`。
 - API 全量 `cargo test`。
 - Desktop `npm --prefix desktop run check` 与 `npm --prefix desktop test`，包含 client + coordinator 组合测试，以及真实 Electron 主进程、HTTP transport、`safeStorage`、重启恢复和 logout 集成。
-- Electron `safeStorage` 与 OS single-instance smoke。
+- 本机 macOS 与三平台 CI 的 Electron `safeStorage`、OS single-instance smoke。
 - 根 `npm run check:frontend`，确认现有 Web/共享前端边界不回归。
-- `npm --prefix desktop run scan:credential-leaks` 扫描运行源码、脚本、fixture 与已有 `dist`；Release workflow 在构建后强制扫描打包产物。
+- `npm --prefix desktop run scan:credential-leaks` 扫描运行源码、脚本与存在的 fixture 根目录；当前提交重新构建 macOS arm64 bundle 后，对 `desktop/dist` 的 107 个文件执行必需目录扫描并通过。Release workflow 在每个平台构建后强制重复扫描。
 
 ## 主要发现
 
@@ -32,9 +32,10 @@ date: 2026-08-01
 
 ### 可接受的残留项
 
-- `.github/workflows/desktop-security.yml` 已配置 macOS/Windows/Linux 的 Desktop tests、泄漏扫描、真实 Electron `safeStorage` 与 single-instance smoke；当前结论保持 draft，等待本次推送的 matrix 结果。
+- Desktop Security [运行 30704836371](https://github.com/ZhcChen/yuance/actions/runs/30704836371) 已在 macOS、Windows、Linux 三个平台通过 Desktop checks/tests、泄漏扫描及对应 Electron smoke。
+- macOS 执行真实 Electron device flow、`safeStorage` 持久化、进程重启恢复与中断 logout 重试；Windows CI 以真实 `safeStorage` smoke、原生 Windows 原子替换/恢复测试和 single-instance smoke 分别证明平台边界；Linux 在 `basic_text` 环境明确 fail closed。
 - API integration 独立覆盖 Browser Cookie + CSRF 批准和真实服务端状态；Electron integration 使用真实主进程入口、loopback HTTP server、真实 `safeStorage` 与进程重启。人工 Browser 操作与部署现场强杀演练作为环境级补充，不冒充自动化证明。
-- 发行 bundle 扫描 Gate 已写入 `release-desktop.yml`，但未创建发布 tag，因此当前只有 Gate 配置与本地已有 `dist` 扫描结果，不声称已有新发行包结果。
+- 发行 bundle 扫描 Gate 已写入 `release-desktop.yml`；本次本地新构建 bundle 已扫描，但未创建发布 tag，不声称已有正式发行产物。
 - 当前远端 Web renderer 不消费 device token，业务 API 也默认拒绝 device access。这是计划边界，不是功能缺失。
 
 ### 建议后续跟进
@@ -55,5 +56,5 @@ date: 2026-08-01
 
 ## 结论
 
-- 结论：本地实现与验证通过，等待三平台 Desktop Security workflow 后接受。
-- 下一步：取得 CI matrix 证据，完成计划状态回填，再将本切片作为 `app://` 安全宿主 RFC 的认证输入。
+- 结论：通过。
+- 下一步：将本切片作为 `app://` 安全宿主 RFC 的认证输入。

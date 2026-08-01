@@ -1,7 +1,7 @@
 ---
 title: feat: D1 设备会话与 Desktop 凭证
 type: feat
-status: active
+status: completed
 date: 2026-08-01
 origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 ---
