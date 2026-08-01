@@ -1,0 +1,72 @@
+name: Desktop Security
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-security.yml"
+      - ".github/workflows/release-desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-security.yml"
+      - ".github/workflows/release-desktop.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - macos-latest
+          - windows-latest
+          - ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm --prefix desktop ci
+
+      - name: Run desktop checks
+        run: npm --prefix desktop run check
+
+      - name: Run desktop tests
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop test
+
+      - name: Run Linux desktop tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop test
+
+      - name: Scan credential artifacts
+        run: npm --prefix desktop run scan:credential-leaks
+
+      - name: Verify native safeStorage boundary
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
+
+      - name: Verify Linux safeStorage fail-closed boundary
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:safe-storage && xvfb-run -a npm --prefix desktop run smoke:single-instance

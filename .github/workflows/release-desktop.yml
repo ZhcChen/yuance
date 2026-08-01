@@ -36,7 +36,12 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
 
       - name: Run desktop tests
+        if: runner.os != 'Linux'
         run: npm --prefix desktop test
+
+      - name: Run Linux desktop tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop test
 
   build:
     name: Build ${{ matrix.platform.name }} ${{ matrix.platform.arch }}
@@ -98,7 +103,12 @@ jobs:
         run: npm --prefix desktop ci
 
       - name: Run desktop tests
+        if: runner.os != 'Linux'
         run: npm --prefix desktop test
+
+      - name: Run Linux desktop tests
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop test
 
       - name: Verify native safeStorage boundary
         if: runner.os != 'Linux'
@@ -112,6 +122,9 @@ jobs:
         run: npm --prefix desktop run dist:ci -- ${{ matrix.platform.target }} ${{ matrix.platform.arch_flag }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Scan packaged credential artifacts
+        run: npm --prefix desktop run scan:credential-leaks -- dist
 
       - name: Collect release asset
         run: node desktop/scripts/collect-release-assets.mjs desktop/dist .artifacts/release-assets

@@ -150,10 +150,7 @@ async fn message_open_redirects_unauthenticated_user_to_login_with_safe_return_t
 #[tokio::test]
 async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to() {
     let _guard = env_lock().lock().expect("env lock should acquire");
-    let previous = std::env::var("YUANCE_WEB_APP_SHELL_V1").ok();
-    unsafe {
-        std::env::set_var("YUANCE_WEB_APP_SHELL_V1", "true");
-    }
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
 
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
@@ -168,13 +165,6 @@ async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_retur
         )
         .await
         .expect("router should respond");
-
-    unsafe {
-        match previous {
-            Some(value) => std::env::set_var("YUANCE_WEB_APP_SHELL_V1", value),
-            None => std::env::remove_var("YUANCE_WEB_APP_SHELL_V1"),
-        }
-    }
 
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
@@ -811,6 +801,8 @@ async fn bootstrap_init_with_csrf_creates_admin_session() {
 
 #[tokio::test]
 async fn logout_revokes_session_and_clears_cookies() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", None);
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -858,7 +850,7 @@ async fn logout_revokes_session_and_clears_cookies() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/login?return_to=%2Fweb"
+        "/web/login"
     );
 }
 
@@ -1381,6 +1373,35 @@ fn test_settings() -> Settings {
 fn env_lock() -> &'static Mutex<()> {
     static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     ENV_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct EnvOverride {
+    key: &'static str,
+    previous: Option<String>,
+}
+
+impl EnvOverride {
+    fn set(key: &'static str, value: Option<&str>) -> Self {
+        let previous = std::env::var(key).ok();
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(key, value),
+                None => std::env::remove_var(key),
+            }
+        }
+        Self { key, previous }
+    }
+}
+
+impl Drop for EnvOverride {
+    fn drop(&mut self) {
+        unsafe {
+            match self.previous.take() {
+                Some(value) => std::env::set_var(self.key, value),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 }
 
 fn csrf_cookie() -> String {

@@ -169,7 +169,7 @@ async function installationId(userDataPath) {
   return loadOrCreateInstallationId({ fs, filePath, platform: process.platform });
 }
 
-async function runDeviceAuthHeadless(serverInstanceId) {
+async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", openExternal = true } = {}) {
   const endpoint = resolveDeviceAuthEndpoint({ isDevRuntime });
   const profile = createDesktopProfile({
     endpoint,
@@ -197,7 +197,22 @@ async function runDeviceAuthHeadless(serverInstanceId) {
     client: createDeviceAuthClient({ profile }),
   });
   const initialized = await coordinator.initialize();
+  if (action === "logout" && initialized.status === "locked" && initialized.reason === "pending_revocation") {
+    const loggedOut = await coordinator.retryPendingRevocation();
+    process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true, recovered: true })}\n`);
+    return;
+  }
+  if (action === "logout" && initialized.status === "revoked") {
+    const loggedOut = await coordinator.discardLocalSession();
+    process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true, recovered: true })}\n`);
+    return;
+  }
   if (initialized.status === "authenticated") {
+    if (action === "logout") {
+      const loggedOut = await coordinator.logout();
+      process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true })}\n`);
+      return;
+    }
     process.stdout.write(`${JSON.stringify({ status: initialized.status, recovered: true })}\n`);
     return;
   }
@@ -210,7 +225,9 @@ async function runDeviceAuthHeadless(serverInstanceId) {
     platform: process.platform,
     clientVersion: app.getVersion(),
     onUserCode: (userCode) => process.stdout.write(`user_code=${userCode}\n`),
-    openExternal: (verificationUrl) => shell.openExternal(verificationUrl),
+    openExternal: openExternal
+      ? (verificationUrl) => shell.openExternal(verificationUrl)
+      : async () => {},
   });
   process.stdout.write(`${JSON.stringify({ status: result.status })}\n`);
 }
@@ -222,10 +239,21 @@ if (isDevRuntime) {
   app.setPath("userData", developmentDataPaths.userData);
   app.setPath("sessionData", developmentDataPaths.sessionData);
 }
+const headlessUserDataPath = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--user-data-path="))?.slice("--user-data-path=".length)
+  : undefined;
+if (headlessUserDataPath) {
+  if (!path.isAbsolute(headlessUserDataPath)) throw new Error("--user-data-path must be absolute");
+  app.setPath("userData", headlessUserDataPath);
+  app.setPath("sessionData", path.join(headlessUserDataPath, "Session Data"));
+}
 const isSafeStorageSmoke = !app.isPackaged && process.argv.includes("--safe-storage-smoke");
 const deviceAuthHeadless = !app.isPackaged && process.argv.includes("--device-auth-headless");
 const headlessServerInstanceId = !app.isPackaged
   ? process.argv.find((value) => value.startsWith("--server-instance-id="))?.slice("--server-instance-id=".length)
+  : undefined;
+const headlessAction = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--device-auth-action="))?.slice("--device-auth-action=".length)
   : undefined;
 const singleInstanceProbe = !app.isPackaged
   ? process.argv.find((value) => value.startsWith("--single-instance-lock-probe="))
@@ -261,7 +289,13 @@ if (singleInstanceProbe) {
       try {
         if (!headlessServerInstanceId) throw new Error("--server-instance-id is required");
         initializeCredentialStoreFactory();
-        await runDeviceAuthHeadless(headlessServerInstanceId);
+        if (headlessAction && !["authorize", "logout"].includes(headlessAction)) {
+          throw new Error("--device-auth-action must be authorize or logout");
+        }
+        await runDeviceAuthHeadless(headlessServerInstanceId, {
+          action: headlessAction || "authorize",
+          openExternal: !process.argv.includes("--no-open-external"),
+        });
         app.exit(0);
       } catch (error) {
         process.stderr.write(`device auth headless failed: ${error.message}\n`);

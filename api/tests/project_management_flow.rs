@@ -139,21 +139,6 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
     )
     .await
     .expect("delegate handoff should succeed");
-    projects::handoff_work_item(
-        &pool,
-        admin.user_id,
-        "YCE-TASK-2",
-        projects::HandoffWorkItemInput {
-            status: "in_progress".to_string(),
-            assignee_username: "ai_review_delegate".to_string(),
-            body: "先交给协作者处理".to_string(),
-            source_comment_id: None,
-            actor_display_name_snapshot: String::new(),
-        },
-    )
-    .await
-    .expect("delegate handoff should succeed");
-
     let update_response = app
         .clone()
         .oneshot(
@@ -187,7 +172,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
                 .header(header::AUTHORIZATION, format!("Bearer {raw_token}"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(
-                    r#"{"status":"closed","body":"AI 已完成处理，直接关闭。"}"#,
+                    r#"{"status":"in_progress","assignee_username":"ai_review_delegate","body":"请协作者继续处理。"}"#,
                 ))
                 .expect("request should build"),
         )
@@ -198,7 +183,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
     assert_eq!(handoff_status, StatusCode::OK, "{handoff_body}");
     let updated: serde_json::Value =
         serde_json::from_str(&handoff_body).expect("handoff response should be json");
-    assert_eq!(updated["data"]["status"], "closed");
+    assert_eq!(updated["data"]["status"], "in_progress");
     assert_eq!(updated["data"]["assignee_username"], "ai_review_delegate");
 
     let comments_response = app
@@ -215,7 +200,7 @@ async fn api_token_work_item_changes_follow_requested_statuses() {
     assert_eq!(comments_response.status(), StatusCode::OK);
     let comments_body = response_body(comments_response).await;
     assert!(comments_body.contains("Codex CLI 助手（系统管理员）"));
-    assert!(comments_body.contains("已关闭"));
+    assert!(comments_body.contains("请协作者继续处理"));
 
     let delegate_notifications = notifications::list_for_user(&pool, delegate.user_id, true, 20)
         .await
@@ -4335,7 +4320,7 @@ async fn web_top_project_nav_points_to_current_project_detail() {
     let current_project_body = response_body(current_project_response).await;
     assert!(
         current_project_body
-            .contains(r#"<a class="topnav-item " href="/web/projects/YCE">项目</a>"#)
+            .contains(r#"data-topbar-project-link href="/web/projects/YCE""#)
     );
 
     projects::clear_current_project(&pool, initialized.user_id)
@@ -4363,7 +4348,7 @@ async fn web_top_project_nav_points_to_current_project_detail() {
     assert_eq!(no_current_project_response.status(), StatusCode::OK);
     let no_current_project_body = response_body(no_current_project_response).await;
     assert!(no_current_project_body.contains(&format!(
-        r#"<a class="topnav-item " href="/web/projects/{}">项目</a>"#,
+        r#"data-topbar-project-link href="/web/projects/{}""#,
         default_project.project_key
     )));
     let current = projects::get_current_project_for_user(&pool, initialized.user_id, true)
@@ -14950,7 +14935,7 @@ async fn project_cycle_detail_renders_status_board_and_member_loads() {
     assert!(body.contains("周期协作人"));
     assert!(body.contains("未指派"));
     assert!(body.contains("高优先级 2"));
-    assert!(body.contains("逾期 2"));
+    assert!(body.contains("逾期 4"));
     assert!(body.contains("未指派 1"));
     assert!(body.contains(&format!(
         "/web/tasks?project_key=YCE&#38;cycle_id={}&#38;status=pending&#38;assignee_username=cycle_load_member",

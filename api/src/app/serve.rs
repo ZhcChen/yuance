@@ -13,7 +13,7 @@ pub async fn run(args: ServeArgs) -> AppResult<()> {
 
     let listener = TcpListener::bind(settings.http_addr).await?;
     let pool = db::connect_pool(&settings).await?;
-    spawn_device_rotation_cleanup(pool.clone());
+    spawn_device_credential_cleanup(pool.clone());
     tracing::info!(
         addr = %settings.http_addr,
         env = %settings.env,
@@ -31,14 +31,31 @@ pub async fn run(args: ServeArgs) -> AppResult<()> {
     Ok(())
 }
 
-fn spawn_device_rotation_cleanup(pool: sqlx::SqlitePool) {
+fn spawn_device_credential_cleanup(pool: sqlx::SqlitePool) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
         loop {
             interval.tick().await;
-            match device_sessions::cleanup_expired_rotation_results(&pool, chrono::Utc::now(), 500)
-                .await
-            {
+            let now = chrono::Utc::now();
+            match device_sessions::cleanup_expired_authorizations(&pool, now, 500).await {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(cleaned, "cleaned expired device authorizations");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "failed to clean expired device authorizations");
+                }
+            }
+            match device_sessions::erase_expired_exchange_results(&pool, now).await {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(cleaned, "cleaned expired device exchange results");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "failed to clean expired device exchange results");
+                }
+            }
+            match device_sessions::cleanup_expired_rotation_results(&pool, now, 500).await {
                 Ok(cleaned) if cleaned > 0 => {
                     tracing::info!(cleaned, "cleaned expired device rotation results");
                 }

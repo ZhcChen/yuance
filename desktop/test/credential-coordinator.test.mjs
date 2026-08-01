@@ -463,6 +463,29 @@ test("pending revocation restart stays locked and can only retry revocation or c
   assert.equal(revocations.size, 0);
 });
 
+test("pending revocation discards local credentials when refresh proves the family is revoked", async () => {
+  const store = memoryStore({ status: "available", credential: storedCredential });
+  const revocations = new Set([profile.key]);
+  const coordinator = createCredentialCoordinator({
+    profile,
+    credentialStore: store,
+    pendingAuthorizationStore: { load: async () => ({ status: "empty" }), save: async () => ({ status: "saved" }), remove: async () => ({ status: "removed" }) },
+    pendingRevocationStore: {
+      has: async () => revocations.has(profile.key),
+      mark: async () => ({ status: "saved" }),
+      clear: async () => { revocations.delete(profile.key); return { status: "removed" }; },
+    },
+    client: {
+      refresh: async () => { throw Object.assign(new Error("revoked"), { code: "family_revoked" }); },
+    },
+  });
+  await coordinator.initialize();
+
+  assert.equal((await coordinator.retryPendingRevocation()).status, "unauthenticated");
+  assert.deepEqual(await store.load(), { status: "empty" });
+  assert.equal(revocations.size, 0);
+});
+
 test("pending revocation cannot be overwritten by a new authorization", async () => {
   const store = memoryStore({ status: "available", credential: storedCredential });
   const revocations = new Set([profile.key]);
@@ -568,7 +591,7 @@ test("late access cannot unlock a coordinator after logout starts", async () => 
   await assert.rejects(logout, /offline/);
 });
 
-test("revoked pending session can discard only local credentials and marker", async () => {
+test("revoked pending session automatically discards local credentials and marker", async () => {
   const store = memoryStore({ status: "available", credential: storedCredential });
   const revocations = new Set([profile.key]);
   const coordinator = createCredentialCoordinator({
@@ -583,9 +606,7 @@ test("revoked pending session can discard only local credentials and marker", as
     randomUUID: () => "550e8400-e29b-41d4-a716-446655440000",
   });
   await coordinator.initialize();
-  await assert.rejects(coordinator.retryPendingRevocation());
-  assert.equal(coordinator.snapshot().status, "revoked");
-  await coordinator.discardLocalSession();
+  await coordinator.retryPendingRevocation();
   assert.deepEqual(await store.load(), { status: "empty" });
   assert.equal(revocations.size, 0);
   assert.equal(coordinator.snapshot().status, "unauthenticated");

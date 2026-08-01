@@ -491,6 +491,55 @@ pub async fn cleanup_expired_rotation_results(
     Ok(result.rows_affected())
 }
 
+pub async fn cleanup_expired_authorizations(
+    pool: &SqlitePool,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> DeviceSessionResult<u64> {
+    if !(1..=1000).contains(&limit) {
+        return Err(DeviceSessionError::InvalidRequest(
+            "authorization cleanup limit 必须介于 1 和 1000".to_string(),
+        ));
+    }
+    let now_value = timestamp(now);
+    let retention_cutoff = timestamp(now - Duration::seconds(EXPIRED_AUTHORIZATION_RETENTION_SECONDS));
+    let mut transaction = pool.begin().await?;
+    let expired = sqlx::query(
+        r#"
+        UPDATE device_authorizations
+        SET authorization_status = 'expired', updated_at = ?1
+        WHERE authorization_status IN ('pending', 'approved') AND expires_at <= ?1
+        "#,
+    )
+    .bind(&now_value)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+    let deleted = sqlx::query(
+        r#"
+        DELETE FROM device_authorizations
+        WHERE id IN (
+            SELECT authorization.id FROM device_authorizations authorization
+            WHERE authorization.authorization_status IN ('expired', 'denied')
+              AND authorization.updated_at <= ?1
+              AND NOT EXISTS (
+                  SELECT 1 FROM device_credential_families family
+                  WHERE family.authorization_id = authorization.id
+              )
+            ORDER BY authorization.updated_at
+            LIMIT ?2
+        )
+        "#,
+    )
+    .bind(retention_cutoff)
+    .bind(limit)
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+    transaction.commit().await?;
+    Ok(expired + deleted)
+}
+
 pub async fn erase_expired_exchange_results(
     pool: &SqlitePool,
     now: DateTime<Utc>,
@@ -2253,6 +2302,45 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(retained, (1, String::new()));
+    }
+
+    #[tokio::test]
+    async fn authorization_cleanup_expires_and_later_removes_unbound_records() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let (started, _) = start(&pool, now).await;
+        sqlx::query("UPDATE device_authorizations SET expires_at = ?1 WHERE id = ?2")
+            .bind(timestamp(now - Duration::seconds(1)))
+            .bind(&started.authorization_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        assert_eq!(cleanup_expired_authorizations(&pool, now, 100).await.unwrap(), 1);
+        let status = sqlx::query_scalar::<_, String>(
+            "SELECT authorization_status FROM device_authorizations WHERE id = ?1",
+        )
+        .bind(&started.authorization_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "expired");
+
+        let after_retention = now + Duration::seconds(EXPIRED_AUTHORIZATION_RETENTION_SECONDS + 1);
+        assert_eq!(
+            cleanup_expired_authorizations(&pool, after_retention, 100)
+                .await
+                .unwrap(),
+            1
+        );
+        let remaining = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM device_authorizations WHERE id = ?1",
+        )
+        .bind(&started.authorization_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(remaining, 0);
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@ const STATES = Object.freeze([
 ]);
 const REVOKED_CODES = new Set([
   "device_revoked",
+  "family_revoked",
   "device_session_revoked",
   "user_inactive",
   "device_refresh_replay",
@@ -385,9 +386,10 @@ export function createCredentialCoordinator({
       if (!access) await rotate({ recovery: Boolean(credential.pendingRotation), allowLocked: true });
       return await logout();
     } catch (error) {
-      if (!REVOKED_CODES.has(error?.code) && error?.securityFailure !== true) {
-        transition("locked", "pending_revocation");
+      if (status === "revoked" || REVOKED_CODES.has(error?.code) || error?.securityFailure === true) {
+        return discardLocalSession();
       }
+      transition("locked", "pending_revocation");
       throw error;
     }
   }
@@ -449,7 +451,7 @@ export function createCredentialCoordinator({
 
   async function runLogout() {
     operationEpoch += 1;
-    const token = access?.token;
+    let token = access?.token;
     access = null;
     transition("locked", "pending_revocation");
     const marker = await pendingRevocationStore.mark(profile.key);
@@ -465,6 +467,12 @@ export function createCredentialCoordinator({
       throw new CredentialCoordinatorError("authorization_cleanup_failed", "Could not remove pending authorization");
     }
     try {
+      if (!token && credential) {
+        await rotate({ recovery: Boolean(credential.pendingRotation), allowLocked: true });
+        token = access?.token;
+        access = null;
+        transition("locked", "pending_revocation");
+      }
       if (!token) throw new CredentialCoordinatorError("access_unavailable", "Device access is unavailable for logout");
       const result = await client.logout(token);
       if (credential && result.familyId !== credential.familyId) {
@@ -482,6 +490,9 @@ export function createCredentialCoordinator({
       transition("unauthenticated");
       return snapshot();
     } catch (error) {
+      if (status === "revoked" || REVOKED_CODES.has(error?.code) || error?.securityFailure === true) {
+        return discardLocalSession();
+      }
       transition("locked", "pending_revocation");
       throw error;
     }
