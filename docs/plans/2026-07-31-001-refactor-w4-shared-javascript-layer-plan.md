@@ -18,7 +18,11 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 
 2026-07-31 执行记录：Unit 3 已完成。`ApiError`、错误 payload 映射、注入式 `createApiClient()`、工作项/评论/附件、通知、topbar 与基础 auth/project client 已进入 `frontend/packages/api-client`；Browser Cookie/CSRF、401 登录跳转、`return_to` hash 恢复和 `EventSource` 继续留在 `web/src/lib/api.js`。`web` 已通过本地 package dependency 回接共享 `api-client`，现有 Web API transport 测试保持通过。
 
-2026-07-31 执行记录：Unit 4A 已完成。纯路由 builder/parser 与通知 target 映射已进入 `frontend/packages/app-core`，并新增 package 单元测试；`web/src/lib/routes.js` 仅保留 `window.location` 默认参数 wrapper，`web/src/lib/notification-target.js` 改为公开 re-export。原 Unit 4 已按边界拆为 4A-4D，后续依次完成平台能力契约、工作项 mutation/comment use case 和附件编排回接。
+2026-07-31 执行记录：Unit 4A 已完成。纯路由 builder/parser 与通知 target 映射已进入 `frontend/packages/app-core`，并新增 package 单元测试；`web/src/lib/routes.js` 仅保留 `window.location` 默认参数 wrapper，`web/src/lib/notification-target.js` 改为公开 re-export。原 Unit 4 已按边界拆为 4A-4D。
+
+2026-08-01 执行记录：Unit 4B-4D 已完成。`platform-contract` 已冻结文件选择、签名对象传输、受控下载、路由和状态反馈能力；工作项 mutation、handoff、评论及附件编排已进入 `app-core`，Browser `File`、header 过滤、对象存储请求和 DOM 下载留在 `web/src/platform/browser/files.js`。共享层与 Browser adapter 单元测试覆盖 action 过期保护、确认状态一致性、上传四段式顺序、失败短路、受控 URL/header 和 capability 生命周期；完整 19 项 Browser E2E 通过。
+
+2026-08-01 执行记录：Unit 5 已完成。工作项详情、评论、附件、formatter 和直接样式已提取到 `frontend/packages/ui`，并通过公开 package exports 回接 Web；共享 UI 采用 `tsx --test` 执行 9 项 SSR contract 测试，不依赖 `window`、`document`、`fetch`、Browser adapter 或其他内部业务 package。Vite 已显式 dedupe React runtime，生产构建模块数由重复 React 状态的 61 降至 51；完整 19 项 Browser E2E 通过。
 
 ## 问题框架
 
@@ -101,12 +105,9 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 ### Resolved During Implementation
 
 - **`web` 如何消费共享 package？** 已采用 `file:../frontend/packages/*` 本地 package dependency，并由 `web/package-lock.json` 固定解析；Unit 3 已通过 checkJs、Node test 和 Vite build 证明共享 `api-client` 可回接。本阶段不把整个仓库改为 root npm workspace，Unit 6 继续验证 React 单例和公开导出边界。
-
-### Deferred to Implementation
-
-- **UI package 是否引入组件测试运行器。** 若现有 Node test 无法经济地覆盖 React 组件 contract，Unit 5 可选择最小测试依赖；但不得用测试工具选择阻塞 Browser E2E 回归。
-- **附件 signed request 执行 contract 的最终命名。** Unit 4B 根据现有 `AppSignedObjectRequest` 与 Browser adapter 实作确定命名；计划只要求语义边界，不预写具体函数名。
-- **是否在 W4 顺手拆分整个 `App`。** 由实施中复杂度决定。若继续拆分会扩大风险，应只拆工作项协作和路由/通知相关组件，其余保持 Browser 壳内。
+- **UI package 是否引入组件测试运行器？** 已引入最小的 `tsx` test runner，以 Node test + React SSR 验证组件静态 contract；用户交互和宿主集成继续由 Browser E2E 验收。
+- **附件 signed request 执行 contract 的最终命名是什么？** 平台契约采用 `SignedObjectRequest`、`ObjectTransferCapability`、`uploadObject` 和 `downloadObject`，Browser adapter 只消费由认证 API 响应生成且具备用途、TTL 和一次性约束的 capability。
+- **是否在 W4 顺手拆分整个 `App`？** 不拆分整个应用壳。Unit 5 只提取已验证的工作项详情、评论、附件和 formatter；消息中心、项目列表、工作项列表及 Browser 状态编排继续留在 `web/src/app.jsx`，Unit 6 只收口宿主 adapter 与 composition root。
 
 ## High-Level Technical Design
 
@@ -329,7 +330,7 @@ flowchart TB
 - `web/src/lib/routes.js` 与 `web/src/lib/notification-target.js` 成为兼容 wrapper 或被安全移除。
 - Web 页面刷新、前进/后退和通知跳转不因提取改变。
 
-- [ ] **Unit 4B: 定义平台文件、下载与路由能力契约**
+- [x] **Unit 4B: 定义平台文件、下载与路由能力契约**
 
 **Goal:** 在 `platform-contract` 中定义 W4 实际需要的平台能力形状，不引入 Browser 或 Desktop 实现。
 
@@ -353,7 +354,7 @@ flowchart TB
 - `platform-contract` 单元测试和边界检查通过。
 - package 不导入 Browser、Electron、Node.js 或业务 feature。
 
-- [ ] **Unit 4C: 提取工作项 mutation 与评论 use case**
+- [x] **Unit 4C: 提取工作项 mutation 与评论 use case**
 
 **Goal:** 将工作项编辑、handoff、评论新增和评论编辑编排提成不依赖 React state 或 DOM 的 use case。
 
@@ -376,7 +377,7 @@ flowchart TB
 - 单元测试覆盖编辑、handoff、评论新增/编辑、刷新顺序、错误透传和过期响应。
 - Web 聚焦测试与现有工作项协作 E2E 通过。
 
-- [ ] **Unit 4D: 提取附件编排并回接 Browser adapter**
+- [x] **Unit 4D: 提取附件编排并回接 Browser adapter**
 
 **Goal:** 提取工作项与评论附件上传/下载编排，以 Unit 4B 的平台契约执行宿主操作。
 
@@ -400,7 +401,7 @@ flowchart TB
 - 单元测试覆盖上传顺序、签名/平台失败时不确认 uploaded、下载意图和错误透传。
 - 工作项及评论附件上传/下载 Browser E2E 通过。
 
-- [ ] **Unit 5: 提取首批无宿主副作用 UI 组件与样式策略**
+- [x] **Unit 5: 提取首批无宿主副作用 UI 组件与样式策略**
 
 **Goal:** 从 `web/src/app.jsx` 和 `web/src/app.css` 中提取首批纯 UI 组件，使工作项详情协作页面由共享 `ui` 组件渲染，Browser 宿主只负责状态、adapter 和 composition。
 
