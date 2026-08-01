@@ -353,14 +353,13 @@ async function runAppProtocolSmoke(window) {
 
 function notifyFromRenderer(event, payload) {
   assertTrustedIpcSender(event);
-  if (!Notification.isSupported() || (mainWindow && mainWindow.isFocused())) {
-    return { shown: false };
-  }
-
   const notificationPayload = normalizeNotificationPayload(
     parseNotificationPayload(payload),
     rendererTarget.origin,
   );
+  if (!Notification.isSupported() || (mainWindow && mainWindow.isFocused())) {
+    return { shown: false };
+  }
   const notification = new Notification({
     title: notificationPayload.title,
     body: notificationPayload.body,

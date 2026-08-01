@@ -31,12 +31,16 @@ function archivePath(value) {
   return value.replace(/^[/\\]+/u, "").replaceAll("\\", "/");
 }
 
-function extract(archive, relativePath) {
-  return asar.extractFile(archive, relativePath, false);
+function rawArchivePath(value) {
+  return value.replace(/^[/\\]+/u, "");
 }
 
-function assertArchivedRegularFile(archive, relativePath) {
-  const stats = asar.statFile(archive, relativePath, false);
+function extract(archive, entries, relativePath) {
+  return asar.extractFile(archive, entries.get(relativePath) ?? relativePath, false);
+}
+
+function assertArchivedRegularFile(archive, entries, relativePath) {
+  const stats = asar.statFile(archive, entries.get(relativePath) ?? relativePath, false);
   if (!stats || typeof stats.size !== "number" || "files" in stats || "link" in stats || stats.unpacked) {
     throw new Error(`Required ASAR file is missing or unpacked: ${relativePath}`);
   }
@@ -86,14 +90,17 @@ export async function findAppAsar(inputPath) {
 
 export async function verifyAppBundle(inputPath) {
   const archive = await findAppAsar(inputPath);
-  const listed = new Set(asar.listPackage(archive).map(archivePath));
+  const entries = new Map(
+    asar.listPackage(archive).map((entry) => [archivePath(entry), rawArchivePath(entry)]),
+  );
+  const listed = new Set(entries.keys());
   for (const required of REQUIRED_ARCHIVE_FILES) {
     if (!listed.has(required)) throw new Error(`Required ASAR entry is missing: ${required}`);
-    assertArchivedRegularFile(archive, required);
+    assertArchivedRegularFile(archive, entries, required);
   }
 
   const manifest = validateResourceManifest(
-    JSON.parse(extract(archive, "renderer-dist/resource-manifest.json").toString("utf8")),
+    JSON.parse(extract(archive, entries, "renderer-dist/resource-manifest.json").toString("utf8")),
   );
   const expectedRendererFiles = new Set(["renderer-dist/resource-manifest.json"]);
   for (const resource of Object.values(manifest.files)) {
@@ -107,8 +114,8 @@ export async function verifyAppBundle(inputPath) {
     const relativePath = `renderer-dist/${resource.relativePath}`;
     expectedRendererFiles.add(relativePath);
     if (!listed.has(relativePath)) throw new Error(`Manifest resource is missing from ASAR: ${relativePath}`);
-    assertArchivedRegularFile(archive, relativePath);
-    const contents = extract(archive, relativePath);
+    assertArchivedRegularFile(archive, entries, relativePath);
+    const contents = extract(archive, entries, relativePath);
     if (/(?:https?:\/\/(?:127\.0\.0\.1|localhost)|@vite\/client)/iu.test(contents.toString("utf8"))) {
       throw new Error(`Renderer resource contains a development runtime reference: ${relativePath}`);
     }
@@ -119,14 +126,16 @@ export async function verifyAppBundle(inputPath) {
   }
   for (const entry of listed) {
     if (entry.startsWith("renderer-dist/") && !expectedRendererFiles.has(entry)) {
-      const stats = asar.statFile(archive, entry, false);
+      const stats = asar.statFile(archive, entries.get(entry) ?? entry, false);
       if (typeof stats.size === "number" || "link" in stats) {
         throw new Error(`Unregistered renderer file is present in ASAR: ${entry}`);
       }
     }
   }
-  verifyCspSource(extract(archive, "src/protocol/app-protocol.mjs").toString("utf8"));
-  verifyProtocolHandlerSource(extract(archive, "src/protocol/app-protocol-handler.mjs").toString("utf8"));
+  verifyCspSource(extract(archive, entries, "src/protocol/app-protocol.mjs").toString("utf8"));
+  verifyProtocolHandlerSource(
+    extract(archive, entries, "src/protocol/app-protocol-handler.mjs").toString("utf8"),
+  );
   return Object.freeze({ archive, resourceCount: manifest.files ? Object.keys(manifest.files).length : 0 });
 }
 

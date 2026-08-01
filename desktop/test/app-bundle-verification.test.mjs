@@ -8,6 +8,26 @@ import test from "node:test";
 import { createResourceManifest } from "../src/protocol/resource-manifest.mjs";
 import { verifyAppBundle } from "../scripts/verify-app-bundle.mjs";
 
+async function waitForArchiveFixture(archive) {
+  let lastError;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      const manifestEntry = asar.listPackage(archive).find(
+        (entry) => entry.replace(/^[/\\]+/u, "").replaceAll("\\", "/") === "renderer-dist/resource-manifest.json",
+      );
+      if (!manifestEntry) throw new Error("Fixture manifest is missing from ASAR.");
+      JSON.parse(
+        asar.extractFile(archive, manifestEntry.replace(/^[/\\]+/u, ""), false).toString("utf8"),
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
+}
+
 async function createBundleFixture({
   extraRendererFiles = {},
   protocolHandlerSource,
@@ -50,6 +70,7 @@ async function createBundleFixture({
   }
   const archive = path.join(root, "app.asar");
   await asar.createPackage(source, archive);
+  await waitForArchiveFixture(archive);
   return { archive, root };
 }
 

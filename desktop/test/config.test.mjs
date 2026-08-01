@@ -121,6 +121,16 @@ test("intercepts both direct navigations and server redirects", () => {
   assert.match(mainSource, /if \(!event\.isMainFrame\) handleNavigation\(event\)/);
 });
 
+test("validates notification payloads before platform availability shortcuts", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  const handlerIndex = mainSource.indexOf("function notifyFromRenderer");
+  const payloadIndex = mainSource.indexOf("parseNotificationPayload(payload)", handlerIndex);
+  const availabilityIndex = mainSource.indexOf("Notification.isSupported()", handlerIndex);
+  assert.ok(handlerIndex >= 0);
+  assert.ok(payloadIndex > handlerIndex);
+  assert.ok(availabilityIndex > payloadIndex);
+});
+
 test("configures development storage and maximizes the startup window", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /app\.setPath\("userData", developmentDataPaths\.userData\)/);
