@@ -13,10 +13,19 @@ import {
   isTrustedAppUrl,
   normalizeNotificationPayload,
   resolveDesktopAppIdentity,
+  resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
   resolveWebUrl,
 } from "./config.mjs";
 import { createProfileCredentialStore } from "./auth/credential-store.mjs";
+import { createDesktopProfile } from "./auth/profile.mjs";
+import { createDeviceAuthClient } from "./auth/device-auth-client.mjs";
+import { loadOrCreateInstallationId } from "./auth/installation-id.mjs";
+import {
+  createCredentialCoordinator,
+  createPendingAuthorizationStore,
+  createPendingRevocationStore,
+} from "./auth/credential-coordinator.mjs";
 import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -155,6 +164,57 @@ function initializeCredentialStoreFactory() {
     });
 }
 
+async function installationId(userDataPath) {
+  const filePath = path.join(userDataPath, "Device Credentials", "installation-id");
+  return loadOrCreateInstallationId({ fs, filePath, platform: process.platform });
+}
+
+async function runDeviceAuthHeadless(serverInstanceId) {
+  const endpoint = resolveDeviceAuthEndpoint({ isDevRuntime });
+  const profile = createDesktopProfile({
+    endpoint,
+    serverInstanceId,
+    mode: "development",
+    allowLoopbackHttp: endpoint.startsWith("http://"),
+  });
+  const userDataPath = app.getPath("userData");
+  const credentialDirectory = path.join(userDataPath, "Device Credentials");
+  const profileHash = profile.key.slice(profile.key.indexOf(":") + 1);
+  const coordinator = createCredentialCoordinator({
+    profile,
+    credentialStore: credentialStoreForProfile(profile),
+    pendingAuthorizationStore: createPendingAuthorizationStore({
+      safeStorage,
+      fs,
+      filePath: path.join(credentialDirectory, `${profileHash}.authorization.enc.json`),
+      profile,
+      platform: process.platform,
+    }),
+    pendingRevocationStore: createPendingRevocationStore({
+      fs,
+      directory: path.join(credentialDirectory, "Pending Revocations"),
+    }),
+    client: createDeviceAuthClient({ profile }),
+  });
+  const initialized = await coordinator.initialize();
+  if (initialized.status === "authenticated") {
+    process.stdout.write(`${JSON.stringify({ status: initialized.status, recovered: true })}\n`);
+    return;
+  }
+  if (initialized.status === "locked" || initialized.status === "revoked") {
+    throw new Error(`credential coordinator is ${initialized.status}: ${initialized.reason}`);
+  }
+  const result = await coordinator.authorize({
+    installationId: await installationId(userDataPath),
+    deviceName: `${appIdentity.displayName} (${process.platform})`,
+    platform: process.platform,
+    clientVersion: app.getVersion(),
+    onUserCode: (userCode) => process.stdout.write(`user_code=${userCode}\n`),
+    openExternal: (verificationUrl) => shell.openExternal(verificationUrl),
+  });
+  process.stdout.write(`${JSON.stringify({ status: result.status })}\n`);
+}
+
 app.setName(appIdentity.displayName);
 app.setAppUserModelId(appIdentity.appUserModelId);
 if (isDevRuntime) {
@@ -163,6 +223,10 @@ if (isDevRuntime) {
   app.setPath("sessionData", developmentDataPaths.sessionData);
 }
 const isSafeStorageSmoke = !app.isPackaged && process.argv.includes("--safe-storage-smoke");
+const deviceAuthHeadless = !app.isPackaged && process.argv.includes("--device-auth-headless");
+const headlessServerInstanceId = !app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--server-instance-id="))?.slice("--server-instance-id=".length)
+  : undefined;
 const singleInstanceProbe = !app.isPackaged
   ? process.argv.find((value) => value.startsWith("--single-instance-lock-probe="))
   : undefined;
@@ -188,6 +252,23 @@ if (singleInstanceProbe) {
       app.exit(1);
     }
   });
+} else if (deviceAuthHeadless) {
+  const hasSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!hasSingleInstanceLock) {
+    app.exit(2);
+  } else {
+    app.whenReady().then(async () => {
+      try {
+        if (!headlessServerInstanceId) throw new Error("--server-instance-id is required");
+        initializeCredentialStoreFactory();
+        await runDeviceAuthHeadless(headlessServerInstanceId);
+        app.exit(0);
+      } catch (error) {
+        process.stderr.write(`device auth headless failed: ${error.message}\n`);
+        app.exit(1);
+      }
+    });
+  }
 } else {
   ipcMain.handle("yuance:notify", notifyFromRenderer);
   const hasSingleInstanceLock = app.requestSingleInstanceLock();
