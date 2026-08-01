@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
 
 import { createCredentialRuntime } from "../src/auth/credential-runtime.mjs";
@@ -113,7 +114,7 @@ test("profile evidence mismatch locks until an explicit local discard", async ()
   assert.deepEqual(fs.removed, []);
   assert.deepEqual(await runtime.discardMismatchedProfile(), { status: "unauthenticated" });
   assert.equal(coordinator.initializeCalls, 1);
-  assert.deepEqual(fs.removed, [`/tmp/yuance-runtime-test/Device Credentials/${"b".repeat(64)}.enc.json`]);
+  assert.deepEqual(fs.removed, [path.join("/tmp/yuance-runtime-test", "Device Credentials", `${"b".repeat(64)}.enc.json`)]);
   assert.deepEqual(states, [{ status: "locked" }, { status: "unauthenticated" }]);
 });
 
@@ -219,7 +220,7 @@ function fakeFs({ entries = [] } = {}) {
     async readdir() { return currentEntries; },
     async rm(filePath) {
       this.removed.push(filePath);
-      currentEntries = currentEntries.filter((entry) => entry !== filePath.split("/").at(-1));
+      currentEntries = currentEntries.filter((entry) => entry !== path.basename(filePath));
     },
   };
   return adapter;
