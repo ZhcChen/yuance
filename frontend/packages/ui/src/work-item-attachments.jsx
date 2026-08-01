@@ -1,0 +1,77 @@
+// @ts-check
+
+import React from 'react';
+
+import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';
+
+/**
+ * @typedef {object} Attachment
+ * @property {number} id
+ * @property {string} filename
+ * @property {string} content_type
+ * @property {number} byte_size
+ * @property {string} status
+ * @property {string} created_by
+ * @property {string} created_at
+ */
+
+/**
+ * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, onDownload: (attachment: Attachment) => void, showCreator?: boolean, className?: string }} props
+ */
+export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, onDownload, showCreator = false, className = '' }) {
+  return (
+    <ul className={`work-item-attachment-list ${className}`.trim()} aria-label={ariaLabel}>
+      {attachments.map((attachment) => (
+        <li key={attachment.id} className={`work-item-attachment-row is-${attachment.status || 'unknown'}`}>
+          <div className="work-item-attachment-main">
+            <strong>{attachment.filename || '未命名附件'}</strong>
+            <span className="shell-meta">
+              {formatByteSize(attachment.byte_size)} · {attachment.content_type || 'application/octet-stream'} · {attachmentStatusLabel(attachment.status)}
+            </span>
+            {showCreator ? <span className="shell-muted">{attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}</span> : null}
+          </div>
+          <div className="work-item-attachment-actions">
+            {attachmentIsUploaded(attachment) ? (
+              <button
+                className="shell-button shell-button-secondary"
+                type="button"
+                aria-label={`下载${downloadLabel} ${attachment.filename || attachment.id}`}
+                onClick={() => onDownload(attachment)}
+                disabled={downloadingId === attachment.id}
+              >
+                {downloadingId === attachment.id ? '打开中…' : '下载'}
+              </button>
+            ) : <span className="attachment-action-hint">上传完成后可下载</span>}
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, downloadingId: number | null, onUpload: (event: import('react').ChangeEvent<HTMLInputElement>) => void, onDownload: (attachment: Attachment) => void }} props
+ */
+export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, onUpload, onDownload }) {
+  return (
+    <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
+      <div className="shell-panel-header">
+        <h3 id="work-item-attachments-title">工作项附件</h3>
+        <span className="shell-meta">共 {attachments.length} 个</span>
+      </div>
+      <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
+        <label className="work-item-file-field">
+          <span>上传工作项附件</span>
+          <input type="file" onChange={onUpload} disabled={uploading || mutationBusy} />
+        </label>
+        <p className="shell-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
+      </form>
+      {status ? <p className="work-item-attachment-status" aria-live="polite">{status}</p> : null}
+      {warning ? <p className="work-item-attachment-warning" aria-live="polite">{warning}</p> : null}
+      {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
+      {attachments.length ? (
+        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} onDownload={onDownload} showCreator />
+      ) : <p className="shell-empty">当前没有工作项附件。</p>}
+    </section>
+  );
+}

@@ -12,6 +12,12 @@ import {
   uploadWorkItemCommentAttachment,
 } from '@yuance/frontend-app-core';
 import {
+  WorkItemAttachments,
+  attachmentIsUploaded,
+  attachmentStatusLabel,
+  formatByteSize,
+} from '@yuance/frontend-ui';
+import {
   ApiError,
   createWorkItemAttachment,
   createWorkItemComment,
@@ -234,46 +240,6 @@ function formatTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
-}
-
-/** @param {number} byteSize */
-function formatByteSize(byteSize) {
-  if (!Number.isFinite(byteSize) || byteSize <= 0) {
-    return '大小未知';
-  }
-  if (byteSize < 1024) {
-    return `${byteSize} B`;
-  }
-  const units = ['KB', 'MB', 'GB'];
-  let value = byteSize / 1024;
-  for (const unit of units) {
-    if (value < 1024 || unit === 'GB') {
-      return `${value.toFixed(value >= 10 ? 0 : 1)} ${unit}`;
-    }
-    value /= 1024;
-  }
-  return `${byteSize} B`;
-}
-
-/** @param {string} status */
-function attachmentStatusLabel(status) {
-  switch (status) {
-    case 'uploaded':
-      return '已上传';
-    case 'pending':
-      return '待上传';
-    case 'failed':
-      return '上传失败';
-    case 'deleted':
-      return '已归档';
-    default:
-      return status || '未知状态';
-  }
-}
-
-/** @param {AppAttachment} attachment */
-function attachmentIsUploaded(attachment) {
-  return attachment.status === 'uploaded';
 }
 
 /**
@@ -2460,70 +2426,17 @@ export default function App() {
                     <p className="work-item-action-error" role="alert">{workItemActionError}</p>
                   ) : null}
 
-                  <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
-                    <div className="shell-panel-header">
-                      <h3 id="work-item-attachments-title">工作项附件</h3>
-                      <span className="shell-meta">共 {workItemAttachments.length} 个</span>
-                    </div>
-                    <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
-                      <label className="work-item-file-field">
-                        <span>上传工作项附件</span>
-                        <input
-                          type="file"
-                          onChange={(event) => void uploadSelectedWorkItemAttachment(event)}
-                          disabled={workItemAttachmentUploading || workItemMutationSubmitting}
-                        />
-                      </label>
-                      <p className="shell-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
-                    </form>
-                    {workItemAttachmentStatus ? (
-                      <p className="work-item-attachment-status" aria-live="polite">{workItemAttachmentStatus}</p>
-                    ) : null}
-                    {workItemAttachmentLoadWarning ? (
-                      <p className="work-item-attachment-warning" aria-live="polite">{workItemAttachmentLoadWarning}</p>
-                    ) : null}
-                    {workItemAttachmentActionError ? (
-                      <p className="work-item-action-error" role="alert">{workItemAttachmentActionError}</p>
-                    ) : null}
-                    {workItemAttachments.length ? (
-                      <ul className="work-item-attachment-list">
-                        {workItemAttachments.map((attachment) => (
-                          <li key={attachment.id} className={`work-item-attachment-row is-${attachment.status || 'unknown'}`}>
-                            <div className="work-item-attachment-main">
-                              <strong>{attachment.filename || '未命名附件'}</strong>
-                              <span className="shell-meta">
-                                {formatByteSize(attachment.byte_size)}
-                                {' · '}
-                                {attachment.content_type || 'application/octet-stream'}
-                                {' · '}
-                                {attachmentStatusLabel(attachment.status)}
-                              </span>
-                              <span className="shell-muted">
-                                {attachment.created_by || '未知用户'} · {attachment.created_at || '未知时间'}
-                              </span>
-                            </div>
-                            <div className="work-item-attachment-actions">
-                              {attachmentIsUploaded(attachment) ? (
-                                <button
-                                  className="shell-button shell-button-secondary"
-                                  type="button"
-                                  aria-label={`下载附件 ${attachment.filename || attachment.id}`}
-                                  onClick={() => void downloadWorkItemAttachment(attachment)}
-                                  disabled={workItemAttachmentDownloadingId === attachment.id}
-                                >
-                                  {workItemAttachmentDownloadingId === attachment.id ? '打开中…' : '下载'}
-                                </button>
-                              ) : (
-                                <span className="attachment-action-hint">上传完成后可下载</span>
-                              )}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="shell-empty">当前没有工作项附件。</p>
-                    )}
-                  </section>
+                  <WorkItemAttachments
+                    attachments={workItemAttachments}
+                    status={workItemAttachmentStatus}
+                    warning={workItemAttachmentLoadWarning}
+                    error={workItemAttachmentActionError}
+                    uploading={workItemAttachmentUploading}
+                    mutationBusy={workItemMutationSubmitting}
+                    downloadingId={workItemAttachmentDownloadingId}
+                    onUpload={(event) => void uploadSelectedWorkItemAttachment(event)}
+                    onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
+                  />
 
                   <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
                     <div className="shell-panel-header">

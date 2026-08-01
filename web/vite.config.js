@@ -6,6 +6,9 @@ const proxyTarget = process.env.YUANCE_WEB_PROXY_TARGET || 'http://127.0.0.1:330
 export default defineConfig({
   base: '/web/app/',
   plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react/jsx-runtime'],
+  },
   server: {
     host: '127.0.0.1',
     port: 4173,
