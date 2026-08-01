@@ -20,8 +20,8 @@ const SECURITY_ERROR_CODES = new Set([
 ]);
 
 export class DeviceAuthProtocolError extends Error {
-  constructor(code, message, { status, retryAfterSeconds, cause } = {}) {
-    super(message, { cause });
+  constructor(code, message, { status, retryAfterSeconds } = {}) {
+    super(message);
     this.name = "DeviceAuthProtocolError";
     this.code = code;
     this.status = status;
@@ -32,7 +32,7 @@ export class DeviceAuthProtocolError extends Error {
 
 export function createDeviceAuthClient({
   profile,
-  fetchImpl = globalThis.fetch,
+  fetchImpl,
   timeoutMs = 15_000,
   maxResponseBytes = 256 * 1024,
   now = Date.now,
@@ -70,12 +70,11 @@ export function createDeviceAuthClient({
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (error) {
+      clearTimeout(timeout);
       if (controller.signal.aborted) {
-        throw new DeviceAuthProtocolError("request_timeout", "Device auth request timed out", {
-          cause: error,
-        });
+        throw new DeviceAuthProtocolError("request_timeout", "Device auth request timed out");
       }
-      throw new DeviceAuthProtocolError("network_error", "Device auth request failed", { cause: error });
+      throw new DeviceAuthProtocolError("network_error", "Device auth request failed");
     }
     try {
       if (response.redirected || (response.status >= 300 && response.status < 400)) {
@@ -100,7 +99,7 @@ export function createDeviceAuthClient({
       return parsed.data;
     } catch (error) {
       if (controller.signal.aborted && !(error instanceof DeviceAuthProtocolError)) {
-        throw new DeviceAuthProtocolError("request_timeout", "Device auth response timed out", { cause: error });
+        throw new DeviceAuthProtocolError("request_timeout", "Device auth response timed out");
       }
       throw error;
     } finally {
@@ -260,7 +259,7 @@ async function readJsonResponse(response, maxResponseBytes, signal) {
   try {
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch (error) {
-    throw new DeviceAuthProtocolError("invalid_json", "Device auth response is invalid JSON", { cause: error });
+    throw new DeviceAuthProtocolError("invalid_json", "Device auth response is invalid JSON");
   }
 }
 
@@ -286,7 +285,7 @@ function responseError(response, body) {
   const code = typeof error.code === "string" ? error.code : "device_auth_error";
   const bodyRetry = positiveIntegerOrUndefined(error.retry_after);
   const headerRetry = parseRetryAfter(response.headers.get("retry-after"));
-  return new DeviceAuthProtocolError(code, typeof error.message === "string" ? error.message : "Device auth request failed", {
+  return new DeviceAuthProtocolError(code, "Device auth request failed", {
     status: response.status,
     retryAfterSeconds: Math.max(bodyRetry ?? 0, headerRetry ?? 0) || undefined,
   });

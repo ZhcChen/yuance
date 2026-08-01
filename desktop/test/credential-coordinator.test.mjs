@@ -98,6 +98,30 @@ test("exposes every required state and starts unauthenticated", async () => {
   assert.equal("refreshToken" in coordinator.snapshot(), false);
 });
 
+test("lock cancels initialization before pending rotation recovery can start", async () => {
+  let releaseLoad;
+  let refreshCalls = 0;
+  const store = memoryStore();
+  store.load = () => new Promise((resolve) => {
+    releaseLoad = () => resolve({
+      status: "available",
+      credential: { ...storedCredential, pendingRotation: { sourceGeneration: 0, transactionId: "pending" } },
+    });
+  });
+  const { coordinator } = fixture({
+    store,
+    client: { refresh: async () => { refreshCalls += 1; return exchanged(1); } },
+  });
+
+  const initializing = coordinator.initialize();
+  await Promise.resolve();
+  await coordinator.lock("runtime_disposed");
+  releaseLoad();
+  await assert.rejects(initializing, (error) => error.code === "stale_operation");
+  assert.equal(refreshCalls, 0);
+  assert.equal(coordinator.snapshot().status, "locked");
+});
+
 test("state subscriptions are immediate, ordered, and removable", async () => {
   const { coordinator } = fixture();
   const states = [];

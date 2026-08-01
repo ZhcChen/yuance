@@ -23,18 +23,12 @@ import {
   isDevelopmentRuntime,
   normalizeNotificationPayload,
   resolveDesktopAppIdentity,
+  resolveDesktopNetworkOrigin,
   resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
 } from "./config.mjs";
-import { createProfileCredentialStore } from "./auth/credential-store.mjs";
-import { createDesktopProfile } from "./auth/profile.mjs";
-import { createDeviceAuthClient } from "./auth/device-auth-client.mjs";
 import { loadOrCreateInstallationId } from "./auth/installation-id.mjs";
-import {
-  createCredentialCoordinator,
-  createPendingAuthorizationStore,
-  createPendingRevocationStore,
-} from "./auth/credential-coordinator.mjs";
+import { createCredentialRuntime } from "./auth/credential-runtime.mjs";
 import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
 import { createHostStatePublisher } from "./ipc/host-state.mjs";
 import {
@@ -43,6 +37,8 @@ import {
   parseNotificationPayload,
 } from "./ipc/sender-policy.mjs";
 import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
+import { enrollDesktop } from "./network/enrollment-client.mjs";
+import { createTrustedNetworkSession } from "./network/network-session.mjs";
 import {
   browserWindowWebPreferences,
   decideNavigation,
@@ -77,7 +73,8 @@ let appProtocolSmokeInitialRenderer;
 let appProtocolSmokePhase = "initial";
 const activeNotifications = new Set();
 let mainWindow = null;
-let credentialStoreForProfile = null;
+let credentialRuntime = null;
+let credentialRuntimeGeneration = 0;
 const hostStatePublisher = createHostStatePublisher();
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
 const assertTrustedIpcSender = createIpcSenderPolicy({
@@ -372,18 +369,6 @@ function notifyFromRenderer(event, payload) {
   return { shown: true };
 }
 
-function initializeCredentialStoreFactory() {
-  const userDataPath = app.getPath("userData");
-  credentialStoreForProfile = (profile) =>
-    createProfileCredentialStore({
-      safeStorage,
-      fs,
-      userDataPath,
-      profile,
-      platform: process.platform,
-    });
-}
-
 async function installationId(userDataPath) {
   const filePath = path.join(userDataPath, "Device Credentials", "installation-id");
   return loadOrCreateInstallationId({ fs, filePath, platform: process.platform });
@@ -391,65 +376,87 @@ async function installationId(userDataPath) {
 
 async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", openExternal = true } = {}) {
   const endpoint = resolveDeviceAuthEndpoint({ isDevRuntime });
-  const profile = createDesktopProfile({
-    endpoint,
-    serverInstanceId,
+  const network = await createTrustedNetworkSession({
+    electronSession: session,
     mode: "development",
-    allowLoopbackHttp: endpoint.startsWith("http://"),
+    allowedOrigin: endpoint,
+  });
+  const enrolled = await enrollDesktop({
+    origin: endpoint,
+    mode: "development",
+    fetchImpl: network.fetch,
+    expectedServerInstanceId: serverInstanceId,
   });
   const userDataPath = app.getPath("userData");
-  const credentialDirectory = path.join(userDataPath, "Device Credentials");
-  const profileHash = profile.key.slice(profile.key.indexOf(":") + 1);
-  const coordinator = createCredentialCoordinator({
-    profile,
-    credentialStore: credentialStoreForProfile(profile),
-    pendingAuthorizationStore: createPendingAuthorizationStore({
-      safeStorage,
-      fs,
-      filePath: path.join(credentialDirectory, `${profileHash}.authorization.enc.json`),
-      profile,
-      platform: process.platform,
-    }),
-    pendingRevocationStore: createPendingRevocationStore({
-      fs,
-      directory: path.join(credentialDirectory, "Pending Revocations"),
-    }),
-    client: createDeviceAuthClient({ profile }),
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    safeStorage,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: () => installationId(userDataPath),
+    deviceName: `${appIdentity.displayName} (${process.platform})`,
+    clientVersion: app.getVersion(),
   });
-  const initialized = await coordinator.initialize();
-  if (action === "logout" && initialized.status === "locked" && initialized.reason === "pending_revocation") {
-    const loggedOut = await coordinator.retryPendingRevocation();
-    process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true, recovered: true })}\n`);
-    return;
-  }
-  if (action === "logout" && initialized.status === "revoked") {
-    const loggedOut = await coordinator.discardLocalSession();
-    process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true, recovered: true })}\n`);
-    return;
-  }
+  const initialized = await runtime.initialize();
   if (initialized.status === "authenticated") {
     if (action === "logout") {
-      const loggedOut = await coordinator.logout();
+      const loggedOut = await runtime.logout();
       process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true })}\n`);
       return;
     }
     process.stdout.write(`${JSON.stringify({ status: initialized.status, recovered: true })}\n`);
     return;
   }
-  if (initialized.status === "locked" || initialized.status === "revoked") {
-    throw new Error(`credential coordinator is ${initialized.status}: ${initialized.reason}`);
+  if (action === "logout" && ["locked", "reauthorization_required"].includes(initialized.status)) {
+    const loggedOut = await runtime.logout();
+    process.stdout.write(`${JSON.stringify({ status: loggedOut.status, loggedOut: true, recovered: true })}\n`);
+    return;
   }
-  const result = await coordinator.authorize({
-    installationId: await installationId(userDataPath),
-    deviceName: `${appIdentity.displayName} (${process.platform})`,
-    platform: process.platform,
-    clientVersion: app.getVersion(),
+  if (initialized.status === "locked" || initialized.status === "reauthorization_required") {
+    throw new Error(`credential runtime is ${initialized.status}`);
+  }
+  const result = await runtime.authorize({
     onUserCode: (userCode) => process.stdout.write(`user_code=${userCode}\n`),
     openExternal: openExternal
       ? (verificationUrl) => shell.openExternal(verificationUrl)
       : async () => {},
   });
   process.stdout.write(`${JSON.stringify({ status: result.status })}\n`);
+}
+
+async function initializeDesktopCredentialRuntime() {
+  const generation = ++credentialRuntimeGeneration;
+  const mode = isDevRuntime ? "development" : "production";
+  const origin = resolveDesktopNetworkOrigin({ isDevRuntime });
+  const network = await createTrustedNetworkSession({
+    electronSession: session,
+    mode,
+    allowedOrigin: origin,
+  });
+  const enrolled = await enrollDesktop({ origin, mode, fetchImpl: network.fetch });
+  if (generation !== credentialRuntimeGeneration) return;
+  const userDataPath = app.getPath("userData");
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    safeStorage,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: () => installationId(userDataPath),
+    deviceName: `${appIdentity.displayName} (${process.platform})`,
+    clientVersion: app.getVersion(),
+    onNetworkInvalidated: () => {},
+    onPublicState: (state) => {
+      hostStatePublisher.update(state);
+      hostStatePublisher.publishTo(mainWindow);
+    },
+  });
+  credentialRuntime = runtime;
+  await runtime.initialize();
+  if (generation !== credentialRuntimeGeneration) runtime.dispose();
 }
 
 app.setName(appIdentity.displayName);
@@ -513,7 +520,6 @@ if (singleInstanceProbe) {
     app.whenReady().then(async () => {
       try {
         if (!headlessServerInstanceId) throw new Error("--server-instance-id is required");
-        initializeCredentialStoreFactory();
         if (headlessAction && !["authorize", "logout"].includes(headlessAction)) {
           throw new Error("--device-auth-action must be authorize or logout");
         }
@@ -568,10 +574,16 @@ if (singleInstanceProbe) {
             });
           }
         }
-        initializeCredentialStoreFactory();
-        hostStatePublisher.update({ status: "unauthenticated" });
         applyRuntimeBrandIcon();
         mainWindow = createMainWindow();
+        if (appProtocolSmoke) {
+          hostStatePublisher.update({ status: "unauthenticated" });
+        } else {
+          initializeDesktopCredentialRuntime().catch(() => {
+            hostStatePublisher.update({ status: "fatal" });
+            hostStatePublisher.publishTo(mainWindow);
+          });
+        }
       } catch (error) {
         console.error("Failed to initialize Yuance renderer:", error);
         if (appProtocolSmoke) app.exit(1);
@@ -594,4 +606,10 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", () => {
+  credentialRuntimeGeneration += 1;
+  credentialRuntime?.dispose();
+  credentialRuntime = null;
 });

@@ -63,6 +63,46 @@ test("rejects forged or downgraded profile objects", () => {
   );
 });
 
+test("requires an explicit trusted fetch implementation", () => {
+  assert.throws(() => createDeviceAuthClient({ profile }), /fetchImpl is required/);
+});
+
+test("network errors do not retain endpoint or credential details", async () => {
+  const client = createDeviceAuthClient({
+    profile,
+    fetchImpl: async () => {
+      throw new Error("https://yuance.example/?access_token=yuance_dat_secret");
+    },
+  });
+  try {
+    await client.probe("yuance_dat_secret");
+    assert.fail("probe should reject");
+  } catch (error) {
+    const publicError = `${error.message}\n${error.stack}\n${JSON.stringify(error)}`;
+    assert.equal(error.cause, undefined);
+    assert.equal(publicError.includes("yuance.example"), false);
+    assert.equal(publicError.includes("yuance_dat_secret"), false);
+  }
+});
+
+test("server-controlled error messages do not enter public errors", async () => {
+  const client = createDeviceAuthClient({
+    profile,
+    fetchImpl: async () => jsonResponse({
+      error: {
+        code: "temporarily_unavailable",
+        message: "yuance_dat_secret https://internal.example Cookie=session",
+      },
+    }, { status: 503 }),
+  });
+  await assert.rejects(client.probe("yuance_dat_test"), (error) => {
+    const publicError = `${error.message}\n${error.stack}\n${JSON.stringify(error)}`;
+    assert.equal(error.message, "Device auth request failed");
+    assert.doesNotMatch(publicError, /yuance_dat_secret|internal\.example|Cookie=session/);
+    return true;
+  });
+});
+
 test("uses fixed trusted paths, manual redirects, no-store, and no ambient credentials", async () => {
   const calls = [];
   const client = createDeviceAuthClient({

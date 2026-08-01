@@ -185,10 +185,7 @@ test("acquires the OS single-instance lock before the ready lifecycle", () => {
   assert.ok(readyIndex > lockIndex);
   assert.match(mainSource, /if \(!hasSingleInstanceLock\) \{\s*app\.quit\(\);/);
   assert.match(mainSource, /app\.on\("second-instance", \(\) => revealWindow\("\/"\)\)/);
-  assert.ok(
-    mainSource.indexOf("initializeCredentialStoreFactory();") >
-      mainSource.indexOf("if (!hasSingleInstanceLock)"),
-  );
+  assert.ok(mainSource.indexOf("initializeDesktopCredentialRuntime().catch", readyIndex) > readyIndex);
 });
 
 test("registers the privileged app scheme before the ready lifecycle", () => {
@@ -199,4 +196,17 @@ test("registers the privileged app scheme before the ready lifecycle", () => {
   assert.ok(readyIndex > registrationIndex);
   assert.match(mainSource, /standard: true, secure: true/);
   assert.doesNotMatch(mainSource, /supportFetchAPI|bypassCSP|allowServiceWorkers/);
+});
+
+test("creates the starting Shell before one asynchronous credential runtime", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  const normalLifecycle = mainSource.indexOf("mainWindow = createMainWindow();");
+  const runtimeStart = mainSource.indexOf("initializeDesktopCredentialRuntime().catch", normalLifecycle);
+  assert.ok(normalLifecycle >= 0);
+  assert.ok(runtimeStart > normalLifecycle);
+  assert.equal(mainSource.indexOf("initializeDesktopCredentialRuntime().catch", runtimeStart + 1), -1);
+  assert.match(mainSource.slice(runtimeStart), /hostStatePublisher\.update\(\{ status: "fatal" \}\)/u);
+  assert.match(mainSource, /createTrustedNetworkSession\(\{[\s\S]*allowedOrigin: origin/u);
+  assert.match(mainSource, /enrollDesktop\(\{ origin, mode, fetchImpl: network\.fetch \}\)/u);
+  assert.doesNotMatch(mainSource, /globalThis\.fetch/u);
 });

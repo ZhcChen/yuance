@@ -20,11 +20,31 @@ test("Electron headless persists, recovers, and revokes a device session", { tim
     return;
   }
 
-  const state = { exchanges: 0, probes: 0, refreshes: 0, logouts: 0, failNextLogout: false };
+  const state = {
+    exchanges: 0,
+    probes: 0,
+    refreshes: 0,
+    logouts: 0,
+    failNextLogout: false,
+    requests: [],
+  };
   const server = http.createServer(async (request, response) => {
+    state.requests.push({
+      method: request.method,
+      path: request.url,
+      cookie: request.headers.cookie,
+    });
     const body = await readJson(request);
     response.setHeader("content-type", "application/json");
     response.setHeader("cache-control", "private, no-store");
+    if (request.url === "/.well-known/yuance-desktop" && request.method === "GET") {
+      return send(response, 200, {
+        schema_version: 1,
+        api_protocol_version: 1,
+        server_instance_id: "electron-integration-server",
+        capabilities: ["device-authorization.v1", "device-session.probe.v1"],
+      });
+    }
     if (request.url === "/api/v1/device-authorizations" && request.method === "POST") {
       return send(response, 201, { data: {
         device_code: "yuance_dc_electron-integration-device-code",
@@ -104,12 +124,17 @@ test("Electron headless persists, recovers, and revokes a device session", { tim
   assert.ok(state.probes >= 1);
 
   state.failNextLogout = true;
-  await assert.rejects(runElectron([...args, "--device-auth-action=logout"], env), /retry/);
+  await assert.rejects(
+    runElectron([...args, "--device-auth-action=logout"], env),
+    /Device auth request failed/,
+  );
   const loggedOut = await runElectron([...args, "--device-auth-action=logout"], env);
   assert.match(loggedOut.stdout, /"loggedOut":true/);
   assert.match(loggedOut.stdout, /"recovered":true/);
   assert.equal(state.refreshes, 2);
   assert.equal(state.logouts, 2);
+  assert.ok(state.requests.filter(({ path }) => path === "/.well-known/yuance-desktop").length >= 4);
+  assert.equal(state.requests.every(({ cookie }) => cookie === undefined), true);
 });
 
 function credentials(generation) {

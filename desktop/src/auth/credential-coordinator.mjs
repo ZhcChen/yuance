@@ -115,9 +115,12 @@ export function createCredentialCoordinator({
 
   async function initialize() {
     operationEpoch += 1;
+    const epoch = operationEpoch;
     access = null;
     const pendingRevocation = await pendingRevocationStore.has(profile.key);
+    if (epoch !== operationEpoch) throw staleOperation();
     const loaded = await credentialStore.load();
+    if (epoch !== operationEpoch) throw staleOperation();
     if (loaded.status === "empty") {
       credential = null;
       if (pendingRevocation) {
@@ -125,6 +128,7 @@ export function createCredentialCoordinator({
         return snapshot();
       }
       const pendingAuthorization = await pendingAuthorizationStore.load();
+      if (epoch !== operationEpoch) throw staleOperation();
       if (pendingAuthorization.status === "available") {
         try {
           await resumeAuthorization(pendingAuthorization.authorization);
@@ -147,6 +151,7 @@ export function createCredentialCoordinator({
     }
     credential = loaded.credential;
     const staleAuthorizationRemoved = await mutateAuthorization(() => pendingAuthorizationStore.remove());
+    if (epoch !== operationEpoch) throw staleOperation();
     if (staleAuthorizationRemoved.status !== "removed") {
       access = null;
       transition("locked", staleAuthorizationRemoved.reason ?? "authorization_cleanup_failed");
@@ -157,6 +162,7 @@ export function createCredentialCoordinator({
       return snapshot();
     }
     if (credential.pendingRotation) {
+      if (epoch !== operationEpoch) throw staleOperation();
       try {
         await rotate({ recovery: true });
       } catch {
