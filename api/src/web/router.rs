@@ -518,6 +518,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/system/api-docs", get(system_api_docs))
         .route("/api/openapi.json", get(openapi_json))
         .route("/api/system/openapi.json", get(system_openapi_json))
+        .route(
+            "/.well-known/yuance-desktop",
+            get(web::desktop_enrollment::desktop_enrollment),
+        )
         .route("/api/healthz", get(web::api::healthz))
         .route("/api/readyz", get(web::api::readyz))
         .route("/api/v1/bootstrap/status", get(web::api::bootstrap_status))
@@ -1133,6 +1137,7 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
             | "/web/bootstrap/init"
             | "/api/openapi.json"
             | "/api/system/openapi.json"
+            | "/.well-known/yuance-desktop"
             | "/api/healthz"
             | "/api/readyz"
             | "/api/v1/bootstrap/status"

@@ -59,6 +59,59 @@
     }
   ],
   "paths": {
+    "/.well-known/yuance-desktop": {
+      "get": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "获取 Desktop enrollment 契约",
+        "description": "返回固定版本、服务实例和当前已启用的 Desktop capability ID，不返回 endpoint 或 credential。",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Desktop enrollment 契约",
+            "headers": {
+              "Cache-Control": {
+                "description": "禁止缓存 enrollment 响应。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesktopEnrollment"
+                }
+              }
+            }
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "meta"
+        ],
+        "summary": "探测 Desktop enrollment 契约",
+        "description": "返回与 GET 相同的状态和响应头，但不返回响应体。",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Desktop enrollment 契约可用",
+            "headers": {
+              "Cache-Control": {
+                "description": "禁止缓存 enrollment 响应。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/openapi.json": {
       "get": {
         "tags": [
@@ -1600,6 +1653,43 @@
       }
     },
     "schemas": {
+      "DesktopEnrollment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schema_version",
+          "api_protocol_version",
+          "server_instance_id",
+          "capabilities"
+        ],
+        "properties": {
+          "schema_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "api_protocol_version": {
+            "type": "integer",
+            "const": 1
+          },
+          "server_instance_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "capabilities": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "const": "device-authorization.v1"
+              },
+              {
+                "const": "device-session.probe.v1"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      },
       "DeviceAuthorizationStartRequest": {
         "type": "object",
         "additionalProperties": false,
