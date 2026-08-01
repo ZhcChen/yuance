@@ -31,6 +31,7 @@ export default [
     rules: {
       'no-console': ['error', { allow: ['warn', 'error'] }],
       'no-unused-vars': ['error', { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
     },
   },

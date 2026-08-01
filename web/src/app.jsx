@@ -19,36 +19,7 @@ import {
 } from '@yuance/frontend-ui';
 import {
   ApiError,
-  createWorkItemAttachment,
-  createWorkItemComment,
-  createWorkItemCommentAttachment,
-  getCurrentUser,
-  getNotificationTarget,
-  getNotifications,
-  getProjects,
-  getTopbarStatus,
-  getWorkItem,
-  getWorkItemAttachmentDownloadUrl,
-  getWorkItemAttachmentUploadUrl,
-  getWorkItemAttachments,
-  getWorkItemCommentAttachmentDownloadUrl,
-  getWorkItemCommentAttachmentUploadUrl,
-  getWorkItemCommentAttachments,
-  getWorkItemComments,
-  getWorkItems,
-  handoffWorkItem,
-  logout,
-  markAllNotificationsRead,
-  markNotificationRead,
-  markWorkItemAttachmentUploaded,
-  markWorkItemCommentAttachmentUploaded,
-  openTopbarEvents,
-  refreshCsrfToken,
-  restorePendingReturnToHash,
-  updateCurrentProject,
-  updateWorkItem,
-  updateWorkItemComment,
-} from './lib/api.js';
+} from '@yuance/frontend-api-client';
 import { notificationTargetPath } from './lib/notification-target.js';
 import {
   buildHomePath,
@@ -56,26 +27,7 @@ import {
   buildProjectsPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
-  parseAppRoute,
 } from './lib/routes.js';
-import { createBrowserFilePlatform } from './platform/browser/files.js';
-
-const WORK_ITEM_COLLABORATION_API = {
-  createWorkItemAttachment,
-  createWorkItemComment,
-  createWorkItemCommentAttachment,
-  getWorkItemAttachmentDownloadUrl,
-  getWorkItemAttachmentUploadUrl,
-  getWorkItemCommentAttachmentDownloadUrl,
-  getWorkItemCommentAttachmentUploadUrl,
-  handoffWorkItem,
-  markWorkItemAttachmentUploaded,
-  markWorkItemCommentAttachmentUploaded,
-  updateWorkItem,
-  updateWorkItemComment,
-};
-
-const BROWSER_FILE_PLATFORM = createBrowserFilePlatform({ refreshCsrfToken });
 
 /**
  * @typedef AppUser
@@ -373,19 +325,20 @@ function workItemHandoffFormFromDetail(item) {
 }
 
 /**
+ * @param {typeof import('./lib/api.js').webApi} api
  * @param {string} itemKey
  * @param {AppWorkItemComment[]} comments
  * @param {Promise<AppAttachment[]>} [attachmentsPromise]
  * @returns {Promise<WorkItemAttachmentBundle>}
  */
-async function loadWorkItemAttachmentBundle(itemKey, comments, attachmentsPromise = getWorkItemAttachments(itemKey)) {
+async function loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise = api.getWorkItemAttachments(itemKey)) {
   const [attachmentsResult, commentAttachmentsResult] = await Promise.allSettled([
     attachmentsPromise,
     Promise.allSettled(
       comments
         .filter((comment) => !comment.is_draft)
         .map(async (comment) => {
-          const nextAttachments = await getWorkItemCommentAttachments(itemKey, comment.id);
+          const nextAttachments = await api.getWorkItemCommentAttachments(itemKey, comment.id);
           return /** @type {[string, AppAttachment[]]} */ ([String(comment.id), nextAttachments]);
         }),
     ),
@@ -416,7 +369,7 @@ function isWorkItemListRouteId(routeId) {
   return routeId === 'requirements' || routeId === 'tasks' || routeId === 'bugs';
 }
 
-/** @param {ReturnType<typeof parseAppRoute>} route */
+/** @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} route */
 function workItemOwnerForRoute(route) {
   return /** @type {'app' | 'web'} */ (
     isWorkItemListRouteId(route.id) || route.id === 'work-item-detail'
@@ -425,7 +378,7 @@ function workItemOwnerForRoute(route) {
   );
 }
 
-/** @param {ReturnType<typeof parseAppRoute>} route */
+/** @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} route */
 function routeDescription(route) {
   switch (route.id) {
     case 'messages':
@@ -445,7 +398,7 @@ function routeDescription(route) {
   }
 }
 
-/** @param {ReturnType<typeof parseAppRoute>} route */
+/** @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} route */
 function routeEyebrow(route) {
   switch (route.id) {
     case 'messages':
@@ -462,7 +415,7 @@ function routeEyebrow(route) {
   }
 }
 
-/** @param {ReturnType<typeof parseAppRoute>} route */
+/** @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} route */
 function emptyMessageTitle(route) {
   if (route.id !== 'messages') {
     return '暂无最近消息。';
@@ -490,9 +443,18 @@ function notificationKindLabel(kind) {
   }
 }
 
-/** @returns {React.ReactElement} */
-export default function App() {
-  const [route, setRoute] = useState(() => parseAppRoute());
+/**
+ * @param {{ services: {
+ *   api: typeof import('./lib/api.js').webApi,
+ *   events: ReturnType<typeof import('./platform/browser/events.js').createBrowserEvents>,
+ *   files: ReturnType<typeof import('./platform/browser/files.js').createBrowserFilePlatform>,
+ *   router: ReturnType<typeof import('./platform/browser/router.js').createBrowserRouter>,
+ * } }} props
+ * @returns {React.ReactElement}
+ */
+export default function App({ services }) {
+  const { api, events, files, router } = services;
+  const [route, setRoute] = useState(() => router.currentRoute());
   const routeRef = useRef(route);
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
   const newCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
@@ -629,7 +591,7 @@ export default function App() {
   routeRef.current = route;
 
   /**
-   * @param {ReturnType<typeof parseAppRoute>} targetRoute
+   * @param {ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>} targetRoute
    * @param {'load' | 'refresh'} mode
    */
   async function loadRouteState(targetRoute, mode) {
@@ -672,26 +634,26 @@ export default function App() {
 
     try {
       const [nextUser, nextTopbar, nextFeed, nextProjects, nextWorkItems, nextWorkItemBundle] = await Promise.all([
-        getCurrentUser(),
-        getTopbarStatus(),
+        api.getCurrentUser(),
+        api.getTopbarStatus(),
         targetRoute.id === 'projects' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
-            ? getNotifications({
+            ? api.getNotifications({
               filter: targetRoute.filter,
               page: targetRoute.page,
               perPage: targetRoute.perPage,
             })
-            : getNotifications({ limit: 8 }),
+            : api.getNotifications({ limit: 8 }),
         targetRoute.id === 'projects'
-          ? getProjects({
+          ? api.getProjects({
             status: targetRoute.status,
             page: targetRoute.page,
             perPage: targetRoute.perPage,
           })
           : Promise.resolve(null),
         isWorkItemListRouteId(targetRoute.id)
-          ? getWorkItems({
+          ? api.getWorkItems({
             itemType: targetRoute.itemType,
             q: targetRoute.q,
             status: targetRoute.status,
@@ -704,13 +666,13 @@ export default function App() {
         targetRoute.id === 'work-item-detail'
           ? (async () => {
             const itemKey = String(targetRoute.itemKey || '');
-            const commentsPromise = getWorkItemComments(itemKey);
-            const attachmentsPromise = getWorkItemAttachments(itemKey);
+            const commentsPromise = api.getWorkItemComments(itemKey);
+            const attachmentsPromise = api.getWorkItemAttachments(itemKey);
             void attachmentsPromise.catch(() => {});
             const [item, comments, attachmentBundle] = await Promise.all([
-              getWorkItem(itemKey),
+              api.getWorkItem(itemKey),
               commentsPromise,
-              commentsPromise.then((comments) => loadWorkItemAttachmentBundle(itemKey, comments, attachmentsPromise)),
+              commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
             ]);
             return { item, comments, attachmentBundle };
           })()
@@ -741,7 +703,7 @@ export default function App() {
           nextWorkItemBundle?.attachmentBundle?.loadFailed ? '部分附件列表加载失败，请刷新重试。' : '',
         );
       }
-      restorePendingReturnToHash();
+      api.restorePendingReturnToHash();
       setError(null);
     } catch (caught) {
       if (requestRef.current !== requestId) {
@@ -757,7 +719,7 @@ export default function App() {
   }
 
   function syncRouteFromLocation() {
-    setRoute(parseAppRoute(window.location.pathname, window.location.search));
+    setRoute(router.currentRoute());
   }
 
   /**
@@ -766,11 +728,7 @@ export default function App() {
    * @param {boolean} [replace]
    */
   function navigate(path, nextStatusMessage = '', replace = false) {
-    if (replace) {
-      window.history.replaceState(null, '', path);
-    } else {
-      window.history.pushState(null, '', path);
-    }
+    router.navigate(path, { replace });
     setStatusMessage(nextStatusMessage);
     syncRouteFromLocation();
   }
@@ -793,8 +751,8 @@ export default function App() {
                   : route.id === 'unsupported'
                     ? '未迁移路由 - 元策'
                     : '元策浏览器工作台 - 元策';
-    document.title = title;
-  }, [route, activeWorkItemDetail]);
+    router.setTitle(title);
+  }, [route, activeWorkItemDetail, router]);
 
   useEffect(() => {
     void loadRouteState(route, 'load');
@@ -815,13 +773,11 @@ export default function App() {
   }, [activeWorkItemDetail, workItemFormKey]);
 
   useEffect(() => {
-    const handlePopState = () => {
+    return router.subscribe(() => {
       setStatusMessage('已根据浏览器历史恢复页面。');
       syncRouteFromLocation();
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
+    });
+  }, [router]);
 
   useEffect(() => {
     if (workItemEditingCommentId !== null) {
@@ -830,7 +786,7 @@ export default function App() {
   }, [workItemEditingCommentId]);
 
   useEffect(() => {
-    const close = openTopbarEvents({
+    const close = events.openTopbarEvents({
       onRefresh: () => {
         void loadRouteState(routeRef.current, 'refresh');
       },
@@ -839,7 +795,7 @@ export default function App() {
       },
     });
     return close;
-  }, []);
+  }, [events]);
 
   useEffect(() => {
     if (!loading) {
@@ -851,31 +807,31 @@ export default function App() {
 
   async function handleLogout() {
     try {
-      await logout();
+      await api.logout();
     } catch (_error) {
       // Even if logout fails after the session is gone, returning to the login page is the safest path.
     }
-    window.location.assign('/web/login');
+    router.assign('/web/login');
   }
 
   /** @param {AppNotification} item */
   async function handleOpenNotification(item) {
     try {
-      const result = item.target ? await markNotificationRead(item.id) : await getNotificationTarget(item.id);
+      const result = item.target ? await api.markNotificationRead(item.id) : await api.getNotificationTarget(item.id);
       const target = result.target || item.target;
       const owner = /** @type {'app' | 'web'} */ (
         target ? workItemOwnerForRoute(routeRef.current) : routeRef.current.owner === 'app' ? 'app' : 'web'
       );
       setStatusMessage('正在打开消息目标。');
-      window.location.assign(notificationTargetPath(target, owner));
+      router.assign(notificationTargetPath(target, owner));
     } catch (_error) {
-      window.location.assign(messagesPath);
+      router.assign(messagesPath);
     }
   }
 
   async function handleMarkAllRead() {
     try {
-      await markAllNotificationsRead();
+      await api.markAllNotificationsRead();
       setStatusMessage('消息已全部标为已读。');
       await loadRouteState(routeRef.current, 'refresh');
     } catch (caught) {
@@ -886,7 +842,7 @@ export default function App() {
   /** @param {AppProject} project */
   async function handleSetCurrentProject(project) {
     try {
-      await updateCurrentProject(project.key);
+      await api.updateCurrentProject(project.key);
       setStatusMessage(`已切换当前项目到 ${project.key}。`);
       await loadRouteState(routeRef.current, 'refresh');
     } catch (caught) {
@@ -1009,8 +965,8 @@ export default function App() {
    */
   async function refreshWorkItemCompanionState(itemKey, actionLabel, actionId) {
     const [commentsResult, topbarResult] = await Promise.allSettled([
-      getWorkItemComments(itemKey),
-      getTopbarStatus(),
+      api.getWorkItemComments(itemKey),
+      api.getTopbarStatus(),
     ]);
     if (!isCurrentWorkItemDetailRoute(itemKey, actionId)) {
       return;
@@ -1056,7 +1012,7 @@ export default function App() {
     setWorkItemActionError('');
     try {
       await saveWorkItem({
-        api: WORK_ITEM_COLLABORATION_API,
+        api,
         itemKey,
         payload: {
           title,
@@ -1109,7 +1065,7 @@ export default function App() {
     setWorkItemActionError('');
     try {
       await handoffWorkItemUseCase({
-        api: WORK_ITEM_COLLABORATION_API,
+        api,
         itemKey,
         payload: {
           status: workItemHandoffForm.status,
@@ -1165,7 +1121,7 @@ export default function App() {
     setWorkItemCommentActionError('');
     try {
       await createWorkItemCommentUseCase({
-        api: WORK_ITEM_COLLABORATION_API,
+        api,
         itemKey,
         payload: { body, bodyFormat: 'plain' },
         lifecycle: {
@@ -1221,7 +1177,7 @@ export default function App() {
     setWorkItemCommentActionError('');
     try {
       await updateWorkItemCommentUseCase({
-        api: WORK_ITEM_COLLABORATION_API,
+        api,
         itemKey,
         commentId,
         payload: { body, bodyFormat: 'plain' },
@@ -1259,7 +1215,7 @@ export default function App() {
    * @param {number} actionId
    */
   async function refreshWorkItemAttachmentList(itemKey, actionId) {
-    const refreshed = await getWorkItemAttachments(itemKey);
+    const refreshed = await api.getWorkItemAttachments(itemKey);
     if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
       setWorkItemAttachments(refreshed);
     }
@@ -1272,7 +1228,7 @@ export default function App() {
    * @param {number} actionId
    */
   async function refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId) {
-    const refreshed = await getWorkItemCommentAttachments(itemKey, commentId);
+    const refreshed = await api.getWorkItemCommentAttachments(itemKey, commentId);
     if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
       setWorkItemCommentAttachments((current) => ({
         ...current,
@@ -1295,8 +1251,8 @@ export default function App() {
     setWorkItemAttachmentStatus(`正在获取 ${attachment.filename || '附件'} 的下载链接。`);
     try {
       const opened = await downloadWorkItemAttachmentUseCase({
-        api: WORK_ITEM_COLLABORATION_API,
-        platform: BROWSER_FILE_PLATFORM,
+        api,
+        platform: files,
         itemKey,
         attachmentId: attachment.id,
         suggestedFilename: attachment.filename,
@@ -1333,8 +1289,8 @@ export default function App() {
     }));
     try {
       const opened = await downloadWorkItemCommentAttachmentUseCase({
-        api: WORK_ITEM_COLLABORATION_API,
-        platform: BROWSER_FILE_PLATFORM,
+        api,
+        platform: files,
         itemKey,
         commentId,
         attachmentId: attachment.id,
@@ -1385,10 +1341,10 @@ export default function App() {
     setWorkItemAttachmentStatus(`${filename} 正在登记附件。`);
     try {
       const result = await uploadWorkItemAttachment({
-        api: WORK_ITEM_COLLABORATION_API,
-        platform: BROWSER_FILE_PLATFORM,
+        api,
+        platform: files,
         itemKey,
-        file: BROWSER_FILE_PLATFORM.selectFile(file),
+        file: files.selectFile(file),
         lifecycle: {
           isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
           onStage: (stage) => {
@@ -1495,11 +1451,11 @@ export default function App() {
     }));
     try {
       const result = await uploadWorkItemCommentAttachment({
-        api: WORK_ITEM_COLLABORATION_API,
-        platform: BROWSER_FILE_PLATFORM,
+        api,
+        platform: files,
         itemKey,
         commentId,
-        file: BROWSER_FILE_PLATFORM.selectFile(file),
+        file: files.selectFile(file),
         lifecycle: {
           isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
           onStage: (stage) => {
@@ -1605,7 +1561,7 @@ export default function App() {
   /** @param {React.MouseEvent<HTMLAnchorElement>} event @param {string} path @param {string} message */
   function handleNavigate(event, path, message) {
     event.preventDefault();
-    if (`${window.location.pathname}${window.location.search}` === path) {
+    if (router.currentPath() === path) {
       return;
     }
     navigate(path, message);

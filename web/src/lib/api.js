@@ -106,3 +106,34 @@ export const logout = /** @type {() => Promise<{ revoked: boolean }>} */ (apiCli
 export function openTopbarEvents(callbacks) {
   return browserEvents.openTopbarEvents(callbacks);
 }
+
+export const webApi = {
+  createWorkItemAttachment,
+  createWorkItemComment,
+  createWorkItemCommentAttachment,
+  getCurrentUser,
+  getNotificationTarget,
+  getNotifications,
+  getProjects,
+  getTopbarStatus,
+  getWorkItem,
+  getWorkItemAttachmentDownloadUrl,
+  getWorkItemAttachmentUploadUrl,
+  getWorkItemAttachments,
+  getWorkItemCommentAttachmentDownloadUrl,
+  getWorkItemCommentAttachmentUploadUrl,
+  getWorkItemCommentAttachments,
+  getWorkItemComments,
+  getWorkItems,
+  handoffWorkItem,
+  logout,
+  markAllNotificationsRead,
+  markNotificationRead,
+  markWorkItemAttachmentUploaded,
+  markWorkItemCommentAttachmentUploaded,
+  refreshCsrfToken,
+  restorePendingReturnToHash,
+  updateCurrentProject,
+  updateWorkItem,
+  updateWorkItemComment,
+};

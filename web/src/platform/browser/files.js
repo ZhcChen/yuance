@@ -147,9 +147,8 @@ function normalizeTransferAuthorization(rawAuthorization, context) {
   }
   const url = new URL(request.url);
   const allowedOrigins = new Set([context.origin, ...context.allowedTransferOrigins]);
-  const trustedAliyunOss = url.protocol === 'https:'
-    && (url.hostname === 'aliyuncs.com' || url.hostname.endsWith('.aliyuncs.com'));
-  if (!allowedOrigins.has(url.origin) && !trustedAliyunOss) {
+  const storageScope = parseAliyunOssScope(url);
+  if (!allowedOrigins.has(url.origin) && !storageScope) {
     throw new Error('签名请求目标不在 Browser transfer allowlist 中。');
   }
   validateSignedHeaders(request.headers);
@@ -157,7 +156,18 @@ function normalizeTransferAuthorization(rawAuthorization, context) {
     request,
     purpose: envelope.purpose,
     expiresAt: context.now + expiresInSeconds * 1000,
+    storageOrigin: url.origin,
+    storageBucket: storageScope?.bucket || null,
+    storageEndpoint: storageScope?.endpoint || null,
   });
+}
+
+/** @param {URL} url */
+function parseAliyunOssScope(url) {
+  if (url.protocol !== 'https:') return null;
+  const match = url.hostname.match(/^([a-z0-9][a-z0-9-]{1,61}[a-z0-9])\.(oss-[a-z0-9-]+\.aliyuncs\.com)$/);
+  if (!match) return null;
+  return { bucket: match[1], endpoint: match[2] };
 }
 
 /** @param {unknown} rawRequest @param {string} baseUrl @returns {SignedObjectRequest} */

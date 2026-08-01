@@ -106,7 +106,7 @@ test('browser file platform restricts transfer origins and signed headers', () =
   );
 });
 
-test('browser file platform accepts HTTPS Aliyun OSS transfer origins', async () => {
+test('browser file platform accepts a scoped HTTPS Aliyun OSS bucket origin', async () => {
   const opened = [];
   const platform = createBrowserFilePlatform({
     refreshCsrfToken: async () => '',
@@ -125,6 +125,28 @@ test('browser file platform accepts HTTPS Aliyun OSS transfer origins', async ()
 
   await platform.downloads.downloadSignedRequest(transfer, 'file.txt');
   assert.deepEqual(opened, ['https://yuance.oss-cn-hangzhou.aliyuncs.com/file']);
+});
+
+test('browser file platform rejects unscoped Aliyun domains', () => {
+  const platform = createBrowserFilePlatform({
+    refreshCsrfToken: async () => '',
+    baseUrl: 'https://yuance.test/web/app/',
+  });
+
+  for (const url of [
+    'https://aliyuncs.com/file',
+    'https://oss-cn-hangzhou.aliyuncs.com/file',
+    'https://console.aliyuncs.com/file',
+  ]) {
+    assert.throws(
+      () => platform.transfers.authorizeSignedRequest({
+        purpose: 'download',
+        expiresInSeconds: 300,
+        request: { method: 'GET', url, headers: [] },
+      }),
+      /allowlist/,
+    );
+  }
 });
 
 test('browser file platform binds capabilities to purpose and consumes them once', async () => {
