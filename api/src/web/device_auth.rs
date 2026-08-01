@@ -49,6 +49,16 @@ pub struct ExchangeAuthorizationRequest {
     exchange_transaction_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RotateRefreshRequest {
+    refresh_token: String,
+    generation: i64,
+    transaction_id: String,
+    device_id: String,
+    server_instance_id: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct CredentialMetadataPayload {
     token_type: &'static str,
@@ -287,30 +297,103 @@ pub(crate) async fn exchange_authorization(
         tracing::warn!(%error, "failed to record device authorization exchange audit");
     }
 
-    let access_expires_in = (credentials.access_expires_at - now).num_seconds().max(1);
-    let refresh_expires_in = (credentials.refresh_expires_at - now).num_seconds().max(1);
-    let common = |audience| CredentialMetadataPayload {
-        token_type: "Bearer",
-        issuer: device_sessions::DEVICE_ACCESS_ISSUER,
-        audience,
-        device_id: credentials.device_id.clone(),
-        family_id: credentials.family_id.clone(),
-        generation: credentials.generation,
-        authorization_version: credentials.authorization_version,
+    credentials_response(credentials)
+}
+
+pub(crate) async fn rotate_refresh(
+    State(state): State<AppState>,
+    Extension(client_ip): Extension<DeviceAuthClientIp>,
+    headers: HeaderMap,
+    payload: Result<Json<RotateRefreshRequest>, JsonRejection>,
+) -> Response {
+    let Json(payload) = match payload {
+        Ok(payload) => payload,
+        Err(error) => return json_rejection(error),
     };
-    no_store(
-        Json(ApiEnvelope {
-            data: ExchangedAuthorizationPayload {
-                access_token: credentials.access_token,
-                refresh_token: credentials.refresh_token,
-                access_expires_in,
-                refresh_expires_in,
-                access: common(device_sessions::DEVICE_ACCESS_AUDIENCE),
-                refresh: common(device_sessions::DEVICE_REFRESH_AUDIENCE),
-            },
-        })
-        .into_response(),
+    let Some(_permit) = state.try_device_auth_permit() else {
+        return rate_limited_response(1);
+    };
+    if let Some(response) = reject_ambient_credentials(&headers) {
+        return response;
+    }
+    let pool = match state.pool() {
+        Ok(pool) => pool,
+        Err(error) => return no_store(error.into_response()),
+    };
+    let policy = match device_policy(&state) {
+        Ok(policy) => policy,
+        Err(error) => return no_store(error.into_response()),
+    };
+    let now = Utc::now();
+    let audit_context = device_audit_context(&headers, client_ip);
+    let transaction_id = payload.transaction_id.clone();
+    let device_id = payload.device_id.clone();
+    let credentials = match device_sessions::rotate_refresh_token(
+        pool,
+        &state.settings.security_master_key,
+        &policy,
+        device_sessions::RotateRefreshInput {
+            refresh_token: payload.refresh_token,
+            generation: payload.generation,
+            transaction_id: payload.transaction_id,
+            device_id: payload.device_id,
+            server_instance_id: payload.server_instance_id,
+        },
+        now,
     )
+    .await
+    {
+        Ok(credentials) => credentials,
+        Err(error) => {
+            if matches!(
+                error,
+                device_sessions::DeviceSessionError::RefreshReplay
+                    | device_sessions::DeviceSessionError::RotationRecoveryFailed
+            ) {
+                let metadata = serde_json::json!({
+                    "device_id": device_id,
+                    "transaction_id": transaction_id,
+                    "error_code": error.code(),
+                    "server_instance_id": state.settings.device_sessions.server_instance_id
+                });
+                if let Err(audit_error) = audit::record_with_context(
+                    pool,
+                    None,
+                    "device_session.refresh_security_failure",
+                    "device",
+                    &device_id,
+                    &metadata.to_string(),
+                    &audit_context,
+                )
+                .await
+                {
+                    tracing::warn!(%audit_error, "failed to record device refresh security audit");
+                }
+            }
+            return device_refresh_error(error);
+        }
+    };
+    let metadata = serde_json::json!({
+        "device_id": credentials.device_id,
+        "family_id": credentials.family_id,
+        "generation": credentials.generation,
+        "transaction_id": transaction_id,
+        "server_instance_id": credentials.server_instance_id
+    });
+    if let Err(error) = audit::record_with_context(
+        pool,
+        Some(credentials.user_id),
+        "device_session.refreshed",
+        "device_credential_family",
+        &credentials.family_id,
+        &metadata.to_string(),
+        &audit_context,
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to record device refresh audit");
+    }
+    credentials_response(credentials)
 }
 
 pub(crate) async fn probe_device_session(
@@ -685,6 +768,77 @@ fn device_access_error(error: device_sessions::DeviceSessionError) -> Response {
             None,
         ),
     }
+}
+
+fn device_refresh_error(error: device_sessions::DeviceSessionError) -> Response {
+    use device_sessions::DeviceSessionError as Error;
+    match &error {
+        Error::InvalidRefreshToken
+        | Error::RefreshExpired
+        | Error::DeviceRevoked
+        | Error::FamilyRevoked
+        | Error::UserInactive => protocol_error(
+            StatusCode::UNAUTHORIZED,
+            error.code(),
+            error.to_string(),
+            None,
+        ),
+        Error::RefreshReplay | Error::IdempotencyExpired | Error::RotationRecoveryFailed => {
+            protocol_error(StatusCode::CONFLICT, error.code(), error.to_string(), None)
+        }
+        Error::StorageFailure(_) | Error::InvalidState(_) | Error::CryptoFailure => {
+            tracing::error!(error_code = error.code(), %error, "device refresh operation failed");
+            protocol_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "device_session_unavailable",
+                "设备会话服务暂时不可用".to_string(),
+                None,
+            )
+        }
+        Error::InvalidRequest(_) => protocol_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_device_request",
+            error.to_string(),
+            None,
+        ),
+        _ => protocol_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_device_request",
+            error.to_string(),
+            None,
+        ),
+    }
+}
+
+fn credentials_response(credentials: device_sessions::InitialDeviceCredentials) -> Response {
+    let access_expires_in = (credentials.access_expires_at - credentials.issued_at)
+        .num_seconds()
+        .max(1);
+    let refresh_expires_in = (credentials.refresh_expires_at - credentials.issued_at)
+        .num_seconds()
+        .max(1);
+    let common = |audience| CredentialMetadataPayload {
+        token_type: "Bearer",
+        issuer: device_sessions::DEVICE_ACCESS_ISSUER,
+        audience,
+        device_id: credentials.device_id.clone(),
+        family_id: credentials.family_id.clone(),
+        generation: credentials.generation,
+        authorization_version: credentials.authorization_version,
+    };
+    no_store(
+        Json(ApiEnvelope {
+            data: ExchangedAuthorizationPayload {
+                access_token: credentials.access_token,
+                refresh_token: credentials.refresh_token,
+                access_expires_in,
+                refresh_expires_in,
+                access: common(device_sessions::DEVICE_ACCESS_AUDIENCE),
+                refresh: common(device_sessions::DEVICE_REFRESH_AUDIENCE),
+            },
+        })
+        .into_response(),
+    )
 }
 
 fn json_rejection(error: JsonRejection) -> Response {

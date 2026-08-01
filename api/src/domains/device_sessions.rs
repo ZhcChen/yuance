@@ -59,6 +59,14 @@ pub enum DeviceSessionError {
     DeviceRevoked,
     #[error("设备会话已撤销")]
     FamilyRevoked,
+    #[error("device refresh token 无效")]
+    InvalidRefreshToken,
+    #[error("device refresh token 已过期")]
+    RefreshExpired,
+    #[error("检测到旧 generation 使用不同 transaction 重放，设备会话已撤销")]
+    RefreshReplay,
+    #[error("refresh rotation 幂等结果无法恢复，设备会话已撤销")]
+    RotationRecoveryFailed,
     #[error("exchange transaction 与已消费授权不匹配")]
     ExchangeTransactionMismatch,
     #[error("幂等恢复结果已过期")]
@@ -88,6 +96,10 @@ impl DeviceSessionError {
             Self::AccessExpired => "device_access_expired",
             Self::DeviceRevoked => "device_revoked",
             Self::FamilyRevoked => "device_session_revoked",
+            Self::InvalidRefreshToken => "invalid_device_refresh",
+            Self::RefreshExpired => "device_refresh_expired",
+            Self::RefreshReplay => "device_refresh_replay",
+            Self::RotationRecoveryFailed => "rotation_recovery_failed",
             Self::ExchangeTransactionMismatch => "exchange_transaction_mismatch",
             Self::IdempotencyExpired => "idempotency_expired",
             Self::InvalidState(_) => "invalid_state",
@@ -186,9 +198,19 @@ pub struct InitialDeviceCredentials {
     pub user_id: i64,
     pub generation: i64,
     pub authorization_version: i64,
+    pub issued_at: DateTime<Utc>,
     pub access_expires_at: DateTime<Utc>,
     pub refresh_expires_at: DateTime<Utc>,
     pub refresh_absolute_expires_at: DateTime<Utc>,
+    pub server_instance_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct RotateRefreshInput {
+    pub refresh_token: String,
+    pub generation: i64,
+    pub transaction_id: String,
+    pub device_id: String,
     pub server_instance_id: String,
 }
 
@@ -406,6 +428,67 @@ pub async fn exchange_authorization(
     .await;
     finish_transaction(transaction, transaction_should_commit(&result)).await?;
     result
+}
+
+pub async fn rotate_refresh_token(
+    pool: &SqlitePool,
+    master_key: &str,
+    policy: &DeviceSessionPolicy,
+    input: RotateRefreshInput,
+    now: DateTime<Utc>,
+) -> DeviceSessionResult<InitialDeviceCredentials> {
+    validate_policy(policy)?;
+    if !is_device_refresh_token(&input.refresh_token) || input.generation < 0 {
+        return Err(DeviceSessionError::InvalidRefreshToken);
+    }
+    let transaction_id = normalize_transaction_id_domain(&input.transaction_id)?;
+    if input.device_id.trim().is_empty() || input.server_instance_id != policy.server_instance_id {
+        return Err(DeviceSessionError::InvalidRefreshToken);
+    }
+    let refresh_token_hash = hash_device_token(&input.refresh_token);
+    let mut transaction = begin_immediate(pool).await?;
+    let result = rotate_refresh_in_transaction(
+        &mut transaction,
+        master_key,
+        policy,
+        &refresh_token_hash,
+        input.generation,
+        &transaction_id,
+        &input.device_id,
+        now,
+    )
+    .await;
+    finish_transaction(transaction, transaction_should_commit(&result)).await?;
+    result
+}
+
+pub async fn cleanup_expired_rotation_results(
+    pool: &SqlitePool,
+    now: DateTime<Utc>,
+    limit: i64,
+) -> DeviceSessionResult<u64> {
+    if !(1..=1000).contains(&limit) {
+        return Err(DeviceSessionError::InvalidRequest(
+            "rotation cleanup limit 必须介于 1 和 1000".to_string(),
+        ));
+    }
+    let result = sqlx::query(
+        r#"
+        UPDATE device_refresh_rotations
+        SET result_ciphertext = '', updated_at = ?1
+        WHERE id IN (
+            SELECT id FROM device_refresh_rotations
+            WHERE result_expires_at <= ?1 AND result_ciphertext <> ''
+            ORDER BY result_expires_at
+            LIMIT ?2
+        )
+        "#,
+    )
+    .bind(timestamp(now))
+    .bind(limit)
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn erase_expired_exchange_results(
@@ -732,6 +815,290 @@ async fn prepare_authorization_capacity(
     Ok(())
 }
 
+async fn rotate_refresh_in_transaction(
+    connection: &mut SqliteConnection,
+    master_key: &str,
+    policy: &DeviceSessionPolicy,
+    source_refresh_token_hash: &str,
+    source_generation: i64,
+    transaction_id: &str,
+    requested_device_id: &str,
+    now: DateTime<Utc>,
+) -> DeviceSessionResult<InitialDeviceCredentials> {
+    let row = sqlx::query(
+        r#"
+        SELECT refresh.family_id, refresh.device_id, refresh.user_id,
+               refresh.server_instance_id, refresh.generation, refresh.credential_status,
+               refresh.expires_at, family.family_status,
+               family.authorization_version AS family_version,
+               family.refresh_absolute_expires_at,
+               device.device_status, device.authorization_version AS device_version,
+               user.status AS user_status
+        FROM device_refresh_credentials refresh
+        JOIN device_credential_families family ON family.id = refresh.family_id
+        JOIN devices device ON device.id = refresh.device_id
+        JOIN users user ON user.id = refresh.user_id
+        WHERE refresh.refresh_token_hash = ?1
+        "#,
+    )
+    .bind(source_refresh_token_hash)
+    .fetch_optional(&mut *connection)
+    .await?
+    .ok_or(DeviceSessionError::InvalidRefreshToken)?;
+
+    let family_id = row.get::<String, _>("family_id");
+    let device_id = row.get::<String, _>("device_id");
+    let user_id = row.get::<i64, _>("user_id");
+    if device_id != requested_device_id
+        || row.get::<String, _>("server_instance_id") != policy.server_instance_id
+        || row.get::<i64, _>("generation") != source_generation
+    {
+        return Err(DeviceSessionError::InvalidRefreshToken);
+    }
+    if row.get::<String, _>("user_status") != "active" {
+        return Err(DeviceSessionError::UserInactive);
+    }
+    if row.get::<String, _>("device_status") != "active" {
+        return Err(DeviceSessionError::DeviceRevoked);
+    }
+    if row.get::<String, _>("family_status") != "active" {
+        return Err(DeviceSessionError::FamilyRevoked);
+    }
+    let authorization_version = row.get::<i64, _>("device_version");
+    if row.get::<i64, _>("family_version") != authorization_version {
+        return Err(DeviceSessionError::FamilyRevoked);
+    }
+
+    let rotation = sqlx::query(
+        r#"
+        SELECT transaction_id, result_ciphertext, result_expires_at
+        FROM device_refresh_rotations
+        WHERE family_id = ?1 AND source_generation = ?2
+        "#,
+    )
+    .bind(&family_id)
+    .bind(source_generation)
+    .fetch_optional(&mut *connection)
+    .await?;
+    if let Some(rotation) = rotation {
+        if rotation.get::<String, _>("transaction_id") != transaction_id {
+            revoke_family_in_transaction(connection, user_id, &family_id, now, "refresh_replay")
+                .await?;
+            sqlx::query(
+                "UPDATE device_refresh_rotations SET rotation_status = 'family_revoked', updated_at = ?1 WHERE family_id = ?2 AND source_generation = ?3",
+            )
+            .bind(timestamp(now))
+            .bind(&family_id)
+            .bind(source_generation)
+            .execute(&mut *connection)
+            .await?;
+            return Err(DeviceSessionError::RefreshReplay);
+        }
+        if parse_timestamp(rotation.get("result_expires_at"))? <= now {
+            revoke_family_in_transaction(
+                connection,
+                user_id,
+                &family_id,
+                now,
+                "rotation_recovery_expired",
+            )
+            .await?;
+            sqlx::query(
+                "UPDATE device_refresh_rotations SET rotation_status = 'family_revoked', result_ciphertext = '', updated_at = ?1 WHERE family_id = ?2 AND source_generation = ?3",
+            )
+            .bind(timestamp(now))
+            .bind(&family_id)
+            .bind(source_generation)
+            .execute(&mut *connection)
+            .await?;
+            return Err(DeviceSessionError::RotationRecoveryFailed);
+        }
+        let aad = refresh_rotation_aad(
+            &family_id,
+            &device_id,
+            &policy.server_instance_id,
+            source_generation,
+            transaction_id,
+            source_refresh_token_hash,
+        );
+        let ciphertext = rotation.get::<String, _>("result_ciphertext");
+        let recovered = crypto::decrypt_secret(master_key, &ciphertext, &aad)
+            .ok()
+            .and_then(|plaintext| serde_json::from_str(&plaintext).ok());
+        if let Some(credentials) = recovered {
+            return Ok(credentials);
+        }
+        revoke_family_in_transaction(
+            connection,
+            user_id,
+            &family_id,
+            now,
+            "rotation_recovery_failed",
+        )
+        .await?;
+        sqlx::query(
+            "UPDATE device_refresh_rotations SET rotation_status = 'family_revoked', updated_at = ?1 WHERE family_id = ?2 AND source_generation = ?3",
+        )
+        .bind(timestamp(now))
+        .bind(&family_id)
+        .bind(source_generation)
+        .execute(&mut *connection)
+        .await?;
+        return Err(DeviceSessionError::RotationRecoveryFailed);
+    }
+
+    if row.get::<String, _>("credential_status") != "active" {
+        return Err(DeviceSessionError::InvalidRefreshToken);
+    }
+    let refresh_expires_at = parse_timestamp(row.get("expires_at"))?;
+    let refresh_absolute_expires_at = parse_timestamp(row.get("refresh_absolute_expires_at"))?;
+    if refresh_expires_at <= now || refresh_absolute_expires_at <= now {
+        sqlx::query(
+            "UPDATE device_refresh_credentials SET credential_status = 'expired', updated_at = ?1 WHERE refresh_token_hash = ?2 AND credential_status = 'active'",
+        )
+        .bind(timestamp(now))
+        .bind(source_refresh_token_hash)
+        .execute(&mut *connection)
+        .await?;
+        return Err(DeviceSessionError::RefreshExpired);
+    }
+    let transaction_in_use = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM device_refresh_rotations WHERE transaction_id = ?1",
+    )
+    .bind(transaction_id)
+    .fetch_one(&mut *connection)
+    .await?;
+    if transaction_in_use != 0 {
+        return Err(DeviceSessionError::InvalidRequest(
+            "transaction_id 已用于其他 rotation".to_string(),
+        ));
+    }
+
+    let next_generation = source_generation + 1;
+    let access_token = issue_access_token();
+    let refresh_token = issue_refresh_token();
+    let access_expires_at = now + Duration::seconds(policy.access_ttl_seconds);
+    let next_refresh_expires_at = std::cmp::min(
+        now + Duration::seconds(policy.refresh_sliding_ttl_seconds),
+        refresh_absolute_expires_at,
+    );
+    let credentials = InitialDeviceCredentials {
+        access_token,
+        refresh_token,
+        device_id: device_id.clone(),
+        family_id: family_id.clone(),
+        user_id,
+        generation: next_generation,
+        authorization_version,
+        issued_at: now,
+        access_expires_at,
+        refresh_expires_at: next_refresh_expires_at,
+        refresh_absolute_expires_at,
+        server_instance_id: policy.server_instance_id.clone(),
+    };
+    let plaintext =
+        serde_json::to_string(&credentials).map_err(|_| DeviceSessionError::CryptoFailure)?;
+    let aad = refresh_rotation_aad(
+        &family_id,
+        &device_id,
+        &policy.server_instance_id,
+        source_generation,
+        transaction_id,
+        source_refresh_token_hash,
+    );
+    let ciphertext = crypto::encrypt_secret(master_key, &plaintext, &aad)
+        .map_err(|_| DeviceSessionError::CryptoFailure)?;
+    let now_value = timestamp(now);
+    let consumed = sqlx::query(
+        "UPDATE device_refresh_credentials SET credential_status = 'rotated', consumed_at = ?1, updated_at = ?1 WHERE refresh_token_hash = ?2 AND credential_status = 'active'",
+    )
+    .bind(&now_value)
+    .bind(source_refresh_token_hash)
+    .execute(&mut *connection)
+    .await?;
+    if consumed.rows_affected() != 1 {
+        return Err(invalid_state("refresh_rotation_cas_failed"));
+    }
+    sqlx::query(
+        r#"
+        INSERT INTO device_access_sessions (
+            id, access_token_hash, family_id, device_id, user_id,
+            server_instance_id, generation, issuer, audience,
+            authorization_version, expires_at, last_seen_at, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12, ?12)
+        "#,
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(hash_device_token(&credentials.access_token))
+    .bind(&family_id)
+    .bind(&device_id)
+    .bind(user_id)
+    .bind(&policy.server_instance_id)
+    .bind(next_generation)
+    .bind(DEVICE_ACCESS_ISSUER)
+    .bind(DEVICE_ACCESS_AUDIENCE)
+    .bind(authorization_version)
+    .bind(timestamp(access_expires_at))
+    .bind(&now_value)
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO device_refresh_credentials (
+            id, refresh_token_hash, family_id, device_id, user_id,
+            server_instance_id, generation, issuer, audience, expires_at,
+            created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+        "#,
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(hash_device_token(&credentials.refresh_token))
+    .bind(&family_id)
+    .bind(&device_id)
+    .bind(user_id)
+    .bind(&policy.server_instance_id)
+    .bind(next_generation)
+    .bind(DEVICE_ACCESS_ISSUER)
+    .bind(DEVICE_REFRESH_AUDIENCE)
+    .bind(timestamp(next_refresh_expires_at))
+    .bind(&now_value)
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        "UPDATE device_credential_families SET refresh_sliding_expires_at = ?1, updated_at = ?2 WHERE id = ?3",
+    )
+    .bind(timestamp(next_refresh_expires_at))
+    .bind(&now_value)
+    .bind(&family_id)
+    .execute(&mut *connection)
+    .await?;
+    sqlx::query(
+        r#"
+        INSERT INTO device_refresh_rotations (
+            id, family_id, device_id, user_id, server_instance_id,
+            source_generation, source_refresh_token_hash, transaction_id,
+            result_ciphertext, result_expires_at, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+        "#,
+    )
+    .bind(Uuid::new_v4().to_string())
+    .bind(&family_id)
+    .bind(&device_id)
+    .bind(user_id)
+    .bind(&policy.server_instance_id)
+    .bind(source_generation)
+    .bind(source_refresh_token_hash)
+    .bind(transaction_id)
+    .bind(ciphertext)
+    .bind(timestamp(
+        now + Duration::seconds(policy.idempotency_ttl_seconds),
+    ))
+    .bind(&now_value)
+    .execute(&mut *connection)
+    .await?;
+    Ok(credentials)
+}
+
 #[derive(Debug)]
 struct ExchangeRow {
     id: String,
@@ -900,6 +1267,7 @@ async fn exchange_in_transaction(
         user_id,
         generation: 0,
         authorization_version,
+        issued_at: now,
         access_expires_at,
         refresh_expires_at,
         refresh_absolute_expires_at,
@@ -1622,6 +1990,40 @@ mod tests {
         (started, verifier)
     }
 
+    async fn issue_credentials(pool: &SqlitePool, now: DateTime<Utc>) -> InitialDeviceCredentials {
+        let user_id = insert_user(pool, "active").await;
+        let (started, verifier) = start(pool, now).await;
+        approve_authorization(pool, &started.authorization_id, user_id, now)
+            .await
+            .unwrap();
+        exchange_authorization(
+            pool,
+            MASTER_KEY,
+            &policy(),
+            ExchangeAuthorizationInput {
+                device_code: started.device_code,
+                code_verifier: verifier,
+                exchange_transaction_id: Uuid::new_v4().to_string(),
+            },
+            now,
+        )
+        .await
+        .unwrap()
+    }
+
+    fn rotation_input(
+        credentials: &InitialDeviceCredentials,
+        transaction_id: String,
+    ) -> RotateRefreshInput {
+        RotateRefreshInput {
+            refresh_token: credentials.refresh_token.clone(),
+            generation: credentials.generation,
+            transaction_id,
+            device_id: credentials.device_id.clone(),
+            server_instance_id: credentials.server_instance_id.clone(),
+        }
+    }
+
     #[test]
     fn device_tokens_use_distinct_namespaces_and_full_entropy() {
         let access = issue_access_token();
@@ -1706,6 +2108,151 @@ mod tests {
             refresh_rotation_aad("family:a", "device", "server", 3, "tx", "hash"),
             refresh_rotation_aad("family", "a:device", "server", 3, "tx", "hash")
         );
+    }
+
+    #[tokio::test]
+    async fn refresh_rotation_advances_generation_and_recovers_same_transaction() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let initial = issue_credentials(&pool, now).await;
+        let transaction_id = Uuid::new_v4().to_string();
+        let input = rotation_input(&initial, transaction_id);
+
+        let rotated = rotate_refresh_token(&pool, MASTER_KEY, &policy(), input.clone(), now)
+            .await
+            .unwrap();
+        let recovered = rotate_refresh_token(&pool, MASTER_KEY, &policy(), input, now)
+            .await
+            .unwrap();
+        assert_eq!(rotated, recovered);
+        assert_eq!(rotated.generation, 1);
+        assert_eq!(rotated.family_id, initial.family_id);
+        assert_ne!(rotated.access_token, initial.access_token);
+        assert_ne!(rotated.refresh_token, initial.refresh_token);
+
+        let statuses = sqlx::query_as::<_, (String, String)>(
+            "SELECT credential_status, CAST(generation AS TEXT) FROM device_refresh_credentials WHERE family_id = ?1 ORDER BY generation",
+        )
+        .bind(&initial.family_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            statuses,
+            vec![
+                ("rotated".to_string(), "0".to_string()),
+                ("active".to_string(), "1".to_string())
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn competing_refresh_transactions_revoke_the_family() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let initial = issue_credentials(&pool, now).await;
+        let first_pool = pool.clone();
+        let second_pool = pool.clone();
+        let first = rotation_input(&initial, Uuid::new_v4().to_string());
+        let second = rotation_input(&initial, Uuid::new_v4().to_string());
+        let first_policy = policy();
+        let second_policy = policy();
+
+        let (first, second) = tokio::join!(
+            rotate_refresh_token(&first_pool, MASTER_KEY, &first_policy, first, now),
+            rotate_refresh_token(&second_pool, MASTER_KEY, &second_policy, second, now),
+        );
+        assert!(first.is_ok() || second.is_ok());
+        assert!(
+            matches!(first, Err(DeviceSessionError::RefreshReplay))
+                || matches!(second, Err(DeviceSessionError::RefreshReplay))
+        );
+        let family_status: String = sqlx::query_scalar(
+            "SELECT family_status FROM device_credential_families WHERE id = ?1",
+        )
+        .bind(&initial.family_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(family_status, "revoked");
+        let active_credentials: i64 = sqlx::query_scalar(
+            "SELECT (SELECT COUNT(*) FROM device_access_sessions WHERE family_id = ?1 AND session_status = 'active') + (SELECT COUNT(*) FROM device_refresh_credentials WHERE family_id = ?1 AND credential_status = 'active')",
+        )
+        .bind(&initial.family_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active_credentials, 0);
+    }
+
+    #[tokio::test]
+    async fn corrupted_rotation_result_revokes_instead_of_issuing_again() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let initial = issue_credentials(&pool, now).await;
+        let input = rotation_input(&initial, Uuid::new_v4().to_string());
+        rotate_refresh_token(&pool, MASTER_KEY, &policy(), input.clone(), now)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE device_refresh_rotations SET result_ciphertext = 'corrupted' WHERE family_id = ?1",
+        )
+        .bind(&initial.family_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let error = rotate_refresh_token(&pool, MASTER_KEY, &policy(), input, now)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), "rotation_recovery_failed");
+        let family_status: String = sqlx::query_scalar(
+            "SELECT family_status FROM device_credential_families WHERE id = ?1",
+        )
+        .bind(&initial.family_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(family_status, "revoked");
+    }
+
+    #[tokio::test]
+    async fn rotation_cleanup_wipes_only_expired_ciphertext_and_retains_replay_fact() {
+        let pool = test_pool().await;
+        let now = Utc::now();
+        let initial = issue_credentials(&pool, now).await;
+        rotate_refresh_token(
+            &pool,
+            MASTER_KEY,
+            &policy(),
+            rotation_input(&initial, Uuid::new_v4().to_string()),
+            now,
+        )
+        .await
+        .unwrap();
+        sqlx::query(
+            "UPDATE device_refresh_rotations SET result_expires_at = ?1 WHERE family_id = ?2",
+        )
+        .bind(timestamp(now - Duration::seconds(1)))
+        .bind(&initial.family_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            cleanup_expired_rotation_results(&pool, now, 100)
+                .await
+                .unwrap(),
+            1
+        );
+        let retained = sqlx::query_as::<_, (i64, String)>(
+            "SELECT COUNT(*), result_ciphertext FROM device_refresh_rotations WHERE family_id = ?1",
+        )
+        .bind(&initial.family_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(retained, (1, String::new()));
     }
 
     #[tokio::test]

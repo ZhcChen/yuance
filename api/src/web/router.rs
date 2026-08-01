@@ -531,6 +531,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::device_auth::exchange_authorization),
         )
         .route(
+            "/api/v1/device-sessions/refresh",
+            post(web::device_auth::rotate_refresh),
+        )
+        .route(
             "/api/v1/device-session",
             get(web::device_auth::probe_device_session),
         )
@@ -895,6 +899,7 @@ async fn device_auth_boundary_middleware(
     let boundary = match path {
         "/api/v1/device-authorizations" => (120, 20, true, true, false),
         "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
+        "/api/v1/device-sessions/refresh" => (600, 120, true, true, false),
         "/api/v1/device-session" | "/api/v1/device-session/logout" => {
             (1200, 120, true, false, false)
         }
@@ -1134,6 +1139,7 @@ fn should_try_session_refresh(path: &str, headers: &HeaderMap) -> bool {
             | "/api/v1/auth/login"
             | "/api/v1/device-authorizations"
             | "/api/v1/device-authorizations/exchange"
+            | "/api/v1/device-sessions/refresh"
             | "/api/v1/device-session"
             | "/api/v1/device-session/logout"
             | "/api/v1/bootstrap/init"

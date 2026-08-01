@@ -400,13 +400,22 @@ fn openapi_publishes_registered_device_session_paths_and_security() {
         "device_revoked",
         "device_session_revoked",
         "device_session_unavailable",
+        "invalid_device_refresh",
+        "device_refresh_expired",
+        "device_refresh_replay",
+        "rotation_recovery_failed",
     ] {
         assert!(error_codes.iter().any(|value| value == code));
     }
-    assert!(
-        document["paths"]
-            .get("/api/v1/device-sessions/refresh")
-            .is_none()
+    let refresh = &document["paths"]["/api/v1/device-sessions/refresh"]["post"];
+    assert_eq!(refresh["security"], serde_json::json!([]));
+    assert_eq!(
+        refresh["requestBody"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/DeviceRefreshRotationRequest"
+    );
+    assert_eq!(
+        refresh["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/DeviceRefreshRotationEnvelope"
     );
 }
 

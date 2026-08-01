@@ -357,6 +357,61 @@
         }
       }
     },
+    "/api/v1/device-sessions/refresh": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "轮换设备 refresh credential",
+        "description": "使用当前 refresh token、source generation、设备/服务绑定和客户端预持久化 transaction ID 原子轮换凭证。相同 transaction 返回相同结果；旧 generation 使用不同 transaction 会撤销整个 credential family。此端点拒绝 Cookie 和 Authorization header。",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRefreshRotationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "返回或恢复下一 generation 的设备凭证",
+            "headers": {
+              "Cache-Control": {
+                "$ref": "#/components/headers/SensitiveNoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceRefreshRotationEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "409": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          },
+          "415": {
+            "$ref": "#/components/responses/DeviceAuthorizationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/DeviceAuthorizationRateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/DeviceSessionError"
+          }
+        }
+      }
+    },
     "/api/v1/device-session": {
       "get": {
         "tags": [
@@ -1736,6 +1791,112 @@
           }
         }
       },
+      "DeviceRefreshRotationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "refresh_token",
+          "generation",
+          "transaction_id",
+          "device_id",
+          "server_instance_id"
+        ],
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "transaction_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "device_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "server_instance_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "DeviceRefreshRotationEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "access_token",
+              "refresh_token",
+              "access_expires_in",
+              "refresh_expires_in",
+              "access",
+              "refresh"
+            ],
+            "properties": {
+              "access_token": {
+                "type": "string",
+                "pattern": "^yuance_dat_[A-Za-z0-9_-]+$"
+              },
+              "refresh_token": {
+                "type": "string",
+                "pattern": "^yuance_drt_[A-Za-z0-9_-]+$"
+              },
+              "access_expires_in": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "refresh_expires_in": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "access": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
+                  },
+                  {
+                    "properties": {
+                      "audience": {
+                        "const": "yuance-api"
+                      },
+                      "generation": {
+                        "minimum": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "refresh": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DeviceCredentialMetadata"
+                  },
+                  {
+                    "properties": {
+                      "audience": {
+                        "const": "yuance-device-refresh"
+                      },
+                      "generation": {
+                        "minimum": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
       "DeviceSessionProbeEnvelope": {
         "type": "object",
         "additionalProperties": false,
@@ -1834,6 +1995,10 @@
           "device_access_expired",
           "device_revoked",
           "device_session_revoked",
+          "invalid_device_refresh",
+          "device_refresh_expired",
+          "device_refresh_replay",
+          "rotation_recovery_failed",
           "invalid_code_challenge",
           "invalid_device_code",
           "invalid_code_verifier",

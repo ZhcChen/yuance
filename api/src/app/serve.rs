@@ -2,6 +2,7 @@ use tokio::net::TcpListener;
 
 use crate::{
     app::ServeArgs,
+    domains::device_sessions,
     platform::{config::Settings, db, error::AppResult, telemetry},
     web::router::{AppState, build_router},
 };
@@ -12,6 +13,7 @@ pub async fn run(args: ServeArgs) -> AppResult<()> {
 
     let listener = TcpListener::bind(settings.http_addr).await?;
     let pool = db::connect_pool(&settings).await?;
+    spawn_device_rotation_cleanup(pool.clone());
     tracing::info!(
         addr = %settings.http_addr,
         env = %settings.env,
@@ -27,6 +29,26 @@ pub async fn run(args: ServeArgs) -> AppResult<()> {
     .await?;
 
     Ok(())
+}
+
+fn spawn_device_rotation_cleanup(pool: sqlx::SqlitePool) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+        loop {
+            interval.tick().await;
+            match device_sessions::cleanup_expired_rotation_results(&pool, chrono::Utc::now(), 500)
+                .await
+            {
+                Ok(cleaned) if cleaned > 0 => {
+                    tracing::info!(cleaned, "cleaned expired device rotation results");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "failed to clean expired device rotation results");
+                }
+            }
+        }
+    });
 }
 
 pub(crate) fn settings_from_args(args: ServeArgs) -> AppResult<Settings> {
