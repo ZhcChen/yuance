@@ -20,12 +20,17 @@ pub async fn run(args: ServeArgs) -> AppResult<()> {
         "yuance-api listening"
     );
 
-    let app = build_router(AppState::new(settings, Some(pool)));
+    let state = AppState::new(settings, Some(pool));
+    let shutdown_state = state.clone();
+    let app = build_router(state);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        shutdown_state.shutdown_device_streams();
+    })
     .await?;
 
     Ok(())

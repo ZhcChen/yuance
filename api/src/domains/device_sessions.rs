@@ -230,6 +230,33 @@ pub struct AuthenticatedDeviceAccess {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeviceAccessLease {
+    pub access_session_id: String,
+    pub user_id: i64,
+    pub device_id: String,
+    pub family_id: String,
+    pub generation: i64,
+    pub authorization_version: i64,
+    pub access_expires_at: DateTime<Utc>,
+    pub server_instance_id: String,
+}
+
+impl From<&AuthenticatedDeviceAccess> for DeviceAccessLease {
+    fn from(access: &AuthenticatedDeviceAccess) -> Self {
+        Self {
+            access_session_id: access.access_session_id.clone(),
+            user_id: access.user_id,
+            device_id: access.device_id.clone(),
+            family_id: access.family_id.clone(),
+            generation: access.generation,
+            authorization_version: access.authorization_version,
+            access_expires_at: access.access_expires_at,
+            server_instance_id: access.server_instance_id.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeviceFamilySummary {
     pub family_id: String,
     pub device_id: String,
@@ -594,6 +621,62 @@ pub async fn authenticate_access_token(
     .await;
     finish_transaction(transaction, transaction_should_commit(&result)).await?;
     result
+}
+
+pub async fn revalidate_access_lease(
+    pool: &SqlitePool,
+    lease: &DeviceAccessLease,
+    now: DateTime<Utc>,
+) -> DeviceSessionResult<()> {
+    if lease.access_expires_at <= now {
+        return Err(DeviceSessionError::AccessExpired);
+    }
+    let row = sqlx::query(
+        r#"
+        SELECT access.user_id, access.device_id, access.family_id, access.generation,
+               access.authorization_version AS access_version, access.expires_at,
+               access.session_status, access.server_instance_id,
+               family.family_status, family.authorization_version AS family_version,
+               device.device_status, device.authorization_version AS device_version,
+               user.status AS user_status
+        FROM device_access_sessions access
+        JOIN device_credential_families family ON family.id = access.family_id
+        JOIN devices device ON device.id = access.device_id
+        JOIN users user ON user.id = access.user_id
+        WHERE access.id = ?1
+        "#,
+    )
+    .bind(&lease.access_session_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(DeviceSessionError::InvalidAccessToken)?;
+
+    if row.get::<i64, _>("user_id") != lease.user_id
+        || row.get::<String, _>("device_id") != lease.device_id
+        || row.get::<String, _>("family_id") != lease.family_id
+        || row.get::<i64, _>("generation") != lease.generation
+        || row.get::<i64, _>("access_version") != lease.authorization_version
+        || row.get::<String, _>("server_instance_id") != lease.server_instance_id
+    {
+        return Err(DeviceSessionError::InvalidAccessToken);
+    }
+    if row.get::<String, _>("user_status") != "active" {
+        return Err(DeviceSessionError::UserInactive);
+    }
+    if row.get::<String, _>("device_status") != "active" {
+        return Err(DeviceSessionError::DeviceRevoked);
+    }
+    if row.get::<String, _>("family_status") != "active" {
+        return Err(DeviceSessionError::FamilyRevoked);
+    }
+    if row.get::<String, _>("session_status") != "active"
+        || row.get::<i64, _>("family_version") != lease.authorization_version
+        || row.get::<i64, _>("device_version") != lease.authorization_version
+        || parse_timestamp(row.get("expires_at"))? != lease.access_expires_at
+    {
+        return Err(DeviceSessionError::InvalidAccessToken);
+    }
+    Ok(())
 }
 
 async fn authenticate_access_in_transaction(
@@ -1068,6 +1151,19 @@ async fn rotate_refresh_in_transaction(
     if consumed.rows_affected() != 1 {
         return Err(invalid_state("refresh_rotation_cas_failed"));
     }
+    sqlx::query(
+        r#"
+        UPDATE device_access_sessions
+        SET session_status = 'revoked', revoked_at = ?1,
+            revoke_reason = 'refresh_rotated', updated_at = ?1
+        WHERE family_id = ?2 AND generation = ?3 AND session_status = 'active'
+        "#,
+    )
+    .bind(&now_value)
+    .bind(&family_id)
+    .bind(source_generation)
+    .execute(&mut *connection)
+    .await?;
     sqlx::query(
         r#"
         INSERT INTO device_access_sessions (

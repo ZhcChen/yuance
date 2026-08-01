@@ -32,6 +32,9 @@ pub struct DeviceSessionSettings {
     pub refresh_absolute_ttl: String,
     pub idempotency_ttl: String,
     pub poll_interval: String,
+    pub control_revalidation_interval: String,
+    pub control_revalidation_timeout: String,
+    pub control_max_active_streams: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +45,8 @@ pub struct DeviceSessionDurations {
     pub refresh_absolute_ttl_seconds: i64,
     pub idempotency_ttl_seconds: i64,
     pub poll_interval_seconds: i64,
+    pub control_revalidation_interval_ms: i64,
+    pub control_revalidation_timeout_ms: i64,
 }
 
 impl Default for DeviceSessionSettings {
@@ -55,6 +60,9 @@ impl Default for DeviceSessionSettings {
             refresh_absolute_ttl: "90d".to_string(),
             idempotency_ttl: "24h".to_string(),
             poll_interval: "5s".to_string(),
+            control_revalidation_interval: "1s".to_string(),
+            control_revalidation_timeout: "500ms".to_string(),
+            control_max_active_streams: "1024".to_string(),
         }
     }
 }
@@ -104,6 +112,15 @@ impl Settings {
                 refresh_absolute_ttl: env_string("YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL", "90d"),
                 idempotency_ttl: env_string("YUANCE_DEVICE_IDEMPOTENCY_TTL", "24h"),
                 poll_interval: env_string("YUANCE_DEVICE_POLL_INTERVAL", "5s"),
+                control_revalidation_interval: env_string(
+                    "YUANCE_DEVICE_CONTROL_REVALIDATION_INTERVAL", "1s",
+                ),
+                control_revalidation_timeout: env_string(
+                    "YUANCE_DEVICE_CONTROL_REVALIDATION_TIMEOUT", "500ms",
+                ),
+                control_max_active_streams: env_string(
+                    "YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS", "1024",
+                ),
             },
             experimental_legacy_preview_enabled: env_flag_enabled(
                 "YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED",
@@ -176,7 +193,21 @@ impl DeviceSessionSettings {
                 "YUANCE_DEVICE_POLL_INTERVAL",
                 &self.poll_interval,
             )?,
+            control_revalidation_interval_ms: parse_duration_millis(
+                "YUANCE_DEVICE_CONTROL_REVALIDATION_INTERVAL",
+                &self.control_revalidation_interval,
+            )?,
+            control_revalidation_timeout_ms: parse_duration_millis(
+                "YUANCE_DEVICE_CONTROL_REVALIDATION_TIMEOUT",
+                &self.control_revalidation_timeout,
+            )?,
         };
+
+        validate_control_stream_timing(
+            durations.control_revalidation_interval_ms,
+            durations.control_revalidation_timeout_ms,
+        )?;
+        self.control_max_active_streams()?;
 
         validate_duration_range(
             "YUANCE_DEVICE_AUTHORIZATION_TTL",
@@ -235,6 +266,34 @@ impl DeviceSessionSettings {
         }
 
         Ok(durations)
+    }
+
+    pub fn control_stream_timing(&self) -> AppResult<(std::time::Duration, std::time::Duration)> {
+        let interval = parse_duration_millis(
+            "YUANCE_DEVICE_CONTROL_REVALIDATION_INTERVAL",
+            &self.control_revalidation_interval,
+        )?;
+        let timeout = parse_duration_millis(
+            "YUANCE_DEVICE_CONTROL_REVALIDATION_TIMEOUT",
+            &self.control_revalidation_timeout,
+        )?;
+        validate_control_stream_timing(interval, timeout)?;
+        Ok((
+            std::time::Duration::from_millis(interval as u64),
+            std::time::Duration::from_millis(timeout as u64),
+        ))
+    }
+
+    pub fn control_max_active_streams(&self) -> AppResult<usize> {
+        let value = self.control_max_active_streams.trim().parse::<usize>().map_err(|_| {
+            AppError::Config("YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS 必须是正整数".to_string())
+        })?;
+        if !(16..=10_000).contains(&value) {
+            return Err(AppError::Config(
+                "YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS 必须介于 16 和 10000".to_string(),
+            ));
+        }
+        Ok(value)
     }
 
     pub fn trusted_proxy_networks(&self) -> AppResult<Vec<ipnet::IpNet>> {
@@ -311,6 +370,39 @@ fn parse_duration_seconds(name: &str, value: &str) -> AppResult<i64> {
     amount
         .checked_mul(multiplier)
         .ok_or_else(|| AppError::Config(format!("{name} 数值过大")))
+}
+
+fn parse_duration_millis(name: &str, value: &str) -> AppResult<i64> {
+    let value = value.trim();
+    if let Some(number) = value.strip_suffix("ms") {
+        let amount = number.trim().parse::<i64>()
+            .map_err(|_| AppError::Config(format!("{name} 必须是正整数毫秒值")))?;
+        if amount <= 0 { return Err(AppError::Config(format!("{name} 必须大于 0"))); }
+        return Ok(amount);
+    }
+    parse_duration_seconds(name, value)?.checked_mul(1_000)
+        .ok_or_else(|| AppError::Config(format!("{name} 数值过大")))
+}
+
+fn validate_control_stream_timing(interval_ms: i64, timeout_ms: i64) -> AppResult<()> {
+    const SCHEDULER_MARGIN_MS: i64 = 500;
+    const REVOCATION_DEADLINE_MS: i64 = 5_000;
+    if !(250..=1_000).contains(&interval_ms) {
+        return Err(AppError::Config(
+            "YUANCE_DEVICE_CONTROL_REVALIDATION_INTERVAL 必须介于 250ms 和 1s".to_string(),
+        ));
+    }
+    if !(100..=500).contains(&timeout_ms) {
+        return Err(AppError::Config(
+            "YUANCE_DEVICE_CONTROL_REVALIDATION_TIMEOUT 必须介于 100ms 和 500ms".to_string(),
+        ));
+    }
+    if interval_ms + timeout_ms + SCHEDULER_MARGIN_MS >= REVOCATION_DEADLINE_MS {
+        return Err(AppError::Config(
+            "Device control stream 重验预算必须严格小于 5 秒撤销 deadline".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_server_instance_id(value: &str, environment: &str) -> AppResult<()> {
@@ -457,6 +549,8 @@ mod tests {
                 refresh_absolute_ttl_seconds: 90 * 24 * 60 * 60,
                 idempotency_ttl_seconds: 24 * 60 * 60,
                 poll_interval_seconds: 5,
+                control_revalidation_interval_ms: 1_000,
+                control_revalidation_timeout_ms: 500,
             }
         );
     }
@@ -473,6 +567,9 @@ mod tests {
             ("refresh_absolute_ttl", "181d"),
             ("idempotency_ttl", "1m"),
             ("idempotency_ttl", "8d"),
+            ("control_revalidation_interval", "3s"),
+            ("control_revalidation_timeout", "2s"),
+            ("control_max_active_streams", "8"),
         ];
 
         for (field, value) in cases {
@@ -484,6 +581,9 @@ mod tests {
                 "refresh_sliding_ttl" => settings.refresh_sliding_ttl = value.to_string(),
                 "refresh_absolute_ttl" => settings.refresh_absolute_ttl = value.to_string(),
                 "idempotency_ttl" => settings.idempotency_ttl = value.to_string(),
+                "control_revalidation_interval" => settings.control_revalidation_interval = value.to_string(),
+                "control_revalidation_timeout" => settings.control_revalidation_timeout = value.to_string(),
+                "control_max_active_streams" => settings.control_max_active_streams = value.to_string(),
                 _ => unreachable!(),
             }
             assert!(

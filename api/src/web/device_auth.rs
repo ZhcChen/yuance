@@ -3,10 +3,11 @@ use axum::{
     Form, Json,
     extract::{Extension, Query, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode, header},
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Redirect, Response, sse::{Event, KeepAlive, Sse}},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::{convert::Infallible, time::Duration};
 
 use crate::{
     domains::{api_tokens, audit, auth, device_sessions},
@@ -424,6 +425,68 @@ pub(crate) async fn probe_device_session(
             },
         })
         .into_response(),
+    )
+}
+
+pub(crate) async fn device_session_control(
+    State(state): State<AppState>,
+    Extension(client_ip): Extension<DeviceAuthClientIp>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(_permit) = state.try_device_auth_permit() else {
+        return rate_limited_response(1);
+    };
+    let context = device_audit_context(&headers, client_ip);
+    let access = match require_device_access(&state, &headers, &context).await {
+        Ok(access) => access,
+        Err(response) => return response,
+    };
+    let Some(stream_permit) = state.try_device_stream_permit(&access.family_id) else {
+        return rate_limited_response(1);
+    };
+    let pool = match state.pool() {
+        Ok(pool) => pool.clone(),
+        Err(error) => return no_store(error.into_response()),
+    };
+    let lease = device_sessions::DeviceAccessLease::from(&access);
+    let (revalidation_interval, revalidation_timeout) = match state.settings.device_sessions.control_stream_timing() {
+        Ok(timing) => timing,
+        Err(error) => return no_store(error.into_response()),
+    };
+    let mut shutdown = state.subscribe_device_stream_shutdown();
+    let expires_in = (lease.access_expires_at - Utc::now())
+        .to_std()
+        .unwrap_or(Duration::ZERO);
+    let stream = async_stream::stream! {
+        let _stream_permit = stream_permit;
+        if *shutdown.borrow() { return; }
+        yield Ok::<Event, Infallible>(Event::default().event("connected").data("{\"schema_version\":1}"));
+        let mut revalidation = tokio::time::interval(revalidation_interval);
+        revalidation.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let expiry = tokio::time::sleep(expires_in);
+        tokio::pin!(expiry);
+        loop {
+            tokio::select! {
+                _ = &mut expiry => break,
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow() { break; }
+                }
+                _ = revalidation.tick() => {
+                    match tokio::time::timeout(
+                        revalidation_timeout,
+                        device_sessions::revalidate_access_lease(&pool, &lease, Utc::now()),
+                    ).await {
+                        Ok(Ok(())) => {}
+                        _ => break,
+                    }
+                }
+            }
+        }
+    };
+    no_store(
+        Sse::new(stream)
+            .keep_alive(KeepAlive::new().interval(Duration::from_secs(1)).text("keep-alive"))
+            .into_response(),
     )
 }
 

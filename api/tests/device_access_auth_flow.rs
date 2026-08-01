@@ -23,6 +23,7 @@ use yuance_api::{
 
 const PROBE_PATH: &str = "/api/v1/device-session";
 const LOGOUT_PATH: &str = "/api/v1/device-session/logout";
+const CONTROL_PATH: &str = "/api/v1/device-session/events";
 const CODE_VERIFIER: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-._~";
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -130,6 +131,10 @@ async fn device_endpoints_reject_cookie_pat_system_and_refresh_credentials() {
     let app = test_app(pool.clone());
 
     let response = device_request(&app, "GET", PROBE_PATH, "", Some(&session_cookie)).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_device_error(response, "credential_not_allowed").await;
+
+    let response = device_request(&app, "GET", CONTROL_PATH, "", Some(&session_cookie)).await;
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_device_error(response, "credential_not_allowed").await;
 

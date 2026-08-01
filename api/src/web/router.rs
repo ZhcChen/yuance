@@ -10,14 +10,14 @@ use axum::{
 use include_dir::{Dir, include_dir};
 use serde::Deserialize;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     net::{IpAddr, SocketAddr},
     path::{Path as StdPath, PathBuf},
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, watch};
 
 use crate::{
     domains::auth,
@@ -38,15 +38,25 @@ pub struct AppState {
     pub settings: Settings,
     pub pool: Option<sqlx::SqlitePool>,
     device_auth_limiter: Arc<DeviceAuthLimiter>,
+    device_stream_shutdown: Arc<watch::Sender<bool>>,
+    device_stream_concurrency: Arc<Semaphore>,
+    active_device_stream_families: Arc<Mutex<HashSet<String>>>,
 }
 
 impl AppState {
     pub fn new(settings: Settings, pool: Option<sqlx::SqlitePool>) -> Self {
         let device_auth_limiter = Arc::new(DeviceAuthLimiter::new(&settings));
+        let max_active_streams = settings
+            .device_sessions
+            .control_max_active_streams()
+            .unwrap_or(16);
         Self {
             settings,
             pool,
             device_auth_limiter,
+            device_stream_shutdown: Arc::new(watch::channel(false).0),
+            device_stream_concurrency: Arc::new(Semaphore::new(max_active_streams)),
+            active_device_stream_families: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -68,6 +78,9 @@ impl AppState {
             },
             pool: None,
             device_auth_limiter: Arc::new(DeviceAuthLimiter::default()),
+            device_stream_shutdown: Arc::new(watch::channel(false).0),
+            device_stream_concurrency: Arc::new(Semaphore::new(16)),
+            active_device_stream_families: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -83,6 +96,38 @@ impl AppState {
             .clone()
             .try_acquire_owned()
             .ok()
+    }
+
+    pub(crate) fn subscribe_device_stream_shutdown(&self) -> watch::Receiver<bool> {
+        self.device_stream_shutdown.subscribe()
+    }
+
+    pub fn shutdown_device_streams(&self) {
+        self.device_stream_shutdown.send_replace(true);
+    }
+
+    pub(crate) fn try_device_stream_permit(&self, family_id: &str) -> Option<DeviceStreamPermit> {
+        let global = self.device_stream_concurrency.clone().try_acquire_owned().ok()?;
+        let mut active = self.active_device_stream_families.lock().ok()?;
+        if !active.insert(family_id.to_string()) { return None; }
+        drop(active);
+        Some(DeviceStreamPermit {
+            family_id: family_id.to_string(),
+            active: self.active_device_stream_families.clone(),
+            _global: global,
+        })
+    }
+}
+
+pub(crate) struct DeviceStreamPermit {
+    family_id: String,
+    active: Arc<Mutex<HashSet<String>>>,
+    _global: tokio::sync::OwnedSemaphorePermit,
+}
+
+impl Drop for DeviceStreamPermit {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.active.lock() { active.remove(&self.family_id); }
     }
 }
 
@@ -546,6 +591,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/device-session/logout",
             post(web::device_auth::logout_device_session),
         )
+        .route(
+            "/api/v1/device-session/events",
+            get(web::device_auth::device_session_control),
+        )
         .route("/api/v1/auth/me", get(web::api::me))
         .route("/api/v1/auth/csrf", get(web::auth_api::csrf_token))
         .route("/api/v1/auth/logout", post(web::api::logout))
@@ -904,7 +953,7 @@ async fn device_auth_boundary_middleware(
         "/api/v1/device-authorizations" => (120, 20, true, true, false),
         "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
         "/api/v1/device-sessions/refresh" => (600, 120, true, true, false),
-        "/api/v1/device-session" | "/api/v1/device-session/logout" => {
+        "/api/v1/device-session" | "/api/v1/device-session/logout" | "/api/v1/device-session/events" => {
             (1200, 120, true, false, false)
         }
         "/web/device-authorization"

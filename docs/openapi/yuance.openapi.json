@@ -545,6 +545,32 @@
         }
       }
     },
+    "/api/v1/device-session/events": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "订阅设备会话控制流",
+        "description": "使用短期 device access token 建立受持续 authorization lease 约束的 SSE 控制流。服务端至少每秒重验 user、device、family、generation、authorization version 与 access expiry；撤销、过期、重验超时或服务关闭时结束流。",
+        "security": [
+          { "deviceAccess": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "设备控制流已建立",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
+          "500": { "$ref": "#/components/responses/DeviceSessionError" }
+        }
+      }
+    },
     "/api/v1/me/tokens": {
       "get": {
         "tags": [
@@ -1411,7 +1437,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "Yuance Device Access Token",
-        "description": "使用 yuance_dat_* 短期设备 access token。首个 D1 切片只允许显式登记的 device probe/logout/设备管理接口；普通业务 API 默认拒绝。"
+        "description": "使用 yuance_dat_* 短期设备 access token。仅允许显式登记的 device probe、logout 和 control stream；普通业务 API 默认拒绝。"
       },
       "cookieSession": {
         "type": "apiKey",

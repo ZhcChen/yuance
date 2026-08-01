@@ -146,7 +146,10 @@ fn openapi_matches_enrollment_and_does_not_publish_device_sse_early() {
             }
         })
     );
-    assert!(document["paths"]["/api/v1/device-session/events"].is_null());
+    assert_eq!(
+        document["paths"]["/api/v1/device-session/events"]["get"]["security"],
+        serde_json::json!([{ "deviceAccess": [] }])
+    );
 }
 
 fn test_state() -> AppState {

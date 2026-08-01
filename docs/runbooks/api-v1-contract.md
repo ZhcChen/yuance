@@ -75,6 +75,7 @@ POST /api/v1/device-authorizations
 POST /api/v1/device-authorizations/exchange
 POST /api/v1/device-sessions/refresh
 GET  /api/v1/device-session
+GET  /api/v1/device-session/events
 POST /api/v1/device-session/logout
 GET  /api/v1/me/tokens
 POST /api/v1/me/tokens
@@ -113,7 +114,7 @@ DELETE /api/v1/me/tokens/{token_id}
 
 `POST /api/v1/device-sessions/refresh` 提交当前 `refresh_token`、source `generation`、`device_id`、`server_instance_id` 和发送前已持久化的 `transaction_id`。同一 generation + transaction 可恢复完全相同的下一代凭证；旧 generation 使用不同 transaction 会以 `409 device_refresh_replay` 撤销整个 credential family。幂等密文无法解密时返回 `409 rotation_recovery_failed` 并撤销 family。该端点同样拒绝 Cookie 与 `Authorization` header，所有响应禁止缓存。
 
-`GET /api/v1/device-session` 与 `POST /api/v1/device-session/logout` 只接受 `Authorization: Bearer yuance_dat_*`。probe 返回 user/device/family/generation、access 到期时间和 authorization version，不返回任何 token；logout 原子撤销当前 credential family 及其 access/refresh。Cookie、PAT、system token、device refresh 或混合凭证均不允许进入这两个端点。device access 默认不能访问其他 `/api/v1/**` 业务 API，后续 D2 只能按 method + path + feature 显式登记。
+`GET /api/v1/device-session`、`GET /api/v1/device-session/events` 与 `POST /api/v1/device-session/logout` 只接受 `Authorization: Bearer yuance_dat_*`。probe 返回 user/device/family/generation、access 到期时间和 authorization version，不返回任何 token；events 仅发送 `connected` 事件和 heartbeat comment，并持续重验设备授权 lease；logout 原子撤销当前 credential family 及其 access/refresh。Cookie、PAT、system token、device refresh 或混合凭证均不允许进入这些端点。device access 默认不能访问其他 `/api/v1/**` 业务 API，后续 D2 只能按 method + path + feature 显式登记。
 
 设备会话 logout 与 Browser 撤销先原子提交 family/access/refresh 的撤销状态，再以 best-effort 写入审计；审计写入失败会记录服务端告警，但不会回滚或恢复已经撤销的凭证。若后续要求撤销与审计具备同一提交保证，应采用 transaction outbox，而不是在审计失败时重新开放凭证。
 
