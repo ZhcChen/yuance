@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { isLoopbackHostname } from "./auth/profile.mjs";
 import { isAllowedAppRoute } from "./routes/app-route.mjs";
 
 export const DEFAULT_WEB_URL = "https://yuance.quanxinfu.com/web";
@@ -58,10 +59,36 @@ export function resolveDeviceAuthEndpoint({
   isDevRuntime,
   rawUrl = process.env.YUANCE_DESKTOP_WEB_URL,
 } = {}) {
-  if (!isDevRuntime) {
-    return new URL(DEFAULT_WEB_URL).origin;
+  return resolveDesktopNetworkOrigin({ isDevRuntime, rawUrl });
+}
+
+export function resolveDesktopNetworkOrigin({ isDevRuntime, rawUrl } = {}) {
+  if (!isDevRuntime) return new URL(DEFAULT_WEB_URL).origin;
+  if (typeof rawUrl !== "string" || rawUrl.length === 0 || rawUrl.trim() !== rawUrl) {
+    throw new Error("Development Desktop network origin must be an explicit loopback URL.");
   }
-  return resolveWebUrl(rawUrl).origin;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Development Desktop network origin must be a valid URL.");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Development Desktop network origin must not contain userinfo.");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("Development Desktop network origin must not contain a query or fragment.");
+  }
+  if (!isLoopbackHostname(parsed.hostname)) {
+    throw new Error("Development Desktop network origin must use a loopback host.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Development Desktop network origin must use HTTP or HTTPS.");
+  }
+  if (rawUrl.includes("\\") || !["/", "/web", "/web/"].includes(parsed.pathname)) {
+    throw new Error("Development Desktop network origin path must be / or /web.");
+  }
+  return parsed.origin;
 }
 
 export function isTrustedAppUrl(value, appOrigin) {

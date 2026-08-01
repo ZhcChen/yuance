@@ -13,6 +13,7 @@ import {
   PRODUCTION_APP_DISPLAY_NAME,
   PRODUCTION_APP_USER_MODEL_ID,
   resolveDesktopAppIdentity,
+  resolveDesktopNetworkOrigin,
   resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
   resolveWebUrl,
@@ -71,6 +72,42 @@ test("ignores endpoint environment overrides for production device auth profiles
     }),
     "http://127.0.0.1:33033",
   );
+});
+
+test("uses a build-fixed production network origin and explicit development loopback", () => {
+  assert.equal(
+    resolveDesktopNetworkOrigin({
+      isDevRuntime: false,
+      rawUrl: "https://attacker.example/web",
+    }),
+    "https://yuance.quanxinfu.com",
+  );
+  for (const rawUrl of [
+    "http://127.0.0.1:33033/web",
+    "https://localhost:33033/web",
+    "http://[::1]:33033/web",
+  ]) {
+    assert.equal(
+      new URL(resolveDesktopNetworkOrigin({ isDevRuntime: true, rawUrl })).hostname,
+      new URL(rawUrl).hostname,
+    );
+  }
+  for (const rawUrl of [
+    undefined,
+    "https://attacker.example/web",
+    "http://192.168.1.2:33033/web",
+    "http://localhost:33033/web?tenant=1",
+    "http://user:secret@localhost:33033/web",
+    "http://localhost:33033/arbitrary",
+    "http://localhost:33033/%77eb",
+    "http:\\localhost:33033\\web",
+    "not-a-url?secret=value",
+  ]) {
+    assert.throws(
+      () => resolveDesktopNetworkOrigin({ isDevRuntime: true, rawUrl }),
+      /loopback|explicit|query|userinfo|path|valid URL/i,
+    );
+  }
 });
 
 test("rejects unsupported application URLs", () => {

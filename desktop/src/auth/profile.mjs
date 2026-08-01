@@ -8,7 +8,7 @@ function fail(message) {
   throw new TypeError(`Invalid desktop profile: ${message}`);
 }
 
-function isLoopbackHostname(hostname) {
+export function isLoopbackHostname(hostname) {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
   if (normalized === "localhost") {
     return true;

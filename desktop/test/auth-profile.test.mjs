@@ -117,3 +117,18 @@ test("does not reuse profile keys across endpoint, server identity, or runtime m
 
   assert.equal(new Set(profiles.map(({ key }) => key)).size, profiles.length);
 });
+
+test("keeps enrolled development and production identities isolated", () => {
+  const production = createDesktopProfile({
+    endpoint: "https://yuance.example",
+    serverInstanceId: "server-1",
+    mode: "production",
+  });
+  const development = createDesktopProfile({
+    endpoint: "https://yuance.example",
+    serverInstanceId: "server-1",
+    mode: "development",
+  });
+  assert.notEqual(production.key, development.key);
+  assert.notEqual(production.mode, development.mode);
+});
