@@ -1,7 +1,7 @@
 ---
 title: refactor: W4 共享 JavaScript 层提炼
 type: refactor
-status: active
+status: completed
 date: 2026-07-31
 origin: docs/plans/2026-07-28-feat-web-desktop-shared-frontend-plan.md
 ---
@@ -23,6 +23,8 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 2026-08-01 执行记录：Unit 4B-4D 已完成。`platform-contract` 已冻结文件选择、签名对象传输、受控下载、路由和状态反馈能力；工作项 mutation、handoff、评论及附件编排已进入 `app-core`，Browser `File`、header 过滤、对象存储请求和 DOM 下载留在 `web/src/platform/browser/files.js`。共享层与 Browser adapter 单元测试覆盖 action 过期保护、确认状态一致性、上传四段式顺序、失败短路、受控 URL/header 和 capability 生命周期；完整 19 项 Browser E2E 通过。
 
 2026-08-01 执行记录：Unit 5 已完成。工作项详情、评论、附件、formatter 和直接样式已提取到 `frontend/packages/ui`，并通过公开 package exports 回接 Web；共享 UI 采用 `tsx --test` 执行 9 项 SSR contract 测试，不依赖 `window`、`document`、`fetch`、Browser adapter 或其他内部业务 package。Vite 已显式 dedupe React runtime，生产构建模块数由重复 React 状态的 61 降至 51；完整 19 项 Browser E2E 通过。
+
+2026-08-01 收口记录：Unit 6-7 已完成。Browser Cookie/CSRF transport、return-to hash、history/router、EventSource 和文件传输已收敛到 `web/src/platform/browser/**`，由 `web/src/main.jsx` 注入 `App`；附件 capability 绑定严格的 OSS bucket/endpoint/origin、用途、TTL 和一次性消费。根前端检查、Web 32 项单元测试、共享包测试、生产构建、19 项 Browser E2E、React 单例检查和 linux/amd64 API 镜像 smoke 均通过。隔离镜像构建发现并修复 `file:` workspace 依赖缺少 `frontend` 安装上下文的问题，已增加静态回归测试。W4 未启动 Desktop renderer、device-session、`app://`、离线能力、富文本高级体验、资料库或文档预览迁移；下一切片确定为 D1 device-session/credential RFC。
 
 ## 问题框架
 
@@ -443,7 +445,7 @@ flowchart TB
 - `web/src/app.jsx` 的 JSX 体积下降，Browser-specific state/adapter 留在宿主层。
 - 工作项协作 Browser E2E 继续通过，页面可访问 label/role 不退化。
 
-- [ ] **Unit 6: Web 宿主回接共享包并完成 Browser 回归**
+- [x] **Unit 6: Web 宿主回接共享包并完成 Browser 回归**
 
 **Goal:** 将 `web/src/main.jsx` / `web/src/app.jsx` 收口为 Browser composition root 和 adapter，实现共享 `api-client`、`app-core`、`ui` 在现有 Web 生产路径中的端到端闭环。
 
@@ -493,7 +495,7 @@ flowchart TB
 - Web 运行时不再 deep import `frontend/packages/**/src/**` 内部文件，只使用公开导出或已冻结 alias。
 - Browser bundle 不包含 Electron/Node 宿主依赖，并保持 React 单例解析。
 
-- [ ] **Unit 7: 收口验证、主线回填与 D1/D2 输入更新**
+- [x] **Unit 7: 收口验证、主线回填与 D1/D2 输入更新**
 
 **Goal:** 完成 W4 收口复核，更新主线阶段状态，记录共享包边界、未纳入能力和下一阶段输入，确保 D1/D2 不误读 W4 结果。
 
