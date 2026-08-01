@@ -98,6 +98,17 @@ test("exposes every required state and starts unauthenticated", async () => {
   assert.equal("refreshToken" in coordinator.snapshot(), false);
 });
 
+test("state subscriptions are immediate, ordered, and removable", async () => {
+  const { coordinator } = fixture();
+  const states = [];
+  const unsubscribe = coordinator.subscribe((snapshot) => states.push(snapshot.status));
+  await coordinator.initialize();
+  coordinator.lock("manual_lock");
+  unsubscribe();
+  await coordinator.discardLocalSession();
+  assert.deepEqual(states, ["unauthenticated", "unauthenticated", "locked"]);
+});
+
 test("authorization persists credentials without access token and restart recovers authenticated", async () => {
   const store = memoryStore();
   const client = {

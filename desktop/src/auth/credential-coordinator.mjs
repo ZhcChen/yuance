@@ -55,6 +55,7 @@ export function createCredentialCoordinator({
   let revocationFlight = null;
   let credentialMutationTail = Promise.resolve();
   let authorizationMutationTail = Promise.resolve();
+  const stateSubscribers = new Set();
 
   function mutateCredential(operation) {
     const result = credentialMutationTail.then(operation, operation);
@@ -82,10 +83,34 @@ export function createCredentialCoordinator({
     });
   }
 
+  function notifyStateSubscribers() {
+    const current = snapshot();
+    for (const subscriber of [...stateSubscribers]) {
+      try {
+        subscriber(current);
+      } catch (_error) {
+        // A host observer cannot interrupt credential state transitions.
+      }
+    }
+  }
+
+  function subscribe(subscriber) {
+    if (typeof subscriber !== "function") throw new TypeError("State subscriber must be a function");
+    stateSubscribers.add(subscriber);
+    try {
+      subscriber(snapshot());
+    } catch (error) {
+      stateSubscribers.delete(subscriber);
+      throw error;
+    }
+    return () => stateSubscribers.delete(subscriber);
+  }
+
   function transition(next, nextReason) {
     if (!STATES.includes(next)) throw new TypeError(`Unknown coordinator state: ${next}`);
     status = next;
     reason = nextReason;
+    notifyStateSubscribers();
   }
 
   async function initialize() {
@@ -501,6 +526,7 @@ export function createCredentialCoordinator({
   return Object.freeze({
     states: STATES,
     snapshot,
+    subscribe,
     initialize,
     authorize,
     getAccessToken,

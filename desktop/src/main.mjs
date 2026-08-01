@@ -385,6 +385,7 @@ if (singleInstanceProbe) {
           });
         }
         initializeCredentialStoreFactory();
+        hostStatePublisher.update({ status: "unauthenticated" });
         applyRuntimeBrandIcon();
         mainWindow = createMainWindow();
       } catch (error) {
