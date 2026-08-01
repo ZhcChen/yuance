@@ -50,7 +50,7 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | `docs/plans/2026-07-25-002-feat-legacy-doc-ppt-experimental-preview-plan.md` | 功能切片计划 | `completed` | 文档预览 / 附件体验切片；不提前进入 `web/` 模块、Desktop renderer、device-session 或离线同步。 | 已收口：legacy `doc/ppt` 默认关闭，开启时统一实验性入口、降级页和 rollout 文档。 |
 | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` | W0 执行产物 | `completed` | 首批 Web-first 盘点、route-to-contract parity、回跳/缓存/rollout/CI 基线；服务于 W1/W2 输入。 | 不合并正文；后续 W1/W2 直接引用该基线，若 W0 决策变化再同步修订。 |
 | `docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` | W3 功能切片计划 | `completed` | 工作项详情写入、handoff、评论与附件迁移；已形成首个 Web 读写业务闭环。 | 已收口：Browser E2E 覆盖编辑、handoff、评论和附件四段式上传/下载；可作为 W4 共享层提炼评估输入。 |
-| `docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` | W4 重构子计划/RFC | `active` | 共享 JavaScript 层提炼；已完成边界冻结、`frontend/` workspace 骨架和纯 API client 提取。 | 继续按该子计划执行 app-core、ui 和 Browser 回接；未完成前不启动 Desktop renderer、`app://`、device-session 或离线能力。 |
+| `docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` | W4 重构子计划/RFC | `active` | 共享 JavaScript 层提炼；Unit 1-3 与 4A 已完成，路由和通知目标语义已进入 `app-core`。 | 继续执行 4B-4D 的平台契约、工作项 use case 与附件编排，再进入 ui 和 Browser 回接；未完成前不启动 Desktop renderer、`app://`、device-session 或离线能力。 |
 
 ### 阶段状态快照
 
@@ -59,8 +59,8 @@ Desktop 的核心不是重新实现一套业务页面。它以已经通过浏览
 | W0：Web-first 边界与契约基线 | `completed` | `docs/plans/2026-07-30-web-first-w0-inventory-and-contract-parity.md` 已收口；首批 route-to-contract parity 与交付基线已形成。 | 只在 W0 决策变化时同步修订。 |
 | W1：独立 Web 构建与首批 REST/SSE 契约 | `completed`（基础闭环） | `web/package.json`、`web/jsconfig.json`、`web/vite.config.js`、根 `check:frontend`、`.github/workflows/web-frontend.yml`、`api/Dockerfile`、`scripts/smoke-web-app-image.sh`、`api/tests/routing_smoke.rs`。 | 后续只做硬化：完整 rollout 控制面、bundle budget、自动 axe gate、契约 breaking-change diff。 |
 | W2：浏览器应用壳、认证衔接与消息中心 | `completed`（首批壳与消息） | `web/src/app.jsx`、`web/src/lib/api.js`、`web/src/lib/routes.js`、`web/e2e/app-shell.spec.mjs`；登录 `return_to`、通知语义目标与幂等已读已有测试覆盖。 | 继续通过 W3 feature 切片扩展应用壳能力，不再重复建设壳。 |
-| W3：浏览器端高频 Feature 迁移 | `active`（首个读写闭环已完成） | 项目列表、工作项列表、工作项详情协作闭环已接入；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已收口。 | 继续按独立切片迁移资料库、项目详情、文档预览等高频 feature；不阻塞 W4 评估。 |
-| W4：共享 JavaScript 层提炼 | `active`（Unit 1-3 已完成） | `docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` 已定义抽取边界、包依赖图、Browser transport 留存和迁移顺序；`frontend/packages/*` 骨架、边界检查与共享 `api-client` 已创建，Browser transport 已回接共享 client。 | 继续按 W4 子计划执行 app-core、ui 提炼和 Web 回接验证。 |
+| W3：浏览器端高频 Feature 迁移 | `active`（首个读写闭环已完成） | 项目列表、工作项列表、工作项详情协作闭环已接入；`docs/plans/2026-07-30-002-feat-web-work-item-collaboration-migration-plan.md` 已收口。 | W4 收口时只选择资料库、项目详情或文档预览中的一个下一切片并新建子计划；不并行展开多个 W3 子计划。 |
+| W4：共享 JavaScript 层提炼 | `active`（Unit 1-3、4A 已完成） | `docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` 已定义抽取边界；workspace、共享 `api-client`、路由和通知目标语义已落地。 | 继续执行 Unit 4B-4D，再完成聚焦 UI 提炼和 Web 回接验证。 |
 | D1 / D2：Electron 安全宿主与功能对齐 | `pending` | 当前 Desktop 仍以远端 Web 页面为主。 | D1 前必须先完成 device-session / `app://` / credential / file-transfer RFC。 |
 | G-DIST / D3 / D4：更新与离线能力 | `pending` | 未启动。 | 作为 D2 后独立 Gate 或离线专项，不阻塞 W3。 |
 
@@ -472,9 +472,9 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 
 ### W4：从已验证 Web Feature 提炼共享 JavaScript 层
 
-**当前状态：** `active`（Unit 1-3 已完成）
+**当前状态：** `active`（Unit 1-3、4A 已完成）
 
-**启动门槛：** 不以“应用壳 + 只读列表/详情”启动共享包抽取。工作项协作闭环已经通过 Browser E2E 覆盖编辑、handoff、评论和附件上传/下载，可作为 W4 的首个评估输入。`docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` 已作为 W4 子计划/RFC，明确抽取边界、包依赖图、保留在 Browser 宿主内的 Cookie/CSRF transport、以及不纳入本轮的富文本/预览/离线能力。2026-07-31 已完成 Unit 1 边界冻结、Unit 2 `frontend/` workspace 骨架和 Unit 3 纯 API client 提取；后续仍需按子计划迁移 app-core、ui 并完成剩余 Web 回接验证。
+**启动门槛：** 不以“应用壳 + 只读列表/详情”启动共享包抽取。工作项协作闭环已经通过 Browser E2E 覆盖编辑、handoff、评论和附件上传/下载，可作为 W4 的首个评估输入。`docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md` 已作为 W4 子计划/RFC，明确抽取边界、包依赖图、保留在 Browser 宿主内的 Cookie/CSRF transport、以及不纳入本轮的富文本/预览/离线能力。2026-07-31 已完成 Unit 1-3 与 Unit 4A 路由/通知语义提取；后续按 4B-4D 完成平台契约、工作项 use case 和附件编排，再提取聚焦 UI 并完成 Web 回接验证。
 
 **目标：** 在至少一个完整业务 feature 已经通过 Browser E2E 和真实发布路径验证后，提取稳定共享 JavaScript/JSDoc 代码，为 Desktop 使用同一套 UI 与逻辑做准备。
 
@@ -502,6 +502,8 @@ Desktop 不复用浏览器 `<input type="file">`、`File` 或远端 Web bridge �
 - CI 验证 workspace 唯一 lockfile、依赖 DAG、循环依赖、`exports` 白名单、禁止 deep import 和 React/React DOM 单例；构建产物体积与无障碍组件测试不超过 W0 预算。
 
 ### D1：Electron 安全宿主、设备认证与内置 Renderer
+
+> D1 当前正文是阶段规格与拆分依据，不可直接作为单个执行单元。W4 收口且明确选择进入 Desktop 主线后，必须先分别创建并评审 device-session/credential、`app://` 安全宿主、Desktop network/SSE、文件 capability/transfer 和三平台发行 Gate 子计划；同一时间只执行一个具备独立验收与回退边界的子计划。
 
 **目标：** 建立正式 Electron 包的安全运行底座：`app://` 内置 JavaScript renderer、独立设备认证、最小 preload/IPC、凭证库和不可回退的 Electron 安全不变量。D1 只验证可安全挂载共享应用壳，不承担全量业务页面对齐。
 

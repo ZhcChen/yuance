@@ -18,7 +18,7 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 
 2026-07-31 执行记录：Unit 3 已完成。`ApiError`、错误 payload 映射、注入式 `createApiClient()`、工作项/评论/附件、通知、topbar 与基础 auth/project client 已进入 `frontend/packages/api-client`；Browser Cookie/CSRF、401 登录跳转、`return_to` hash 恢复和 `EventSource` 继续留在 `web/src/lib/api.js`。`web` 已通过本地 package dependency 回接共享 `api-client`，现有 Web API transport 测试保持通过。
 
-2026-07-31 执行记录：Unit 4 第一小闭环已完成。纯路由 builder/parser 与通知 target 映射已进入 `frontend/packages/app-core`，并新增 package 单元测试；`web/src/lib/routes.js` 仅保留 `window.location` 默认参数 wrapper，`web/src/lib/notification-target.js` 改为公开 re-export。工作项协作 use case 编排尚未提取，Unit 4 暂不勾选完成。
+2026-07-31 执行记录：Unit 4A 已完成。纯路由 builder/parser 与通知 target 映射已进入 `frontend/packages/app-core`，并新增 package 单元测试；`web/src/lib/routes.js` 仅保留 `window.location` 默认参数 wrapper，`web/src/lib/notification-target.js` 改为公开 re-export。原 Unit 4 已按边界拆为 4A-4D，后续依次完成平台能力契约、工作项 mutation/comment use case 和附件编排回接。
 
 ## 问题框架
 
@@ -98,11 +98,14 @@ W4 的目标不是启动 Desktop renderer，也不是把所有 Web 代码一次�
 - **是否需要把 Browser Cookie/CSRF transport 提到 `api-client`？** 不需要。共享 `api-client` 接受 transport 注入，Browser Cookie/CSRF 留在 `web/`，Desktop 后续实现独立 Bearer/fetch-stream transport。
 - **是否应以资料库或文档预览作为首批共享 feature？** 不应。资料库和文档预览尚未迁入新 `web/`，不能作为已验证共享基线。
 
+### Resolved During Implementation
+
+- **`web` 如何消费共享 package？** 已采用 `file:../frontend/packages/*` 本地 package dependency，并由 `web/package-lock.json` 固定解析；Unit 3 已通过 checkJs、Node test 和 Vite build 证明共享 `api-client` 可回接。本阶段不把整个仓库改为 root npm workspace，Unit 6 继续验证 React 单例和公开导出边界。
+
 ### Deferred to Implementation
 
-- **`web` 消费共享 package 的最终安装/解析方式。** Unit 1 需在 package-name alias 或受控 local link 中选择最小可维护方案，并以 checkJs、Node test、Vite build 和 React 单例验证为准；本阶段默认不把整个仓库改为 root npm workspace。
 - **UI package 是否引入组件测试运行器。** 若现有 Node test 无法经济地覆盖 React 组件 contract，Unit 5 可选择最小测试依赖；但不得用测试工具选择阻塞 Browser E2E 回归。
-- **附件 signed request 执行 contract 的最终命名。** Unit 4 根据现有 `AppSignedObjectRequest` 与 Browser adapter 实作确定命名；计划只要求语义边界，不预写具体函数名。
+- **附件 signed request 执行 contract 的最终命名。** Unit 4B 根据现有 `AppSignedObjectRequest` 与 Browser adapter 实作确定命名；计划只要求语义边界，不预写具体函数名。
 - **是否在 W4 顺手拆分整个 `App`。** 由实施中复杂度决定。若继续拆分会扩大风险，应只拆工作项协作和路由/通知相关组件，其余保持 Browser 壳内。
 
 ## High-Level Technical Design
@@ -286,29 +289,22 @@ flowchart TB
 - Browser transport 测试继续覆盖 CSRF、401、same-origin 和 SSE 留存边界。
 - Web build 和 Browser E2E 在 API client 提取后行为不变。
 
-- [ ] **Unit 4: 提取路由、通知目标与工作项协作 app-core 边界**
+- [x] **Unit 4A: 提取路由与通知目标语义**
 
-**Goal:** 将纯路由语义、通知目标映射和工作项协作 use case 编排提取到 `frontend/packages/app-core` 与 `platform-contract`，同时把 Browser history、location 和 DOM 焦点留在 `web/`。
+**Goal:** 将纯路由语义和通知目标映射提取到 `frontend/packages/app-core`，同时把 Browser history、location 和 DOM 焦点留在 `web/`。
 
 **Requirements:** R3, R4, R5, R6, R7
 
 **Dependencies:** Unit 3。
 
 **Files:**
-- Modify: `frontend/packages/platform-contract/src/index.js`
-- Create: `frontend/packages/platform-contract/src/platform.js`
-- Create: `frontend/packages/platform-contract/src/files.js`
-- Create: `frontend/packages/platform-contract/src/router.js`
 - Modify: `frontend/packages/app-core/src/index.js`
 - Create: `frontend/packages/app-core/src/routes.js`
 - Create: `frontend/packages/app-core/src/notification-target.js`
-- Create: `frontend/packages/app-core/src/work-item-collaboration.js`
 - Create: `frontend/packages/app-core/test/routes.test.mjs`
 - Create: `frontend/packages/app-core/test/notification-target.test.mjs`
-- Create: `frontend/packages/app-core/test/work-item-collaboration.test.mjs`
 - Modify: `web/src/lib/routes.js`
 - Modify: `web/src/lib/notification-target.js`
-- Modify: `web/src/app.jsx`
 - Modify: `web/test/routes.test.mjs`
 - Modify: `web/test/notification-target.test.mjs`
 
@@ -316,28 +312,93 @@ flowchart TB
 - 将 `buildHomePath`、`buildMessagesPath`、`buildProjectsPath`、`buildWorkItemListPath`、`buildWorkItemDetailPath` 和不读取 global 的 route parse 移入 `app-core`。
 - `web/src/lib/routes.js` 只保留从 `window.location` 读取当前路由和调用 `history.pushState/replaceState` 的 Browser wrapper。
 - 将 `notificationTargetPath()` 移入 `app-core`，继续以服务端语义 target 映射内部路由，不重新引入 `/web/messages/{id}/open` 作为业务协议。
-- 将工作项编辑、handoff、评论和附件 orchestration 提成不依赖 React state 的 use case 函数；这些函数接收 `api`、`platform.files` / `platform.downloads` 和刷新回调。
-- `platform-contract` 只定义能力形状和 JSDoc 类型：路由、文件选择、签名上传/下载执行、状态反馈和通知呈现意图；不包含 Browser 或 Desktop 实现。
 
 **Patterns to follow:**
 - `web/src/lib/routes.js`
 - `web/src/lib/notification-target.js`
-- `web/src/app.jsx` 中 `submitWorkItemEdit`、`submitWorkItemHandoff`、`submitWorkItemComment`、附件上传/下载流程。
 
 **Test scenarios:**
 - Happy path：`buildWorkItemDetailPath({ owner: 'app', itemKey, commentId })` 输出新 Web 工作项详情 hash 路由。
 - Edge case：空 work item key 映射回任务列表，不产生非法详情路由。
 - Happy path：通知 target 为 work item 时映射到工作项详情并保留评论 hash。
 - Error path：通知 target 缺失或未知 kind 时映射到消息中心。
-- Happy path：工作项编辑 use case 调用 `api.updateWorkItem` 后触发详情、评论和 topbar 刷新回调。
-- Happy path：附件上传 use case 按登记、签名、平台上传、uploaded、刷新列表顺序执行。
-- Error path：附件签名或平台上传失败时返回可展示错误，并不调用 uploaded 确认。
 - Integration：Browser wrapper 仍负责 history/location/focus，app-core 测试中不需要 DOM。
 
 **Verification:**
-- `app-core` 与 `platform-contract` 单元测试覆盖路由、通知 target、工作项 mutation 和附件 orchestration。
+- `app-core` 单元测试覆盖路由和通知 target。
 - `web/src/lib/routes.js` 与 `web/src/lib/notification-target.js` 成为兼容 wrapper 或被安全移除。
-- Web 页面刷新、前进/后退、通知跳转和附件流程不因提取改变。
+- Web 页面刷新、前进/后退和通知跳转不因提取改变。
+
+- [ ] **Unit 4B: 定义平台文件、下载与路由能力契约**
+
+**Goal:** 在 `platform-contract` 中定义 W4 实际需要的平台能力形状，不引入 Browser 或 Desktop 实现。
+
+**Requirements:** R3, R4, R5, R7
+
+**Dependencies:** Unit 4A。
+
+**Files:**
+- Modify: `frontend/packages/platform-contract/src/index.js`
+- Create: `frontend/packages/platform-contract/src/platform.js`
+- Create: `frontend/packages/platform-contract/src/files.js`
+- Create: `frontend/packages/platform-contract/src/router.js`
+- Create: `frontend/packages/platform-contract/test/platform.test.mjs`
+
+**Approach:**
+- 只定义文件选择结果、签名上传执行、受控下载、内部路由和状态反馈的 JSDoc 类型与最小能力接口。
+- 不暴露原始本地路径、任意 URL/headers、Browser `File`、DOM 或 Electron bridge。
+- 根据现有 `AppSignedObjectRequest` 冻结 signed request contract 命名，并将本计划对应 Open Question 移入已解决事项。
+
+**Verification:**
+- `platform-contract` 单元测试和边界检查通过。
+- package 不导入 Browser、Electron、Node.js 或业务 feature。
+
+- [ ] **Unit 4C: 提取工作项 mutation 与评论 use case**
+
+**Goal:** 将工作项编辑、handoff、评论新增和评论编辑编排提成不依赖 React state 或 DOM 的 use case。
+
+**Requirements:** R3, R4, R5, R6, R7
+
+**Dependencies:** Unit 4B。
+
+**Files:**
+- Modify: `frontend/packages/app-core/src/index.js`
+- Create: `frontend/packages/app-core/src/work-item-collaboration.js`
+- Create: `frontend/packages/app-core/test/work-item-collaboration.test.mjs`
+- Modify: `web/src/app.jsx`
+
+**Approach:**
+- use case 接收 `api`、输入 payload 和成功后的刷新回调；不直接管理 React state、焦点或路由。
+- 保留 action/request ID 的过期响应保护，服务端响应继续作为最终事实。
+- Browser 宿主负责表单输入保留、错误呈现和 DOM 焦点恢复。
+
+**Verification:**
+- 单元测试覆盖编辑、handoff、评论新增/编辑、刷新顺序、错误透传和过期响应。
+- Web 聚焦测试与现有工作项协作 E2E 通过。
+
+- [ ] **Unit 4D: 提取附件编排并回接 Browser adapter**
+
+**Goal:** 提取工作项与评论附件上传/下载编排，以 Unit 4B 的平台契约执行宿主操作。
+
+**Requirements:** R3, R4, R5, R6, R7
+
+**Dependencies:** Unit 4C。
+
+**Files:**
+- Modify: `frontend/packages/app-core/src/work-item-collaboration.js`
+- Modify: `frontend/packages/app-core/test/work-item-collaboration.test.mjs`
+- Create: `web/src/platform/browser/files.js`
+- Modify: `web/src/app.jsx`
+- Modify: `web/e2e/app-shell.spec.mjs`
+
+**Approach:**
+- 上传严格按登记、签名、平台上传、uploaded 确认、刷新列表顺序执行。
+- 下载由 use case 获取受控签名请求，Browser adapter 负责 DOM 下载或打开行为。
+- `<input type=file>`、`File`、header 过滤、DOM anchor 和签名请求实际执行继续留在 Browser adapter。
+
+**Verification:**
+- 单元测试覆盖上传顺序、签名/平台失败时不确认 uploaded、下载意图和错误透传。
+- 工作项及评论附件上传/下载 Browser E2E 通过。
 
 - [ ] **Unit 5: 提取首批无宿主副作用 UI 组件与样式策略**
 
@@ -345,13 +406,11 @@ flowchart TB
 
 **Requirements:** R3, R4, R5, R6, R7
 
-**Dependencies:** Unit 4。
+**Dependencies:** Unit 4D。
 
 **Files:**
-- Create: `frontend/packages/ui/src/app-shell.jsx`
-- Create: `frontend/packages/ui/src/message-center.jsx`
-- Create: `frontend/packages/ui/src/work-item-list.jsx`
 - Create: `frontend/packages/ui/src/work-item-detail.jsx`
+- Create: `frontend/packages/ui/src/work-item-comments.jsx`
 - Create: `frontend/packages/ui/src/work-item-attachments.jsx`
 - Create: `frontend/packages/ui/src/formatters.js`
 - Create: `frontend/packages/ui/src/styles.css`
@@ -361,14 +420,14 @@ flowchart TB
 - Modify: `web/e2e/app-shell.spec.mjs`
 
 **Approach:**
-- 首批优先提取工作项详情、评论、附件面板、状态/优先级展示、通用 shell card/action 样式和必要 formatter。
+- 首批只提取工作项详情、评论、附件面板、状态/优先级展示、必要 formatter 和这些组件直接使用的样式；应用壳、消息中心与工作项列表留待后续按稳定性单独评估。
 - UI 组件只通过 props 接收数据、busy/error/status 状态和回调；不得导入 `api-client`、`app-core`、`platform-contract`、`fetch`、`window`、`document` 或 Browser adapter。
 - 样式策略采用共享 `ui/src/styles.css` + Browser 宿主薄入口；保留真正属于 Browser shell 的页面级布局在 `web/src/app.css`，避免把宿主导航和资源 base 假设带入 `ui`。
 - 如果组件测试需要新增 runner，选择最小依赖并记录原因；无论是否新增组件测试，工作项协作行为仍以 Browser E2E 为最终验收。
 
 **Patterns to follow:**
 - `web/src/app.jsx` 当前 JSX 分区。
-- `web/src/app.css` 当前 `.shell-card`、`.work-item-*`、`.message-*` 样式。
+- `web/src/app.css` 当前 `.shell-card` 与 `.work-item-*` 样式。
 - `web/e2e/app-shell.spec.mjs` 中依赖 role/label 的可访问选择器。
 
 **Test scenarios:**
@@ -396,7 +455,7 @@ flowchart TB
 - Modify: `web/src/app.jsx`
 - Create: `web/src/platform/browser/api-transport.js`
 - Create: `web/src/platform/browser/router.js`
-- Create: `web/src/platform/browser/files.js`
+- Modify: `web/src/platform/browser/files.js`
 - Create: `web/src/platform/browser/events.js`
 - Modify: `web/src/lib/api.js`
 - Modify: `web/src/lib/routes.js`
@@ -451,6 +510,7 @@ flowchart TB
 - 将本计划状态改为 `completed`，勾选完成单元，并记录验证证据。
 - 主线计划中将 W4 从“规划中/实施中”更新为实际状态，并保留 D1/D2 的明确前置：device-session、`app://`、credential、Desktop SSE、file-transfer RFC。
 - 回填 W4 未纳入范围：富文本高级体验、资料库、文档预览、Desktop renderer、离线能力和旧 Askama 下线。
+- 在资料库、项目详情、文档预览和 D1 RFC 中只选择一个下一切片；选定后另建可独立验收的子计划，未选方向继续保留在主线 `pending`。
 - 若实现中发现包解析、React 单例、CSRF transport 或 signed request 边界的可复用经验，沉淀到 `docs/solutions/`。
 
 **Patterns to follow:**
