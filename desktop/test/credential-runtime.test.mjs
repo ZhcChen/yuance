@@ -84,11 +84,12 @@ test("access lease stays inside a callback and rejects stale results", async () 
   const result = await runtime.withAccessLease(async (lease) => {
     leaseKeys = Object.keys(lease).sort();
     assert.equal(lease.accessToken, "yuance_dat_runtime-secret");
+    assert.equal(lease.accessExpiresAt, "2026-08-02T12:00:00Z");
     assert.equal(Object.isFrozen(lease), true);
     return "ok";
   });
   assert.equal(result, "ok");
-  assert.deepEqual(leaseKeys, ["accessToken", "epoch"]);
+  assert.deepEqual(leaseKeys, ["accessExpiresAt", "accessToken", "epoch"]);
 
   await assert.rejects(
     runtime.withAccessLease(async () => {
@@ -198,6 +199,9 @@ function fakeCoordinator({ status = "unauthenticated" } = {}) {
     },
     async initialize() { this.initializeCalls += 1; return snapshot; },
     async getAccessToken() { return "yuance_dat_runtime-secret"; },
+    async getAccessLease() {
+      return Object.freeze({ token: "yuance_dat_runtime-secret", expiresAt: "2026-08-02T12:00:00Z" });
+    },
     async refresh() { this.refreshCalls += 1; return "yuance_dat_rotated-secret"; },
     async authorize(input) { this.authorizeInputs.push(input); return snapshot; },
     async logout() { return snapshot; },

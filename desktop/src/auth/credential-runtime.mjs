@@ -132,9 +132,15 @@ export function createCredentialRuntime({
     requireUsable();
     if (typeof operation !== "function") throw new TypeError("access lease operation is required");
     const leaseEpoch = epoch;
-    const accessToken = await coordinator.getAccessToken();
+    const lease = typeof coordinator.getAccessLease === "function"
+      ? await coordinator.getAccessLease()
+      : Object.freeze({ token: await coordinator.getAccessToken(), expiresAt: undefined });
     if (leaseEpoch !== epoch) throw new Error("stale network epoch");
-    const result = await operation(Object.freeze({ accessToken, epoch: leaseEpoch }));
+    const result = await operation(Object.freeze({
+      accessToken: lease.token,
+      accessExpiresAt: lease.expiresAt,
+      epoch: leaseEpoch,
+    }));
     if (leaseEpoch !== epoch) throw new Error("stale network epoch");
     return result;
   }

@@ -312,14 +312,18 @@ export function createCredentialCoordinator({
   }
 
   async function getAccessToken() {
+    return (await getAccessLease()).token;
+  }
+
+  async function getAccessLease() {
     if (status === "locked" || status === "revoked" || status === "error") {
       throw new CredentialCoordinatorError(status, `Credential coordinator is ${status}`);
     }
     if (!credential) throw new CredentialCoordinatorError("unauthenticated", "No device credential is available");
-    if (access && Date.parse(access.expiresAt) > now()) return access.token;
+    if (access && Date.parse(access.expiresAt) > now()) return access;
     await refresh();
     if (!access) throw new CredentialCoordinatorError("locked", "No committed access token is available");
-    return access.token;
+    return access;
   }
 
   function refresh() {
@@ -536,6 +540,7 @@ export function createCredentialCoordinator({
     initialize,
     authorize,
     getAccessToken,
+    getAccessLease,
     refresh,
     logout,
     retryPendingRevocation,
