@@ -11,6 +11,7 @@ import {
   shell,
 } from "electron";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -42,6 +43,7 @@ import {
   parseNotificationPayload,
 } from "./ipc/sender-policy.mjs";
 import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
+import { APP_ORIGIN } from "./protocol/app-protocol.mjs";
 import {
   browserWindowWebPreferences,
   decideNavigation,
@@ -66,6 +68,10 @@ const rendererTarget = resolveRendererTarget({
   isPackaged: app.isPackaged,
   rawDevServerUrl: process.env.YUANCE_DESKTOP_RENDERER_URL,
 });
+const appProtocolSmoke = app.isPackaged && process.argv.includes("--app-protocol-smoke");
+const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
+const appProtocolSmokeRequests = [];
+let appProtocolSmokeDataPath;
 const activeNotifications = new Set();
 let mainWindow = null;
 let credentialStoreForProfile = null;
@@ -146,10 +152,12 @@ function createMainWindow() {
     }),
   });
 
-  window.once("ready-to-show", () => {
-    window.maximize();
-    window.show();
-  });
+  if (!appProtocolSmoke) {
+    window.once("ready-to-show", () => {
+      window.maximize();
+      window.show();
+    });
+  }
   window.webContents.on("will-navigate", handleNavigation);
   window.webContents.on("will-redirect", handleNavigation);
   window.webContents.on("will-frame-navigate", (event) => {
@@ -170,6 +178,21 @@ function createMainWindow() {
   window.webContents.on("did-finish-load", () => {
     if (rendererReadiness.didCommit(window.webContents.getURL())) {
       hostStatePublisher.publishTo(window);
+      if (appProtocolSmoke) {
+        setTimeout(async () => {
+          const result = {
+            kind: "yuance-app-protocol-smoke",
+            url: window.webContents.getURL(),
+            hostState: hostStatePublisher.snapshot().status,
+            externalRequestCount: appProtocolSmokeRequests.length,
+          };
+          if (appProtocolSmokeDataPath) {
+            await fs.rm(appProtocolSmokeDataPath, { recursive: true, force: true }).catch(() => {});
+          }
+          await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result)}\n`, resolve));
+          app.exit(result.externalRequestCount === 0 ? 0 : 1);
+        }, APP_PROTOCOL_SMOKE_STABILITY_MS);
+      }
     }
   });
   window.webContents.on("did-fail-load", (_event, _code, _description, _url, isMainFrame) => {
@@ -187,8 +210,11 @@ function createMainWindow() {
   window.loadURL(rendererTarget.url).catch((error) => {
     console.error("Failed to load Yuance renderer:", error);
     if (!window.isDestroyed()) window.destroy();
-    dialog.showErrorBox("元策无法启动", "应用界面加载失败，请重新启动或重新安装后再试。");
-    app.quit();
+    if (appProtocolSmoke) app.exit(1);
+    else {
+      dialog.showErrorBox("元策无法启动", "应用界面加载失败，请重新启动或重新安装后再试。");
+      app.quit();
+    }
   });
   return window;
 }
@@ -302,6 +328,11 @@ if (isDevRuntime) {
   app.setPath("userData", developmentDataPaths.userData);
   app.setPath("sessionData", developmentDataPaths.sessionData);
 }
+if (appProtocolSmoke) {
+  appProtocolSmokeDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-app-protocol-smoke-"));
+  app.setPath("userData", appProtocolSmokeDataPath);
+  app.setPath("sessionData", path.join(appProtocolSmokeDataPath, "Session Data"));
+}
 const headlessUserDataPath = !app.isPackaged
   ? process.argv.find((value) => value.startsWith("--user-data-path="))?.slice("--user-data-path=".length)
   : undefined;
@@ -377,12 +408,23 @@ if (singleInstanceProbe) {
       try {
         if (rendererTarget.kind === "app-protocol") {
           const rendererRoot = path.join(moduleDir, "..", "renderer-dist");
+          const rendererSession = session.fromPartition(rendererTarget.partition);
           await registerAppProtocol({
-            protocol: session.fromPartition(rendererTarget.partition).protocol,
+            protocol: rendererSession.protocol,
             fs,
             rendererRoot,
             manifestPath: path.join(rendererRoot, "resource-manifest.json"),
           });
+          if (appProtocolSmoke) {
+            rendererSession.webRequest.onBeforeRequest((details, callback) => {
+              if (!details.url.startsWith(`${APP_ORIGIN}/`)) {
+                appProtocolSmokeRequests.push(details.url);
+                callback({ cancel: true });
+                return;
+              }
+              callback({});
+            });
+          }
         }
         initializeCredentialStoreFactory();
         hostStatePublisher.update({ status: "unauthenticated" });
@@ -390,8 +432,11 @@ if (singleInstanceProbe) {
         mainWindow = createMainWindow();
       } catch (error) {
         console.error("Failed to initialize Yuance renderer:", error);
-        dialog.showErrorBox("元策无法启动", "应用资源校验失败，请重新安装后再试。");
-        app.quit();
+        if (appProtocolSmoke) app.exit(1);
+        else {
+          dialog.showErrorBox("元策无法启动", "应用资源校验失败，请重新安装后再试。");
+          app.quit();
+        }
         return;
       }
       app.on("activate", () => {

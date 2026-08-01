@@ -118,10 +118,21 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a npm --prefix desktop run smoke:safe-storage && xvfb-run -a npm --prefix desktop run smoke:single-instance
 
-      - name: Build installer
+      - name: Build installer and unpacked staging app
         run: npm --prefix desktop run dist:ci -- ${{ matrix.platform.target }} ${{ matrix.platform.arch_flag }}
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Verify unpacked ASAR
+        run: npm --prefix desktop run verify:bundle -- dist
+
+      - name: Smoke unpacked app protocol
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:app-protocol -- dist
+
+      - name: Smoke Linux unpacked app protocol
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:app-protocol -- dist
 
       - name: Scan packaged credential artifacts
         run: npm --prefix desktop run scan:credential-leaks -- dist

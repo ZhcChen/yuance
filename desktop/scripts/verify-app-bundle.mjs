@@ -1,0 +1,141 @@
+import asar from "@electron/asar";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { validateResourceManifest } from "../src/protocol/resource-manifest.mjs";
+
+const REQUIRED_ARCHIVE_FILES = Object.freeze([
+  "src/main.mjs",
+  "src/preload.cjs",
+  "src/protocol/app-protocol.mjs",
+  "src/protocol/app-protocol-handler.mjs",
+  "renderer-dist/resource-manifest.json",
+]);
+const REQUIRED_CSP_DIRECTIVES = Object.freeze([
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'none'",
+  "worker-src 'none'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+]);
+
+function archivePath(value) {
+  return value.replace(/^[/\\]+/u, "").replaceAll("\\", "/");
+}
+
+function extract(archive, relativePath) {
+  return asar.extractFile(archive, relativePath, false);
+}
+
+function assertArchivedRegularFile(archive, relativePath) {
+  const stats = asar.statFile(archive, relativePath, false);
+  if (!stats || typeof stats.size !== "number" || "files" in stats || "link" in stats || stats.unpacked) {
+    throw new Error(`Required ASAR file is missing or unpacked: ${relativePath}`);
+  }
+}
+
+function verifyCspSource(source) {
+  const expectedDeclaration = [
+    "export const APP_CONTENT_SECURITY_POLICY = [",
+    ...REQUIRED_CSP_DIRECTIVES.map((directive) => `  ${JSON.stringify(directive)},`),
+    '].join("; ");',
+  ].join("\n");
+  if (!source.replaceAll("\r\n", "\n").includes(expectedDeclaration)) {
+    throw new Error("Bundled CSP declaration does not match the fixed baseline.");
+  }
+  if (!source.includes('"Content-Security-Policy": APP_CONTENT_SECURITY_POLICY,')) {
+    throw new Error("Bundled protocol response does not bind the fixed CSP baseline.");
+  }
+  if (/unsafe-inline|unsafe-eval|bypassCSP|allowServiceWorkers/u.test(source)) {
+    throw new Error("Bundled protocol source weakens the CSP baseline.");
+  }
+}
+
+function verifyProtocolHandlerSource(source) {
+  if (!source.includes("headers: resolution.headers,")) {
+    throw new Error("Bundled protocol handler does not forward verified response headers.");
+  }
+}
+
+export async function findAppAsar(inputPath) {
+  const stats = await fs.stat(inputPath);
+  if (stats.isFile()) return inputPath;
+  const pending = [inputPath];
+  const matches = [];
+  while (pending.length) {
+    const directory = pending.pop();
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(entryPath);
+      else if (entry.isFile() && entry.name === "app.asar") matches.push(entryPath);
+    }
+  }
+  if (matches.length !== 1) {
+    throw new Error(`Expected exactly one app.asar under ${inputPath}, found ${matches.length}.`);
+  }
+  return matches[0];
+}
+
+export async function verifyAppBundle(inputPath) {
+  const archive = await findAppAsar(inputPath);
+  const listed = new Set(asar.listPackage(archive).map(archivePath));
+  for (const required of REQUIRED_ARCHIVE_FILES) {
+    if (!listed.has(required)) throw new Error(`Required ASAR entry is missing: ${required}`);
+    assertArchivedRegularFile(archive, required);
+  }
+
+  const manifest = validateResourceManifest(
+    JSON.parse(extract(archive, "renderer-dist/resource-manifest.json").toString("utf8")),
+  );
+  const expectedRendererFiles = new Set(["renderer-dist/resource-manifest.json"]);
+  for (const resource of Object.values(manifest.files)) {
+    if (
+      resource.relativePath.endsWith(".map") ||
+      resource.relativePath.startsWith("test/") ||
+      resource.relativePath.includes("/fixtures/")
+    ) {
+      throw new Error(`Forbidden renderer artifact is registered: ${resource.relativePath}`);
+    }
+    const relativePath = `renderer-dist/${resource.relativePath}`;
+    expectedRendererFiles.add(relativePath);
+    if (!listed.has(relativePath)) throw new Error(`Manifest resource is missing from ASAR: ${relativePath}`);
+    assertArchivedRegularFile(archive, relativePath);
+    const contents = extract(archive, relativePath);
+    if (/(?:https?:\/\/(?:127\.0\.0\.1|localhost)|@vite\/client)/iu.test(contents.toString("utf8"))) {
+      throw new Error(`Renderer resource contains a development runtime reference: ${relativePath}`);
+    }
+    const digest = crypto.createHash("sha256").update(contents).digest("hex");
+    if (contents.byteLength !== resource.bytes || digest !== resource.sha256) {
+      throw new Error(`Manifest resource integrity mismatch: ${relativePath}`);
+    }
+  }
+  for (const entry of listed) {
+    if (entry.startsWith("renderer-dist/") && !expectedRendererFiles.has(entry)) {
+      const stats = asar.statFile(archive, entry, false);
+      if (typeof stats.size === "number" || "link" in stats) {
+        throw new Error(`Unregistered renderer file is present in ASAR: ${entry}`);
+      }
+    }
+  }
+  verifyCspSource(extract(archive, "src/protocol/app-protocol.mjs").toString("utf8"));
+  verifyProtocolHandlerSource(extract(archive, "src/protocol/app-protocol-handler.mjs").toString("utf8"));
+  return Object.freeze({ archive, resourceCount: manifest.files ? Object.keys(manifest.files).length : 0 });
+}
+
+if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
+  const inputPath = path.resolve(process.argv[2] || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist"));
+  verifyAppBundle(inputPath)
+    .then((result) => console.log(`Verified ${result.resourceCount} renderer resources in ${result.archive}.`))
+    .catch((error) => {
+      console.error(`Bundle verification failed: ${error instanceof Error ? error.message : String(error)}`);
+      process.exitCode = 1;
+    });
+}

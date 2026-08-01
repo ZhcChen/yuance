@@ -6,6 +6,7 @@ artifactName: Yuance-${version}-${os}-${arch}.${ext}
 
 files:
   - src/**
+  - renderer-dist/**
   - package.json
 
 extraResources:

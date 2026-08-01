@@ -16,7 +16,7 @@ export default defineConfig({
   build: {
     outDir: "../../renderer-dist",
     emptyOutDir: true,
-    manifest: true,
+    manifest: false,
     sourcemap: false,
   },
 });
