@@ -3,14 +3,14 @@ use sha2::{Digest, Sha256};
 use std::ffi::c_void;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::mem::{size_of, zeroed};
+use std::mem::{size_of, transmute, zeroed};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{
     CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_SUCCESS, GENERIC_READ,
-    GENERIC_WRITE, HANDLE,
+    GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
 };
 use windows_sys::Win32::Security::Authorization::{SE_FILE_OBJECT, SetSecurityInfo};
 use windows_sys::Win32::Security::{
@@ -28,11 +28,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     GetFileInformationByHandleEx, GetFinalPathNameByHandleW, SetFileInformationByHandle,
     VOLUME_NAME_DOS, WRITE_DAC,
 };
+use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-
-unsafe extern "C" {
-    fn _get_osfhandle(fd: i32) -> isize;
-}
 
 #[link(name = "ntdll")]
 unsafe extern "system" {
@@ -366,27 +363,7 @@ pub(super) fn verify_snapshot_handle(spool_root: &str, private_path: &str, fd: i
     let root = root_chain
         .last()
         .ok_or_else(|| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))?;
-    let raw = unsafe { _get_osfhandle(fd) };
-    if raw == -1 {
-        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
-    }
-    let process = unsafe { GetCurrentProcess() };
-    let mut duplicated: HANDLE = null_mut();
-    if unsafe {
-        DuplicateHandle(
-            process,
-            raw as HANDLE,
-            process,
-            &mut duplicated,
-            0,
-            0,
-            DUPLICATE_SAME_ACCESS,
-        )
-    } == 0
-    {
-        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
-    }
-    let opened = unsafe { File::from_raw_handle(duplicated as _) };
+    let opened = duplicate_fd(fd, "ERR_FILE_GUARD_SNAPSHOT_INVALID")?;
     verify_regular(&opened)?;
     ensure_handle_within_root(&opened, root)?;
     if final_path(&opened)? != normalize_final_path(&private_path.to_string_lossy()) {
@@ -473,8 +450,17 @@ pub(super) fn commit_download(input: &CommitWindowsDownloadInput) -> Result<()> 
 }
 
 fn duplicate_fd(fd: i32, code: &'static str) -> Result<File> {
-    let raw = unsafe { _get_osfhandle(fd) };
-    if raw == -1 {
+    type UvGetOsfhandle = unsafe extern "C" fn(i32) -> HANDLE;
+
+    let module = unsafe { GetModuleHandleW(null()) };
+    if module.is_null() {
+        return Err(stable_error(code));
+    }
+    let symbol = unsafe { GetProcAddress(module, c"uv_get_osfhandle".as_ptr().cast()) }
+        .ok_or_else(|| stable_error(code))?;
+    let uv_get_osfhandle: UvGetOsfhandle = unsafe { transmute(symbol) };
+    let raw = unsafe { uv_get_osfhandle(fd) };
+    if raw == INVALID_HANDLE_VALUE {
         return Err(stable_error(code));
     }
     let process = unsafe { GetCurrentProcess() };
@@ -482,7 +468,7 @@ fn duplicate_fd(fd: i32, code: &'static str) -> Result<File> {
     if unsafe {
         DuplicateHandle(
             process,
-            raw as HANDLE,
+            raw,
             process,
             &mut duplicated,
             0,
