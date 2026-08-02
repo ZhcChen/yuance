@@ -75,7 +75,7 @@ pub(super) fn secure_spool_root(spool_root: &str) -> Result<()> {
         }
         let acl_root = open_directory_for_acl(path)?;
         verify_not_reparse(&acl_root)?;
-        if identity(root)? != identity(&acl_root)? {
+        if !same_file_object(identity(root)?, identity(&acl_root)?) {
             return Err(stable_error("ERR_FILE_GUARD_SPOOL_CHANGED"));
         }
         apply_private_dacl(&acl_root)?;
@@ -84,7 +84,7 @@ pub(super) fn secure_spool_root(spool_root: &str) -> Result<()> {
         let verified = verified_chain
             .last()
             .ok_or_else(|| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))?;
-        if identity(root)? != identity(verified)? {
+        if !same_file_object(identity(root)?, identity(verified)?) {
             return Err(stable_error("ERR_FILE_GUARD_SPOOL_CHANGED"));
         }
         if created {
@@ -105,7 +105,7 @@ fn rollback_created_spool(path: &Path, expected: Identity) {
         return;
     };
     let Some(root) = chain.last() else { return };
-    if identity(root).ok() != Some(expected) {
+    if !identity(root).is_ok_and(|current| same_file_object(current, expected)) {
         return;
     }
     let marker_path = path.join(MARKER_NAME);
@@ -120,7 +120,7 @@ fn rollback_created_spool(path: &Path, expected: Identity) {
     let Ok(directory) = open_directory_for_delete(path) else {
         return;
     };
-    if identity(&directory).ok() == Some(expected) {
+    if identity(&directory).is_ok_and(|current| same_file_object(current, expected)) {
         let _ = delete_by_handle(&directory);
     }
 }
@@ -240,7 +240,7 @@ pub(super) fn capture(input: ValidatedInput) -> Result<CaptureWindowsFileResult>
     let root_recheck = root_recheck_chain
         .last()
         .ok_or_else(|| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))?;
-    if identity(&root_recheck)? != trusted_root_identity
+    if !same_file_object(identity(&root_recheck)?, trusted_root_identity)
         || final_path(&root_recheck)? != trusted_root_final
     {
         return Err(stable_error("ERR_FILE_GUARD_SPOOL_CHANGED"));
@@ -630,6 +630,10 @@ fn identity(file: &File) -> Result<Identity> {
     })
 }
 
+fn same_file_object(left: Identity, right: Identity) -> bool {
+    left.volume == right.volume && left.file_id == right.file_id
+}
+
 fn file_info<T>(file: &File, class: i32) -> Result<T> {
     let mut value: T = unsafe { zeroed() };
     let ok = unsafe {
@@ -913,6 +917,33 @@ mod tests {
             normalize_final_path(r"\\?\UNC\server\share\Spool"),
             r"\\server\share\spool"
         );
+    }
+
+    #[test]
+    fn directory_object_identity_ignores_expected_metadata_changes() {
+        let original = Identity {
+            volume: 7,
+            file_id: [3; 16],
+            size: 0,
+            last_write: 10,
+            change_time: 11,
+        };
+        assert!(same_file_object(
+            original,
+            Identity {
+                size: 4096,
+                last_write: 12,
+                change_time: 13,
+                ..original
+            }
+        ));
+        assert!(!same_file_object(
+            original,
+            Identity {
+                file_id: [4; 16],
+                ..original
+            }
+        ));
     }
 
     #[test]
