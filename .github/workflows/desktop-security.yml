@@ -139,7 +139,12 @@ jobs:
 
       - name: Smoke Linux unpacked desktop file transfer
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm --prefix desktop run smoke:desktop-file-transfer -- dist
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
+            xvfb-run -a npm --prefix desktop run smoke:desktop-file-transfer -- dist
+          '
 
       - name: Scan source, fixture, report, ASAR, and unpacked artifacts
         run: npm --prefix desktop run scan:credential-leaks
