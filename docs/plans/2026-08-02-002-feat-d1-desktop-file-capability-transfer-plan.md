@@ -1,7 +1,7 @@
 ---
 title: "feat: D1-C Desktop 文件 Capability 与受控传输"
 type: feat
-status: ready
+status: completed
 date: 2026-08-02
 artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
