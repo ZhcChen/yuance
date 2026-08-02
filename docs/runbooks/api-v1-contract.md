@@ -134,7 +134,7 @@ refresh rotation 成功与 replay/recovery failure 的审计同样采用 best-ef
 
 - Desktop profile 绑定 canonical origin、服务端稳定 `server_instance_id` 和开发/生产模式。正式模式只接受内置 HTTPS origin；开发模式仅显式允许 loopback HTTP。任何 profile identity 变化都不得复用原 credential record。
 - access token 只驻留 Electron 主进程内存；持久化 record 只包含 refresh credential、绑定元数据、generation 和 pending rotation。renderer、preload、Cookie jar、普通配置和日志不得接触 access/refresh token。
-- Windows 只有在 Electron `safeStorage` 可用时才启用持久会话。Linux 只允许 `gnome_libsecret`、`kwallet`、`kwallet5` 或 `kwallet6`，必须拒绝 `basic_text`、空或未知 backend。macOS 禁止使用 Keychain；当前凭证实现尚未完成替代存储前，相关持久会话与凭证 smoke 必须保持禁用。
+- Windows 只有在 Electron `safeStorage` 可用时才启用持久会话。Linux 只允许 `gnome_libsecret`、`kwallet`、`kwallet5` 或 `kwallet6`，必须拒绝 `basic_text`、空或未知 backend。macOS 禁止使用 Keychain，使用进程内随机 AES key 支持当次授权会话；key 不持久化，重启后旧密文 fail closed、仅清除本地不可恢复记录并要求重新授权，native `safeStorage` smoke保持 unavailable。
 - refresh 前先原子持久化 pending transaction；启动发现 pending rotation 时必须以相同 transaction 重试。迟到或 generation/transaction 不匹配的响应不得提交。
 - logout 立即清除内存 access 并冻结请求。在线撤销成功后删除本地 record；离线或本地删除失败时保持 `locked/pending_revocation`，只能重试撤销、清理本地会话或重新授权，不能恢复旧会话。
 - 当前 coordinator 不向远端 `/web` renderer 注入 device token。正式 renderer、`app://`、Desktop SSE 和业务 API device access 仍属于后续独立切片。

@@ -99,7 +99,7 @@ const desktopFileSmokeOrigin = app.isPackaged
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
 const appProtocolSmokeResponses = [];
-const credentialStorage = process.platform === "darwin" ? createUnavailableMacCredentialStorage() : safeStorage;
+const credentialStorage = process.platform === "darwin" ? createEphemeralCredentialStorage() : safeStorage;
 let appProtocolSmokePermissionChecks = 0;
 let appProtocolSmokeDataPath;
 let appProtocolSmokeInitialRenderer;
@@ -445,7 +445,7 @@ async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", o
     deviceName: `${appIdentity.displayName} (${process.platform})`,
     clientVersion: app.getVersion(),
   });
-  const initialized = await runtime.initialize();
+  const initialized = await normalizeMacEphemeralSession(runtime, await runtime.initialize());
   if (initialized.status === "authenticated") {
     if (action === "logout") {
       const loggedOut = await runtime.logout();
@@ -495,7 +495,7 @@ async function runDesktopNetworkSmoke() {
     onNetworkInvalidated: () => activeController?.abort(),
     onPublicState: (state) => authStates.push(state.status),
   });
-  const initialized = await runtime.initialize();
+  const initialized = await normalizeMacEphemeralSession(runtime, await runtime.initialize());
   writeDesktopNetworkSmokeStage("credential-initialized");
   if (desktopNetworkSmokePhase === "authorize") {
     if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial smoke state: ${initialized.status}`);
@@ -534,7 +534,7 @@ async function runDesktopFileSmoke() {
   const userDataPath = app.getPath("userData");
   const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
   const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
-  const fileSmokeStorage = createEphemeralFileSmokeStorage();
+  const fileSmokeStorage = createEphemeralCredentialStorage();
   const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: fileSmokeStorage, fs, userDataPath, platform: process.platform, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged File Smoke", clientVersion: app.getVersion() });
   const initialized = await runtime.initialize();
   if (desktopFileSmokePhase === "authorize") {
@@ -584,7 +584,7 @@ async function runDesktopFileSmoke() {
   process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-smoke", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: sourceBytes.length, hashMatch: createHash("sha256").update(sourceBytes).digest("hex") === createHash("sha256").update(downloadedBytes).digest("hex"), staleCapabilityRejected, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
 }
 
-function createEphemeralFileSmokeStorage() {
+function createEphemeralCredentialStorage() {
   const key = randomBytes(32);
   return Object.freeze({
     isEncryptionAvailable: () => true,
@@ -609,6 +609,13 @@ function createUnavailableMacCredentialStorage() {
     encryptString: () => { throw new Error("macOS credential storage is unavailable"); },
     decryptString: () => { throw new Error("macOS credential storage is unavailable"); },
   });
+}
+
+async function normalizeMacEphemeralSession(runtime, initialized) {
+  if (process.platform === "darwin" && ["locked", "reauthorization_required"].includes(initialized.status)) {
+    return runtime.discardLocalSession();
+  }
+  return initialized;
 }
 
 function writeDesktopNetworkSmokeStage(stage) {
@@ -697,7 +704,7 @@ async function initializeDesktopCredentialRuntime() {
   credentialRuntime = runtime;
   networkCoordinator = coordinator;
   let initialized;
-  try { initialized = await runtime.initialize(); }
+  try { initialized = await normalizeMacEphemeralSession(runtime, await runtime.initialize()); }
   catch (error) {
     coordinator.stop();
     runtime.dispose();
@@ -804,7 +811,7 @@ if (singleInstanceProbe) {
 } else if (isSafeStorageSmoke) {
   app.whenReady().then(async () => {
     try {
-      const result = await runSafeStorageSmoke({ safeStorage: credentialStorage });
+      const result = await runSafeStorageSmoke({ safeStorage: process.platform === "darwin" ? createUnavailableMacCredentialStorage() : credentialStorage });
       process.stdout.write(`${JSON.stringify(result)}\n`);
       app.exit(0);
     } catch (error) {
