@@ -93,13 +93,7 @@ jobs:
 
       - name: Run macOS desktop tests without Keychain
         if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          npm --prefix desktop run build:native
-          find desktop/test -name '*.test.mjs' \
-            ! -name 'device-auth-electron-integration.test.mjs' \
-            ! -name 'desktop-network-api-integration.test.mjs' \
-            -print0 | xargs -0 node --test
+        run: npm --prefix desktop test
 
       - name: Run Linux desktop tests
         if: runner.os == 'Linux'

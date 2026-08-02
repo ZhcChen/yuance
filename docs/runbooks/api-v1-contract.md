@@ -77,6 +77,10 @@ POST /api/v1/device-sessions/refresh
 GET  /api/v1/device-session
 GET  /api/v1/device-session/events
 POST /api/v1/device-session/logout
+POST /api/v1/device-file-transfer/canary/upload-request
+GET  /api/v1/device-file-transfer/canary/download-request
+PUT  /api/v1/device-file-transfer/canary/upload
+GET  /api/v1/device-file-transfer/canary/download
 GET  /api/v1/me/tokens
 POST /api/v1/me/tokens
 DELETE /api/v1/me/tokens/{token_id}
@@ -116,6 +120,10 @@ DELETE /api/v1/me/tokens/{token_id}
 
 `GET /api/v1/device-session`、`GET /api/v1/device-session/events` 与 `POST /api/v1/device-session/logout` 只接受 `Authorization: Bearer yuance_dat_*`。probe 返回 user/device/family/generation、access 到期时间和 authorization version，不返回任何 token；events 仅发送 `connected` 事件和 heartbeat comment，并持续重验设备授权 lease；logout 原子撤销当前 credential family 及其 access/refresh。Cookie、PAT、system token、device refresh 或混合凭证均不允许进入这些端点。device access 默认不能访问其他 `/api/v1/**` 业务 API，后续 D2 只能按 method + path + feature 显式登记。
 
+`POST /api/v1/device-file-transfer/canary/upload-request` 与 `GET /api/v1/device-file-transfer/canary/download-request` 只接受有效 Device access。两个签发端点不接受调用方提供的 body、query、对象键、URL 或 header 参数，只返回固定 purpose/method/大小/content type/短 TTL 的 transfer contract；Cookie、PAT、system token、device refresh、已撤销或过期 Device access 均被拒绝。
+
+`PUT /api/v1/device-file-transfer/canary/upload` 与 `GET /api/v1/device-file-transfer/canary/download` 只接受签发端点产生的短期加密 grant，不接受 Cookie、Authorization 或其他 ambient credential。四个 canary 端点只用于证明 Desktop 主进程的文件 capability 与受控字节传输边界，不开放项目附件、工作项附件或任意对象存储能力。
+
 设备会话 logout 与 Browser 撤销先原子提交 family/access/refresh 的撤销状态，再以 best-effort 写入审计；审计写入失败会记录服务端告警，但不会回滚或恢复已经撤销的凭证。若后续要求撤销与审计具备同一提交保证，应采用 transaction outbox，而不是在审计失败时重新开放凭证。
 
 refresh rotation 成功与 replay/recovery failure 的审计同样采用 best-effort：凭证事务的提交或安全撤销不依赖审计表写入成功，审计 metadata 只包含 device/family/generation/transaction 等标识，不包含原始 access、refresh 或幂等响应密文。
@@ -126,7 +134,7 @@ refresh rotation 成功与 replay/recovery failure 的审计同样采用 best-ef
 
 - Desktop profile 绑定 canonical origin、服务端稳定 `server_instance_id` 和开发/生产模式。正式模式只接受内置 HTTPS origin；开发模式仅显式允许 loopback HTTP。任何 profile identity 变化都不得复用原 credential record。
 - access token 只驻留 Electron 主进程内存；持久化 record 只包含 refresh credential、绑定元数据、generation 和 pending rotation。renderer、preload、Cookie jar、普通配置和日志不得接触 access/refresh token。
-- macOS/Windows 只有在 Electron `safeStorage` 可用时才启用持久会话。Linux 只允许 `gnome_libsecret`、`kwallet`、`kwallet5` 或 `kwallet6`，必须拒绝 `basic_text`、空或未知 backend。
+- Windows 只有在 Electron `safeStorage` 可用时才启用持久会话。Linux 只允许 `gnome_libsecret`、`kwallet`、`kwallet5` 或 `kwallet6`，必须拒绝 `basic_text`、空或未知 backend。macOS 禁止使用 Keychain；当前凭证实现尚未完成替代存储前，相关持久会话与凭证 smoke 必须保持禁用。
 - refresh 前先原子持久化 pending transaction；启动发现 pending rotation 时必须以相同 transaction 重试。迟到或 generation/transaction 不匹配的响应不得提交。
 - logout 立即清除内存 access 并冻结请求。在线撤销成功后删除本地 record；离线或本地删除失败时保持 `locked/pending_revocation`，只能重试撤销、清理本地会话或重新授权，不能恢复旧会话。
 - 当前 coordinator 不向远端 `/web` renderer 注入 device token。正式 renderer、`app://`、Desktop SSE 和业务 API device access 仍属于后续独立切片。

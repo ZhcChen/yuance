@@ -99,6 +99,7 @@ const desktopFileSmokeOrigin = app.isPackaged
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
 const appProtocolSmokeResponses = [];
+const credentialStorage = process.platform === "darwin" ? createUnavailableMacCredentialStorage() : safeStorage;
 let appProtocolSmokePermissionChecks = 0;
 let appProtocolSmokeDataPath;
 let appProtocolSmokeInitialRenderer;
@@ -436,7 +437,7 @@ async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", o
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage,
+    safeStorage: credentialStorage,
     fs,
     userDataPath,
     platform: process.platform,
@@ -487,7 +488,7 @@ async function runDesktopNetworkSmoke() {
   let activeController;
   const authStates = [];
   const runtime = createCredentialRuntime({
-    profile: enrolled.profile, fetchImpl: network.fetch, safeStorage, fs,
+    profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: credentialStorage, fs,
     userDataPath: app.getPath("userData"), platform: process.platform,
     installationId: () => installationId(app.getPath("userData")),
     deviceName: "Yuance Packaged Network Smoke", clientVersion: app.getVersion(),
@@ -602,6 +603,14 @@ function createEphemeralFileSmokeStorage() {
   });
 }
 
+function createUnavailableMacCredentialStorage() {
+  return Object.freeze({
+    isEncryptionAvailable: () => false,
+    encryptString: () => { throw new Error("macOS credential storage is unavailable"); },
+    decryptString: () => { throw new Error("macOS credential storage is unavailable"); },
+  });
+}
+
 function writeDesktopNetworkSmokeStage(stage) {
   process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-stage", stage })}\n`);
 }
@@ -652,7 +661,7 @@ async function initializeDesktopCredentialRuntime() {
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage,
+    safeStorage: credentialStorage,
     fs,
     userDataPath,
     platform: process.platform,
@@ -795,7 +804,7 @@ if (singleInstanceProbe) {
 } else if (isSafeStorageSmoke) {
   app.whenReady().then(async () => {
     try {
-      const result = await runSafeStorageSmoke({ safeStorage });
+      const result = await runSafeStorageSmoke({ safeStorage: credentialStorage });
       process.stdout.write(`${JSON.stringify(result)}\n`);
       app.exit(0);
     } catch (error) {

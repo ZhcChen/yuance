@@ -9,6 +9,10 @@ import test from "node:test";
 import electron from "electron";
 
 test("Electron headless persists, recovers, and revokes a device session", { timeout: 45_000 }, async (t) => {
+  if (process.platform === "darwin") {
+    await assert.rejects(runElectron(["--safe-storage-smoke"]), /encryption_unavailable/);
+    return;
+  }
   const capability = await runElectron(["--safe-storage-smoke"]);
   const smoke = JSON.parse(capability.stdout.trim().split("\n").at(-1));
   if (process.platform === "win32") {

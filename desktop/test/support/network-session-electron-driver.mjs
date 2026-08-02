@@ -1,5 +1,5 @@
 import { app, BrowserWindow, safeStorage, session } from "electron";
-import { createHash, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -158,7 +158,7 @@ async function runRealFileApi({ origin, mode, network, observations }) {
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage,
+    safeStorage: process.platform === "darwin" ? createEphemeralStorage() : safeStorage,
     fs,
     userDataPath,
     platform: process.platform,
@@ -208,6 +208,25 @@ async function runRealFileApi({ origin, mode, network, observations }) {
   const temporaryFiles = (await fs.readdir(userDataPath)).filter((name) => name.startsWith(".yuance-download-"));
   process.stdout.write(`${JSON.stringify({ kind: "yuance-file-api-result", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: content.length, hashMatch: sourceHash === downloadHash, temporaryFiles: temporaryFiles.length, activeOperations: registry.snapshot().active, observations: observations.filter((value) => value.phase === "transfer") })}\n`);
   app.exit(0);
+}
+
+function createEphemeralStorage() {
+  const key = randomBytes(32);
+  return Object.freeze({
+    isEncryptionAvailable: () => true,
+    encryptString(value) {
+      const nonce = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", key, nonce);
+      const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+      return Buffer.concat([nonce, cipher.getAuthTag(), encrypted]);
+    },
+    decryptString(value) {
+      const bytes = Buffer.from(value);
+      const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
+      decipher.setAuthTag(bytes.subarray(12, 28));
+      return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
+    },
+  });
 }
 
 function reportFailure(error) {
