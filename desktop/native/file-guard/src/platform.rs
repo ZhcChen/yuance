@@ -289,8 +289,13 @@ pub(super) fn capture(input: ValidatedInput) -> Result<CaptureWindowsFileResult>
     )?;
     staging_guard.disarm();
     ensure_handle_within_root(&destination, trusted_root)?;
-    if final_path(&destination)? != normalize_final_path(&committed.to_string_lossy())
-        || identity(&destination)?.size as u64 != byte_size
+    let committed_handle = open_file_no_reparse(&committed, false)?;
+    verify_regular(&committed_handle)?;
+    ensure_direct_child(&committed_handle, trusted_root)?;
+    let committed_identity = identity(&committed_handle)?;
+    if final_path(&committed_handle)? != normalize_final_path(&committed.to_string_lossy())
+        || committed_identity != identity(&destination)?
+        || committed_identity.size as u64 != byte_size
     {
         let _ = delete_by_handle(&destination);
         return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_SIZE"));
