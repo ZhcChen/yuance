@@ -26,7 +26,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO,
     FileAttributeTagInfo, FileBasicInfo, FileDispositionInfo, FileIdInfo, FileRenameInfo,
     FileStandardInfo, FlushFileBuffers, GetFileInformationByHandleEx, GetFinalPathNameByHandleW,
-    SetFileInformationByHandle, VOLUME_NAME_DOS,
+    SetFileInformationByHandle, VOLUME_NAME_DOS, WRITE_DAC,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -73,7 +73,12 @@ pub(super) fn secure_spool_root(spool_root: &str) -> Result<()> {
         } else {
             ensure_spool_marker(path, root, false)?;
         }
-        apply_private_dacl(root)?;
+        let acl_root = open_directory_for_acl(path)?;
+        verify_not_reparse(&acl_root)?;
+        if identity(root)? != identity(&acl_root)? {
+            return Err(stable_error("ERR_FILE_GUARD_SPOOL_CHANGED"));
+        }
+        apply_private_dacl(&acl_root)?;
         // Reopen after changing security so replacement during ACL application is detected.
         let verified_chain = open_verified_directory_chain(path)?;
         let verified = verified_chain
@@ -550,6 +555,15 @@ fn open_directory_for_delete(path: &Path) -> Result<File> {
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)
         .map_err(|_| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))
+}
+
+fn open_directory_for_acl(path: &Path) -> Result<File> {
+    OpenOptions::new()
+        .access_mode(GENERIC_READ | WRITE_DAC)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .map_err(|_| stable_error("ERR_FILE_GUARD_SPOOL_ACL"))
 }
 
 fn open_verified_directory_chain(path: &Path) -> Result<Vec<File>> {

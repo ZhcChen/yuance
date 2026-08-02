@@ -37,7 +37,7 @@ async function runElectronFileApi(origin, approve) {
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-api-electron-"));
   try {
     const driverApp = fileURLToPath(new URL("./support/network-electron-app/", import.meta.url));
-    const args = [driverApp, "--mode=development", `--origin=${origin}`, `--user-data-path=${userDataPath}`, "--file-api", ...(process.platform === "linux" ? ["--no-sandbox"] : [])];
+    const args = [driverApp, "--mode=development", `--origin=${origin}`, `--user-data-path=${userDataPath}`, "--file-api", ...(process.platform === "linux" ? ["--no-sandbox", "--password-store=gnome-libsecret"] : [])];
     return await spawnAndApprove(electron, args, approve);
   } finally {
     await fs.rm(userDataPath, { recursive: true, force: true });
