@@ -68,8 +68,22 @@ async function createBundleFixture({
     await fs.mkdir(path.dirname(filePath), { recursive: true });
     await fs.writeFile(filePath, contents);
   }
+  if (process.platform === "win32") {
+    const nativeName = Object.freeze({
+      x64: "index.win32-x64-msvc.node",
+      arm64: "index.win32-arm64-msvc.node",
+    })[process.arch];
+    assert.ok(nativeName, "Windows bundle fixture requires a supported architecture");
+    const nativeDirectory = path.join(source, "src", "native");
+    await fs.mkdir(nativeDirectory, { recursive: true });
+    await fs.copyFile(new URL(`../src/native/${nativeName}`, import.meta.url), path.join(nativeDirectory, nativeName));
+  }
   const archive = path.join(root, "app.asar");
-  await asar.createPackage(source, archive);
+  if (process.platform === "win32") {
+    await asar.createPackageWithOptions(source, archive, { unpack: "src/native/*.node" });
+  } else {
+    await asar.createPackage(source, archive);
+  }
   await waitForArchiveFixture(archive);
   return { archive, root };
 }
