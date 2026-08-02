@@ -293,10 +293,15 @@ pub(super) fn capture(input: ValidatedInput) -> Result<CaptureWindowsFileResult>
     verify_regular(&committed_handle)?;
     ensure_direct_child(&committed_handle, trusted_root)?;
     let committed_identity = identity(&committed_handle)?;
-    if final_path(&committed_handle)? != normalize_final_path(&committed.to_string_lossy())
-        || !same_file_object(committed_identity, identity(&destination)?)
-        || committed_identity.size as u64 != byte_size
-    {
+    if final_path(&committed_handle)? != normalize_final_path(&committed.to_string_lossy()) {
+        let _ = delete_by_handle(&destination);
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_LOCATION"));
+    }
+    if !same_file_object(committed_identity, identity(&destination)?) {
+        let _ = delete_by_handle(&destination);
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_IDENTITY"));
+    }
+    if committed_identity.size < 0 || committed_identity.size as u64 != byte_size {
         let _ = delete_by_handle(&destination);
         return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_SIZE"));
     }
