@@ -9,8 +9,9 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_SUCCESS, GENERIC_READ,
-    GENERIC_WRITE, HANDLE,
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS,
+    ERROR_FILE_EXISTS, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED, ERROR_SUCCESS, GENERIC_READ,
+    GENERIC_WRITE, GetLastError, HANDLE,
 };
 use windows_sys::Win32::Security::Authorization::{SE_FILE_OBJECT, SetSecurityInfo};
 use windows_sys::Win32::Security::{
@@ -781,9 +782,19 @@ fn rename_by_handle(
         )
     };
     if ok == 0 {
-        Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_COMMIT"))
+        Err(stable_error(rename_failure_code()))
     } else {
         Ok(())
+    }
+}
+
+fn rename_failure_code() -> &'static str {
+    match unsafe { GetLastError() } {
+        ERROR_ACCESS_DENIED => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_ACCESS",
+        ERROR_INVALID_PARAMETER => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_INVALID",
+        ERROR_NOT_SUPPORTED => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_UNSUPPORTED",
+        ERROR_ALREADY_EXISTS | ERROR_FILE_EXISTS => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_EXISTS",
+        _ => "ERR_FILE_GUARD_SNAPSHOT_COMMIT",
     }
 }
 
