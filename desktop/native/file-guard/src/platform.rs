@@ -454,13 +454,18 @@ fn duplicate_fd(fd: i32, code: &'static str) -> Result<File> {
 
     let module = unsafe { GetModuleHandleW(null()) };
     if module.is_null() {
+        trace_fd_stage("module-missing");
         return Err(stable_error(code));
     }
-    let symbol = unsafe { GetProcAddress(module, c"uv_get_osfhandle".as_ptr().cast()) }
-        .ok_or_else(|| stable_error(code))?;
+    let Some(symbol) = (unsafe { GetProcAddress(module, c"uv_get_osfhandle".as_ptr().cast()) })
+    else {
+        trace_fd_stage("symbol-missing");
+        return Err(stable_error(code));
+    };
     let uv_get_osfhandle: UvGetOsfhandle = unsafe { transmute(symbol) };
     let raw = unsafe { uv_get_osfhandle(fd) };
     if raw == INVALID_HANDLE_VALUE {
+        trace_fd_stage("fd-invalid");
         return Err(stable_error(code));
     }
     let process = unsafe { GetCurrentProcess() };
@@ -477,9 +482,19 @@ fn duplicate_fd(fd: i32, code: &'static str) -> Result<File> {
         )
     } == 0
     {
+        trace_fd_stage("duplicate-failed");
         return Err(stable_error(code));
     }
+    trace_fd_stage("duplicated");
     Ok(unsafe { File::from_raw_handle(duplicated as _) })
+}
+
+fn trace_fd_stage(stage: &str) {
+    if std::env::var_os("YUANCE_WINDOWS_FILE_GUARD_TRACE").as_deref()
+        == Some(std::ffi::OsStr::new("1"))
+    {
+        eprintln!("[windows-file-guard-native] {stage}");
+    }
 }
 
 fn remove_owned_file(root: &File, path: &Path) -> Result<()> {
