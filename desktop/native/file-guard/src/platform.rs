@@ -71,7 +71,7 @@ struct NtIoStatusBlock {
 
 #[repr(C)]
 struct NtFileRenameInformation {
-    replace_if_exists: u32,
+    replace_if_exists: u8,
     root_directory: HANDLE,
     file_name_length: u32,
     file_name: [u16; 1],
@@ -796,14 +796,16 @@ fn rename_by_handle(
         use std::os::windows::ffi::OsStrExt;
         committed_name.encode_wide().collect()
     };
-    let byte_len = size_of::<NtFileRenameInformation>() + name.len() * size_of::<u16>();
+    let name_offset = std::mem::offset_of!(NtFileRenameInformation, file_name);
+    let byte_len = name_offset + name.len() * size_of::<u16>();
     let mut storage = vec![0_usize; byte_len.div_ceil(size_of::<usize>())];
     let info = storage.as_mut_ptr() as *mut NtFileRenameInformation;
     unsafe {
-        (*info).replace_if_exists = u32::from(replace);
+        (*info).replace_if_exists = u8::from(replace);
         (*info).root_directory = root.as_raw_handle() as HANDLE;
         (*info).file_name_length = (name.len() * size_of::<u16>()) as u32;
-        std::ptr::copy_nonoverlapping(name.as_ptr(), (*info).file_name.as_mut_ptr(), name.len());
+        let name_target = (info as *mut u8).add(name_offset) as *mut u16;
+        std::ptr::copy_nonoverlapping(name.as_ptr(), name_target, name.len());
     }
     let mut io_status = NtIoStatusBlock {
         status_or_pointer: 0,
