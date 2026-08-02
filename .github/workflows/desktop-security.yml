@@ -45,6 +45,7 @@ jobs:
         os:
           - macos-latest
           - windows-latest
+          - windows-11-arm
           - ubuntu-latest
 
     steps:
@@ -66,7 +67,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: api
+          workspaces: |
+            api
+            desktop/native/file-guard
 
       - name: Install shared frontend dependencies
         run: npm --prefix frontend ci
@@ -79,7 +82,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
 
       - name: Run focused Device API tests
-        run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_sse_authorization_flow
+        run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_sse_authorization_flow --test device_file_transfer_flow
 
       - name: Run desktop checks
         run: npm --prefix desktop run check

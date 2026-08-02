@@ -1,0 +1,28 @@
+[package]
+name = "yuance-file-guard"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+napi = { version = "3.0", default-features = false, features = ["dyn-symbols", "napi8"] }
+napi-derive = "3.0"
+
+[target.'cfg(windows)'.dependencies]
+sha2 = "0.10"
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+  "Win32_System_Threading",
+] }
+
+[build-dependencies]
+napi-build = "2.2"
+
+[workspace]

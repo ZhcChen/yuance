@@ -1,6 +1,8 @@
 import asar from "@electron/asar";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -66,6 +68,58 @@ function verifyCspSource(source) {
 function verifyProtocolHandlerSource(source) {
   if (!source.includes("headers: resolution.headers,")) {
     throw new Error("Bundled protocol handler does not forward verified response headers.");
+  }
+}
+
+async function verifyPackagedWindowsFileGuard(archive, entries) {
+  if (process.platform !== "win32") return;
+  const expectedNames = Object.freeze({
+    x64: "index.win32-x64-msvc.node",
+    arm64: "index.win32-arm64-msvc.node",
+  });
+  const expectedName = expectedNames[process.arch];
+  if (!expectedName) throw new Error("Packaged native file guard architecture is unsupported.");
+  const nativeEntries = [...entries.keys()].filter((entry) => entry.startsWith("src/native/") && entry.endsWith(".node"));
+  const expectedEntry = `src/native/${expectedName}`;
+  if (nativeEntries.length !== 1 || nativeEntries[0] !== expectedEntry) {
+    throw new Error("Packaged native file guard does not match the current architecture.");
+  }
+  const stats = asar.statFile(archive, entries.get(expectedEntry) ?? expectedEntry, false);
+  if (!stats || typeof stats.size !== "number" || !stats.unpacked || "link" in stats || "files" in stats) {
+    throw new Error("Packaged native file guard is not an unpacked regular file.");
+  }
+  const bindingPath = path.join(`${archive}.unpacked`, "src", "native", expectedName);
+  let root;
+  try {
+    const bindingStats = await fs.lstat(bindingPath);
+    if (!bindingStats.isFile() || bindingStats.isSymbolicLink()) throw new Error("invalid binding");
+    const native = createRequire(import.meta.url)(bindingPath);
+    for (const operation of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot"]) {
+      if (typeof native?.[operation] !== "function") throw new Error("invalid exports");
+    }
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-file-guard-"));
+    const sourceRoot = path.join(root, "source");
+    const spoolRoot = path.join(root, "spool");
+    await fs.mkdir(sourceRoot);
+    const sourcePath = path.join(sourceRoot, "canary.txt");
+    const content = Buffer.from("yuance-packaged-file-guard-canary");
+    await fs.writeFile(sourcePath, content);
+    await native.secureWindowsSpoolRoot(spoolRoot);
+    const captured = await native.captureWindowsFile({
+      sourcePath,
+      spoolRoot,
+      nonce: crypto.randomBytes(16).toString("hex"),
+      maxBytes: 1024,
+    });
+    if (captured?.byteSize !== content.length || captured?.sha256 !== crypto.createHash("sha256").update(content).digest("hex")) {
+      throw new Error("invalid capture");
+    }
+    await native.removeWindowsSnapshot(spoolRoot, captured.privatePath);
+    if (await native.cleanupWindowsSpool(spoolRoot) !== 0) throw new Error("invalid cleanup");
+  } catch {
+    throw new Error("Packaged native file guard verification failed.");
+  } finally {
+    if (root) await fs.rm(root, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -136,6 +190,7 @@ export async function verifyAppBundle(inputPath) {
   verifyProtocolHandlerSource(
     extract(archive, entries, "src/protocol/app-protocol-handler.mjs").toString("utf8"),
   );
+  await verifyPackagedWindowsFileGuard(archive, entries);
   return Object.freeze({ archive, resourceCount: manifest.files ? Object.keys(manifest.files).length : 0 });
 }
 
