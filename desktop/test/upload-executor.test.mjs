@@ -85,7 +85,7 @@ test("rejects metadata drift before network and still consumes both capabilities
 
 test("detects spool mutation during transfer and never permits replay", async (t) => {
   const value = await fixture(t, async (url, options) => {
-    await fs.writeFile(value.privatePath, "changed bytes");
+    await fs.writeFile(value.privatePath, "changed bytes with deterministic size drift");
     await new Response(options.body).arrayBuffer();
     return uploadResponse(204, url);
   });
