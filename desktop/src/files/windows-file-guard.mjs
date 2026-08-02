@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,7 +23,7 @@ export function loadWindowsFileGuard({
   } catch {
     throw guardError("file_native_guard_required");
   }
-  for (const name of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot"]) {
+  for (const name of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle"]) {
     if (typeof native?.[name] !== "function") throw guardError("file_native_guard_required");
   }
   return Object.freeze({
@@ -30,6 +31,25 @@ export function loadWindowsFileGuard({
     cleanupSpool: (spoolRoot) => invoke(native.cleanupWindowsSpool, spoolRoot),
     captureFile: (input) => invoke(native.captureWindowsFile, input),
     removeSnapshot: (spoolRoot, privatePath) => invoke(native.removeWindowsSnapshot, spoolRoot, privatePath),
+    openSnapshot: async ({ spoolRoot, privatePath }) => {
+      const handle = await fs.open(privatePath, "r");
+      try {
+        await invoke(native.verifyWindowsSnapshotHandle, spoolRoot, privatePath, handle.fd);
+        const identity = toIdentity(await handle.stat({ bigint: true }));
+        return Object.freeze({
+          handle,
+          identity,
+          currentIdentity: async () => {
+            const handleIdentity = toIdentity(await handle.stat({ bigint: true }));
+            const pathIdentity = toIdentity(await fs.lstat(privatePath, { bigint: true }));
+            return sameIdentity(handleIdentity, pathIdentity) ? handleIdentity : pathIdentity;
+          },
+        });
+      } catch (error) {
+        await handle.close().catch(() => {});
+        throw error;
+      }
+    },
   });
 }
 
@@ -43,7 +63,7 @@ async function invoke(operation, ...args) {
 
 function mapNativeError(message) {
   if (message.includes("LIMIT_EXCEEDED")) return "file_too_large";
-  if (message.includes("SOURCE_CHANGED")) return "file_identity_changed";
+  if (message.includes("SOURCE_CHANGED") || message.includes("SNAPSHOT_CHANGED")) return "file_identity_changed";
   if (message.includes("REPARSE_POINT")) return "file_link_not_allowed";
   if (message.includes("NOT_REGULAR")) return "file_not_regular";
   if (message.includes("SNAPSHOT_WRITE") || message.includes("SNAPSHOT_SIZE") || message.includes("SNAPSHOT_SYNC")) return "file_spool_write_failed";
@@ -52,3 +72,14 @@ function mapNativeError(message) {
 }
 
 function guardError(code) { return Object.assign(new Error("Native file guard failed"), { code }); }
+
+function toIdentity(stats) {
+  return Object.freeze({
+    dev: String(stats.dev),
+    ino: String(stats.ino),
+    size: Number(stats.size),
+    mtimeNs: String(stats.mtimeNs ?? BigInt(Math.trunc(Number(stats.mtimeMs) * 1_000_000))),
+    ctimeNs: String(stats.ctimeNs ?? BigInt(Math.trunc(Number(stats.ctimeMs) * 1_000_000))),
+  });
+}
+function sameIdentity(left, right) { return ["dev", "ino", "size", "mtimeNs", "ctimeNs"].every((key) => left[key] === right[key]); }

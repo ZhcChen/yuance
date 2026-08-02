@@ -34,11 +34,30 @@ test("creates isolated persistent sessions and clears ambient network state", as
     ["clearAuthCache"],
   ]);
   assert.equal(typeof productionNetwork.fetch, "function");
+  assert.equal(typeof productionNetwork.transferFetch, "function");
   assert.equal(isTrustedSessionFetch(productionNetwork.fetch), true);
   assert.equal(isTrustedSessionFetch(async () => {}), false);
   assert.equal(Object.isFrozen(productionNetwork), true);
   assert.equal(productionNetwork.partition, production.partition);
   assert.equal(networkPartitionForMode("production"), production.partition);
+});
+
+test("transfer fetch allows HTTPS signed targets without ambient or Device credentials", async () => {
+  const fake = fakeElectronSession();
+  const network = await createTrustedNetworkSession({ electronSession: fake.module, mode: "production", allowedOrigin: "https://yuance.example" });
+  const safe = { method: "PUT", redirect: "manual", credentials: "omit", cache: "no-store", headers: [["content-type", "text/plain"]], body: new ReadableStream({ start(controller) { controller.close(); } }), duplex: "half", signal: new AbortController().signal };
+  await network.transferFetch("https://objects.example/file?signature=opaque", safe);
+  assert.equal(fake.fetchCalls.length, 1);
+  for (const [url, options] of [
+    ["http://objects.example/file", safe],
+    ["https://objects.example/file#fragment", safe],
+    ["https://objects.example/file", { ...safe, method: "GET" }],
+    ["https://objects.example/file", { ...safe, redirect: "follow" }],
+    ["https://objects.example/file", { ...safe, credentials: "include" }],
+    ["https://objects.example/file", { ...safe, headers: { Authorization: "Bearer secret" } }],
+    ["https://objects.example/file", { ...safe, headers: { "Proxy-Authorization": "Basic secret" } }],
+  ]) await assert.rejects(network.transferFetch(url, options), /trusted transfer/);
+  assert.equal(fake.fetchCalls.length, 1);
 });
 
 test("binds Chromium session.fetch and emits only redacted test observations", async () => {

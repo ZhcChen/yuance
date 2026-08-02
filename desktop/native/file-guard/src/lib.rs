@@ -103,6 +103,23 @@ pub fn remove_windows_snapshot(
     }))
 }
 
+#[napi(js_name = "verifyWindowsSnapshotHandle")]
+pub fn verify_windows_snapshot_handle(
+    spool_root: String,
+    private_path: String,
+    fd: i32,
+) -> Result<AsyncTask<VerifySnapshotTask>> {
+    validate_spool_root(&spool_root)?;
+    if !is_absolute_normal_path(&private_path) || private_path.contains('\0') || fd < 0 {
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
+    }
+    Ok(AsyncTask::new(VerifySnapshotTask {
+        spool_root,
+        private_path,
+        fd,
+    }))
+}
+
 pub struct CaptureTask(Option<ValidatedInput>);
 impl Task for CaptureTask {
     type Output = CaptureWindowsFileResult;
@@ -158,6 +175,22 @@ impl Task for RemoveSnapshotTask {
     }
 }
 
+pub struct VerifySnapshotTask {
+    spool_root: String,
+    private_path: String,
+    fd: i32,
+}
+impl Task for VerifySnapshotTask {
+    type Output = ();
+    type JsValue = ();
+    fn compute(&mut self) -> Result<Self::Output> {
+        platform::verify_snapshot_handle(&self.spool_root, &self.private_path, self.fd)
+    }
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
 fn validate_spool_root(spool_root: &str) -> Result<()> {
     if !is_absolute_normal_path(spool_root) || spool_root.contains('\0') {
         return Err(stable_error("ERR_FILE_GUARD_SPOOL_INVALID"));
@@ -182,6 +215,14 @@ mod platform {
     }
 
     pub(super) fn remove_snapshot(_spool_root: &str, _private_path: &str) -> Result<()> {
+        Err(stable_error("ERR_FILE_GUARD_WINDOWS_REQUIRED"))
+    }
+
+    pub(super) fn verify_snapshot_handle(
+        _spool_root: &str,
+        _private_path: &str,
+        _fd: i32,
+    ) -> Result<()> {
         Err(stable_error("ERR_FILE_GUARD_WINDOWS_REQUIRED"))
     }
 }

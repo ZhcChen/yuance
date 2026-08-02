@@ -94,7 +94,7 @@ async function verifyPackagedWindowsFileGuard(archive, entries) {
     const bindingStats = await fs.lstat(bindingPath);
     if (!bindingStats.isFile() || bindingStats.isSymbolicLink()) throw new Error("invalid binding");
     const native = createRequire(import.meta.url)(bindingPath);
-    for (const operation of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot"]) {
+    for (const operation of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle"]) {
       if (typeof native?.[operation] !== "function") throw new Error("invalid exports");
     }
     root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-file-guard-"));
@@ -114,6 +114,9 @@ async function verifyPackagedWindowsFileGuard(archive, entries) {
     if (captured?.byteSize !== content.length || captured?.sha256 !== crypto.createHash("sha256").update(content).digest("hex")) {
       throw new Error("invalid capture");
     }
+    const snapshotHandle = await fs.open(captured.privatePath, "r");
+    try { await native.verifyWindowsSnapshotHandle(spoolRoot, captured.privatePath, snapshotHandle.fd); }
+    finally { await snapshotHandle.close(); }
     await native.removeWindowsSnapshot(spoolRoot, captured.privatePath);
     if (await native.cleanupWindowsSpool(spoolRoot) !== 0) throw new Error("invalid cleanup");
   } catch {

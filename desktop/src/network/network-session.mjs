@@ -3,6 +3,8 @@ const NETWORK_PARTITIONS = Object.freeze({
   development: "persist:yuance-network-development-v1",
 });
 const TRUSTED_SESSION_FETCH = Symbol("yuance.trusted-session-fetch");
+const TRUSTED_TRANSFER_FETCH = Symbol("yuance.trusted-transfer-fetch");
+const TRANSFER_HEADERS = new Set(["content-length", "content-md5", "content-type", "x-amz-checksum-sha256", "x-amz-content-sha256", "x-oss-content-sha256", "x-oss-forbid-overwrite"]);
 
 export function networkPartitionForMode(mode) {
   const partition = NETWORK_PARTITIONS[mode];
@@ -61,10 +63,41 @@ export async function createTrustedNetworkSession({
   }
   Object.defineProperty(fetchWithChromium, TRUSTED_SESSION_FETCH, { value: true });
 
+  async function fetchTransferWithChromium(url, options = {}) {
+    validateTransferRequest(url, options, allowedOrigin);
+    const response = await chromiumSession.fetch(url, options);
+    if (testObserver) testObserver(Object.freeze({ method: "PUT", phase: "transfer", status: response.status }));
+    return response;
+  }
+  Object.defineProperty(fetchTransferWithChromium, TRUSTED_TRANSFER_FETCH, { value: true });
+
   return Object.freeze({
     partition,
     fetch: fetchWithChromium,
+    transferFetch: fetchTransferWithChromium,
   });
+}
+
+function validateTransferRequest(url, options, allowedOrigin) {
+  const parsed = parseNetworkUrl(url, "trusted transfer URL is invalid");
+  const allowed = new URL(allowedOrigin);
+  if (parsed.username || parsed.password || parsed.hash || (parsed.protocol !== "https:" && !(parsed.origin === allowed.origin && parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)))) {
+    throw new TypeError("trusted transfer URL is invalid");
+  }
+  if (options.method !== "PUT" || options.redirect !== "manual" || options.credentials !== "omit" || options.cache !== "no-store") {
+    throw new TypeError("trusted transfer request policy is invalid");
+  }
+  const headers = new Headers(options.headers);
+  for (const name of ["authorization", "cookie", "host", "origin", "proxy-authorization", "referer"]) {
+    if (headers.has(name)) throw new TypeError("trusted transfer request header is forbidden");
+  }
+  for (const name of headers.keys()) if (!TRANSFER_HEADERS.has(name)) throw new TypeError("trusted transfer request header is forbidden");
+  if (!(options.body instanceof ReadableStream) || options.duplex !== "half" || !(options.signal instanceof AbortSignal)) throw new TypeError("trusted transfer request body is invalid");
+}
+
+function isLoopbackHost(hostname) {
+  const value = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return value === "localhost" || value === "::1" || /^127(?:\.\d{1,3}){3}$/.test(value);
 }
 
 function validateRequest(url, options, allowedOrigin) {
@@ -97,4 +130,8 @@ function parseNetworkUrl(value, message) {
 
 export function isTrustedSessionFetch(value) {
   return typeof value === "function" && value[TRUSTED_SESSION_FETCH] === true;
+}
+
+export function isTrustedTransferFetch(value) {
+  return typeof value === "function" && value[TRUSTED_TRANSFER_FETCH] === true;
 }

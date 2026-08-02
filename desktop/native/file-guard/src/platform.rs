@@ -5,11 +5,12 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::mem::{offset_of, size_of, zeroed};
 use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::AsRawHandle;
+use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_SUCCESS, GENERIC_READ, GENERIC_WRITE, HANDLE,
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_SUCCESS, GENERIC_READ,
+    GENERIC_WRITE, HANDLE,
 };
 use windows_sys::Win32::Security::Authorization::{SE_FILE_OBJECT, SetSecurityInfo};
 use windows_sys::Win32::Security::{
@@ -28,6 +29,10 @@ use windows_sys::Win32::Storage::FileSystem::{
     SetFileInformationByHandle, VOLUME_NAME_DOS,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+
+unsafe extern "C" {
+    fn _get_osfhandle(fd: i32) -> isize;
+}
 
 const STAGING_PREFIX: &str = ".yuance-staging-";
 const STAGING_SUFFIX: &str = ".tmp";
@@ -297,6 +302,56 @@ pub(super) fn remove_snapshot(spool_root: &str, private_path: &str) -> Result<()
         return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
     }
     remove_owned_file(root_handle, path)
+}
+
+pub(super) fn verify_snapshot_handle(spool_root: &str, private_path: &str, fd: i32) -> Result<()> {
+    secure_spool_root(spool_root)?;
+    let root_path = Path::new(spool_root);
+    let private_path = Path::new(private_path);
+    let name = private_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"))?;
+    if !is_snapshot_name(name) {
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
+    }
+    let root_chain = open_verified_directory_chain(root_path)?;
+    let root = root_chain
+        .last()
+        .ok_or_else(|| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))?;
+    let raw = unsafe { _get_osfhandle(fd) };
+    if raw == -1 {
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
+    }
+    let process = unsafe { GetCurrentProcess() };
+    let mut duplicated: HANDLE = null_mut();
+    if unsafe {
+        DuplicateHandle(
+            process,
+            raw as HANDLE,
+            process,
+            &mut duplicated,
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        )
+    } == 0
+    {
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_INVALID"));
+    }
+    let opened = unsafe { File::from_raw_handle(duplicated as _) };
+    verify_regular(&opened)?;
+    ensure_handle_within_root(&opened, root)?;
+    if final_path(&opened)? != normalize_final_path(&private_path.to_string_lossy()) {
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_CHANGED"));
+    }
+    let path_handle = open_file_no_reparse(private_path, false)?;
+    if identity(&path_handle)? != identity(&opened)?
+        || final_path(&path_handle)? != final_path(&opened)?
+    {
+        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_CHANGED"));
+    }
+    Ok(())
 }
 
 fn remove_owned_file(root: &File, path: &Path) -> Result<()> {

@@ -1,17 +1,36 @@
 const OPERATION_NAME = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*){1,3}$/u;
+const ACTIVE_OPERATION_NAMES = new Set(["file.upload", "file.download"]);
+const MAX_ACTIVE_OPERATIONS = 4;
 const PROBE_KEYS = [
   "access_expires_at", "authorization_version", "device_id", "display_name", "family_id",
   "generation", "server_instance_id", "user_id", "username",
 ];
 
-export function createOperationRegistry() {
+export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
+  if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
   const operations = new Map([["session.probe", Object.freeze({ idempotent: true, method: "GET", path: "/api/v1/device-session", parse: parseSessionProbe })]]);
+  const active = new Set();
   function resolve(name, input) {
     if (typeof name !== "string" || !OPERATION_NAME.test(name) || !operations.has(name)) throw new TypeError("unknown operation");
     if (!isPlainObject(input) || Object.keys(input).length !== 0) throw new TypeError("operation input must be an empty object");
     return operations.get(name);
   }
-  return Object.freeze({ resolve });
+  function begin(name, controller) {
+    if (!ACTIVE_OPERATION_NAMES.has(name) || !(controller instanceof AbortController)) throw new TypeError("active operation is invalid");
+    if (active.size >= maxActiveOperations) throw Object.assign(new Error("Active operation quota exceeded"), { code: "file_transfer_concurrency_limit" });
+    const entry = Object.freeze({ name, controller });
+    active.add(entry);
+    let finished = false;
+    return () => {
+      if (finished) return;
+      finished = true;
+      active.delete(entry);
+    };
+  }
+  function abortAll() {
+    for (const entry of active) entry.controller.abort();
+  }
+  return Object.freeze({ resolve, begin, abortAll, snapshot: () => Object.freeze({ active: active.size }) });
 }
 
 function parseSessionProbe(data, profile) {

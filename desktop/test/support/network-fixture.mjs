@@ -17,6 +17,8 @@ export async function startNetworkFixture() {
     pacRequests: 0,
     cookieHeaders: [],
     authorizationHeaders: [],
+    uploadBodies: [],
+    uploadHeaders: [],
   };
   const target = http.createServer((request, response) => {
     state.targetRequests += 1;
@@ -29,6 +31,17 @@ export async function startNetworkFixture() {
         response.writeHead(401, { "www-authenticate": "Basic realm=yuance-network-test" });
         response.end("authentication required");
       }
+      return;
+    }
+    if (request.url === "/upload") {
+      const chunks = [];
+      request.on("data", (chunk) => chunks.push(chunk));
+      request.on("end", () => {
+        state.uploadBodies.push(Buffer.concat(chunks));
+        state.uploadHeaders.push({ authorization: request.headers.authorization || "", cookie: request.headers.cookie || "", contentType: request.headers["content-type"] || "" });
+        response.writeHead(204);
+        response.end();
+      });
       return;
     }
     state.enrollmentRequests += 1;

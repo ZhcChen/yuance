@@ -28,6 +28,9 @@ test("real Windows native guard captures, protects, and cleans snapshots", { ski
   assert.equal(captured.byteSize, content.length);
   assert.equal(captured.sha256, crypto.createHash("sha256").update(content).digest("hex"));
   assert.deepEqual(await fs.readFile(captured.privatePath), content);
+  const opened = await guard.openSnapshot({ spoolRoot, privatePath: captured.privatePath });
+  assert.equal(opened.identity.size, content.length);
+  await opened.handle.close();
   await guard.removeSnapshot(spoolRoot, captured.privatePath);
   await assert.rejects(fs.access(captured.privatePath), { code: "ENOENT" });
   assert.equal(await guard.cleanupSpool(spoolRoot), 0);

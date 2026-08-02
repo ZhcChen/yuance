@@ -11,6 +11,7 @@ test("loads only the exact Windows native binding and sanitizes native errors", 
     cleanupWindowsSpool: async () => 2,
     captureWindowsFile: async () => { throw new Error("ERR_FILE_GUARD_REPARSE_POINT: C:\\private"); },
     removeWindowsSnapshot: async () => {},
+    verifyWindowsSnapshotHandle: async () => {},
   };
   const guard = loadWindowsFileGuard({ platform: "win32", arch: "x64", nativeDirectory: "C:\\native", requireImpl: (candidate) => {
     assert.equal(candidate, "C:\\native\\index.win32-x64-msvc.node");

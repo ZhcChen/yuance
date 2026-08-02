@@ -43,3 +43,22 @@ test("normalizes a probe response without credentials", () => {
     server_instance_id: "server-1", access_token: "yuance_dat_leak",
   }, { serverInstanceId: "server-1" }), /identity/i);
 });
+
+test("tracks only fixed file operations with a bounded abort lifecycle", () => {
+  const registry = createOperationRegistry({ maxActiveOperations: 2 });
+  const first = new AbortController();
+  const second = new AbortController();
+  const finish = registry.begin("file.upload", first);
+  const finishSecond = registry.begin("file.download", second);
+  assert.deepEqual(registry.snapshot(), { active: 2 });
+  assert.throws(() => registry.begin("file.upload", new AbortController()), (error) => error.code === "file_transfer_concurrency_limit");
+  assert.throws(() => registry.begin("network.generic", new AbortController()), /active operation/);
+  registry.abortAll();
+  assert.equal(first.signal.aborted, true);
+  assert.equal(second.signal.aborted, true);
+  assert.deepEqual(registry.snapshot(), { active: 2 });
+  finish();
+  finishSecond();
+  assert.deepEqual(registry.snapshot(), { active: 0 });
+  assert.throws(() => createOperationRegistry({ maxActiveOperations: 5 }), /fixed safety limit/);
+});

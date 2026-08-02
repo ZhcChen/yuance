@@ -1,5 +1,10 @@
 import { app, BrowserWindow, session } from "electron";
+import { createHash } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 
+import { createUploadExecutor } from "../../src/files/upload-executor.mjs";
+import { loadWindowsFileGuard } from "../../src/files/windows-file-guard.mjs";
 import { enrollDesktop } from "../../src/network/enrollment-client.mjs";
 import {
   createTrustedNetworkSession,
@@ -51,6 +56,33 @@ async function run() {
       allowedOrigin: origin,
       testObserver: (value) => observations.push(value),
     });
+    if (process.argv.includes("--upload")) {
+      const content = Buffer.from("yuance-electron-upload-canary");
+      const sourcePath = path.join(userDataPath, "upload-source.bin");
+      await fs.writeFile(sourcePath, content);
+      const sha256 = createHash("sha256").update(content).digest("hex");
+      let removed = false;
+      const windowsGuard = loadWindowsFileGuard();
+      const spoolRoot = path.join(userDataPath, "upload-spool");
+      const nativeSnapshot = windowsGuard
+        ? await windowsGuard.captureFile({ sourcePath, spoolRoot, nonce: "0123456789abcdef0123456789abcdef", maxBytes: 1024 })
+        : { privatePath: path.join(userDataPath, "upload-snapshot.bin") };
+      if (!windowsGuard) await fs.copyFile(sourcePath, nativeSnapshot.privatePath);
+      const snapshot = Object.freeze({ privatePath: nativeSnapshot.privatePath, filename: "canary.bin", contentType: "application/octet-stream", byteSize: content.length, sha256, remove: async () => { removed = true; if (windowsGuard) await windowsGuard.removeSnapshot(spoolRoot, nativeSnapshot.privatePath); else await fs.unlink(nativeSnapshot.privatePath); } });
+      const contract = Object.freeze({ version: 1, purpose: "upload", method: "PUT", url: `${origin}/upload`, origin, headers: Object.freeze([Object.freeze(["content-type", "application/octet-stream"])]), expectedBytes: content.length, contentType: "application/octet-stream", sha256, expiresAt: Date.now() + 60_000 });
+      const executor = createUploadExecutor({
+        fileVault: { consume: () => snapshot },
+        grantVault: { consume: () => contract },
+        fetchImpl: network.transferFetch,
+        platform: process.platform,
+        windowsGuard,
+        spoolRoot,
+      });
+      const result = await executor.execute({ fileCapability: "file", transferGrant: "grant", binding: {} });
+      process.stdout.write(`${JSON.stringify({ ok: true, result, removed, observations })}\n`);
+      app.exit(0);
+      return;
+    }
     const repeat = Number(option("--repeat") || 1);
     let enrolled;
     for (let index = 0; index < repeat; index += 1) {
