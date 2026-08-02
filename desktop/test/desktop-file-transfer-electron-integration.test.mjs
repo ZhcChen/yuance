@@ -31,6 +31,7 @@ test("production file smoke exposes no renderer or preload channel", async () =>
     fs.readFile(new URL("../src/ipc/file-commands.mjs", import.meta.url), "utf8"),
   ]);
   assert.match(main, /desktop-file-smoke-phase/u);
+  assert.match(main, /fileSmokeStorage = createEphemeralFileSmokeStorage\(\)/u);
   assert.doesNotMatch(preload, /desktop-file-smoke/u);
   assert.doesNotMatch(commands, /desktop-file-smoke/u);
 });

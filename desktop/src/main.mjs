@@ -533,7 +533,7 @@ async function runDesktopFileSmoke() {
   const userDataPath = app.getPath("userData");
   const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
   const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
-  const fileSmokeStorage = process.platform === "darwin" ? createEphemeralFileSmokeStorage() : safeStorage;
+  const fileSmokeStorage = createEphemeralFileSmokeStorage();
   const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: fileSmokeStorage, fs, userDataPath, platform: process.platform, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged File Smoke", clientVersion: app.getVersion() });
   const initialized = await runtime.initialize();
   if (desktopFileSmokePhase === "authorize") {

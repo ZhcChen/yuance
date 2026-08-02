@@ -87,9 +87,19 @@ jobs:
       - name: Run desktop checks
         run: npm --prefix desktop run check
 
-      - name: Run desktop tests
-        if: runner.os != 'Linux'
+      - name: Run Windows desktop tests
+        if: runner.os == 'Windows'
         run: npm --prefix desktop test
+
+      - name: Run macOS desktop tests without Keychain
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          npm --prefix desktop run build:native
+          find desktop/test -name '*.test.mjs' \
+            ! -name 'device-auth-electron-integration.test.mjs' \
+            ! -name 'desktop-network-api-integration.test.mjs' \
+            -print0 | xargs -0 node --test
 
       - name: Run Linux desktop tests
         if: runner.os == 'Linux'
@@ -112,7 +122,7 @@ jobs:
         run: xvfb-run -a npm --prefix desktop run smoke:app-protocol -- dist
 
       - name: Smoke unpacked desktop network
-        if: runner.os != 'Linux'
+        if: runner.os == 'Windows'
         run: npm --prefix desktop run smoke:desktop-network -- dist
 
       - name: Smoke Linux unpacked desktop network
@@ -124,15 +134,31 @@ jobs:
             xvfb-run -a npm --prefix desktop run smoke:desktop-network -- dist
           '
 
+      - name: Smoke unpacked desktop file transfer
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:desktop-file-transfer -- dist
+
+      - name: Smoke Linux unpacked desktop file transfer
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm --prefix desktop run smoke:desktop-file-transfer -- dist
+
       - name: Scan source, fixture, report, ASAR, and unpacked artifacts
         run: npm --prefix desktop run scan:credential-leaks
 
       - name: Verify desktop network cleanup evidence
+        if: runner.os != 'macOS'
         run: npm --prefix desktop run verify:desktop-network-artifacts
 
+      - name: Verify desktop file transfer cleanup evidence
+        run: npm --prefix desktop run verify:desktop-file-transfer-artifacts
+
       - name: Verify native safeStorage boundary
-        if: runner.os != 'Linux'
+        if: runner.os == 'Windows'
         run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
+
+      - name: Verify macOS single-instance boundary without Keychain
+        if: runner.os == 'macOS'
+        run: npm --prefix desktop run smoke:single-instance
 
       - name: Verify Linux secure safeStorage boundary
         if: runner.os == 'Linux'
@@ -144,11 +170,11 @@ jobs:
             xvfb-run -a npm --prefix desktop run smoke:single-instance
           '
 
-      - name: Upload desktop network verification
+      - name: Upload desktop security verification
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: desktop-network-verification-${{ matrix.os }}
+          name: desktop-security-verification-${{ matrix.os }}
           path: desktop/dist/verification/
           if-no-files-found: warn
           retention-days: 14

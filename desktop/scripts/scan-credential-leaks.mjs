@@ -19,6 +19,11 @@ const RULES = [
   ["literal bearer credential", new RegExp(`Bearer\\s+(?:yuance_(?:dat|drt|dc|pat)_)?${TOKEN_SUFFIX}`, "gi")],
   ["literal session cookie", /(?:^|[;\s])(?:session|refresh_token)=[A-Za-z0-9_-]{24,}/gi],
 ];
+const ARTIFACT_RULES = [
+  ["signed transfer URL", /https?:\/\/[^\s"']+[?&](?:x-amz-|signature=|expires=)[^\s"']*/gi],
+  ["local filesystem path", /(?:[A-Za-z]:\\(?:Users|Windows)\\[^\r\n"']+|\/(?:Users|home|tmp)\/[^\r\n"']+)/g],
+];
+const TEXT_ARTIFACT_EXTENSIONS = new Set([".json", ".log", ".txt"]);
 
 async function collectFiles(root) {
   const files = [];
@@ -65,7 +70,9 @@ const findings = [];
 
 for (const file of files) {
   const content = (await readFile(file)).toString("latin1");
-  for (const [rule, pattern] of RULES) {
+  const isTextArtifact = file.split(path.sep).includes("dist") && TEXT_ARTIFACT_EXTENSIONS.has(path.extname(file).toLowerCase());
+  const rules = isTextArtifact ? [...RULES, ...ARTIFACT_RULES] : RULES;
+  for (const [rule, pattern] of rules) {
     pattern.lastIndex = 0;
     if (pattern.test(content)) findings.push({ file, rule });
   }

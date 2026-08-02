@@ -138,3 +138,16 @@ test("rejects registered source maps and development runtime references", async 
   context.after(() => fs.rm(devUrl.root, { recursive: true, force: true }));
   await assert.rejects(verifyAppBundle(devUrl.archive), /development runtime reference/);
 });
+
+test("rejects renderer file capabilities, signed requests, and local path fixtures", async (context) => {
+  for (const source of [
+    "import fs from 'node:fs';",
+    "window.ipcRenderer.invoke('open')",
+    "const signed_url = 'secret';",
+    "const fixture = '/Users/private/file.txt';",
+  ]) {
+    const fixture = await createBundleFixture({ registeredRendererFiles: { "assets/private.js": source } });
+    context.after(() => fs.rm(fixture.root, { recursive: true, force: true }));
+    await assert.rejects(verifyAppBundle(fixture.archive), /Renderer resource contains/);
+  }
+});

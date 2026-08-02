@@ -28,6 +28,12 @@ const REQUIRED_CSP_DIRECTIVES = Object.freeze([
   "form-action 'none'",
   "frame-ancestors 'none'",
 ]);
+const FORBIDDEN_RENDERER_PATTERNS = Object.freeze([
+  [/(?:from\s*["'](?:node:)?(?:fs|path|child_process)(?:\/promises)?["']|require\(\s*["'](?:node:)?(?:fs|path|child_process)(?:\/promises)?["']\s*\))/u, "Node filesystem capability"],
+  [/ipcRenderer|window\.require|process\.binding/u, "Electron or Node bridge"],
+  [/(?:file:\/\/|signed[_-]?url|\bAuthorization\b|Bearer\s|\bCookie\b)/u, "private transfer material"],
+  [/(?:[A-Za-z]:\\(?:Users|Windows)\\|\/(?:Users|home|tmp)\/)/u, "local path fixture"],
+]);
 
 function archivePath(value) {
   return value.replace(/^[/\\]+/u, "").replaceAll("\\", "/");
@@ -68,6 +74,12 @@ function verifyCspSource(source) {
 function verifyProtocolHandlerSource(source) {
   if (!source.includes("headers: resolution.headers,")) {
     throw new Error("Bundled protocol handler does not forward verified response headers.");
+  }
+}
+
+function verifyRendererSource(source, relativePath) {
+  for (const [pattern, label] of FORBIDDEN_RENDERER_PATTERNS) {
+    if (pattern.test(source)) throw new Error(`Renderer resource contains ${label}: ${relativePath}`);
   }
 }
 
@@ -186,9 +198,11 @@ export async function verifyAppBundle(inputPath) {
     if (!listed.has(relativePath)) throw new Error(`Manifest resource is missing from ASAR: ${relativePath}`);
     assertArchivedRegularFile(archive, entries, relativePath);
     const contents = extract(archive, entries, relativePath);
-    if (/(?:https?:\/\/(?:127\.0\.0\.1|localhost)|@vite\/client)/iu.test(contents.toString("utf8"))) {
+    const source = contents.toString("utf8");
+    if (/(?:https?:\/\/(?:127\.0\.0\.1|localhost)|@vite\/client)/iu.test(source)) {
       throw new Error(`Renderer resource contains a development runtime reference: ${relativePath}`);
     }
+    verifyRendererSource(source, relativePath);
     const digest = crypto.createHash("sha256").update(contents).digest("hex");
     if (contents.byteLength !== resource.bytes || digest !== resource.sha256) {
       throw new Error(`Manifest resource integrity mismatch: ${relativePath}`);

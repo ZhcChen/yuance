@@ -30,4 +30,12 @@ test("credential leak scanner accepts clean artifacts and rejects complete crede
     execFileAsync(process.execPath, [scannerPath, path.join(directory, "missing")]),
     (error) => error.code === 1 && /scan root is missing/.test(error.stderr),
   );
+
+  const dist = path.join(directory, "dist");
+  await fs.mkdir(dist);
+  await fs.writeFile(path.join(dist, "report.json"), JSON.stringify({ path: "/Users/private/file.txt" }));
+  await assert.rejects(
+    execFileAsync(process.execPath, [scannerPath, dist]),
+    (error) => error.code === 1 && /local filesystem path/.test(error.stderr),
+  );
 });
