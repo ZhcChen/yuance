@@ -97,7 +97,12 @@ jobs:
 
       - name: Run Linux desktop tests
         if: runner.os == 'Linux'
-        run: xvfb-run -a npm --prefix desktop test
+        shell: bash
+        run: |
+          dbus-run-session -- bash -euo pipefail -c '
+            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
+            xvfb-run -a npm --prefix desktop test
+          '
 
       - name: Build unpacked desktop app
         run: npm --prefix desktop run pack:dir
