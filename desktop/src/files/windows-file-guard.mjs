@@ -58,10 +58,6 @@ async function invoke(operation, ...args) {
   try {
     return await operation(...args);
   } catch (error) {
-    if (process.env.YUANCE_WINDOWS_FILE_GUARD_TRACE === "1") {
-      const stableCode = String(error?.message ?? "").match(/ERR_FILE_GUARD_[A-Z_]+/u)?.[0] ?? "ERR_FILE_GUARD_UNKNOWN";
-      process.stderr.write(`[windows-file-guard] ${stableCode}\n`);
-    }
     throw guardError(mapNativeError(String(error?.message ?? "")));
   }
 }

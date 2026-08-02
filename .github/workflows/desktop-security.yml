@@ -90,8 +90,6 @@ jobs:
       - name: Run Windows desktop tests
         if: runner.os == 'Windows'
         run: npm --prefix desktop test
-        env:
-          YUANCE_WINDOWS_FILE_GUARD_TRACE: '1'
 
       - name: Run macOS desktop tests without Keychain
         if: runner.os == 'macOS'
