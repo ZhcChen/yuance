@@ -19,6 +19,7 @@ export async function startNetworkFixture() {
     authorizationHeaders: [],
     uploadBodies: [],
     uploadHeaders: [],
+    downloadHeaders: [],
   };
   const target = http.createServer((request, response) => {
     state.targetRequests += 1;
@@ -42,6 +43,16 @@ export async function startNetworkFixture() {
         response.writeHead(204);
         response.end();
       });
+      return;
+    }
+    if (request.url === "/download") {
+      const content = Buffer.from("yuance-electron-download-canary");
+      state.downloadHeaders.push({ authorization: request.headers.authorization || "", cookie: request.headers.cookie || "" });
+      response.writeHead(200, {
+        "content-type": "application/octet-stream",
+        "content-length": String(content.length),
+      });
+      response.end(content);
       return;
     }
     state.enrollmentRequests += 1;

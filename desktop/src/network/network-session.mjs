@@ -66,7 +66,7 @@ export async function createTrustedNetworkSession({
   async function fetchTransferWithChromium(url, options = {}) {
     validateTransferRequest(url, options, allowedOrigin);
     const response = await chromiumSession.fetch(url, options);
-    if (testObserver) testObserver(Object.freeze({ method: "PUT", phase: "transfer", status: response.status }));
+    if (testObserver) testObserver(Object.freeze({ method: options.method, phase: "transfer", status: response.status }));
     return response;
   }
   Object.defineProperty(fetchTransferWithChromium, TRUSTED_TRANSFER_FETCH, { value: true });
@@ -84,7 +84,7 @@ function validateTransferRequest(url, options, allowedOrigin) {
   if (parsed.username || parsed.password || parsed.hash || (parsed.protocol !== "https:" && !(parsed.origin === allowed.origin && parsed.protocol === "http:" && isLoopbackHost(parsed.hostname)))) {
     throw new TypeError("trusted transfer URL is invalid");
   }
-  if (options.method !== "PUT" || options.redirect !== "manual" || options.credentials !== "omit" || options.cache !== "no-store") {
+  if (!["PUT", "GET"].includes(options.method) || options.redirect !== "manual" || options.credentials !== "omit" || options.cache !== "no-store") {
     throw new TypeError("trusted transfer request policy is invalid");
   }
   const headers = new Headers(options.headers);
@@ -92,7 +92,10 @@ function validateTransferRequest(url, options, allowedOrigin) {
     if (headers.has(name)) throw new TypeError("trusted transfer request header is forbidden");
   }
   for (const name of headers.keys()) if (!TRANSFER_HEADERS.has(name)) throw new TypeError("trusted transfer request header is forbidden");
-  if (!(options.body instanceof ReadableStream) || options.duplex !== "half" || !(options.signal instanceof AbortSignal)) throw new TypeError("trusted transfer request body is invalid");
+  const validBody = options.method === "PUT"
+    ? options.body instanceof ReadableStream && options.duplex === "half"
+    : options.body === undefined && options.duplex === undefined && [...headers].length === 0;
+  if (!validBody || !(options.signal instanceof AbortSignal)) throw new TypeError("trusted transfer request body is invalid");
 }
 
 function isLoopbackHost(hostname) {

@@ -20,6 +20,16 @@ pub struct CaptureWindowsFileResult {
     pub sha256: String,
 }
 
+#[napi(object)]
+pub struct CommitWindowsDownloadInput {
+    pub directory: String,
+    pub target_path: String,
+    pub temporary_path: String,
+    pub parent_fd: i32,
+    pub temporary_fd: i32,
+    pub target_fd: i32,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ValidatedInput {
     source_path: String,
@@ -120,6 +130,21 @@ pub fn verify_windows_snapshot_handle(
     }))
 }
 
+#[napi(js_name = "commitWindowsDownload")]
+pub fn commit_windows_download(
+    input: CommitWindowsDownloadInput,
+) -> Result<AsyncTask<CommitDownloadTask>> {
+    for value in [&input.directory, &input.target_path, &input.temporary_path] {
+        if !is_absolute_normal_path(value) || value.contains('\0') {
+            return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_INVALID"));
+        }
+    }
+    if input.parent_fd < 0 || input.temporary_fd < 0 || input.target_fd < -1 {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_INVALID"));
+    }
+    Ok(AsyncTask::new(CommitDownloadTask(input)))
+}
+
 pub struct CaptureTask(Option<ValidatedInput>);
 impl Task for CaptureTask {
     type Output = CaptureWindowsFileResult;
@@ -191,6 +216,18 @@ impl Task for VerifySnapshotTask {
     }
 }
 
+pub struct CommitDownloadTask(CommitWindowsDownloadInput);
+impl Task for CommitDownloadTask {
+    type Output = ();
+    type JsValue = ();
+    fn compute(&mut self) -> Result<Self::Output> {
+        platform::commit_download(&self.0)
+    }
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
 fn validate_spool_root(spool_root: &str) -> Result<()> {
     if !is_absolute_normal_path(spool_root) || spool_root.contains('\0') {
         return Err(stable_error("ERR_FILE_GUARD_SPOOL_INVALID"));
@@ -223,6 +260,10 @@ mod platform {
         _private_path: &str,
         _fd: i32,
     ) -> Result<()> {
+        Err(stable_error("ERR_FILE_GUARD_WINDOWS_REQUIRED"))
+    }
+
+    pub(super) fn commit_download(_input: &CommitWindowsDownloadInput) -> Result<()> {
         Err(stable_error("ERR_FILE_GUARD_WINDOWS_REQUIRED"))
     }
 }

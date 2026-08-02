@@ -40,6 +40,8 @@ const SNAPSHOT_PREFIX: &str = "yuance-snapshot-";
 const SNAPSHOT_SUFFIX: &str = ".bin";
 const MARKER_NAME: &str = ".yuance-file-spool-v1";
 const MARKER_CONTENT: &[u8] = b"yuance-file-spool-v1\n";
+const DOWNLOAD_PREFIX: &str = ".yuance-download-";
+const DOWNLOAD_SUFFIX: &str = ".tmp";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Identity {
@@ -354,6 +356,94 @@ pub(super) fn verify_snapshot_handle(spool_root: &str, private_path: &str, fd: i
     Ok(())
 }
 
+pub(super) fn commit_download(input: &CommitWindowsDownloadInput) -> Result<()> {
+    let directory = Path::new(&input.directory);
+    let target_path = Path::new(&input.target_path);
+    let temporary_path = Path::new(&input.temporary_path);
+    validate_windows_path(directory, "ERR_FILE_GUARD_DOWNLOAD_INVALID")?;
+    validate_windows_path(target_path, "ERR_FILE_GUARD_DOWNLOAD_INVALID")?;
+    validate_windows_path(temporary_path, "ERR_FILE_GUARD_DOWNLOAD_INVALID")?;
+    if target_path.parent() != Some(directory) || temporary_path.parent() != Some(directory) {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_INVALID"));
+    }
+    let temporary_name = temporary_path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| stable_error("ERR_FILE_GUARD_DOWNLOAD_INVALID"))?;
+    if !has_safe_nonce(temporary_name, DOWNLOAD_PREFIX, DOWNLOAD_SUFFIX) {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_INVALID"));
+    }
+    let target_name = target_path
+        .file_name()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| stable_error("ERR_FILE_GUARD_DOWNLOAD_INVALID"))?;
+
+    let parent = duplicate_fd(input.parent_fd, "ERR_FILE_GUARD_DOWNLOAD_CHANGED")?;
+    verify_not_reparse(&parent)?;
+    let parent_info: FILE_STANDARD_INFO = file_info(&parent, FileStandardInfo)?;
+    if parent_info.Directory == 0 || final_path(&parent)? != normalize_final_path(&input.directory)
+    {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
+    }
+
+    let temporary = duplicate_fd(input.temporary_fd, "ERR_FILE_GUARD_DOWNLOAD_CHANGED")?;
+    verify_regular(&temporary)?;
+    ensure_direct_child(&temporary, &parent)?;
+    if final_path(&temporary)? != normalize_final_path(&input.temporary_path) {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
+    }
+    let reopened_temporary = open_file_for_delete(temporary_path)?;
+    if identity(&reopened_temporary)? != identity(&temporary)? {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
+    }
+
+    let replace = input.target_fd >= 0;
+    if replace {
+        let target = duplicate_fd(input.target_fd, "ERR_FILE_GUARD_DOWNLOAD_CHANGED")?;
+        verify_regular(&target)?;
+        ensure_direct_child(&target, &parent)?;
+        if final_path(&target)? != normalize_final_path(&input.target_path) {
+            return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
+        }
+        let reopened_target = open_file_no_reparse(target_path, false)?;
+        if identity(&reopened_target)? != identity(&target)? {
+            return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
+        }
+    } else {
+        match fs::symlink_metadata(target_path) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED")),
+        }
+    }
+
+    rename_by_handle(&reopened_temporary, &parent, target_name, replace)
+        .map_err(|_| stable_error("ERR_FILE_GUARD_DOWNLOAD_COMMIT"))
+}
+
+fn duplicate_fd(fd: i32, code: &'static str) -> Result<File> {
+    let raw = unsafe { _get_osfhandle(fd) };
+    if raw == -1 {
+        return Err(stable_error(code));
+    }
+    let process = unsafe { GetCurrentProcess() };
+    let mut duplicated: HANDLE = null_mut();
+    if unsafe {
+        DuplicateHandle(
+            process,
+            raw as HANDLE,
+            process,
+            &mut duplicated,
+            0,
+            0,
+            DUPLICATE_SAME_ACCESS,
+        )
+    } == 0
+    {
+        return Err(stable_error(code));
+    }
+    Ok(unsafe { File::from_raw_handle(duplicated as _) })
+}
+
 fn remove_owned_file(root: &File, path: &Path) -> Result<()> {
     let file = open_file_for_delete(path)?;
     verify_regular(&file)?;
@@ -619,6 +709,15 @@ fn write_all_checked(file: &mut File, mut bytes: &[u8]) -> Result<()> {
 }
 
 fn atomic_commit(file: &File, root: &File, committed_name: &std::ffi::OsStr) -> Result<()> {
+    rename_by_handle(file, root, committed_name, false)
+}
+
+fn rename_by_handle(
+    file: &File,
+    root: &File,
+    committed_name: &std::ffi::OsStr,
+    replace: bool,
+) -> Result<()> {
     let name: Vec<u16> = {
         use std::os::windows::ffi::OsStrExt;
         committed_name.encode_wide().collect()
@@ -627,7 +726,7 @@ fn atomic_commit(file: &File, root: &File, committed_name: &std::ffi::OsStr) -> 
     let mut storage = vec![0_usize; byte_len.div_ceil(size_of::<usize>())];
     let info = storage.as_mut_ptr() as *mut FILE_RENAME_INFO;
     unsafe {
-        (*info).Anonymous.ReplaceIfExists = 0;
+        (*info).Anonymous.ReplaceIfExists = u8::from(replace);
         (*info).RootDirectory = root.as_raw_handle() as HANDLE;
         (*info).FileNameLength = (name.len() * size_of::<u16>()) as u32;
         std::ptr::copy_nonoverlapping(name.as_ptr(), (*info).FileName.as_mut_ptr(), name.len());

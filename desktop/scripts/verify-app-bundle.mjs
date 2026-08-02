@@ -94,7 +94,7 @@ async function verifyPackagedWindowsFileGuard(archive, entries) {
     const bindingStats = await fs.lstat(bindingPath);
     if (!bindingStats.isFile() || bindingStats.isSymbolicLink()) throw new Error("invalid binding");
     const native = createRequire(import.meta.url)(bindingPath);
-    for (const operation of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle"]) {
+    for (const operation of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle", "commitWindowsDownload"]) {
       if (typeof native?.[operation] !== "function") throw new Error("invalid exports");
     }
     root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-file-guard-"));
@@ -119,6 +119,19 @@ async function verifyPackagedWindowsFileGuard(archive, entries) {
     finally { await snapshotHandle.close(); }
     await native.removeWindowsSnapshot(spoolRoot, captured.privatePath);
     if (await native.cleanupWindowsSpool(spoolRoot) !== 0) throw new Error("invalid cleanup");
+    const downloadPath = path.join(root, "download.bin");
+    const temporaryPath = path.join(root, `.yuance-download-${crypto.randomBytes(16).toString("hex")}.tmp`);
+    const parentHandle = await fs.open(root, "r");
+    const temporaryHandle = await fs.open(temporaryPath, "wx", 0o600);
+    try {
+      await temporaryHandle.writeFile(content);
+      await temporaryHandle.sync();
+      await native.commitWindowsDownload({ directory: root, targetPath: downloadPath, temporaryPath, parentFd: parentHandle.fd, temporaryFd: temporaryHandle.fd, targetFd: -1 });
+    } finally {
+      await temporaryHandle.close();
+      await parentHandle.close();
+    }
+    if (!content.equals(await fs.readFile(downloadPath))) throw new Error("invalid download commit");
   } catch {
     throw new Error("Packaged native file guard verification failed.");
   } finally {

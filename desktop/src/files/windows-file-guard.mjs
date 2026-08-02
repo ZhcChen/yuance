@@ -23,7 +23,7 @@ export function loadWindowsFileGuard({
   } catch {
     throw guardError("file_native_guard_required");
   }
-  for (const name of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle"]) {
+  for (const name of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle", "commitWindowsDownload"]) {
     if (typeof native?.[name] !== "function") throw guardError("file_native_guard_required");
   }
   return Object.freeze({
@@ -31,6 +31,7 @@ export function loadWindowsFileGuard({
     cleanupSpool: (spoolRoot) => invoke(native.cleanupWindowsSpool, spoolRoot),
     captureFile: (input) => invoke(native.captureWindowsFile, input),
     removeSnapshot: (spoolRoot, privatePath) => invoke(native.removeWindowsSnapshot, spoolRoot, privatePath),
+    commitDownload: (input) => invoke(native.commitWindowsDownload, input),
     openSnapshot: async ({ spoolRoot, privatePath }) => {
       const handle = await fs.open(privatePath, "r");
       try {
@@ -68,6 +69,8 @@ function mapNativeError(message) {
   if (message.includes("NOT_REGULAR")) return "file_not_regular";
   if (message.includes("SNAPSHOT_WRITE") || message.includes("SNAPSHOT_SIZE") || message.includes("SNAPSHOT_SYNC")) return "file_spool_write_failed";
   if (message.includes("SPOOL") || message.includes("MARKER") || message.includes("OUTSIDE_SPOOL")) return "file_spool_unavailable";
+  if (message.includes("DOWNLOAD_CHANGED")) return "file_download_target_changed";
+  if (message.includes("DOWNLOAD")) return "file_download_commit_failed";
   return "file_unavailable";
 }
 

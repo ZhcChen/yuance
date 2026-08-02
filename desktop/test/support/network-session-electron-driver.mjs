@@ -4,6 +4,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import { createUploadExecutor } from "../../src/files/upload-executor.mjs";
+import { createDownloadExecutor } from "../../src/files/download-executor.mjs";
+import { createDownloadTargetManager } from "../../src/files/download-target.mjs";
 import { loadWindowsFileGuard } from "../../src/files/windows-file-guard.mjs";
 import { enrollDesktop } from "../../src/network/enrollment-client.mjs";
 import {
@@ -80,6 +82,31 @@ async function run() {
       });
       const result = await executor.execute({ fileCapability: "file", transferGrant: "grant", binding: {} });
       process.stdout.write(`${JSON.stringify({ ok: true, result, removed, observations })}\n`);
+      app.exit(0);
+      return;
+    }
+    if (process.argv.includes("--download")) {
+      const content = Buffer.from("yuance-electron-download-canary");
+      const sha256 = createHash("sha256").update(content).digest("hex");
+      const windowsGuard = loadWindowsFileGuard();
+      const targets = [path.join(userDataPath, "new-download.bin"), path.join(userDataPath, "existing-download.bin")];
+      await fs.writeFile(targets[1], "existing-content-must-be-replaced");
+      let targetIndex = 0;
+      const targetManager = createDownloadTargetManager({
+        dialog: { showSaveDialog: async () => ({ canceled: false, filePath: targets[targetIndex++] }) },
+        windowsGuard,
+      });
+      const contract = Object.freeze({ version: 1, purpose: "download", method: "GET", url: `${origin}/download`, origin, headers: Object.freeze([]), expectedBytes: content.length, contentType: "application/octet-stream", sha256, expiresAt: Date.now() + 60_000 });
+      const executor = createDownloadExecutor({
+        grantVault: { consume: () => contract },
+        targetManager,
+        fetchImpl: network.transferFetch,
+      });
+      const first = await executor.execute({ transferGrant: "first", binding: {}, suggestedFilename: "first.bin" });
+      const second = await executor.execute({ transferGrant: "second", binding: {}, suggestedFilename: "second.bin" });
+      const files = await Promise.all(targets.map((target) => fs.readFile(target)));
+      const temporaryFiles = (await fs.readdir(userDataPath)).filter((name) => name.startsWith(".yuance-download-"));
+      process.stdout.write(`${JSON.stringify({ ok: true, results: [first, second], hashes: files.map((value) => createHash("sha256").update(value).digest("hex")), temporaryFiles, observations })}\n`);
       app.exit(0);
       return;
     }
