@@ -80,7 +80,7 @@ async function createBundleFixture({
   }
   const archive = path.join(root, "app.asar");
   if (process.platform === "win32") {
-    await asar.createPackageWithOptions(source, archive, { unpack: "src/native/*.node" });
+    await asar.createPackageWithOptions(source, archive, { unpack: "**/*.node" });
   } else {
     await asar.createPackage(source, archive);
   }
