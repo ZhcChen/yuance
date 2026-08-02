@@ -12,6 +12,7 @@ import {
   shell,
 } from "electron";
 import fs from "node:fs/promises";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -88,6 +89,12 @@ const desktopNetworkSmokePhase = app.isPackaged
   : undefined;
 const desktopNetworkSmokeOrigin = app.isPackaged
   ? process.argv.find((value) => value.startsWith("--desktop-network-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
+const desktopFileSmokePhase = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-file-smoke-phase="))?.split("=", 2)[1]
+  : undefined;
+const desktopFileSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-file-smoke-origin="))?.split("=", 2)[1]
   : undefined;
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
@@ -519,6 +526,82 @@ async function runDesktopNetworkSmoke() {
   })}\n`);
 }
 
+async function runDesktopFileSmoke() {
+  if (!["authorize", "verify"].includes(desktopFileSmokePhase) || !desktopFileSmokeOrigin) throw new Error("packaged file smoke arguments are invalid");
+  const origin = new URL(desktopFileSmokeOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") throw new Error("packaged file smoke origin must be an exact loopback HTTP origin");
+  const userDataPath = app.getPath("userData");
+  const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
+  const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
+  const fileSmokeStorage = process.platform === "darwin" ? createEphemeralFileSmokeStorage() : safeStorage;
+  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: fileSmokeStorage, fs, userDataPath, platform: process.platform, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged File Smoke", clientVersion: app.getVersion() });
+  const initialized = await runtime.initialize();
+  if (desktopFileSmokePhase === "authorize") {
+    if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial file smoke state: ${initialized.status}`);
+    await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-user-code", userCode })}\n`) });
+    const spool = createFileSpool({ rootDirectory: path.join(userDataPath, "File Spool"), platform: process.platform, windowsGuard: loadWindowsFileGuard() });
+    const sourcePath = path.join(userDataPath, "file-smoke-source.txt");
+    await fs.writeFile(sourcePath, "yuance-desktop-file-canary-v1-data", { mode: 0o600 });
+    const snapshot = await spool.capture(sourcePath, { filename: "canary.txt", contentType: "text/plain; charset=utf-8" });
+    const stale = createFileCapabilityVault().issue(snapshot, { ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose: "upload" });
+    await fs.writeFile(path.join(userDataPath, "file-smoke-stale.json"), JSON.stringify({ capability: stale.capability }), { mode: 0o600 });
+    await runtime.logout();
+    runtime.dispose();
+    process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-authorized", prepared: true })}\n`);
+    return;
+  }
+  if (initialized.status !== "authenticated") await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-user-code", userCode })}\n`) });
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(userDataPath, "File Spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  await spool.cleanupOrphans();
+  const stale = JSON.parse(await fs.readFile(path.join(userDataPath, "file-smoke-stale.json"), "utf8"));
+  let staleCapabilityRejected = false;
+  try { createFileCapabilityVault().consume(stale.capability, { ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose: "upload" }); }
+  catch (error) { staleCapabilityRejected = error?.code === "file_capability_invalid"; }
+  await fs.rm(path.join(userDataPath, "file-smoke-stale.json"), { force: true });
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const registry = createOperationRegistry();
+  const binding = (purpose) => Object.freeze({ ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose });
+  const sourcePath = path.join(userDataPath, "file-smoke-source.txt");
+  const downloadPath = path.join(userDataPath, "file-smoke-download.txt");
+  const selected = await createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sourcePath] }) }, spool, vault: fileVault }).choose({ binding: binding("upload") });
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const uploadContract = parseTransferContract(await rest.execute("file.canaryupload", {}), { apiOrigin: enrolled.profile.origin, expectedPurpose: "upload", allowLoopbackHttp: true });
+  const uploadGrant = grantVault.issue(uploadContract, binding("upload")).grant;
+  const uploaded = await createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot }).execute({ fileCapability: selected.capability, transferGrant: uploadGrant, binding: binding("upload") });
+  const downloadContract = parseTransferContract(await rest.execute("file.canarydownload", {}), { apiOrigin: enrolled.profile.origin, expectedPurpose: "download", allowLoopbackHttp: true });
+  const downloadGrant = grantVault.issue(downloadContract, binding("download")).grant;
+  const downloaded = await createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog: { showSaveDialog: async () => ({ canceled: false, filePath: downloadPath }) }, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry }).execute({ suggestedFilename: "canary.txt", transferGrant: downloadGrant, binding: binding("download") });
+  const sourceBytes = await fs.readFile(sourcePath);
+  const downloadedBytes = await fs.readFile(downloadPath);
+  await runtime.logout();
+  runtime.dispose();
+  await fileVault.invalidateAll();
+  const spoolFiles = (await fs.readdir(spoolRoot).catch(() => [])).filter((name) => /^(?:snapshot-|\.capture-)/u.test(name));
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-smoke", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: sourceBytes.length, hashMatch: createHash("sha256").update(sourceBytes).digest("hex") === createHash("sha256").update(downloadedBytes).digest("hex"), staleCapabilityRejected, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
+}
+
+function createEphemeralFileSmokeStorage() {
+  const key = randomBytes(32);
+  return Object.freeze({
+    isEncryptionAvailable: () => true,
+    encryptString(value) {
+      const nonce = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", key, nonce);
+      const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+      return Buffer.concat([nonce, cipher.getAuthTag(), encrypted]);
+    },
+    decryptString(value) {
+      const bytes = Buffer.from(value);
+      const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
+      decipher.setAuthTag(bytes.subarray(12, 28));
+      return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
+    },
+  });
+}
+
 function writeDesktopNetworkSmokeStage(stage) {
   process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-stage", stage })}\n`);
 }
@@ -667,7 +750,7 @@ async function disposeCurrentFileRuntime() {
   await current?.state.invalidateAll();
 }
 
-app.setName(desktopNetworkSmokePhase ? `${appIdentity.displayName} Network Smoke` : appIdentity.displayName);
+app.setName(desktopNetworkSmokePhase ? `${appIdentity.displayName} Network Smoke` : desktopFileSmokePhase ? `${appIdentity.displayName} Network Smoke` : appIdentity.displayName);
 app.setAppUserModelId(appIdentity.appUserModelId);
 if (isDevRuntime) {
   const developmentDataPaths = resolveDevelopmentDataPaths(app.getPath("appData"));
@@ -750,6 +833,15 @@ if (singleInstanceProbe) {
   app.whenReady().then(async () => {
     try { await runDesktopNetworkSmoke(); app.quit(); }
     catch (error) { process.stderr.write(`desktop network smoke failed: ${error.message}\n`); app.exit(1); }
+  });
+} else if (desktopFileSmokePhase) {
+  const smokeProfile = process.argv.find((value) => value.startsWith("--desktop-file-smoke-profile="))?.split("=", 2)[1];
+  if (!smokeProfile || !path.isAbsolute(smokeProfile)) throw new Error("packaged file smoke profile must be absolute");
+  app.setPath("userData", smokeProfile);
+  app.setPath("sessionData", path.join(smokeProfile, "Session Data"));
+  app.whenReady().then(async () => {
+    try { await runDesktopFileSmoke(); app.quit(); }
+    catch (error) { process.stderr.write(`desktop file smoke failed: ${error.message}\n`); app.exit(1); }
   });
 } else {
   ipcMain.handle("yuance:notify", notifyFromRenderer);
