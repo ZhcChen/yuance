@@ -9,9 +9,8 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{
-    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS,
-    ERROR_FILE_EXISTS, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED, ERROR_SUCCESS, GENERIC_READ,
-    GENERIC_WRITE, GetLastError, HANDLE,
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_SUCCESS, GENERIC_READ,
+    GENERIC_WRITE, HANDLE,
 };
 use windows_sys::Win32::Security::Authorization::{SE_FILE_OBJECT, SetSecurityInfo};
 use windows_sys::Win32::Security::{
@@ -24,15 +23,26 @@ use windows_sys::Win32::Storage::FileSystem::{
     DELETE, FILE_ALL_ACCESS, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
     FILE_BASIC_INFO, FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS,
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_FLAG_SEQUENTIAL_SCAN, FILE_ID_INFO, FILE_NAME_NORMALIZED,
-    FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO,
-    FileAttributeTagInfo, FileBasicInfo, FileDispositionInfo, FileIdInfo, FileRenameInfo,
-    FileStandardInfo, FlushFileBuffers, GetFileInformationByHandleEx, GetFinalPathNameByHandleW,
-    SetFileInformationByHandle, VOLUME_NAME_DOS, WRITE_DAC,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FileAttributeTagInfo,
+    FileBasicInfo, FileDispositionInfo, FileIdInfo, FileStandardInfo, FlushFileBuffers,
+    GetFileInformationByHandleEx, GetFinalPathNameByHandleW, SetFileInformationByHandle,
+    VOLUME_NAME_DOS, WRITE_DAC,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
 unsafe extern "C" {
     fn _get_osfhandle(fd: i32) -> isize;
+}
+
+#[link(name = "ntdll")]
+unsafe extern "system" {
+    fn NtSetInformationFile(
+        file_handle: HANDLE,
+        io_status_block: *mut NtIoStatusBlock,
+        file_information: *const c_void,
+        length: u32,
+        file_information_class: i32,
+    ) -> i32;
 }
 
 const STAGING_PREFIX: &str = ".yuance-staging-";
@@ -52,6 +62,22 @@ struct Identity {
     last_write: i64,
     change_time: i64,
 }
+
+#[repr(C)]
+struct NtIoStatusBlock {
+    status_or_pointer: usize,
+    information: usize,
+}
+
+#[repr(C)]
+struct NtFileRenameInformation {
+    replace_if_exists: u32,
+    root_directory: HANDLE,
+    file_name_length: u32,
+    file_name: [u16; 1],
+}
+
+const FILE_RENAME_INFORMATION_CLASS: i32 = 10;
 
 pub(super) fn secure_spool_root(spool_root: &str) -> Result<()> {
     validate_windows_path(Path::new(spool_root), "ERR_FILE_GUARD_SPOOL_INVALID")?;
@@ -764,37 +790,32 @@ fn rename_by_handle(
         use std::os::windows::ffi::OsStrExt;
         committed_name.encode_wide().collect()
     };
-    let byte_len = size_of::<FILE_RENAME_INFO>() + name.len() * size_of::<u16>();
+    let byte_len = size_of::<NtFileRenameInformation>() + name.len() * size_of::<u16>();
     let mut storage = vec![0_usize; byte_len.div_ceil(size_of::<usize>())];
-    let info = storage.as_mut_ptr() as *mut FILE_RENAME_INFO;
+    let info = storage.as_mut_ptr() as *mut NtFileRenameInformation;
     unsafe {
-        (*info).Anonymous.ReplaceIfExists = u8::from(replace);
-        (*info).RootDirectory = root.as_raw_handle() as HANDLE;
-        (*info).FileNameLength = (name.len() * size_of::<u16>()) as u32;
-        std::ptr::copy_nonoverlapping(name.as_ptr(), (*info).FileName.as_mut_ptr(), name.len());
+        (*info).replace_if_exists = u32::from(replace);
+        (*info).root_directory = root.as_raw_handle() as HANDLE;
+        (*info).file_name_length = (name.len() * size_of::<u16>()) as u32;
+        std::ptr::copy_nonoverlapping(name.as_ptr(), (*info).file_name.as_mut_ptr(), name.len());
     }
-    let ok = unsafe {
-        SetFileInformationByHandle(
+    let mut io_status = NtIoStatusBlock {
+        status_or_pointer: 0,
+        information: 0,
+    };
+    let status = unsafe {
+        NtSetInformationFile(
             file.as_raw_handle() as HANDLE,
-            FileRenameInfo,
+            &mut io_status,
             info as *const c_void,
             byte_len as u32,
+            FILE_RENAME_INFORMATION_CLASS,
         )
     };
-    if ok == 0 {
-        Err(stable_error(rename_failure_code()))
+    if status < 0 {
+        Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_COMMIT"))
     } else {
         Ok(())
-    }
-}
-
-fn rename_failure_code() -> &'static str {
-    match unsafe { GetLastError() } {
-        ERROR_ACCESS_DENIED => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_ACCESS",
-        ERROR_INVALID_PARAMETER => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_INVALID",
-        ERROR_NOT_SUPPORTED => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_UNSUPPORTED",
-        ERROR_ALREADY_EXISTS | ERROR_FILE_EXISTS => "ERR_FILE_GUARD_SNAPSHOT_COMMIT_EXISTS",
-        _ => "ERR_FILE_GUARD_SNAPSHOT_COMMIT",
     }
 }
 
