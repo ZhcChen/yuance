@@ -543,7 +543,7 @@ pub(crate) async fn logout_device_session(
     )
 }
 
-async fn require_device_access(
+pub(crate) async fn require_device_access(
     state: &AppState,
     headers: &HeaderMap,
     context: &audit::AuditContext,

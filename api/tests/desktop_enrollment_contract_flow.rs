@@ -30,7 +30,8 @@ async fn enrollment_get_and_head_publish_a_stable_strict_contract() {
             "server_instance_id": "desktop-enrollment-test",
             "capabilities": [
                 "device-authorization.v1",
-                "device-session.probe.v1"
+                "device-session.probe.v1",
+                "device-file-transfer.canary.v1"
             ]
         })
     );
@@ -102,7 +103,7 @@ async fn enrollment_rejects_wrong_methods_and_path_confusion() {
 }
 
 #[test]
-fn openapi_matches_enrollment_and_does_not_publish_device_sse_early() {
+fn openapi_matches_enrollment_and_device_capabilities() {
     let document: Value =
         serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
             .expect("OpenAPI document should parse");
@@ -138,10 +139,11 @@ fn openapi_matches_enrollment_and_does_not_publish_device_sse_early() {
                     "type": "array",
                     "prefixItems": [
                         { "const": "device-authorization.v1" },
-                        { "const": "device-session.probe.v1" }
+                        { "const": "device-session.probe.v1" },
+                        { "const": "device-file-transfer.canary.v1" }
                     ],
-                    "minItems": 2,
-                    "maxItems": 2
+                    "minItems": 3,
+                    "maxItems": 3
                 }
             }
         })
@@ -150,6 +152,33 @@ fn openapi_matches_enrollment_and_does_not_publish_device_sse_early() {
         document["paths"]["/api/v1/device-session/events"]["get"]["security"],
         serde_json::json!([{ "deviceAccess": [] }])
     );
+    for (path, method) in [
+        ("/api/v1/device-file-transfer/canary/upload-request", "post"),
+        (
+            "/api/v1/device-file-transfer/canary/download-request",
+            "get",
+        ),
+    ] {
+        assert_eq!(
+            document["paths"][path][method]["security"],
+            serde_json::json!([{ "deviceAccess": [] }])
+        );
+        assert_eq!(
+            document["paths"][path][method]["responses"]["200"]["content"]["application/json"]["schema"]
+                ["$ref"],
+            "#/components/schemas/DeviceFileTransferEnvelope"
+        );
+    }
+    for (path, method) in [
+        ("/api/v1/device-file-transfer/canary/upload", "put"),
+        ("/api/v1/device-file-transfer/canary/download", "get"),
+    ] {
+        assert_eq!(document["paths"][path][method]["security"], json!([]));
+        assert_eq!(
+            document["paths"][path][method]["parameters"][0]["name"],
+            "grant"
+        );
+    }
 }
 
 fn test_state() -> AppState {

@@ -595,6 +595,22 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/device-session/events",
             get(web::device_auth::device_session_control),
         )
+        .route(
+            "/api/v1/device-file-transfer/canary/upload-request",
+            post(web::device_file_transfer::canary_upload_request),
+        )
+        .route(
+            "/api/v1/device-file-transfer/canary/download-request",
+            get(web::device_file_transfer::canary_download_request),
+        )
+        .route(
+            "/api/v1/device-file-transfer/canary/upload",
+            put(web::device_file_transfer::canary_upload),
+        )
+        .route(
+            "/api/v1/device-file-transfer/canary/download",
+            get(web::device_file_transfer::canary_download),
+        )
         .route("/api/v1/auth/me", get(web::api::me))
         .route("/api/v1/auth/csrf", get(web::auth_api::csrf_token))
         .route("/api/v1/auth/logout", post(web::api::logout))
@@ -953,9 +969,15 @@ async fn device_auth_boundary_middleware(
         "/api/v1/device-authorizations" => (120, 20, true, true, false),
         "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
         "/api/v1/device-sessions/refresh" => (600, 120, true, true, false),
-        "/api/v1/device-session" | "/api/v1/device-session/logout" | "/api/v1/device-session/events" => {
+        "/api/v1/device-session"
+        | "/api/v1/device-session/logout"
+        | "/api/v1/device-session/events"
+        | "/api/v1/device-file-transfer/canary/upload-request"
+        | "/api/v1/device-file-transfer/canary/download-request" => {
             (1200, 120, true, false, false)
         }
+        "/api/v1/device-file-transfer/canary/upload"
+        | "/api/v1/device-file-transfer/canary/download" => (1200, 120, true, true, false),
         "/web/device-authorization"
         | "/web/device-authorization/approve"
         | "/web/device-authorization/deny" => (600, 30, false, false, true),

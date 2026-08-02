@@ -571,6 +571,132 @@
         }
       }
     },
+    "/api/v1/device-file-transfer/canary/upload-request": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "签发 Desktop 文件上传 canary 请求",
+        "description": "使用短期 device access token 为当前 credential family 签发固定 34 字节 canary 对象的 60 秒上传请求。不接受 request body、URL、object key、header 或其它调用方可控传输字段。",
+        "security": [
+          { "deviceAccess": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定上传 canary 请求",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeviceFileTransferEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
+          "500": { "$ref": "#/components/responses/DeviceSessionError" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/download-request": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "签发 Desktop 文件下载 canary 请求",
+        "description": "使用短期 device access token 为当前 credential family 签发固定 canary 对象的 60 秒下载请求。不接受 URL、object key、header 或其它调用方可控传输字段。",
+        "security": [
+          { "deviceAccess": [] }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定下载 canary 请求",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/DeviceFileTransferEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" },
+          "500": { "$ref": "#/components/responses/DeviceSessionError" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/upload": {
+      "put": {
+        "tags": ["auth"],
+        "summary": "执行已签发的 Desktop canary 上传",
+        "description": "仅接受 upload-request 返回的短期加密 grant 和固定 34 字节 canary 内容。此请求不接受 Cookie、Authorization 或其它 ambient credential。",
+        "security": [],
+        "parameters": [
+          {
+            "name": "grant",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 32 }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain; charset=utf-8": {
+              "schema": { "type": "string", "minLength": 34, "maxLength": 34 }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "固定 canary 内容已写入",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" }
+        }
+      }
+    },
+    "/api/v1/device-file-transfer/canary/download": {
+      "get": {
+        "tags": ["auth"],
+        "summary": "执行已签发的 Desktop canary 下载",
+        "description": "仅接受 download-request 返回的短期加密 grant，返回当前 credential family 的固定 canary 内容。此请求不接受 Cookie、Authorization 或其它 ambient credential。",
+        "security": [],
+        "parameters": [
+          {
+            "name": "grant",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "minLength": 32 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "固定 34 字节 canary 内容",
+            "headers": {
+              "Cache-Control": { "$ref": "#/components/headers/SensitiveNoStore" },
+              "Content-Type": {
+                "schema": { "type": "string", "const": "text/plain; charset=utf-8" }
+              }
+            },
+            "content": {
+              "text/plain; charset=utf-8": {
+                "schema": { "type": "string", "minLength": 34, "maxLength": 34 }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/DeviceSessionError" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "429": { "$ref": "#/components/responses/DeviceAuthorizationRateLimited" }
+        }
+      }
+    },
     "/api/v1/me/tokens": {
       "get": {
         "tags": [
@@ -1709,10 +1835,13 @@
               },
               {
                 "const": "device-session.probe.v1"
+              },
+              {
+                "const": "device-file-transfer.canary.v1"
               }
             ],
-            "minItems": 2,
-            "maxItems": 2
+            "minItems": 3,
+            "maxItems": 3
           }
         }
       },
@@ -2095,6 +2224,65 @@
                 "type": "string",
                 "format": "uuid"
               }
+            }
+          }
+        }
+      },
+      "DeviceFileTransferEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "schema_version",
+              "purpose",
+              "request",
+              "expected_bytes",
+              "content_type",
+              "sha256",
+              "expires_in_seconds",
+              "expires_at"
+            ],
+            "properties": {
+              "schema_version": { "type": "integer", "const": 1 },
+              "purpose": { "type": "string", "enum": ["upload", "download"] },
+              "request": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["method", "url", "headers"],
+                "properties": {
+                  "method": { "type": "string", "enum": ["PUT", "GET"] },
+                  "url": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^(https://|/api/v1/device-file-transfer/canary/(upload|download)\\?)"
+                  },
+                  "headers": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "array",
+                      "prefixItems": [
+                        { "type": "string", "minLength": 1, "maxLength": 128 },
+                        { "type": "string", "maxLength": 4096 }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2
+                    }
+                  }
+                }
+              },
+              "expected_bytes": { "type": "integer", "const": 34 },
+              "content_type": { "type": "string", "const": "text/plain; charset=utf-8" },
+              "sha256": {
+                "type": "string",
+                "const": "b8cc33ab99db3adf840e78e7743d983527909af20a7a61d6e454dc15747c404b"
+              },
+              "expires_in_seconds": { "type": "integer", "const": 60 },
+              "expires_at": { "type": "string", "format": "date-time" }
             }
           }
         }
