@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::ffi::c_void;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::mem::{offset_of, size_of, zeroed};
+use std::mem::{size_of, zeroed};
 use std::os::windows::fs::OpenOptionsExt;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::{Path, PathBuf};
@@ -764,7 +764,7 @@ fn rename_by_handle(
         use std::os::windows::ffi::OsStrExt;
         committed_name.encode_wide().collect()
     };
-    let byte_len = offset_of!(FILE_RENAME_INFO, FileName) + name.len() * size_of::<u16>();
+    let byte_len = size_of::<FILE_RENAME_INFO>() + name.len() * size_of::<u16>();
     let mut storage = vec![0_usize; byte_len.div_ceil(size_of::<usize>())];
     let info = storage.as_mut_ptr() as *mut FILE_RENAME_INFO;
     unsafe {
