@@ -6,6 +6,8 @@ import test from "node:test";
 
 import { createFileSpool } from "../src/files/file-spool.mjs";
 
+const posixTest = process.platform === "win32" ? test.skip : test;
+
 async function fixture(t, limits = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -14,7 +16,7 @@ async function fixture(t, limits = {}) {
   return { root, spool };
 }
 
-test("streams an immutable private snapshot with size and sha256", async (t) => {
+posixTest("streams an immutable private snapshot with size and sha256", async (t) => {
   const { root, spool } = await fixture(t);
   const source = path.join(root, "plan.txt");
   await fs.writeFile(source, "file snapshot");
@@ -34,7 +36,7 @@ test("streams an immutable private snapshot with size and sha256", async (t) => 
   }
 });
 
-test("preserves canonical MIME parameters and rejects injected values", async (t) => {
+posixTest("preserves canonical MIME parameters and rejects injected values", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-mime-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, "source.txt");
@@ -48,7 +50,7 @@ test("preserves canonical MIME parameters and rejects injected values", async (t
   await rejected.remove();
 });
 
-test("rejects files above fixed limits and leaves no partial snapshot", async (t) => {
+posixTest("rejects files above fixed limits and leaves no partial snapshot", async (t) => {
   const { root, spool } = await fixture(t, { maxFileBytes: 4, maxTotalBytes: 6 });
   const source = path.join(root, "large.bin");
   await fs.writeFile(source, "12345");
@@ -56,7 +58,7 @@ test("rejects files above fixed limits and leaves no partial snapshot", async (t
   assert.deepEqual(await fs.readdir(spool.rootDirectory), [".yuance-file-spool-v1"]);
 });
 
-test("rejects path replacement during capture and removes the partial snapshot", async (t) => {
+posixTest("rejects path replacement during capture and removes the partial snapshot", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-race-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, "source.bin");
@@ -91,7 +93,7 @@ test("rejects path replacement during capture and removes the partial snapshot",
   assert.deepEqual(await fs.readdir(spool.rootDirectory), [".yuance-file-spool-v1"]);
 });
 
-test("rejects deletion, growth, truncation, and same-size modification during capture", async (t) => {
+posixTest("rejects deletion, growth, truncation, and same-size modification during capture", async (t) => {
   for (const mutation of ["delete", "grow", "truncate", "same-size"]) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), `yuance-file-spool-${mutation}-`));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -129,7 +131,7 @@ test("rejects deletion, growth, truncation, and same-size modification during ca
   }
 });
 
-test("cleanup removes only owned snapshot files and preserves unknown entries", async (t) => {
+posixTest("cleanup removes only owned snapshot files and preserves unknown entries", async (t) => {
   const { spool } = await fixture(t);
   const owned = path.join(spool.rootDirectory, "snapshot-0123456789abcdef0123456789abcdef.bin");
   const unknown = path.join(spool.rootDirectory, "keep.txt");
@@ -139,7 +141,7 @@ test("cleanup removes only owned snapshot files and preserves unknown entries", 
   assert.deepEqual((await fs.readdir(spool.rootDirectory)).sort(), [".yuance-file-spool-v1", "keep.txt"]);
 });
 
-test("retries partial writes until the complete snapshot is durable", async (t) => {
+posixTest("retries partial writes until the complete snapshot is durable", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-short-write-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, "source.bin");
@@ -169,7 +171,7 @@ test("retries partial writes until the complete snapshot is durable", async (t) 
   assert.equal(await fs.readFile(snapshot.privatePath, "utf8"), "complete snapshot bytes");
 });
 
-test("refuses to claim an existing unmarked directory", async (t) => {
+posixTest("refuses to claim an existing unmarked directory", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-unowned-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const spoolRoot = path.join(root, "existing");
@@ -180,7 +182,7 @@ test("refuses to claim an existing unmarked directory", async (t) => {
   assert.equal(await fs.readFile(path.join(spoolRoot, "snapshot-0123456789abcdef0123456789abcdef.bin"), "utf8"), "foreign");
 });
 
-test("rolls back a newly created spool when marker initialization fails", async (t) => {
+posixTest("rolls back a newly created spool when marker initialization fails", async (t) => {
   for (const failure of ["writeFile", "sync"]) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), `yuance-file-spool-init-${failure}-`));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -214,7 +216,7 @@ test("rolls back a newly created spool when marker initialization fails", async 
   }
 });
 
-test("serializes startup cleanup before capture", async (t) => {
+posixTest("serializes startup cleanup before capture", async (t) => {
   const { root, spool } = await fixture(t);
   const orphan = path.join(spool.rootDirectory, "snapshot-0123456789abcdef0123456789abcdef.bin");
   const source = path.join(root, "source.txt");

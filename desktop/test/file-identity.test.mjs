@@ -9,8 +9,9 @@ import test from "node:test";
 import { openRegularFile, sameFileIdentity } from "../src/files/file-identity.mjs";
 
 const execFileAsync = promisify(execFile);
+const posixTest = process.platform === "win32" ? test.skip : test;
 
-test("opens a regular file and captures stable private identity", async (t) => {
+posixTest("opens a regular file and captures stable private identity", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-identity-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, "report.txt");
@@ -23,7 +24,7 @@ test("opens a regular file and captures stable private identity", async (t) => {
   assert.deepEqual(Object.keys(opened).sort(), ["currentIdentity", "handle", "identity"]);
 });
 
-test("rejects directories and symbolic links without following them", async (t) => {
+posixTest("rejects directories and symbolic links without following them", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-identity-link-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const source = path.join(root, "source.txt");

@@ -6,6 +6,8 @@ import test from "node:test";
 
 import { createDownloadTargetManager, sanitizeDownloadFilename } from "../src/files/download-target.mjs";
 
+const posixTest = process.platform === "win32" ? test.skip : test;
+
 test("sanitizes traversal, reserved names, ADS, controls, and oversized suggestions", () => {
   assert.equal(sanitizeDownloadFilename("../report.txt"), "report.txt");
   assert.equal(sanitizeDownloadFilename("..\\report.txt"), "report.txt");
@@ -15,12 +17,12 @@ test("sanitizes traversal, reserved names, ADS, controls, and oversized suggesti
 
 test("uses a fixed save dialog and cancellation creates no target", async () => {
   const calls = [];
-  const manager = createDownloadTargetManager({ dialog: { showSaveDialog: async (...args) => { calls.push(args); return { canceled: true }; } } });
+  const manager = createDownloadTargetManager({ dialog: { showSaveDialog: async (...args) => { calls.push(args); return { canceled: true }; } }, platform: "linux" });
   assert.equal(await manager.choose({ window: {}, suggestedFilename: "../report.txt" }), null);
   assert.deepEqual(calls[0][1], { title: "保存文件", defaultPath: "report.txt", properties: ["dontAddToRecent", "showOverwriteConfirmation"] });
 });
 
-test("returns the sanitized final dialog filename instead of the suggestion", async (t) => {
+posixTest("returns the sanitized final dialog filename instead of the suggestion", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-download-name-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const manager = createDownloadTargetManager({ dialog: { showSaveDialog: async () => ({ canceled: false, filePath: path.join(root, "chosen.txt") }) } });
@@ -29,7 +31,7 @@ test("returns the sanitized final dialog filename instead of the suggestion", as
   await target.cleanup();
 });
 
-test("atomically creates a new file and replaces an existing regular file", async (t) => {
+posixTest("atomically creates a new file and replaces an existing regular file", async (t) => {
   for (const existing of [false, true]) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-download-target-"));
     t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -45,7 +47,7 @@ test("atomically creates a new file and replaces an existing regular file", asyn
   }
 });
 
-test("rejects symlinks, directories, and target replacement without damaging replacement", async (t) => {
+posixTest("rejects symlinks, directories, and target replacement without damaging replacement", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-download-target-race-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const targetPath = path.join(root, "report.txt");
@@ -70,7 +72,7 @@ test("rejects symlinks, directories, and target replacement without damaging rep
 });
 
 test("rejects non-absolute dialog output and Windows reserved path forms", async () => {
-  const manager = createDownloadTargetManager({ dialog: { showSaveDialog: async () => ({ canceled: false, filePath: "relative.txt" }) } });
+  const manager = createDownloadTargetManager({ dialog: { showSaveDialog: async () => ({ canceled: false, filePath: "relative.txt" }) }, platform: "linux" });
   await assert.rejects(manager.choose({ suggestedFilename: "report.txt" }), (error) => error.code === "file_download_target_invalid");
   assert.throws(() => createDownloadTargetManager({ dialog: { showSaveDialog() {} }, platform: "win32" }), (error) => error.code === "file_native_guard_required");
 });

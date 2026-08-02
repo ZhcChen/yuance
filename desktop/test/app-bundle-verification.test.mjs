@@ -3,10 +3,15 @@ import asar from "@electron/asar";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { createResourceManifest } from "../src/protocol/resource-manifest.mjs";
 import { verifyAppBundle } from "../scripts/verify-app-bundle.mjs";
+
+const execFileAsync = promisify(execFile);
 
 async function waitForArchiveFixture(archive) {
   let lastError;
@@ -91,9 +96,13 @@ async function createBundleFixture({
 test("verifies renderer bytes, required host files, and CSP in the actual ASAR", async (context) => {
   const fixture = await createBundleFixture();
   context.after(() => fs.rm(fixture.root, { recursive: true, force: true }));
-  const result = await verifyAppBundle(fixture.archive);
-  assert.equal(result.resourceCount, 2);
-  assert.equal(result.archive, fixture.archive);
+  if (process.platform === "win32") {
+    await execFileAsync(process.execPath, [fileURLToPath(new URL("../scripts/verify-app-bundle.mjs", import.meta.url)), fixture.archive]);
+  } else {
+    const result = await verifyAppBundle(fixture.archive);
+    assert.equal(result.resourceCount, 2);
+    assert.equal(result.archive, fixture.archive);
+  }
 });
 
 test("rejects manifest integrity mismatch from the actual ASAR", async (context) => {
