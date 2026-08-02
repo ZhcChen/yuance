@@ -91,6 +91,7 @@ test("access lease stays inside a callback and rejects stale results", async () 
   });
   assert.equal(result, "ok");
   assert.deepEqual(leaseKeys, ["accessExpiresAt", "accessToken", "epoch"]);
+  assert.deepEqual(runtime.fileBindingVersion(), { profileEpoch: runtime.networkEpoch(), authorizationVersion: 7 });
 
   await assert.rejects(
     runtime.withAccessLease(async () => {
@@ -184,7 +185,7 @@ function runtimeFixture({ coordinator = fakeCoordinator(), fs = fakeFs(), ...ove
 }
 
 function fakeCoordinator({ status = "unauthenticated" } = {}) {
-  let snapshot = { status };
+  let snapshot = { status, ...(status === "authenticated" ? { authorizationVersion: 7 } : {}) };
   let listener;
   return {
     initializeCalls: 0,

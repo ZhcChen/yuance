@@ -6,7 +6,7 @@ import DesktopApp from "./app.jsx";
 import { createDesktopAuthState } from "./platform/auth-state.js";
 import { createDesktopNetworkState } from "./platform/network-state.js";
 import { createDesktopRouter } from "./platform/router.js";
-import { createUnavailableFileAdapter } from "./platform/unavailable.js";
+import { createDesktopFiles } from "./platform/files.js";
 import "./app.css";
 
 const rootElement = document.getElementById("root");
@@ -17,7 +17,7 @@ const services = Object.freeze({
   auth: createDesktopAuthState(bridge?.hostState, bridge?.auth),
   router: createDesktopRouter(),
   network: createDesktopNetworkState(bridge?.network),
-  files: createUnavailableFileAdapter(),
+  files: createDesktopFiles(bridge?.files),
 });
 
 ReactDOM.createRoot(rootElement).render(

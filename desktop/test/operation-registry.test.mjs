@@ -3,13 +3,20 @@ import test from "node:test";
 
 import { createOperationRegistry } from "../src/network/operation-registry.mjs";
 
-test("registers only the fixed parameter-free session probe", () => {
+test("registers only fixed parameter-free Device operations", () => {
   const registry = createOperationRegistry();
   assert.deepEqual(registry.resolve("session.probe", {}), {
     idempotent: true,
     method: "GET",
     path: "/api/v1/device-session",
     parse: registry.resolve("session.probe", {}).parse,
+  });
+  assert.deepEqual(Object.fromEntries(["upload", "download"].map((purpose) => {
+    const operation = registry.resolve(`file.canary${purpose}`, {});
+    return [purpose, { idempotent: operation.idempotent, method: operation.method, path: operation.path }];
+  })), {
+    upload: { idempotent: false, method: "POST", path: "/api/v1/device-file-transfer/canary/upload-request" },
+    download: { idempotent: true, method: "GET", path: "/api/v1/device-file-transfer/canary/download-request" },
   });
   for (const [name, input] of [
     ["session.unknown", {}],

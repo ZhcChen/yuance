@@ -34,6 +34,8 @@ import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
 import { createHostStatePublisher } from "./ipc/host-state.mjs";
 import { registerAuthCommandHandlers } from "./ipc/auth-commands.mjs";
 import { createNetworkStatePublisher } from "./ipc/network-state.mjs";
+import { registerFileCommandHandlers } from "./ipc/file-commands.mjs";
+import { createFileStateController } from "./ipc/file-state.mjs";
 import {
   createIpcSenderPolicy,
   createRendererReadinessTracker,
@@ -46,6 +48,16 @@ import { createNetworkCoordinator } from "./network/network-coordinator.mjs";
 import { bindNetworkPowerLifecycle } from "./network/power-lifecycle.mjs";
 import { createRestTransport } from "./network/rest-transport.mjs";
 import { createSseClient } from "./network/sse-client.mjs";
+import { createOperationRegistry } from "./network/operation-registry.mjs";
+import { createFileCapabilityVault } from "./files/file-capability-vault.mjs";
+import { createFileSpool } from "./files/file-spool.mjs";
+import { createFileDialog } from "./files/file-dialog.mjs";
+import { createTransferGrantVault } from "./files/transfer-grant-vault.mjs";
+import { parseTransferContract } from "./files/transfer-contract.mjs";
+import { createUploadExecutor } from "./files/upload-executor.mjs";
+import { createDownloadExecutor } from "./files/download-executor.mjs";
+import { createDownloadTargetManager } from "./files/download-target.mjs";
+import { loadWindowsFileGuard } from "./files/windows-file-guard.mjs";
 import {
   browserWindowWebPreferences,
   decideNavigation,
@@ -88,11 +100,16 @@ const activeNotifications = new Set();
 let mainWindow = null;
 let credentialRuntime = null;
 let networkCoordinator = null;
+let fileRuntime = null;
 let credentialRuntimeGeneration = 0;
 const hostStatePublisher = createHostStatePublisher();
 const networkStatePublisher = createNetworkStatePublisher();
 let disposeAuthCommands = () => {};
 let disposeNetworkPowerLifecycle = () => {};
+let disposeFileCommands = () => {};
+let disposeFilePowerLifecycle = () => {};
+let quitCleanupStarted = false;
+let quitCleanupComplete = false;
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
 const assertTrustedIpcSender = createIpcSenderPolicy({
   getMainWindow: () => mainWindow,
@@ -219,12 +236,14 @@ function createMainWindow() {
   });
   window.webContents.on("render-process-gone", () => {
     rendererReadiness.reset();
+    fileRuntime?.state.invalidateAll().catch(() => {});
   });
   window.on("closed", () => {
     rendererReadiness.reset();
     if (mainWindow === window) {
       mainWindow = null;
       networkCoordinator?.stop();
+      fileRuntime?.state.invalidateAll().catch(() => {});
     }
   });
   window.loadURL(rendererTarget.url).catch((error) => {
@@ -557,11 +576,15 @@ async function initializeDesktopCredentialRuntime() {
     installationId: () => installationId(userDataPath),
     deviceName: `${appIdentity.displayName} (${process.platform})`,
     clientVersion: app.getVersion(),
-    onNetworkInvalidated: () => coordinator?.invalidate(),
+    onNetworkInvalidated: () => {
+      coordinator?.invalidate();
+      fileRuntime?.state.invalidateAll().catch(() => {});
+    },
     onPublicState: (state) => {
       hostStatePublisher.update(state);
       hostStatePublisher.publishTo(mainWindow);
       if (state.status === "authenticated") coordinator?.start();
+      else fileRuntime?.state.invalidateAll().catch(() => {});
     },
   });
   const restTransport = createRestTransport({
@@ -598,6 +621,50 @@ async function initializeDesktopCredentialRuntime() {
   } else if (initialized.status === "authenticated") {
     coordinator.start();
   }
+  if (generation === credentialRuntimeGeneration) await initializeFileRuntime({ generation, runtime, network, profile: enrolled.profile, restTransport });
+}
+
+async function initializeFileRuntime({ generation, runtime, network, profile, restTransport }) {
+  await disposeCurrentFileRuntime();
+  if (generation !== credentialRuntimeGeneration) return;
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(app.getPath("userData"), "File Spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  await spool.cleanupOrphans();
+  if (generation !== credentialRuntimeGeneration) return;
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const registry = createOperationRegistry();
+  const state = createFileStateController({ fileVault, grantVault, registry });
+  const fileDialog = createFileDialog({ dialog, spool, vault: fileVault });
+  const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
+  const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
+  const getBinding = (event, purpose) => Object.freeze({
+    ...runtime.fileBindingVersion(),
+    webContentsId: event.sender.id,
+    frameRoutingId: event.senderFrame.routingId,
+    purpose,
+  });
+  const issueTransferGrant = async (purpose, binding) => {
+    const raw = await restTransport.execute(`file.canary${purpose}`, {});
+    const contract = parseTransferContract(raw, { apiOrigin: profile.origin, expectedPurpose: purpose, allowLoopbackHttp: isDevRuntime });
+    return grantVault.issue(contract, binding).grant;
+  };
+  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor });
+  const onSuspend = () => { state.invalidateAll().catch(() => {}); };
+  powerMonitor.on("suspend", onSuspend);
+  disposeFilePowerLifecycle = () => powerMonitor.removeListener("suspend", onSuspend);
+  fileRuntime = Object.freeze({ state });
+}
+
+async function disposeCurrentFileRuntime() {
+  disposeFileCommands();
+  disposeFileCommands = () => {};
+  disposeFilePowerLifecycle();
+  disposeFilePowerLifecycle = () => {};
+  const current = fileRuntime;
+  fileRuntime = null;
+  await current?.state.invalidateAll();
 }
 
 app.setName(desktopNetworkSmokePhase ? `${appIdentity.displayName} Network Smoke` : appIdentity.displayName);
@@ -770,7 +837,11 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (event) => {
+  if (quitCleanupComplete) return;
+  event.preventDefault();
+  if (quitCleanupStarted) return;
+  quitCleanupStarted = true;
   credentialRuntimeGeneration += 1;
   disposeNetworkPowerLifecycle();
   disposeNetworkPowerLifecycle = () => {};
@@ -779,4 +850,10 @@ app.on("before-quit", () => {
   disposeAuthCommands();
   credentialRuntime?.dispose();
   credentialRuntime = null;
+  disposeCurrentFileRuntime()
+    .catch(() => {})
+    .finally(() => {
+      quitCleanupComplete = true;
+      app.quit();
+    });
 });

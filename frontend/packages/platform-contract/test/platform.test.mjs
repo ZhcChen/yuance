@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   defineDownloadCapabilities,
   defineFileCapabilities,
+  defineHostDelegatedFileCapabilities,
   definePlatformCapabilities,
   defineRouterCapabilities,
   defineStatusCapabilities,
@@ -38,6 +39,16 @@ test('platform capability definitions preserve injected adapters', () => {
   assert.equal(platform.transfers, transfers);
   assert.equal(platform.router, router);
   assert.equal(platform.status, status);
+});
+
+test('host-delegated file capabilities preserve opaque desktop operations', () => {
+  const capabilities = defineHostDelegatedFileCapabilities({
+    chooseFile: async () => null,
+    uploadCanary: async () => ({ status: 'completed' }),
+    downloadCanary: async () => ({ status: 'cancelled' }),
+  });
+  assert.deepEqual(Object.keys(capabilities).sort(), ['chooseFile', 'downloadCanary', 'uploadCanary']);
+  assert.throws(() => defineHostDelegatedFileCapabilities({ chooseFile: async () => null }), /uploadCanary/);
 });
 
 test('platform capability definitions reject missing operations', () => {

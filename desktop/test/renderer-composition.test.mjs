@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createDesktopAuthState, normalizePublicAuthState } from "../src/renderer/platform/auth-state.js";
 import { createDesktopNetworkState, normalizePublicNetworkState } from "../src/renderer/platform/network-state.js";
 import { createDesktopRouter, normalizeDesktopRoute } from "../src/renderer/platform/router.js";
+import { createDesktopFiles } from "../src/renderer/platform/files.js";
 import { createUnavailableFileAdapter, createUnavailableNetworkAdapter } from "../src/renderer/platform/unavailable.js";
 
 test("normalizes every public auth state and fails closed for unknown values", () => {
@@ -87,9 +88,24 @@ test("network and file adapters fail closed", () => {
   assert.throws(() => createUnavailableFileAdapter().select(), /file is not available/);
 });
 
+test("desktop file adapter delegates opaque intents and normalizes results", async () => {
+  const calls = [];
+  const files = createDesktopFiles({
+    choose: async () => ({ capability: `yfc_${"a".repeat(32)}`, filename: "a.txt", contentType: "text/plain", byteSize: 1, path: "/secret" }),
+    uploadCanary: async (capability) => { calls.push(capability); return { status: "completed", byteSize: 1, url: "https://secret" }; },
+    downloadCanary: async () => ({ status: "cancelled", path: "/secret" }),
+  });
+  const selected = await files.chooseFile();
+  assert.ok(selected);
+  assert.deepEqual(selected, { capability: `yfc_${"a".repeat(32)}`, filename: "a.txt", contentType: "text/plain", byteSize: 1 });
+  assert.deepEqual(await files.uploadCanary(selected.capability), { status: "completed", byteSize: 1 });
+  assert.deepEqual(await files.downloadCanary(), { status: "cancelled" });
+  assert.deepEqual(calls, [`yfc_${"a".repeat(32)}`]);
+});
+
 test("renderer composition uses shared components and contracts without Browser transports", async () => {
   const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/renderer");
-  const files = ["main.jsx", "app.jsx", "platform/auth-state.js", "platform/network-state.js", "platform/router.js", "platform/unavailable.js"];
+  const files = ["main.jsx", "app.jsx", "platform/auth-state.js", "platform/network-state.js", "platform/router.js", "platform/files.js", "platform/unavailable.js"];
   const source = (await Promise.all(files.map((file) => fs.readFile(path.join(sourceRoot, file), "utf8")))).join("\n");
   assert.match(source, /normalizeHostAuthState/);
   assert.match(source, /defineRouterCapabilities/);

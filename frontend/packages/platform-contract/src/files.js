@@ -76,6 +76,27 @@ export function defineTransferCapabilities(capabilities) {
 }
 
 /**
+ * Desktop 宿主委托能力。renderer 只能回传 file capability，不能取得或构造 signed request。
+ *
+ * @typedef {object} HostDelegatedFileCapabilities
+ * @property {() => Promise<SelectedFile | null>} chooseFile
+ * @property {(fileCapability: FileCapability) => Promise<{status: string, byteSize?: number}>} uploadCanary
+ * @property {() => Promise<{status: string, byteSize?: number, filename?: string}>} downloadCanary
+ */
+
+/**
+ * @param {Partial<HostDelegatedFileCapabilities>} capabilities
+ * @returns {HostDelegatedFileCapabilities}
+ */
+export function defineHostDelegatedFileCapabilities(capabilities) {
+  requireObject(capabilities);
+  requireOperation(capabilities, 'chooseFile');
+  requireOperation(capabilities, 'uploadCanary');
+  requireOperation(capabilities, 'downloadCanary');
+  return /** @type {HostDelegatedFileCapabilities} */ (capabilities);
+}
+
+/**
  * @param {object} capabilities
  * @param {string} operation
  */

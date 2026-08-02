@@ -41,18 +41,32 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 2);
+  assert.equal(bridge.schemaVersion, 3);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.notifications), true);
   assert.equal(Object.isFrozen(bridge.auth), true);
   assert.equal(Object.isFrozen(bridge.network), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "hostState", "network", "notifications", "schemaVersion"]);
+  assert.equal(Object.isFrozen(bridge.files), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "files", "hostState", "network", "notifications", "schemaVersion"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   await bridge.notifications.show({ title: "更新" });
   assert.deepEqual(invocations, [["yuance:notify", { title: "更新" }]]);
+});
+
+test("file bridge exposes only fixed host-delegated commands", async () => {
+  const { bridge, invocations } = await executePreload();
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "uploadCanary"]);
+  await bridge.files.choose();
+  await bridge.files.uploadCanary("yfc_opaque");
+  await bridge.files.downloadCanary();
+  assert.deepEqual(invocations, [
+    ["yuance:file-choose", undefined],
+    ["yuance:file-upload-canary", "yfc_opaque"],
+    ["yuance:file-download-canary", undefined],
+  ]);
 });
 
 test("auth bridge exposes only parameter-free semantic commands", async () => {

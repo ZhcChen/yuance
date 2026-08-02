@@ -45,7 +45,7 @@ ipcRenderer.on(NETWORK_STATE_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 2,
+  schemaVersion: 3,
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
@@ -76,6 +76,11 @@ const bridge = Object.freeze({
       catch (error) { networkStateSubscribers.delete(callback); throw error; }
       return () => networkStateSubscribers.delete(callback);
     },
+  }),
+  files: Object.freeze({
+    choose() { return ipcRenderer.invoke("yuance:file-choose"); },
+    uploadCanary(capability) { return ipcRenderer.invoke("yuance:file-upload-canary", capability); },
+    downloadCanary() { return ipcRenderer.invoke("yuance:file-download-canary"); },
   }),
   notifications: Object.freeze({
     show(payload) {

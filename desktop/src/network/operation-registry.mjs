@@ -8,7 +8,11 @@ const PROBE_KEYS = [
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
   if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
-  const operations = new Map([["session.probe", Object.freeze({ idempotent: true, method: "GET", path: "/api/v1/device-session", parse: parseSessionProbe })]]);
+  const operations = new Map([
+    ["session.probe", Object.freeze({ idempotent: true, method: "GET", path: "/api/v1/device-session", parse: parseSessionProbe })],
+    ["file.canaryupload", Object.freeze({ idempotent: false, method: "POST", path: "/api/v1/device-file-transfer/canary/upload-request", parse: parseTransferEnvelope })],
+    ["file.canarydownload", Object.freeze({ idempotent: true, method: "GET", path: "/api/v1/device-file-transfer/canary/download-request", parse: parseTransferEnvelope })],
+  ]);
   const active = new Set();
   function resolve(name, input) {
     if (typeof name !== "string" || !OPERATION_NAME.test(name) || !operations.has(name)) throw new TypeError("unknown operation");
@@ -45,6 +49,7 @@ function parseSessionProbe(data, profile) {
     accessExpiresAt: timestamp(data.access_expires_at, "access_expires_at"),
   });
 }
+function parseTransferEnvelope(data) { if (!isPlainObject(data)) throw new TypeError("transfer envelope is invalid"); return data; }
 function requiredString(value, name) { if (typeof value !== "string" || value.length === 0 || value.length > 1024) throw new TypeError(`${name} is invalid`); return value; }
 function integer(value, minimum, name) { if (!Number.isSafeInteger(value) || value < minimum) throw new TypeError(`${name} is invalid`); return value; }
 function timestamp(value, name) { const parsed = Date.parse(value); if (typeof value !== "string" || !Number.isFinite(parsed)) throw new TypeError(`${name} is invalid`); return new Date(parsed).toISOString(); }

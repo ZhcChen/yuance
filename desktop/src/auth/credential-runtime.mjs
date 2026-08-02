@@ -188,6 +188,15 @@ export function createCredentialRuntime({
     return epoch;
   }
 
+  function fileBindingVersion() {
+    requireUsable();
+    const state = coordinator.snapshot();
+    if (!["authenticated", "refreshing"].includes(state.status) || !Number.isSafeInteger(state.authorizationVersion) || state.authorizationVersion < 1) {
+      throw new Error("authenticated file binding is unavailable");
+    }
+    return Object.freeze({ profileEpoch: epoch, authorizationVersion: state.authorizationVersion });
+  }
+
   function snapshot() {
     return blockedReason ? Object.freeze({ status: "locked" }) : toPublicAuthState(coordinator.snapshot());
   }
@@ -220,6 +229,7 @@ export function createCredentialRuntime({
     discardLocalSession,
     discardMismatchedProfile,
     networkEpoch,
+    fileBindingVersion,
     snapshot,
     dispose,
   });

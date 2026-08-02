@@ -216,8 +216,8 @@ test("binds the SSE network epoch to credentials, window, power, and quit lifecy
   assert.match(mainSource, /createSseClient\(\{ profile: enrolled\.profile, fetchImpl: network\.fetch \}\)/u);
   assert.match(mainSource, /probe: \(\) => restTransport\.execute\("session\.probe", \{\}\)/u);
   assert.match(mainSource, /onReauthorizationRequired: \(\) => runtime\.discardLocalSession\(\)/u);
-  assert.match(mainSource, /onNetworkInvalidated: \(\) => coordinator\?\.invalidate\(\)/u);
+  assert.match(mainSource, /onNetworkInvalidated: \(\) => \{[\s\S]*coordinator\?\.invalidate\(\);[\s\S]*fileRuntime\?\.state\.invalidateAll\(\)/u);
   assert.match(mainSource, /window\.on\("closed", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
   assert.match(mainSource, /bindNetworkPowerLifecycle\(\{[\s\S]*powerEvents: powerMonitor,[\s\S]*getCoordinator: \(\) => networkCoordinator/u);
-  assert.match(mainSource, /app\.on\("before-quit", \(\) => \{[\s\S]*networkCoordinator\?\.stop\(\)/u);
+  assert.match(mainSource, /app\.on\("before-quit", \(event\) => \{[\s\S]*event\.preventDefault\(\);[\s\S]*networkCoordinator\?\.stop\(\)[\s\S]*disposeCurrentFileRuntime\(\)/u);
 });

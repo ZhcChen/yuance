@@ -14,6 +14,7 @@ export const PLATFORM_CONTRACT_PACKAGE_NAME = '@yuance/frontend-platform-contrac
 export {
   defineDownloadCapabilities,
   defineFileCapabilities,
+  defineHostDelegatedFileCapabilities,
   defineTransferCapabilities,
 } from './files.js';
 export { definePlatformCapabilities, defineStatusCapabilities } from './platform.js';
