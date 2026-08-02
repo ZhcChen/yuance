@@ -51,6 +51,24 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         const csrfToken = response.headers.get("x-yuance-csrf-token") || (await response.json()).data?.csrf_token;
         return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken });
       },
+      async activateTestStorage(session) {
+        const body = new URLSearchParams({
+          _csrf: session.csrfToken,
+          endpoint: "memory://yuance-tests",
+          region: "test",
+          bucket: "desktop-file-canary",
+          access_key_id: "DesktopFileFixtureAccessKey",
+          access_key_secret: "DesktopFileFixtureSecret2026",
+          activate: "on",
+        });
+        const response = await fetchImpl(`${origin}/web/system/storage`, {
+          method: "POST",
+          redirect: "manual",
+          headers: { cookie: session.cookie, "content-type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        if (response.status !== 200) throw new Error(`test storage activation failed with ${response.status}`);
+      },
       async stop({ beforeRemove = async () => {} } = {}) {
         if (stopped) return;
         stopped = true;

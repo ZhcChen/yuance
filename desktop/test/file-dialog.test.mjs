@@ -8,7 +8,7 @@ const binding = { profileEpoch: 1, webContentsId: 2, frameRoutingId: 3, purpose:
 test("uses a fixed single-file dialog and returns only vault metadata", async () => {
   const calls = [];
   const privatePath = "/Users/private/计划.txt";
-  const snapshot = { privatePath: "/spool/private", filename: "计划.txt", contentType: "text/plain", byteSize: 4, sha256: "a".repeat(64), remove: async () => {} };
+  const snapshot = { privatePath: "/spool/private", filename: "计划.txt", contentType: "text/plain; charset=utf-8", byteSize: 4, sha256: "a".repeat(64), remove: async () => {} };
   const adapter = createFileDialog({
     dialog: { showOpenDialog: async (...args) => { calls.push(args); return { canceled: false, filePaths: [privatePath] }; } },
     spool: { capture: async (...args) => { calls.push(args); return snapshot; } },
@@ -16,10 +16,10 @@ test("uses a fixed single-file dialog and returns only vault metadata", async ()
   });
   const window = {};
   const result = await adapter.choose({ window, binding });
-  assert.deepEqual(result, { capability: "yfc_public", filename: "计划.txt", contentType: "text/plain", byteSize: 4 });
+  assert.deepEqual(result, { capability: "yfc_public", filename: "计划.txt", contentType: "text/plain; charset=utf-8", byteSize: 4 });
   assert.equal(JSON.stringify(result).includes("/Users/"), false);
   assert.deepEqual(calls[0], [window, { title: "选择文件", properties: ["openFile", "dontAddToRecent"] }]);
-  assert.deepEqual(calls[1], [privatePath, { filename: "计划.txt", contentType: "text/plain" }]);
+  assert.deepEqual(calls[1], [privatePath, { filename: "计划.txt", contentType: "text/plain; charset=utf-8" }]);
 });
 
 test("cancel does not touch spool or vault", async () => {

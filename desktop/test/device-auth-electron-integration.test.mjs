@@ -42,7 +42,7 @@ test("Electron headless persists, recovers, and revokes a device session", { tim
         schema_version: 1,
         api_protocol_version: 1,
         server_instance_id: "electron-integration-server",
-        capabilities: ["device-authorization.v1", "device-session.probe.v1"],
+        capabilities: ["device-authorization.v1", "device-session.probe.v1", "device-file-transfer.canary.v1"],
       });
     }
     if (request.url === "/api/v1/device-authorizations" && request.method === "POST") {

@@ -1,11 +1,19 @@
-import { app, BrowserWindow, session } from "electron";
-import { createHash } from "node:crypto";
+import { app, BrowserWindow, safeStorage, session } from "electron";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import { createUploadExecutor } from "../../src/files/upload-executor.mjs";
 import { createDownloadExecutor } from "../../src/files/download-executor.mjs";
 import { createDownloadTargetManager } from "../../src/files/download-target.mjs";
+import { createFileCapabilityVault } from "../../src/files/file-capability-vault.mjs";
+import { createFileSpool } from "../../src/files/file-spool.mjs";
+import { createFileDialog } from "../../src/files/file-dialog.mjs";
+import { createTransferGrantVault } from "../../src/files/transfer-grant-vault.mjs";
+import { parseTransferContract } from "../../src/files/transfer-contract.mjs";
+import { createOperationRegistry } from "../../src/network/operation-registry.mjs";
+import { createRestTransport } from "../../src/network/rest-transport.mjs";
+import { createCredentialRuntime } from "../../src/auth/credential-runtime.mjs";
 import { loadWindowsFileGuard } from "../../src/files/windows-file-guard.mjs";
 import { enrollDesktop } from "../../src/network/enrollment-client.mjs";
 import {
@@ -58,6 +66,10 @@ async function run() {
       allowedOrigin: origin,
       testObserver: (value) => observations.push(value),
     });
+    if (process.argv.includes("--file-api")) {
+      await runRealFileApi({ origin, mode, network, observations });
+      return;
+    }
     if (process.argv.includes("--upload")) {
       const content = Buffer.from("yuance-electron-upload-canary");
       const sourcePath = path.join(userDataPath, "upload-source.bin");
@@ -136,6 +148,65 @@ async function run() {
     reportFailure(error);
     return;
   }
+  app.exit(0);
+}
+
+async function runRealFileApi({ origin, mode, network, observations }) {
+  const stage = (value) => process.stdout.write(`${JSON.stringify({ kind: "yuance-file-stage", stage: value })}\n`);
+  const enrolled = await enrollDesktop({ origin, mode, fetchImpl: network.fetch });
+  stage("enrolled");
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    safeStorage,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: async () => randomUUID(),
+    deviceName: "Yuance File Integration",
+    clientVersion: "0.1.0",
+  });
+  await runtime.initialize();
+  await runtime.authorize({
+    openExternal: async () => {},
+    onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-file-user-code", userCode })}\n`),
+  });
+  stage("authorized");
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(userDataPath, "file-spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const registry = createOperationRegistry();
+  const content = Buffer.from("yuance-desktop-file-canary-v1-data");
+  const sourcePath = path.join(userDataPath, "canary-source.txt");
+  const downloadPath = path.join(userDataPath, "canary-download.txt");
+  await fs.writeFile(sourcePath, content);
+  const bindingVersion = runtime.fileBindingVersion();
+  const binding = (purpose) => Object.freeze({ ...bindingVersion, webContentsId: 1, frameRoutingId: 1, purpose });
+  const fileDialog = createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sourcePath] }) }, spool, vault: fileVault });
+  const selected = await fileDialog.choose({ binding: binding("upload") });
+  stage("selected");
+  const uploadContract = parseTransferContract(await rest.execute("file.canaryupload", {}), { apiOrigin: enrolled.profile.origin, expectedPurpose: "upload", allowLoopbackHttp: true });
+  stage("upload-granted");
+  const uploadGrant = grantVault.issue(uploadContract, binding("upload")).grant;
+  const upload = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
+  const uploaded = await upload.execute({ fileCapability: selected.capability, transferGrant: uploadGrant, binding: binding("upload") });
+  stage("uploaded");
+  const downloadContract = parseTransferContract(await rest.execute("file.canarydownload", {}), { apiOrigin: enrolled.profile.origin, expectedPurpose: "download", allowLoopbackHttp: true });
+  stage("download-granted");
+  const downloadGrant = grantVault.issue(downloadContract, binding("download")).grant;
+  const targetManager = createDownloadTargetManager({ dialog: { showSaveDialog: async () => ({ canceled: false, filePath: downloadPath }) }, platform: process.platform, windowsGuard });
+  const download = createDownloadExecutor({ grantVault, targetManager, fetchImpl: network.transferFetch, registry });
+  const downloaded = await download.execute({ suggestedFilename: "canary.txt", transferGrant: downloadGrant, binding: binding("download") });
+  const downloadedBytes = await fs.readFile(downloadPath);
+  const sourceHash = createHash("sha256").update(content).digest("hex");
+  const downloadHash = createHash("sha256").update(downloadedBytes).digest("hex");
+  await runtime.logout();
+  runtime.dispose();
+  const temporaryFiles = (await fs.readdir(userDataPath)).filter((name) => name.startsWith(".yuance-download-"));
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-file-api-result", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: content.length, hashMatch: sourceHash === downloadHash, temporaryFiles: temporaryFiles.length, activeOperations: registry.snapshot().active, observations: observations.filter((value) => value.phase === "transfer") })}\n`);
   app.exit(0);
 }
 

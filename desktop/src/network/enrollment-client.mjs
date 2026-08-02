@@ -12,6 +12,7 @@ const EXPECTED_FIELDS = Object.freeze([
 const EXPECTED_CAPABILITIES = Object.freeze([
   "device-authorization.v1",
   "device-session.probe.v1",
+  "device-file-transfer.canary.v1",
 ]);
 
 export class DesktopEnrollmentError extends Error {

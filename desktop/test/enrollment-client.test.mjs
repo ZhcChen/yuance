@@ -11,7 +11,7 @@ const enrollment = {
   schema_version: 1,
   api_protocol_version: 1,
   server_instance_id: "server-1",
-  capabilities: ["device-authorization.v1", "device-session.probe.v1"],
+  capabilities: ["device-authorization.v1", "device-session.probe.v1", "device-file-transfer.canary.v1"],
 };
 
 test("reads the fixed enrollment path and creates a trusted profile", async () => {
@@ -138,7 +138,7 @@ test("rejects unknown fields, invalid versions, capabilities, and server identit
     { ...enrollment, api_protocol_version: "1" },
     { ...enrollment, server_instance_id: " server-1" },
     { ...enrollment, server_instance_id: "server\n1" },
-    { ...enrollment, capabilities: ["device-session.probe.v1", "device-authorization.v1"] },
+    { ...enrollment, capabilities: ["device-session.probe.v1", "device-authorization.v1", "device-file-transfer.canary.v1"] },
     { ...enrollment, capabilities: [...enrollment.capabilities, "unknown.v1"] },
     { ...enrollment, capabilities: ["device-authorization.v1"] },
   ];

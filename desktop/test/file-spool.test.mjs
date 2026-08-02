@@ -34,6 +34,20 @@ test("streams an immutable private snapshot with size and sha256", async (t) => 
   }
 });
 
+test("preserves canonical MIME parameters and rejects injected values", async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-file-spool-mime-"));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const source = path.join(root, "source.txt");
+  await fs.writeFile(source, "test");
+  const spool = createFileSpool({ rootDirectory: path.join(root, "spool") });
+  const canonical = await spool.capture(source, { filename: "source.txt", contentType: "text/plain; charset=utf-8" });
+  assert.equal(canonical.contentType, "text/plain; charset=utf-8");
+  await canonical.remove();
+  const rejected = await spool.capture(source, { filename: "source.txt", contentType: "text/plain\r\nx: injected" });
+  assert.equal(rejected.contentType, "application/octet-stream");
+  await rejected.remove();
+});
+
 test("rejects files above fixed limits and leaves no partial snapshot", async (t) => {
   const { root, spool } = await fixture(t, { maxFileBytes: 4, maxTotalBytes: 6 });
   const source = path.join(root, "large.bin");

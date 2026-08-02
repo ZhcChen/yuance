@@ -248,7 +248,7 @@ function sanitizeFilename(value) {
 }
 
 function sanitizeContentType(value) {
-  return typeof value === "string" && /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/i.test(value)
+  return typeof value === "string" && value.length <= 255 && /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*(?:; [a-z0-9!#$&^_.+-]+=[a-z0-9!#$&^_.+-]+)*$/i.test(value)
     ? value.toLowerCase()
     : "application/octet-stream";
 }

@@ -6,7 +6,7 @@ const enrollment = Object.freeze({
   schema_version: 1,
   api_protocol_version: 1,
   server_instance_id: "electron-network-test",
-  capabilities: ["device-authorization.v1", "device-session.probe.v1"],
+  capabilities: ["device-authorization.v1", "device-session.probe.v1", "device-file-transfer.canary.v1"],
 });
 
 export async function startNetworkFixture() {
