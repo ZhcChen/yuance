@@ -366,13 +366,8 @@ pub(super) fn verify_snapshot_handle(spool_root: &str, private_path: &str, fd: i
     let opened = duplicate_fd(fd, "ERR_FILE_GUARD_SNAPSHOT_INVALID")?;
     verify_regular(&opened)?;
     ensure_handle_within_root(&opened, root)?;
-    if final_path(&opened)? != normalize_final_path(&private_path.to_string_lossy()) {
-        return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_CHANGED"));
-    }
     let path_handle = open_file_no_reparse(private_path, false)?;
-    if identity(&path_handle)? != identity(&opened)?
-        || final_path(&path_handle)? != final_path(&opened)?
-    {
+    if identity(&path_handle)? != identity(&opened)? {
         return Err(stable_error("ERR_FILE_GUARD_SNAPSHOT_CHANGED"));
     }
     Ok(())
@@ -403,17 +398,13 @@ pub(super) fn commit_download(input: &CommitWindowsDownloadInput) -> Result<()> 
     let parent = duplicate_fd(input.parent_fd, "ERR_FILE_GUARD_DOWNLOAD_CHANGED")?;
     verify_not_reparse(&parent)?;
     let parent_info: FILE_STANDARD_INFO = file_info(&parent, FileStandardInfo)?;
-    if parent_info.Directory == 0 || final_path(&parent)? != normalize_final_path(&input.directory)
-    {
+    if parent_info.Directory == 0 {
         return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
     }
 
     let temporary = duplicate_fd(input.temporary_fd, "ERR_FILE_GUARD_DOWNLOAD_CHANGED")?;
     verify_regular(&temporary)?;
     ensure_direct_child(&temporary, &parent)?;
-    if final_path(&temporary)? != normalize_final_path(&input.temporary_path) {
-        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
-    }
     let reopened_temporary = open_file_for_delete(temporary_path)?;
     if identity(&reopened_temporary)? != identity(&temporary)? {
         return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
@@ -424,9 +415,6 @@ pub(super) fn commit_download(input: &CommitWindowsDownloadInput) -> Result<()> 
         let target = duplicate_fd(input.target_fd, "ERR_FILE_GUARD_DOWNLOAD_CHANGED")?;
         verify_regular(&target)?;
         ensure_direct_child(&target, &parent)?;
-        if final_path(&target)? != normalize_final_path(&input.target_path) {
-            return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
-        }
         let reopened_target = open_file_no_reparse(target_path, false)?;
         if identity(&reopened_target)? != identity(&target)? {
             return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
@@ -440,9 +428,7 @@ pub(super) fn commit_download(input: &CommitWindowsDownloadInput) -> Result<()> 
 
     let mutation_parent = open_directory_for_mutation(directory)?;
     verify_not_reparse(&mutation_parent)?;
-    if !same_file_object(identity(&mutation_parent)?, identity(&parent)?)
-        || final_path(&mutation_parent)? != final_path(&parent)?
-    {
+    if !same_file_object(identity(&mutation_parent)?, identity(&parent)?) {
         return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
     }
     rename_by_handle(&reopened_temporary, &mutation_parent, target_name, replace)
