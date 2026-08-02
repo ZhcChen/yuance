@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 PRODUCTION_DIR="$ROOT_DIR/deploy/easy-deploy/production"
 BACKEND_DIR="$PRODUCTION_DIR/backend"
 GATEWAY_DIR="$PRODUCTION_DIR/gateway"
@@ -73,7 +73,22 @@ if ! grep -q 'container_name: yuance-api' "$COMPOSE_FILE"; then
 fi
 
 if ! grep -q '127.0.0.1.*33033' "$GATEWAY_DIR/Caddyfile.yuance.example"; then
-  echo "Caddy 模板必须反代到 127.0.0.1:33033。" >&2
+  echo "旧环境回滚用 Caddy 模板必须反代到 127.0.0.1:33033。" >&2
+  exit 1
+fi
+
+if ! grep -q 'DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-local-wsl}"' "$ROOT_DIR/scripts/deploy-production.sh"; then
+  echo "正式部署必须默认使用 local-wsl 模式。" >&2
+  exit 1
+fi
+
+if grep -q 'YUANCE_DEPLOY_HOST:-qfy-sc-test' "$ROOT_DIR/scripts/deploy-production.sh"; then
+  echo "正式部署禁止隐式回退到旧服务器 qfy-sc-test。" >&2
+  exit 1
+fi
+
+if ! grep -q 'remote 模式必须显式设置 YUANCE_DEPLOY_HOST' "$ROOT_DIR/scripts/deploy-production.sh"; then
+  echo "remote 模式必须校验显式目标主机。" >&2
   exit 1
 fi
 

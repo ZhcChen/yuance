@@ -1,5 +1,9 @@
 # 元策正式后端 Compose 模板
 
+当前正式运行位置是 Ubuntu WSL 的 `/srv/yuance/backend`，由 WSL 原生
+Docker Engine 承载。仓库目录中的 `easy-deploy` 是历史命名，不代表当前
+运行路径或部署平台。
+
 本目录用于手工 Compose 部署 `yuance`，只包含一个服务：
 
 ```text
@@ -15,7 +19,7 @@ api：Rust 单体服务，启动命令 ./yuance-api serve
 
 ## 关键边界
 
-- 服务器只运行 Compose，不构建源码镜像。
+- WSL 只运行 Compose，不在 `/srv/yuance` 内构建源码镜像。
 - Compose 模板不得包含 `build:`。
 - SQLite 数据、WAL、SHM、后续本地运行数据挂载在 `./data`。
 - 备份文件挂载在 `./backups`。
@@ -61,7 +65,7 @@ seed local-admin
 ## 手工部署命令
 
 ```bash
-cd /srv/yuance/easy-deploy/production/backend
+cd /srv/yuance/backend
 
 docker load -i /srv/yuance/releases/yuance-api-linux-amd64.tar
 

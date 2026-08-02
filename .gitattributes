@@ -1,3 +1,4 @@
 skills/yuance-agent/SKILL.md text eol=lf
 skills/yuance-agent/agents/*.yaml text eol=lf
 skills/yuance-agent/references/*.md text eol=lf
+*.sh text eol=lf
