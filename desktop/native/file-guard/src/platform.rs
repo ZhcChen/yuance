@@ -246,9 +246,16 @@ pub(super) fn capture(input: ValidatedInput) -> Result<CaptureWindowsFileResult>
         return Err(stable_error("ERR_FILE_GUARD_SPOOL_CHANGED"));
     }
 
+    let mutation_root = open_directory_for_mutation(spool_root)?;
+    verify_not_reparse(&mutation_root)?;
+    if !same_file_object(identity(&mutation_root)?, trusted_root_identity)
+        || final_path(&mutation_root)? != trusted_root_final
+    {
+        return Err(stable_error("ERR_FILE_GUARD_SPOOL_CHANGED"));
+    }
     atomic_commit(
         &destination,
-        trusted_root,
+        &mutation_root,
         committed
             .file_name()
             .ok_or_else(|| stable_error("ERR_FILE_GUARD_SNAPSHOT_COMMIT"))?,
@@ -421,7 +428,14 @@ pub(super) fn commit_download(input: &CommitWindowsDownloadInput) -> Result<()> 
         }
     }
 
-    rename_by_handle(&reopened_temporary, &parent, target_name, replace)
+    let mutation_parent = open_directory_for_mutation(directory)?;
+    verify_not_reparse(&mutation_parent)?;
+    if !same_file_object(identity(&mutation_parent)?, identity(&parent)?)
+        || final_path(&mutation_parent)? != final_path(&parent)?
+    {
+        return Err(stable_error("ERR_FILE_GUARD_DOWNLOAD_CHANGED"));
+    }
+    rename_by_handle(&reopened_temporary, &mutation_parent, target_name, replace)
         .map_err(|_| stable_error("ERR_FILE_GUARD_DOWNLOAD_COMMIT"))
 }
 
@@ -564,6 +578,15 @@ fn open_directory_for_acl(path: &Path) -> Result<File> {
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)
         .map_err(|_| stable_error("ERR_FILE_GUARD_SPOOL_ACL"))
+}
+
+fn open_directory_for_mutation(path: &Path) -> Result<File> {
+    OpenOptions::new()
+        .access_mode(GENERIC_READ | GENERIC_WRITE)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .map_err(|_| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))
 }
 
 fn open_verified_directory_chain(path: &Path) -> Result<Vec<File>> {
