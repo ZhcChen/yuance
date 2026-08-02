@@ -68,13 +68,15 @@ struct NtIoStatusBlock {
 
 #[repr(C)]
 struct NtFileRenameInformation {
-    replace_if_exists: u8,
+    flags: u32,
     root_directory: HANDLE,
     file_name_length: u32,
     file_name: [u16; 1],
 }
 
-const FILE_RENAME_INFORMATION_CLASS: i32 = 10;
+const FILE_RENAME_INFORMATION_EX_CLASS: i32 = 65;
+const FILE_RENAME_REPLACE_IF_EXISTS: u32 = 0x0000_0001;
+const FILE_RENAME_POSIX_SEMANTICS: u32 = 0x0000_0002;
 
 pub(super) fn secure_spool_root(spool_root: &str) -> Result<()> {
     validate_windows_path(Path::new(spool_root), "ERR_FILE_GUARD_SPOOL_INVALID")?;
@@ -788,7 +790,11 @@ fn rename_by_handle(
     let mut storage = vec![0_usize; byte_len.div_ceil(size_of::<usize>())];
     let info = storage.as_mut_ptr() as *mut NtFileRenameInformation;
     unsafe {
-        (*info).replace_if_exists = u8::from(replace);
+        (*info).flags = if replace {
+            FILE_RENAME_REPLACE_IF_EXISTS | FILE_RENAME_POSIX_SEMANTICS
+        } else {
+            0
+        };
         (*info).root_directory = root.as_raw_handle() as HANDLE;
         (*info).file_name_length = (name.len() * size_of::<u16>()) as u32;
         let name_target = (info as *mut u8).add(name_offset) as *mut u16;
@@ -804,7 +810,7 @@ fn rename_by_handle(
             &mut io_status,
             info as *const c_void,
             byte_len as u32,
-            FILE_RENAME_INFORMATION_CLASS,
+            FILE_RENAME_INFORMATION_EX_CLASS,
         )
     };
     if status < 0 {
