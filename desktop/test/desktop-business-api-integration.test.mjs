@@ -11,7 +11,7 @@ import electron from "electron";
 import { approveDeviceAuthorization } from "./support/browser-approval-driver.mjs";
 import { buildRealApi, startRealApiFixture } from "./support/real-api-fixture.mjs";
 
-test("real API and Electron complete the D2 read-only business matrix", { timeout: 60_000 }, async (t) => {
+test("real API and Electron complete the D2 business read and mutation matrix", { timeout: 60_000 }, async (t) => {
   await buildRealApi();
   const fixture = await startRealApiFixture({ seedDemo: true });
   t.after(() => fixture.stop());
@@ -28,7 +28,21 @@ test("real API and Electron complete the D2 read-only business matrix", { timeou
   assert.ok(report.comments >= 1);
   assert.ok(report.attachments >= 0);
   assert.ok(report.commentAttachments >= 0);
-  assert.equal(JSON.stringify(report).includes("yuance_dat_"), false);
+  assert.equal(report.projectSelected, true);
+  assert.equal(report.workItemUpdated, true);
+  assert.equal(report.workItemHandedOff, true);
+  assert.equal(report.commentCreated, true);
+  assert.equal(report.commentUpdated, true);
+  assert.equal(report.mutationsPersisted, true);
+  assert.equal(report.notificationRead, true);
+  assert.equal(report.notificationsReadAll, true);
+  assert.equal(report.mutationsExecutedOnce, true);
+  const serialized = JSON.stringify(report);
+  assert.equal(serialized.includes("yuance_dat_"), false);
+  assert.equal(serialized.includes("Desktop mutation integration"), false);
+  assert.equal(serialized.includes("Desktop comment integration"), false);
+  assert.equal(serialized.includes(fixture.origin), false);
+  assert.equal(serialized.includes(fixture.root), false);
 });
 
 async function runElectronBusinessApi(origin, approve) {

@@ -235,7 +235,15 @@ async function runRealBusinessApi({ origin, mode, network }) {
     onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-business-user-code", userCode })}\n`),
   });
   stage("authorized");
-  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const operationCounts = new Map();
+  const registry = createOperationRegistry();
+  const countingRegistry = Object.freeze({
+    resolve(name, input) {
+      operationCounts.set(name, (operationCounts.get(name) || 0) + 1);
+      return registry.resolve(name, input);
+    },
+  });
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: countingRegistry });
   stage("identity");
   const user = await rest.execute("identity.current", {});
   stage("topbar");
@@ -260,6 +268,57 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const commentAttachments = comments.length > 0
     ? await rest.execute("workitem.commentattachments", { itemKey, commentId: comments[0].id })
     : [];
+  stage("select-project");
+  const selectedProject = await rest.execute("project.select", { projectKey: "YCE" });
+  stage("update-work-item");
+  const updated = await rest.execute("workitem.update", {
+    itemKey,
+    payload: {
+      title: "Desktop mutation integration",
+      description: "Desktop mutation integration description",
+      priority: "P1",
+    },
+  });
+  const nextStatus = updated.status === "in_progress" ? "pending_confirmation" : "in_progress";
+  stage("handoff-work-item");
+  const handedOff = await rest.execute("workitem.handoff", {
+    itemKey,
+    payload: {
+      status: nextStatus,
+      assigneeUsername: "yuance_admin",
+      body: "Desktop handoff integration",
+    },
+  });
+  stage("create-comment");
+  const createdComment = await rest.execute("workitem.commentcreate", {
+    itemKey,
+    payload: { body: "Desktop comment integration", bodyFormat: "plain" },
+  });
+  stage("update-comment");
+  const updatedComment = await rest.execute("workitem.commentupdate", {
+    itemKey,
+    commentId: createdComment.id,
+    payload: { body: "Desktop comment integration updated", bodyFormat: "plain" },
+  });
+  stage("verify-mutations");
+  const verifiedDetail = await rest.execute("workitem.detail", { itemKey });
+  const verifiedComments = await rest.execute("workitem.comments", { itemKey });
+  const notificationsAfterMutation = await rest.execute("notification.list", { filter: "all", page: 1, perPage: 20 });
+  let notificationRead = true;
+  if (notificationsAfterMutation.items.length > 0) {
+    const readResult = await rest.execute("notification.read", { notificationId: notificationsAfterMutation.items[0].id });
+    notificationRead = readResult.read === true;
+  }
+  const readAllResult = await rest.execute("notification.readall", {});
+  const mutationOperations = [
+    "project.select",
+    "workitem.update",
+    "workitem.handoff",
+    "workitem.commentcreate",
+    "workitem.commentupdate",
+    "notification.readall",
+  ];
+  if (notificationsAfterMutation.items.length > 0) mutationOperations.push("notification.read");
   await runtime.logout();
   runtime.dispose();
   process.stdout.write(`${JSON.stringify({
@@ -274,6 +333,17 @@ async function runRealBusinessApi({ origin, mode, network }) {
     comments: comments.length,
     attachments: attachments.length,
     commentAttachments: commentAttachments.length,
+    projectSelected: selectedProject.key === "YCE",
+    workItemUpdated: updated.key === itemKey && updated.priority === "P1",
+    workItemHandedOff: handedOff.key === itemKey && handedOff.status === nextStatus,
+    commentCreated: createdComment.id > 0 && createdComment.body_format === "plain",
+    commentUpdated: updatedComment.id === createdComment.id,
+    mutationsPersisted: verifiedDetail.status === nextStatus
+      && verifiedDetail.priority === "P1"
+      && verifiedComments.some((comment) => comment.id === createdComment.id && comment.body === updatedComment.body),
+    notificationRead,
+    notificationsReadAll: Number.isSafeInteger(readAllResult.affected),
+    mutationsExecutedOnce: mutationOperations.every((name) => operationCounts.get(name) === 1),
   })}\n`);
   app.exit(0);
 }
