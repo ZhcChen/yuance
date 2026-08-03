@@ -679,7 +679,8 @@ async function runFeatureParityBusinessUiSmoke(window) {
   for (let index = 0; index < 3; index += 1) {
     await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-stop");
     networkCoordinator?.invalidate();
-    networkCoordinator?.start();
+    networkStatePublisher.update({ status: "offline" });
+    networkStatePublisher.publishTo(mainWindow);
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, `network interruption ${index + 1}`);
     if (index === 0) {
       await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
@@ -690,6 +691,8 @@ async function runFeatureParityBusinessUiSmoke(window) {
     await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-start");
     networkCoordinator?.invalidate();
     networkCoordinator?.start();
+    networkStatePublisher.update({ status: "online" });
+    networkStatePublisher.publishTo(mainWindow);
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
   }
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
