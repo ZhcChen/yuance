@@ -17,12 +17,13 @@ export function parseTransferContract(value, {
   expectedPurpose,
   now = Date.now,
   allowLoopbackHttp = false,
+  allowedRelativePath,
 } = {}) {
   if (!isPlainObject(value) || !sameKeys(value, CONTRACT_KEYS)) throw contractError();
   if (value.schema_version !== 1 || !Object.hasOwn(METHODS, value.purpose) || value.purpose !== expectedPurpose) throw contractError();
   if (!isPlainObject(value.request) || !sameKeys(value.request, REQUEST_KEYS) || value.request.method !== METHODS[value.purpose]) throw contractError();
   const trustedApiOrigin = parseApiOrigin(apiOrigin, allowLoopbackHttp);
-  const url = parseRequestUrl(value.request.url, value.purpose, trustedApiOrigin, allowLoopbackHttp);
+  const url = parseRequestUrl(value.request.url, value.purpose, trustedApiOrigin, allowLoopbackHttp, allowedRelativePath);
   const headers = parseHeaders(value.request.headers, value.purpose);
   const expectedBytes = requireInteger(value.expected_bytes, 0, MAX_TRANSFER_BYTES);
   const contentType = parseContentType(value.content_type);
@@ -60,14 +61,15 @@ function parseApiOrigin(value, allowLoopbackHttp) {
   return parsed.origin;
 }
 
-function parseRequestUrl(value, purpose, apiOrigin, allowLoopbackHttp) {
+function parseRequestUrl(value, purpose, apiOrigin, allowLoopbackHttp, allowedRelativePath) {
   if (typeof value !== "string" || value.length === 0 || value.length > MAX_URL_LENGTH || !/^[\x21-\x7e]+$/.test(value) || value.includes("\\")) throw contractError();
   const relative = value.startsWith("/");
   let parsed;
   try { parsed = new URL(value, apiOrigin); } catch { throw contractError(); }
   if (parsed.username || parsed.password || parsed.hash) throw contractError();
   if (relative) {
-    const expectedPath = `/api/v1/device-file-transfer/canary/${purpose}`;
+    const expectedPath = allowedRelativePath ?? `/api/v1/device-file-transfer/canary/${purpose}`;
+    if (typeof expectedPath !== "string" || !/^\/api\/v1\/[a-z0-9/-]+$/u.test(expectedPath)) throw new TypeError("allowedRelativePath is invalid");
     if (parsed.origin !== apiOrigin || parsed.pathname !== expectedPath || !value.startsWith(`${expectedPath}?`) || parsed.search.length < 2) throw contractError();
   } else {
     if (parsed.protocol !== "https:" && !(allowLoopbackHttp && parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname) && parsed.origin === apiOrigin)) throw contractError();

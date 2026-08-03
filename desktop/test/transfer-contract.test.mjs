@@ -61,6 +61,28 @@ test("accepts only the fixed same-origin loopback canary route", () => {
   ]) assert.throws(() => parseTransferContract(contract({ request: { url } }), { apiOrigin: "http://127.0.0.1:3000", expectedPurpose: "upload", now: () => NOW, allowLoopbackHttp: true }), invalidContract);
 });
 
+test("accepts only an explicitly selected same-origin business storage route", () => {
+  const value = contract({
+    content_type: "text/plain",
+    request: { method: "PUT", url: "/api/v1/test-storage/upload?object_key=private", headers: [["content-type", "text/plain"]] },
+  });
+  const parsed = parseTransferContract(value, {
+    apiOrigin: "http://127.0.0.1:3000",
+    expectedPurpose: "upload",
+    allowLoopbackHttp: true,
+    allowedRelativePath: "/api/v1/test-storage/upload",
+    now: () => NOW,
+  });
+  assert.equal(parsed.url, "http://127.0.0.1:3000/api/v1/test-storage/upload?object_key=private");
+  assert.throws(() => parseTransferContract(value, {
+    apiOrigin: "http://127.0.0.1:3000",
+    expectedPurpose: "upload",
+    allowLoopbackHttp: true,
+    allowedRelativePath: "/api/v1/test-storage/download",
+    now: () => NOW,
+  }), (error) => error.code === "file_transfer_contract_invalid");
+});
+
 test("rejects unsafe URL forms, methods, and purpose drift", () => {
   const urls = [
     "http://objects.example/file?signature=x",
