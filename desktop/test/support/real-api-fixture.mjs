@@ -108,7 +108,7 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         if (response.status !== 200) throw new Error(`test storage activation failed with ${response.status}`);
       },
       async stopApi() {
-        await stopChild(child, { force: true });
+        await stopChild(child, { force: process.platform === "win32" });
         child = undefined;
       },
       async startApi() {

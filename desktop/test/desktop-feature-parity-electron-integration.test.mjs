@@ -88,10 +88,20 @@ test("feature parity CLI flushes evidence before terminating lingering platform 
 
 test("real API fixture stop is bounded when Windows does not emit exit", async () => {
   const fixture = await fs.readFile(new URL("./support/real-api-fixture.mjs", import.meta.url), "utf8");
-  assert.match(fixture, /async stopApi\(\) \{\s+await stopChild\(child, \{ force: true \}\);\s+child = undefined;/u);
+  assert.match(fixture, /async stopApi\(\) \{\s+await stopChild\(child, \{ force: process\.platform === "win32" \}\);\s+child = undefined;/u);
   assert.match(fixture, /function stopChild\(child, \{ force = false \} = \{\}\) \{[\s\S]*if \(force\) return forceStopChild\(child\);/u);
   assert.match(fixture, /const timer = setTimeout\(\(\) => \{\s+forceStopChild\(child\)\.then\(finish, finish\);\s+\}, 4_000\);/u);
   assert.match(fixture, /spawn\("taskkill", \["\/pid", String\(child\.pid\), "\/T", "\/F"\]/u);
+});
+
+test("packaged UI interruption waits for fixture acknowledgement", async () => {
+  const [main, smoke] = await Promise.all([
+    fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8"),
+    fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8"),
+  ]);
+  assert.match(smoke, /stdio: \["pipe", "pipe", "pipe"\][\s\S]*child\.stdin\.write\(`\$\{JSON\.stringify\(\{ kind: `\$\{value\.kind\}-ack` \}\)\}\\n`\)/u);
+  assert.match(main, /JSON\.parse\(line\)\.kind !== `\$\{kind\}-ack`[\s\S]*acknowledgement timed out/u);
+  assert.match(main, /writeFeatureParityUiEvent\("yuance-desktop-feature-parity-ui-api-stop"\);\s+networkCoordinator\?\.invalidate\(\);\s+networkCoordinator\?\.start\(\);/u);
 });
 
 function validReport() {

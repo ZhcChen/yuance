@@ -678,6 +678,8 @@ async function runFeatureParityBusinessUiSmoke(window) {
 
   for (let index = 0; index < 3; index += 1) {
     await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-stop");
+    networkCoordinator?.invalidate();
+    networkCoordinator?.start();
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, `network interruption ${index + 1}`);
     if (index === 0) {
       await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
@@ -789,7 +791,33 @@ async function runWorkItemAttachmentUploadAttempt(window) {
 }
 
 function writeFeatureParityUiEvent(kind) {
-  return new Promise((resolve) => process.stdout.write(`${JSON.stringify({ kind })}\n`, resolve));
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const cleanup = () => {
+      clearTimeout(timer);
+      process.stdin.off("data", onData);
+    };
+    const onData = (chunk) => {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/u);
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        try {
+          if (JSON.parse(line).kind !== `${kind}-ack`) continue;
+          cleanup();
+          resolve();
+          return;
+        } catch {}
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`UI smoke ${kind} acknowledgement timed out`));
+    }, 20_000);
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", onData);
+    process.stdout.write(`${JSON.stringify({ kind })}\n`);
+  });
 }
 
 async function executeFeatureParityUiScript(window, source, label) {

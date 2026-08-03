@@ -118,7 +118,7 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
 function runUiSmoke(executable, origin, profile, platform, onValue) {
   return new Promise((resolve, reject) => {
     const args = [`--desktop-feature-parity-ui-smoke-origin=${origin}`, `--desktop-feature-parity-ui-smoke-profile=${profile}`, ...(platform === "linux" ? ["--no-sandbox", "--password-store=gnome-libsecret"] : [])];
-    const child = spawn(executable, args, { cwd: path.dirname(executable), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(executable, args, { cwd: path.dirname(executable), stdio: ["pipe", "pipe", "pipe"] });
     let stdout = ""; let stderr = ""; let report; let sideEffect = Promise.resolve(); let settled = false;
     const finish = (callback) => { if (settled) return; settled = true; clearTimeout(timer); callback(); };
     const finishReport = () => {
@@ -132,7 +132,11 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
       for (const line of lines) {
         try {
           const value = JSON.parse(line);
-          sideEffect = sideEffect.then(() => onValue(value));
+          sideEffect = sideEffect.then(() => onValue(value)).then(() => {
+            if (["yuance-desktop-feature-parity-ui-api-stop", "yuance-desktop-feature-parity-ui-api-start"].includes(value.kind)) {
+              child.stdin.write(`${JSON.stringify({ kind: `${value.kind}-ack` })}\n`);
+            }
+          });
           if (value.kind === "yuance-desktop-feature-parity-ui-smoke") {
             report = value;
             finishReport();
