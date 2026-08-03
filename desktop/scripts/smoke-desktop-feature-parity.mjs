@@ -230,6 +230,8 @@ if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
   } finally {
     clearInterval(keepAlive);
   }
-  await Promise.all([process.stdout, process.stderr].map((stream) => stream.writableNeedDrain ? once(stream, "drain") : undefined));
+  await Promise.all([process.stdout, process.stderr].map((stream) => stream.writableNeedDrain
+    ? Promise.race([once(stream, "drain"), new Promise((resolve) => setTimeout(resolve, 1_000))])
+    : undefined));
   process.exit(exitCode);
 }
