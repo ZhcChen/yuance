@@ -688,6 +688,8 @@ async function runFeatureParityBusinessUiSmoke(window) {
       })()`), 10_000, "offline state shell");
     }
     await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-start");
+    networkCoordinator?.invalidate();
+    networkCoordinator?.start();
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
   }
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
