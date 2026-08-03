@@ -107,12 +107,19 @@ function validateResponse(response, expectedUrl, maxHeaderBytes) {
 }
 
 function decodeControl(message) {
-  if (message.event !== "connected") return undefined;
+  if (!["connected", "topbar", "release-version"].includes(message.event)) return undefined;
   try {
     const data = JSON.parse(message.data);
-    if (data && Object.keys(data).length === 1 && data.schema_version === 1) return Object.freeze({ type: "connected" });
+    if (message.event === "connected" && data && sameKeys(data, ["schema_version"]) && data.schema_version === 1) return Object.freeze({ type: "connected" });
+    if (message.event === "topbar" && data && sameKeys(data, ["reason", "schema_version"]) && data.schema_version === 1 && ["connected", "refresh"].includes(data.reason)) return Object.freeze({ type: "topbar", reason: data.reason });
+    if (message.event === "release-version" && data && sameKeys(data, ["schema_version", "version"]) && data.schema_version === 1 && typeof data.version === "string" && /^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$/u.test(data.version)) return Object.freeze({ type: "release-version", version: data.version });
   } catch {}
   throw contract("invalid_control_event", "SSE control event is invalid");
+}
+
+function sameKeys(value, expected) {
+  const keys = Object.keys(value).sort();
+  return keys.length === expected.length && keys.every((key, index) => key === expected[index]);
 }
 
 function createBufferGate(maxBufferBytes) {

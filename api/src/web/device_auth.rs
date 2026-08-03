@@ -11,11 +11,11 @@ use std::{convert::Infallible, time::Duration};
 
 use crate::{
     domains::{api_tokens, audit, auth, device_sessions},
-    platform::{error::AppResult, security::csrf},
+    platform::{error::AppResult, realtime, security::csrf},
     web::{
         audit_context,
         response::{self, ApiEnvelope},
-        router::{AppState, DeviceAuthClientIp},
+        router::{app_release_version, AppState, DeviceAuthClientIp},
     },
 };
 
@@ -449,6 +449,9 @@ pub(crate) async fn device_session_control(
         Err(error) => return no_store(error.into_response()),
     };
     let lease = device_sessions::DeviceAccessLease::from(&access);
+    let user_id = access.user_id;
+    let release_version = app_release_version();
+    let mut realtime = realtime::subscribe_user_realtime();
     let (revalidation_interval, revalidation_timeout) = match state.settings.device_sessions.control_stream_timing() {
         Ok(timing) => timing,
         Err(error) => return no_store(error.into_response()),
@@ -461,6 +464,10 @@ pub(crate) async fn device_session_control(
         let _stream_permit = stream_permit;
         if *shutdown.borrow() { return; }
         yield Ok::<Event, Infallible>(Event::default().event("connected").data("{\"schema_version\":1}"));
+        yield Ok::<Event, Infallible>(Event::default().event("release-version").data(
+            serde_json::json!({"schema_version": 1, "version": release_version}).to_string()
+        ));
+        yield Ok::<Event, Infallible>(Event::default().event("topbar").data("{\"schema_version\":1,\"reason\":\"connected\"}"));
         let mut revalidation = tokio::time::interval(revalidation_interval);
         revalidation.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let expiry = tokio::time::sleep(expires_in);
@@ -470,6 +477,18 @@ pub(crate) async fn device_session_control(
                 _ = &mut expiry => break,
                 changed = shutdown.changed() => {
                     if changed.is_err() || *shutdown.borrow() { break; }
+                }
+                message = realtime.recv() => {
+                    match message {
+                        Ok(message) if message.kind == "topbar" && message.user_ids.contains(&user_id) => {
+                            yield Ok::<Event, Infallible>(Event::default().event("topbar").data("{\"schema_version\":1,\"reason\":\"refresh\"}"));
+                        }
+                        Ok(_) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            yield Ok::<Event, Infallible>(Event::default().event("topbar").data("{\"schema_version\":1,\"reason\":\"refresh\"}"));
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
                 }
                 _ = revalidation.tick() => {
                     match tokio::time::timeout(

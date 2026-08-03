@@ -64,8 +64,27 @@ test("late control events after invalidation are never published", async () => {
   await new Promise((resolve) => setImmediate(resolve)); assert.equal(states.at(-1), "idle"); assert.equal(states.includes("online"), false);
 });
 
+test("forwards allowlisted facts with the current credential epoch and drops late facts", async () => {
+  const streams = [];
+  const facts = [];
+  const coordinator = createNetworkCoordinator({ credentialRuntime: runtime(), sseClient: client(streams), probe: async () => {}, onFact: (value) => facts.push(value), minRetryMs: 1, maxRetryMs: 2 });
+  const running = coordinator.start();
+  await until(() => streams.length === 1);
+  streams[0].onControl({ type: "connected" });
+  streams[0].onControl({ type: "topbar", reason: "refresh" });
+  streams[0].onControl({ type: "release-version", version: "0.1.0" });
+  assert.deepEqual(facts, [
+    { type: "topbar", reason: "refresh", epoch: 1 },
+    { type: "release-version", version: "0.1.0", epoch: 1 },
+  ]);
+  coordinator.invalidate();
+  streams[0].onControl({ type: "topbar", reason: "refresh" });
+  assert.equal(facts.length, 2);
+  await running;
+});
+
 function runtime({ expiresAt = new Date(Date.now() + 60_000).toISOString() } = {}) {
   return { epoch: 1, leaseCalls: 0, refreshCalls: 0, async withAccessLease(operation) { this.leaseCalls += 1; return operation({ accessToken: `yuance_dat_${this.epoch}`, accessExpiresAt: expiresAt, epoch: this.epoch }); }, async refreshAccess(epoch) { if (epoch !== this.epoch) return false; this.refreshCalls += 1; this.epoch += 1; return true; } };
 }
-function client(streams) { return { subscribe({ signal, onControl, onRetry }) { return new Promise((resolve, reject) => streams.push({ signal, connect: () => onControl({ type: "connected" }), retry: onRetry, end: () => resolve({ reason: "eof" }), fail: reject })); } }; }
+function client(streams) { return { subscribe({ signal, onControl, onRetry }) { return new Promise((resolve, reject) => streams.push({ signal, onControl, connect: () => onControl({ type: "connected" }), retry: onRetry, end: () => resolve({ reason: "eof" }), fail: reject })); } }; }
 async function until(predicate) { for (let index = 0; index < 100; index += 1) { if (predicate()) return; await new Promise((resolve) => setTimeout(resolve, 1)); } throw new Error("condition not reached"); }

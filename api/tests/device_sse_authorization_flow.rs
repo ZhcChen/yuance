@@ -16,7 +16,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
     domains::{bootstrap, device_sessions},
-    platform::{config::Settings, db},
+    platform::{config::Settings, db, realtime},
     web::router::{AppState, build_router},
 };
 
@@ -63,7 +63,12 @@ async fn shutdown_signal_closes_an_active_control_stream() {
     let response = device_request(&app, "GET", CONTROL_PATH, &credentials.access_token).await;
     assert_eq!(response.status(), StatusCode::OK);
     let mut body = response.into_body();
-    next_frame(&mut body).await.expect("ready frame");
+    let connected = next_frame(&mut body).await.expect("ready frame");
+    assert!(String::from_utf8_lossy(&connected).contains("event: connected"));
+    let release = next_frame(&mut body).await.expect("release frame");
+    assert!(String::from_utf8_lossy(&release).contains("event: release-version"));
+    let topbar = next_frame(&mut body).await.expect("topbar frame");
+    assert!(String::from_utf8_lossy(&topbar).contains("event: topbar"));
     let started = Instant::now();
     state.shutdown_device_streams();
     wait_for_eof(&mut body).await;
@@ -149,7 +154,12 @@ async fn healthy_stream_receives_heartbeat_comment() {
     let app = test_app(pool.clone());
     let response = device_request(&app, "GET", CONTROL_PATH, &credentials.access_token).await;
     let mut body = response.into_body();
-    next_frame(&mut body).await.expect("ready frame");
+    let connected = next_frame(&mut body).await.expect("ready frame");
+    assert!(String::from_utf8_lossy(&connected).contains("event: connected"));
+    let release = next_frame(&mut body).await.expect("release frame");
+    assert!(String::from_utf8_lossy(&release).contains("event: release-version"));
+    let topbar = next_frame(&mut body).await.expect("topbar frame");
+    assert!(String::from_utf8_lossy(&topbar).contains("event: topbar"));
     let heartbeat = timeout(Duration::from_millis(1200), body.frame())
         .await
         .expect("heartbeat deadline")
@@ -160,6 +170,29 @@ async fn healthy_stream_receives_heartbeat_comment() {
     assert!(String::from_utf8_lossy(&heartbeat).contains(": keep-alive"));
 
     drop(body);
+}
+
+#[tokio::test]
+async fn control_stream_emits_only_targeted_topbar_refresh_facts() {
+    let pool = test_pool().await;
+    let user_id = bootstrap_admin(&pool).await;
+    let credentials = issue_device_credentials(&pool, user_id, "sse-facts").await;
+    let app = test_app(pool.clone());
+    let response = device_request(&app, "GET", CONTROL_PATH, &credentials.access_token).await;
+    let mut body = response.into_body();
+    for _ in 0..3 {
+        next_frame(&mut body).await.expect("initial fact");
+    }
+
+    realtime::publish_topbar_refresh_for_user(user_id + 1);
+    realtime::publish_topbar_refresh_for_user(user_id);
+    let refresh = timeout(Duration::from_millis(500), next_frame(&mut body))
+        .await
+        .expect("targeted refresh deadline")
+        .expect("targeted refresh frame");
+    let refresh = String::from_utf8_lossy(&refresh);
+    assert!(refresh.contains("event: topbar"));
+    assert!(refresh.contains("\"reason\":\"refresh\""));
 }
 
 #[tokio::test]

@@ -17,6 +17,21 @@ test("parses split UTF-8, CRLF, comments, multiline data and retry without expos
   assert.deepEqual(result, { reason: "eof", retryHint: 2500 });
 });
 
+test("parses only versioned topbar and release facts and drops unknown events", async () => {
+  const controls = [];
+  const body = [
+    "event: topbar\ndata: {\"schema_version\":1,\"reason\":\"refresh\"}\n\n",
+    "event: release-version\ndata: {\"schema_version\":1,\"version\":\"0.1.0\"}\n\n",
+    "event: unknown\ndata: {\"private\":\"ignored\"}\n\n",
+  ].join("");
+  const client = createSseClient({ profile, fetchImpl: await trustedFetch(() => sseResponse([new TextEncoder().encode(body)])) });
+  await client.subscribe({ accessToken: "yuance_dat_valid", signal: new AbortController().signal, onControl: (value) => controls.push(value) });
+  assert.deepEqual(controls, [
+    { type: "topbar", reason: "refresh" },
+    { type: "release-version", version: "0.1.0" },
+  ]);
+});
+
 test("uses fixed request fields and rejects redirect, final URL, status and content type", async () => {
   let request;
   const client = createSseClient({ profile, fetchImpl: await trustedFetch((url, options) => { request = { url, options }; return sseResponse([]); }) });
@@ -63,6 +78,8 @@ test("fails closed for invalid UTF-8", async () => {
 });
 test("fails closed for malformed connected events", async () => {
   await rejectsStream(sseResponse([new TextEncoder().encode("event: connected\ndata: {}\n\n")]), {}, "invalid_control_event");
+  await rejectsStream(sseResponse([new TextEncoder().encode("event: topbar\ndata: {\"schema_version\":1,\"reason\":\"other\"}\n\n")]), {}, "invalid_control_event");
+  await rejectsStream(sseResponse([new TextEncoder().encode("event: release-version\ndata: {\"schema_version\":1,\"version\":\"https://secret\"}\n\n")]), {}, "invalid_control_event");
 });
 test("fails closed when the stream becomes idle", async () => {
   await rejectsStream(sseResponse(new ReadableStream({ start() {} })), { idleMs: 10 }, "idle_timeout");

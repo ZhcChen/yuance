@@ -10,6 +10,7 @@ export function createNetworkCoordinator({
   sseClient,
   probe,
   onState = () => {},
+  onFact = () => {},
   onReauthorizationRequired = async () => {},
   now = Date.now,
   random = Math.random,
@@ -20,7 +21,7 @@ export function createNetworkCoordinator({
 } = {}) {
   if (!credentialRuntime || typeof credentialRuntime.withAccessLease !== "function" || typeof credentialRuntime.refreshAccess !== "function") throw new TypeError("credentialRuntime is required");
   if (!sseClient || typeof sseClient.subscribe !== "function") throw new TypeError("sseClient is required");
-  if (typeof probe !== "function" || typeof onState !== "function") throw new TypeError("network observers are required");
+  if (typeof probe !== "function" || typeof onState !== "function" || typeof onFact !== "function") throw new TypeError("network observers are required");
   if (typeof onReauthorizationRequired !== "function") throw new TypeError("reauthorization observer is required");
   if (typeof sleep !== "function") throw new TypeError("sleep is required");
   for (const value of [minRetryMs, maxRetryMs, expirySkewMs]) if (!Number.isSafeInteger(value) || value < 0) throw new TypeError("retry settings are invalid");
@@ -69,7 +70,13 @@ export function createNetworkCoordinator({
           const stream = sseClient.subscribe({
             accessToken,
             signal: controller.signal,
-            onControl(value) { if (value.type === "connected" && current === generation) { failures = 0; publish("online"); } },
+            onControl(value) {
+              if (current !== generation) return;
+              if (value.type === "connected") { failures = 0; publish("online"); return; }
+              if (["topbar", "release-version"].includes(value.type)) {
+                try { onFact(Object.freeze({ ...value, epoch })); } catch {}
+              }
+            },
             onRetry(value) { if (Number.isSafeInteger(value)) retryHint = clamp(value, minRetryMs, maxRetryMs); },
           }).catch((error) => { if (controller.signal.aborted) return { reason: "cancelled" }; throw error; });
           try { return await Promise.race([stream, expiry]); }
