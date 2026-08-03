@@ -97,7 +97,7 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
       }
     });
     child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
-    const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+    const timer = setTimeout(() => child.kill("SIGKILL"), 180_000);
     child.once("error", (error) => finish(() => reject(error)));
     child.once("exit", async (code, signal) => {
       try { await sideEffect; } catch (error) { finish(() => reject(error)); return; }

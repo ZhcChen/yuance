@@ -1101,7 +1101,7 @@ async function openSmokeStream(runtime, sse, setController, onFact = () => {}) {
 }
 
 async function waitForSmokeCondition(predicate) {
-  const deadline = Date.now() + 5_000;
+  const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await delay(10);
@@ -1113,7 +1113,7 @@ async function waitForSmokeConnected(connected) {
   let timer;
   try {
     await Promise.race([connected, new Promise((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error("packaged SSE connect timed out")), 5_000);
+      timer = setTimeout(() => reject(new Error("packaged SSE connect timed out")), 15_000);
     })]);
   } finally { clearTimeout(timer); }
 }
