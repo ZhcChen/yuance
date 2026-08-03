@@ -122,10 +122,13 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
     let stdout = ""; let stderr = ""; let report; let sideEffect = Promise.resolve(); let settled = false;
     const finish = (callback) => { if (settled) return; settled = true; clearTimeout(timer); callback(); };
     const finishReport = () => {
-      sideEffect.then(() => finish(() => {
-        child.kill();
-        resolve(report);
-      })).catch((error) => finish(() => reject(error)));
+      if (platform !== "win32") return;
+      setTimeout(() => {
+        sideEffect.then(() => finish(() => {
+          child.kill();
+          resolve(report);
+        })).catch((error) => finish(() => reject(error)));
+      }, 5_000).unref();
     };
     child.stdout.setEncoding("utf8").on("data", (chunk) => {
       stdout += chunk;
