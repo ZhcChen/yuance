@@ -42,20 +42,20 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 6);
+  assert.equal(bridge.schemaVersion, 7);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
-  assert.equal(Object.isFrozen(bridge.notifications), true);
+  assert.equal(Object.isFrozen(bridge.events), true);
   assert.equal(Object.isFrozen(bridge.auth), true);
   assert.equal(Object.isFrozen(bridge.network), true);
   assert.equal(Object.isFrozen(bridge.files), true);
   assert.equal(Object.isFrozen(bridge.business), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "business", "files", "hostState", "network", "notifications", "schemaVersion"]);
+  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "business", "events", "files", "hostState", "network", "schemaVersion"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
-  await bridge.notifications.show({ title: "更新" });
-  assert.deepEqual(invocations, [["yuance:notify", { title: "更新" }]]);
+  assert.equal("notifications" in bridge, false);
+  assert.deepEqual(invocations, []);
 });
 
 test("business bridge exposes only one semantic execute command", async () => {
@@ -135,13 +135,21 @@ test("host state subscriptions receive sanitized snapshots and unsubscribe clean
   assert.equal(values.length, 2);
 });
 
-test("notification click listeners use one fixed channel and can be removed", async () => {
+test("business event bridge accepts only versioned allowlisted facts", async () => {
   const { bridge, listeners } = await executePreload();
-  const targets = [];
-  const unsubscribe = bridge.notifications.onClick((target) => targets.push(target));
-  const listener = listeners.get("yuance:notification-click");
-  listener({}, "/messages");
+  const facts = [];
+  const unsubscribe = bridge.events.subscribe((fact) => facts.push(fact));
+  const listener = listeners.get("yuance:business-fact");
+  listener({}, { schemaVersion: 1, type: "topbar" });
+  listener({}, { schemaVersion: 1, type: "release-version", version: "0.2.0" });
+  listener({}, { schemaVersion: 1, type: "notification-target", path: "/web/app/work-items/YCE-TASK-2#comment-3" });
+  listener({}, { schemaVersion: 1, type: "notification-target", path: "https://evil.example", title: "伪造" });
+  listener({}, { schemaVersion: 1, type: "topbar", token: "secret" });
   unsubscribe();
-  assert.deepEqual(targets, ["/messages"]);
-  assert.equal(listeners.has("yuance:notification-click"), false);
+  listener({}, { schemaVersion: 1, type: "topbar" });
+  assert.deepEqual(facts.map((fact) => ({ ...fact })), [
+    { schemaVersion: 1, type: "topbar" },
+    { schemaVersion: 1, type: "release-version", version: "0.2.0" },
+    { schemaVersion: 1, type: "notification-target", path: "/web/app/work-items/YCE-TASK-2#comment-3" },
+  ]);
 });

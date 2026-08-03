@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   createIpcSenderPolicy,
   createRendererReadinessTracker,
-  parseNotificationPayload,
 } from "../src/ipc/sender-policy.mjs";
 import { resolveRendererTarget } from "../src/window/security-policy.mjs";
 
@@ -86,26 +85,4 @@ test("rejects subframes, stale windows, destroyed senders, and invalid routes", 
     mutate();
     assert.throws(() => assertSender(fixture.event), /Untrusted renderer/);
   }
-});
-
-test("notification payload accepts only bounded allowlisted strings", () => {
-  assert.deepEqual(parseNotificationPayload({ title: "更新", body: "任务已更新", targetPath: "/work-items/W-1" }), {
-    title: "更新",
-    body: "任务已更新",
-    targetPath: "/work-items/W-1",
-  });
-  assert.equal(Object.isFrozen(parseNotificationPayload({})), true);
-
-  for (const payload of [
-    null,
-    [],
-    { title: 1 },
-    { title: "x".repeat(121) },
-    { unknown: "value" },
-    JSON.parse('{"__proto__":{"polluted":true}}'),
-    Object.assign(Object.create({ inherited: true }), { title: "value" }),
-  ]) {
-    assert.throws(() => parseNotificationPayload(payload), /Notification payload|notification payload/);
-  }
-  assert.equal({}.polluted, undefined);
 });

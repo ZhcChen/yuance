@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 const HOST_STATE_CHANNEL = "yuance:host-state";
-const NOTIFICATION_CLICK_CHANNEL = "yuance:notification-click";
+const BUSINESS_FACT_CHANNEL = "yuance:business-fact";
 const NETWORK_STATE_CHANNEL = "yuance:network-state";
 const BUSINESS_EXECUTE_CHANNEL = "yuance:business-execute";
 const ATTACHMENT_PROGRESS_CHANNEL = "yuance:file-attachment-progress";
@@ -22,6 +22,7 @@ const PUBLIC_NETWORK_STATES = new Set([
 ]);
 let networkStateSnapshot = Object.freeze({ status: "idle" });
 const networkStateSubscribers = new Set();
+const businessFactSubscribers = new Set();
 
 function normalizeHostState(value) {
   const status = value && typeof value === "object" ? value.status : undefined;
@@ -47,8 +48,16 @@ ipcRenderer.on(NETWORK_STATE_CHANNEL, (_event, value) => {
   }
 });
 
+ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
+  const fact = normalizeBusinessFact(value);
+  if (!fact) return;
+  for (const callback of [...businessFactSubscribers]) {
+    try { callback(fact); } catch (_error) {}
+  }
+});
+
 const bridge = Object.freeze({
-  schemaVersion: 6,
+  schemaVersion: 7,
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
@@ -93,20 +102,36 @@ const bridge = Object.freeze({
     downloadWorkItemCommentAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-comment-attachment", input); },
     revealDownload(capability) { return ipcRenderer.invoke("yuance:file-reveal-download", capability); },
   }),
-  notifications: Object.freeze({
-    show(payload) {
-      return ipcRenderer.invoke("yuance:notify", payload);
-    },
-    onClick(callback) {
-      if (typeof callback !== "function") {
-        return () => {};
-      }
-      const listener = (_event, targetPath) => callback(targetPath);
-      ipcRenderer.on(NOTIFICATION_CLICK_CHANNEL, listener);
-      return () => ipcRenderer.removeListener(NOTIFICATION_CLICK_CHANNEL, listener);
+  events: Object.freeze({
+    subscribe(callback) {
+      if (typeof callback !== "function") return () => {};
+      businessFactSubscribers.add(callback);
+      return () => businessFactSubscribers.delete(callback);
     },
   }),
 });
+
+function normalizeBusinessFact(value) {
+  if (!value || typeof value !== "object" || value.schemaVersion !== 1) return null;
+  const keys = Object.keys(value).sort();
+  if (value.type === "topbar" && sameKeys(keys, ["schemaVersion", "type"])) return Object.freeze({ schemaVersion: 1, type: "topbar" });
+  if (value.type === "release-version" && sameKeys(keys, ["schemaVersion", "type", "version"]) && typeof value.version === "string" && value.version.length > 0 && value.version.length <= 256) {
+    return Object.freeze({ schemaVersion: 1, type: "release-version", version: value.version });
+  }
+  if (value.type === "notification-target" && sameKeys(keys, ["path", "schemaVersion", "type"]) && isInternalNotificationPath(value.path)) {
+    return Object.freeze({ schemaVersion: 1, type: "notification-target", path: value.path });
+  }
+  return null;
+}
+
+function sameKeys(actual, expected) {
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function isInternalNotificationPath(value) {
+  if (value === "/web/app/messages") return true;
+  return typeof value === "string" && /^\/web\/app\/work-items\/[A-Z][A-Z0-9-]{2,63}(?:#comment-[1-9][0-9]*)?$/u.test(value);
+}
 
 function invokeAttachmentUpload(channel, input, onStage) {
   const operationId = globalThis.crypto.randomUUID();

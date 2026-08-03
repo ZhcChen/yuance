@@ -13,13 +13,13 @@ test("injected lifecycle events suspend, resume, and detach the active coordinat
   const powerEvents = new EventEmitter();
   const calls = [];
   let coordinator = { suspend: () => calls.push("first:suspend"), resume: () => calls.push("first:resume") };
-  const dispose = bindNetworkPowerLifecycle({ powerEvents, getCoordinator: () => coordinator });
+  const dispose = bindNetworkPowerLifecycle({ powerEvents, getCoordinator: () => coordinator, onSuspend: () => calls.push("notifications:invalidate") });
   powerEvents.emit("suspend");
   coordinator = { suspend: () => calls.push("second:suspend"), resume: () => calls.push("second:resume") };
   powerEvents.emit("resume");
   dispose();
   powerEvents.emit("suspend");
-  assert.deepEqual(calls, ["first:suspend", "second:resume"]);
+  assert.deepEqual(calls, ["notifications:invalidate", "first:suspend", "second:resume"]);
 });
 
 test("real Electron powerMonitor drives the production lifecycle binding", { timeout: 15_000 }, async () => {

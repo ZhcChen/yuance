@@ -1,10 +1,8 @@
 import path from "node:path";
 
 import { isLoopbackHostname } from "./auth/profile.mjs";
-import { isAllowedAppRoute } from "./routes/app-route.mjs";
 
 export const DEFAULT_WEB_URL = "https://yuance.quanxinfu.com/web";
-export const DEFAULT_NOTIFICATION_TITLE = "元策";
 export const PRODUCTION_APP_DISPLAY_NAME = "元策";
 export const DEVELOPMENT_APP_DISPLAY_NAME = "元策 Dev";
 export const PRODUCTION_APP_USER_MODEL_ID = "com.quanxinfu.yuance";
@@ -105,41 +103,4 @@ export function isTrustedAppUrl(value, appOrigin) {
   } catch (_error) {
     return false;
   }
-}
-
-export function safeNotificationTarget(value, appOrigin) {
-  const fallback = "/messages";
-  try {
-    const target = new URL(value, appOrigin);
-    const expected = new URL(appOrigin);
-    if (
-      target.protocol !== expected.protocol ||
-      target.hostname !== expected.hostname ||
-      target.port !== expected.port ||
-      target.username ||
-      target.password ||
-      target.search ||
-      target.hash ||
-      !isAllowedAppRoute(target.pathname)
-    ) {
-      return fallback;
-    }
-    return target.pathname;
-  } catch (_error) {
-    return fallback;
-  }
-}
-
-function normalizeText(value, fallback, limit) {
-  const text = String(value || "").replace(/[\u0000-\u001f\u007f]/g, " ").trim();
-  return (text || fallback).slice(0, limit);
-}
-
-export function normalizeNotificationPayload(payload, appOrigin) {
-  const value = payload && typeof payload === "object" ? payload : {};
-  return {
-    title: normalizeText(value.title, DEFAULT_NOTIFICATION_TITLE, 120),
-    body: normalizeText(value.body, "你有一条新的消息。", 240),
-    targetPath: safeNotificationTarget(value.targetPath, appOrigin),
-  };
 }

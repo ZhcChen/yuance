@@ -49,30 +49,3 @@ export function createIpcSenderPolicy({ getMainWindow, isNavigationPending, rend
     return true;
   };
 }
-
-export function parseNotificationPayload(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new TypeError("Notification payload must be an object.");
-  }
-  const prototype = Object.getPrototypeOf(payload);
-  if (prototype !== Object.prototype && prototype !== null) {
-    throw new TypeError("Notification payload must be a plain object.");
-  }
-  const allowedKeys = new Set(["title", "body", "targetPath"]);
-  for (const key of Object.keys(payload)) {
-    if (!allowedKeys.has(key) || key === "__proto__" || key === "constructor" || key === "prototype") {
-      throw new TypeError(`Unknown notification payload field: ${key}`);
-    }
-  }
-  for (const [key, limit] of [["title", 120], ["body", 240], ["targetPath", 512]]) {
-    const value = payload[key];
-    if (value !== undefined && (typeof value !== "string" || value.length > limit)) {
-      throw new TypeError(`Invalid notification payload field: ${key}`);
-    }
-  }
-  return Object.freeze({
-    ...(payload.title !== undefined ? { title: payload.title } : {}),
-    ...(payload.body !== undefined ? { body: payload.body } : {}),
-    ...(payload.targetPath !== undefined ? { targetPath: payload.targetPath } : {}),
-  });
-}

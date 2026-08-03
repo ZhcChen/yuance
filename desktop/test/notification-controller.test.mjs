@@ -47,6 +47,44 @@ test("release facts are forwarded without querying or delivering notifications",
   assert.deepEqual(fixture.shown, []);
 });
 
+test("native click restores the window, resolves a fixed target, marks unread and publishes an internal path", async () => {
+  const fixture = createFixture({
+    items: [notification(13)],
+    operationResults: {
+      "notification.target": { notification_id: 13, read: false, target: notification(13).target },
+      "notification.read": { notification_id: 13, read: true, target: notification(13).target },
+    },
+  });
+  await fixture.controller.handleFact({ type: "topbar", reason: "refresh", epoch: 5 });
+
+  await fixture.shown[0].onClick();
+
+  assert.deepEqual(fixture.windowActions, ["restore", "show", "focus"]);
+  assert.deepEqual(fixture.operations.slice(1), [
+    ["notification.target", { notificationId: 13 }],
+    ["notification.read", { notificationId: 13 }],
+  ]);
+  assert.deepEqual(fixture.refreshes.at(-1), {
+    schemaVersion: 1,
+    type: "notification-target",
+    path: "/web/app/work-items/YCE-TASK-13#comment-27",
+  });
+});
+
+test("native click falls back to the messages route when target resolution fails", async () => {
+  const fixture = createFixture({ items: [notification(14)], failTarget: true });
+  await fixture.controller.handleFact({ type: "topbar", reason: "refresh", epoch: 6 });
+
+  await fixture.shown[0].onClick();
+
+  assert.deepEqual(fixture.windowActions, ["restore", "show", "focus"]);
+  assert.deepEqual(fixture.refreshes.at(-1), {
+    schemaVersion: 1,
+    type: "notification-target",
+    path: "/web/app/messages",
+  });
+});
+
 test("unknown, malformed and invalidated facts have no side effects", async () => {
   let resolveQuery;
   const fixture = createFixture({ execute: () => new Promise((resolve) => { resolveQuery = resolve; }) });
@@ -61,13 +99,16 @@ test("unknown, malformed and invalidated facts have no side effects", async () =
   assert.deepEqual(fixture.shown, []);
 });
 
-function createFixture({ focused = false, minimized = false, supported = true, enabled = true, items = [], execute } = {}) {
+function createFixture({ focused = false, minimized = false, supported = true, enabled = true, items = [], execute, operationResults = {}, failTarget = false } = {}) {
   const operations = [];
   const refreshes = [];
   const shown = [];
+  const windowActions = [];
   const controller = createNotificationController({
     execute: execute ?? (async (operation, input) => {
       operations.push([operation, input]);
+      if (operation === "notification.target" && failTarget) throw Object.assign(new Error("missing"), { code: "not_found" });
+      if (operation in operationResults) return operationResults[operation];
       return { items };
     }),
     publishFact: (fact) => refreshes.push(fact),
@@ -76,8 +117,12 @@ function createFixture({ focused = false, minimized = false, supported = true, e
     isNativeNotificationSupported: () => supported,
     isNativeNotificationEnabled: () => enabled,
     showNativeNotification: (value) => shown.push(value),
+    focusWindow: () => windowActions.push("restore", "show", "focus"),
+    resolveTargetPath: (target) => target
+      ? `/web/app/work-items/${target.work_item_key}${target.comment_id ? `#comment-${target.comment_id}` : ""}`
+      : "/web/app/messages",
   });
-  return { controller, operations, refreshes, shown };
+  return { controller, operations, refreshes, shown, windowActions };
 }
 
 function notification(id) {
@@ -86,6 +131,6 @@ function notification(id) {
     title: `通知 ${id}`,
     body: `正文 ${id}`,
     read: false,
-    target: { kind: "work_item", project_key: "YCE", work_item_key: `YCE-TASK-${id}`, comment_id: null },
+    target: { kind: "work_item", project_key: "YCE", work_item_key: `YCE-TASK-${id}`, comment_id: id === 13 ? 27 : null },
   });
 }

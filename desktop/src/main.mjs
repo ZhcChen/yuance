@@ -16,6 +16,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { notificationTargetPath } from "@yuance/frontend-app-core";
 
 import {
   resolvePngBrandIconPath,
@@ -23,7 +24,6 @@ import {
 } from "./branding.mjs";
 import {
   isDevelopmentRuntime,
-  normalizeNotificationPayload,
   resolveDesktopAppIdentity,
   resolveDesktopNetworkOrigin,
   resolveDeviceAuthEndpoint,
@@ -41,7 +41,6 @@ import { createFileStateController } from "./ipc/file-state.mjs";
 import {
   createIpcSenderPolicy,
   createRendererReadinessTracker,
-  parseNotificationPayload,
 } from "./ipc/sender-policy.mjs";
 import { registerAppProtocol } from "./protocol/app-protocol-handler.mjs";
 import { enrollDesktop } from "./network/enrollment-client.mjs";
@@ -51,6 +50,7 @@ import { bindNetworkPowerLifecycle } from "./network/power-lifecycle.mjs";
 import { createRestTransport } from "./network/rest-transport.mjs";
 import { createSseClient } from "./network/sse-client.mjs";
 import { createOperationRegistry } from "./network/operation-registry.mjs";
+import { createNotificationController } from "./notifications/notification-controller.mjs";
 import { createFileCapabilityVault } from "./files/file-capability-vault.mjs";
 import { createFileSpool } from "./files/file-spool.mjs";
 import { createFileDialog } from "./files/file-dialog.mjs";
@@ -116,6 +116,7 @@ const activeNotifications = new Set();
 let mainWindow = null;
 let credentialRuntime = null;
 let networkCoordinator = null;
+let notificationController = null;
 let fileRuntime = null;
 let businessTransport = null;
 let credentialRuntimeGeneration = 0;
@@ -173,7 +174,7 @@ function openExternalIfSafe(value) {
   return true;
 }
 
-function revealWindow(targetPath) {
+function revealWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
@@ -182,7 +183,27 @@ function revealWindow(targetPath) {
   }
   mainWindow.show();
   mainWindow.focus();
-  mainWindow.webContents.send("yuance:notification-click", targetPath);
+}
+
+function publishBusinessFact(fact) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("yuance:business-fact", fact);
+}
+
+function showNativeNotification({ title, body, onClick }) {
+  const notification = new Notification({ title, body, silent: false });
+  activeNotifications.add(notification);
+  notification.once("click", onClick);
+  notification.once("close", () => activeNotifications.delete(notification));
+  notification.show();
+}
+
+function invalidateNotifications() {
+  notificationController?.invalidate();
+  for (const notification of activeNotifications) {
+    try { notification.close(); } catch {}
+  }
+  activeNotifications.clear();
 }
 
 function handleNavigation(event) {
@@ -260,6 +281,7 @@ function createMainWindow() {
     rendererReadiness.reset();
     if (mainWindow === window) {
       mainWindow = null;
+      invalidateNotifications();
       networkCoordinator?.stop();
       fileRuntime?.state.invalidateAll().catch(() => {});
     }
@@ -285,12 +307,9 @@ async function rendererSmokeSnapshot(window) {
     frame.hidden = true;
     document.body.append(frame);
     const subframeBridgeExposed = Boolean(frame.contentWindow && frame.contentWindow.yuanceDesktop);
-    let invalidPayloadRejected = false;
-    try {
-      await bridge.notifications.show({ title: "smoke", unexpected: true });
-    } catch (_error) {
-      invalidPayloadRejected = true;
-    }
+    const invalidPayloadRejected = !bridge.notifications
+      && Object.keys(bridge.events).length === 1
+      && typeof bridge.events.subscribe === "function";
     const permissionResult = await Promise.race([
       navigator.permissions.query({ name: "geolocation" }).then((result) => result.state, () => "error"),
       new Promise((resolve) => setTimeout(() => resolve("timeout"), 500)),
@@ -402,27 +421,6 @@ async function runAppProtocolSmoke(window) {
   if (appProtocolSmokePhase !== "reloading") return;
   appProtocolSmokePhase = "finishing";
   await finishAppProtocolSmoke(window);
-}
-
-function notifyFromRenderer(event, payload) {
-  assertTrustedIpcSender(event);
-  const notificationPayload = normalizeNotificationPayload(
-    parseNotificationPayload(payload),
-    rendererTarget.origin,
-  );
-  if (!Notification.isSupported() || (mainWindow && mainWindow.isFocused())) {
-    return { shown: false };
-  }
-  const notification = new Notification({
-    title: notificationPayload.title,
-    body: notificationPayload.body,
-    silent: false,
-  });
-  activeNotifications.add(notification);
-  notification.once("click", () => revealWindow(notificationPayload.targetPath));
-  notification.once("close", () => activeNotifications.delete(notification));
-  notification.show();
-  return { shown: true };
 }
 
 async function installationId(userDataPath) {
@@ -743,6 +741,8 @@ async function waitForSmokeConnected(connected) {
 async function initializeDesktopCredentialRuntime() {
   const generation = ++credentialRuntimeGeneration;
   businessTransport = null;
+  invalidateNotifications();
+  notificationController = null;
   const mode = isDevRuntime ? "development" : "production";
   const origin = resolveDesktopNetworkOrigin({ isDevRuntime });
   const network = await createTrustedNetworkSession({
@@ -766,19 +766,33 @@ async function initializeDesktopCredentialRuntime() {
     clientVersion: app.getVersion(),
     onNetworkInvalidated: () => {
       coordinator?.invalidate();
+      invalidateNotifications();
       fileRuntime?.state.invalidateAll().catch(() => {});
     },
     onPublicState: (state) => {
       hostStatePublisher.update(state);
       hostStatePublisher.publishTo(mainWindow);
       if (state.status === "authenticated") coordinator?.start();
-      else fileRuntime?.state.invalidateAll().catch(() => {});
+      else {
+        invalidateNotifications();
+        fileRuntime?.state.invalidateAll().catch(() => {});
+      }
     },
   });
   const restTransport = createRestTransport({
     profile: enrolled.profile,
     credentialRuntime: runtime,
     fetchImpl: network.fetch,
+  });
+  const notifications = createNotificationController({
+    execute: (operation, input) => restTransport.execute(operation, input),
+    publishFact: publishBusinessFact,
+    isWindowFocused: () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isFocused()),
+    isWindowMinimized: () => Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isMinimized()),
+    isNativeNotificationSupported: () => Notification.isSupported(),
+    showNativeNotification,
+    focusWindow: revealWindow,
+    resolveTargetPath: (target) => notificationTargetPath(target, "app"),
   });
   coordinator = createNetworkCoordinator({
     credentialRuntime: runtime,
@@ -788,6 +802,7 @@ async function initializeDesktopCredentialRuntime() {
       networkStatePublisher.update(state);
       networkStatePublisher.publishTo(mainWindow);
     },
+    onFact: (fact) => notifications.handleFact(fact),
     onReauthorizationRequired: () => runtime.discardLocalSession(),
   });
   credentialRuntime = runtime;
@@ -802,6 +817,7 @@ async function initializeDesktopCredentialRuntime() {
     throw error;
   }
   if (generation !== credentialRuntimeGeneration) {
+    notifications.invalidate();
     coordinator.stop();
     runtime.dispose();
     if (credentialRuntime === runtime) credentialRuntime = null;
@@ -809,6 +825,7 @@ async function initializeDesktopCredentialRuntime() {
   } else if (initialized.status === "authenticated") {
     coordinator.start();
   }
+  if (generation === credentialRuntimeGeneration) notificationController = notifications;
   if (generation === credentialRuntimeGeneration) businessTransport = restTransport;
   if (generation === credentialRuntimeGeneration) await initializeFileRuntime({ generation, runtime, network, profile: enrolled.profile, restTransport });
 }
@@ -973,7 +990,6 @@ if (singleInstanceProbe) {
     catch (error) { process.stderr.write(`desktop business file smoke failed: ${error.message}\n`); app.exit(1); }
   });
 } else {
-  ipcMain.handle("yuance:notify", notifyFromRenderer);
   disposeBusinessCommands = registerBusinessCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
@@ -993,7 +1009,7 @@ if (singleInstanceProbe) {
   if (!hasSingleInstanceLock) {
     app.quit();
   } else {
-    app.on("second-instance", () => revealWindow("/"));
+    app.on("second-instance", () => revealWindow());
     app.whenReady().then(async () => {
       try {
         if (rendererTarget.kind === "app-protocol") {
@@ -1032,6 +1048,7 @@ if (singleInstanceProbe) {
         disposeNetworkPowerLifecycle = bindNetworkPowerLifecycle({
           powerEvents: powerMonitor,
           getCoordinator: () => networkCoordinator,
+          onSuspend: invalidateNotifications,
         });
         if (appProtocolSmoke) {
           hostStatePublisher.update({ status: "unauthenticated" });
@@ -1073,6 +1090,8 @@ app.on("before-quit", (event) => {
   quitCleanupStarted = true;
   credentialRuntimeGeneration += 1;
   businessTransport = null;
+  invalidateNotifications();
+  notificationController = null;
   disposeBusinessCommands();
   disposeBusinessCommands = () => {};
   disposeNetworkPowerLifecycle();

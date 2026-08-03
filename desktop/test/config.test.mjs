@@ -9,7 +9,6 @@ import {
   DEFAULT_WEB_URL,
   isDevelopmentRuntime,
   isTrustedAppUrl,
-  normalizeNotificationPayload,
   PRODUCTION_APP_DISPLAY_NAME,
   PRODUCTION_APP_USER_MODEL_ID,
   resolveDesktopAppIdentity,
@@ -17,7 +16,6 @@ import {
   resolveDeviceAuthEndpoint,
   resolveDevelopmentDataPaths,
   resolveWebUrl,
-  safeNotificationTarget,
 } from "../src/config.mjs";
 
 test("separates development and packaged runtime identities", () => {
@@ -121,35 +119,6 @@ test("accepts only the configured Web origin", () => {
   assert.equal(isTrustedAppUrl("app://other/messages", "app://yuance"), false);
 });
 
-test("limits notification navigation to canonical app routes", () => {
-  const origin = "app://yuance";
-  assert.equal(
-    safeNotificationTarget("/messages/42", origin),
-    "/messages/42",
-  );
-  assert.equal(safeNotificationTarget("https://example.com", origin), "/messages");
-  assert.equal(safeNotificationTarget("/api/v1/projects", origin), "/messages");
-  assert.equal(safeNotificationTarget("/messages/42?next=/projects", origin), "/messages");
-  assert.equal(
-    safeNotificationTarget("/projects/p-1", "http://127.0.0.1:4273"),
-    "/projects/p-1",
-  );
-});
-
-test("normalizes native notification payloads", () => {
-  assert.deepEqual(
-    normalizeNotificationPayload(
-      { title: "  新评论\n", body: "查看任务讨论", targetPath: "/messages/42" },
-      "app://yuance",
-    ),
-    {
-      title: "新评论",
-      body: "查看任务讨论",
-      targetPath: "/messages/42",
-    },
-  );
-});
-
 test("intercepts both direct navigations and server redirects", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /webContents\.on\("will-navigate", handleNavigation\)/);
@@ -158,14 +127,10 @@ test("intercepts both direct navigations and server redirects", () => {
   assert.match(mainSource, /if \(!event\.isMainFrame\) handleNavigation\(event\)/);
 });
 
-test("validates notification payloads before platform availability shortcuts", () => {
+test("removes the renderer-controlled native notification channel", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
-  const handlerIndex = mainSource.indexOf("function notifyFromRenderer");
-  const payloadIndex = mainSource.indexOf("parseNotificationPayload(payload)", handlerIndex);
-  const availabilityIndex = mainSource.indexOf("Notification.isSupported()", handlerIndex);
-  assert.ok(handlerIndex >= 0);
-  assert.ok(payloadIndex > handlerIndex);
-  assert.ok(availabilityIndex > payloadIndex);
+  assert.doesNotMatch(mainSource, /yuance:notify|notifyFromRenderer|parseNotificationPayload/);
+  assert.match(mainSource, /onFact: \(fact\) => notifications\.handleFact\(fact\)/);
 });
 
 test("configures development storage and maximizes the startup window", () => {
@@ -184,7 +149,7 @@ test("acquires the OS single-instance lock before the ready lifecycle", () => {
   assert.ok(lockIndex >= 0);
   assert.ok(readyIndex > lockIndex);
   assert.match(mainSource, /if \(!hasSingleInstanceLock\) \{\s*app\.quit\(\);/);
-  assert.match(mainSource, /app\.on\("second-instance", \(\) => revealWindow\("\/"\)\)/);
+  assert.match(mainSource, /app\.on\("second-instance", \(\) => revealWindow\(\)\)/);
   assert.ok(mainSource.indexOf("initializeDesktopCredentialRuntime().catch", readyIndex) > readyIndex);
 });
 

@@ -9,11 +9,13 @@ export function createNotificationController({
   isNativeNotificationSupported,
   isNativeNotificationEnabled = () => true,
   showNativeNotification,
+  focusWindow,
+  resolveTargetPath,
   now = Date.now,
   deduplicationTtlMs = DEFAULT_DEDUPLICATION_TTL_MS,
   maxDeduplicationEntries = DEFAULT_MAX_DEDUPLICATION_ENTRIES,
 } = {}) {
-  for (const dependency of [execute, publishFact, isWindowFocused, isWindowMinimized, isNativeNotificationSupported, isNativeNotificationEnabled, showNativeNotification, now]) {
+  for (const dependency of [execute, publishFact, isWindowFocused, isWindowMinimized, isNativeNotificationSupported, isNativeNotificationEnabled, showNativeNotification, focusWindow, resolveTargetPath, now]) {
     if (typeof dependency !== "function") throw new TypeError("notification controller dependency is required");
   }
   if (!Number.isSafeInteger(deduplicationTtlMs) || deduplicationTtlMs < 1) throw new TypeError("deduplicationTtlMs is invalid");
@@ -21,10 +23,12 @@ export function createNotificationController({
 
   let generation = 0;
   const delivered = new Map();
+  const clicks = new Map();
 
   function invalidate() {
     generation += 1;
     delivered.clear();
+    clicks.clear();
   }
 
   async function handleFact(value) {
@@ -61,9 +65,36 @@ export function createNotificationController({
           body: item.body,
           target: item.target,
           epoch: fact.epoch,
+          onClick: () => handleClick(item.id, fact.epoch),
         }));
       } catch {}
     }
+  }
+
+  function handleClick(notificationId, epoch) {
+    const key = `${epoch}:${notificationId}`;
+    if (clicks.has(key)) return clicks.get(key);
+    const current = generation;
+    const pending = resolveClick(notificationId, current).catch(() => {});
+    clicks.set(key, pending);
+    return pending;
+  }
+
+  async function resolveClick(notificationId, current) {
+    focusWindow();
+    let target = null;
+    try {
+      const result = await execute("notification.target", { notificationId });
+      if (current !== generation) return;
+      target = result?.target ?? null;
+      if (result?.read === false) await execute("notification.read", { notificationId });
+    } catch {}
+    if (current !== generation) return;
+    publishFact(Object.freeze({
+      schemaVersion: 1,
+      type: "notification-target",
+      path: resolveTargetPath(target),
+    }));
   }
 
   function pruneDelivered(timestamp) {
