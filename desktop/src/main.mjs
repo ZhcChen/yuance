@@ -448,6 +448,7 @@ async function runFeatureParityUiSmoke(window) {
   })()`), 10_000, "authorization action");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")))()`), 30_000, "shared app load");
   const business = await runFeatureParityBusinessUiSmoke(window);
+  const resilience = await runFeatureParityResilienceSmoke(window);
   window.focus();
   window.webContents.focus();
   await window.webContents.executeJavaScript("document.body.focus()");
@@ -487,6 +488,10 @@ async function runFeatureParityUiSmoke(window) {
       processCount: ${resources.processCount},
       workingSetKb: ${resources.workingSetKb},
       cpuPercent: ${resources.cpuPercent},
+      hiddenWindow: ${resilience.hiddenWindow},
+      lifecycleCycles: ${resilience.lifecycleCycles},
+      networkRecovered: ${resilience.networkRecovered},
+      postResumeRefresh: ${resilience.postResumeRefresh},
       liveRegions: document.querySelectorAll("[aria-live]").length,
       keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
       genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
@@ -494,6 +499,23 @@ async function runFeatureParityUiSmoke(window) {
   })()`);
   await new Promise((resolve) => process.stdout.write(`${JSON.stringify(report)}\n`, resolve));
   app.quit();
+}
+
+async function runFeatureParityResilienceSmoke(window) {
+  window.hide();
+  await delay(500);
+  const hiddenWindow = !window.isVisible();
+  for (let index = 0; index < 3; index += 1) {
+    networkCoordinator?.suspend();
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "suspended", 5_000, "network suspend");
+    networkCoordinator?.resume();
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 15_000, "network resume");
+  }
+  window.show();
+  window.focus();
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "刷新")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "刷新" && !value.disabled)`), 30_000, "post-resume refresh");
+  return Object.freeze({ hiddenWindow, lifecycleCycles: 3, networkRecovered: true, postResumeRefresh: true });
 }
 
 function desktopUiSmokeResourceMetrics() {

@@ -128,10 +128,14 @@ function assertUiReport(report) {
     workingSetKb: Number.isSafeInteger(report?.workingSetKb) && report.workingSetKb >= 1 && report.workingSetKb <= 1_048_576,
     cpuPercent: Number.isSafeInteger(report?.cpuPercent) && report.cpuPercent >= 0 && report.cpuPercent <= 3_200,
     profileBytes: Number.isSafeInteger(report?.profileBytes) && report.profileBytes >= 1 && report.profileBytes <= 268_435_456,
+    hiddenWindow: report?.hiddenWindow === true,
+    lifecycleCycles: report?.lifecycleCycles === 3,
+    networkRecovered: report?.networkRecovered === true,
+    postResumeRefresh: report?.postResumeRefresh === true,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,keyboardFocus,kind,liveRegions,messageTargetFocused,messageTargetOpened,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
+    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
