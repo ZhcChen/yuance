@@ -489,6 +489,9 @@ async function runFeatureParityUiSmoke(window) {
       permissionInputPreserved: ${business.permissionInputPreserved},
       validationError: ${business.validationError},
       validationFocused: ${business.validationFocused},
+      offlineStateVisible: ${business.offlineStateVisible},
+      offlineRecoveryVisible: ${business.offlineRecoveryVisible},
+      interruptionRecovered: ${business.interruptionRecovered},
       processCount: ${resources.processCount},
       workingSetKb: ${resources.workingSetKb},
       cpuPercent: ${resources.cpuPercent},
@@ -547,7 +550,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
   })()`), 30_000, "work item link");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.startsWith("YCE-TASK-2")`), 30_000, "work item detail");
 
-  await window.webContents.executeJavaScript(`(() => {
+  await executeFeatureParityUiScript(window, `(() => {
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
     const input = panel?.querySelector('input[name="title"]');
     const button = panel?.querySelector('button[type="submit"]');
@@ -556,10 +559,10 @@ async function runFeatureParityBusinessUiSmoke(window) {
     setter.call(input, "Desktop packaged UI edit");
     input.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
-  })()`);
+  })()`, "work item edit submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), 30_000, "work item edit");
 
-  await window.webContents.executeJavaScript(`(() => {
+  await executeFeatureParityUiScript(window, `(() => {
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
     const select = panel?.querySelector('select[name="status"]');
     const textarea = panel?.querySelector('textarea[name="body"]');
@@ -571,7 +574,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI handoff");
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
-  })()`);
+  })()`, "work item handoff submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('[role="status"]')].some((value) => value.textContent.includes("已推进并指派"))`), 30_000, "work item handoff");
 
   await window.webContents.executeJavaScript(`(() => {
@@ -636,7 +639,24 @@ async function runFeatureParityBusinessUiSmoke(window) {
     return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
   })()`), 10_000, "comment attachment reveal");
 
-  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录")?.click()`);
+  await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-stop");
+  await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, "network interruption");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const shell = document.querySelector('.host-status-shell');
+    return Boolean(shell && !document.querySelector('.work-item-action-form') && [...shell.querySelectorAll('button')].some((value) => !value.disabled));
+  })()`), 10_000, "offline state shell");
+  await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-start");
+  await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, "network interruption recovery");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
+    return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
+  })()`), 30_000, "offline shared app recovery");
+
+  await executeFeatureParityUiScript(window, `(() => {
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
+    if (!button) throw new Error("logout button is unavailable");
+    button.click();
+  })()`, "logout");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "开始授权")`), 30_000, "member authorization shell");
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "开始授权")?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.host-status-shell') && Boolean(document.querySelector('main'))`), 30_000, "member shared app load");
@@ -687,7 +707,19 @@ async function runFeatureParityBusinessUiSmoke(window) {
     permissionInputPreserved: true,
     validationError: true,
     validationFocused: true,
+    offlineStateVisible: true,
+    offlineRecoveryVisible: true,
+    interruptionRecovered: true,
   });
+}
+
+function writeFeatureParityUiEvent(kind) {
+  return new Promise((resolve) => process.stdout.write(`${JSON.stringify({ kind })}\n`, resolve));
+}
+
+async function executeFeatureParityUiScript(window, source, label) {
+  try { return await window.webContents.executeJavaScript(source); }
+  catch { throw new Error(`UI smoke ${label} script failed`); }
 }
 
 async function waitForUiSmoke(operation, timeoutMs = 10_000, label = "condition") {

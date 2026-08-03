@@ -32,11 +32,15 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
   try {
     await run(path.join(repoRoot, "target", "debug", process.platform === "win32" ? "yuance-api.exe" : "yuance-api"), ["migrate", "up"], { cwd: repoRoot, env });
     if (seedDemo) await run(binary, ["seed", "demo"], { cwd: repoRoot, env });
-    child = spawn(binary, ["serve", `--http-addr=127.0.0.1:${port}`], { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] });
     logStream = createWriteStream(logPath, { flags: "a", mode: 0o600 });
-    child.stdout.pipe(logStream, { end: false });
-    child.stderr.pipe(logStream, { end: false });
-    await waitForReady(origin, child, fetchImpl);
+    const launchApi = async () => {
+      if (child && child.exitCode === null) return;
+      child = spawn(binary, ["serve", `--http-addr=127.0.0.1:${port}`], { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] });
+      child.stdout.pipe(logStream, { end: false });
+      child.stderr.pipe(logStream, { end: false });
+      await waitForReady(origin, child, fetchImpl);
+    };
+    await launchApi();
     return Object.freeze({
       origin,
       serverInstanceId: "desktop-network-fixture",
@@ -102,6 +106,12 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
           body,
         });
         if (response.status !== 200) throw new Error(`test storage activation failed with ${response.status}`);
+      },
+      async stopApi() {
+        await stopChild(child);
+      },
+      async startApi() {
+        await launchApi();
       },
       async stop({ beforeRemove = async () => {} } = {}) {
         if (stopped) return;
