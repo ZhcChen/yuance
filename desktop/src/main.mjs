@@ -694,6 +694,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     networkStatePublisher.publishTo(mainWindow);
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
   }
+  window.reload();
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
     return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);

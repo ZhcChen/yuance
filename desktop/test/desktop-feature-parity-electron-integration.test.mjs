@@ -103,6 +103,7 @@ test("packaged UI interruption waits for fixture acknowledgement", async () => {
   assert.match(main, /const ackPath = path\.join\(desktopFeatureParityUiSmokeProfile, `\.yuance-\$\{kind\}-ack`\);[\s\S]*fs\.readFile\(ackPath, "utf8"\)[\s\S]*`\$\{kind\} acknowledgement`/u);
   assert.match(main, /writeFeatureParityUiEvent\("yuance-desktop-feature-parity-ui-api-stop"\);\s+networkCoordinator\?\.invalidate\(\);\s+networkStatePublisher\.update\(\{ status: "offline" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);/u);
   assert.match(main, /writeFeatureParityUiEvent\("yuance-desktop-feature-parity-ui-api-start"\);\s+networkCoordinator\?\.invalidate\(\);\s+networkStatePublisher\.update\(\{ status: "online" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);/u);
+  assert.match(main, /window\.reload\(\);\s+await waitForUiSmoke[\s\S]*"offline shared app recovery"/u);
   assert.match(main, /desktopFeatureParityUiSmokeOrigin \? \{ connectTimeoutMs: 5_000, idleMs: 5_000 \} : \{\}/u);
 });
 
