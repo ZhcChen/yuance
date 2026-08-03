@@ -7,10 +7,10 @@ import test from "node:test";
 import { assertDesktopNetworkSmokeReport } from "../scripts/smoke-desktop-network.mjs";
 import { verifyDesktopNetworkArtifacts } from "../scripts/verify-desktop-network-artifacts.mjs";
 
-function validReport() {
-  const packagedMessages = process.platform !== "linux";
+function validReport(platform = process.platform) {
+  const packagedMessages = platform === "darwin";
   return {
-    kind: "yuance-desktop-network-smoke", credentialRestart: process.platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: process.platform === "linux" ? "integration-fallback" : "packaged-sse", probe: true,
+    kind: "yuance-desktop-network-smoke", credentialRestart: platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true,
     firstStream: true, rotated: true, secondStream: true, loggedOut: true,
     messageRefresh: packagedMessages, releaseVersion: packagedMessages, foregroundSuppressed: true,
     revokeResponseToEofMs: 900,
@@ -22,12 +22,21 @@ test("accepts only complete credential-free packaged network reports", () => {
   assert.equal(assertDesktopNetworkSmokeReport(validReport()).kind, "yuance-desktop-network-smoke");
   for (const mutation of [
     { credentialRestart: "unknown" }, { messageEvidence: "unknown" }, { probe: false }, { firstStream: false }, { rotated: false },
-    { secondStream: false }, { loggedOut: false }, { messageRefresh: process.platform === "linux" }, { releaseVersion: process.platform === "linux" },
+    { secondStream: false }, { loggedOut: false }, { messageRefresh: process.platform !== "darwin" }, { releaseVersion: process.platform !== "darwin" },
     { foregroundSuppressed: false }, { revokeResponseToEofMs: 5_000 },
     { diagnostic: "Authorization: Bearer secret" }, { diagnostic: "yuance_dat_secret" },
     { diagnostic: "device_code=secret" }, { diagnostic: "csrf=secret" },
   ]) {
     assert.throws(() => assertDesktopNetworkSmokeReport({ ...validReport(), ...mutation }), /invariant failed/);
+  }
+});
+
+test("locks packaged and integration message evidence to each platform", () => {
+  for (const platform of ["darwin", "linux", "win32"]) {
+    const report = validReport(platform);
+    assert.equal(assertDesktopNetworkSmokeReport(report, { platform }).messageEvidence, platform === "darwin" ? "packaged-sse" : "integration-fallback");
+    assert.throws(() => assertDesktopNetworkSmokeReport({ ...report, messageRefresh: !report.messageRefresh }, { platform }), /invariant failed/u);
+    assert.throws(() => assertDesktopNetworkSmokeReport({ ...report, messageEvidence: report.messageEvidence === "packaged-sse" ? "integration-fallback" : "packaged-sse" }, { platform }), /invariant failed/u);
   }
 });
 

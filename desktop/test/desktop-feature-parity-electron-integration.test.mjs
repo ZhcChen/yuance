@@ -48,7 +48,7 @@ function validReport() {
 
 function childArtifacts() {
   return {
-    "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: process.platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: process.platform === "linux" ? "integration-fallback" : "packaged-sse", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: process.platform !== "linux", releaseVersion: process.platform !== "linux", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
+    "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: process.platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: process.platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: process.platform === "darwin", releaseVersion: process.platform === "darwin", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
     "desktop-network-cleanup.json": { kind: "yuance-desktop-network-cleanup", apiProcess: "stopped", profile: "removed" },
     "desktop-network-api.log": "",
     "desktop-file-transfer-smoke.json": { kind: "yuance-desktop-file-smoke", upload: true, download: true, hashMatch: true, staleCapabilityRejected: true, byteSize: 34, activeOperations: 0, spoolFiles: 0 },

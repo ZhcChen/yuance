@@ -891,7 +891,7 @@ async function runDesktopNetworkSmoke() {
   });
   await rest.execute("session.probe", {});
   const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => streamFacts.push(fact));
-  const messageEvidence = process.platform === "linux" ? "integration-fallback" : "packaged-sse";
+  const messageEvidence = process.platform === "darwin" ? "packaged-sse" : "integration-fallback";
   if (messageEvidence === "packaged-sse") {
     await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
       && streamFacts.some((fact) => fact.type === "release-version"));
