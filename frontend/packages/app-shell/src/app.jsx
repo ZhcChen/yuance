@@ -1192,7 +1192,6 @@ export function SharedApp({ services }) {
             setWorkItemEditingCommentId(null);
             setWorkItemEditCommentBody('');
             setStatusMessage(`${itemKey} 评论已更新。`);
-            focusWorkItemCommentEditButton(updated.id);
           },
           refreshCompanion: () => refreshWorkItemCompanionState(
             itemKey,
@@ -1201,6 +1200,9 @@ export function SharedApp({ services }) {
           ),
         },
       });
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        focusWorkItemCommentEditButton(commentId);
+      }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('编辑评论失败。')));
