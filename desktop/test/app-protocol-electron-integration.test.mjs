@@ -8,7 +8,7 @@ function validReport() {
     url: "app://yuance/projects/smoke",
     title: "元策",
     bodyText: "需要登录",
-    bridgeSchemaVersion: 6,
+    bridgeSchemaVersion: 7,
     bridgeState: "unauthenticated",
     resourceUrls: [
       "app://yuance/assets/index-aaaaaaaa.js",
@@ -53,6 +53,7 @@ test("rejects protocol, renderer, IPC, permission, profile, and network regressi
     (value) => { value.externalRequestCount = 1; },
     (value) => { value.csp = "default-src *"; },
     (value) => { value.reloadedRenderer.url = "https://example.com/"; },
+    (value) => { value.reloadedRenderer.bridgeSchemaVersion = 6; },
     (value) => { value.resourceResponses = []; },
     (value) => { value.resourceResponses = value.resourceResponses.map((url) => url.replace(/\.css$/u, ".js")); },
     (value) => { value.resourceResponses = value.resourceResponses.map((url) => url.replace(/\.js$/u, ".css")); },
