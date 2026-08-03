@@ -12,6 +12,11 @@ const REQUIRED_ARCHIVE_FILES = Object.freeze([
   "src/main.mjs",
   "src/preload.cjs",
   "src/ipc/business-commands.mjs",
+  "src/ipc/file-commands.mjs",
+  "src/files/business-attachment-coordinator.mjs",
+  "src/files/reveal-download-controller.mjs",
+  "src/files/reveal-download-vault.mjs",
+  "src/network/attachment-operation-registry.mjs",
   "src/network/operation-registry.mjs",
   "src/network/rest-transport.mjs",
   "src/protocol/app-protocol.mjs",
@@ -32,10 +37,24 @@ const REQUIRED_CSP_DIRECTIVES = Object.freeze([
   "frame-ancestors 'none'",
 ]);
 const FORBIDDEN_RENDERER_PATTERNS = Object.freeze([
+  [/(?:\bfetch\s*\(|\bXMLHttpRequest\b|\bEventSource\b|\bWebSocket\b)/u, "generic network capability"],
   [/(?:from\s*["'](?:node:)?(?:fs|path|child_process)(?:\/promises)?["']|require\(\s*["'](?:node:)?(?:fs|path|child_process)(?:\/promises)?["']\s*\))/u, "Node filesystem capability"],
   [/ipcRenderer|window\.require|process\.binding/u, "Electron or Node bridge"],
   [/(?:file:\/\/|signed[_-]?url|\bAuthorization\b|Bearer\s|\bCookie\b)/u, "private transfer material"],
   [/(?:[A-Za-z]:\\(?:Users|Windows)\\|\/(?:Users|home|tmp)\/)/u, "local path fixture"],
+]);
+const FORBIDDEN_PRELOAD_PATTERNS = Object.freeze([
+  [/(?:\bfetch\s*\(|\bXMLHttpRequest\b|\bEventSource\b|\bWebSocket\b)/u, "generic network capability"],
+  [/(?:shell\.openExternal|from\s*["'](?:node:)?(?:fs|path)|require\(\s*["'](?:node:)?(?:fs|path))/u, "filesystem or external navigation capability"],
+  [/(?:https?:\/\/|file:\/\/|signed[_-]?url|\bAuthorization\b|Bearer\s|\bCookie\b|object_key)/u, "private transfer material"],
+]);
+const REQUIRED_PRELOAD_FILE_MARKERS = Object.freeze([
+  "yuance:file-choose",
+  "yuance:file-upload-work-item-attachment",
+  "yuance:file-upload-work-item-comment-attachment",
+  "yuance:file-download-work-item-attachment",
+  "yuance:file-download-work-item-comment-attachment",
+  "yuance:file-reveal-download",
 ]);
 const REQUIRED_BUSINESS_RENDERER_MARKERS = Object.freeze([
   "Desktop business request failed.",
@@ -102,6 +121,15 @@ function verifyProtocolHandlerSource(source) {
 function verifyRendererSource(source, relativePath) {
   for (const [pattern, label] of FORBIDDEN_RENDERER_PATTERNS) {
     if (pattern.test(source)) throw new Error(`Renderer resource contains ${label}: ${relativePath}`);
+  }
+}
+
+function verifyPreloadSource(source) {
+  for (const [pattern, label] of FORBIDDEN_PRELOAD_PATTERNS) {
+    if (pattern.test(source)) throw new Error(`Preload contains ${label}.`);
+  }
+  for (const marker of REQUIRED_PRELOAD_FILE_MARKERS) {
+    if (!source.includes(marker)) throw new Error("Preload is missing a fixed business file channel.");
   }
 }
 
@@ -239,6 +267,7 @@ export async function verifyAppBundle(inputPath) {
   for (const marker of REQUIRED_MUTATION_OPERATION_MARKERS) {
     if (!operationRegistrySource.includes(marker)) throw new Error("Bundled operation registry is missing a required business mutation.");
   }
+  verifyPreloadSource(extract(archive, entries, "src/preload.cjs").toString("utf8"));
   if (rendererSource.split(REACT_RUNTIME_MARKER).length - 1 !== 1) {
     throw new Error("Bundled renderer must contain exactly one React runtime.");
   }

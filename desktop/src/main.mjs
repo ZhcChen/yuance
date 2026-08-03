@@ -101,6 +101,9 @@ const desktopFileSmokePhase = app.isPackaged
 const desktopFileSmokeOrigin = app.isPackaged
   ? process.argv.find((value) => value.startsWith("--desktop-file-smoke-origin="))?.split("=", 2)[1]
   : undefined;
+const desktopBusinessFileSmokeOrigin = app.isPackaged
+  ? process.argv.find((value) => value.startsWith("--desktop-business-file-smoke-origin="))?.split("=", 2)[1]
+  : undefined;
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
 const appProtocolSmokeResponses = [];
@@ -591,6 +594,76 @@ async function runDesktopFileSmoke() {
   process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-file-smoke", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: sourceBytes.length, hashMatch: createHash("sha256").update(sourceBytes).digest("hex") === createHash("sha256").update(downloadedBytes).digest("hex"), staleCapabilityRejected, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
 }
 
+async function runDesktopBusinessFileSmoke() {
+  if (!desktopBusinessFileSmokeOrigin) throw new Error("packaged business file smoke arguments are invalid");
+  const origin = new URL(desktopBusinessFileSmokeOrigin);
+  if (origin.protocol !== "http:" || origin.hostname !== "127.0.0.1" || origin.username || origin.password || origin.search || origin.hash || origin.pathname !== "/") throw new Error("packaged business file smoke origin must be an exact loopback HTTP origin");
+  const userDataPath = app.getPath("userData");
+  const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
+  const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
+  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: process.platform === "darwin" ? createEphemeralCredentialStorage() : credentialStorage, fs, userDataPath, platform: process.platform, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged Business File Smoke", clientVersion: app.getVersion() });
+  await runtime.initialize();
+  await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-business-file-user-code", userCode })}\n`) });
+
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const attachmentRest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: createAttachmentOperationRegistry() });
+  const workItems = await rest.execute("workitem.list", { projectKey: "YCE", page: 1, perPage: 20 });
+  const itemKey = workItems.items.find((item) => item.key === "YCE-TASK-2")?.key;
+  if (!itemKey) throw new Error("packaged business file work item is unavailable");
+  const comments = await rest.execute("workitem.comments", { itemKey });
+  const commentId = comments.find((comment) => !comment.is_flow && !comment.is_draft)?.id;
+  if (!commentId) throw new Error("packaged business file comment is unavailable");
+
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(userDataPath, "Business File Spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const revealVault = createRevealDownloadVault();
+  const registry = createOperationRegistry();
+  const baseBinding = Object.freeze({ ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1 });
+  const binding = (purpose) => Object.freeze({ ...baseBinding, purpose });
+  const contents = [Buffer.from("yuance-packaged-business-item-v1"), Buffer.from("yuance-packaged-business-comment-v1")];
+  const sources = [path.join(userDataPath, "business-item.txt"), path.join(userDataPath, "business-comment.txt")];
+  await Promise.all(sources.map((source, index) => fs.writeFile(source, contents[index], { mode: 0o600 })));
+  let sourceIndex = 0;
+  const chooser = createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sources[sourceIndex++]] }) }, spool, vault: fileVault });
+  const selected = await Promise.all([chooser.choose({ binding: binding("upload") }), chooser.choose({ binding: binding("upload") })]);
+
+  const downloads = [path.join(userDataPath, "business-item-download.txt"), path.join(userDataPath, "business-comment-download.txt")];
+  let downloadIndex = 0;
+  const targetManager = createDownloadTargetManager({ dialog: { showSaveDialog: async () => downloadIndex < downloads.length ? { canceled: false, filePath: downloads[downloadIndex++] } : { canceled: true } }, platform: process.platform, windowsGuard });
+  const coordinator = createBusinessAttachmentCoordinator({
+    restTransport: attachmentRest,
+    fileVault,
+    grantVault,
+    revealVault,
+    uploadExecutor: createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot }),
+    downloadExecutor: createDownloadExecutor({ grantVault, targetManager, fetchImpl: network.transferFetch, registry }),
+    apiOrigin: enrolled.profile.origin,
+    allowLoopbackHttp: true,
+    allowedRelativePaths: { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" },
+  });
+  const stages = [];
+  const itemUpload = await coordinator.uploadWorkItemAttachment({ itemKey, fileCapability: selected[0].capability, binding: baseBinding, signal: undefined, onStage: (stage) => stages.push(`item:${stage}`) });
+  const commentUpload = await coordinator.uploadWorkItemCommentAttachment({ itemKey, commentId, fileCapability: selected[1].capability, binding: baseBinding, signal: undefined, onStage: (stage) => stages.push(`comment:${stage}`) });
+  const itemDownload = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const commentDownload = await coordinator.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const cancelled = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  let revealCount = 0;
+  const revealController = createRevealDownloadController({ vault: revealVault, shell: { showItemInFolder: (target) => { revealCount += 1; shell.showItemInFolder(target); } } });
+  await revealController.reveal(itemDownload.revealCapability, binding("reveal-download"));
+  await revealController.reveal(commentDownload.revealCapability, binding("reveal-download"));
+  const downloaded = await Promise.all(downloads.map((target) => fs.readFile(target)));
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  await runtime.logout();
+  runtime.dispose();
+  await fileVault.invalidateAll();
+  revealVault.invalidateAll();
+  const spoolFiles = (await fs.readdir(spoolRoot).catch(() => [])).filter((name) => /^(?:snapshot-|\.capture-)/u.test(name));
+  process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-business-file-smoke", itemUploaded: itemUpload.uploaded.status === "uploaded", commentUploaded: commentUpload.uploaded.status === "uploaded", downloadsMatch: hash(downloaded[0]) === hash(contents[0]) && hash(downloaded[1]) === hash(contents[1]), revealCount, cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability, stageCount: stages.length, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
+}
+
 function createEphemeralCredentialStorage() {
   const key = randomBytes(32);
   return Object.freeze({
@@ -881,6 +954,15 @@ if (singleInstanceProbe) {
   app.whenReady().then(async () => {
     try { await runDesktopFileSmoke(); app.quit(); }
     catch (error) { process.stderr.write(`desktop file smoke failed: ${error.message}\n`); app.exit(1); }
+  });
+} else if (desktopBusinessFileSmokeOrigin) {
+  const smokeProfile = process.argv.find((value) => value.startsWith("--desktop-business-file-smoke-profile="))?.split("=", 2)[1];
+  if (!smokeProfile || !path.isAbsolute(smokeProfile)) throw new Error("packaged business file smoke profile must be absolute");
+  app.setPath("userData", smokeProfile);
+  app.setPath("sessionData", path.join(smokeProfile, "Session Data"));
+  app.whenReady().then(async () => {
+    try { await runDesktopBusinessFileSmoke(); app.quit(); }
+    catch (error) { process.stderr.write(`desktop business file smoke failed: ${error.message}\n`); app.exit(1); }
   });
 } else {
   ipcMain.handle("yuance:notify", notifyFromRenderer);

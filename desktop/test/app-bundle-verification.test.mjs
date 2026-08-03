@@ -36,6 +36,7 @@ async function waitForArchiveFixture(archive) {
 async function createBundleFixture({
   extraRendererFiles = {},
   protocolHandlerSource,
+  preloadSource,
   rendererAppSource,
   mutateManifest,
   protocolSource,
@@ -45,12 +46,23 @@ async function createBundleFixture({
   const source = path.join(root, "source");
   const renderer = path.join(source, "renderer-dist");
   await fs.mkdir(path.join(source, "src", "protocol"), { recursive: true });
+  await fs.mkdir(path.join(source, "src", "files"), { recursive: true });
   await fs.mkdir(path.join(source, "src", "ipc"), { recursive: true });
   await fs.mkdir(path.join(source, "src", "network"), { recursive: true });
   await fs.mkdir(path.join(renderer, "assets"), { recursive: true });
   await fs.writeFile(path.join(source, "src", "main.mjs"), "export {};\n");
-  await fs.writeFile(path.join(source, "src", "preload.cjs"), "module.exports = {};\n");
+  await fs.writeFile(path.join(source, "src", "preload.cjs"), preloadSource ?? [
+    'const channels = ["yuance:file-choose", "yuance:file-upload-work-item-attachment",',
+    '  "yuance:file-upload-work-item-comment-attachment", "yuance:file-download-work-item-attachment",',
+    '  "yuance:file-download-work-item-comment-attachment", "yuance:file-reveal-download"];',
+    "module.exports = channels;",
+  ].join("\n"));
   await fs.writeFile(path.join(source, "src", "ipc", "business-commands.mjs"), "export {};\n");
+  await fs.writeFile(path.join(source, "src", "ipc", "file-commands.mjs"), "export {};\n");
+  for (const name of ["business-attachment-coordinator.mjs", "reveal-download-controller.mjs", "reveal-download-vault.mjs"]) {
+    await fs.writeFile(path.join(source, "src", "files", name), "export {};\n");
+  }
+  await fs.writeFile(path.join(source, "src", "network", "attachment-operation-registry.mjs"), "export {};\n");
   await fs.writeFile(path.join(source, "src", "network", "operation-registry.mjs"), [
     'const operations = ["project.select", "notification.read", "notification.readall",',
     '  "workitem.update", "workitem.handoff", "workitem.commentcreate", "workitem.commentupdate"];',
@@ -179,6 +191,10 @@ test("rejects registered source maps and development runtime references", async 
 
 test("rejects renderer file capabilities, signed requests, and local path fixtures", async (context) => {
   for (const source of [
+    "fetch('/api/v1/projects');",
+    "new XMLHttpRequest();",
+    "new EventSource('/events');",
+    "new WebSocket('wss://example.invalid');",
     "import fs from 'node:fs';",
     "window.ipcRenderer.invoke('open')",
     "const signed_url = 'secret';",
@@ -187,6 +203,20 @@ test("rejects renderer file capabilities, signed requests, and local path fixtur
     const fixture = await createBundleFixture({ registeredRendererFiles: { "assets/private.js": source } });
     context.after(() => fs.rm(fixture.root, { recursive: true, force: true }));
     await assert.rejects(verifyAppBundle(fixture.archive), /Renderer resource contains/);
+  }
+});
+
+test("rejects preload network, filesystem, external navigation, and private transfer capabilities", async (context) => {
+  const markers = '"yuance:file-choose yuance:file-upload-work-item-attachment yuance:file-upload-work-item-comment-attachment yuance:file-download-work-item-attachment yuance:file-download-work-item-comment-attachment yuance:file-reveal-download";';
+  for (const source of [
+    `${markers}\nfetch('/api/v1/projects');`,
+    `${markers}\nrequire('node:fs');`,
+    `${markers}\nshell.openExternal(value);`,
+    `${markers}\nconst signed_url = value;`,
+  ]) {
+    const fixture = await createBundleFixture({ preloadSource: source });
+    context.after(() => fs.rm(fixture.root, { recursive: true, force: true }));
+    await assert.rejects(verifyAppBundle(fixture.archive), /Preload contains/);
   }
 });
 

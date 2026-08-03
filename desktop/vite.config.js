@@ -14,6 +14,7 @@ export default defineConfig({
     strictPort: true,
   },
   build: {
+    modulePreload: { polyfill: false },
     outDir: "../../renderer-dist",
     emptyOutDir: true,
     manifest: false,
