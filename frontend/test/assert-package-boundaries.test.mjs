@@ -20,6 +20,15 @@ const PACKAGE_MANIFESTS = {
       '@yuance/frontend-platform-contract': '0.1.0',
     },
   },
+  'app-shell': {
+    name: '@yuance/frontend-app-shell',
+    dependencies: {
+      '@yuance/frontend-api-client': '0.1.0',
+      '@yuance/frontend-app-core': '0.1.0',
+      '@yuance/frontend-platform-contract': '0.1.0',
+      '@yuance/frontend-ui': '0.1.0',
+    },
+  },
   ui: {
     name: '@yuance/frontend-ui',
   },
@@ -47,6 +56,27 @@ test('analyzePackageBoundaries allows app-core to import public package roots', 
         "import { marker as apiMarker } from '@yuance/frontend-api-client';",
         "import { marker as platformMarker } from '@yuance/frontend-platform-contract';",
         'export const marker = apiMarker && platformMarker;',
+        '',
+      ].join('\n'),
+    );
+
+    assert.deepEqual(await analyzePackageBoundaries(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('analyzePackageBoundaries allows app-shell to compose all public package roots', async () => {
+  const root = await createWorkspace();
+  try {
+    await writeFile(
+      path.join(root, 'packages', 'app-shell', 'src', 'index.js'),
+      [
+        "import { marker as apiMarker } from '@yuance/frontend-api-client';",
+        "import { marker as coreMarker } from '@yuance/frontend-app-core';",
+        "import { marker as platformMarker } from '@yuance/frontend-platform-contract';",
+        "import { marker as uiMarker } from '@yuance/frontend-ui';",
+        'export const marker = apiMarker && coreMarker && platformMarker && uiMarker;',
         '',
       ].join('\n'),
     );

@@ -20,6 +20,15 @@ const PACKAGE_RULES = {
       '@yuance/frontend-platform-contract',
     ],
   },
+  'app-shell': {
+    packageName: '@yuance/frontend-app-shell',
+    allowedInternalImports: [
+      '@yuance/frontend-api-client',
+      '@yuance/frontend-app-core',
+      '@yuance/frontend-platform-contract',
+      '@yuance/frontend-ui',
+    ],
+  },
   ui: {
     packageName: '@yuance/frontend-ui',
     allowedInternalImports: [],

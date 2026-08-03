@@ -18,6 +18,11 @@ const services = {
   events: createBrowserEvents(),
   files: createBrowserFilePlatform({ refreshCsrfToken: webApi.refreshCsrfToken }),
   router: createBrowserRouter(),
+  runtime: {
+    scheduleFrame: (callback) => window.requestAnimationFrame(callback),
+    getElementById: (id) => document.getElementById(id),
+    readFormValue: (form, name) => String(new FormData(form).get(name) || ''),
+  },
 };
 
 ReactDOM.createRoot(rootElement).render(

@@ -15,6 +15,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@yuance/frontend-app-shell": "file:../frontend/packages/app-shell",
     "@yuance/frontend-api-client": "file:../frontend/packages/api-client",
     "@yuance/frontend-app-core": "file:../frontend/packages/app-core",
     "@yuance/frontend-platform-contract": "file:../frontend/packages/platform-contract",
