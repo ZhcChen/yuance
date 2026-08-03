@@ -1239,7 +1239,11 @@ async function initializeDesktopCredentialRuntime() {
   });
   coordinator = createNetworkCoordinator({
     credentialRuntime: runtime,
-    sseClient: createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch }),
+    sseClient: createSseClient({
+      profile: enrolled.profile,
+      fetchImpl: network.fetch,
+      ...(desktopFeatureParityUiSmokeOrigin ? { idleMs: 5_000 } : {}),
+    }),
     probe: () => restTransport.execute("session.probe", {}),
     onState: (state) => {
       networkStatePublisher.update(state);
