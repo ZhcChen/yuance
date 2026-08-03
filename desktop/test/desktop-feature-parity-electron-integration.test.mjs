@@ -42,6 +42,13 @@ test("packaged UI smoke requires an explicit loopback port", async () => {
   assert.match(main, /origin\.hostname !== "127\.0\.0\.1" \|\| !origin\.port/u);
 });
 
+test("packaged UI smoke retries attachment selection only as a second explicit user action", async () => {
+  const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /let workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt\(window\);\s+if \(!workItemAttachmentUploaded\) workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt\(window\);/u);
+  assert.match(main, /if \(!button \|\| button\.disabled\) return false;\s+button\.click\(\);/u);
+  assert.match(main, /if \(error\.message === "UI smoke work item attachment upload timed out"\) return false;/u);
+});
+
 function validReport() {
   return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, sharedUi: true, keyboardFocus: true, liveRegions: 1, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
 }

@@ -749,13 +749,23 @@ async function runFeatureParityBusinessUiSmoke(window) {
 }
 
 async function runWorkItemAttachmentUploadAttempt(window) {
-  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件")?.click()`);
-  await new Promise((resolve) => setTimeout(resolve, 250));
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const panel = document.querySelector('.work-item-attachments-panel');
-    const uploaded = [...(panel?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
-    return uploaded || Boolean(panel?.querySelector('.work-item-action-error'));
-  })()`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment upload");
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件");
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  })()`), 10_000, "work item attachment select action");
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+      const panel = document.querySelector('.work-item-attachments-panel');
+      const uploaded = [...(panel?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
+      return uploaded || Boolean(panel?.querySelector('.work-item-action-error'));
+    })()`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment upload");
+  } catch (error) {
+    if (error.message === "UI smoke work item attachment upload timed out") return false;
+    throw error;
+  }
   return window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`);
 }
 
