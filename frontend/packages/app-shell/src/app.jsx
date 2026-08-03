@@ -23,9 +23,9 @@ import {
   WorkItemDetail,
   attachmentIsUploaded,
 } from '@yuance/frontend-ui';
-import {
-  ApiError,
-} from '@yuance/frontend-api-client';
+import { errorMessage } from './errors.js';
+
+/** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 
 /** @typedef {Omit<ReturnType<typeof import('@yuance/frontend-api-client').createApiClient>, 'createWorkItemCommentDraft' | 'publishWorkItemCommentDraft'> & { restorePendingReturnToHash(): void }} AppApiService */
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { selectFile(file: File): import('@yuance/frontend-platform-contract').SelectedFile }} AppFileService */
@@ -209,17 +209,6 @@ function upsertAttachment(attachments, attachment) {
     nextAttachments.push(attachment);
   }
   return nextAttachments;
-}
-
-/** @param {ApiError | Error | null} error */
-function errorMessage(error) {
-  if (!error) {
-    return '';
-  }
-  if (error instanceof ApiError) {
-    return error.message;
-  }
-  return error.message || '加载失败。';
 }
 
 /** @param {'all' | 'unread' | 'pending' | 'read'} filter */
