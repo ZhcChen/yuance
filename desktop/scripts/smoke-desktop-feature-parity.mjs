@@ -101,10 +101,15 @@ function assertUiReport(report) {
     restrictedBridge: report?.restrictedBridge === true,
     semanticMain: report?.semanticMain === true,
     semanticNavigation: report?.semanticNavigation === true,
+    workItemDetail: report?.workItemDetail === true,
+    workItemEdited: report?.workItemEdited === true,
+    workItemHandedOff: report?.workItemHandedOff === true,
+    commentCreated: report?.commentCreated === true,
+    commentEdited: report?.commentEdited === true,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "genericBridgeMethods,keyboardFocus,kind,liveRegions,restrictedBridge,semanticMain,semanticNavigation,sharedApp",
+    shape: report && Object.keys(report).sort().join(",") === "commentCreated,commentEdited,genericBridgeMethods,keyboardFocus,kind,liveRegions,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemDetail,workItemEdited,workItemHandedOff",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);

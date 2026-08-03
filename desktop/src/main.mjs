@@ -266,6 +266,9 @@ function createMainWindow() {
   window.webContents.on("did-start-navigation", (event) => {
     rendererReadiness.didStart(event);
   });
+  window.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) rendererReadiness.didCommit(url);
+  });
   window.webContents.on("did-finish-load", () => {
     if (rendererReadiness.didCommit(window.webContents.getURL())) {
       hostStatePublisher.publishTo(window);
@@ -442,8 +445,9 @@ async function runFeatureParityUiSmoke(window) {
     if (!button || button.disabled) return false;
     button.click();
     return true;
-  })()`));
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")))()`), 30_000);
+  })()`), 10_000, "authorization action");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")))()`), 30_000, "shared app load");
+  const business = await runFeatureParityBusinessUiSmoke(window);
   window.focus();
   window.webContents.focus();
   await window.webContents.executeJavaScript("document.body.focus()");
@@ -466,6 +470,11 @@ async function runFeatureParityUiSmoke(window) {
       restrictedBridge: Object.keys(bridge).sort().join(",") === "auth,business,events,files,hostState,network,schemaVersion" && bridge.schemaVersion === 7,
       semanticMain: document.querySelectorAll("main").length === 1,
       semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
+      workItemDetail: ${business.workItemDetail},
+      workItemEdited: ${business.workItemEdited},
+      workItemHandedOff: ${business.workItemHandedOff},
+      commentCreated: ${business.commentCreated},
+      commentEdited: ${business.commentEdited},
       liveRegions: document.querySelectorAll("[aria-live]").length,
       keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
       genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
@@ -475,13 +484,85 @@ async function runFeatureParityUiSmoke(window) {
   app.quit();
 }
 
-async function waitForUiSmoke(operation, timeoutMs = 10_000) {
+async function runFeatureParityBusinessUiSmoke(window) {
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const link = [...document.querySelectorAll('a[href]')].find((value) => value.textContent.trim() === "任务");
+    if (!link) return false;
+    link.click();
+    return true;
+  })()`), 10_000, "task navigation");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-row')].find((value) => value.querySelector('strong')?.textContent.startsWith("YCE-TASK-2"));
+    const link = row?.querySelector('a[href]');
+    if (!link) return false;
+    link.click();
+    return true;
+  })()`), 30_000, "work item link");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.startsWith("YCE-TASK-2")`), 30_000, "work item detail");
+
+  await window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
+    const input = panel?.querySelector('input[name="title"]');
+    const button = panel?.querySelector('button[type="submit"]');
+    if (!input || !button) throw new Error("work item edit form is unavailable");
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, "Desktop packaged UI edit");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), 30_000, "work item edit");
+
+  await window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
+    const select = panel?.querySelector('select[name="status"]');
+    const textarea = panel?.querySelector('textarea[name="body"]');
+    const button = panel?.querySelector('button[type="submit"]');
+    if (!select || !textarea || !button) throw new Error("work item handoff form is unavailable");
+    const nextStatus = select.value === "in_progress" ? "pending_confirmation" : "in_progress";
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, nextStatus);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI handoff");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('[role="status"]')].some((value) => value.textContent.includes("已推进并指派"))`), 30_000, "work item handoff");
+
+  await window.webContents.executeJavaScript(`(() => {
+    const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
+    if (!textarea || !button) throw new Error("comment create form is unavailable");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI comment");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "Desktop packaged UI comment")`), 30_000, "comment create");
+
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment");
+    const button = row?.querySelector('button[data-comment-edit]');
+    if (!button) throw new Error("comment edit action is unavailable");
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-comment-edit-form textarea'))`), 10_000, "comment edit form");
+  await window.webContents.executeJavaScript(`(() => {
+    const textarea = document.querySelector('.work-item-comment-edit-form textarea');
+    const button = [...document.querySelectorAll('.work-item-comment-edit-form button')].find((value) => value.textContent.trim() === "保存评论");
+    if (!textarea || !button) throw new Error("comment edit form is unavailable");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI comment updated");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "Desktop packaged UI comment updated")`), 30_000, "comment edit");
+  return Object.freeze({ workItemDetail: true, workItemEdited: true, workItemHandedOff: true, commentCreated: true, commentEdited: true });
+}
+
+async function waitForUiSmoke(operation, timeoutMs = 10_000, label = "condition") {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try { if (await operation()) return; } catch {}
     await delay(50);
   }
-  throw new Error("UI smoke condition timed out");
+  throw new Error(`UI smoke ${label} timed out`);
 }
 
 function validatePackagedLoopbackOrigin(value) {

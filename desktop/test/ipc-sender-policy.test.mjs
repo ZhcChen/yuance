@@ -65,6 +65,19 @@ test("late failures and unrelated external cancellation cannot reopen a newer na
   assert.equal(tracker.didCommit("app://yuance/work-items"), true);
 });
 
+test("trusted same-document route commits reopen IPC after pushState navigation", () => {
+  const tracker = createRendererReadinessTracker(resolveRendererTarget({ isPackaged: true }));
+  tracker.didCommit("app://yuance/");
+  tracker.didStart({ url: "app://yuance/tasks", isMainFrame: true });
+  assert.equal(tracker.isPending(), true);
+  assert.equal(tracker.didCommit("app://yuance/tasks"), true);
+  assert.equal(tracker.isPending(), false);
+
+  tracker.didStart({ url: "app://yuance/unknown", isMainFrame: true });
+  assert.equal(tracker.didCommit("app://yuance/unknown"), false);
+  assert.equal(tracker.isPending(), true);
+});
+
 test("rejects subframes, stale windows, destroyed senders, and invalid routes", () => {
   const fixture = senderFixture();
   const assertSender = createIpcSenderPolicy({
