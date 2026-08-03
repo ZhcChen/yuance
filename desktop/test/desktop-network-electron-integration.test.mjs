@@ -8,10 +8,11 @@ import { assertDesktopNetworkSmokeReport } from "../scripts/smoke-desktop-networ
 import { verifyDesktopNetworkArtifacts } from "../scripts/verify-desktop-network-artifacts.mjs";
 
 function validReport() {
+  const packagedMessages = process.platform !== "linux";
   return {
     kind: "yuance-desktop-network-smoke", credentialRestart: process.platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: process.platform === "linux" ? "integration-fallback" : "packaged-sse", probe: true,
     firstStream: true, rotated: true, secondStream: true, loggedOut: true,
-    messageRefresh: true, releaseVersion: true, foregroundSuppressed: true,
+    messageRefresh: packagedMessages, releaseVersion: packagedMessages, foregroundSuppressed: true,
     revokeResponseToEofMs: 900,
     publicAuthStates: ["authenticated", "unauthenticated"],
   };
@@ -21,7 +22,7 @@ test("accepts only complete credential-free packaged network reports", () => {
   assert.equal(assertDesktopNetworkSmokeReport(validReport()).kind, "yuance-desktop-network-smoke");
   for (const mutation of [
     { credentialRestart: "unknown" }, { messageEvidence: "unknown" }, { probe: false }, { firstStream: false }, { rotated: false },
-    { secondStream: false }, { loggedOut: false }, { messageRefresh: false }, { releaseVersion: false },
+    { secondStream: false }, { loggedOut: false }, { messageRefresh: process.platform === "linux" }, { releaseVersion: process.platform === "linux" },
     { foregroundSuppressed: false }, { revokeResponseToEofMs: 5_000 },
     { diagnostic: "Authorization: Bearer secret" }, { diagnostic: "yuance_dat_secret" },
     { diagnostic: "device_code=secret" }, { diagnostic: "csrf=secret" },

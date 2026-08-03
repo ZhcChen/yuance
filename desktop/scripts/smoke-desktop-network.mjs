@@ -98,7 +98,8 @@ function runPhase(executable, phase, origin, profile, platform, onReport = async
 export function assertDesktopNetworkSmokeReport(report, { platform = process.platform } = {}) {
   const expectedRestart = platform === "darwin" ? "reauthorized" : "recovered";
   const expectedMessageEvidence = platform === "linux" ? "integration-fallback" : "packaged-sse";
-  if (report?.kind !== "yuance-desktop-network-smoke" || report.credentialRestart !== expectedRestart || report.messageEvidence !== expectedMessageEvidence || !report.probe || !report.firstStream || !report.rotated || !report.secondStream || !report.loggedOut || !report.messageRefresh || !report.releaseVersion || !report.foregroundSuppressed || !(report.revokeResponseToEofMs < 5_000) || CREDENTIAL_PATTERN.test(JSON.stringify(report))) {
+  const expectedPackagedMessages = expectedMessageEvidence === "packaged-sse";
+  if (report?.kind !== "yuance-desktop-network-smoke" || report.credentialRestart !== expectedRestart || report.messageEvidence !== expectedMessageEvidence || !report.probe || !report.firstStream || !report.rotated || !report.secondStream || !report.loggedOut || report.messageRefresh !== expectedPackagedMessages || report.releaseVersion !== expectedPackagedMessages || !report.foregroundSuppressed || !(report.revokeResponseToEofMs < 5_000) || CREDENTIAL_PATTERN.test(JSON.stringify(report))) {
     throw new Error(`packaged network smoke invariant failed: ${JSON.stringify(report)}`);
   }
   return report;

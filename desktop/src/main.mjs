@@ -892,17 +892,14 @@ async function runDesktopNetworkSmoke() {
   await rest.execute("session.probe", {});
   const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => streamFacts.push(fact));
   const messageEvidence = process.platform === "linux" ? "integration-fallback" : "packaged-sse";
-  if (process.platform === "linux") {
-    await messages.handleFact(Object.freeze({ type: "release-version", version: app.getVersion(), epoch: first.epoch }));
-    await messages.handleFact(Object.freeze({ type: "topbar", reason: "connected", epoch: first.epoch }));
-  } else {
+  if (messageEvidence === "packaged-sse") {
     await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
       && streamFacts.some((fact) => fact.type === "release-version"));
     for (const fact of streamFacts) await messages.handleFact(fact);
+    await waitForSmokeCondition(() => messageQueryCompleted
+      && messageFacts.some((fact) => fact.type === "topbar")
+      && messageFacts.some((fact) => fact.type === "release-version"));
   }
-  await waitForSmokeCondition(() => messageQueryCompleted
-    && messageFacts.some((fact) => fact.type === "topbar")
-    && messageFacts.some((fact) => fact.type === "release-version"));
   await runtime.refreshAccess(first.epoch);
   await first.completion;
   await rest.execute("session.probe", {});
@@ -916,8 +913,8 @@ async function runDesktopNetworkSmoke() {
   process.stdout.write(`${JSON.stringify({
     kind: "yuance-desktop-network-smoke", credentialRestart, probe: true, firstStream: true,
     rotated: true, secondStream: true, loggedOut: true, revokeResponseToEofMs: Math.round(revokeResponseToEofMs),
-    messageRefresh: messageFacts.some((fact) => fact.type === "topbar"),
-    releaseVersion: messageFacts.some((fact) => fact.type === "release-version"),
+    messageRefresh: messageEvidence === "packaged-sse" && messageFacts.some((fact) => fact.type === "topbar"),
+    releaseVersion: messageEvidence === "packaged-sse" && messageFacts.some((fact) => fact.type === "release-version"),
     messageEvidence,
     foregroundSuppressed: nativeNotifications.length === 0,
     publicAuthStates: authStates,
