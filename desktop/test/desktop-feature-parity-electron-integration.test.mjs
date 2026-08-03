@@ -86,6 +86,12 @@ test("feature parity CLI flushes evidence before terminating lingering platform 
   assert.doesNotMatch(smoke, /\.write\("",/u);
 });
 
+test("real API fixture stop is bounded when Windows does not emit exit", async () => {
+  const fixture = await fs.readFile(new URL("./support/real-api-fixture.mjs", import.meta.url), "utf8");
+  assert.match(fixture, /const timer = setTimeout\(\(\) => \{\s+forceStopChild\(child\)\.then\(finish, finish\);\s+\}, 4_000\);/u);
+  assert.match(fixture, /spawn\("taskkill", \["\/pid", String\(child\.pid\), "\/T", "\/F"\]/u);
+});
+
 function validReport() {
   return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, sharedUi: true, keyboardFocus: true, liveRegions: 1, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
 }

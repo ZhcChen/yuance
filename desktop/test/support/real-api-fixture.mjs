@@ -177,10 +177,25 @@ function stopChild(child) {
       clearTimeout(timer);
       resolve();
     };
-    const timer = setTimeout(() => { child.kill("SIGKILL"); }, 4_000);
+    const timer = setTimeout(() => {
+      forceStopChild(child).then(finish, finish);
+    }, 4_000);
     child.once("exit", finish);
     child.kill("SIGTERM");
     if (child.exitCode !== null) finish();
+  });
+}
+
+function forceStopChild(child) {
+  if (process.platform !== "win32") {
+    child.kill("SIGKILL");
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    const timer = setTimeout(resolve, 10_000);
+    killer.once("error", () => { clearTimeout(timer); resolve(); });
+    killer.once("exit", () => { clearTimeout(timer); resolve(); });
   });
 }
 
