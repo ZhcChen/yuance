@@ -16,7 +16,7 @@ use sqlx::SqlitePool;
 use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
-    domains::{api_tokens, auth, bootstrap, device_sessions, system_api_tokens},
+    domains::{api_tokens, auth, bootstrap, device_sessions, projects, system_api_tokens},
     platform::{config::Settings, db, security::csrf::CSRF_COOKIE_NAME},
     web::router::{AppState, build_router},
 };
@@ -26,6 +26,84 @@ const LOGOUT_PATH: &str = "/api/v1/device-session/logout";
 const CONTROL_PATH: &str = "/api/v1/device-session/events";
 const CODE_VERIFIER: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-._~";
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+#[tokio::test]
+async fn device_access_reads_and_updates_work_item_through_existing_business_routes() {
+    let pool = test_pool().await;
+    let (user_id, _) = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, user_id).await.unwrap();
+    let credentials = issue_device_credentials(&pool, user_id, "business-probe").await;
+    let app = test_app(pool.clone());
+
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["key"], "YCE-TASK-2");
+
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        serde_json::json!({"title": "Device principal probe"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["title"], "Device principal probe");
+    assert_eq!(
+        projects::get_work_item_detail(&pool, "YCE-TASK-2")
+            .await
+            .unwrap()
+            .unwrap()
+            .title,
+        "Device principal probe"
+    );
+    let audit_metadata = sqlx::query_scalar::<_, String>(
+        "SELECT metadata FROM audit_logs WHERE action = 'work_item.update' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let audit_metadata: Value = serde_json::from_str(&audit_metadata).unwrap();
+    assert_eq!(audit_metadata["source"], "device");
+    assert_eq!(audit_metadata["device_id"], credentials.device_id);
+    assert_eq!(audit_metadata["family_id"], credentials.family_id);
+    assert_eq!(audit_metadata["generation"], credentials.generation);
+    assert_eq!(
+        audit_metadata["authorization_version"],
+        credentials.authorization_version
+    );
+    let audit_metadata = audit_metadata.to_string();
+    assert!(!audit_metadata.contains(&credentials.access_token));
+    assert!(!audit_metadata.contains(&credentials.refresh_token));
+
+    device_sessions::revoke_family_for_user(
+        &pool,
+        user_id,
+        &credentials.family_id,
+        Utc::now(),
+        "business_probe",
+    )
+    .await
+    .unwrap();
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
 
 #[tokio::test]
 async fn device_access_probes_logs_out_and_cannot_enter_business_api() {
@@ -512,6 +590,27 @@ async fn device_request(
     }
     app.clone()
         .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
+}
+
+async fn device_json_request(
+    app: &Router,
+    method: &str,
+    path: &str,
+    token: &str,
+    payload: Value,
+) -> Response {
+    app.clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(path)
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
         .await
         .unwrap()
 }

@@ -885,17 +885,49 @@ struct ApiTokenActor {
 }
 
 #[derive(Debug, Clone)]
+struct DeviceApiPrincipal {
+    device_id: String,
+    family_id: String,
+    generation: i64,
+    authorization_version: i64,
+}
+
+#[derive(Debug, Clone)]
+enum ApiPrincipalKind {
+    Session,
+    ApiToken(ApiTokenActor),
+    Device(DeviceApiPrincipal),
+}
+
+#[derive(Debug, Clone)]
 struct ApiPrincipal {
     user: auth::AuthUser,
-    token_actor: Option<ApiTokenActor>,
+    kind: ApiPrincipalKind,
 }
 
 impl ApiPrincipal {
     fn actor_display_name_snapshot(&self) -> String {
-        self.token_actor
-            .as_ref()
-            .map(|actor| actor.display_name.clone())
-            .unwrap_or_default()
+        match &self.kind {
+            ApiPrincipalKind::ApiToken(actor) => actor.display_name.clone(),
+            ApiPrincipalKind::Session | ApiPrincipalKind::Device(_) => String::new(),
+        }
+    }
+
+    fn audit_details(&self) -> String {
+        match &self.kind {
+            ApiPrincipalKind::Session => serde_json::json!({"source": "session"}).to_string(),
+            ApiPrincipalKind::ApiToken(_) => {
+                serde_json::json!({"source": "api_token"}).to_string()
+            }
+            ApiPrincipalKind::Device(device) => serde_json::json!({
+                "source": "device",
+                "device_id": device.device_id,
+                "family_id": device.family_id,
+                "generation": device.generation,
+                "authorization_version": device.authorization_version,
+            })
+            .to_string(),
+        }
     }
 }
 
@@ -1908,7 +1940,8 @@ pub async fn list_work_items(
     headers: HeaderMap,
     Query(query): Query<WorkItemQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<WorkItemPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -2048,7 +2081,8 @@ pub async fn get_work_item(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, &item_key)
@@ -2068,7 +2102,7 @@ pub async fn update_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<UpdateWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2112,7 +2146,7 @@ pub async fn update_work_item(
         "work_item.update",
         "work_item",
         &updated.item_key,
-        "{}",
+        &principal.audit_details(),
     )
     .await?;
 
@@ -4408,7 +4442,7 @@ async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResu
             api_token_actor_display_name(&authenticated.user, &authenticated.token_name);
         return Ok(ApiPrincipal {
             user: authenticated.user,
-            token_actor: Some(ApiTokenActor { display_name }),
+            kind: ApiPrincipalKind::ApiToken(ApiTokenActor { display_name }),
         });
     }
     let user = auth::user_from_headers(pool, headers)
@@ -4416,7 +4450,46 @@ async fn require_api_principal(state: &AppState, headers: &HeaderMap) -> AppResu
         .ok_or(AppError::Unauthorized)?;
     Ok(ApiPrincipal {
         user,
-        token_actor: None,
+        kind: ApiPrincipalKind::Session,
+    })
+}
+
+async fn require_d2_api_principal(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> AppResult<ApiPrincipal> {
+    let Some(raw_token) = single_bearer_token(headers)? else {
+        return require_api_principal(state, headers).await;
+    };
+    if !device_sessions::is_device_access_token(&raw_token) {
+        return require_api_principal(state, headers).await;
+    }
+
+    let pool = state.pool()?;
+    let context = audit_context::from_headers(headers);
+    let access = device_sessions::authenticate_access_token(
+        pool,
+        &raw_token,
+        &state.settings.device_sessions.server_instance_id,
+        chrono::Utc::now(),
+        &context.ip,
+        &context.user_agent,
+    )
+    .await
+    .map_err(|_| AppError::Unauthorized)?;
+    Ok(ApiPrincipal {
+        user: auth::AuthUser {
+            id: access.user_id,
+            username: access.username,
+            display_name: access.display_name,
+            is_super_admin: access.is_super_admin,
+        },
+        kind: ApiPrincipalKind::Device(DeviceApiPrincipal {
+            device_id: access.device_id,
+            family_id: access.family_id,
+            generation: access.generation,
+            authorization_version: access.authorization_version,
+        }),
     })
 }
 
@@ -4657,6 +4730,9 @@ async fn ensure_api_token_project_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(());
     };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(());
+    }
     if api_tokens::token_allows_project(pool, &raw_token, user_id, project_id).await? {
         return Ok(());
     }
@@ -4674,6 +4750,9 @@ async fn api_token_project_scope_keys(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(None);
     };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(None);
+    }
     api_tokens::token_project_scope_keys(pool, &raw_token, user_id).await
 }
 
@@ -4788,6 +4867,9 @@ async fn ensure_api_token_scope(
     let Some(raw_token) = api_tokens::bearer_token(headers) else {
         return Ok(());
     };
+    if device_sessions::is_device_access_token(&raw_token) {
+        return Ok(());
+    }
     if api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, required_scope).await? {
         return Ok(());
     }
