@@ -219,13 +219,19 @@ async function supportingReportBytes(root) {
 if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
   const inputPath = path.resolve(process.argv[2] || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist"));
   const keepAlive = setInterval(() => {}, 1_000);
+  let exitCode = 0;
   try {
     await smokeDesktopFeatureParity(inputPath);
     console.log("Verified packaged desktop feature parity.");
   } catch (error) {
     console.error(error.message);
-    process.exitCode = 1;
+    exitCode = 1;
   } finally {
     clearInterval(keepAlive);
   }
+  await Promise.all([
+    new Promise((resolve) => process.stdout.write("", resolve)),
+    new Promise((resolve) => process.stderr.write("", resolve)),
+  ]);
+  process.exit(exitCode);
 }

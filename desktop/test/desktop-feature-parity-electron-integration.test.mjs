@@ -49,6 +49,11 @@ test("packaged UI smoke retries attachment selection only as a second explicit u
   assert.match(main, /if \(error\.message === "UI smoke work item attachment upload timed out"\) return false;/u);
 });
 
+test("feature parity CLI flushes evidence before terminating lingering platform handles", async () => {
+  const smoke = await fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8");
+  assert.match(smoke, /await smokeDesktopFeatureParity\(inputPath\);[\s\S]*clearInterval\(keepAlive\);[\s\S]*process\.stdout\.write\("", resolve\)[\s\S]*process\.stderr\.write\("", resolve\)[\s\S]*process\.exit\(exitCode\);/u);
+});
+
 function validReport() {
   return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, sharedUi: true, keyboardFocus: true, liveRegions: 1, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
 }
