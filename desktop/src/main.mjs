@@ -461,6 +461,7 @@ async function runFeatureParityUiSmoke(window) {
     })()`);
     if (focused) break;
   }
+  const resources = desktopUiSmokeResourceMetrics();
   const report = await window.webContents.executeJavaScript(`(() => {
     const bridge = window.yuanceDesktop;
     const active = document.activeElement;
@@ -483,6 +484,9 @@ async function runFeatureParityUiSmoke(window) {
       commentAttachmentRevealed: ${business.commentAttachmentRevealed},
       messageTargetOpened: ${business.messageTargetOpened},
       messageTargetFocused: ${business.messageTargetFocused},
+      processCount: ${resources.processCount},
+      workingSetKb: ${resources.workingSetKb},
+      cpuPercent: ${resources.cpuPercent},
       liveRegions: document.querySelectorAll("[aria-live]").length,
       keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
       genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
@@ -490,6 +494,15 @@ async function runFeatureParityUiSmoke(window) {
   })()`);
   await new Promise((resolve) => process.stdout.write(`${JSON.stringify(report)}\n`, resolve));
   app.quit();
+}
+
+function desktopUiSmokeResourceMetrics() {
+  const metrics = app.getAppMetrics();
+  return Object.freeze({
+    processCount: metrics.length,
+    workingSetKb: Math.ceil(metrics.reduce((total, value) => total + (value.memory?.workingSetSize || 0), 0)),
+    cpuPercent: Math.ceil(metrics.reduce((total, value) => total + (value.cpu?.percentCPUUsage || 0), 0)),
+  });
 }
 
 async function runFeatureParityBusinessUiSmoke(window) {

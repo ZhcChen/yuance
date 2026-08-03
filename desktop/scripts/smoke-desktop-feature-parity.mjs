@@ -57,13 +57,14 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
     const memberSession = await fixture.prepareDemoDesktopMember(adminSession);
     const approvalSessions = [adminSession, memberSession];
     const executable = await findUnpackedExecutable(inputPath, platform);
-    const report = await runUiSmoke(executable, fixture.origin, profile, platform, (value) => {
+    const appReport = await runUiSmoke(executable, fixture.origin, profile, platform, (value) => {
       if (value.kind === "yuance-desktop-feature-parity-ui-user-code") {
         const session = approvalSessions.shift();
         if (!session) throw new Error("packaged UI smoke requested an unexpected authorization");
         return approveDeviceAuthorization({ origin: fixture.origin, userCode: value.userCode, session });
       }
     });
+    const report = Object.freeze({ ...appReport, profileBytes: await directoryBytes(profile) });
     assertUiReport(report);
     await fs.writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
     return Object.freeze({ report, outputPath });
@@ -123,14 +124,34 @@ function assertUiReport(report) {
     commentAttachmentRevealed: report?.commentAttachmentRevealed === true,
     messageTargetOpened: report?.messageTargetOpened === true,
     messageTargetFocused: report?.messageTargetFocused === true,
+    processCount: Number.isSafeInteger(report?.processCount) && report.processCount >= 1 && report.processCount <= 32,
+    workingSetKb: Number.isSafeInteger(report?.workingSetKb) && report.workingSetKb >= 1 && report.workingSetKb <= 1_048_576,
+    cpuPercent: Number.isSafeInteger(report?.cpuPercent) && report.cpuPercent >= 0 && report.cpuPercent <= 3_200,
+    profileBytes: Number.isSafeInteger(report?.profileBytes) && report.profileBytes >= 1 && report.profileBytes <= 268_435_456,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,genericBridgeMethods,keyboardFocus,kind,liveRegions,messageTargetFocused,messageTargetOpened,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff",
+    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,keyboardFocus,kind,liveRegions,messageTargetFocused,messageTargetOpened,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
   return report;
+}
+
+async function directoryBytes(root) {
+  let total = 0;
+  const pending = [root];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      const target = path.join(current, entry.name);
+      if (entry.isSymbolicLink()) throw new Error("packaged UI smoke profile contains a symbolic link");
+      if (entry.isDirectory()) pending.push(target);
+      else if (entry.isFile()) total += (await fs.stat(target)).size;
+      if (total > 268_435_456) return total;
+    }
+  }
+  return total;
 }
 
 async function supportingReportBytes(root) {
