@@ -419,6 +419,57 @@ fn openapi_publishes_registered_device_session_paths_and_security() {
     );
 }
 
+#[test]
+fn openapi_freezes_d2_device_business_allowlist() {
+    let document: serde_json::Value =
+        serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
+            .expect("OpenAPI document should parse");
+    let allowlist = document["x-yuance-device-business-allowlist"]
+        .as_array()
+        .expect("Device business allowlist should be an array");
+    let expected = serde_json::json!([
+        "GET /api/v1/auth/me",
+        "GET /api/v1/projects",
+        "GET /api/v1/current-project",
+        "PATCH /api/v1/current-project",
+        "GET /api/v1/topbar/status",
+        "GET /api/v1/topbar/events",
+        "GET /api/v1/notifications",
+        "GET /api/v1/notifications/{notification_id}/target",
+        "POST /api/v1/notifications/{notification_id}/read",
+        "POST /api/v1/notifications/read-all",
+        "GET /api/v1/work-items",
+        "GET /api/v1/work-items/{item_key}",
+        "PATCH /api/v1/work-items/{item_key}",
+        "POST /api/v1/work-items/{item_key}/handoff",
+        "GET /api/v1/work-items/{item_key}/events",
+        "GET /api/v1/work-items/{item_key}/comments",
+        "POST /api/v1/work-items/{item_key}/comments",
+        "POST /api/v1/work-items/{item_key}/comments/draft",
+        "PATCH /api/v1/work-items/{item_key}/comments/{comment_id}",
+        "POST /api/v1/work-items/{item_key}/comments/{comment_id}/publish",
+        "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
+        "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
+        "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url",
+        "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded",
+        "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url",
+        "GET /api/v1/work-items/{item_key}/attachments",
+        "POST /api/v1/work-items/{item_key}/attachments",
+        "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url",
+        "POST /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded",
+        "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url"
+    ]);
+    assert_eq!(allowlist, expected.as_array().unwrap());
+    for forbidden in [
+        "GET /api/v1/projects/{project_key}",
+        "POST /api/v1/work-items",
+        "POST /api/v1/work-items/{item_key}/restore",
+        "DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
+    ] {
+        assert!(!allowlist.iter().any(|entry| entry == forbidden));
+    }
+}
+
 async fn test_pool() -> SqlitePool {
     let settings = Settings {
         http_addr: "127.0.0.1:33033"

@@ -3,7 +3,7 @@
   "info": {
     "title": "元策 API",
     "summary": "元策项目、需求、任务、Bug、资料库和消息通知 API。",
-    "description": "元策 API 面向 Web 客户端、程序化集成和本地 MCP server。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。",
+    "description": "元策 API 面向 Web 客户端、程序化集成和 Desktop。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Device access token 只允许调用 x-yuance-device-business-allowlist 显式登记的 method + path，并继续执行相同 RBAC、项目成员和业务状态校验。",
     "version": "1.0.0"
   },
   "externalDocs": {
@@ -57,6 +57,38 @@
     {
       "cookieSession": []
     }
+  ],
+  "x-yuance-device-business-allowlist": [
+    "GET /api/v1/auth/me",
+    "GET /api/v1/projects",
+    "GET /api/v1/current-project",
+    "PATCH /api/v1/current-project",
+    "GET /api/v1/topbar/status",
+    "GET /api/v1/topbar/events",
+    "GET /api/v1/notifications",
+    "GET /api/v1/notifications/{notification_id}/target",
+    "POST /api/v1/notifications/{notification_id}/read",
+    "POST /api/v1/notifications/read-all",
+    "GET /api/v1/work-items",
+    "GET /api/v1/work-items/{item_key}",
+    "PATCH /api/v1/work-items/{item_key}",
+    "POST /api/v1/work-items/{item_key}/handoff",
+    "GET /api/v1/work-items/{item_key}/events",
+    "GET /api/v1/work-items/{item_key}/comments",
+    "POST /api/v1/work-items/{item_key}/comments",
+    "POST /api/v1/work-items/{item_key}/comments/draft",
+    "PATCH /api/v1/work-items/{item_key}/comments/{comment_id}",
+    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/publish",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
+    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url",
+    "POST /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded",
+    "GET /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url",
+    "GET /api/v1/work-items/{item_key}/attachments",
+    "POST /api/v1/work-items/{item_key}/attachments",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url",
+    "POST /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url"
   ],
   "paths": {
     "/.well-known/yuance-desktop": {
@@ -1563,7 +1595,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "Yuance Device Access Token",
-        "description": "使用 yuance_dat_* 短期设备 access token。仅允许显式登记的 device probe、logout 和 control stream；普通业务 API 默认拒绝。"
+        "description": "使用 yuance_dat_* 短期设备 access token。除设备会话端点外，只允许调用顶层 x-yuance-device-business-allowlist 显式登记的 method + path；未登记业务 API 默认拒绝。"
       },
       "cookieSession": {
         "type": "apiKey",

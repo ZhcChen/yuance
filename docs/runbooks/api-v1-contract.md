@@ -34,11 +34,11 @@ date: 2026-06-30
 - 认证：支持 Web Cookie session、Personal Access Token 和独立的设备会话凭证。
   - 浏览器 Web 调用默认使用 `yuance_session` Cookie。
   - MCP / 外部脚本建议使用 `Authorization: Bearer yuance_pat_xxx`。
-  - Desktop 设备授权使用独立的 `yuance_dat_` access 与 `yuance_drt_` refresh namespace；当前尚未向 device access 开放业务 API，且设备凭证不能作为 PAT 使用。
+  - Desktop 设备授权使用独立的 `yuance_dat_` access 与 `yuance_drt_` refresh namespace；Device access 仅可调用下文 D2 显式矩阵，且设备凭证不能作为 PAT 使用。
 - CSRF：所有会改变状态的 Cookie API 必须提供 CSRF。
   - 登录和初始化成功响应会设置 `yuance_csrf` cookie，并在 JSON 中返回 `csrf_token`。
   - 后续写请求传 `x-yuance-csrf-token: <csrf_token>`。
-  - Bearer Token 写请求不依赖 Cookie，因此不需要 CSRF。
+  - Bearer PAT 或 Device access 写请求不依赖 Cookie，因此不需要 CSRF；二者仍分别执行 scope/allowlist 与统一业务授权。
 - JSON 请求头：写请求建议使用 `Content-Type: application/json`。
 - 未登录：返回 `401 unauthorized`。
 - 无功能权限或数据范围权限：返回 `403 forbidden`。
@@ -118,7 +118,46 @@ DELETE /api/v1/me/tokens/{token_id}
 
 `POST /api/v1/device-sessions/refresh` 提交当前 `refresh_token`、source `generation`、`device_id`、`server_instance_id` 和发送前已持久化的 `transaction_id`。同一 generation + transaction 可恢复完全相同的下一代凭证；旧 generation 使用不同 transaction 会以 `409 device_refresh_replay` 撤销整个 credential family。幂等密文无法解密时返回 `409 rotation_recovery_failed` 并撤销 family。该端点同样拒绝 Cookie 与 `Authorization` header，所有响应禁止缓存。
 
-`GET /api/v1/device-session`、`GET /api/v1/device-session/events` 与 `POST /api/v1/device-session/logout` 只接受 `Authorization: Bearer yuance_dat_*`。probe 返回 user/device/family/generation、access 到期时间和 authorization version，不返回任何 token；events 仅发送 `connected` 事件和 heartbeat comment，并持续重验设备授权 lease；logout 原子撤销当前 credential family 及其 access/refresh。Cookie、PAT、system token、device refresh 或混合凭证均不允许进入这些端点。device access 默认不能访问其他 `/api/v1/**` 业务 API，后续 D2 只能按 method + path + feature 显式登记。
+`GET /api/v1/device-session`、`GET /api/v1/device-session/events` 与 `POST /api/v1/device-session/logout` 只接受 `Authorization: Bearer yuance_dat_*`。probe 返回 user/device/family/generation、access 到期时间和 authorization version，不返回任何 token；events 仅发送 `connected` 事件和 heartbeat comment，并持续重验设备授权 lease；logout 原子撤销当前 credential family 及其 access/refresh。Cookie、PAT、system token、device refresh 或混合凭证均不允许进入这些端点。Device access 对业务 API 继续默认拒绝，只开放下一节的 method + path 矩阵。
+
+#### D2 Device 业务路由矩阵
+
+Device access 当前仅允许以下业务 route；OpenAPI 顶层 `x-yuance-device-business-allowlist` 是对应机器可读清单：
+
+```text
+GET   /api/v1/auth/me
+GET   /api/v1/projects
+GET   /api/v1/current-project
+PATCH /api/v1/current-project
+GET   /api/v1/topbar/status
+GET   /api/v1/topbar/events
+GET   /api/v1/notifications
+GET   /api/v1/notifications/{notification_id}/target
+POST  /api/v1/notifications/{notification_id}/read
+POST  /api/v1/notifications/read-all
+GET   /api/v1/work-items
+GET   /api/v1/work-items/{item_key}
+PATCH /api/v1/work-items/{item_key}
+POST  /api/v1/work-items/{item_key}/handoff
+GET   /api/v1/work-items/{item_key}/events
+GET   /api/v1/work-items/{item_key}/comments
+POST  /api/v1/work-items/{item_key}/comments
+POST  /api/v1/work-items/{item_key}/comments/draft
+PATCH /api/v1/work-items/{item_key}/comments/{comment_id}
+POST  /api/v1/work-items/{item_key}/comments/{comment_id}/publish
+GET   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
+POST  /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
+GET   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url
+POST  /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded
+GET   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url
+GET   /api/v1/work-items/{item_key}/attachments
+POST  /api/v1/work-items/{item_key}/attachments
+GET   /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url
+POST  /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded
+GET   /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url
+```
+
+Device principal 使用服务端认证所得 user、device/family、generation 和 authorization version，不接受客户端声明 actor。Device 不套用 PAT scope/project_scope，但必须继续通过同一 RBAC、项目成员关系、项目内角色、对象归属、状态机和审计逻辑。撤销、过期、用户禁用或 authorization version 失效后返回 `401`；缺少功能权限、项目成员关系或写权限返回 `403`。未列入矩阵的项目详情/管理、工作项创建/恢复、附件删除、资料库和系统管理 route 继续在 domain side effect 前拒绝。
 
 `POST /api/v1/device-file-transfer/canary/upload-request` 与 `GET /api/v1/device-file-transfer/canary/download-request` 只接受有效 Device access。两个签发端点不接受调用方提供的 body、query、对象键、URL 或 header 参数，只返回固定 purpose/method/大小/content type/短 TTL 的 transfer contract；Cookie、PAT、system token、device refresh、已撤销或过期 Device access 均被拒绝。
 
