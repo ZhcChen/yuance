@@ -146,6 +146,19 @@ test("maps uncertain mutation transport outcomes without replay", async () => {
   }
 });
 
+test("preserves deterministic mutation authorization and not-found errors without replay", async () => {
+  const registry = { resolve: () => Object.freeze({ idempotent: false, method: "PATCH", path: "/api/v1/work-items/DEMO-1", body: '{"title":"x"}', contentType: "application/json", parse: (value) => value }) };
+  for (const [status, code] of [[403, "project_access_denied"], [404, "work_item_not_found"]]) {
+    let calls = 0;
+    const transport = createRestTransport({ profile, credentialRuntime: runtimeFixture(), registry, fetchImpl: await trustedFetch(async () => {
+      calls += 1;
+      return jsonResponse({ error: { code, message: "public failure" } }, { status, url: "https://yuance.example/api/v1/work-items/DEMO-1" });
+    }) });
+    await assert.rejects(transport.execute("workitem.update", {}), (error) => error.code === code && error.status === status);
+    assert.equal(calls, 1);
+  }
+});
+
 function runtimeFixture() {
   let epoch = 1;
   return {
