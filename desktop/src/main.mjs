@@ -695,10 +695,21 @@ async function runFeatureParityBusinessUiSmoke(window) {
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
   }
   window.reload();
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
-    return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
-  })()`), 30_000, "offline shared app recovery");
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+      const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
+      return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
+    })()`), 30_000, "offline shared app recovery");
+  } catch {
+    const diagnostics = await window.webContents.executeJavaScript(`(() => ({
+      auth: window.yuanceDesktop?.hostState?.getSnapshot?.()?.status || "missing",
+      network: window.yuanceDesktop?.network?.getSnapshot?.()?.status || "missing",
+      hostShell: Boolean(document.querySelector('.host-status-shell')),
+      main: Boolean(document.querySelector('main')),
+      logout: [...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "退出登录" && !value.disabled),
+    }))()`);
+    throw new Error(`UI smoke offline shared app recovery timed out: ${JSON.stringify(diagnostics)}`);
+  }
 
   await executeFeatureParityUiScript(window, `(() => {
     const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
