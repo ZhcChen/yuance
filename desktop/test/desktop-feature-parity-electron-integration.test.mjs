@@ -71,7 +71,8 @@ test("packaged UI smoke proves handoff through durable detail state", async () =
 
 test("feature parity CLI flushes evidence before terminating lingering platform handles", async () => {
   const smoke = await fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8");
-  assert.match(smoke, /await smokeDesktopFeatureParity\(inputPath\);[\s\S]*clearInterval\(keepAlive\);[\s\S]*process\.stdout\.write\("", resolve\)[\s\S]*process\.stderr\.write\("", resolve\)[\s\S]*process\.exit\(exitCode\);/u);
+  assert.match(smoke, /await smokeDesktopFeatureParity\(inputPath\);[\s\S]*clearInterval\(keepAlive\);[\s\S]*stream\.writableNeedDrain \? once\(stream, "drain"\) : undefined[\s\S]*process\.exit\(exitCode\);/u);
+  assert.doesNotMatch(smoke, /\.write\("",/u);
 });
 
 function validReport() {

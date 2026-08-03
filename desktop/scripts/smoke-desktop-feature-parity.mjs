@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -229,9 +230,6 @@ if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
   } finally {
     clearInterval(keepAlive);
   }
-  await Promise.all([
-    new Promise((resolve) => process.stdout.write("", resolve)),
-    new Promise((resolve) => process.stderr.write("", resolve)),
-  ]);
+  await Promise.all([process.stdout, process.stderr].map((stream) => stream.writableNeedDrain ? once(stream, "drain") : undefined));
   process.exit(exitCode);
 }
