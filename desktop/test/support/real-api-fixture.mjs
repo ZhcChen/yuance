@@ -107,13 +107,6 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         });
         if (response.status !== 200) throw new Error(`test storage activation failed with ${response.status}`);
       },
-      async stopApi() {
-        await stopChild(child, { force: process.platform === "win32" });
-        child = undefined;
-      },
-      async startApi() {
-        await launchApi();
-      },
       async stop({ beforeRemove = async () => {} } = {}) {
         if (stopped) return;
         stopped = true;
@@ -168,9 +161,8 @@ function run(command, args, options) {
   });
 }
 
-function stopChild(child, { force = false } = {}) {
+function stopChild(child) {
   if (!child || child.exitCode !== null) return Promise.resolve();
-  if (force) return forceStopChild(child);
   return new Promise((resolve) => {
     let settled = false;
     const finish = () => {

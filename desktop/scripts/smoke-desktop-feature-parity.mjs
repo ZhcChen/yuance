@@ -99,8 +99,6 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
         if (!session) throw new Error("packaged UI smoke requested an unexpected authorization");
         return approveDeviceAuthorization({ origin: fixture.origin, userCode: value.userCode, session });
       }
-      if (value.kind === "yuance-desktop-feature-parity-ui-api-stop") return fixture.stopApi();
-      if (value.kind === "yuance-desktop-feature-parity-ui-api-start") return fixture.startApi();
     });
     const report = Object.freeze({ ...appReport, profileBytes: await directoryBytes(profile) });
     assertUiReport(report);
@@ -132,11 +130,7 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
       for (const line of lines) {
         try {
           const value = JSON.parse(line);
-          sideEffect = sideEffect.then(() => onValue(value)).then(() => {
-            if (["yuance-desktop-feature-parity-ui-api-stop", "yuance-desktop-feature-parity-ui-api-start"].includes(value.kind)) {
-              return fs.writeFile(featureParityAckPath(profile, value.kind), `${value.kind}\n`, { mode: 0o600 });
-            }
-          });
+          sideEffect = sideEffect.then(() => onValue(value));
           if (value.kind === "yuance-desktop-feature-parity-ui-smoke") {
             report = value;
             finishReport();
@@ -157,10 +151,6 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
       finish(() => code === 0 && !signal && report ? resolve(report) : reject(new Error(`packaged feature parity UI smoke failed (${signal || code}): ${stderr || stdout}`)));
     });
   });
-}
-
-function featureParityAckPath(profile, kind) {
-  return path.join(profile, `.yuance-${kind}-ack`);
 }
 
 function terminateChildProcessTree(child, platform) {

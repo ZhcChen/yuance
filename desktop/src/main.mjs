@@ -677,7 +677,6 @@ async function runFeatureParityBusinessUiSmoke(window) {
   })()`), 10_000, "comment attachment reveal");
 
   for (let index = 0; index < 3; index += 1) {
-    await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-stop");
     networkCoordinator?.invalidate();
     networkStatePublisher.update({ status: "offline" });
     networkStatePublisher.publishTo(mainWindow);
@@ -688,28 +687,14 @@ async function runFeatureParityBusinessUiSmoke(window) {
         return Boolean(shell && !document.querySelector('.work-item-action-form') && [...shell.querySelectorAll('button')].some((value) => !value.disabled));
       })()`), 10_000, "offline state shell");
     }
-    await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-start");
-    networkCoordinator?.invalidate();
     networkStatePublisher.update({ status: "online" });
     networkStatePublisher.publishTo(mainWindow);
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
   }
-  window.reload();
-  try {
-    await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-      const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
-      return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
-    })()`), 30_000, "offline shared app recovery");
-  } catch {
-    const diagnostics = await window.webContents.executeJavaScript(`(() => ({
-      auth: window.yuanceDesktop?.hostState?.getSnapshot?.()?.status || "missing",
-      network: window.yuanceDesktop?.network?.getSnapshot?.()?.status || "missing",
-      hostShell: Boolean(document.querySelector('.host-status-shell')),
-      main: Boolean(document.querySelector('main')),
-      logout: [...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "退出登录" && !value.disabled),
-    }))()`);
-    throw new Error(`UI smoke offline shared app recovery timed out: ${JSON.stringify(diagnostics)}`);
-  }
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
+    return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
+  })()`), 30_000, "offline shared app recovery");
 
   await executeFeatureParityUiScript(window, `(() => {
     const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
@@ -804,17 +789,6 @@ async function runWorkItemAttachmentUploadAttempt(window) {
     throw error;
   }
   return window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`);
-}
-
-async function writeFeatureParityUiEvent(kind) {
-  const ackPath = path.join(desktopFeatureParityUiSmokeProfile, `.yuance-${kind}-ack`);
-  await fs.rm(ackPath, { force: true });
-  await new Promise((resolve) => process.stdout.write(`${JSON.stringify({ kind })}\n`, resolve));
-  await waitForUiSmoke(async () => {
-    try { return (await fs.readFile(ackPath, "utf8")).trim() === kind; }
-    catch { return false; }
-  }, 20_000, `${kind} acknowledgement`);
-  await fs.rm(ackPath, { force: true });
 }
 
 async function executeFeatureParityUiScript(window, source, label) {

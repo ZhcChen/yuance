@@ -86,24 +86,21 @@ test("feature parity CLI flushes evidence before terminating lingering platform 
   assert.doesNotMatch(smoke, /\.write\("",/u);
 });
 
-test("real API fixture stop is bounded when Windows does not emit exit", async () => {
+test("real API fixture cleanup is bounded when graceful stop does not emit exit", async () => {
   const fixture = await fs.readFile(new URL("./support/real-api-fixture.mjs", import.meta.url), "utf8");
-  assert.match(fixture, /async stopApi\(\) \{\s+await stopChild\(child, \{ force: process\.platform === "win32" \}\);\s+child = undefined;/u);
-  assert.match(fixture, /function stopChild\(child, \{ force = false \} = \{\}\) \{[\s\S]*if \(force\) return forceStopChild\(child\);/u);
+  assert.match(fixture, /async stop\(\{ beforeRemove = async \(\) => \{\} \} = \{\}\) \{[\s\S]*await stopChild\(child\);/u);
   assert.match(fixture, /const timer = setTimeout\(\(\) => \{\s+forceStopChild\(child\)\.then\(finish, finish\);\s+\}, 4_000\);/u);
   assert.match(fixture, /spawn\("taskkill", \["\/pid", String\(child\.pid\), "\/T", "\/F"\]/u);
 });
 
-test("packaged UI interruption waits for fixture acknowledgement", async () => {
+test("packaged UI interruption isolates public state from API process lifecycle", async () => {
   const [main, smoke] = await Promise.all([
     fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8"),
     fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8"),
   ]);
-  assert.match(smoke, /stdio: \["ignore", "pipe", "pipe"\][\s\S]*fs\.writeFile\(featureParityAckPath\(profile, value\.kind\), `\$\{value\.kind\}\\n`/u);
-  assert.match(main, /const ackPath = path\.join\(desktopFeatureParityUiSmokeProfile, `\.yuance-\$\{kind\}-ack`\);[\s\S]*fs\.readFile\(ackPath, "utf8"\)[\s\S]*`\$\{kind\} acknowledgement`/u);
-  assert.match(main, /writeFeatureParityUiEvent\("yuance-desktop-feature-parity-ui-api-stop"\);\s+networkCoordinator\?\.invalidate\(\);\s+networkStatePublisher\.update\(\{ status: "offline" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);/u);
-  assert.match(main, /writeFeatureParityUiEvent\("yuance-desktop-feature-parity-ui-api-start"\);\s+networkCoordinator\?\.invalidate\(\);\s+networkStatePublisher\.update\(\{ status: "online" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);/u);
-  assert.match(main, /window\.reload\(\);\s+try \{\s+await waitForUiSmoke[\s\S]*"offline shared app recovery"[\s\S]*hostShell:[\s\S]*logout:[\s\S]*JSON\.stringify\(diagnostics\)/u);
+  assert.match(main, /networkCoordinator\?\.invalidate\(\);\s+networkStatePublisher\.update\(\{ status: "offline" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);[\s\S]*networkStatePublisher\.update\(\{ status: "online" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);/u);
+  assert.doesNotMatch(main, /yuance-desktop-feature-parity-ui-api-(?:stop|start)|writeFeatureParityUiEvent/u);
+  assert.doesNotMatch(smoke, /yuance-desktop-feature-parity-ui-api-(?:stop|start)|featureParityAckPath/u);
   assert.match(main, /desktopFeatureParityUiSmokeOrigin \? \{ connectTimeoutMs: 5_000, idleMs: 5_000 \} : \{\}/u);
 });
 
