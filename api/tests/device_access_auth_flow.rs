@@ -16,7 +16,9 @@ use sqlx::SqlitePool;
 use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
-    domains::{api_tokens, auth, bootstrap, device_sessions, projects, system_api_tokens},
+    domains::{
+        api_tokens, auth, bootstrap, device_sessions, projects, system_api_tokens, users,
+    },
     platform::{config::Settings, db, security::csrf::CSRF_COOKIE_NAME},
     web::router::{AppState, build_router},
 };
@@ -28,12 +30,138 @@ const CODE_VERIFIER: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[tokio::test]
+async fn device_business_routes_preserve_project_membership_and_viewer_write_denial() {
+    let pool = test_pool().await;
+    let (admin_id, _) = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "device_viewer".to_string(),
+            display_name: "Device Viewer".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "ViewerPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let credentials = issue_device_credentials(&pool, user_id, "viewer-device").await;
+    let app = test_app(pool.clone());
+
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        serde_json::json!({"title": "must not change"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let project_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM projects WHERE project_key = 'YCE'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO project_members (project_id, user_id, member_role) VALUES (?1, ?2, 'viewer')",
+    )
+    .bind(project_id)
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        "/api/v1/work-items/YCE-TASK-2",
+        &credentials.access_token,
+        serde_json::json!({"title": "still must not change"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_ne!(
+        projects::get_work_item_detail(&pool, "YCE-TASK-2")
+            .await
+            .unwrap()
+            .unwrap()
+            .title,
+        "still must not change"
+    );
+}
+
+#[tokio::test]
 async fn device_access_reads_and_updates_work_item_through_existing_business_routes() {
     let pool = test_pool().await;
     let (user_id, _) = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, user_id).await.unwrap();
     let credentials = issue_device_credentials(&pool, user_id, "business-probe").await;
     let app = test_app(pool.clone());
+
+    for path in [
+        "/api/v1/auth/me",
+        "/api/v1/projects",
+        "/api/v1/current-project",
+        "/api/v1/topbar/status",
+        "/api/v1/notifications",
+        "/api/v1/work-items?project_key=YCE",
+        "/api/v1/work-items/YCE-TASK-2/comments",
+        "/api/v1/work-items/YCE-TASK-2/attachments",
+    ] {
+        let response = device_request(&app, "GET", path, &credentials.access_token, None).await;
+        assert_eq!(response.status(), StatusCode::OK, "path: {path}");
+    }
+
+    let comment_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM work_item_comments WHERE work_item_id = (SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2') ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let comment_attachments_path = format!(
+        "/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments"
+    );
+    let response = device_request(
+        &app,
+        "GET",
+        &comment_attachments_path,
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        "/api/v1/current-project",
+        &credentials.access_token,
+        serde_json::json!({"project_key": "YCE"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = device_request(
         &app,
@@ -46,6 +174,41 @@ async fn device_access_reads_and_updates_work_item_through_existing_business_rou
     assert_eq!(response.status(), StatusCode::OK);
     let body = json_body(response).await;
     assert_eq!(body["data"]["key"], "YCE-TASK-2");
+
+    let response = device_json_request(
+        &app,
+        "POST",
+        "/api/v1/work-items/YCE-TASK-2/handoff",
+        &credentials.access_token,
+        serde_json::json!({
+            "status": "in_progress",
+            "assignee_username": "admin",
+            "body": "Device handoff probe"
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = device_json_request(
+        &app,
+        "POST",
+        "/api/v1/work-items/YCE-TASK-2/comments",
+        &credentials.access_token,
+        serde_json::json!({"body": "Device comment probe", "body_format": "plain"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = json_body(response).await;
+    let created_comment_id = body["data"]["id"].as_i64().unwrap();
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        &format!("/api/v1/work-items/YCE-TASK-2/comments/{created_comment_id}"),
+        &credentials.access_token,
+        serde_json::json!({"body": "Device comment updated", "body_format": "plain"}),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
 
     let response = device_json_request(
         &app,
@@ -106,7 +269,7 @@ async fn device_access_reads_and_updates_work_item_through_existing_business_rou
 }
 
 #[tokio::test]
-async fn device_access_probes_logs_out_and_cannot_enter_business_api() {
+async fn device_access_probes_reads_identity_and_keeps_unlisted_routes_closed() {
     let pool = test_pool().await;
     let (user_id, session_cookie) = bootstrap_admin_session(&pool).await;
     let credentials = issue_device_credentials(&pool, user_id, "probe-device").await;
@@ -127,6 +290,19 @@ async fn device_access_probes_logs_out_and_cannot_enter_business_api() {
         &app,
         "GET",
         "/api/v1/auth/me",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["id"], user_id);
+    assert_eq!(body["data"]["username"], "admin");
+
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/projects/YCE",
         &credentials.access_token,
         None,
     )

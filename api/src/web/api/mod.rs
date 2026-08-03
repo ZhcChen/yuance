@@ -401,7 +401,8 @@ pub async fn list_notifications(
     headers: HeaderMap,
     Query(query): Query<NotificationQuery>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
 
@@ -449,7 +450,8 @@ pub async fn get_notification_target(
     headers: HeaderMap,
     Path(notification_id): Path<i64>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     let notification = notifications::get_for_user(pool, user.id, notification_id).await?;
@@ -461,7 +463,8 @@ pub async fn mark_notification_read(
     headers: HeaderMap,
     Path(notification_id): Path<i64>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     ensure_api_csrf(&headers)?;
@@ -473,7 +476,8 @@ pub async fn mark_all_notifications_read(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     ensure_api_csrf(&headers)?;
@@ -485,7 +489,8 @@ pub async fn get_topbar_status(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
     let token_project_scope = api_token_project_scope_keys(pool, &headers, user.id).await?;
@@ -567,7 +572,8 @@ pub async fn topbar_events(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let user_id = user.id;
     let release_version = app_release_version();
     let mut receiver = realtime::subscribe_user_realtime();
@@ -1518,7 +1524,7 @@ pub async fn me(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let user = require_d2_api_principal(&state, &headers).await?.user;
 
     Ok(no_store_json(auth_user_payload(user)))
 }
@@ -1570,7 +1576,8 @@ pub async fn list_projects(
     headers: HeaderMap,
     Query(query): Query<ProjectQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<ProjectPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -1628,7 +1635,8 @@ pub async fn get_current_project(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Option<CurrentProjectPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let can_access_all_projects = api_user_can_access_all_projects(pool, &user).await?;
@@ -1649,7 +1657,8 @@ pub async fn update_current_project(
     headers: HeaderMap,
     Json(payload): Json<UpdateCurrentProjectRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CurrentProjectPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
@@ -2159,7 +2168,7 @@ pub async fn handoff_work_item(
     Path(item_key): Path<String>,
     Json(payload): Json<HandoffWorkItemRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2240,7 +2249,7 @@ pub async fn create_work_item_comment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2285,7 +2294,7 @@ pub async fn create_work_item_comment_draft(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2318,7 +2327,7 @@ pub async fn publish_work_item_comment_draft(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2379,7 +2388,8 @@ pub async fn update_work_item_comment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateCommentRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
@@ -2422,7 +2432,7 @@ pub async fn create_work_item_comment_attachment(
     Path((item_key, comment_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, item, project, comment) =
         require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
     ensure_api_csrf(&headers)?;
@@ -3350,7 +3360,7 @@ pub async fn create_work_item_attachment(
     Path(item_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, item, project) = require_api_work_item_context(&state, &headers, &item_key).await?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -4612,7 +4622,7 @@ async fn require_api_work_item_context(
     projects::WorkItemDetail,
     projects::ProjectDetail,
 )> {
-    let user = require_api_user(state, headers).await?;
+    let user = require_d2_api_principal(state, headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, item_key)
