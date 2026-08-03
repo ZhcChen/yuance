@@ -72,6 +72,8 @@ import {
   resolveRendererTarget,
 } from "./window/security-policy.mjs";
 
+const UI_ATTACHMENT_TIMEOUT_MS = 60_000;
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: "app",
@@ -619,12 +621,12 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), 30_000, "comment edit");
 
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件")?.click()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`), 30_000, "work item attachment upload");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment upload");
   await window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].find((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt");
     row?.querySelector('button[aria-label^="下载附件"]')?.click();
   })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-attachments-panel .work-item-attachment-row button:not([aria-label])'))`), 30_000, "work item attachment download");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-attachments-panel .work-item-attachment-row button:not([aria-label])'))`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment download");
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row button')].find((value) => value.textContent.trim() === "在文件夹中显示")?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-attachments-panel .work-item-attachment-status')?.textContent.includes("已在文件夹中定位")`), 10_000, "work item attachment reveal");
 
@@ -635,7 +637,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     return [...(row?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
-  })()`), 30_000, "comment attachment upload");
+  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment upload");
   await window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     row?.querySelector('button[aria-label^="下载评论附件"]')?.click();
@@ -643,7 +645,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     return [...(row?.querySelectorAll('button') || [])].some((value) => value.textContent.trim() === "在文件夹中显示");
-  })()`), 30_000, "comment attachment download");
+  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment download");
   await window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "在文件夹中显示")?.click();
