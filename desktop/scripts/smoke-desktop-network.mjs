@@ -25,8 +25,12 @@ export async function smokeDesktopNetwork(inputPath, { platform = process.platfo
       }
     });
     if (authorize.kind !== "yuance-desktop-network-authorized" || authorize.status !== "authenticated") throw new Error("packaged authorization did not complete");
-    const report = await runPhase(executable, "verify", fixture.origin, profile, platform);
-    assertDesktopNetworkSmokeReport(report);
+    const report = await runPhase(executable, "verify", fixture.origin, profile, platform, async (value) => {
+      if (value.kind === "yuance-desktop-network-user-code") {
+        await approveDeviceAuthorization({ origin: fixture.origin, userCode: value.userCode, session });
+      }
+    });
+    assertDesktopNetworkSmokeReport(report, { platform });
     const outputPath = path.join(outputDirectory, "desktop-network-smoke.json");
     await fs.writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
     return Object.freeze({ executable, report, outputPath });
@@ -91,8 +95,9 @@ function runPhase(executable, phase, origin, profile, platform, onReport = async
   });
 }
 
-export function assertDesktopNetworkSmokeReport(report) {
-  if (report?.kind !== "yuance-desktop-network-smoke" || !report.recovered || !report.probe || !report.firstStream || !report.rotated || !report.secondStream || !report.loggedOut || !(report.revokeResponseToEofMs < 5_000) || CREDENTIAL_PATTERN.test(JSON.stringify(report))) {
+export function assertDesktopNetworkSmokeReport(report, { platform = process.platform } = {}) {
+  const expectedRestart = platform === "darwin" ? "reauthorized" : "recovered";
+  if (report?.kind !== "yuance-desktop-network-smoke" || report.credentialRestart !== expectedRestart || !report.probe || !report.firstStream || !report.rotated || !report.secondStream || !report.loggedOut || !(report.revokeResponseToEofMs < 5_000) || CREDENTIAL_PATTERN.test(JSON.stringify(report))) {
     throw new Error(`packaged network smoke invariant failed: ${JSON.stringify(report)}`);
   }
   return report;

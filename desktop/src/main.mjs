@@ -516,7 +516,15 @@ async function runDesktopNetworkSmoke() {
     process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-authorized", status: runtime.snapshot().status })}\n`);
     return;
   }
-  if (initialized.status !== "authenticated") throw new Error(`packaged credential recovery failed: ${initialized.status}`);
+  let credentialRestart = "recovered";
+  if (initialized.status !== "authenticated") {
+    if (process.platform !== "darwin" || initialized.status !== "unauthenticated") throw new Error(`packaged credential recovery failed: ${initialized.status}`);
+    credentialRestart = "reauthorized";
+    await runtime.authorize({
+      openExternal: async () => {},
+      onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-user-code", userCode })}\n`),
+    });
+  }
   const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
   const sse = createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch });
   await rest.execute("session.probe", {});
@@ -531,7 +539,7 @@ async function runDesktopNetworkSmoke() {
   const revokeResponseToEofMs = performance.now() - revokeStartedAt;
   if (revokeResponseToEofMs >= 5_000) throw new Error("packaged revoke-to-EOF deadline exceeded");
   process.stdout.write(`${JSON.stringify({
-    kind: "yuance-desktop-network-smoke", recovered: true, probe: true, firstStream: true,
+    kind: "yuance-desktop-network-smoke", credentialRestart, probe: true, firstStream: true,
     rotated: true, secondStream: true, loggedOut: true, revokeResponseToEofMs: Math.round(revokeResponseToEofMs),
     publicAuthStates: authStates,
   })}\n`);
