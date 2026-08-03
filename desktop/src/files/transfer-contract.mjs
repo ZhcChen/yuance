@@ -4,6 +4,7 @@ const MAX_URL_LENGTH = 8 * 1024;
 const MAX_HEADER_VALUE_LENGTH = 4 * 1024;
 const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
 const MAX_TTL_SECONDS = 60;
+const MAX_CLOCK_SKEW_MS = 5_000;
 const CONTRACT_KEYS = ["content_type", "expected_bytes", "expires_at", "expires_in_seconds", "purpose", "request", "schema_version", "sha256"];
 const REQUEST_KEYS = ["headers", "method", "url"];
 const METHODS = Object.freeze({ upload: "PUT", download: "GET" });
@@ -36,7 +37,7 @@ export function parseTransferContract(value, {
   const currentTime = now();
   if (typeof value.expires_at !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value.expires_at)) throw contractError();
   const serverExpiresAt = Date.parse(value.expires_at);
-  if (!Number.isFinite(currentTime) || !Number.isFinite(serverExpiresAt) || serverExpiresAt <= currentTime || serverExpiresAt > currentTime + MAX_TTL_SECONDS * 1_000) throw contractError();
+  if (!Number.isFinite(currentTime) || !Number.isFinite(serverExpiresAt) || serverExpiresAt <= currentTime || serverExpiresAt > currentTime + MAX_TTL_SECONDS * 1_000 + MAX_CLOCK_SKEW_MS) throw contractError();
   const expiresAt = Math.min(serverExpiresAt, currentTime + ttlSeconds * 1_000);
   return Object.freeze({
     version: 1,

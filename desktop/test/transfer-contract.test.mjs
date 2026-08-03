@@ -128,10 +128,15 @@ test("rejects unknown fields, invalid metadata, and TTL boundaries", () => {
     contract({ expires_at: NOW + 1_000 }),
     contract({ expires_at: "2026-08-02 10:00:01Z" }),
     contract({ expires_at: new Date(NOW).toISOString() }),
-    contract({ expires_at: new Date(NOW + 60_001).toISOString() }),
+    contract({ expires_at: new Date(NOW + 65_001).toISOString() }),
   ]) assert.throws(() => parse(value), invalidContract);
   const shortened = parse(contract({ expires_in_seconds: 10 }));
   assert.equal(shortened.expiresAt, NOW + 10_000);
+});
+
+test("accepts bounded positive clock skew without extending local lifetime", () => {
+  const parsed = parse(contract({ expires_at: new Date(NOW + 65_000).toISOString() }));
+  assert.equal(parsed.expiresAt, NOW + 60_000);
 });
 
 test("binds signed upload headers to expected metadata", () => {

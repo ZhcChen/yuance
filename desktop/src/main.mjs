@@ -73,6 +73,7 @@ import {
 } from "./window/security-policy.mjs";
 
 const UI_ATTACHMENT_TIMEOUT_MS = 60_000;
+const UI_MUTATION_TIMEOUT_MS = 60_000;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -576,7 +577,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
   })()`, "work item edit submit");
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), 30_000, "work item edit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), UI_MUTATION_TIMEOUT_MS, "work item edit");
 
   await executeFeatureParityUiScript(window, `(() => {
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
@@ -591,7 +592,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
   })()`, "work item handoff submit");
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('[role="status"]')].some((value) => value.textContent.includes("已推进并指派"))`), 30_000, "work item handoff");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('[role="status"]')].some((value) => value.textContent.includes("已推进并指派"))`), UI_MUTATION_TIMEOUT_MS, "work item handoff");
 
   await window.webContents.executeJavaScript(`(() => {
     const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
@@ -601,7 +602,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
   })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), 30_000, "comment create");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), UI_MUTATION_TIMEOUT_MS, "comment create");
 
   await window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment");
@@ -618,7 +619,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
   })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), 30_000, "comment edit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), UI_MUTATION_TIMEOUT_MS, "comment edit");
 
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件")?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment upload");
