@@ -51,7 +51,11 @@ async function createBundleFixture({
   await fs.writeFile(path.join(source, "src", "main.mjs"), "export {};\n");
   await fs.writeFile(path.join(source, "src", "preload.cjs"), "module.exports = {};\n");
   await fs.writeFile(path.join(source, "src", "ipc", "business-commands.mjs"), "export {};\n");
-  await fs.writeFile(path.join(source, "src", "network", "operation-registry.mjs"), "export {};\n");
+  await fs.writeFile(path.join(source, "src", "network", "operation-registry.mjs"), [
+    'const operations = ["project.select", "notification.read", "notification.readall",',
+    '  "workitem.update", "workitem.handoff", "workitem.commentcreate", "workitem.commentupdate"];',
+    "export { operations };",
+  ].join("\n"));
   await fs.writeFile(path.join(source, "src", "network", "rest-transport.mjs"), "export {};\n");
   await fs.writeFile(
     path.join(source, "src", "protocol", "app-protocol.mjs"),
@@ -67,7 +71,7 @@ async function createBundleFixture({
   await fs.writeFile(path.join(renderer, "index.html"), "<script src=\"/assets/app.js\"></script>");
   await fs.writeFile(path.join(renderer, "assets", "app.js"), rendererAppSource ?? [
     "const adapter = 'Desktop business request failed.';",
-    "const labels = ['元策浏览器工作台', '消息中心', '项目列表'];",
+    "const labels = ['元策浏览器工作台', '消息中心', '项目列表', '已推进并指派', '评论已发布', '操作结果待确认'];",
     "const __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=true;",
     "export { adapter, labels, __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE };",
   ].join("\n"));

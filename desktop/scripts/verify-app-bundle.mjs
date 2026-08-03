@@ -42,6 +42,18 @@ const REQUIRED_BUSINESS_RENDERER_MARKERS = Object.freeze([
   "元策浏览器工作台",
   "消息中心",
   "项目列表",
+  "已推进并指派",
+  "评论已发布",
+  "操作结果待确认",
+]);
+const REQUIRED_MUTATION_OPERATION_MARKERS = Object.freeze([
+  '"project.select"',
+  '"notification.read"',
+  '"notification.readall"',
+  '"workitem.update"',
+  '"workitem.handoff"',
+  '"workitem.commentcreate"',
+  '"workitem.commentupdate"',
 ]);
 const REACT_RUNTIME_MARKER = "__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=";
 
@@ -222,6 +234,10 @@ export async function verifyAppBundle(inputPath) {
   }
   for (const marker of REQUIRED_BUSINESS_RENDERER_MARKERS) {
     if (!rendererSource.includes(marker)) throw new Error("Bundled renderer is missing the shared business application.");
+  }
+  const operationRegistrySource = extract(archive, entries, "src/network/operation-registry.mjs").toString("utf8");
+  for (const marker of REQUIRED_MUTATION_OPERATION_MARKERS) {
+    if (!operationRegistrySource.includes(marker)) throw new Error("Bundled operation registry is missing a required business mutation.");
   }
   if (rendererSource.split(REACT_RUNTIME_MARKER).length - 1 !== 1) {
     throw new Error("Bundled renderer must contain exactly one React runtime.");
