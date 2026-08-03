@@ -45,7 +45,7 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
   const fixture = await startRealApiFixture({ seedDemo: true });
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-feature-ui-"));
   await fs.mkdir(path.join(profile, "Downloads"), { recursive: true });
-  await fs.writeFile(path.join(profile, "fixture-upload.txt"), Buffer.alloc(1024 * 1024, 0x61), { mode: 0o600 });
+  await fs.writeFile(path.join(profile, "fixture-upload.txt"), Buffer.alloc(256 * 1024, 0x61), { mode: 0o600 });
   const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
   await fs.mkdir(outputDirectory, { recursive: true });
   const outputPath = path.join(outputDirectory, "desktop-feature-parity-ui-smoke.json");

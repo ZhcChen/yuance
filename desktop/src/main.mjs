@@ -872,6 +872,7 @@ async function runDesktopNetworkSmoke() {
   }
   const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
   const sse = createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch });
+  const streamFacts = [];
   const messageFacts = [];
   const nativeNotifications = [];
   let messageQueryCompleted = false;
@@ -889,7 +890,10 @@ async function runDesktopNetworkSmoke() {
     resolveTargetPath: () => notificationTargetPath(null, "app"),
   });
   await rest.execute("session.probe", {});
-  const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => messages.handleFact(fact));
+  const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => streamFacts.push(fact));
+  await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
+    && streamFacts.some((fact) => fact.type === "release-version"));
+  for (const fact of streamFacts) await messages.handleFact(fact);
   await waitForSmokeCondition(() => messageQueryCompleted
     && messageFacts.some((fact) => fact.type === "topbar")
     && messageFacts.some((fact) => fact.type === "release-version"));

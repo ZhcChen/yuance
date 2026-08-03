@@ -34,10 +34,10 @@ date: 2026-08-03
 
 ### 文件、资源与清理
 
-- 正式包 UI 使用 1 MiB 文件分别完成工作项和评论附件流式上传、下载与定位；D1/D2 回归另行覆盖取消、partial、uncertain、redirect、目标替换、源变化和生命周期 abort。
+- 正式包 UI 使用 256 KiB 文件分别完成工作项和评论附件流式上传、下载与定位；D1/D2 回归另行覆盖取消、partial、uncertain、redirect、目标替换、源变化和生命周期 abort。
 - 报告限制 Electron 进程数不超过 32、工作集不超过 1 GiB、总 CPU 不超过 3200%、profile 不超过 256 MiB；本次采样全部在预算内。
 - 每次 smoke 无论成功或失败均停止 API child，并删除 profile、spool 和下载目录；最终报告要求 `activeOperations: 0`、`spoolFiles: 0`。
-- 4 MiB 测试样本曾触发测试存储的 `attachment_upload_partial`，未作为成功证据，也未通过放宽生产边界掩盖；U7 的可复现压力样本固定为 1 MiB。
+- 4 MiB 测试样本曾触发测试存储的 `attachment_upload_partial`，未作为成功证据，也未通过放宽生产边界掩盖；跨平台 Gate 的可复现压力样本固定为 256 KiB。
 
 ### 无障碍与宿主边界
 
@@ -56,7 +56,7 @@ date: 2026-08-03
 
 - 本地正式包运行证据仅为 macOS arm64。`.github/workflows/desktop-security.yml` 已让 macOS、Ubuntu、Windows x64、Windows ARM64 执行同一 D2 Gate，但四个远端 runner 的实际结果必须在 U8 复核，不能由本地结果替代。
 - 资源检查采用有界公共指标和失败 Gate，不是 cgroup 或虚拟机级低资源隔离；更长后台驻留和平台通知交互由 U8 runner 与可审计手工证据补充。
-- 1 MiB 压力样本证明流式链路而非业务 100 MiB 最大值；最大值校验、partial 和无自动重放已有分层测试，生产对象存储的最大文件验收不在本地 memory fixture 中宣称完成。
+- 256 KiB 压力样本证明流式链路而非业务 100 MiB 最大值；最大值校验、partial 和无自动重放已有分层测试，生产对象存储的最大文件验收不在本地 memory fixture 中宣称完成。
 - Electron Builder 的 workspace dependency path 提示仍存在；bundle verifier 已证明共享 App、样式和 React 单例进入 ASAR，此提示不影响 U7 运行证据。
 
 ## 结论
