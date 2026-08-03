@@ -36,6 +36,7 @@ async function waitForArchiveFixture(archive) {
 async function createBundleFixture({
   extraRendererFiles = {},
   protocolHandlerSource,
+  rendererAppSource,
   mutateManifest,
   protocolSource,
   registeredRendererFiles = {},
@@ -44,9 +45,14 @@ async function createBundleFixture({
   const source = path.join(root, "source");
   const renderer = path.join(source, "renderer-dist");
   await fs.mkdir(path.join(source, "src", "protocol"), { recursive: true });
+  await fs.mkdir(path.join(source, "src", "ipc"), { recursive: true });
+  await fs.mkdir(path.join(source, "src", "network"), { recursive: true });
   await fs.mkdir(path.join(renderer, "assets"), { recursive: true });
   await fs.writeFile(path.join(source, "src", "main.mjs"), "export {};\n");
   await fs.writeFile(path.join(source, "src", "preload.cjs"), "module.exports = {};\n");
+  await fs.writeFile(path.join(source, "src", "ipc", "business-commands.mjs"), "export {};\n");
+  await fs.writeFile(path.join(source, "src", "network", "operation-registry.mjs"), "export {};\n");
+  await fs.writeFile(path.join(source, "src", "network", "rest-transport.mjs"), "export {};\n");
   await fs.writeFile(
     path.join(source, "src", "protocol", "app-protocol.mjs"),
     protocolSource ?? await fs.readFile(new URL("../src/protocol/app-protocol.mjs", import.meta.url), "utf8"),
@@ -59,7 +65,12 @@ async function createBundleFixture({
     ),
   );
   await fs.writeFile(path.join(renderer, "index.html"), "<script src=\"/assets/app.js\"></script>");
-  await fs.writeFile(path.join(renderer, "assets", "app.js"), "export {};\n");
+  await fs.writeFile(path.join(renderer, "assets", "app.js"), rendererAppSource ?? [
+    "const adapter = 'Desktop business request failed.';",
+    "const labels = ['元策浏览器工作台', '消息中心', '项目列表'];",
+    "const __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=true;",
+    "export { adapter, labels, __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE };",
+  ].join("\n"));
   for (const [relativePath, contents] of Object.entries(registeredRendererFiles)) {
     const filePath = path.join(renderer, relativePath);
     await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -173,4 +184,16 @@ test("rejects renderer file capabilities, signed requests, and local path fixtur
     context.after(() => fs.rm(fixture.root, { recursive: true, force: true }));
     await assert.rejects(verifyAppBundle(fixture.archive), /Renderer resource contains/);
   }
+});
+
+test("requires the shared business app and exactly one React runtime", async (context) => {
+  const missingApp = await createBundleFixture({ rendererAppSource: "const __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=true;" });
+  context.after(() => fs.rm(missingApp.root, { recursive: true, force: true }));
+  await assert.rejects(verifyAppBundle(missingApp.archive), /missing the shared business application/);
+
+  const duplicateReact = await createBundleFixture({
+    registeredRendererFiles: { "assets/duplicate.js": "const __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=true;" },
+  });
+  context.after(() => fs.rm(duplicateReact.root, { recursive: true, force: true }));
+  await assert.rejects(verifyAppBundle(duplicateReact.archive), /exactly one React runtime/);
 });

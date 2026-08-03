@@ -11,6 +11,9 @@ import { validateResourceManifest } from "../src/protocol/resource-manifest.mjs"
 const REQUIRED_ARCHIVE_FILES = Object.freeze([
   "src/main.mjs",
   "src/preload.cjs",
+  "src/ipc/business-commands.mjs",
+  "src/network/operation-registry.mjs",
+  "src/network/rest-transport.mjs",
   "src/protocol/app-protocol.mjs",
   "src/protocol/app-protocol-handler.mjs",
   "renderer-dist/resource-manifest.json",
@@ -34,6 +37,13 @@ const FORBIDDEN_RENDERER_PATTERNS = Object.freeze([
   [/(?:file:\/\/|signed[_-]?url|\bAuthorization\b|Bearer\s|\bCookie\b)/u, "private transfer material"],
   [/(?:[A-Za-z]:\\(?:Users|Windows)\\|\/(?:Users|home|tmp)\/)/u, "local path fixture"],
 ]);
+const REQUIRED_BUSINESS_RENDERER_MARKERS = Object.freeze([
+  "Desktop business request failed.",
+  "元策浏览器工作台",
+  "消息中心",
+  "项目列表",
+]);
+const REACT_RUNTIME_MARKER = "__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE=";
 
 function archivePath(value) {
   return value.replace(/^[/\\]+/u, "").replaceAll("\\", "/");
@@ -185,6 +195,7 @@ export async function verifyAppBundle(inputPath) {
     JSON.parse(extract(archive, entries, "renderer-dist/resource-manifest.json").toString("utf8")),
   );
   const expectedRendererFiles = new Set(["renderer-dist/resource-manifest.json"]);
+  let rendererSource = "";
   for (const resource of Object.values(manifest.files)) {
     if (
       resource.relativePath.endsWith(".map") ||
@@ -199,6 +210,7 @@ export async function verifyAppBundle(inputPath) {
     assertArchivedRegularFile(archive, entries, relativePath);
     const contents = extract(archive, entries, relativePath);
     const source = contents.toString("utf8");
+    if (resource.relativePath.endsWith(".js")) rendererSource += source;
     if (/(?:https?:\/\/(?:127\.0\.0\.1|localhost)|@vite\/client)/iu.test(source)) {
       throw new Error(`Renderer resource contains a development runtime reference: ${relativePath}`);
     }
@@ -207,6 +219,12 @@ export async function verifyAppBundle(inputPath) {
     if (contents.byteLength !== resource.bytes || digest !== resource.sha256) {
       throw new Error(`Manifest resource integrity mismatch: ${relativePath}`);
     }
+  }
+  for (const marker of REQUIRED_BUSINESS_RENDERER_MARKERS) {
+    if (!rendererSource.includes(marker)) throw new Error("Bundled renderer is missing the shared business application.");
+  }
+  if (rendererSource.split(REACT_RUNTIME_MARKER).length - 1 !== 1) {
+    throw new Error("Bundled renderer must contain exactly one React runtime.");
   }
   for (const entry of listed) {
     if (entry.startsWith("renderer-dist/") && !expectedRendererFiles.has(entry)) {
