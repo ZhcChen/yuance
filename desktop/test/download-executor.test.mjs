@@ -17,7 +17,7 @@ async function fixture(delegate, { cancelled = false, timeoutMs = 1_000, writeFa
   const target = Object.freeze({
     publicFilename: "canary.bin",
     handle: { async write(bytes, offset, length) { if (writeFailure) throw new Error("disk full /private/path"); written.push(Buffer.from(bytes).subarray(offset, offset + length)); return { bytesWritten: length }; } },
-    async commit(bytes) { assert.equal(bytes, content.length); committed += 1; },
+    async commit(bytes) { assert.equal(bytes, content.length); committed += 1; return Object.freeze({ privatePath: "/private/canary.bin", identity: Object.freeze({ dev: "1", ino: "2", size: "15", mtimeNs: "3", ctimeNs: "4" }) }); },
     async cleanup() { cleaned += 1; },
   });
   const contract = Object.freeze({ version: 1, purpose: "download", method: "GET", url: "https://objects.example/file?signature=opaque", origin: "https://objects.example", headers: Object.freeze([]), expectedBytes: content.length, contentType: "application/octet-stream", sha256: createHash("sha256").update(content).digest("hex"), expiresAt: Date.now() + 60_000 });
@@ -45,6 +45,14 @@ test("streams and verifies a download before committing the target", async () =>
   assert.equal(value.committed(), 1);
   assert.equal(value.cleaned(), 1);
   assert.deepEqual(value.registry.snapshot(), { active: 0 });
+});
+
+test("delivers the committed locator only through the private callback", async () => {
+  const value = await fixture(async (url) => response(content, { url }));
+  let locator;
+  const result = await value.executor.execute({ suggestedFilename: "canary.bin", transferGrant: "grant", binding, onCommittedTarget: (value) => { locator = value; } });
+  assert.equal(locator.privatePath, "/private/canary.bin");
+  assert.equal(JSON.stringify(result).includes("private"), false);
 });
 
 test("cancel leaves the grant unconsumed and performs no network request", async () => {

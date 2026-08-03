@@ -86,6 +86,7 @@ export function createDownloadTargetManager({
           await closeHandles();
           const finalStats = await fs.lstat(targetPath, { bigint: true });
           if (finalStats.isSymbolicLink() || !finalStats.isFile() || Number(finalStats.size) !== expectedBytes) throw targetError("file_download_commit_failed");
+          return Object.freeze({ privatePath: targetPath, identity: identity(finalStats) });
         },
         async cleanup() {
           await closeHandles();

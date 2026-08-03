@@ -11,8 +11,9 @@ export function createDownloadExecutor({ grantVault, targetManager, fetchImpl, r
   if (typeof registry?.begin !== "function") throw new TypeError("Download executor requires operation registry");
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > DEFAULT_TIMEOUT_MS) throw new TypeError("timeoutMs exceeds the fixed safety limit");
 
-  async function execute({ window, suggestedFilename, transferGrant, binding, signal } = {}) {
+  async function execute({ window, suggestedFilename, transferGrant, binding, signal, onCommittedTarget } = {}) {
     if (signal !== undefined && !(signal instanceof AbortSignal)) throw new TypeError("signal is invalid");
+    if (onCommittedTarget !== undefined && typeof onCommittedTarget !== "function") throw new TypeError("onCommittedTarget is invalid");
     const target = await targetManager.choose({ window, suggestedFilename });
     if (!target) return Object.freeze({ status: "cancelled" });
     const controller = new AbortController();
@@ -36,7 +37,8 @@ export function createDownloadExecutor({ grantVault, targetManager, fetchImpl, r
       }
       validateResponse(response, contract);
       await writeResponse(response, target.handle, contract, controller.signal);
-      await target.commit(contract.expectedBytes);
+      const locator = await target.commit(contract.expectedBytes);
+      if (onCommittedTarget) await onCommittedTarget(locator);
       return Object.freeze({ status: "completed", byteSize: contract.expectedBytes, filename: target.publicFilename });
     } catch (error) {
       if (error?.code?.startsWith("file_")) throw error;
