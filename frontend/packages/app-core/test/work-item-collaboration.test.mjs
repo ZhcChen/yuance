@@ -308,6 +308,7 @@ test('desktop delegated attachment upload preserves stages without exposing sign
         uploadWorkItemCommentAttachment: async () => ({ created, uploaded }),
         downloadWorkItemAttachment: async () => ({ status: 'completed' }),
         downloadWorkItemCommentAttachment: async () => ({ status: 'completed' }),
+        revealDownload: async () => ({ status: 'revealed' }),
       },
     },
     itemKey: 'YCE-TASK-2',
@@ -346,6 +347,7 @@ test('desktop delegated attachment download avoids renderer signing and honors c
         return { status: /** @type {const} */ ('cancelled') };
       },
       downloadWorkItemCommentAttachment: async () => ({ status: /** @type {const} */ ('completed') }),
+      revealDownload: async () => ({ status: /** @type {const} */ ('revealed') }),
     },
   };
   const result = await downloadWorkItemAttachment({
@@ -357,7 +359,7 @@ test('desktop delegated attachment download avoids renderer signing and honors c
     isCurrent: () => true,
   });
 
-  assert.equal(result, false);
+  assert.deepEqual(result, { completed: false, revealCapability: null });
   assert.equal(signed, false);
 });
 
@@ -544,6 +546,6 @@ test('stale attachment download does not invoke the platform', async () => {
     isCurrent: () => false,
   });
 
-  assert.equal(opened, false);
+  assert.deepEqual(opened, { completed: false, revealCapability: null });
   assert.deepEqual(events, []);
 });

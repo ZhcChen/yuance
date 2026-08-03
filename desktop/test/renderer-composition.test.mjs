@@ -118,8 +118,9 @@ test("desktop app file adapter delegates business attachments and rejects signed
     downloadCanary: async () => ({ status: "completed" }),
     uploadWorkItemAttachment: async (input, onStage) => { calls.push(input); onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded"), url: "https://secret" }; },
     uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
-    downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, path: "/secret" }),
+    downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
+    revealDownload: async (capability) => { calls.push(capability); return { status: "revealed", path: "/secret" }; },
   };
   const platform = createDesktopAppFiles(bridge);
   const stages = [];
@@ -127,10 +128,14 @@ test("desktop app file adapter delegates business attachments and rejects signed
   const result = await platform.attachments.uploadWorkItemAttachment({ itemKey: "DEMO-1", fileCapability }, (stage) => stages.push(stage));
   assert.deepEqual(result, { created: attachment("pending"), uploaded: attachment("uploaded") });
   assert.deepEqual(stages, ["uploading"]);
-  assert.deepEqual(await platform.attachments.downloadWorkItemAttachment({ itemKey: "DEMO-1", attachmentId: 9, suggestedFilename: "ignored" }), { status: "completed", filename: "a.txt", byteSize: 1 });
+  const downloaded = await platform.attachments.downloadWorkItemAttachment({ itemKey: "DEMO-1", attachmentId: 9, suggestedFilename: "ignored" });
+  assert.equal(downloaded.status, "completed");
+  assert.equal(typeof downloaded.revealCapability, "string");
+  assert.ok(downloaded.revealCapability);
+  assert.deepEqual(await platform.attachments.revealDownload(downloaded.revealCapability), { status: "revealed" });
   assert.throws(() => platform.transfers.authorizeSignedRequest(), /unavailable/);
   assert.equal(JSON.stringify(result).includes("secret"), false);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
 });
 
 function attachment(status) {

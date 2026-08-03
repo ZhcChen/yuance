@@ -48,7 +48,7 @@ ipcRenderer.on(NETWORK_STATE_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 5,
+  schemaVersion: 6,
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
@@ -91,6 +91,7 @@ const bridge = Object.freeze({
     uploadWorkItemCommentAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-work-item-comment-attachment", input, onStage); },
     downloadWorkItemAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-attachment", input); },
     downloadWorkItemCommentAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-comment-attachment", input); },
+    revealDownload(capability) { return ipcRenderer.invoke("yuance:file-reveal-download", capability); },
   }),
   notifications: Object.freeze({
     show(payload) {

@@ -58,10 +58,12 @@ test('host-delegated attachment capabilities require the complete business matri
     uploadWorkItemCommentAttachment: async () => ({ created: {}, uploaded: {} }),
     downloadWorkItemAttachment: async () => ({ status: 'completed' }),
     downloadWorkItemCommentAttachment: async () => ({ status: 'cancelled' }),
+    revealDownload: async () => ({ status: 'revealed' }),
   });
   assert.deepEqual(Object.keys(capabilities).sort(), [
     'downloadWorkItemAttachment',
     'downloadWorkItemCommentAttachment',
+    'revealDownload',
     'uploadWorkItemAttachment',
     'uploadWorkItemCommentAttachment',
   ]);

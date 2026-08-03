@@ -8,7 +8,7 @@ function validReport() {
     url: "app://yuance/projects/smoke",
     title: "元策",
     bodyText: "需要登录",
-    bridgeSchemaVersion: 5,
+    bridgeSchemaVersion: 6,
     bridgeState: "unauthenticated",
     resourceUrls: [
       "app://yuance/assets/index-aaaaaaaa.js",

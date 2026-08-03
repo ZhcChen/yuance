@@ -55,7 +55,7 @@ test("downloads using the server filename and returns only public result fields"
   const result = await fixture({ calls, signedAttachment: attachment("uploaded") }).downloadWorkItemCommentAttachment({ itemKey: "YCE-TASK-2", commentId: 4, attachmentId: 9, binding, signal: undefined, window: Object.freeze({ id: 1 }) });
   assert.deepEqual(calls[0], ["attachment.commentdownloadsign", { itemKey: "YCE-TASK-2", commentId: 4, attachmentId: 9 }]);
   assert.equal(calls[2][1].suggestedFilename, "report.txt");
-  assert.deepEqual(result, { status: "completed", filename: "report.txt", byteSize: 12 });
+  assert.deepEqual(result, { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"d".repeat(32)}` });
 });
 
 test("rejects download grants for attachments that are not uploaded", async () => {
@@ -85,8 +85,9 @@ function fixture({ calls = [], signedAttachment = attachment("pending"), execute
     restTransport,
     fileVault: { describe(value, valueBinding) { calls.push(["describe", { value, valueBinding }]); return metadata; } },
     grantVault: { issue(contract, valueBinding) { calls.push(["issue", { contract, valueBinding }]); return { grant: `ytg_${"c".repeat(32)}` }; } },
+    revealVault: { issue(locator, valueBinding) { calls.push(["reveal", { locator, valueBinding }]); return { capability: `yrd_${"d".repeat(32)}` }; } },
     uploadExecutor: { async execute(input) { calls.push(["upload", input]); return { status: "completed", byteSize: 12 }; } },
-    downloadExecutor: { async execute(input) { calls.push(["download", input]); return { status: "completed", filename: input.suggestedFilename, byteSize: 12 }; } },
+    downloadExecutor: { async execute(input) { calls.push(["download", input]); await input.onCommittedTarget(Object.freeze({ privatePath: "/private/report.txt", identity: Object.freeze({ dev: "1", ino: "2", size: "12", mtimeNs: "3", ctimeNs: "4" }) })); return { status: "completed", filename: input.suggestedFilename, byteSize: 12 }; } },
     apiOrigin: "http://127.0.0.1:3000",
     allowLoopbackHttp: true,
     allowedRelativePaths: { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" },

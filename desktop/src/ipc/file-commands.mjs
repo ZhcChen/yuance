@@ -7,14 +7,15 @@ export const FILE_CHANNELS = Object.freeze({
   downloadWorkItemAttachment: "yuance:file-download-work-item-attachment",
   downloadWorkItemCommentAttachment: "yuance:file-download-work-item-comment-attachment",
   attachmentProgress: "yuance:file-attachment-progress",
+  revealDownload: "yuance:file-reveal-download",
 });
 
 const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const STAGES = new Set(["registering", "signing", "uploading", "confirming"]);
 
-export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding, getWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator } = {}) {
+export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding, getWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, revealController } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function" || typeof ipcMain.removeHandler !== "function") throw new TypeError("ipcMain is required");
-  if (typeof assertSender !== "function" || typeof getBinding !== "function" || typeof getWindow !== "function" || typeof fileDialog?.choose !== "function" || typeof issueTransferGrant !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || !hasAttachmentOperations(attachmentCoordinator)) {
+  if (typeof assertSender !== "function" || typeof getBinding !== "function" || typeof getWindow !== "function" || typeof fileDialog?.choose !== "function" || typeof issueTransferGrant !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || !hasAttachmentOperations(attachmentCoordinator) || typeof revealController?.reveal !== "function") {
     throw new TypeError("file command dependencies are required");
   }
 
@@ -42,6 +43,11 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
     [FILE_CHANNELS.uploadWorkItemCommentAttachment]: attachmentUploadHandler("uploadWorkItemCommentAttachment", true),
     [FILE_CHANNELS.downloadWorkItemAttachment]: attachmentDownloadHandler("downloadWorkItemAttachment", false),
     [FILE_CHANNELS.downloadWorkItemCommentAttachment]: attachmentDownloadHandler("downloadWorkItemCommentAttachment", true),
+    [FILE_CHANNELS.revealDownload]: async (event, capability) => {
+      assertSender(event);
+      if (typeof capability !== "string" || !/^yrd_[A-Za-z0-9_-]{32}$/u.test(capability)) throw publicError("file_reveal_invalid");
+      return normalizeRevealResult(await revealController.reveal(capability, getBinding(event, "reveal-download")));
+    },
   };
 
   function attachmentUploadHandler(operation, comment) {
@@ -73,7 +79,7 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
       assertSender(event);
       const reference = parseAttachmentDownload(payload, comment);
       const binding = stripPurpose(getBinding(event, "download"));
-      return normalizeResult(await attachmentCoordinator[operation]({ ...reference, binding, signal: undefined, window: getWindow() }));
+      return normalizeAttachmentDownloadResult(await attachmentCoordinator[operation]({ ...reference, binding, signal: undefined, window: getWindow() }));
     };
   }
   for (const [channel, handler] of Object.entries(handlers)) ipcMain.handle(channel, sanitize(handler));
@@ -113,6 +119,15 @@ function stripPurpose(binding) {
 function normalizeAttachmentUploadResult(value) {
   if (!value || !isPlainObject(value) || !sameKeys(value, ["created", "uploaded"])) throw publicError("file_unavailable");
   return Object.freeze({ created: normalizeAttachment(value.created), uploaded: normalizeAttachment(value.uploaded) });
+}
+function normalizeAttachmentDownloadResult(value) {
+  const result = normalizeResult(value);
+  if (value.revealCapability !== undefined && (typeof value.revealCapability !== "string" || !/^yrd_[A-Za-z0-9_-]{32}$/u.test(value.revealCapability))) throw publicError("file_unavailable");
+  return Object.freeze({ ...result, ...(value.revealCapability ? { revealCapability: value.revealCapability } : {}) });
+}
+function normalizeRevealResult(value) {
+  if (!value || value.status !== "revealed") throw publicError("file_unavailable");
+  return Object.freeze({ status: "revealed" });
 }
 function normalizeAttachment(value) {
   if (!isPlainObject(value)) throw publicError("file_unavailable");

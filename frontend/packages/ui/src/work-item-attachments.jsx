@@ -16,9 +16,9 @@ import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './f
  */
 
 /**
- * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, onDownload: (attachment: Attachment) => void, showCreator?: boolean, className?: string }} props
+ * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, revealableId?: number | null, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void, showCreator?: boolean, className?: string }} props
  */
-export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, onDownload, showCreator = false, className = '' }) {
+export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, revealableId = null, onDownload, onReveal, showCreator = false, className = '' }) {
   return (
     <ul className={`work-item-attachment-list ${className}`.trim()} aria-label={ariaLabel}>
       {attachments.map((attachment) => (
@@ -32,15 +32,22 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
           </div>
           <div className="work-item-attachment-actions">
             {attachmentIsUploaded(attachment) ? (
-              <button
-                className="yuance-ui-button yuance-ui-button-secondary"
-                type="button"
-                aria-label={`下载${downloadLabel} ${attachment.filename || attachment.id}`}
-                onClick={() => onDownload(attachment)}
-                disabled={downloadingId === attachment.id}
-              >
-                {downloadingId === attachment.id ? '打开中…' : '下载'}
-              </button>
+              <>
+                <button
+                  className="yuance-ui-button yuance-ui-button-secondary"
+                  type="button"
+                  aria-label={`下载${downloadLabel} ${attachment.filename || attachment.id}`}
+                  onClick={() => onDownload(attachment)}
+                  disabled={downloadingId === attachment.id}
+                >
+                  {downloadingId === attachment.id ? '处理中…' : '下载'}
+                </button>
+                {revealableId === attachment.id && onReveal ? (
+                  <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onReveal(attachment)} disabled={downloadingId === attachment.id}>
+                    在文件夹中显示
+                  </button>
+                ) : null}
+              </>
             ) : <span className="attachment-action-hint">上传完成后可下载</span>}
           </div>
         </li>
@@ -50,9 +57,9 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
 }
 
 /**
- * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, downloadingId: number | null, onChooseUpload: () => void, onDownload: (attachment: Attachment) => void }} props
+ * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, downloadingId: number | null, revealableId?: number | null, onChooseUpload: () => void, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void }} props
  */
-export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, onChooseUpload, onDownload }) {
+export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, revealableId = null, onChooseUpload, onDownload, onReveal }) {
   return (
     <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
       <div className="yuance-ui-panel-header">
@@ -69,7 +76,7 @@ export function WorkItemAttachments({ attachments, status, warning, error, uploa
       {warning ? <p className="work-item-attachment-warning" aria-live="polite">{warning}</p> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {attachments.length ? (
-        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} onDownload={onDownload} showCreator />
+        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} revealableId={revealableId} onDownload={onDownload} onReveal={onReveal} showCreator />
       ) : <p className="yuance-ui-empty">当前没有工作项附件。</p>}
     </section>
   );

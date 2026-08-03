@@ -20,9 +20,10 @@ function fixture() {
     attachmentCoordinator: {
       uploadWorkItemAttachment: async (input) => { calls.push(["attachment-upload", input]); input.onStage("registering"); input.onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       uploadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-upload", input]); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
-      downloadWorkItemAttachment: async (input) => { calls.push(["attachment-download", input]); return { status: "completed", filename: "report.txt", byteSize: 12, path: "/secret" }; },
+      downloadWorkItemAttachment: async (input) => { calls.push(["attachment-download", input]); return { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }; },
       downloadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-download", input]); return { status: "cancelled" }; },
     },
+    revealController: { reveal: async (capability, binding) => { calls.push(["reveal", capability, binding]); return { status: "revealed", path: "/secret" }; } },
   });
   return { handlers, calls, event, dispose };
 }
@@ -62,8 +63,16 @@ test("business attachment commands publish bounded progress and public results",
     ["send", FILE_CHANNELS.attachmentProgress, { operationId, stage: "registering" }],
     ["send", FILE_CHANNELS.attachmentProgress, { operationId, stage: "uploading" }],
   ]);
-  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadWorkItemAttachment)(value.event, { itemKey: "YCE-TASK-2", attachmentId: 9, suggestedFilename: "ignored.txt" }), { status: "completed", filename: "report.txt", byteSize: 12 });
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadWorkItemAttachment)(value.event, { itemKey: "YCE-TASK-2", attachmentId: 9, suggestedFilename: "ignored.txt" }), { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"b".repeat(32)}` });
   assert.equal(JSON.stringify(result).includes("/secret"), false);
+});
+
+test("reveal command binds the opaque capability to the current sender", async () => {
+  const value = fixture();
+  const capability = `yrd_${"b".repeat(32)}`;
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.revealDownload)(value.event, capability), { status: "revealed" });
+  assert.deepEqual(value.calls.find(([name]) => name === "reveal"), ["reveal", capability, { profileEpoch: 1, authorizationVersion: 2, webContentsId: 7, frameRoutingId: 11, purpose: "reveal-download" }]);
+  await assert.rejects(value.handlers.get(FILE_CHANNELS.revealDownload)(value.event, "/private/report.txt"), (error) => error.code === "file_reveal_invalid");
 });
 
 test("business attachment commands reject injected primitives before coordinator access", async () => {

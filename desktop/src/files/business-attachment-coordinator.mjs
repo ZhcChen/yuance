@@ -8,11 +8,12 @@ export function createBusinessAttachmentCoordinator({
   grantVault,
   uploadExecutor,
   downloadExecutor,
+  revealVault,
   apiOrigin,
   allowLoopbackHttp = false,
   allowedRelativePaths = Object.freeze({}),
 } = {}) {
-  if (typeof restTransport?.execute !== "function" || typeof fileVault?.describe !== "function" || typeof grantVault?.issue !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function") {
+  if (typeof restTransport?.execute !== "function" || typeof fileVault?.describe !== "function" || typeof grantVault?.issue !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || typeof revealVault?.issue !== "function") {
     throw new TypeError("Business attachment coordinator dependencies are required");
   }
   if (typeof apiOrigin !== "string" || !isPlainObject(allowedRelativePaths) || Object.keys(allowedRelativePaths).some((key) => !["download", "upload"].includes(key))) {
@@ -77,8 +78,21 @@ export function createBusinessAttachmentCoordinator({
     if (signed?.attachment?.status !== "uploaded" || typeof signed?.transfer?.sha256 !== "string" || !SHA256.test(signed.transfer.sha256)) throw publicError("attachment_download_unavailable");
     const contract = parseBusinessContract(signed.transfer, "download");
     const downloadBinding = Object.freeze({ ...binding, purpose: "download" });
+    const revealBinding = Object.freeze({ ...binding, purpose: "reveal-download" });
     const transferGrant = grantVault.issue(contract, downloadBinding).grant;
-    return downloadExecutor.execute({ window, suggestedFilename: signed.attachment.filename, transferGrant, binding: downloadBinding, signal });
+    let revealCapability;
+    const result = await downloadExecutor.execute({
+      window,
+      suggestedFilename: signed.attachment.filename,
+      transferGrant,
+      binding: downloadBinding,
+      signal,
+      onCommittedTarget: (locator) => {
+        try { revealCapability = revealVault.issue(locator, revealBinding).capability; }
+        catch { revealCapability = undefined; }
+      },
+    });
+    return Object.freeze({ ...result, ...(revealCapability ? { revealCapability } : {}) });
   }
 
   function parseBusinessContract(value, purpose) {

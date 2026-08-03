@@ -42,7 +42,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 5);
+  assert.equal(bridge.schemaVersion, 6);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.notifications), true);
@@ -70,7 +70,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "uploadCanary", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "revealDownload", "uploadCanary", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();
@@ -79,6 +79,12 @@ test("file bridge exposes only fixed host-delegated commands", async () => {
     ["yuance:file-upload-canary", "yfc_opaque"],
     ["yuance:file-download-canary", undefined],
   ]);
+});
+
+test("reveal bridge forwards only an opaque capability on its fixed channel", async () => {
+  const { bridge, invocations } = await executePreload();
+  await bridge.files.revealDownload("yrd_opaque");
+  assert.deepEqual(invocations, [["yuance:file-reveal-download", "yrd_opaque"]]);
 });
 
 test("attachment upload correlates fixed progress stages and removes its listener", async () => {

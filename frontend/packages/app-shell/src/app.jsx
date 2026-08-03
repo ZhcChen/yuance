@@ -503,8 +503,10 @@ export function SharedApp({ services }) {
   const [workItemAttachmentStatus, setWorkItemAttachmentStatus] = useState('');
   const [workItemAttachmentUploading, setWorkItemAttachmentUploading] = useState(false);
   const [workItemAttachmentDownloadingId, setWorkItemAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
+  const [workItemAttachmentReveal, setWorkItemAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [workItemCommentAttachmentUploadingId, setWorkItemCommentAttachmentUploadingId] = useState(/** @type {number | null} */ (null));
   const [workItemCommentAttachmentDownloadingKey, setWorkItemCommentAttachmentDownloadingKey] = useState('');
+  const [workItemCommentAttachmentReveal, setWorkItemCommentAttachmentReveal] = useState(/** @type {{ key: string, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [workItemCommentAttachmentStatus, setWorkItemCommentAttachmentStatus] = useState(/** @type {Record<string, string>} */ ({}));
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
@@ -619,8 +621,10 @@ export function SharedApp({ services }) {
         setWorkItemAttachmentStatus('');
         setWorkItemAttachmentUploading(false);
         setWorkItemAttachmentDownloadingId(null);
+        setWorkItemAttachmentReveal(null);
         setWorkItemCommentAttachmentUploadingId(null);
         setWorkItemCommentAttachmentDownloadingKey('');
+        setWorkItemCommentAttachmentReveal(null);
         setWorkItemCommentAttachmentStatus({});
         setWorkItemFormKey('');
       }
@@ -1242,11 +1246,12 @@ export function SharedApp({ services }) {
       return;
     }
     const itemKey = activeWorkItemDetail.key;
+    setWorkItemAttachmentReveal(null);
     setWorkItemAttachmentDownloadingId(attachment.id);
     setWorkItemAttachmentActionError('');
     setWorkItemAttachmentStatus(`正在获取 ${attachment.filename || '附件'} 的下载链接。`);
     try {
-      const opened = await downloadWorkItemAttachmentUseCase({
+      const result = await downloadWorkItemAttachmentUseCase({
         api,
         platform: files,
         itemKey,
@@ -1254,8 +1259,9 @@ export function SharedApp({ services }) {
         suggestedFilename: attachment.filename,
         isCurrent: () => isCurrentWorkItemDetailRoute(itemKey),
       });
-      if (opened) {
-        setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载链接已打开。`);
+      if (result.completed) {
+        setWorkItemAttachmentReveal(result.revealCapability ? { attachmentId: attachment.id, capability: result.revealCapability } : null);
+        setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 下载完成。`);
       }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey)) {
@@ -1264,6 +1270,22 @@ export function SharedApp({ services }) {
       }
     } finally {
       setWorkItemAttachmentDownloadingId((current) => (current === attachment.id ? null : current));
+    }
+  }
+
+  /** @param {AppAttachment} attachment */
+  async function revealWorkItemAttachment(attachment) {
+    const reveal = workItemAttachmentReveal;
+    if (!reveal || reveal.attachmentId !== attachment.id || typeof files.attachments?.revealDownload !== 'function') return;
+    setWorkItemAttachmentReveal(null);
+    setWorkItemAttachmentDownloadingId(attachment.id);
+    try {
+      await files.attachments.revealDownload(reveal.capability);
+      setWorkItemAttachmentStatus(`${attachment.filename || '附件'} 已在文件夹中定位。`);
+    } catch (caught) {
+      setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('定位附件失败。')));
+    } finally {
+      setWorkItemAttachmentDownloadingId(null);
     }
   }
 
@@ -1277,6 +1299,7 @@ export function SharedApp({ services }) {
     }
     const itemKey = activeWorkItemDetail.key;
     const busyKey = `${commentId}:${attachment.id}`;
+    setWorkItemCommentAttachmentReveal(null);
     setWorkItemCommentAttachmentDownloadingKey(busyKey);
     setWorkItemAttachmentActionError('');
     setWorkItemCommentAttachmentStatus((current) => ({
@@ -1284,7 +1307,7 @@ export function SharedApp({ services }) {
       [String(commentId)]: `正在获取 ${attachment.filename || '附件'} 的下载链接。`,
     }));
     try {
-      const opened = await downloadWorkItemCommentAttachmentUseCase({
+      const result = await downloadWorkItemCommentAttachmentUseCase({
         api,
         platform: files,
         itemKey,
@@ -1293,10 +1316,11 @@ export function SharedApp({ services }) {
         suggestedFilename: attachment.filename,
         isCurrent: () => isCurrentWorkItemDetailRoute(itemKey),
       });
-      if (opened) {
+      if (result.completed) {
+        setWorkItemCommentAttachmentReveal(result.revealCapability ? { key: busyKey, capability: result.revealCapability } : null);
         setWorkItemCommentAttachmentStatus((current) => ({
           ...current,
-          [String(commentId)]: `${attachment.filename || '附件'} 下载链接已打开。`,
+          [String(commentId)]: `${attachment.filename || '附件'} 下载完成。`,
         }));
       }
     } catch (caught) {
@@ -1309,6 +1333,23 @@ export function SharedApp({ services }) {
       }
     } finally {
       setWorkItemCommentAttachmentDownloadingKey((current) => (current === busyKey ? '' : current));
+    }
+  }
+
+  /** @param {number} commentId @param {AppAttachment} attachment */
+  async function revealWorkItemCommentAttachment(commentId, attachment) {
+    const key = `${commentId}:${attachment.id}`;
+    const reveal = workItemCommentAttachmentReveal;
+    if (!reveal || reveal.key !== key || typeof files.attachments?.revealDownload !== 'function') return;
+    setWorkItemCommentAttachmentReveal(null);
+    setWorkItemCommentAttachmentDownloadingKey(key);
+    try {
+      await files.attachments.revealDownload(reveal.capability);
+      setWorkItemCommentAttachmentStatus((current) => ({ ...current, [String(commentId)]: `${attachment.filename || '附件'} 已在文件夹中定位。` }));
+    } catch (caught) {
+      setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('定位评论附件失败。')));
+    } finally {
+      setWorkItemCommentAttachmentDownloadingKey('');
     }
   }
 
@@ -2285,8 +2326,10 @@ export function SharedApp({ services }) {
                     uploading={workItemAttachmentUploading}
                     mutationBusy={workItemMutationSubmitting}
                     downloadingId={workItemAttachmentDownloadingId}
+                    revealableId={workItemAttachmentReveal?.attachmentId || null}
                     onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
                     onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
+                    onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
                   />
 
                   <WorkItemComments
@@ -2295,6 +2338,7 @@ export function SharedApp({ services }) {
                     attachmentStatusByComment={workItemCommentAttachmentStatus}
                     uploadingCommentId={workItemCommentAttachmentUploadingId}
                     downloadingKey={workItemCommentAttachmentDownloadingKey}
+                    revealableKey={workItemCommentAttachmentReveal?.key || ''}
                     mutationBusy={workItemMutationSubmitting}
                     editingCommentId={workItemEditingCommentId}
                     newCommentBody={workItemNewCommentBody}
@@ -2312,6 +2356,7 @@ export function SharedApp({ services }) {
                     onStartEdit={startWorkItemCommentEdit}
                     onUploadAttachment={(commentId) => void uploadSelectedWorkItemCommentAttachment(commentId)}
                     onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
+                    onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}
                   />
                 </>
               ) : (

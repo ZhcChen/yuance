@@ -27,6 +27,7 @@ import { AttachmentList } from './work-item-attachments.jsx';
  *   attachmentStatusByComment: Record<string, string>,
  *   uploadingCommentId: number | null,
  *   downloadingKey: string,
+ *   revealableKey: string,
  *   mutationBusy: boolean,
  *   editingCommentId: number | null,
  *   newCommentBody: string,
@@ -44,6 +45,7 @@ import { AttachmentList } from './work-item-attachments.jsx';
  *   onStartEdit: (comment: Comment) => void,
  *   onUploadAttachment: (commentId: number) => void,
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
+ *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  * }} props
  */
 export function WorkItemComments(props) {
@@ -53,6 +55,7 @@ export function WorkItemComments(props) {
     attachmentStatusByComment,
     uploadingCommentId,
     downloadingKey,
+    revealableKey,
     mutationBusy,
     editingCommentId,
     newCommentBody,
@@ -70,6 +73,7 @@ export function WorkItemComments(props) {
     onStartEdit,
     onUploadAttachment,
     onDownloadAttachment,
+    onRevealAttachment,
   } = props;
 
   return (
@@ -123,7 +127,9 @@ export function WorkItemComments(props) {
                     ariaLabel={`评论 ${comment.id} 附件`}
                     downloadLabel="评论附件"
                     downloadingId={downloadingKey.startsWith(`${comment.id}:`) ? Number(downloadingKey.split(':')[1]) : null}
+                    revealableId={revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null}
                     onDownload={(attachment) => onDownloadAttachment(comment.id, attachment)}
+                    onReveal={(attachment) => onRevealAttachment(comment.id, attachment)}
                     className="work-item-comment-attachment-list"
                   />
                 ) : null}

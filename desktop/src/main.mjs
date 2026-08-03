@@ -55,6 +55,8 @@ import { createFileCapabilityVault } from "./files/file-capability-vault.mjs";
 import { createFileSpool } from "./files/file-spool.mjs";
 import { createFileDialog } from "./files/file-dialog.mjs";
 import { createTransferGrantVault } from "./files/transfer-grant-vault.mjs";
+import { createRevealDownloadVault } from "./files/reveal-download-vault.mjs";
+import { createRevealDownloadController } from "./files/reveal-download-controller.mjs";
 import { parseTransferContract } from "./files/transfer-contract.mjs";
 import { createUploadExecutor } from "./files/upload-executor.mjs";
 import { createDownloadExecutor } from "./files/download-executor.mjs";
@@ -740,8 +742,10 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
   if (generation !== credentialRuntimeGeneration) return;
   const fileVault = createFileCapabilityVault();
   const grantVault = createTransferGrantVault();
+  const revealVault = createRevealDownloadVault();
+  const revealController = createRevealDownloadController({ vault: revealVault, shell });
   const registry = createOperationRegistry();
-  const state = createFileStateController({ fileVault, grantVault, registry });
+  const state = createFileStateController({ fileVault, grantVault, revealVault, registry });
   const fileDialog = createFileDialog({ dialog, spool, vault: fileVault });
   const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
   const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
@@ -752,6 +756,7 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
     grantVault,
     uploadExecutor,
     downloadExecutor,
+    revealVault,
     apiOrigin: profile.origin,
     allowLoopbackHttp: isDevRuntime,
     allowedRelativePaths: isDevRuntime ? { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" } : {},
@@ -767,7 +772,7 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
     const contract = parseTransferContract(raw, { apiOrigin: profile.origin, expectedPurpose: purpose, allowLoopbackHttp: isDevRuntime });
     return grantVault.issue(contract, binding).grant;
   };
-  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator });
+  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, revealController });
   const onSuspend = () => { state.invalidateAll().catch(() => {}); };
   powerMonitor.on("suspend", onSuspend);
   disposeFilePowerLifecycle = () => powerMonitor.removeListener("suspend", onSuspend);

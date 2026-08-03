@@ -35,6 +35,7 @@ function renderComments(overrides = {}) {
     attachmentStatusByComment: { 9: '上传完成。' },
     uploadingCommentId: null,
     downloadingKey: '',
+    revealableKey: '',
     mutationBusy: false,
     editingCommentId: null,
     newCommentBody: '',
@@ -52,6 +53,7 @@ function renderComments(overrides = {}) {
     onStartEdit: () => {},
     onUploadAttachment: () => {},
     onDownloadAttachment: () => {},
+    onRevealAttachment: () => {},
     ...overrides,
   }));
 }

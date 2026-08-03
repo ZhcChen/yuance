@@ -258,7 +258,7 @@ export function uploadWorkItemCommentAttachment({ api, platform, itemKey, commen
 async function downloadAttachment({ getSignedRequest, platform, suggestedFilename, isCurrent }) {
   const signed = await getSignedRequest();
   if (!isCurrent()) {
-    return false;
+    return { completed: false, revealCapability: null };
   }
   const transfer = platform.transfers.authorizeSignedRequest({
     request: signed.request,
@@ -266,7 +266,7 @@ async function downloadAttachment({ getSignedRequest, platform, suggestedFilenam
     expiresInSeconds: signed.expires_in_seconds,
   });
   await platform.downloads.downloadSignedRequest(transfer, suggestedFilename);
-  return isCurrent();
+  return { completed: isCurrent(), revealCapability: null };
 }
 
 /**
@@ -281,9 +281,9 @@ async function downloadAttachment({ getSignedRequest, platform, suggestedFilenam
  */
 export function downloadWorkItemAttachment({ api, platform, itemKey, attachmentId, suggestedFilename, isCurrent }) {
   if (typeof platform.attachments?.downloadWorkItemAttachment === 'function') {
-    if (!isCurrent()) return Promise.resolve(false);
+    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
     return platform.attachments.downloadWorkItemAttachment({ itemKey, attachmentId, suggestedFilename })
-      .then((result) => result.status === 'completed' && isCurrent());
+      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
   }
   return downloadAttachment({
     getSignedRequest: () => api.getWorkItemAttachmentDownloadUrl(itemKey, attachmentId),
@@ -306,9 +306,9 @@ export function downloadWorkItemAttachment({ api, platform, itemKey, attachmentI
  */
 export function downloadWorkItemCommentAttachment({ api, platform, itemKey, commentId, attachmentId, suggestedFilename, isCurrent }) {
   if (typeof platform.attachments?.downloadWorkItemCommentAttachment === 'function') {
-    if (!isCurrent()) return Promise.resolve(false);
+    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
     return platform.attachments.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId, suggestedFilename })
-      .then((result) => result.status === 'completed' && isCurrent());
+      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
   }
   return downloadAttachment({
     getSignedRequest: () => api.getWorkItemCommentAttachmentDownloadUrl(itemKey, commentId, attachmentId),

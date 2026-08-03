@@ -4,11 +4,15 @@
 const FILE_CAPABILITY = Symbol('FileCapability');
 /** @type {unique symbol} */
 const SIGNED_TRANSFER_CAPABILITY = Symbol('SignedTransferCapability');
+/** @type {unique symbol} */
+const REVEAL_DOWNLOAD_CAPABILITY = Symbol('RevealDownloadCapability');
 // brand symbol 保持私有，运行时声明只用于形成不可公开构造的 JSDoc 类型。
 void FILE_CAPABILITY;
 void SIGNED_TRANSFER_CAPABILITY;
+void REVEAL_DOWNLOAD_CAPABILITY;
 
 /** @typedef {{ readonly [FILE_CAPABILITY]: true }} FileCapability */
+/** @typedef {{ readonly [REVEAL_DOWNLOAD_CAPABILITY]: true }} RevealDownloadCapability */
 
 /**
  * 由宿主验证服务端响应后签发的受控传输 capability。共享层不得解析或构造。
@@ -102,8 +106,9 @@ export function defineHostDelegatedFileCapabilities(capabilities) {
  * @typedef {object} HostDelegatedAttachmentCapabilities
  * @property {(input: { itemKey: string, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: any, uploaded: any }>} uploadWorkItemAttachment
  * @property {(input: { itemKey: string, commentId: number, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: any, uploaded: any }>} uploadWorkItemCommentAttachment
- * @property {(input: { itemKey: string, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled' }>} downloadWorkItemAttachment
- * @property {(input: { itemKey: string, commentId: number, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled' }>} downloadWorkItemCommentAttachment
+ * @property {(input: { itemKey: string, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadWorkItemAttachment
+ * @property {(input: { itemKey: string, commentId: number, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadWorkItemCommentAttachment
+ * @property {(capability: RevealDownloadCapability) => Promise<{ status: 'revealed' }>} revealDownload
  */
 
 /**
@@ -116,6 +121,7 @@ export function defineHostDelegatedAttachmentCapabilities(capabilities) {
   requireOperation(capabilities, 'uploadWorkItemCommentAttachment');
   requireOperation(capabilities, 'downloadWorkItemAttachment');
   requireOperation(capabilities, 'downloadWorkItemCommentAttachment');
+  requireOperation(capabilities, 'revealDownload');
   return /** @type {HostDelegatedAttachmentCapabilities} */ (capabilities);
 }
 

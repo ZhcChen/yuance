@@ -15,8 +15,9 @@ export function createDesktopAppFiles(bridge, hostFiles = createDesktopFiles(bri
   const attachments = defineHostDelegatedAttachmentCapabilities({
     uploadWorkItemAttachment: async (input, onStage) => normalizeUploadResult(await requireOperation(bridge, "uploadWorkItemAttachment")(input, onStage)),
     uploadWorkItemCommentAttachment: async (input, onStage) => normalizeUploadResult(await requireOperation(bridge, "uploadWorkItemCommentAttachment")(input, onStage)),
-    downloadWorkItemAttachment: async (input) => normalizeResult(await requireOperation(bridge, "downloadWorkItemAttachment")(input)),
-    downloadWorkItemCommentAttachment: async (input) => normalizeResult(await requireOperation(bridge, "downloadWorkItemCommentAttachment")(input)),
+    downloadWorkItemAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadWorkItemAttachment")(input)),
+    downloadWorkItemCommentAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadWorkItemCommentAttachment")(input)),
+    revealDownload: async (capability) => normalizeReveal(await requireOperation(bridge, "revealDownload")(capability)),
   });
   return Object.freeze({
     files: Object.freeze({ chooseFile: hostFiles.chooseFile, uploadSignedRequest: unavailable }),
@@ -47,4 +48,15 @@ function normalizeUploadResult(value) {
 function normalizeAttachment(value) {
   if (!value || typeof value !== "object" || !Number.isSafeInteger(value.id) || typeof value.filename !== "string" || typeof value.content_type !== "string" || !Number.isSafeInteger(value.byte_size) || typeof value.status !== "string" || typeof value.created_by !== "string" || typeof value.created_at !== "string") throw new Error("attachment result is invalid");
   return Object.freeze({ id: value.id, filename: value.filename, content_type: value.content_type, byte_size: value.byte_size, status: value.status, created_by: value.created_by, created_at: value.created_at });
+}
+function normalizeAttachmentDownload(value) {
+  const result = normalizeResult(value);
+  const revealCapability = typeof value?.revealCapability === "string"
+    ? /** @type {import('@yuance/frontend-platform-contract').RevealDownloadCapability} */ (/** @type {unknown} */ (value.revealCapability))
+    : undefined;
+  return Object.freeze({ ...result, ...(revealCapability ? { revealCapability } : {}) });
+}
+function normalizeReveal(value) {
+  if (!value || value.status !== "revealed") throw new Error("reveal result is invalid");
+  return Object.freeze({ status: "revealed" });
 }
