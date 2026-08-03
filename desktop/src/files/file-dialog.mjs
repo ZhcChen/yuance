@@ -1,7 +1,7 @@
 import path from "node:path";
 
 const CONTENT_TYPES = new Map([
-  [".txt", "text/plain; charset=utf-8"],
+  [".txt", "text/plain"],
   [".md", "text/markdown"],
   [".pdf", "application/pdf"],
   [".png", "image/png"],

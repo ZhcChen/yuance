@@ -4304,9 +4304,7 @@ pub async fn test_storage_upload(
     Query(query): Query<TestStorageUploadQuery>,
     body: Bytes,
 ) -> AppResult<StatusCode> {
-    let user_id = require_test_storage_upload_actor_user_id(&state, &headers).await?;
-    ensure_api_csrf(&headers)?;
-    verify_test_storage_upload_grant(&state, &query, user_id)?;
+    verify_test_storage_upload_grant(&state, &query)?;
     let content_type = headers
         .get(header::CONTENT_TYPE)
         .and_then(|value| value.to_str().ok())
@@ -4325,11 +4323,9 @@ pub async fn test_storage_upload(
 
 pub async fn test_storage_download(
     State(state): State<AppState>,
-    headers: HeaderMap,
     Query(query): Query<TestStorageDownloadQuery>,
 ) -> AppResult<impl IntoResponse> {
-    let user_id = require_test_storage_upload_actor_user_id(&state, &headers).await?;
-    let granted_content_type = verify_test_storage_download_grant(&state, &query, user_id)?;
+    let granted_content_type = verify_test_storage_download_grant(&state, &query)?;
     let (storage_content_type, content) =
         storage::read_object(state.pool()?, &state.settings, &query.object_key).await?;
     let normalized_storage_content_type = storage_content_type.trim().to_ascii_lowercase();
@@ -4541,21 +4537,6 @@ async fn require_system_release_api_principal(
         .await?
         .ok_or(AppError::Unauthorized)?;
     Ok(SystemReleaseApiPrincipal::Session(user))
-}
-
-async fn require_test_storage_upload_actor_user_id(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> AppResult<i64> {
-    let pool = state.pool()?;
-    if let Some(raw_token) = single_bearer_token(headers)? {
-        if let Some(authenticated) =
-            system_api_tokens::authenticated_token_from_bearer_token(pool, &raw_token).await?
-        {
-            return Ok(authenticated.owner_user_id);
-        }
-    }
-    Ok(require_api_user(state, headers).await?.id)
 }
 
 fn single_bearer_token(headers: &HeaderMap) -> AppResult<Option<String>> {

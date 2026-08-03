@@ -10,8 +10,12 @@ import { createFileCapabilityVault } from "../../src/files/file-capability-vault
 import { createFileSpool } from "../../src/files/file-spool.mjs";
 import { createFileDialog } from "../../src/files/file-dialog.mjs";
 import { createTransferGrantVault } from "../../src/files/transfer-grant-vault.mjs";
+import { createRevealDownloadVault } from "../../src/files/reveal-download-vault.mjs";
+import { createRevealDownloadController } from "../../src/files/reveal-download-controller.mjs";
+import { createBusinessAttachmentCoordinator } from "../../src/files/business-attachment-coordinator.mjs";
 import { parseTransferContract } from "../../src/files/transfer-contract.mjs";
 import { createOperationRegistry } from "../../src/network/operation-registry.mjs";
+import { createAttachmentOperationRegistry } from "../../src/network/attachment-operation-registry.mjs";
 import { createRestTransport } from "../../src/network/rest-transport.mjs";
 import { createCredentialRuntime } from "../../src/auth/credential-runtime.mjs";
 import { loadWindowsFileGuard } from "../../src/files/windows-file-guard.mjs";
@@ -72,6 +76,10 @@ async function run() {
     }
     if (process.argv.includes("--business-api")) {
       await runRealBusinessApi({ origin, mode, network });
+      return;
+    }
+    if (process.argv.includes("--business-file-api")) {
+      await runRealBusinessFileApi({ origin, mode, network });
       return;
     }
     if (process.argv.includes("--upload")) {
@@ -152,6 +160,118 @@ async function run() {
     reportFailure(error);
     return;
   }
+  app.exit(0);
+}
+
+async function runRealBusinessFileApi({ origin, mode, network }) {
+  const stage = (value) => process.stdout.write(`${JSON.stringify({ kind: "yuance-business-file-stage", stage: value })}\n`);
+  const enrolled = await enrollDesktop({ origin, mode, fetchImpl: network.fetch });
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    safeStorage: process.platform === "darwin" ? createEphemeralStorage() : safeStorage,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: async () => randomUUID(),
+    deviceName: "Yuance Business File Integration",
+    clientVersion: "0.1.0",
+  });
+  await runtime.initialize();
+  await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-business-file-user-code", userCode })}\n`) });
+  stage("authorized");
+
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  const attachmentRest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: createAttachmentOperationRegistry() });
+  stage("work-items");
+  const workItems = await rest.execute("workitem.list", { projectKey: "YCE", page: 1, perPage: 20 });
+  const itemKey = workItems.items.find((item) => item.key === "YCE-TASK-2")?.key;
+  if (!itemKey) throw new Error("seeded work item is unavailable");
+  stage("comments");
+  const comments = await rest.execute("workitem.comments", { itemKey });
+  const commentId = comments.find((comment) => !comment.is_flow && !comment.is_draft)?.id;
+  if (!commentId) throw new Error("seeded comment is unavailable");
+
+  const windowsGuard = loadWindowsFileGuard();
+  const spoolRoot = path.join(userDataPath, "business-file-spool");
+  const spool = createFileSpool({ rootDirectory: spoolRoot, platform: process.platform, windowsGuard });
+  const fileVault = createFileCapabilityVault();
+  const grantVault = createTransferGrantVault();
+  const revealVault = createRevealDownloadVault();
+  const registry = createOperationRegistry();
+  const bindingVersion = runtime.fileBindingVersion();
+  const baseBinding = Object.freeze({ ...bindingVersion, webContentsId: 1, frameRoutingId: 1 });
+  const binding = (purpose) => Object.freeze({ ...baseBinding, purpose });
+  const itemContent = Buffer.from("yuance-business-item-attachment-v1");
+  const commentContent = Buffer.from("yuance-business-comment-attachment-v1");
+  const sourcePaths = [path.join(userDataPath, "item-source.txt"), path.join(userDataPath, "comment-source.txt")];
+  await Promise.all([fs.writeFile(sourcePaths[0], itemContent), fs.writeFile(sourcePaths[1], commentContent)]);
+  let sourceIndex = 0;
+  const fileDialog = createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sourcePaths[sourceIndex++]] }) }, spool, vault: fileVault });
+  const itemFile = await fileDialog.choose({ binding: binding("upload") });
+  const commentFile = await fileDialog.choose({ binding: binding("upload") });
+  if (!itemFile || !commentFile) throw new Error("business file selection was cancelled");
+  stage("selected");
+
+  const downloadPaths = [path.join(userDataPath, "item-download.txt"), path.join(userDataPath, "comment-download.txt")];
+  let downloadIndex = 0;
+  const targetManager = createDownloadTargetManager({
+    dialog: { showSaveDialog: async () => downloadIndex < downloadPaths.length ? { canceled: false, filePath: downloadPaths[downloadIndex++] } : { canceled: true } },
+    platform: process.platform,
+    windowsGuard,
+  });
+  const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
+  const downloadExecutor = createDownloadExecutor({ grantVault, targetManager, fetchImpl: network.transferFetch, registry });
+  const coordinator = createBusinessAttachmentCoordinator({
+    restTransport: attachmentRest,
+    fileVault,
+    grantVault,
+    revealVault,
+    uploadExecutor,
+    downloadExecutor,
+    apiOrigin: enrolled.profile.origin,
+    allowLoopbackHttp: true,
+    allowedRelativePaths: { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" },
+  });
+  const stages = [];
+  const recordStage = (target) => (value) => {
+    stages.push(`${target}:${value}`);
+    stage(`${target}-${value}`);
+  };
+  stage("item-upload");
+  const itemUpload = await coordinator.uploadWorkItemAttachment({ itemKey, fileCapability: itemFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("item") });
+  stage("comment-upload");
+  const commentUpload = await coordinator.uploadWorkItemCommentAttachment({ itemKey, commentId, fileCapability: commentFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("comment") });
+  stage("uploaded");
+  stage("lists");
+  const [itemList, commentList] = await Promise.all([
+    rest.execute("workitem.attachments", { itemKey }),
+    rest.execute("workitem.commentattachments", { itemKey, commentId }),
+  ]);
+  stage("downloads");
+  const itemDownload = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const commentDownload = await coordinator.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const cancelled = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const revealed = [];
+  const revealController = createRevealDownloadController({ vault: revealVault, shell: { showItemInFolder: () => revealed.push(true) } });
+  await revealController.reveal(itemDownload.revealCapability, binding("reveal-download"));
+  await revealController.reveal(commentDownload.revealCapability, binding("reveal-download"));
+  const downloaded = await Promise.all(downloadPaths.map((value) => fs.readFile(value)));
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  await runtime.logout();
+  runtime.dispose();
+  process.stdout.write(`${JSON.stringify({
+    kind: "yuance-business-file-result",
+    itemUploaded: itemUpload.uploaded.status === "uploaded",
+    commentUploaded: commentUpload.uploaded.status === "uploaded",
+    itemListed: itemList.some((value) => value.id === itemUpload.uploaded.id),
+    commentListed: commentList.some((value) => value.id === commentUpload.uploaded.id),
+    hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent),
+    revealCount: revealed.length,
+    cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability,
+    stages,
+    activeOperations: registry.snapshot().active,
+  })}\n`);
   app.exit(0);
 }
 

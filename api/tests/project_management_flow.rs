@@ -9889,7 +9889,7 @@ async fn api_v1_attachment_upload_lifecycle_marks_file_uploaded() {
 }
 
 #[tokio::test]
-async fn api_test_storage_upload_endpoint_requires_authenticated_bound_grant() {
+async fn api_test_storage_upload_endpoint_requires_valid_bound_grant() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let encoded_object_key = "browser-smoke%2Fguard.txt";
@@ -9909,7 +9909,7 @@ async fn api_test_storage_upload_endpoint_requires_authenticated_bound_grant() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(unauthorized_response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(unauthorized_response.status(), StatusCode::FORBIDDEN);
 
     let missing_csrf_response = app
         .clone()
@@ -9949,7 +9949,7 @@ async fn api_test_storage_upload_endpoint_requires_authenticated_bound_grant() {
 }
 
 #[tokio::test]
-async fn api_test_storage_download_endpoint_requires_authenticated_bound_grant() {
+async fn api_test_storage_download_endpoint_requires_valid_bound_grant() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let encoded_object_key = "browser-smoke%2Fguard.txt";
@@ -9967,7 +9967,7 @@ async fn api_test_storage_download_endpoint_requires_authenticated_bound_grant()
         )
         .await
         .expect("router should respond");
-    assert_eq!(unauthorized_response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(unauthorized_response.status(), StatusCode::FORBIDDEN);
 
     let invalid_grant_response = app
         .oneshot(
@@ -9987,14 +9987,13 @@ async fn api_test_storage_download_endpoint_requires_authenticated_bound_grant()
 }
 
 #[tokio::test]
-async fn api_test_storage_upload_grant_is_bound_to_issuing_user() {
+async fn api_test_storage_upload_grant_does_not_require_ambient_user_credentials() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
     seed_memory_storage_config(&pool, initialized.user_id).await;
-    let other_user = create_regular_user(&pool, "upload_observer", "上传观察者").await;
     let project = projects::get_project_detail(&pool, "YCE")
         .await
         .expect("project should load")
@@ -10051,16 +10050,12 @@ async fn api_test_storage_upload_grant_is_bound_to_issuing_user() {
                 .method("PUT")
                 .uri(upload_url)
                 .header(header::CONTENT_TYPE, "image/png")
-                .header(header::COOKIE, other_user.cookie)
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from(vec![0_u8]))
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
-    assert_eq!(upload_response.status(), StatusCode::FORBIDDEN);
-    let body = response_body(upload_response).await;
-    assert!(body.contains("测试对象存储上传授权无效或已过期"));
+    assert_eq!(upload_response.status(), StatusCode::NO_CONTENT);
 }
 
 #[tokio::test]
