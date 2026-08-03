@@ -237,6 +237,7 @@ async fn run_attachment_lifecycle(
     let signed = json_body(response).await;
     assert_eq!(signed["data"]["request"]["method"], "PUT");
     assert_eq!(signed["data"]["checksum_sha256"], checksum_sha256);
+    assert!(signed["data"]["expires_at"].as_str().is_some());
 
     let object_key = sqlx::query_scalar::<_, String>(
         "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",

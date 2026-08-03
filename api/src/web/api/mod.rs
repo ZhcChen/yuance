@@ -738,6 +738,7 @@ pub struct AttachmentSignedUrlPayload {
     pub attachment: AttachmentPayload,
     pub request: storage::SignedObjectRequest,
     pub expires_in_seconds: u64,
+    pub expires_at: String,
     pub checksum_sha256: String,
 }
 
@@ -4058,6 +4059,8 @@ pub async fn system_release_asset_upload_url(
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
     let expires_in_seconds =
         normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request = storage::presign_upload_url(
         pool,
         &state.settings,
@@ -4087,6 +4090,7 @@ pub async fn system_release_asset_upload_url(
         },
         request,
         expires_in_seconds,
+        expires_at,
         checksum_sha256: String::new(),
     }))
 }
@@ -4955,6 +4959,8 @@ async fn signed_attachment_url_payload(
     }
 
     let expires_in_seconds = normalize_signed_url_expiration(kind, query.expires_in_seconds)?;
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request = match kind {
         SignedUrlKind::Upload => {
             storage::presign_upload_url(
@@ -5006,6 +5012,7 @@ async fn signed_attachment_url_payload(
         attachment: attachment_payload(attachment),
         request,
         expires_in_seconds,
+        expires_at,
         checksum_sha256,
     })
 }
