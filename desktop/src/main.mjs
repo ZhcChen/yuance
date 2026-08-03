@@ -525,8 +525,27 @@ async function runDesktopNetworkSmoke() {
   }
   const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
   const sse = createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch });
+  const messageFacts = [];
+  const nativeNotifications = [];
+  let messageQueryCompleted = false;
+  const messages = createNotificationController({
+    execute: async (operation, input) => {
+      try { return await rest.execute(operation, input); }
+      finally { if (operation === "notification.list") messageQueryCompleted = true; }
+    },
+    publishFact: (fact) => messageFacts.push(fact),
+    isWindowFocused: () => true,
+    isWindowMinimized: () => false,
+    isNativeNotificationSupported: () => true,
+    showNativeNotification: (value) => nativeNotifications.push(value),
+    focusWindow: () => {},
+    resolveTargetPath: () => notificationTargetPath(null, "app"),
+  });
   await rest.execute("session.probe", {});
-  const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; });
+  const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => messages.handleFact(fact));
+  await waitForSmokeCondition(() => messageQueryCompleted
+    && messageFacts.some((fact) => fact.type === "topbar")
+    && messageFacts.some((fact) => fact.type === "release-version"));
   await runtime.refreshAccess(first.epoch);
   await first.completion;
   await rest.execute("session.probe", {});
@@ -536,9 +555,13 @@ async function runDesktopNetworkSmoke() {
   await second.completion;
   const revokeResponseToEofMs = performance.now() - revokeStartedAt;
   if (revokeResponseToEofMs >= 5_000) throw new Error("packaged revoke-to-EOF deadline exceeded");
+  messages.invalidate();
   process.stdout.write(`${JSON.stringify({
     kind: "yuance-desktop-network-smoke", credentialRestart, probe: true, firstStream: true,
     rotated: true, secondStream: true, loggedOut: true, revokeResponseToEofMs: Math.round(revokeResponseToEofMs),
+    messageRefresh: messageFacts.some((fact) => fact.type === "topbar"),
+    releaseVersion: messageFacts.some((fact) => fact.type === "release-version"),
+    foregroundSuppressed: nativeNotifications.length === 0,
     publicAuthStates: authStates,
   })}\n`);
 }
@@ -708,7 +731,7 @@ function writeDesktopNetworkSmokeStage(stage) {
   process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-network-stage", stage })}\n`);
 }
 
-async function openSmokeStream(runtime, sse, setController) {
+async function openSmokeStream(runtime, sse, setController, onFact = () => {}) {
   const controller = new AbortController();
   setController(controller);
   let connectedResolve;
@@ -719,6 +742,7 @@ async function openSmokeStream(runtime, sse, setController) {
     epoch = leaseEpoch;
     return sse.subscribe({ accessToken, signal: controller.signal, onControl: (event) => {
       if (event.type === "connected") connectedResolve();
+      else if (["topbar", "release-version"].includes(event.type)) onFact(Object.freeze({ ...event, epoch: leaseEpoch }));
     } });
   }).catch((error) => {
     if (controller.signal.aborted) return;
@@ -727,6 +751,15 @@ async function openSmokeStream(runtime, sse, setController) {
   });
   await waitForSmokeConnected(connected);
   return Object.freeze({ epoch, completion });
+}
+
+async function waitForSmokeCondition(predicate) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await delay(10);
+  }
+  throw new Error("packaged message smoke timed out");
 }
 
 async function waitForSmokeConnected(connected) {

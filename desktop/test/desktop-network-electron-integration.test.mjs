@@ -11,6 +11,7 @@ function validReport() {
   return {
     kind: "yuance-desktop-network-smoke", credentialRestart: process.platform === "darwin" ? "reauthorized" : "recovered", probe: true,
     firstStream: true, rotated: true, secondStream: true, loggedOut: true,
+    messageRefresh: true, releaseVersion: true, foregroundSuppressed: true,
     revokeResponseToEofMs: 900,
     publicAuthStates: ["authenticated", "unauthenticated"],
   };
@@ -20,7 +21,8 @@ test("accepts only complete credential-free packaged network reports", () => {
   assert.equal(assertDesktopNetworkSmokeReport(validReport()).kind, "yuance-desktop-network-smoke");
   for (const mutation of [
     { credentialRestart: "unknown" }, { probe: false }, { firstStream: false }, { rotated: false },
-    { secondStream: false }, { loggedOut: false }, { revokeResponseToEofMs: 5_000 },
+    { secondStream: false }, { loggedOut: false }, { messageRefresh: false }, { releaseVersion: false },
+    { foregroundSuppressed: false }, { revokeResponseToEofMs: 5_000 },
     { diagnostic: "Authorization: Bearer secret" }, { diagnostic: "yuance_dat_secret" },
     { diagnostic: "device_code=secret" }, { diagnostic: "csrf=secret" },
   ]) {
