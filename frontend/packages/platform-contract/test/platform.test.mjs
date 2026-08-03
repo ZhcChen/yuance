@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   defineDownloadCapabilities,
   defineFileCapabilities,
+  defineHostDelegatedAttachmentCapabilities,
   defineHostDelegatedFileCapabilities,
   definePlatformCapabilities,
   defineRouterCapabilities,
@@ -49,6 +50,22 @@ test('host-delegated file capabilities preserve opaque desktop operations', () =
   });
   assert.deepEqual(Object.keys(capabilities).sort(), ['chooseFile', 'downloadCanary', 'uploadCanary']);
   assert.throws(() => defineHostDelegatedFileCapabilities({ chooseFile: async () => null }), /uploadCanary/);
+});
+
+test('host-delegated attachment capabilities require the complete business matrix', () => {
+  const capabilities = defineHostDelegatedAttachmentCapabilities({
+    uploadWorkItemAttachment: async () => ({ created: {}, uploaded: {} }),
+    uploadWorkItemCommentAttachment: async () => ({ created: {}, uploaded: {} }),
+    downloadWorkItemAttachment: async () => ({ status: 'completed' }),
+    downloadWorkItemCommentAttachment: async () => ({ status: 'cancelled' }),
+  });
+  assert.deepEqual(Object.keys(capabilities).sort(), [
+    'downloadWorkItemAttachment',
+    'downloadWorkItemCommentAttachment',
+    'uploadWorkItemAttachment',
+    'uploadWorkItemCommentAttachment',
+  ]);
+  assert.throws(() => defineHostDelegatedAttachmentCapabilities({}), /uploadWorkItemAttachment/);
 });
 
 test('platform capability definitions reject missing operations', () => {

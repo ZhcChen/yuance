@@ -97,6 +97,29 @@ export function defineHostDelegatedFileCapabilities(capabilities) {
 }
 
 /**
+ * Desktop 业务附件由宿主完成登记、签名、传输和确认。进度回调只能接收固定阶段。
+ *
+ * @typedef {object} HostDelegatedAttachmentCapabilities
+ * @property {(input: { itemKey: string, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: any, uploaded: any }>} uploadWorkItemAttachment
+ * @property {(input: { itemKey: string, commentId: number, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: any, uploaded: any }>} uploadWorkItemCommentAttachment
+ * @property {(input: { itemKey: string, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled' }>} downloadWorkItemAttachment
+ * @property {(input: { itemKey: string, commentId: number, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled' }>} downloadWorkItemCommentAttachment
+ */
+
+/**
+ * @param {Partial<HostDelegatedAttachmentCapabilities>} capabilities
+ * @returns {HostDelegatedAttachmentCapabilities}
+ */
+export function defineHostDelegatedAttachmentCapabilities(capabilities) {
+  requireObject(capabilities);
+  requireOperation(capabilities, 'uploadWorkItemAttachment');
+  requireOperation(capabilities, 'uploadWorkItemCommentAttachment');
+  requireOperation(capabilities, 'downloadWorkItemAttachment');
+  requireOperation(capabilities, 'downloadWorkItemCommentAttachment');
+  return /** @type {HostDelegatedAttachmentCapabilities} */ (capabilities);
+}
+
+/**
  * @param {object} capabilities
  * @param {string} operation
  */

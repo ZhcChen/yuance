@@ -286,6 +286,81 @@ test('work item attachment upload follows register sign upload confirm refresh o
   assert.equal(result.uploaded, uploaded);
 });
 
+test('desktop delegated attachment upload preserves stages without exposing signed requests', async () => {
+  const events = [];
+  const created = { id: 9, status: 'pending' };
+  const uploaded = { id: 9, status: 'uploaded' };
+  const fileCapability = /** @type {FileCapability} */ ({});
+  const result = await uploadWorkItemAttachment({
+    api: {
+      createWorkItemAttachment: async () => { throw new Error('renderer API must not register'); },
+      getWorkItemAttachmentUploadUrl: async () => { throw new Error('renderer API must not sign'); },
+      markWorkItemAttachmentUploaded: async () => { throw new Error('renderer API must not confirm'); },
+    },
+    platform: {
+      ...attachmentPlatform(events),
+      attachments: {
+        uploadWorkItemAttachment: async (input, onStage) => {
+          events.push(['delegate', input]);
+          for (const stage of /** @type {const} */ (['registering', 'signing', 'uploading', 'confirming'])) onStage(stage);
+          return { created, uploaded };
+        },
+        uploadWorkItemCommentAttachment: async () => ({ created, uploaded }),
+        downloadWorkItemAttachment: async () => ({ status: 'completed' }),
+        downloadWorkItemCommentAttachment: async () => ({ status: 'completed' }),
+      },
+    },
+    itemKey: 'YCE-TASK-2',
+    file: { capability: fileCapability, filename: 'design.txt', contentType: 'text/plain', byteSize: 7 },
+    lifecycle: {
+      isCurrent: () => true,
+      onStage: (stage) => events.push(['stage', stage]),
+      onCreated: (attachment) => events.push(['created', attachment]),
+      onUploaded: (attachment) => events.push(['uploaded', attachment]),
+      refresh: async () => { events.push(['refresh']); },
+    },
+  });
+
+  assert.deepEqual(events, [
+    ['delegate', { itemKey: 'YCE-TASK-2', fileCapability }],
+    ['stage', 'registering'],
+    ['stage', 'signing'],
+    ['stage', 'uploading'],
+    ['stage', 'confirming'],
+    ['created', created],
+    ['uploaded', uploaded],
+    ['refresh'],
+  ]);
+  assert.equal(result.completed, true);
+});
+
+test('desktop delegated attachment download avoids renderer signing and honors cancellation', async () => {
+  let signed = false;
+  const platform = {
+    ...attachmentPlatform([]),
+    attachments: {
+      uploadWorkItemAttachment: async () => { throw new Error('unused'); },
+      uploadWorkItemCommentAttachment: async () => { throw new Error('unused'); },
+      downloadWorkItemAttachment: async (input) => {
+        assert.deepEqual(input, { itemKey: 'YCE-TASK-2', attachmentId: 9, suggestedFilename: 'design.txt' });
+        return { status: /** @type {const} */ ('cancelled') };
+      },
+      downloadWorkItemCommentAttachment: async () => ({ status: /** @type {const} */ ('completed') }),
+    },
+  };
+  const result = await downloadWorkItemAttachment({
+    api: { getWorkItemAttachmentDownloadUrl: async () => { signed = true; return { request: {}, expires_in_seconds: 30 }; } },
+    platform,
+    itemKey: 'YCE-TASK-2',
+    attachmentId: 9,
+    suggestedFilename: 'design.txt',
+    isCurrent: () => true,
+  });
+
+  assert.equal(result, false);
+  assert.equal(signed, false);
+});
+
 test('attachment upload keeps the confirmed result when refresh fails', async () => {
   const refreshFailure = new Error('refresh failed');
   const uploaded = { id: 9, status: 'uploaded' };

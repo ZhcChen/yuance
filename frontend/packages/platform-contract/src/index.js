@@ -3,6 +3,7 @@
 /** @typedef {import('./files.js').DownloadCapabilities} DownloadCapabilities */
 /** @typedef {import('./files.js').FileCapabilities} FileCapabilities */
 /** @typedef {import('./files.js').FileCapability} FileCapability */
+/** @typedef {import('./files.js').HostDelegatedAttachmentCapabilities} HostDelegatedAttachmentCapabilities */
 /** @typedef {import('./files.js').SelectedFile} SelectedFile */
 /** @typedef {import('./files.js').SignedTransferCapability} SignedTransferCapability */
 /** @typedef {import('./files.js').TransferCapabilities} TransferCapabilities */
@@ -14,6 +15,7 @@ export const PLATFORM_CONTRACT_PACKAGE_NAME = '@yuance/frontend-platform-contrac
 export {
   defineDownloadCapabilities,
   defineFileCapabilities,
+  defineHostDelegatedAttachmentCapabilities,
   defineHostDelegatedFileCapabilities,
   defineTransferCapabilities,
 } from './files.js';
