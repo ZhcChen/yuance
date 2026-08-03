@@ -790,34 +790,15 @@ async function runWorkItemAttachmentUploadAttempt(window) {
   return window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`);
 }
 
-function writeFeatureParityUiEvent(kind) {
-  return new Promise((resolve, reject) => {
-    let buffer = "";
-    const cleanup = () => {
-      clearTimeout(timer);
-      process.stdin.off("data", onData);
-    };
-    const onData = (chunk) => {
-      buffer += chunk;
-      const lines = buffer.split(/\r?\n/u);
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        try {
-          if (JSON.parse(line).kind !== `${kind}-ack`) continue;
-          cleanup();
-          resolve();
-          return;
-        } catch {}
-      }
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`UI smoke ${kind} acknowledgement timed out`));
-    }, 20_000);
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data", onData);
-    process.stdout.write(`${JSON.stringify({ kind })}\n`);
-  });
+async function writeFeatureParityUiEvent(kind) {
+  const ackPath = path.join(desktopFeatureParityUiSmokeProfile, `.yuance-${kind}-ack`);
+  await fs.rm(ackPath, { force: true });
+  await new Promise((resolve) => process.stdout.write(`${JSON.stringify({ kind })}\n`, resolve));
+  await waitForUiSmoke(async () => {
+    try { return (await fs.readFile(ackPath, "utf8")).trim() === kind; }
+    catch { return false; }
+  }, 20_000, `${kind} acknowledgement`);
+  await fs.rm(ackPath, { force: true });
 }
 
 async function executeFeatureParityUiScript(window, source, label) {

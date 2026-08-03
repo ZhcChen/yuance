@@ -99,8 +99,8 @@ test("packaged UI interruption waits for fixture acknowledgement", async () => {
     fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8"),
     fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8"),
   ]);
-  assert.match(smoke, /stdio: \["pipe", "pipe", "pipe"\][\s\S]*child\.stdin\.write\(`\$\{JSON\.stringify\(\{ kind: `\$\{value\.kind\}-ack` \}\)\}\\n`\)/u);
-  assert.match(main, /JSON\.parse\(line\)\.kind !== `\$\{kind\}-ack`[\s\S]*acknowledgement timed out/u);
+  assert.match(smoke, /stdio: \["ignore", "pipe", "pipe"\][\s\S]*fs\.writeFile\(featureParityAckPath\(profile, value\.kind\), `\$\{value\.kind\}\\n`/u);
+  assert.match(main, /const ackPath = path\.join\(desktopFeatureParityUiSmokeProfile, `\.yuance-\$\{kind\}-ack`\);[\s\S]*fs\.readFile\(ackPath, "utf8"\)[\s\S]*`\$\{kind\} acknowledgement`/u);
   assert.match(main, /writeFeatureParityUiEvent\("yuance-desktop-feature-parity-ui-api-stop"\);\s+networkCoordinator\?\.invalidate\(\);\s+networkCoordinator\?\.start\(\);/u);
 });
 
