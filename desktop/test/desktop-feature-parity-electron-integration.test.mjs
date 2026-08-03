@@ -77,8 +77,9 @@ test("packaged UI smoke waits for comment mutation refresh before editing", asyn
 
 test("feature parity CLI flushes evidence before terminating lingering platform handles", async () => {
   const smoke = await fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8");
-  assert.match(smoke, /const finishReport = \(\) => \{\s+if \(platform !== "win32"\) return;[\s\S]*5_000\)\.unref\(\);/u);
+  assert.match(smoke, /const finishReport = \(\) => \{\s+if \(platform !== "win32"\) return;\s+sideEffect\.then\(\(\) => terminateChildProcessTree/u);
   assert.match(smoke, /terminateChildProcessTree\(child, platform\)[\s\S]*spawn\("taskkill", \["\/pid", String\(child\.pid\), "\/T", "\/F"\]/u);
+  assert.match(smoke, /if \(platform === "win32" && report\) return;\s+finish\(/u);
   assert.match(smoke, /if \(value\.kind === "yuance-desktop-feature-parity-ui-smoke"\)[\s\S]*finishReport\(\);/u);
   assert.match(smoke, /child\.kill\("SIGKILL"\);\s+finish\(\(\) => reject\(new Error\(`packaged feature parity UI smoke timed out:/u);
   assert.match(smoke, /await smokeDesktopFeatureParity\(inputPath\);[\s\S]*clearInterval\(keepAlive\);[\s\S]*Promise\.race\(\[once\(stream, "drain"\), new Promise\(\(resolve\) => setTimeout\(resolve, 1_000\)\)\]\)[\s\S]*process\.exit\(exitCode\);/u);
