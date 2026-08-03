@@ -489,6 +489,7 @@ async function runFeatureParityUiSmoke(window) {
       permissionInputPreserved: ${business.permissionInputPreserved},
       validationError: ${business.validationError},
       validationFocused: ${business.validationFocused},
+      notFoundVisible: ${business.notFoundVisible},
       offlineStateVisible: ${business.offlineStateVisible},
       offlineRecoveryVisible: ${business.offlineRecoveryVisible},
       interruptionRecovered: ${business.interruptionRecovered},
@@ -500,6 +501,18 @@ async function runFeatureParityUiSmoke(window) {
       networkRecovered: ${resilience.networkRecovered},
       postResumeRefresh: ${resilience.postResumeRefresh},
       liveRegions: document.querySelectorAll("[aria-live]").length,
+      accessibilityViolations: (() => {
+        const ids = [...document.querySelectorAll("[id]")].map((element) => element.id);
+        const duplicateIds = ids.length - new Set(ids).size;
+        const unnamedControls = [...document.querySelectorAll("button, a[href], input, select, textarea")].filter((element) => {
+          if (element instanceof HTMLInputElement && element.type === "hidden") return false;
+          const labelledBy = element.getAttribute("aria-labelledby");
+          const hasLabelledBy = labelledBy?.split(/\s+/u).every((id) => Boolean(document.getElementById(id)));
+          const hasLabel = Boolean(element.getAttribute("aria-label") || hasLabelledBy || element.closest("label") || element.id && document.querySelector('label[for="' + CSS.escape(element.id) + '"]') || element.textContent?.trim() || element.getAttribute("title"));
+          return !hasLabel;
+        }).length;
+        return duplicateIds + unnamedControls + (document.querySelectorAll("main").length === 1 ? 0 : 1) + (document.querySelectorAll("h1").length === 1 ? 0 : 1);
+      })(),
       keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
       genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
     };
@@ -689,6 +702,13 @@ async function runFeatureParityBusinessUiSmoke(window) {
     const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
     return Boolean(document.querySelector('.work-item-comments-panel [role="alert"]') && textarea?.value === "   " && document.activeElement === textarea);
   })()`), 10_000, "comment validation focus");
+  await window.webContents.executeJavaScript(`history.pushState({}, "", "/work-items/YCE-TASK-999999"); dispatchEvent(new Event("popstate"))`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const alert = document.querySelector('.shell-banner[role="alert"]');
+    return Boolean(alert?.textContent.includes("加载失败") && document.querySelector('#work-item-detail-title')?.textContent === "YCE-TASK-999999");
+  })()`), 30_000, "work item not found");
+  await window.webContents.executeJavaScript(`history.pushState({}, "", "/work-items/YCE-TASK-2"); dispatchEvent(new Event("popstate"))`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.startsWith("YCE-TASK-2") && !document.querySelector('.shell-banner[role="alert"]')`), 30_000, "work item recovery after not found");
   return Object.freeze({
     workItemDetail: true,
     workItemEdited: true,
@@ -707,6 +727,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     permissionInputPreserved: true,
     validationError: true,
     validationFocused: true,
+    notFoundVisible: true,
     offlineStateVisible: true,
     offlineRecoveryVisible: true,
     interruptionRecovered: true,

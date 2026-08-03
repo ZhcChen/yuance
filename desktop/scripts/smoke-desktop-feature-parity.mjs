@@ -138,13 +138,15 @@ function assertUiReport(report) {
     permissionInputPreserved: report?.permissionInputPreserved === true,
     validationError: report?.validationError === true,
     validationFocused: report?.validationFocused === true,
+    notFoundVisible: report?.notFoundVisible === true,
     offlineStateVisible: report?.offlineStateVisible === true,
     offlineRecoveryVisible: report?.offlineRecoveryVisible === true,
     interruptionRecovered: report?.interruptionRecovered === true,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
+    accessibilityViolations: report?.accessibilityViolations === 0,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,interruptionRecovered,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,offlineRecoveryVisible,offlineStateVisible,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
+    shape: report && Object.keys(report).sort().join(",") === "accessibilityViolations,commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,interruptionRecovered,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,notFoundVisible,offlineRecoveryVisible,offlineStateVisible,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
