@@ -45,6 +45,22 @@ export function createFileCapabilityVault({
     return entry.snapshot;
   }
 
+  function describe(capability, binding) {
+    validateConsumptionBinding(binding);
+    const entry = entries.get(capability);
+    if (!entry || entry.expiresAt <= now() || !sameBinding(entry.binding, binding)) {
+      const removed = take(capability);
+      if (removed) scheduleRemove(removed.snapshot);
+      throw capabilityError("file_capability_invalid", "File capability is invalid");
+    }
+    return Object.freeze({
+      filename: entry.snapshot.filename,
+      contentType: entry.snapshot.contentType,
+      byteSize: entry.snapshot.byteSize,
+      sha256: entry.snapshot.sha256,
+    });
+  }
+
   function take(capability) {
     if (typeof capability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/.test(capability)) return undefined;
     const entry = entries.get(capability);
@@ -89,7 +105,7 @@ export function createFileCapabilityVault({
     if (failedCleanup.size > 0) throw capabilityError("file_snapshot_cleanup_failed", "File snapshot cleanup failed");
   }
 
-  return Object.freeze({ issue, consume, invalidateAll, drainCleanup, pruneExpired, snapshot: () => Object.freeze({ entries: entries.size, totalBytes }) });
+  return Object.freeze({ issue, describe, consume, invalidateAll, drainCleanup, pruneExpired, snapshot: () => Object.freeze({ entries: entries.size, totalBytes }) });
 }
 
 function sameBinding(left, right) {

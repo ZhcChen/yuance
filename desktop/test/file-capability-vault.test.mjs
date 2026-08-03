@@ -24,6 +24,30 @@ test("issues opaque public metadata and consumes once with exact bindings", asyn
   assert.throws(() => vault.consume(publicValue.capability, { profileEpoch: 3, webContentsId: 9, frameRoutingId: 2, purpose: "upload" }), (error) => error.code === "file_capability_invalid");
 });
 
+test("describes private integrity metadata without consuming a valid capability", () => {
+  const vault = createFileCapabilityVault({ randomBytes: () => Buffer.alloc(24, 8) });
+  const binding = { profileEpoch: 3, webContentsId: 9, frameRoutingId: 2, purpose: "upload" };
+  const issued = vault.issue(snapshot().value, binding);
+  assert.deepEqual(vault.describe(issued.capability, binding), {
+    filename: "report.txt",
+    contentType: "text/plain",
+    byteSize: 12,
+    sha256: "a".repeat(64),
+  });
+  assert.equal(vault.consume(issued.capability, binding).filename, "report.txt");
+});
+
+test("description binding mismatch destroys the capability and snapshot", async () => {
+  const vault = createFileCapabilityVault({ randomBytes: () => Buffer.alloc(24, 9) });
+  const entry = snapshot();
+  const binding = { profileEpoch: 3, webContentsId: 9, frameRoutingId: 2, purpose: "upload" };
+  const issued = vault.issue(entry.value, binding);
+  assert.throws(() => vault.describe(issued.capability, { ...binding, webContentsId: 10 }), (error) => error.code === "file_capability_invalid");
+  await vault.drainCleanup();
+  assert.equal(entry.removed(), 1);
+  assert.throws(() => vault.consume(issued.capability, binding), (error) => error.code === "file_capability_invalid");
+});
+
 test("wrong sender, profile, or purpose consumes the capability and removes its snapshot", async () => {
   for (const mismatch of [{ profileEpoch: 4 }, { webContentsId: 10 }, { frameRoutingId: 3 }, { purpose: "download" }]) {
     const vault = createFileCapabilityVault({ randomBytes: () => Buffer.from(String(Math.random()).padEnd(24, "0")) });
