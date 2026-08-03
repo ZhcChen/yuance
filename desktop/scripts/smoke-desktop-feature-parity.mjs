@@ -142,8 +142,9 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
     });
     child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(() => reject(new Error(`packaged feature parity UI smoke timed out: ${stderr || stdout}`)));
+      terminateChildProcessTree(child, platform)
+        .then(() => finish(() => reject(new Error(`packaged feature parity UI smoke timed out: ${stderr || stdout}`))))
+        .catch((error) => finish(() => reject(error)));
     }, 180_000);
     child.once("error", (error) => finish(() => reject(error)));
     child.once("exit", async (code, signal) => {

@@ -81,7 +81,7 @@ test("feature parity CLI flushes evidence before terminating lingering platform 
   assert.match(smoke, /terminateChildProcessTree\(child, platform\)[\s\S]*spawn\("taskkill", \["\/pid", String\(child\.pid\), "\/T", "\/F"\]/u);
   assert.match(smoke, /if \(platform === "win32" && report\) return;\s+finish\(/u);
   assert.match(smoke, /if \(value\.kind === "yuance-desktop-feature-parity-ui-smoke"\)[\s\S]*finishReport\(\);/u);
-  assert.match(smoke, /child\.kill\("SIGKILL"\);\s+finish\(\(\) => reject\(new Error\(`packaged feature parity UI smoke timed out:/u);
+  assert.match(smoke, /const timer = setTimeout\(\(\) => \{\s+terminateChildProcessTree\(child, platform\)[\s\S]*packaged feature parity UI smoke timed out:/u);
   assert.match(smoke, /await smokeDesktopFeatureParity\(inputPath\);[\s\S]*clearInterval\(keepAlive\);[\s\S]*Promise\.race\(\[once\(stream, "drain"\), new Promise\(\(resolve\) => setTimeout\(resolve, 1_000\)\)\]\)[\s\S]*process\.exit\(exitCode\);/u);
   assert.doesNotMatch(smoke, /\.write\("",/u);
 });
