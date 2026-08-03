@@ -29,7 +29,7 @@ date: 2026-08-03
 - 管理员通过正式包 UI 完成工作项详情、编辑、handoff、评论新增/编辑，以及工作项和评论附件上传、下载、受控定位。
 - 第二个项目成员通过独立 Device authorization 进入消息中心，打开真实通知 target，导航至工作项详情并把焦点恢复到页面主标题。
 - 正式包 UI 验证 403 权限拒绝、空白评论 validation、真实不存在工作项 404；失败后输入、按钮和焦点保持可恢复，404 后可返回有效详情。
-- fixture 真实停止并重启 API 三次；每次网络状态进入 `offline` 后恢复 `online`。首次中断还验证宿主状态壳出现、业务写表单被清除且恢复按钮可用；恢复不自动重放写操作。
+- 正式包 UI 通过 main 的规范化公开状态连续验证三次 `offline -> online`；首次中断还验证宿主状态壳出现、业务写表单被清除且恢复按钮可用。真实 SSE 断开、探针、refresh 与恢复由独立 packaged network smoke 验证，避免把 API 进程重启导致的 Device session 失效误记为普通断网恢复；写操作仍不自动重放。
 - 隐藏窗口执行三次 suspend/resume，恢复后重新读取可见数据。mutation uncertain、迟到响应和禁止自动重放继续由共享 app-core、Browser E2E、Desktop REST transport 与附件 coordinator 测试冻结。
 - Linux 与 Windows packaged network smoke 以 `messageEvidence: integration-fallback` 明确记录平台替代证据，并强制 `messageRefresh: false`、`releaseVersion: false`，避免把未由该进程验证的消息链路记为成功；恢复会话仍证明 SSE connected、refresh 和 revoke。同平台 Gate 的真实 Electron business integration 强制完成 SSE topbar/release、notification controller 与真实通知查询。macOS 使用 `messageEvidence: packaged-sse`，并强制两项消息结果为 `true`，直接在重新授权会话中验证完整链路。
 
