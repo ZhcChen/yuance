@@ -70,6 +70,11 @@ test("packaged UI smoke proves handoff through durable detail state", async () =
   assert.doesNotMatch(main, /textContent\.includes\("已推进并指派"\)/u);
 });
 
+test("packaged UI smoke waits for comment mutation refresh before editing", async () => {
+  const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /const button = row\?\.querySelector\('button\[data-comment-edit\]'\);\s+return Boolean\(button && !button\.disabled\);\s+\}\)\(\)`\), UI_MUTATION_TIMEOUT_MS, "comment edit action"/u);
+});
+
 test("feature parity CLI flushes evidence before terminating lingering platform handles", async () => {
   const smoke = await fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8");
   assert.match(smoke, /const finishReport = \(\) => \{\s+if \(platform !== "win32"\) return;[\s\S]*5_000\)\.unref\(\);/u);

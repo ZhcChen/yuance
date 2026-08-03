@@ -617,6 +617,11 @@ async function runFeatureParityBusinessUiSmoke(window) {
     button.click();
   })()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), UI_MUTATION_TIMEOUT_MS, "comment create");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment");
+    const button = row?.querySelector('button[data-comment-edit]');
+    return Boolean(button && !button.disabled);
+  })()`), UI_MUTATION_TIMEOUT_MS, "comment edit action");
 
   await window.webContents.executeJavaScript(`(() => {
     const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment");
