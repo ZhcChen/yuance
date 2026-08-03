@@ -485,6 +485,10 @@ async function runFeatureParityUiSmoke(window) {
       commentAttachmentRevealed: ${business.commentAttachmentRevealed},
       messageTargetOpened: ${business.messageTargetOpened},
       messageTargetFocused: ${business.messageTargetFocused},
+      permissionDenied: ${business.permissionDenied},
+      permissionInputPreserved: ${business.permissionInputPreserved},
+      validationError: ${business.validationError},
+      validationFocused: ${business.validationFocused},
       processCount: ${resources.processCount},
       workingSetKb: ${resources.workingSetKb},
       cpuPercent: ${resources.cpuPercent},
@@ -640,6 +644,31 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.message-row button'))`), 30_000, "message list");
   await window.webContents.executeJavaScript(`document.querySelector('.message-row button')?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.message-list') && document.querySelector('h1') === document.activeElement`), 30_000, "message target focus");
+  await window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
+    const input = panel?.querySelector('input[name="title"]');
+    const button = panel?.querySelector('button[type="submit"]');
+    if (!input || !button) throw new Error("permission test edit form is unavailable");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "Desktop permission denied edit");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
+    return Boolean(document.querySelector('.work-item-action-error[role="alert"]') && panel?.querySelector('input[name="title"]')?.value === "Desktop permission denied edit" && !panel?.querySelector('button[type="submit"]')?.disabled);
+  })()`), 30_000, "permission denied edit");
+  await window.webContents.executeJavaScript(`(() => {
+    const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
+    if (!textarea || !button) throw new Error("validation test comment form is unavailable");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "   ");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    button.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
+    return Boolean(document.querySelector('.work-item-comments-panel [role="alert"]') && textarea?.value === "   " && document.activeElement === textarea);
+  })()`), 10_000, "comment validation focus");
   return Object.freeze({
     workItemDetail: true,
     workItemEdited: true,
@@ -654,6 +683,10 @@ async function runFeatureParityBusinessUiSmoke(window) {
     commentAttachmentRevealed: true,
     messageTargetOpened: true,
     messageTargetFocused: true,
+    permissionDenied: true,
+    permissionInputPreserved: true,
+    validationError: true,
+    validationFocused: true,
   });
 }
 

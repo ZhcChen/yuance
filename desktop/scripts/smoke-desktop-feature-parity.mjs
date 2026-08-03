@@ -132,10 +132,14 @@ function assertUiReport(report) {
     lifecycleCycles: report?.lifecycleCycles === 3,
     networkRecovered: report?.networkRecovered === true,
     postResumeRefresh: report?.postResumeRefresh === true,
+    permissionDenied: report?.permissionDenied === true,
+    permissionInputPreserved: report?.permissionInputPreserved === true,
+    validationError: report?.validationError === true,
+    validationFocused: report?.validationFocused === true,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
+    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
