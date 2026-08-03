@@ -13,7 +13,7 @@ use sqlx::SqlitePool;
 use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
-    domains::{bootstrap, device_sessions, projects, users},
+    domains::{bootstrap, device_sessions, projects, storage, users},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -148,6 +148,137 @@ async fn device_principal_does_not_bypass_project_membership_or_viewer_role() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn device_principal_completes_work_item_and_comment_attachment_signing_lifecycle() {
+    let pool = test_pool().await;
+    let admin_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    seed_memory_storage(&pool, admin_id).await;
+    let credentials = issue_device_credentials(&pool, admin_id, "attachment-parity").await;
+    let app = test_app(pool.clone());
+
+    run_attachment_lifecycle(
+        &app,
+        &pool,
+        &credentials.access_token,
+        "/api/v1/work-items/YCE-TASK-2/attachments",
+        "device-item.txt",
+    )
+    .await;
+
+    let comment_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM work_item_comments WHERE work_item_id = (SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2') AND is_draft = 0 ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    run_attachment_lifecycle(
+        &app,
+        &pool,
+        &credentials.access_token,
+        &format!("/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments"),
+        "device-comment.txt",
+    )
+    .await;
+}
+
+async fn run_attachment_lifecycle(
+    app: &Router,
+    pool: &SqlitePool,
+    token: &str,
+    collection_path: &str,
+    filename: &str,
+) {
+    let content = b"device attachment parity".to_vec();
+    let response = request(
+        app,
+        "POST",
+        collection_path,
+        token,
+        Some(serde_json::json!({
+            "original_filename": filename,
+            "content_type": "text/plain",
+            "byte_size": content.len()
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = json_body(response).await;
+    let attachment_id = body["data"]["id"].as_i64().unwrap();
+
+    let member_path = format!("{collection_path}/{attachment_id}");
+    let response = request(
+        app,
+        "GET",
+        &format!("{member_path}/upload-url"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let signed = json_body(response).await;
+    assert_eq!(signed["data"]["request"]["method"], "PUT");
+
+    let object_key = sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",
+    )
+    .bind(attachment_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    storage::write_test_memory_object(
+        pool,
+        &test_settings(),
+        &object_key,
+        "text/plain",
+        content,
+    )
+    .await
+    .unwrap();
+
+    let response = request(
+        app,
+        "POST",
+        &format!("{member_path}/uploaded"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "uploaded");
+
+    let response = request(
+        app,
+        "GET",
+        &format!("{member_path}/download-url"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let signed = json_body(response).await;
+    assert_eq!(signed["data"]["request"]["method"], "GET");
+    assert_eq!(signed["data"]["attachment"]["id"], attachment_id);
+}
+
+async fn seed_memory_storage(pool: &SqlitePool, actor_user_id: i64) {
+    storage::save_config(
+        pool,
+        &test_settings(),
+        actor_user_id,
+        storage::SaveStorageConfigInput {
+            endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+            region: "test".to_string(),
+            bucket: "yuance-files".to_string(),
+            access_key_id: "AKIADEVICEPARITY".to_string(),
+            access_key_secret: "DeviceParitySecret2026!".to_string(),
+            activate: true,
+        },
+    )
+    .await
+    .unwrap();
 }
 
 async fn bootstrap_admin(pool: &SqlitePool) -> i64 {
