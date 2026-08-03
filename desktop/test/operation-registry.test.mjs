@@ -141,6 +141,47 @@ test("rejects malformed or oversized business responses", () => {
   }), /invalid/i);
 });
 
+test("builds non-idempotent mutation descriptors from bounded domain payloads", () => {
+  const registry = createOperationRegistry();
+  const cases = [
+    ["project.select", { projectKey: "DEMO" }, "PATCH", "/api/v1/current-project", { project_key: "DEMO" }],
+    ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
+    ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assigneeUsername: "alice", dueDate: "2026-08-31", parentItemKey: "" } }, "PATCH", "/api/v1/work-items/DEMO-1", { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assignee_username: "alice", due_date: "2026-08-31", parent_item_key: "" }],
+    ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Continue", sourceCommentId: null } }, "POST", "/api/v1/work-items/DEMO-1/handoff", { status: "in_progress", assignee_username: "alice", body: "Continue", source_comment_id: null }],
+    ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "Comment", bodyFormat: "plain" } }, "POST", "/api/v1/work-items/DEMO-1/comments", { body: "Comment", body_format: "plain" }],
+    ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }, "PATCH", "/api/v1/work-items/DEMO-1/comments/9", { body: "Edited", body_format: "plain", parent_comment_id: null }],
+  ];
+  for (const [name, input, method, path, body] of cases) {
+    const operation = registry.resolve(name, input);
+    assert.equal(operation.idempotent, false);
+    assert.equal(operation.method, method);
+    assert.equal(operation.path, path);
+    assert.deepEqual(operation.body === undefined ? undefined : JSON.parse(operation.body), body);
+    assert.equal(operation.body === undefined ? operation.contentType : operation.contentType, body === undefined ? undefined : "application/json");
+  }
+});
+
+test("rejects invalid mutation fields before a descriptor is created", () => {
+  const registry = createOperationRegistry();
+  for (const [name, input] of [
+    ["project.select", { projectKey: "demo" }],
+    ["notification.read", { notificationId: 0 }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: {} }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { title: " " } }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { title: "x".repeat(161) } }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { description: "x".repeat(5_001) } }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { status: "unknown" } }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { priority: "P9" } }],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { dueDate: "2026-99-99" } }],
+    ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "open", assigneeUsername: "", body: "x", url: "https://evil.example" } }],
+    ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "" } }],
+    ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "x".repeat(5_001) } }],
+    ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "x", bodyFormat: "html" } }],
+    ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 0, payload: { body: "x" } }],
+  ]) assert.throws(() => registry.resolve(name, input), /invalid|unknown/i);
+});
+
 test("normalizes a probe response without credentials", () => {
   const operation = createOperationRegistry().resolve("session.probe", {});
   const value = operation.parse({

@@ -25,8 +25,10 @@ export function createRestTransport({ profile, credentialRuntime, fetchImpl, reg
         let response;
         try {
           response = await fetchImpl(url, { method: operation.method, redirect: "manual", credentials: "omit", cache: "no-store", signal: controller.signal,
-            headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}`, "Cache-Control": "no-store" } });
+            headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}`, "Cache-Control": "no-store", ...(operation.contentType ? { "Content-Type": operation.contentType } : {}) },
+            ...(operation.body === undefined ? {} : { body: operation.body }) });
         } catch {
+          if (!operation.idempotent) throw new ResponseContractError("mutation_result_uncertain", "Mutation result is uncertain");
           if (controller.signal.aborted) throw new ResponseContractError("request_timeout", "Request timed out");
           throw new ResponseContractError("network_error", "Request failed");
         }
@@ -35,12 +37,17 @@ export function createRestTransport({ profile, credentialRuntime, fetchImpl, reg
           try { return Object.freeze({ expired: false, value: operation.parse(data, profile) }); }
           catch { throw new ResponseContractError("invalid_response", "Response data is invalid"); }
         } catch (error) {
-          if (controller.signal.aborted) throw new ResponseContractError("request_timeout", "Request timed out");
+          if (controller.signal.aborted) throw new ResponseContractError(operation.idempotent ? "request_timeout" : "mutation_result_uncertain", operation.idempotent ? "Request timed out" : "Mutation result is uncertain");
           if (allowExpiryRetry && operation.idempotent && error instanceof ResponseContractError &&
             error.code === "device_access_expired" && error.status === 401) {
             return Object.freeze({ expired: true, epoch });
           }
-          if (error instanceof ResponseContractError) throw error;
+          if (error instanceof ResponseContractError) {
+            if (!operation.idempotent && ["request_aborted", "response_read_failed", "invalid_json", "invalid_response"].includes(error.code)) {
+              throw new ResponseContractError("mutation_result_uncertain", "Mutation result is uncertain");
+            }
+            throw error;
+          }
           throw new ResponseContractError("response_read_failed", "Response could not be processed");
         }
       } finally { clearTimeout(timeout); }

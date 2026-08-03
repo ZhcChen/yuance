@@ -116,6 +116,36 @@ test("staggered old-epoch responses trigger one refresh and never publish late s
   assert.equal(calls, 3);
 });
 
+test("sends registry-built JSON mutations without retrying access expiry", async () => {
+  const calls = [];
+  const runtime = runtimeFixture();
+  const registry = { resolve: () => Object.freeze({
+    idempotent: false, method: "PATCH", path: "/api/v1/work-items/DEMO-1", body: '{"title":"Updated"}', contentType: "application/json", parse: (value) => value,
+  }) };
+  const transport = createRestTransport({ profile, credentialRuntime: runtime, registry, fetchImpl: await trustedFetch(async (url, options) => {
+    calls.push({ url, options });
+    return jsonResponse({ error: { code: "device_access_expired", message: "expired" } }, { status: 401, url: "https://yuance.example/api/v1/work-items/DEMO-1" });
+  }) });
+  await assert.rejects(transport.execute("workitem.update", {}), (error) => error.code === "device_access_expired");
+  assert.equal(calls.length, 1);
+  assert.equal(runtime.refreshCalls, 0);
+  assert.equal(calls[0].options.body, '{"title":"Updated"}');
+  assert.equal(calls[0].options.headers["Content-Type"], "application/json");
+});
+
+test("maps uncertain mutation transport outcomes without replay", async () => {
+  const registry = { resolve: () => Object.freeze({ idempotent: false, method: "POST", path: "/api/v1/work-items/DEMO-1/comments", body: '{"body":"x"}', contentType: "application/json", parse: (value) => value }) };
+  for (const delegate of [
+    async () => { throw new Error("socket closed"); },
+    async () => jsonResponse({ result: { unexpected: true } }, { url: "https://yuance.example/api/v1/work-items/DEMO-1/comments" }),
+  ]) {
+    let calls = 0;
+    const transport = createRestTransport({ profile, credentialRuntime: runtimeFixture(), registry, fetchImpl: await trustedFetch(async (...args) => { calls += 1; return delegate(...args); }) });
+    await assert.rejects(transport.execute("workitem.commentcreate", {}), (error) => error.code === "mutation_result_uncertain");
+    assert.equal(calls, 1);
+  }
+});
+
 function runtimeFixture() {
   let epoch = 1;
   return {
@@ -155,8 +185,8 @@ async function trustedFetch(delegate) {
   return network.fetch;
 }
 
-function jsonResponse(body, { status = 200 } = {}) {
+function jsonResponse(body, { status = 200, url = "https://yuance.example/api/v1/device-session" } = {}) {
   const response = new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-  Object.defineProperty(response, "url", { value: "https://yuance.example/api/v1/device-session" });
+  Object.defineProperty(response, "url", { value: url });
   return response;
 }

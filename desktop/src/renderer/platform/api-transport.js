@@ -34,11 +34,13 @@ export function createDesktopApiTransport(bridge = {}) {
 
 function resolveReadOperation(url, options) {
   if (typeof url !== "string" || !url.startsWith("/api/v1/") || url.includes("#")) throw apiError("invalid_request", 400);
-  if (options !== undefined && (!isPlainObject(options) || Object.keys(options).some((key) => key !== "method") || options.method !== "GET")) {
-    throw apiError("operation_not_allowed", 405);
-  }
+  if (options !== undefined && !isPlainObject(options)) throw apiError("invalid_request", 400);
+  const method = options?.method ?? "GET";
+  if (!["GET", "POST", "PATCH"].includes(method)) throw apiError("operation_not_allowed", 405);
   const parsed = new URL(url, "https://desktop.invalid");
   if (parsed.origin !== "https://desktop.invalid" || `${parsed.pathname}${parsed.search}` !== url) throw apiError("invalid_request", 400);
+  if (method !== "GET") return resolveMutationOperation(parsed, method, options);
+  if (options !== undefined && Object.keys(options).some((key) => key !== "method")) throw apiError("operation_not_allowed", 405);
   const staticRoute = STATIC_ROUTES.get(parsed.pathname);
   if (staticRoute) {
     rejectQuery(parsed.searchParams, staticRoute[1]);
@@ -69,6 +71,71 @@ function resolveReadOperation(url, options) {
   const detail = matchPath(parsed, /^\/api\/v1\/work-items\/([^/]+)$/u, "workitem.detail", ([itemKey]) => ({ itemKey: decodeSegment(itemKey) }));
   if (detail) return detail;
   throw apiError("operation_not_allowed", 405);
+}
+
+function resolveMutationOperation(parsed, method, options) {
+  rejectQuery(parsed.searchParams, []);
+  if (method === "PATCH" && parsed.pathname === "/api/v1/current-project") {
+    const body = parseJsonBody(options, ["project_key"]);
+    return { operation: "project.select", input: { projectKey: body.project_key } };
+  }
+  if (method === "POST" && parsed.pathname === "/api/v1/notifications/read-all") {
+    rejectBody(options);
+    return { operation: "notification.readall", input: {} };
+  }
+  const notificationRead = parsed.pathname.match(/^\/api\/v1\/notifications\/(\d+)\/read$/u);
+  if (method === "POST" && notificationRead) {
+    rejectBody(options);
+    return { operation: "notification.read", input: { notificationId: positiveInteger(notificationRead[1]) } };
+  }
+  const handoff = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/handoff$/u);
+  if (method === "POST" && handoff) {
+    const body = parseJsonBody(options, ["assignee_username", "body", "source_comment_id", "status"]);
+    return { operation: "workitem.handoff", input: { itemKey: decodeSegment(handoff[1]), payload: renameBody(body, {
+      assignee_username: "assigneeUsername", source_comment_id: "sourceCommentId",
+    }) } };
+  }
+  const comments = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments$/u);
+  if (method === "POST" && comments) {
+    return { operation: "workitem.commentcreate", input: { itemKey: decodeSegment(comments[1]), payload: commentPayload(options) } };
+  }
+  const comment = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)$/u);
+  if (method === "PATCH" && comment) {
+    return { operation: "workitem.commentupdate", input: { itemKey: decodeSegment(comment[1]), commentId: positiveInteger(comment[2]), payload: commentPayload(options) } };
+  }
+  const item = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)$/u);
+  if (method === "PATCH" && item) {
+    const body = parseJsonBody(options, ["assignee_username", "description", "due_date", "parent_item_key", "priority", "status", "title"]);
+    return { operation: "workitem.update", input: { itemKey: decodeSegment(item[1]), payload: renameBody(body, {
+      assignee_username: "assigneeUsername", due_date: "dueDate", parent_item_key: "parentItemKey",
+    }) } };
+  }
+  throw apiError("operation_not_allowed", 405);
+}
+
+function commentPayload(options) {
+  return renameBody(parseJsonBody(options, ["body", "body_format", "parent_comment_id"]), {
+    body_format: "bodyFormat", parent_comment_id: "parentCommentId",
+  });
+}
+
+function parseJsonBody(options, allowed) {
+  if (!isPlainObject(options) || !sameKeys(options, ["body", "headers", "method"]) || !isPlainObject(options.headers) ||
+    !sameKeys(options.headers, ["content-type"]) || options.headers["content-type"] !== "application/json" || typeof options.body !== "string" || options.body.length > 128 * 1024) {
+    throw apiError("invalid_request", 400);
+  }
+  let body;
+  try { body = JSON.parse(options.body); } catch { throw apiError("invalid_request", 400); }
+  if (!isPlainObject(body) || Object.keys(body).some((key) => !allowed.includes(key))) throw apiError("invalid_request", 400);
+  return body;
+}
+
+function rejectBody(options) {
+  if (!isPlainObject(options) || !sameKeys(options, ["method"])) throw apiError("invalid_request", 400);
+}
+
+function renameBody(body, names) {
+  return Object.fromEntries(Object.entries(body).map(([key, value]) => [names[key] ?? key, value]));
 }
 
 function matchPath(parsed, pattern, operation, buildInput) {

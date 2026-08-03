@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ApiError } from "@yuance/frontend-api-client";
+import { ApiError, createApiClient } from "@yuance/frontend-api-client";
 import { createDesktopApiTransport } from "../src/renderer/platform/api-transport.js";
 
 test("desktop API transport maps only known read routes to domain operations", async () => {
@@ -58,4 +58,47 @@ test("desktop API transport validates public IPC envelopes", async () => {
     await assert.rejects(invalid.request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "invalid_response");
   }
   await assert.rejects(createDesktopApiTransport().request("/api/v1/auth/me"), (error) => error instanceof ApiError && error.code === "business_unavailable");
+});
+
+test("api-client mutations map to fixed domain operations without request primitives", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : {} };
+  } });
+  const client = createApiClient({ request: transport.request });
+  await client.updateCurrentProject("DEMO");
+  await client.markNotificationRead(7);
+  await client.markAllNotificationsRead();
+  await client.updateWorkItem("DEMO-1", { title: "Updated", description: "Body", priority: "P1" });
+  await client.handoffWorkItem("DEMO-1", { status: "in_progress", assigneeUsername: "alice", body: "Please continue" });
+  await client.createWorkItemComment("DEMO-1", { body: "New comment" });
+  await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
+  assert.deepEqual(calls, [
+    ["project.select", { projectKey: "DEMO" }],
+    ["notification.read", { notificationId: 7 }],
+    ["notification.readall", {}],
+    ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", priority: "P1" } }],
+    ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Please continue" } }],
+    ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "New comment", bodyFormat: "plain" } }],
+    ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }],
+  ]);
+  assert.equal(JSON.stringify(calls).includes("content-type"), false);
+  assert.equal(JSON.stringify(calls).includes("/api/v1/"), false);
+});
+
+test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
+  let calls = 0;
+  const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });
+  const json = (body, headers = { "content-type": "application/json" }) => ({ method: "PATCH", headers, body });
+  /** @type {Array<[string, { method: string, headers: Record<string, string>, body: string }]>} */
+  const rejected = [
+    ["/api/v1/current-project", json("not-json")],
+    ["/api/v1/current-project", json('{"project_key":"DEMO","url":"https://evil.example"}')],
+    ["/api/v1/current-project", json('{"project_key":"DEMO"}', { "content-type": "text/plain" })],
+    ["/api/v1/work-items/DEMO-1", { ...json('{"title":"x"}'), headers: { "content-type": "application/json", Authorization: "Bearer forged" } }],
+    ["/api/v1/work-items/DEMO-1/comments/draft", { method: "POST", headers: { "content-type": "application/json" }, body: '{"body":"x"}' }],
+  ];
+  for (const [url, options] of rejected) await assert.rejects(transport.request(url, options), (error) => error instanceof ApiError);
+  assert.equal(calls, 0);
 });

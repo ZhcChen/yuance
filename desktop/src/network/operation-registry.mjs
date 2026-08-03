@@ -11,6 +11,7 @@ const PROJECT_STATUSES = new Set(["all", "not_started", "in_progress", "acceptan
 const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
+const WORK_ITEM_STATUSES = new Set(["open", "in_progress", "pending_confirmation", "done", "verified", "resolved", "closed", "cancelled"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
   if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
@@ -22,11 +23,18 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["project.list", projectListOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
+    ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
     ["notification.target", notificationTargetOperation],
+    ["notification.read", notificationReadOperation],
+    ["notification.readall", noInputOperation("POST", "/api/v1/notifications/read-all", parseAffected, false)],
     ["workitem.list", workItemListOperation],
     ["workitem.detail", workItemDetailOperation],
+    ["workitem.update", workItemUpdateOperation],
+    ["workitem.handoff", workItemHandoffOperation],
     ["workitem.comments", workItemCommentsOperation],
+    ["workitem.commentcreate", workItemCommentCreateOperation],
+    ["workitem.commentupdate", workItemCommentUpdateOperation],
     ["workitem.attachments", workItemAttachmentsOperation],
     ["workitem.commentattachments", workItemCommentAttachmentsOperation],
   ]);
@@ -54,8 +62,8 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
   return Object.freeze({ resolve, begin, abortAll, snapshot: () => Object.freeze({ active: active.size }) });
 }
 
-function descriptor(method, path, parse, idempotent = true, dataKind = "object") {
-  return Object.freeze({ idempotent, method, path, parse, ...(dataKind === "object" ? {} : { dataKind }) });
+function descriptor(method, path, parse, idempotent = true, dataKind = "object", body) {
+  return Object.freeze({ idempotent, method, path, parse, ...(dataKind === "object" ? {} : { dataKind }), ...(body === undefined ? {} : { body, contentType: "application/json" }) });
 }
 
 function noInputOperation(method, path, parse, idempotent = true, dataKind = "object") {
@@ -85,6 +93,16 @@ function notificationTargetOperation(input) {
   return descriptor("GET", `/api/v1/notifications/${integer(input.notificationId, 1, "notificationId")}/target`, parseNotificationTargetResult);
 }
 
+function projectSelectOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("PATCH", "/api/v1/current-project", parseCurrentProject, false, "object", jsonBody({ project_key: projectKey(input.projectKey) }));
+}
+
+function notificationReadOperation(input) {
+  exactKeys(input, ["notificationId"]);
+  return descriptor("POST", `/api/v1/notifications/${integer(input.notificationId, 1, "notificationId")}/read`, parseNotificationTargetResult, false);
+}
+
 function workItemListOperation(input) {
   exactKeys(input, ["assigneeUsername", "itemType", "page", "perPage", "priority", "projectKey", "q", "status"]);
   const query = new URLSearchParams();
@@ -101,6 +119,48 @@ function workItemListOperation(input) {
 function workItemDetailOperation(input) {
   exactKeys(input, ["itemKey"]);
   return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetail);
+}
+
+function workItemUpdateOperation(input) {
+  exactKeys(input, ["itemKey", "payload"]);
+  const payload = plainPayload(input.payload, "payload");
+  exactKeys(payload, ["assigneeUsername", "description", "dueDate", "parentItemKey", "priority", "status", "title"]);
+  const body = optionalBodyFields(payload, {
+    title: (value) => boundedRequiredText(value, "title", 160),
+    description: (value) => boundedText(value, "description", 5_000),
+    status: (value) => requiredEnum(value, WORK_ITEM_STATUSES, "status"),
+    priority: (value) => requiredEnum(value, ITEM_PRIORITIES, "priority", false),
+    assigneeUsername: (value) => boundedText(value, "assigneeUsername", 64),
+    dueDate: dateText,
+    parentItemKey: optionalItemKey,
+  }, {
+    assigneeUsername: "assignee_username", dueDate: "due_date", parentItemKey: "parent_item_key",
+  });
+  if (Object.keys(body).length === 0) throw new TypeError("payload is invalid");
+  return descriptor("PATCH", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetail, false, "object", jsonBody(body));
+}
+
+function workItemHandoffOperation(input) {
+  exactKeys(input, ["itemKey", "payload"]);
+  const payload = plainPayload(input.payload, "payload");
+  exactKeys(payload, ["assigneeUsername", "body", "sourceCommentId", "status"]);
+  const body = {
+    status: requiredEnum(payload.status, WORK_ITEM_STATUSES, "status"),
+    assignee_username: boundedText(payload.assigneeUsername, "assigneeUsername", 64),
+    body: boundedText(payload.body, "body", 5_000),
+    ...(payload.sourceCommentId === undefined ? {} : { source_comment_id: nullablePositiveInteger(payload.sourceCommentId) }),
+  };
+  return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/handoff`, parseWorkItemDetail, false, "object", jsonBody(body));
+}
+
+function workItemCommentCreateOperation(input) {
+  exactKeys(input, ["itemKey", "payload"]);
+  return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments`, parseComment, false, "object", jsonBody(commentBody(input.payload)));
+}
+
+function workItemCommentUpdateOperation(input) {
+  exactKeys(input, ["commentId", "itemKey", "payload"]);
+  return descriptor("PATCH", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}`, parseComment, false, "object", jsonBody(commentBody(input.payload)));
 }
 
 function workItemCommentsOperation(input) {
@@ -186,6 +246,7 @@ function parseNotification(value) { return freezeDto(value, {
 function parseNotificationTargetResult(value) { return freezeDto(value, {
   notification_id: positiveInteger, read: boolean, target: nullableNotificationTarget,
 }); }
+function parseAffected(value) { return freezeDto(value, { affected: nonNegativeInteger }); }
 function nullableNotificationTarget(value) {
   if (value === null) return null;
   return freezeDto(value, { kind: workItemKind, project_key: shortString, work_item_key: shortString, comment_id: nullablePositiveInteger });
@@ -217,8 +278,29 @@ function timestamp(value, name) { const parsed = Date.parse(value); if (typeof v
 function exactKeys(value, allowed) { const keys = Object.keys(value); if (keys.some((key) => !allowed.includes(key))) throw new TypeError("operation input contains unknown fields"); }
 function optionalText(value, name, maximum) { if (value === undefined || value === "") return ""; if (typeof value !== "string" || value.trim().length > maximum) throw new TypeError(`${name} is invalid`); return value.trim(); }
 function optionalEnum(value, allowed, name, fallback) { const normalized = value === undefined ? fallback : value; if (typeof normalized !== "string" || !allowed.has(normalized)) throw new TypeError(`${name} is invalid`); return normalized; }
+function requiredEnum(value, allowed, name, allowEmpty = true) { if (typeof value !== "string" || !allowed.has(value) || (!allowEmpty && value === "")) throw new TypeError(`${name} is invalid`); return value; }
 function projectKey(value) { if (typeof value !== "string" || !PROJECT_KEY.test(value)) throw new TypeError("projectKey is invalid"); return value; }
 function itemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
+function optionalItemKey(value) { return value === "" ? "" : itemKey(value); }
+function boundedText(value, name, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError(`${name} is invalid`); return value; }
+function boundedRequiredText(value, name, maximum) { const text = boundedText(value, name, maximum).trim(); if (!text) throw new TypeError(`${name} is invalid`); return text; }
+function dateText(value) { if (value === "") return ""; if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) throw new TypeError("dueDate is invalid"); return value; }
+function plainPayload(value, name) { if (!isPlainObject(value)) throw new TypeError(`${name} is invalid`); return value; }
+function optionalBodyFields(payload, parsers, wireNames) {
+  const result = {};
+  for (const [name, parser] of Object.entries(parsers)) if (payload[name] !== undefined) result[wireNames[name] ?? name] = parser(payload[name]);
+  return result;
+}
+function commentBody(value) {
+  const payload = plainPayload(value, "payload");
+  exactKeys(payload, ["body", "bodyFormat", "parentCommentId"]);
+  const bodyFormat = payload.bodyFormat === undefined ? "plain" : requiredEnum(payload.bodyFormat, new Set(["plain"]), "bodyFormat");
+  return {
+    body: boundedRequiredText(payload.body, "body", 5_000), body_format: bodyFormat,
+    ...(payload.parentCommentId === undefined ? {} : { parent_comment_id: nullablePositiveInteger(payload.parentCommentId) }),
+  };
+}
+function jsonBody(value) { const body = JSON.stringify(value); if (body.length > 128 * 1024) throw new TypeError("request body is invalid"); return body; }
 function appendPagination(query, input) { if (input.page !== undefined) query.set("page", String(integer(input.page, 1, "page", 1_000_000))); if (input.perPage !== undefined) query.set("per_page", String(integer(input.perPage, 1, "perPage", 100))); }
 function appendOptionalString(query, key, value) { if (value !== "") query.set(key, value); }
 function withQuery(path, query) { const suffix = query.toString(); return suffix ? `${path}?${suffix}` : path; }
