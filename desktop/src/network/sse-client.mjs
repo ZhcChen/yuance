@@ -22,6 +22,7 @@ export function createSseClient({
   maxEventBytes = 64 * 1024,
   maxEventsPerWindow = 120,
   rateWindowMs = 10_000,
+  connectTimeoutMs = 15_000,
   idleMs = 45_000,
   now = Date.now,
 } = {}) {
@@ -29,7 +30,7 @@ export function createSseClient({
   if (typeof fetchImpl !== "function" || !isTrustedSessionFetch(fetchImpl)) {
     throw new TypeError("trusted Electron session fetch is required");
   }
-  for (const [name, value] of Object.entries({ maxHeaderBytes, maxBufferBytes, maxEventBytes, maxEventsPerWindow, rateWindowMs, idleMs })) {
+  for (const [name, value] of Object.entries({ maxHeaderBytes, maxBufferBytes, maxEventBytes, maxEventsPerWindow, rateWindowMs, connectTimeoutMs, idleMs })) {
     if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} is invalid`);
   }
   if (typeof now !== "function") throw new TypeError("now is required");
@@ -44,12 +45,20 @@ export function createSseClient({
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) controller.abort();
     let response;
+    let connectTimedOut = false;
+    const connectTimer = setTimeout(() => {
+      connectTimedOut = true;
+      controller.abort();
+    }, connectTimeoutMs);
     try {
       response = await fetchImpl(url, { method: "GET", redirect: "manual", credentials: "omit", cache: "no-store", signal: controller.signal,
         headers: { Accept: "text/event-stream", Authorization: `Bearer ${accessToken}`, "Cache-Control": "no-store" } });
     } catch {
       signal.removeEventListener("abort", abort);
-      throw contract(signal.aborted ? "stream_aborted" : "network_error", signal.aborted ? "Stream was aborted" : "Stream request failed");
+      if (signal.aborted) throw contract("stream_aborted", "Stream was aborted");
+      throw contract(connectTimedOut ? "connect_timeout" : "network_error", connectTimedOut ? "Stream connection timed out" : "Stream request failed");
+    } finally {
+      clearTimeout(connectTimer);
     }
     try { validateResponse(response, url, maxHeaderBytes); }
     catch (error) {

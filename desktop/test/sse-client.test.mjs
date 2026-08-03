@@ -84,6 +84,21 @@ test("fails closed for malformed connected events", async () => {
 test("fails closed when the stream becomes idle", async () => {
   await rejectsStream(sseResponse(new ReadableStream({ start() {} })), { idleMs: 10 }, "idle_timeout");
 });
+test("aborts a stream request that exceeds the connection deadline", async () => {
+  let aborted = false;
+  const client = createSseClient({
+    profile,
+    connectTimeoutMs: 10,
+    fetchImpl: await trustedFetch((_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      }, { once: true });
+    })),
+  });
+  await assert.rejects(client.subscribe({ accessToken: "yuance_dat_valid", signal: new AbortController().signal }), (error) => error.code === "connect_timeout");
+  assert.equal(aborted, true);
+});
 test("cancellation aborts a pending read", async () => {
   const controller = new AbortController();
   const client = createSseClient({ profile, fetchImpl: await trustedFetch(() => sseResponse(new ReadableStream({ start() {} }))) });

@@ -1244,7 +1244,7 @@ async function initializeDesktopCredentialRuntime() {
     sseClient: createSseClient({
       profile: enrolled.profile,
       fetchImpl: network.fetch,
-      ...(desktopFeatureParityUiSmokeOrigin ? { idleMs: 5_000 } : {}),
+      ...(desktopFeatureParityUiSmokeOrigin ? { connectTimeoutMs: 5_000, idleMs: 5_000 } : {}),
     }),
     probe: () => restTransport.execute("session.probe", {}),
     onState: (state) => {
