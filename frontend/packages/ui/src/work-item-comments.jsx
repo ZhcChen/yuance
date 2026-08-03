@@ -42,7 +42,7 @@ import { AttachmentList } from './work-item-attachments.jsx';
  *   onChangeEdit: (event: import('react').ChangeEvent<HTMLTextAreaElement>) => void,
  *   onCancelEdit: () => void,
  *   onStartEdit: (comment: Comment) => void,
- *   onUploadAttachment: (commentId: number, event: import('react').ChangeEvent<HTMLInputElement>) => void,
+ *   onUploadAttachment: (commentId: number) => void,
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  * }} props
  */
@@ -129,21 +129,21 @@ export function WorkItemComments(props) {
                 ) : null}
                 {!comment.is_flow && !comment.is_draft ? (
                   <form className="work-item-comment-attachment-upload" onSubmit={(event) => event.preventDefault()}>
-                    <label className="work-item-file-field">
-                      <span>上传评论附件</span>
-                      <input
-                        type="file"
-                        onChange={(event) => onUploadAttachment(comment.id, event)}
-                        disabled={commentUploading || uploadingCommentId !== null || mutationBusy}
-                      />
-                    </label>
+                    <button
+                      className="yuance-ui-button yuance-ui-button-secondary"
+                      type="button"
+                      onClick={() => onUploadAttachment(comment.id)}
+                      disabled={commentUploading || uploadingCommentId !== null || mutationBusy}
+                    >
+                      {commentUploading ? '处理中…' : '选择评论附件'}
+                    </button>
                     {attachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{attachmentStatus}</p> : null}
                   </form>
                 ) : null}
                 <p className="yuance-ui-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
                 {!comment.is_flow && !comment.is_draft && editingCommentId === null ? (
                   <div className="work-item-comment-actions">
-                    <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button>
+                    <button data-comment-edit className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button>
                   </div>
                 ) : null}
               </li>

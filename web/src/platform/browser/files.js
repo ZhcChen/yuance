@@ -31,7 +31,7 @@ import {
  */
 export function createBrowserFilePlatform({
   refreshCsrfToken,
-  chooseFile = async () => null,
+  chooseFile = chooseFileFromDocument,
   fetchImpl = globalThis.fetch,
   baseUrl = globalThis.location?.href || 'http://localhost/',
   origin = globalThis.location?.origin || new URL(baseUrl).origin,
@@ -115,6 +115,24 @@ export function createBrowserFilePlatform({
   });
 
   return { files, downloads, transfers, selectFile };
+}
+
+function chooseFileFromDocument() {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.hidden = true;
+    const finish = () => {
+      window.removeEventListener('focus', onFocus);
+      input.remove();
+      resolve(input.files?.[0] || null);
+    };
+    const onFocus = () => setTimeout(() => { if (!input.files?.length) finish(); }, 0);
+    input.addEventListener('change', finish, { once: true });
+    window.addEventListener('focus', onFocus, { once: true });
+    document.body.append(input);
+    input.click();
+  });
 }
 
 /**

@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+async function chooseFile(page, button, file) {
+  const chooser = page.waitForEvent('filechooser');
+  await button.click();
+  await (await chooser).setFiles(file);
+}
+
 async function login(page, entryPath) {
   await page.goto(entryPath);
   await expect(page).toHaveURL(/\/web\/login/);
@@ -1082,7 +1088,7 @@ test('work item attachments can list download and upload for item and comments',
   expect(downloadUrlRequests[1]).toContain('/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/download-url');
   await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[1] || '')).toContain('/signed-download/comment-901-811');
 
-  await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({
+  await chooseFile(page, attachmentPanel.getByRole('button', { name: '选择工作项附件' }), {
     name: 'web-upload.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('hello from web'),
@@ -1103,7 +1109,7 @@ test('work item attachments can list download and upload for item and comments',
   await expect(attachmentPanel).toContainText('web-upload.txt');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 附件已上传。');
 
-  await comment901.getByLabel('上传评论附件').setInputFiles({
+  await chooseFile(page, comment901.getByRole('button', { name: '选择评论附件' }), {
     name: 'comment-upload.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('hello comment'),
@@ -1242,7 +1248,7 @@ test('work item attachment confirmation failure keeps pending file context', asy
   await login(page, '/web/app/work-items/YCE-TASK-2');
 
   const attachmentPanel = page.locator('.work-item-attachments-panel');
-  await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({
+  await chooseFile(page, attachmentPanel.getByRole('button', { name: '选择工作项附件' }), {
     name: 'broken-upload.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('broken'),
@@ -1255,9 +1261,9 @@ test('work item attachment confirmation failure keeps pending file context', asy
   await expect(attachmentPanel).toContainText('待上传');
   await expect(attachmentPanel).not.toContainText('上传失败');
   await expect(attachmentPanel).toContainText('broken-upload.txt 上传结果待确认。');
-  await expect(attachmentPanel.getByLabel('上传工作项附件')).toBeEnabled();
+  await expect(attachmentPanel.getByRole('button', { name: '选择工作项附件' })).toBeEnabled();
 
-  await attachmentPanel.getByLabel('上传工作项附件').setInputFiles({
+  await chooseFile(page, attachmentPanel.getByRole('button', { name: '选择工作项附件' }), {
     name: 'broken-upload.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('broken'),

@@ -8,7 +8,7 @@ import DesktopApp from "./app.jsx";
 import { createDesktopAuthState } from "./platform/auth-state.js";
 import { createDesktopNetworkState } from "./platform/network-state.js";
 import { createDesktopRouter } from "./platform/router.js";
-import { createDesktopFiles } from "./platform/files.js";
+import { createDesktopAppFiles, createDesktopFiles } from "./platform/files.js";
 import { createDesktopApiTransport } from "./platform/api-transport.js";
 import { createDesktopEvents } from "./platform/events.js";
 import "./app.css";
@@ -21,11 +21,12 @@ const auth = createDesktopAuthState(bridge?.hostState, bridge?.auth);
 const apiTransport = createDesktopApiTransport(bridge?.business);
 const apiClient = createApiClient({ request: apiTransport.request });
 const router = createDesktopRouter();
+const hostFiles = createDesktopFiles(bridge?.files);
 const services = Object.freeze({
   auth,
   router,
   network: createDesktopNetworkState(bridge?.network),
-  files: createDesktopFiles(bridge?.files),
+  files: hostFiles,
   app: Object.freeze({
     api: Object.freeze({
       ...apiClient,
@@ -33,7 +34,7 @@ const services = Object.freeze({
       restorePendingReturnToHash() {},
     }),
     events: createDesktopEvents(),
-    files: createReadOnlyFilePlatform(),
+    files: createDesktopAppFiles(bridge?.files, hostFiles),
     router,
     runtime: Object.freeze({
       scheduleFrame: (callback) => window.requestAnimationFrame(callback),
@@ -42,16 +43,6 @@ const services = Object.freeze({
     }),
   }),
 });
-
-function createReadOnlyFilePlatform() {
-  const unavailable = () => { throw new Error("Desktop attachment operations are not available in this release stage."); };
-  return Object.freeze({
-    selectFile: unavailable,
-    files: Object.freeze({ chooseFile: unavailable, uploadSignedRequest: unavailable }),
-    downloads: Object.freeze({ downloadSignedRequest: unavailable }),
-    transfers: Object.freeze({ authorizeSignedRequest: unavailable }),
-  });
-}
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>

@@ -50,9 +50,9 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
 }
 
 /**
- * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, downloadingId: number | null, onUpload: (event: import('react').ChangeEvent<HTMLInputElement>) => void, onDownload: (attachment: Attachment) => void }} props
+ * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, downloadingId: number | null, onChooseUpload: () => void, onDownload: (attachment: Attachment) => void }} props
  */
-export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, onUpload, onDownload }) {
+export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, onChooseUpload, onDownload }) {
   return (
     <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
       <div className="yuance-ui-panel-header">
@@ -60,10 +60,9 @@ export function WorkItemAttachments({ attachments, status, warning, error, uploa
         <span className="yuance-ui-meta">共 {attachments.length} 个</span>
       </div>
       <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
-        <label className="work-item-file-field">
-          <span>上传工作项附件</span>
-          <input type="file" onChange={onUpload} disabled={uploading || mutationBusy} />
-        </label>
+        <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onChooseUpload} disabled={uploading || mutationBusy}>
+          {uploading ? '处理中…' : '选择工作项附件'}
+        </button>
         <p className="yuance-ui-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
       </form>
       {status ? <p className="work-item-attachment-status" aria-live="polite">{status}</p> : null}

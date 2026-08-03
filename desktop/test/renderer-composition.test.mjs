@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { createDesktopAuthState, normalizePublicAuthState } from "../src/renderer/platform/auth-state.js";
 import { createDesktopNetworkState, normalizePublicNetworkState } from "../src/renderer/platform/network-state.js";
 import { createDesktopRouter, normalizeDesktopRoute } from "../src/renderer/platform/router.js";
-import { createDesktopFiles } from "../src/renderer/platform/files.js";
+import { createDesktopAppFiles, createDesktopFiles } from "../src/renderer/platform/files.js";
 import { createUnavailableFileAdapter, createUnavailableNetworkAdapter } from "../src/renderer/platform/unavailable.js";
 
 test("normalizes every public auth state and fails closed for unknown values", () => {
@@ -109,6 +109,33 @@ test("desktop file adapter delegates opaque intents and normalizes results", asy
   assert.deepEqual(await files.downloadCanary(), { status: "cancelled" });
   assert.deepEqual(calls, [`yfc_${"a".repeat(32)}`]);
 });
+
+test("desktop app file adapter delegates business attachments and rejects signed requests", async () => {
+  const calls = [];
+  const bridge = {
+    choose: async () => ({ capability: `yfc_${"a".repeat(32)}`, filename: "a.txt", contentType: "text/plain", byteSize: 1 }),
+    uploadCanary: async () => ({ status: "completed" }),
+    downloadCanary: async () => ({ status: "completed" }),
+    uploadWorkItemAttachment: async (input, onStage) => { calls.push(input); onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded"), url: "https://secret" }; },
+    uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, path: "/secret" }),
+    downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
+  };
+  const platform = createDesktopAppFiles(bridge);
+  const stages = [];
+  const fileCapability = /** @type {import('@yuance/frontend-platform-contract').FileCapability} */ (/** @type {unknown} */ ("opaque"));
+  const result = await platform.attachments.uploadWorkItemAttachment({ itemKey: "DEMO-1", fileCapability }, (stage) => stages.push(stage));
+  assert.deepEqual(result, { created: attachment("pending"), uploaded: attachment("uploaded") });
+  assert.deepEqual(stages, ["uploading"]);
+  assert.deepEqual(await platform.attachments.downloadWorkItemAttachment({ itemKey: "DEMO-1", attachmentId: 9, suggestedFilename: "ignored" }), { status: "completed", filename: "a.txt", byteSize: 1 });
+  assert.throws(() => platform.transfers.authorizeSignedRequest(), /unavailable/);
+  assert.equal(JSON.stringify(result).includes("secret"), false);
+  assert.equal(calls.length, 1);
+});
+
+function attachment(status) {
+  return { id: 9, filename: "a.txt", content_type: "text/plain", byte_size: 1, status, created_by: "Alice", created_at: "2026-08-03T00:00:00Z" };
+}
 
 test("renderer composition uses shared components and contracts without Browser transports", async () => {
   const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/renderer");

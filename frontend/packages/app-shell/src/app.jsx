@@ -28,7 +28,7 @@ import { errorMessage } from './errors.js';
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 
 /** @typedef {Omit<ReturnType<typeof import('@yuance/frontend-api-client').createApiClient>, 'createWorkItemCommentDraft' | 'publishWorkItemCommentDraft'> & { restorePendingReturnToHash(): void }} AppApiService */
-/** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { selectFile(file: File): import('@yuance/frontend-platform-contract').SelectedFile }} AppFileService */
+/** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
 /**
@@ -882,9 +882,11 @@ export function SharedApp({ services }) {
   /** @param {number} commentId */
   function focusWorkItemCommentEditButton(commentId) {
     runtime.scheduleFrame(() => {
-      const row = runtime.getElementById(`comment-${commentId}`);
-      const button = row?.querySelector('button');
-      button?.focus();
+      runtime.scheduleFrame(() => {
+        const row = runtime.getElementById(`comment-${commentId}`);
+        const button = /** @type {HTMLButtonElement | null | undefined} */ (row?.querySelector('[data-comment-edit]'));
+        button?.focus();
+      });
     });
   }
 
@@ -1310,27 +1312,46 @@ export function SharedApp({ services }) {
     }
   }
 
-  /** @param {React.ChangeEvent<HTMLInputElement>} event */
-  async function uploadSelectedWorkItemAttachment(event) {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!activeWorkItemDetail || !file || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
+  async function uploadSelectedWorkItemAttachment() {
+    if (!activeWorkItemDetail || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
       return;
     }
-    if (!file.size || file.size <= 0) {
-      setWorkItemAttachmentActionError('请选择非空文件。');
-      setWorkItemAttachmentStatus(`${file.name || '附件'} 未上传。`);
-      return;
-    }
-
     const itemKey = activeWorkItemDetail.key;
-    const filename = file.name || 'attachment.bin';
     const actionId = workItemAttachmentActionRef.current + 1;
-    let createdAttachment = /** @type {AppAttachment | null} */ (null);
-    let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
     workItemAttachmentActionRef.current = actionId;
     workItemAttachmentMutationRef.current = true;
     setWorkItemAttachmentUploading(true);
+    setWorkItemAttachmentStatus('正在选择工作项附件。');
+    let file;
+    try { file = await files.files.chooseFile(); }
+    catch (caught) {
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemAttachmentUploading(false);
+      if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('选择附件失败。')));
+      return;
+    }
+    if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemAttachmentUploading(false);
+      return;
+    }
+    if (!file) {
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemAttachmentUploading(false);
+      setWorkItemAttachmentStatus('已取消选择附件。');
+      return;
+    }
+    if (!file.byteSize || file.byteSize <= 0) {
+      setWorkItemAttachmentActionError('请选择非空文件。');
+      setWorkItemAttachmentStatus(`${file.filename || '附件'} 未上传。`);
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemAttachmentUploading(false);
+      return;
+    }
+
+    const filename = file.filename || 'attachment.bin';
+    let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
     setWorkItemAttachmentActionError('');
     setWorkItemAttachmentStatus(`${filename} 正在登记附件。`);
     try {
@@ -1338,7 +1359,7 @@ export function SharedApp({ services }) {
         api,
         platform: files,
         itemKey,
-        file: files.selectFile(file),
+        file,
         lifecycle: {
           isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
           onStage: (stage) => {
@@ -1369,7 +1390,6 @@ export function SharedApp({ services }) {
         if (result.refreshError) {
           setWorkItemAttachmentActionError('附件已上传，但列表刷新失败，请手动刷新。');
         }
-        input.value = '';
       }
     } catch (caught) {
       if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
@@ -1401,7 +1421,6 @@ export function SharedApp({ services }) {
           setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
           setWorkItemAttachmentStatus(`${filename} 上传失败，请重试。`);
         }
-        input.value = '';
       }
     } finally {
       if (workItemAttachmentActionRef.current === actionId) {
@@ -1413,31 +1432,50 @@ export function SharedApp({ services }) {
 
   /**
    * @param {number} commentId
-   * @param {React.ChangeEvent<HTMLInputElement>} event
    */
-  async function uploadSelectedWorkItemCommentAttachment(commentId, event) {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!activeWorkItemDetail || !file || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
+  async function uploadSelectedWorkItemCommentAttachment(commentId) {
+    if (!activeWorkItemDetail || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
       return;
     }
-    if (!file.size || file.size <= 0) {
-      setWorkItemAttachmentActionError('请选择非空文件。');
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${file.name || '附件'} 未上传。`,
-      }));
-      return;
-    }
-
     const itemKey = activeWorkItemDetail.key;
-    const filename = file.name || 'attachment.bin';
     const actionId = workItemAttachmentActionRef.current + 1;
-    let createdAttachment = /** @type {AppAttachment | null} */ (null);
-    let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
     workItemAttachmentActionRef.current = actionId;
     workItemAttachmentMutationRef.current = true;
     setWorkItemCommentAttachmentUploadingId(commentId);
+    setWorkItemCommentAttachmentStatus((current) => ({ ...current, [String(commentId)]: '正在选择评论附件。' }));
+    let file;
+    try { file = await files.files.chooseFile(); }
+    catch (caught) {
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemCommentAttachmentUploadingId(null);
+      if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('选择附件失败。')));
+      return;
+    }
+    if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemCommentAttachmentUploadingId(null);
+      return;
+    }
+    if (!file) {
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemCommentAttachmentUploadingId(null);
+      setWorkItemCommentAttachmentStatus((current) => ({ ...current, [String(commentId)]: '已取消选择附件。' }));
+      return;
+    }
+    if (!file.byteSize || file.byteSize <= 0) {
+      setWorkItemAttachmentActionError('请选择非空文件。');
+      setWorkItemCommentAttachmentStatus((current) => ({
+        ...current,
+        [String(commentId)]: `${file.filename || '附件'} 未上传。`,
+      }));
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemCommentAttachmentUploadingId(null);
+      return;
+    }
+
+    const filename = file.filename || 'attachment.bin';
+    let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
     setWorkItemAttachmentActionError('');
     setWorkItemCommentAttachmentStatus((current) => ({
       ...current,
@@ -1449,7 +1487,7 @@ export function SharedApp({ services }) {
         platform: files,
         itemKey,
         commentId,
-        file: files.selectFile(file),
+        file,
         lifecycle: {
           isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
           onStage: (stage) => {
@@ -1492,7 +1530,6 @@ export function SharedApp({ services }) {
         if (result.refreshError) {
           setWorkItemAttachmentActionError('评论附件已上传，但列表刷新失败，请手动刷新。');
         }
-        input.value = '';
       }
     } catch (caught) {
       if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
@@ -1542,7 +1579,6 @@ export function SharedApp({ services }) {
             [String(commentId)]: `${filename} 上传失败，请重试。`,
           }));
         }
-        input.value = '';
       }
     } finally {
       if (workItemAttachmentActionRef.current === actionId) {
@@ -2249,7 +2285,7 @@ export function SharedApp({ services }) {
                     uploading={workItemAttachmentUploading}
                     mutationBusy={workItemMutationSubmitting}
                     downloadingId={workItemAttachmentDownloadingId}
-                    onUpload={(event) => void uploadSelectedWorkItemAttachment(event)}
+                    onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
                     onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
                   />
 
@@ -2274,7 +2310,7 @@ export function SharedApp({ services }) {
                     onChangeEdit={changeWorkItemEditComment}
                     onCancelEdit={cancelWorkItemCommentEdit}
                     onStartEdit={startWorkItemCommentEdit}
-                    onUploadAttachment={(commentId, event) => void uploadSelectedWorkItemCommentAttachment(commentId, event)}
+                    onUploadAttachment={(commentId) => void uploadSelectedWorkItemCommentAttachment(commentId)}
                     onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
                   />
                 </>

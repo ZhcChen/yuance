@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 
 import { createBrowserFilePlatform } from '../src/platform/browser/files.js';
 
+test('browser file chooser converts the selected File into an opaque capability', async () => {
+  const file = new File(['content'], 'design.txt', { type: 'text/plain' });
+  const platform = createBrowserFilePlatform({ refreshCsrfToken: async () => '', chooseFile: async () => file });
+  const selected = await platform.files.chooseFile();
+  assert.equal(selected?.filename, 'design.txt');
+  assert.equal(selected?.byteSize, 7);
+  assert.deepEqual(Object.keys(selected?.capability || {}), []);
+
+  const cancelled = createBrowserFilePlatform({ refreshCsrfToken: async () => '', chooseFile: async () => null });
+  assert.equal(await cancelled.files.chooseFile(), null);
+});
+
 test('browser file platform uploads through opaque capabilities', async () => {
   const calls = [];
   const file = new File(['content'], 'design.txt', { type: 'text/plain' });

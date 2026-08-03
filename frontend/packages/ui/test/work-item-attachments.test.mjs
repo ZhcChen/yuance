@@ -30,7 +30,7 @@ test('work item attachments render content, status and callbacks as controls', (
     uploading: false,
     mutationBusy: false,
     downloadingId: null,
-    onUpload: () => {},
+    onChooseUpload: () => {},
     onDownload: () => {},
   }));
 
@@ -50,7 +50,7 @@ test('work item attachments render an explicit empty state', () => {
     uploading: false,
     mutationBusy: false,
     downloadingId: null,
-    onUpload: () => {},
+    onChooseUpload: () => {},
     onDownload: () => {},
   }));
 
