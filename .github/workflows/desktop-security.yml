@@ -91,7 +91,7 @@ jobs:
 
       - name: Run Windows desktop tests
         if: runner.os == 'Windows'
-        run: npm --prefix desktop test
+        run: npm --prefix desktop run test:serial
 
       - name: Run macOS desktop tests without Keychain
         if: runner.os == 'macOS'

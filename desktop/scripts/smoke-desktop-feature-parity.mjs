@@ -13,9 +13,10 @@ import { buildRealApi, startRealApiFixture } from "../test/support/real-api-fixt
 
 export async function smokeDesktopFeatureParity(inputPath, { platform = process.platform } = {}) {
   const startedAt = performance.now();
-  const network = await smokeDesktopNetwork(inputPath, { platform });
-  const file = await smokeDesktopFileTransfer(inputPath, { platform });
-  const businessFile = await smokeDesktopBusinessFile(inputPath, { platform });
+  const isolated = platform === "win32" ? await runIsolatedSupportingSmokes(inputPath) : null;
+  const network = isolated?.network ?? await smokeDesktopNetwork(inputPath, { platform });
+  const file = isolated?.file ?? await smokeDesktopFileTransfer(inputPath, { platform });
+  const businessFile = isolated?.businessFile ?? await smokeDesktopBusinessFile(inputPath, { platform });
   const ui = await smokeDesktopUiParity(inputPath, { platform });
   const outputDirectory = path.join(path.dirname(file.outputPath), "");
   const reportBytes = await supportingReportBytes(outputDirectory);
@@ -38,6 +39,40 @@ export async function smokeDesktopFeatureParity(inputPath, { platform = process.
   const outputPath = path.join(outputDirectory, "desktop-feature-parity-smoke.json");
   await fs.writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   return Object.freeze({ report, outputPath });
+}
+
+async function runIsolatedSupportingSmokes(inputPath) {
+  const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
+  const entries = [
+    ["network", "smoke-desktop-network.mjs", "desktop-network-smoke.json"],
+    ["file", "smoke-desktop-file-transfer.mjs", "desktop-file-transfer-smoke.json"],
+    ["businessFile", "smoke-desktop-business-file.mjs", "desktop-business-file-smoke.json"],
+  ];
+  const results = {};
+  for (const [key, scriptName, reportName] of entries) {
+    await runIsolatedSmoke(scriptName, inputPath);
+    const outputPath = path.join(outputDirectory, reportName);
+    results[key] = Object.freeze({ report: JSON.parse(await fs.readFile(outputPath, "utf8")), outputPath });
+  }
+  return Object.freeze(results);
+}
+
+function runIsolatedSmoke(scriptName, inputPath) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = fileURLToPath(new URL(scriptName, import.meta.url));
+    const child = spawn(process.execPath, [scriptPath, inputPath], { cwd: path.dirname(scriptPath), stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    const append = (chunk) => { output = `${output}${chunk}`.slice(-128 * 1024); };
+    child.stdout.setEncoding("utf8").on("data", append);
+    child.stderr.setEncoding("utf8").on("data", append);
+    const timer = setTimeout(() => child.kill("SIGKILL"), 180_000);
+    child.once("error", (error) => { clearTimeout(timer); reject(error); });
+    child.once("exit", (code, signal) => {
+      clearTimeout(timer);
+      if (code === 0 && !signal) resolve();
+      else reject(new Error(`isolated ${scriptName} failed (${signal || code}): ${output}`));
+    });
+  });
 }
 
 async function smokeDesktopUiParity(inputPath, { platform }) {
