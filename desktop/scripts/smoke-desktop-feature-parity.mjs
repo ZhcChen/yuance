@@ -121,19 +121,31 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
     const child = spawn(executable, args, { cwd: path.dirname(executable), stdio: ["ignore", "pipe", "pipe"] });
     let stdout = ""; let stderr = ""; let report; let sideEffect = Promise.resolve(); let settled = false;
     const finish = (callback) => { if (settled) return; settled = true; clearTimeout(timer); callback(); };
+    const finishReport = () => {
+      sideEffect.then(() => finish(() => {
+        child.kill();
+        resolve(report);
+      })).catch((error) => finish(() => reject(error)));
+    };
     child.stdout.setEncoding("utf8").on("data", (chunk) => {
       stdout += chunk;
       const lines = stdout.split(/\r?\n/u); stdout = lines.pop() || "";
       for (const line of lines) {
         try {
           const value = JSON.parse(line);
-          if (value.kind === "yuance-desktop-feature-parity-ui-smoke") report = value;
           sideEffect = sideEffect.then(() => onValue(value));
+          if (value.kind === "yuance-desktop-feature-parity-ui-smoke") {
+            report = value;
+            finishReport();
+          }
         } catch {}
       }
     });
     child.stderr.setEncoding("utf8").on("data", (chunk) => { stderr += chunk; });
-    const timer = setTimeout(() => child.kill("SIGKILL"), 180_000);
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(() => reject(new Error(`packaged feature parity UI smoke timed out: ${stderr || stdout}`)));
+    }, 180_000);
     child.once("error", (error) => finish(() => reject(error)));
     child.once("exit", async (code, signal) => {
       try { await sideEffect; } catch (error) { finish(() => reject(error)); return; }
