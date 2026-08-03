@@ -192,6 +192,21 @@ async fn run_attachment_lifecycle(
     filename: &str,
 ) {
     let content = b"device attachment parity".to_vec();
+    let checksum_sha256 = format!("{:x}", Sha256::digest(&content));
+    let invalid = request(
+        app,
+        "POST",
+        collection_path,
+        token,
+        Some(serde_json::json!({
+            "original_filename": "invalid-checksum.txt",
+            "content_type": "text/plain",
+            "byte_size": content.len(),
+            "checksum_sha256": "ABC"
+        })),
+    )
+    .await;
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
     let response = request(
         app,
         "POST",
@@ -200,7 +215,8 @@ async fn run_attachment_lifecycle(
         Some(serde_json::json!({
             "original_filename": filename,
             "content_type": "text/plain",
-            "byte_size": content.len()
+            "byte_size": content.len(),
+            "checksum_sha256": checksum_sha256
         })),
     )
     .await;
@@ -220,6 +236,7 @@ async fn run_attachment_lifecycle(
     assert_eq!(response.status(), StatusCode::OK);
     let signed = json_body(response).await;
     assert_eq!(signed["data"]["request"]["method"], "PUT");
+    assert_eq!(signed["data"]["checksum_sha256"], checksum_sha256);
 
     let object_key = sqlx::query_scalar::<_, String>(
         "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",

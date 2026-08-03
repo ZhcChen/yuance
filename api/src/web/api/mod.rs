@@ -738,6 +738,7 @@ pub struct AttachmentSignedUrlPayload {
     pub attachment: AttachmentPayload,
     pub request: storage::SignedObjectRequest,
     pub expires_in_seconds: u64,
+    pub checksum_sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1158,6 +1159,8 @@ pub struct CreateAttachmentRequest {
     original_filename: String,
     content_type: String,
     byte_size: i64,
+    #[serde(default)]
+    checksum_sha256: String,
     #[serde(default)]
     folder_id: Option<i64>,
 }
@@ -2450,7 +2453,8 @@ pub async fn create_work_item_comment_attachment(
     } else {
         Some(format!("登记评论附件 {}", payload.original_filename))
     };
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -2465,6 +2469,7 @@ pub async fn create_work_item_comment_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary,
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -2692,7 +2697,8 @@ pub async fn create_project_attachment(
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let activity_summary = format!("登记项目附件 {}", payload.original_filename);
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -2707,6 +2713,7 @@ pub async fn create_project_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: Some(activity_summary),
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -3148,7 +3155,8 @@ pub async fn create_project_resource_attachment(
     let config = storage::active_config(pool)
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -3163,6 +3171,7 @@ pub async fn create_project_resource_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: None,
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -3372,7 +3381,8 @@ pub async fn create_work_item_attachment(
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活".to_string()))?;
     let activity_summary = format!("登记工作项附件 {}", payload.original_filename);
-    let attachment = files::create_attachment(
+    let checksum_sha256 = payload.checksum_sha256.clone();
+    let attachment = files::create_attachment_with_checksum(
         pool,
         &config,
         files::CreateAttachmentInput {
@@ -3387,6 +3397,7 @@ pub async fn create_work_item_attachment(
             created_by_display_name_snapshot: principal.actor_display_name_snapshot(),
             activity_summary: Some(activity_summary),
         },
+        &checksum_sha256,
     )
     .await?;
     audit::record(
@@ -4076,6 +4087,7 @@ pub async fn system_release_asset_upload_url(
         },
         request,
         expires_in_seconds,
+        checksum_sha256: String::new(),
     }))
 }
 
@@ -4983,10 +4995,18 @@ async fn signed_attachment_url_payload(
         )?;
     }
 
+    let checksum_sha256 = sqlx::query_scalar::<_, String>(
+        "SELECT checksum_sha256 FROM file_objects WHERE id = ?1",
+    )
+    .bind(attachment.file_object_id)
+    .fetch_one(pool)
+    .await?;
+
     Ok(AttachmentSignedUrlPayload {
         attachment: attachment_payload(attachment),
         request,
         expires_in_seconds,
+        checksum_sha256,
     })
 }
 
