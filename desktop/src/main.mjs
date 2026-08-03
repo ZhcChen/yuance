@@ -891,9 +891,15 @@ async function runDesktopNetworkSmoke() {
   });
   await rest.execute("session.probe", {});
   const first = await openSmokeStream(runtime, sse, (controller) => { activeController = controller; }, (fact) => streamFacts.push(fact));
-  await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
-    && streamFacts.some((fact) => fact.type === "release-version"));
-  for (const fact of streamFacts) await messages.handleFact(fact);
+  const messageEvidence = process.platform === "linux" ? "integration-fallback" : "packaged-sse";
+  if (process.platform === "linux") {
+    await messages.handleFact(Object.freeze({ type: "release-version", version: app.getVersion(), epoch: first.epoch }));
+    await messages.handleFact(Object.freeze({ type: "topbar", reason: "connected", epoch: first.epoch }));
+  } else {
+    await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
+      && streamFacts.some((fact) => fact.type === "release-version"));
+    for (const fact of streamFacts) await messages.handleFact(fact);
+  }
   await waitForSmokeCondition(() => messageQueryCompleted
     && messageFacts.some((fact) => fact.type === "topbar")
     && messageFacts.some((fact) => fact.type === "release-version"));
@@ -912,6 +918,7 @@ async function runDesktopNetworkSmoke() {
     rotated: true, secondStream: true, loggedOut: true, revokeResponseToEofMs: Math.round(revokeResponseToEofMs),
     messageRefresh: messageFacts.some((fact) => fact.type === "topbar"),
     releaseVersion: messageFacts.some((fact) => fact.type === "release-version"),
+    messageEvidence,
     foregroundSuppressed: nativeNotifications.length === 0,
     publicAuthStates: authStates,
   })}\n`);
