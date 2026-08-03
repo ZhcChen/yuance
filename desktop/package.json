@@ -23,6 +23,7 @@
     "check": "npm run check:native && npm run check:reveal && npm run check:business-file && npm run check:notifications && npm run check:main && npm run check:ipc && npm run check:network && npm run check:smoke && npm run check:renderer",
     "pretest": "npm run build:native",
     "test": "node --test test/**/*.test.mjs",
+    "pretest:serial": "npm run build:native",
     "test:serial": "node --test --test-concurrency=1 test/**/*.test.mjs",
     "smoke:safe-storage": "electron . --safe-storage-smoke --no-sandbox",
     "smoke:single-instance": "node ./scripts/smoke-single-instance.mjs",
