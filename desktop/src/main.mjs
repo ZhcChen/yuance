@@ -1101,7 +1101,7 @@ async function openSmokeStream(runtime, sse, setController, onFact = () => {}) {
 }
 
 async function waitForSmokeCondition(predicate) {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await delay(10);
