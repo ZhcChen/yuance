@@ -62,6 +62,13 @@ test("packaged UI smoke retries attachment selection only as a second explicit u
   assert.match(main, /if \(error\.message === "UI smoke work item attachment upload timed out"\) return false;/u);
 });
 
+test("packaged UI smoke proves handoff through durable detail state", async () => {
+  const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /const workItemStatusBeforeHandoff = await executeFeatureParityUiScript/u);
+  assert.match(main, /currentStatus && currentStatus !== \$\{JSON\.stringify\(workItemStatusBeforeHandoff\)\} && button && !button\.disabled/u);
+  assert.doesNotMatch(main, /textContent\.includes\("已推进并指派"\)/u);
+});
+
 test("feature parity CLI flushes evidence before terminating lingering platform handles", async () => {
   const smoke = await fs.readFile(new URL("../scripts/smoke-desktop-feature-parity.mjs", import.meta.url), "utf8");
   assert.match(smoke, /await smokeDesktopFeatureParity\(inputPath\);[\s\S]*clearInterval\(keepAlive\);[\s\S]*process\.stdout\.write\("", resolve\)[\s\S]*process\.stderr\.write\("", resolve\)[\s\S]*process\.exit\(exitCode\);/u);

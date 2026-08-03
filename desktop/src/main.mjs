@@ -579,20 +579,29 @@ async function runFeatureParityBusinessUiSmoke(window) {
   })()`, "work item edit submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), UI_MUTATION_TIMEOUT_MS, "work item edit");
 
-  await executeFeatureParityUiScript(window, `(() => {
+  const workItemStatusBeforeHandoff = await executeFeatureParityUiScript(window, `(() => {
+    const meta = [...document.querySelectorAll('.work-item-detail-meta div')].find((value) => value.querySelector('dt')?.textContent === "状态");
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
     const select = panel?.querySelector('select[name="status"]');
     const textarea = panel?.querySelector('textarea[name="body"]');
     const button = panel?.querySelector('button[type="submit"]');
-    if (!select || !textarea || !button) throw new Error("work item handoff form is unavailable");
+    if (!meta?.querySelector('dd') || !select || !textarea || !button) throw new Error("work item handoff form is unavailable");
+    const currentStatus = meta.querySelector('dd').textContent;
     const nextStatus = select.value === "in_progress" ? "pending_confirmation" : "in_progress";
     Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, nextStatus);
     select.dispatchEvent(new Event("change", { bubbles: true }));
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI handoff");
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
+    return currentStatus;
   })()`, "work item handoff submit");
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('[role="status"]')].some((value) => value.textContent.includes("已推进并指派"))`), UI_MUTATION_TIMEOUT_MS, "work item handoff");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const meta = [...document.querySelectorAll('.work-item-detail-meta div')].find((value) => value.querySelector('dt')?.textContent === "状态");
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
+    const button = panel?.querySelector('button[type="submit"]');
+    const currentStatus = meta?.querySelector('dd')?.textContent;
+    return Boolean(currentStatus && currentStatus !== ${JSON.stringify(workItemStatusBeforeHandoff)} && button && !button.disabled);
+  })()`), UI_MUTATION_TIMEOUT_MS, "work item handoff");
 
   await window.webContents.executeJavaScript(`(() => {
     const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
