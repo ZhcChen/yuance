@@ -58,6 +58,13 @@ test("downloads using the server filename and returns only public result fields"
   assert.deepEqual(result, { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"d".repeat(32)}` });
 });
 
+test("keeps a completed download usable when reveal capability issuance fails", async () => {
+  const calls = [];
+  const result = await fixture({ calls, revealError: true, signedAttachment: attachment("uploaded") }).downloadWorkItemAttachment({ itemKey: "YCE-TASK-2", attachmentId: 9, binding, signal: undefined, window: Object.freeze({ id: 1 }) });
+  assert.deepEqual(result, { status: "completed", filename: "report.txt", byteSize: 12 });
+  assert.equal(calls.some(([name]) => name === "reveal"), true);
+});
+
 test("rejects download grants for attachments that are not uploaded", async () => {
   const calls = [];
   await assert.rejects(
@@ -68,7 +75,7 @@ test("rejects download grants for attachments that are not uploaded", async () =
   assert.equal(calls.some(([name]) => name === "download"), false);
 });
 
-function fixture({ calls = [], signedAttachment = attachment("pending"), executeError } = {}) {
+function fixture({ calls = [], signedAttachment = attachment("pending"), executeError, revealError = false } = {}) {
   const transfer = signedTransfer("upload");
   const restTransport = {
     async execute(name, input) {
@@ -85,7 +92,7 @@ function fixture({ calls = [], signedAttachment = attachment("pending"), execute
     restTransport,
     fileVault: { describe(value, valueBinding) { calls.push(["describe", { value, valueBinding }]); return metadata; } },
     grantVault: { issue(contract, valueBinding) { calls.push(["issue", { contract, valueBinding }]); return { grant: `ytg_${"c".repeat(32)}` }; } },
-    revealVault: { issue(locator, valueBinding) { calls.push(["reveal", { locator, valueBinding }]); return { capability: `yrd_${"d".repeat(32)}` }; } },
+    revealVault: { issue(locator, valueBinding) { calls.push(["reveal", { locator, valueBinding }]); if (revealError) throw new Error("unavailable"); return { capability: `yrd_${"d".repeat(32)}` }; } },
     uploadExecutor: { async execute(input) { calls.push(["upload", input]); return { status: "completed", byteSize: 12 }; } },
     downloadExecutor: { async execute(input) { calls.push(["download", input]); await input.onCommittedTarget(Object.freeze({ privatePath: "/private/report.txt", identity: Object.freeze({ dev: "1", ino: "2", size: "12", mtimeNs: "3", ctimeNs: "4" }) })); return { status: "completed", filename: input.suggestedFilename, byteSize: 12 }; } },
     apiOrigin: "http://127.0.0.1:3000",

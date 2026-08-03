@@ -15,11 +15,21 @@ test("issues opaque single-use reveal capabilities with exact binding", () => {
   assert.throws(() => vault.consume(issued.capability, binding), invalidReveal);
 });
 
-test("binding mismatch consumes capability and lifecycle invalidation clears state", () => {
-  const vault = createRevealDownloadVault({ randomBytes: () => Buffer.alloc(24, 2) });
-  const issued = vault.issue(locator, binding);
-  assert.throws(() => vault.consume(issued.capability, { ...binding, webContentsId: 10 }), invalidReveal);
-  assert.throws(() => vault.consume(issued.capability, binding), invalidReveal);
+test("every binding mismatch consumes capability and lifecycle invalidation clears state", () => {
+  const vault = createRevealDownloadVault();
+  for (const mismatch of [
+    { profileEpoch: 4 },
+    { authorizationVersion: 8 },
+    { webContentsId: 10 },
+    { frameRoutingId: 3 },
+  ]) {
+    const issued = vault.issue(locator, binding);
+    assert.throws(() => vault.consume(issued.capability, { ...binding, ...mismatch }), invalidReveal);
+    assert.throws(() => vault.consume(issued.capability, binding), invalidReveal);
+  }
+  const wrongPurpose = vault.issue(locator, binding);
+  assert.throws(() => vault.consume(wrongPurpose.capability, { ...binding, purpose: "upload" }), /binding/);
+  assert.equal(vault.consume(wrongPurpose.capability, binding), locator);
   vault.issue(locator, binding);
   vault.invalidateAll();
   assert.deepEqual(vault.snapshot(), { entries: 0 });
