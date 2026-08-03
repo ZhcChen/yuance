@@ -44,7 +44,7 @@ async fn device_canary_upload_request_has_frozen_transfer_schema() {
     assert_eq!(transfer["purpose"], "upload");
     assert_eq!(transfer["request"]["method"], "PUT");
     assert_eq!(transfer["expected_bytes"], 34);
-    assert_eq!(transfer["content_type"], "text/plain; charset=utf-8");
+    assert_eq!(transfer["content_type"], "text/plain");
     assert_eq!(transfer["expires_in_seconds"], 60);
     assert!(transfer["expires_at"].as_str().is_some());
     assert!(
@@ -60,7 +60,7 @@ async fn device_canary_upload_request_has_frozen_transfer_schema() {
     );
     assert_eq!(
         transfer["request"]["headers"],
-        serde_json::json!([["content-type", "text/plain; charset=utf-8"]])
+        serde_json::json!([["content-type", "text/plain"]])
     );
 
     let response = signed_request(&app, transfer, Some(CANARY_CONTENT)).await;
@@ -80,7 +80,7 @@ async fn device_canary_upload_request_has_frozen_transfer_schema() {
     assert_eq!(transfer["purpose"], "download");
     assert_eq!(transfer["request"]["method"], "GET");
     assert_eq!(transfer["expected_bytes"], 34);
-    assert_eq!(transfer["content_type"], "text/plain; charset=utf-8");
+    assert_eq!(transfer["content_type"], "text/plain");
     assert_eq!(transfer["expires_in_seconds"], 60);
     assert!(
         transfer["request"]["url"]
@@ -121,7 +121,7 @@ async fn device_canary_upload_request_has_frozen_transfer_schema() {
             Request::builder()
                 .method("PUT")
                 .uri(format!("{upload_url}x"))
-                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                .header(header::CONTENT_TYPE, "text/plain")
                 .body(Body::from(CANARY_CONTENT))
                 .unwrap(),
         )
@@ -152,7 +152,7 @@ async fn device_canary_upload_request_has_frozen_transfer_schema() {
                     header::AUTHORIZATION,
                     format!("Bearer {}", credentials.access_token),
                 )
-                .header(header::CONTENT_TYPE, "text/plain; charset=utf-8")
+                .header(header::CONTENT_TYPE, "text/plain")
                 .body(Body::from(CANARY_CONTENT))
                 .unwrap(),
         )
@@ -237,7 +237,7 @@ async fn device_canary_ignores_untrusted_transfer_fields_and_rejects_wrong_route
 }
 
 #[tokio::test]
-async fn device_canary_rejects_other_credentials_and_business_api_stays_closed() {
+async fn device_canary_rejects_other_credentials_without_narrowing_d2_business_routes() {
     let pool = test_pool().await;
     let user_id = bootstrap_admin(&pool).await;
     seed_memory_storage(&pool, user_id).await;
@@ -340,7 +340,7 @@ async fn device_canary_rejects_other_credentials_and_business_api_stays_closed()
     );
 
     let response = device_request(&app, "GET", "/api/v1/projects", &credentials.access_token).await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

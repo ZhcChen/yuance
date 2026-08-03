@@ -553,7 +553,7 @@ async function runDesktopFileSmoke() {
     const spool = createFileSpool({ rootDirectory: path.join(userDataPath, "File Spool"), platform: process.platform, windowsGuard: loadWindowsFileGuard() });
     const sourcePath = path.join(userDataPath, "file-smoke-source.txt");
     await fs.writeFile(sourcePath, "yuance-desktop-file-canary-v1-data", { mode: 0o600 });
-    const snapshot = await spool.capture(sourcePath, { filename: "canary.txt", contentType: "text/plain; charset=utf-8" });
+    const snapshot = await spool.capture(sourcePath, { filename: "canary.txt", contentType: "text/plain" });
     const stale = createFileCapabilityVault().issue(snapshot, { ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1, purpose: "upload" });
     await fs.writeFile(path.join(userDataPath, "file-smoke-stale.json"), JSON.stringify({ capability: stale.capability }), { mode: 0o600 });
     await runtime.logout();

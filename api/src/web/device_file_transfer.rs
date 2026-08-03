@@ -25,7 +25,7 @@ use crate::{
 const TRANSFER_SCHEMA_VERSION: u32 = 1;
 const TRANSFER_TTL_SECONDS: u64 = 60;
 const CANARY_CONTENT: &[u8] = b"yuance-desktop-file-canary-v1-data";
-const CANARY_CONTENT_TYPE: &str = "text/plain; charset=utf-8";
+const CANARY_CONTENT_TYPE: &str = "text/plain";
 const CANARY_GRANT_AAD: &[u8] = b"yuance:device-file-transfer-canary:v1";
 
 #[derive(Debug, Serialize)]
