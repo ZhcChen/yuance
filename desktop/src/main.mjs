@@ -475,6 +475,12 @@ async function runFeatureParityUiSmoke(window) {
       workItemHandedOff: ${business.workItemHandedOff},
       commentCreated: ${business.commentCreated},
       commentEdited: ${business.commentEdited},
+      workItemAttachmentUploaded: ${business.workItemAttachmentUploaded},
+      workItemAttachmentDownloaded: ${business.workItemAttachmentDownloaded},
+      workItemAttachmentRevealed: ${business.workItemAttachmentRevealed},
+      commentAttachmentUploaded: ${business.commentAttachmentUploaded},
+      commentAttachmentDownloaded: ${business.commentAttachmentDownloaded},
+      commentAttachmentRevealed: ${business.commentAttachmentRevealed},
       liveRegions: document.querySelectorAll("[aria-live]").length,
       keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
       genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
@@ -553,7 +559,54 @@ async function runFeatureParityBusinessUiSmoke(window) {
     button.click();
   })()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "Desktop packaged UI comment updated")`), 30_000, "comment edit");
-  return Object.freeze({ workItemDetail: true, workItemEdited: true, workItemHandedOff: true, commentCreated: true, commentEdited: true });
+
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`), 30_000, "work item attachment upload");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].find((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt");
+    row?.querySelector('button[aria-label^="下载附件"]')?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-attachments-panel .work-item-attachment-row button:not([aria-label])'))`), 30_000, "work item attachment download");
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row button')].find((value) => value.textContent.trim() === "在文件夹中显示")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-attachments-panel .work-item-attachment-status')?.textContent.includes("已在文件夹中定位")`), 10_000, "work item attachment reveal");
+
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "选择评论附件")?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    return [...(row?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
+  })()`), 30_000, "comment attachment upload");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    row?.querySelector('button[aria-label^="下载评论附件"]')?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    return [...(row?.querySelectorAll('button') || [])].some((value) => value.textContent.trim() === "在文件夹中显示");
+  })()`), 30_000, "comment attachment download");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "在文件夹中显示")?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
+  })()`), 10_000, "comment attachment reveal");
+  return Object.freeze({
+    workItemDetail: true,
+    workItemEdited: true,
+    workItemHandedOff: true,
+    commentCreated: true,
+    commentEdited: true,
+    workItemAttachmentUploaded: true,
+    workItemAttachmentDownloaded: true,
+    workItemAttachmentRevealed: true,
+    commentAttachmentUploaded: true,
+    commentAttachmentDownloaded: true,
+    commentAttachmentRevealed: true,
+  });
 }
 
 async function waitForUiSmoke(operation, timeoutMs = 10_000, label = "condition") {
@@ -1026,12 +1079,20 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
   const fileVault = createFileCapabilityVault();
   const grantVault = createTransferGrantVault();
   const revealVault = createRevealDownloadVault();
-  const revealController = createRevealDownloadController({ vault: revealVault, shell });
+  let smokeDownloadIndex = 0;
+  const runtimeDialog = desktopFeatureParityUiSmokeProfile
+    ? {
+        showOpenDialog: async () => ({ canceled: false, filePaths: [path.join(desktopFeatureParityUiSmokeProfile, "fixture-upload.txt")] }),
+        showSaveDialog: async () => ({ canceled: false, filePath: path.join(desktopFeatureParityUiSmokeProfile, "Downloads", `attachment-${++smokeDownloadIndex}.bin`) }),
+      }
+    : dialog;
+  const runtimeShell = desktopFeatureParityUiSmokeProfile ? { showItemInFolder: () => {} } : shell;
+  const revealController = createRevealDownloadController({ vault: revealVault, shell: runtimeShell });
   const registry = createOperationRegistry();
   const state = createFileStateController({ fileVault, grantVault, revealVault, registry });
-  const fileDialog = createFileDialog({ dialog, spool, vault: fileVault });
+  const fileDialog = createFileDialog({ dialog: runtimeDialog, spool, vault: fileVault });
   const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
-  const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
+  const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog: runtimeDialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
   const attachmentRestTransport = createRestTransport({ profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: createAttachmentOperationRegistry() });
   const attachmentCoordinator = createBusinessAttachmentCoordinator({
     restTransport: attachmentRestTransport,
@@ -1041,8 +1102,8 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
     downloadExecutor,
     revealVault,
     apiOrigin: profile.origin,
-    allowLoopbackHttp: isDevRuntime,
-    allowedRelativePaths: isDevRuntime ? { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" } : {},
+    allowLoopbackHttp: isDevRuntime || Boolean(desktopFeatureParityUiSmokeOrigin),
+    allowedRelativePaths: isDevRuntime || desktopFeatureParityUiSmokeOrigin ? { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" } : {},
   });
   const getBinding = (event, purpose) => Object.freeze({
     ...runtime.fileBindingVersion(),

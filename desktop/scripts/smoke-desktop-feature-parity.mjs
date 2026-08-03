@@ -44,6 +44,8 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
   await buildRealApi();
   const fixture = await startRealApiFixture({ seedDemo: true });
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-feature-ui-"));
+  await fs.mkdir(path.join(profile, "Downloads"), { recursive: true });
+  await fs.writeFile(path.join(profile, "fixture-upload.txt"), "packaged feature parity attachment\n", { mode: 0o600 });
   const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
   await fs.mkdir(outputDirectory, { recursive: true });
   const outputPath = path.join(outputDirectory, "desktop-feature-parity-ui-smoke.json");
@@ -51,6 +53,7 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
   await Promise.all([fs.rm(outputPath, { force: true }), fs.rm(cleanupPath, { force: true })]);
   try {
     const session = await fixture.loginDemoAdmin();
+    await fixture.activateTestStorage(session);
     const executable = await findUnpackedExecutable(inputPath, platform);
     const report = await runUiSmoke(executable, fixture.origin, profile, platform, (value) => {
       if (value.kind === "yuance-desktop-feature-parity-ui-user-code") return approveDeviceAuthorization({ origin: fixture.origin, userCode: value.userCode, session });
@@ -106,10 +109,16 @@ function assertUiReport(report) {
     workItemHandedOff: report?.workItemHandedOff === true,
     commentCreated: report?.commentCreated === true,
     commentEdited: report?.commentEdited === true,
+    workItemAttachmentUploaded: report?.workItemAttachmentUploaded === true,
+    workItemAttachmentDownloaded: report?.workItemAttachmentDownloaded === true,
+    workItemAttachmentRevealed: report?.workItemAttachmentRevealed === true,
+    commentAttachmentUploaded: report?.commentAttachmentUploaded === true,
+    commentAttachmentDownloaded: report?.commentAttachmentDownloaded === true,
+    commentAttachmentRevealed: report?.commentAttachmentRevealed === true,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "commentCreated,commentEdited,genericBridgeMethods,keyboardFocus,kind,liveRegions,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemDetail,workItemEdited,workItemHandedOff",
+    shape: report && Object.keys(report).sort().join(",") === "commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,genericBridgeMethods,keyboardFocus,kind,liveRegions,restrictedBridge,semanticMain,semanticNavigation,sharedApp,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
