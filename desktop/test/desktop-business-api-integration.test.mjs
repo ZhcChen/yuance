@@ -36,6 +36,9 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.equal(report.mutationsPersisted, true);
   assert.equal(report.notificationRead, true);
   assert.equal(report.notificationsReadAll, true);
+  assert.equal(report.sseRefresh, true);
+  assert.equal(report.releaseVersion, true);
+  assert.equal(report.foregroundSuppressed, true);
   assert.equal(report.mutationsExecutedOnce, true);
   const serialized = JSON.stringify(report);
   assert.equal(serialized.includes("yuance_dat_"), false);

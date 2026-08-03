@@ -17,6 +17,9 @@ import { parseTransferContract } from "../../src/files/transfer-contract.mjs";
 import { createOperationRegistry } from "../../src/network/operation-registry.mjs";
 import { createAttachmentOperationRegistry } from "../../src/network/attachment-operation-registry.mjs";
 import { createRestTransport } from "../../src/network/rest-transport.mjs";
+import { createSseClient } from "../../src/network/sse-client.mjs";
+import { createNetworkCoordinator } from "../../src/network/network-coordinator.mjs";
+import { createNotificationController } from "../../src/notifications/notification-controller.mjs";
 import { createCredentialRuntime } from "../../src/auth/credential-runtime.mjs";
 import { loadWindowsFileGuard } from "../../src/files/windows-file-guard.mjs";
 import { enrollDesktop } from "../../src/network/enrollment-client.mjs";
@@ -364,6 +367,32 @@ async function runRealBusinessApi({ origin, mode, network }) {
     },
   });
   const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: countingRegistry });
+  const businessFacts = [];
+  const nativeNotifications = [];
+  let controllerQueryCompleted = false;
+  const notificationController = createNotificationController({
+    execute: async (operation, input) => {
+      try { return await rest.execute(operation, input); }
+      finally { if (operation === "notification.list") controllerQueryCompleted = true; }
+    },
+    publishFact: (fact) => businessFacts.push(fact),
+    isWindowFocused: () => true,
+    isWindowMinimized: () => false,
+    isNativeNotificationSupported: () => true,
+    showNativeNotification: (value) => nativeNotifications.push(value),
+    focusWindow: () => {},
+    resolveTargetPath: () => "/web/app/messages",
+  });
+  const networkCoordinator = createNetworkCoordinator({
+    credentialRuntime: runtime,
+    sseClient: createSseClient({ profile: enrolled.profile, fetchImpl: network.fetch }),
+    probe: () => rest.execute("session.probe", {}),
+    onFact: (fact) => notificationController.handleFact(fact),
+  });
+  networkCoordinator.start();
+  await waitUntil(() => controllerQueryCompleted
+    && businessFacts.some((fact) => fact.type === "topbar")
+    && businessFacts.some((fact) => fact.type === "release-version"));
   stage("identity");
   const user = await rest.execute("identity.current", {});
   stage("topbar");
@@ -439,6 +468,8 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "notification.readall",
   ];
   if (notificationsAfterMutation.items.length > 0) mutationOperations.push("notification.read");
+  networkCoordinator.stop();
+  notificationController.invalidate();
   await runtime.logout();
   runtime.dispose();
   process.stdout.write(`${JSON.stringify({
@@ -463,9 +494,21 @@ async function runRealBusinessApi({ origin, mode, network }) {
       && verifiedComments.some((comment) => comment.id === createdComment.id && comment.body === updatedComment.body),
     notificationRead,
     notificationsReadAll: Number.isSafeInteger(readAllResult.affected),
+    sseRefresh: businessFacts.some((fact) => fact.type === "topbar"),
+    releaseVersion: businessFacts.some((fact) => fact.type === "release-version"),
+    foregroundSuppressed: nativeNotifications.length === 0,
     mutationsExecutedOnce: mutationOperations.every((name) => operationCounts.get(name) === 1),
   })}\n`);
   app.exit(0);
+}
+
+async function waitUntil(predicate, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("business SSE integration timed out");
 }
 
 function createEphemeralStorage() {
