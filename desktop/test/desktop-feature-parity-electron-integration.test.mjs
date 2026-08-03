@@ -64,6 +64,7 @@ test("packaged UI smoke retries attachment selection only as a second explicit u
 
 test("packaged UI smoke proves handoff through durable detail state", async () => {
   const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /Boolean\(button && !button\.disabled\);\s+\}\)\(\)`\), UI_MUTATION_TIMEOUT_MS, "work item handoff action"/u);
   assert.match(main, /const workItemStatusBeforeHandoff = await executeFeatureParityUiScript/u);
   assert.match(main, /currentStatus && currentStatus !== \$\{JSON\.stringify\(workItemStatusBeforeHandoff\)\} && button && !button\.disabled/u);
   assert.doesNotMatch(main, /textContent\.includes\("已推进并指派"\)/u);

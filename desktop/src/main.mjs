@@ -578,6 +578,11 @@ async function runFeatureParityBusinessUiSmoke(window) {
     button.click();
   })()`, "work item edit submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), UI_MUTATION_TIMEOUT_MS, "work item edit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
+    const button = panel?.querySelector('button[type="submit"]');
+    return Boolean(button && !button.disabled);
+  })()`), UI_MUTATION_TIMEOUT_MS, "work item handoff action");
 
   const workItemStatusBeforeHandoff = await executeFeatureParityUiScript(window, `(() => {
     const meta = [...document.querySelectorAll('.work-item-detail-meta div')].find((value) => value.querySelector('dt')?.textContent === "状态");
