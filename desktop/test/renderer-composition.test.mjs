@@ -56,7 +56,7 @@ test("auth commands and network state adapters remain semantic and fail closed",
   listener({ status: "online", endpoint: "secret" }); assert.deepEqual(values, [{ status: "online" }]); unsubscribe();
 });
 
-test("desktop router accepts semantic paths and rejects absolute or encoded paths", () => {
+test("desktop router translates shared app paths and rejects absolute or encoded paths", () => {
   assert.equal(normalizeDesktopRoute("/projects/YCE"), "/projects/YCE");
   for (const value of ["https://attacker.test", "//attacker.test", "/projects/%2e%2e/auth", "/unknown", "/projects//YCE", "/projects/x?admin", "/projects/x#admin", "/projects/\0admin", "/projects/／admin", "/projects/⁄admin", "/projects/∕admin", "/projects/项目", "/projects/é", "/projects/\nadmin"]) {
     assert.equal(normalizeDesktopRoute(value), "/", value);
@@ -70,16 +70,23 @@ test("desktop router accepts semantic paths and rejects absolute or encoded path
     dispatchEvent() { listeners.get("popstate")?.(); },
   };
   const router = createDesktopRouter({
-    location: { pathname: "/projects" },
+    location: { pathname: "/projects", search: "?page=2", hash: "" },
     history: { pushState(_state, _title, value) { calls.push(value); }, replaceState(_state, _title, _value) {} },
     eventTarget,
   });
   let updates = 0;
   const unsubscribe = router.subscribe(() => { updates += 1; });
-  router.navigate("/messages");
-  assert.deepEqual(calls, ["/messages"]);
+  assert.equal(router.currentPath(), "/web/app/projects?page=2");
+  assert.deepEqual(router.currentRoute(), {
+    id: "projects", owner: "app", pathname: "/web/app/projects", search: "?page=2",
+    status: "", page: 2, perPage: 10, title: "项目列表",
+  });
+  router.navigate("/web/app/messages?filter=unread");
+  assert.deepEqual(calls, ["/messages?filter=unread"]);
   assert.equal(updates, 1);
   assert.throws(() => router.navigate("https://attacker.test"), /not allowed/);
+  assert.throws(() => router.navigate("/web/projects"), /not allowed/);
+  assert.throws(() => router.navigate("/web/app/unknown"), /not allowed/);
   unsubscribe();
 });
 
@@ -105,11 +112,13 @@ test("desktop file adapter delegates opaque intents and normalizes results", asy
 
 test("renderer composition uses shared components and contracts without Browser transports", async () => {
   const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/renderer");
-  const files = ["main.jsx", "app.jsx", "platform/auth-state.js", "platform/network-state.js", "platform/router.js", "platform/files.js", "platform/unavailable.js"];
+  const files = ["main.jsx", "app.jsx", "platform/api-transport.js", "platform/auth-state.js", "platform/events.js", "platform/network-state.js", "platform/router.js", "platform/files.js", "platform/unavailable.js"];
   const source = (await Promise.all(files.map((file) => fs.readFile(path.join(sourceRoot, file), "utf8")))).join("\n");
   assert.match(source, /normalizeHostAuthState/);
   assert.match(source, /defineRouterCapabilities/);
   assert.match(source, /HostStatusShell/);
+  assert.match(source, /SharedApp/);
+  assert.match(source, /createApiClient/);
   assert.match(source, /services\.auth\.authorize/);
   assert.match(source, /services\.network\.subscribe/);
   assert.doesNotMatch(source, /document\.cookie|EventSource|fetch\s*\(|localStorage|sessionStorage/);

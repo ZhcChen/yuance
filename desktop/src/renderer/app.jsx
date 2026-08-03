@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { HostStatusShell } from "@yuance/frontend-ui";
+import { SharedApp } from "@yuance/frontend-app-shell";
 
 const STATE_LABELS = Object.freeze({
   starting: ["正在启动", "正在恢复设备会话"],
@@ -38,6 +39,10 @@ export default function DesktopApp({ services }) {
   const secondaryAction = authState.status === "authenticated"
     ? { label: "退出设备", onClick: run(services.auth.logout) }
     : undefined;
+
+  if (authState.status === "authenticated" && networkState.status === "online") {
+    return <SharedApp services={services.app} />;
+  }
 
   return <HostStatusShell productName="元策" hostLabel="Desktop" status={authState.status} title={title} detail={detail}
     context={authState.status === "authenticated" ? NETWORK_LABELS[networkState.status] : undefined}
