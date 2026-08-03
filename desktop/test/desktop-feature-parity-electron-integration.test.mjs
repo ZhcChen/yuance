@@ -9,9 +9,10 @@ import { assertFeatureParityReport, verifyDesktopFeatureParityArtifacts } from "
 test("feature parity report accepts only bounded public metrics", () => {
   const report = validReport();
   assert.equal(assertFeatureParityReport(report), report);
+  assert.equal(assertFeatureParityReport({ ...report, messageRefresh: false, releaseVersion: false }).messageRefresh, false);
   for (const mutation of [
-    { network: false }, { files: false }, { businessFiles: false }, { sharedUi: false }, { keyboardFocus: false }, { liveRegions: 0 }, { messageRefresh: false },
-    { releaseVersion: false }, { foregroundSuppressed: false }, { activeOperations: 1 },
+    { network: false }, { files: false }, { businessFiles: false }, { sharedUi: false }, { keyboardFocus: false }, { liveRegions: 0 }, { messageRefresh: "false" },
+    { releaseVersion: null }, { foregroundSuppressed: false }, { activeOperations: 1 },
     { spoolFiles: 1 }, { durationMs: 180_001 }, { reportBytes: 131_073 }, { url: "https://secret" },
   ]) assert.throws(() => assertFeatureParityReport({ ...report, ...mutation }), /invalid/);
 });
@@ -24,6 +25,15 @@ test("feature parity verifier requires every child report, cleanup and exact byt
   const reportBytes = (await Promise.all(Object.keys(files).map((name) => fs.stat(path.join(root, name))))).reduce((total, stat) => total + stat.size, 0);
   await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), reportBytes }));
   assert.equal((await verifyDesktopFeatureParityArtifacts(root)).report.reportBytes, reportBytes);
+
+  const networkPath = path.join(root, "desktop-network-smoke.json");
+  await fs.writeFile(networkPath, JSON.stringify({ ...files["desktop-network-smoke.json"], credentialRestart: "recovered", messageEvidence: "integration-fallback", messageRefresh: false, releaseVersion: false }));
+  const fallbackReportBytes = (await Promise.all(Object.keys(files).map((name) => fs.stat(path.join(root, name))))).reduce((total, stat) => total + stat.size, 0);
+  await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), messageRefresh: false, releaseVersion: false, reportBytes: fallbackReportBytes }));
+  assert.equal((await verifyDesktopFeatureParityArtifacts(root, { platform: "linux" })).report.messageRefresh, false);
+  await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), reportBytes: fallbackReportBytes }));
+  await assert.rejects(verifyDesktopFeatureParityArtifacts(root, { platform: "linux" }), /message evidence drifted/u);
+
   await fs.rm(path.join(root, "desktop-business-file-cleanup.json"));
   await assert.rejects(verifyDesktopFeatureParityArtifacts(root));
 });

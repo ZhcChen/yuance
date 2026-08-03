@@ -4,10 +4,10 @@ import { fileURLToPath } from "node:url";
 
 import { assertDesktopNetworkSmokeReport } from "./smoke-desktop-network.mjs";
 
-export async function verifyDesktopNetworkArtifacts(root) {
+export async function verifyDesktopNetworkArtifacts(root, { platform = process.platform } = {}) {
   const smoke = JSON.parse(await fs.readFile(path.join(root, "desktop-network-smoke.json"), "utf8"));
   const cleanup = JSON.parse(await fs.readFile(path.join(root, "desktop-network-cleanup.json"), "utf8"));
-  assertDesktopNetworkSmokeReport(smoke);
+  assertDesktopNetworkSmokeReport(smoke, { platform });
   if (cleanup?.kind !== "yuance-desktop-network-cleanup" || cleanup.apiProcess !== "stopped" || cleanup.profile !== "removed") {
     throw new Error("desktop network cleanup evidence is incomplete");
   }

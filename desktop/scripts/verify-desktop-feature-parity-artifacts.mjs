@@ -9,9 +9,9 @@ import { verifyDesktopBusinessFileArtifacts } from "./verify-desktop-business-fi
 const MAX_REPORT_BYTES = 128 * 1024;
 const MAX_DURATION_MS = 3 * 60 * 1_000;
 
-export async function verifyDesktopFeatureParityArtifacts(root) {
+export async function verifyDesktopFeatureParityArtifacts(root, { platform = process.platform } = {}) {
   const [network, file, businessFile] = await Promise.all([
-    verifyDesktopNetworkArtifacts(root),
+    verifyDesktopNetworkArtifacts(root, { platform }),
     verifyDesktopFileTransferArtifacts(root),
     verifyDesktopBusinessFileArtifacts(root),
   ]);
@@ -20,6 +20,10 @@ export async function verifyDesktopFeatureParityArtifacts(root) {
   if (bytes.length > MAX_REPORT_BYTES) throw new Error("desktop feature parity report exceeds its size budget");
   const report = JSON.parse(bytes.toString("utf8"));
   assertFeatureParityReport(report);
+  const packagedMessageEvidence = network.smoke.messageEvidence === "packaged-sse";
+  if (report.messageRefresh !== packagedMessageEvidence || report.releaseVersion !== packagedMessageEvidence) {
+    throw new Error("desktop feature parity message evidence drifted");
+  }
   const ui = JSON.parse(await fs.readFile(path.join(root, "desktop-feature-parity-ui-smoke.json"), "utf8"));
   const uiCleanup = JSON.parse(await fs.readFile(path.join(root, "desktop-feature-parity-ui-cleanup.json"), "utf8"));
   if (ui?.kind !== "yuance-desktop-feature-parity-ui-smoke" || !ui.sharedApp || !ui.restrictedBridge || !ui.semanticMain || !ui.semanticNavigation || !ui.workItemDetail || !ui.workItemEdited || !ui.workItemHandedOff || !ui.commentCreated || !ui.commentEdited || !ui.workItemAttachmentUploaded || !ui.workItemAttachmentDownloaded || !ui.workItemAttachmentRevealed || !ui.commentAttachmentUploaded || !ui.commentAttachmentDownloaded || !ui.commentAttachmentRevealed || !ui.messageTargetOpened || !ui.messageTargetFocused || !ui.permissionDenied || !ui.permissionInputPreserved || !ui.validationError || !ui.validationFocused || !ui.notFoundVisible || !ui.offlineStateVisible || !ui.offlineRecoveryVisible || !ui.interruptionRecovered || ui.interruptionCycles !== 3 || !ui.hiddenWindow || ui.lifecycleCycles !== 3 || !ui.networkRecovered || !ui.postResumeRefresh || !ui.keyboardFocus || !Number.isSafeInteger(ui.liveRegions) || ui.liveRegions < 1 || ui.accessibilityViolations !== 0 || ui.genericBridgeMethods !== 0 || !Number.isSafeInteger(ui.processCount) || ui.processCount < 1 || ui.processCount > 32 || !Number.isSafeInteger(ui.workingSetKb) || ui.workingSetKb < 1 || ui.workingSetKb > 1_048_576 || !Number.isSafeInteger(ui.cpuPercent) || ui.cpuPercent < 0 || ui.cpuPercent > 3_200 || !Number.isSafeInteger(ui.profileBytes) || ui.profileBytes < 1 || ui.profileBytes > 268_435_456) throw new Error("desktop feature parity UI evidence is incomplete");
@@ -32,7 +36,7 @@ export function assertFeatureParityReport(report) {
   if (report?.kind !== "yuance-desktop-feature-parity-smoke"
     || !report.network || !report.files || !report.businessFiles
     || !report.sharedUi || !report.keyboardFocus || !Number.isSafeInteger(report.liveRegions) || report.liveRegions < 1
-    || !report.messageRefresh || !report.releaseVersion || !report.foregroundSuppressed
+    || typeof report.messageRefresh !== "boolean" || typeof report.releaseVersion !== "boolean" || !report.foregroundSuppressed
     || report.activeOperations !== 0 || report.spoolFiles !== 0
     || !Number.isSafeInteger(report.durationMs) || report.durationMs < 0 || report.durationMs > MAX_DURATION_MS
     || !Number.isSafeInteger(report.reportBytes) || report.reportBytes < 1 || report.reportBytes > MAX_REPORT_BYTES
