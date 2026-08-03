@@ -20,22 +20,25 @@ test("feature parity report accepts only bounded public metrics", () => {
 test("feature parity verifier requires every child report, cleanup and exact byte count", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-feature-parity-artifacts-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const files = childArtifacts();
+  const platform = "linux";
+  const files = childArtifacts(platform);
   await Promise.all(Object.entries(files).map(([name, value]) => fs.writeFile(path.join(root, name), typeof value === "string" ? value : JSON.stringify(value))));
   const reportBytes = (await Promise.all(Object.keys(files).map((name) => fs.stat(path.join(root, name))))).reduce((total, stat) => total + stat.size, 0);
-  await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), reportBytes }));
-  assert.equal((await verifyDesktopFeatureParityArtifacts(root)).report.reportBytes, reportBytes);
+  const packagedMessages = platform === "darwin";
+  await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), messageRefresh: packagedMessages, releaseVersion: packagedMessages, reportBytes }));
+  assert.equal((await verifyDesktopFeatureParityArtifacts(root, { platform })).report.reportBytes, reportBytes);
 
   const networkPath = path.join(root, "desktop-network-smoke.json");
   await fs.writeFile(networkPath, JSON.stringify({ ...files["desktop-network-smoke.json"], credentialRestart: "recovered", messageEvidence: "integration-fallback", messageRefresh: false, releaseVersion: false }));
   const fallbackReportBytes = (await Promise.all(Object.keys(files).map((name) => fs.stat(path.join(root, name))))).reduce((total, stat) => total + stat.size, 0);
   await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), messageRefresh: false, releaseVersion: false, reportBytes: fallbackReportBytes }));
-  assert.equal((await verifyDesktopFeatureParityArtifacts(root, { platform: "linux" })).report.messageRefresh, false);
+  assert.equal((await verifyDesktopFeatureParityArtifacts(root, { platform })).report.messageRefresh, false);
   await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), reportBytes: fallbackReportBytes }));
-  await assert.rejects(verifyDesktopFeatureParityArtifacts(root, { platform: "linux" }), /message evidence drifted/u);
+  await assert.rejects(verifyDesktopFeatureParityArtifacts(root, { platform }), /message evidence drifted/u);
 
+  await fs.writeFile(path.join(root, "desktop-feature-parity-smoke.json"), JSON.stringify({ ...validReport(), messageRefresh: false, releaseVersion: false, reportBytes: fallbackReportBytes }));
   await fs.rm(path.join(root, "desktop-business-file-cleanup.json"));
-  await assert.rejects(verifyDesktopFeatureParityArtifacts(root));
+  await assert.rejects(verifyDesktopFeatureParityArtifacts(root, { platform }));
 });
 
 test("desktop security workflow runs the same feature parity gate on every runner", async () => {
@@ -68,9 +71,9 @@ function validReport() {
   return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, sharedUi: true, keyboardFocus: true, liveRegions: 1, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
 }
 
-function childArtifacts() {
+function childArtifacts(platform = process.platform) {
   return {
-    "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: process.platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: process.platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: process.platform === "darwin", releaseVersion: process.platform === "darwin", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
+    "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: platform === "darwin", releaseVersion: platform === "darwin", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
     "desktop-network-cleanup.json": { kind: "yuance-desktop-network-cleanup", apiProcess: "stopped", profile: "removed" },
     "desktop-network-api.log": "",
     "desktop-file-transfer-smoke.json": { kind: "yuance-desktop-file-smoke", upload: true, download: true, hashMatch: true, staleCapabilityRejected: true, byteSize: 34, activeOperations: 0, spoolFiles: 0 },
