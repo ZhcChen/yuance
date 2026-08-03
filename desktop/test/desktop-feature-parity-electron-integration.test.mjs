@@ -28,6 +28,15 @@ test("feature parity verifier requires every child report, cleanup and exact byt
   await assert.rejects(verifyDesktopFeatureParityArtifacts(root));
 });
 
+test("desktop security workflow runs the same feature parity gate on every runner", async () => {
+  const workflow = await fs.readFile(new URL("../../.github/workflows/desktop-security.yml", import.meta.url), "utf8");
+  assert.match(workflow, /--test device_business_parity_flow/u);
+  assert.equal((workflow.match(/smoke:desktop-feature-parity -- dist/gu) || []).length, 2);
+  assert.match(workflow, /runner\.os != 'Linux'[\s\S]*smoke:desktop-feature-parity -- dist/u);
+  assert.match(workflow, /runner\.os == 'Linux'[\s\S]*xvfb-run -a npm --prefix desktop run smoke:desktop-feature-parity -- dist/u);
+  assert.match(workflow, /verify:desktop-feature-parity-artifacts/u);
+});
+
 function validReport() {
   return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
 }

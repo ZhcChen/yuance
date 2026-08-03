@@ -82,7 +82,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
 
       - name: Run focused Device API tests
-        run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_sse_authorization_flow --test device_file_transfer_flow
+        run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_business_parity_flow --test device_sse_authorization_flow --test device_file_transfer_flow
 
       - name: Run desktop checks
         run: npm --prefix desktop run check
@@ -120,41 +120,24 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a npm --prefix desktop run smoke:app-protocol -- dist
 
-      - name: Smoke unpacked desktop network
-        if: runner.os == 'Windows'
-        run: npm --prefix desktop run smoke:desktop-network -- dist
-
-      - name: Smoke Linux unpacked desktop network
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop run smoke:desktop-network -- dist
-          '
-
-      - name: Smoke unpacked desktop file transfer
+      - name: Smoke unpacked desktop feature parity
         if: runner.os != 'Linux'
-        run: npm --prefix desktop run smoke:desktop-file-transfer -- dist
+        run: npm --prefix desktop run smoke:desktop-feature-parity -- dist
 
-      - name: Smoke Linux unpacked desktop file transfer
+      - name: Smoke Linux unpacked desktop feature parity
         if: runner.os == 'Linux'
         shell: bash
         run: |
           dbus-run-session -- bash -euo pipefail -c '
             eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop run smoke:desktop-file-transfer -- dist
+            xvfb-run -a npm --prefix desktop run smoke:desktop-feature-parity -- dist
           '
 
       - name: Scan source, fixture, report, ASAR, and unpacked artifacts
         run: npm --prefix desktop run scan:credential-leaks
 
-      - name: Verify desktop network cleanup evidence
-        if: runner.os != 'macOS'
-        run: npm --prefix desktop run verify:desktop-network-artifacts
-
-      - name: Verify desktop file transfer cleanup evidence
-        run: npm --prefix desktop run verify:desktop-file-transfer-artifacts
+      - name: Verify desktop feature parity evidence
+        run: npm --prefix desktop run verify:desktop-feature-parity-artifacts
 
       - name: Verify native safeStorage boundary
         if: runner.os == 'Windows'
