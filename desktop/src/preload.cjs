@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 const HOST_STATE_CHANNEL = "yuance:host-state";
 const NOTIFICATION_CLICK_CHANNEL = "yuance:notification-click";
 const NETWORK_STATE_CHANNEL = "yuance:network-state";
+const BUSINESS_EXECUTE_CHANNEL = "yuance:business-execute";
 const PUBLIC_HOST_STATES = new Set([
   "starting",
   "unauthenticated",
@@ -45,7 +46,7 @@ ipcRenderer.on(NETWORK_STATE_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 3,
+  schemaVersion: 4,
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
@@ -76,6 +77,9 @@ const bridge = Object.freeze({
       catch (error) { networkStateSubscribers.delete(callback); throw error; }
       return () => networkStateSubscribers.delete(callback);
     },
+  }),
+  business: Object.freeze({
+    execute(operation, input) { return ipcRenderer.invoke(BUSINESS_EXECUTE_CHANNEL, { operation, input }); },
   }),
   files: Object.freeze({
     choose() { return ipcRenderer.invoke("yuance:file-choose"); },

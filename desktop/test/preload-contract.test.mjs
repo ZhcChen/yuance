@@ -41,19 +41,30 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 3);
+  assert.equal(bridge.schemaVersion, 4);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.notifications), true);
   assert.equal(Object.isFrozen(bridge.auth), true);
   assert.equal(Object.isFrozen(bridge.network), true);
   assert.equal(Object.isFrozen(bridge.files), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "files", "hostState", "network", "notifications", "schemaVersion"]);
+  assert.equal(Object.isFrozen(bridge.business), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "business", "files", "hostState", "network", "notifications", "schemaVersion"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   await bridge.notifications.show({ title: "更新" });
   assert.deepEqual(invocations, [["yuance:notify", { title: "更新" }]]);
+});
+
+test("business bridge exposes only one semantic execute command", async () => {
+  const { bridge, invocations } = await executePreload();
+  assert.deepEqual(Object.keys(bridge.business), ["execute"]);
+  await bridge.business.execute("workitem.detail", { itemKey: "DEMO-1" });
+  assert.equal(invocations.length, 1);
+  assert.equal(invocations[0][0], "yuance:business-execute");
+  assert.equal(invocations[0][1].operation, "workitem.detail");
+  assert.deepEqual({ ...invocations[0][1].input }, { itemKey: "DEMO-1" });
 });
 
 test("file bridge exposes only fixed host-delegated commands", async () => {

@@ -36,6 +36,7 @@ import { createHostStatePublisher } from "./ipc/host-state.mjs";
 import { registerAuthCommandHandlers } from "./ipc/auth-commands.mjs";
 import { createNetworkStatePublisher } from "./ipc/network-state.mjs";
 import { registerFileCommandHandlers } from "./ipc/file-commands.mjs";
+import { registerBusinessCommandHandlers } from "./ipc/business-commands.mjs";
 import { createFileStateController } from "./ipc/file-state.mjs";
 import {
   createIpcSenderPolicy,
@@ -109,6 +110,7 @@ let mainWindow = null;
 let credentialRuntime = null;
 let networkCoordinator = null;
 let fileRuntime = null;
+let businessTransport = null;
 let credentialRuntimeGeneration = 0;
 const hostStatePublisher = createHostStatePublisher();
 const networkStatePublisher = createNetworkStatePublisher();
@@ -116,6 +118,7 @@ let disposeAuthCommands = () => {};
 let disposeNetworkPowerLifecycle = () => {};
 let disposeFileCommands = () => {};
 let disposeFilePowerLifecycle = () => {};
+let disposeBusinessCommands = () => {};
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
@@ -654,6 +657,7 @@ async function waitForSmokeConnected(connected) {
 
 async function initializeDesktopCredentialRuntime() {
   const generation = ++credentialRuntimeGeneration;
+  businessTransport = null;
   const mode = isDevRuntime ? "development" : "production";
   const origin = resolveDesktopNetworkOrigin({ isDevRuntime });
   const network = await createTrustedNetworkSession({
@@ -720,6 +724,7 @@ async function initializeDesktopCredentialRuntime() {
   } else if (initialized.status === "authenticated") {
     coordinator.start();
   }
+  if (generation === credentialRuntimeGeneration) businessTransport = restTransport;
   if (generation === credentialRuntimeGeneration) await initializeFileRuntime({ generation, runtime, network, profile: enrolled.profile, restTransport });
 }
 
@@ -861,6 +866,14 @@ if (singleInstanceProbe) {
   });
 } else {
   ipcMain.handle("yuance:notify", notifyFromRenderer);
+  disposeBusinessCommands = registerBusinessCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    execute: (operation, input) => {
+      if (!businessTransport) throw Object.assign(new Error("Business transport is unavailable"), { code: "business_unavailable" });
+      return businessTransport.execute(operation, input);
+    },
+  });
   disposeAuthCommands = registerAuthCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
@@ -951,6 +964,9 @@ app.on("before-quit", (event) => {
   if (quitCleanupStarted) return;
   quitCleanupStarted = true;
   credentialRuntimeGeneration += 1;
+  businessTransport = null;
+  disposeBusinessCommands();
+  disposeBusinessCommands = () => {};
   disposeNetworkPowerLifecycle();
   disposeNetworkPowerLifecycle = () => {};
   networkCoordinator?.stop();
