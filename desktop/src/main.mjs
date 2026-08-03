@@ -493,6 +493,7 @@ async function runFeatureParityUiSmoke(window) {
       offlineStateVisible: ${business.offlineStateVisible},
       offlineRecoveryVisible: ${business.offlineRecoveryVisible},
       interruptionRecovered: ${business.interruptionRecovered},
+      interruptionCycles: ${business.interruptionCycles},
       processCount: ${resources.processCount},
       workingSetKb: ${resources.workingSetKb},
       cpuPercent: ${resources.cpuPercent},
@@ -652,14 +653,18 @@ async function runFeatureParityBusinessUiSmoke(window) {
     return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
   })()`), 10_000, "comment attachment reveal");
 
-  await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-stop");
-  await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, "network interruption");
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const shell = document.querySelector('.host-status-shell');
-    return Boolean(shell && !document.querySelector('.work-item-action-form') && [...shell.querySelectorAll('button')].some((value) => !value.disabled));
-  })()`), 10_000, "offline state shell");
-  await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-start");
-  await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, "network interruption recovery");
+  for (let index = 0; index < 3; index += 1) {
+    await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-stop");
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, `network interruption ${index + 1}`);
+    if (index === 0) {
+      await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+        const shell = document.querySelector('.host-status-shell');
+        return Boolean(shell && !document.querySelector('.work-item-action-form') && [...shell.querySelectorAll('button')].some((value) => !value.disabled));
+      })()`), 10_000, "offline state shell");
+    }
+    await writeFeatureParityUiEvent("yuance-desktop-feature-parity-ui-api-start");
+    await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "online", 30_000, `network interruption recovery ${index + 1}`);
+  }
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const logout = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
     return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
@@ -672,8 +677,12 @@ async function runFeatureParityBusinessUiSmoke(window) {
   })()`, "logout");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "开始授权")`), 30_000, "member authorization shell");
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "开始授权")?.click()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.host-status-shell') && Boolean(document.querySelector('main'))`), 30_000, "member shared app load");
-  await window.webContents.executeJavaScript(`[...document.querySelectorAll('nav[aria-label="应用导航"] a')].find((value) => value.textContent.includes("消息中心"))?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.host-status-shell') && [...document.querySelectorAll('nav[aria-label="应用导航"] a')].some((value) => value.textContent.includes("消息中心"))`), 30_000, "member shared app load");
+  await executeFeatureParityUiScript(window, `(() => {
+    const link = [...document.querySelectorAll('nav[aria-label="应用导航"] a')].find((value) => value.textContent.includes("消息中心"));
+    if (!link) throw new Error("message navigation is unavailable");
+    link.click();
+  })()`, "message navigation");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.message-row button'))`), 30_000, "message list");
   await window.webContents.executeJavaScript(`document.querySelector('.message-row button')?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.message-list') && document.querySelector('h1') === document.activeElement`), 30_000, "message target focus");
@@ -731,6 +740,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     offlineStateVisible: true,
     offlineRecoveryVisible: true,
     interruptionRecovered: true,
+    interruptionCycles: 3,
   });
 }
 

@@ -45,7 +45,7 @@ async function smokeDesktopUiParity(inputPath, { platform }) {
   const fixture = await startRealApiFixture({ seedDemo: true });
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-feature-ui-"));
   await fs.mkdir(path.join(profile, "Downloads"), { recursive: true });
-  await fs.writeFile(path.join(profile, "fixture-upload.txt"), "packaged feature parity attachment\n", { mode: 0o600 });
+  await fs.writeFile(path.join(profile, "fixture-upload.txt"), Buffer.alloc(1024 * 1024, 0x61), { mode: 0o600 });
   const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
   await fs.mkdir(outputDirectory, { recursive: true });
   const outputPath = path.join(outputDirectory, "desktop-feature-parity-ui-smoke.json");
@@ -142,11 +142,12 @@ function assertUiReport(report) {
     offlineStateVisible: report?.offlineStateVisible === true,
     offlineRecoveryVisible: report?.offlineRecoveryVisible === true,
     interruptionRecovered: report?.interruptionRecovered === true,
+    interruptionCycles: report?.interruptionCycles === 3,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     accessibilityViolations: report?.accessibilityViolations === 0,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "accessibilityViolations,commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,interruptionRecovered,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,notFoundVisible,offlineRecoveryVisible,offlineStateVisible,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
+    shape: report && Object.keys(report).sort().join(",") === "accessibilityViolations,commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,interruptionCycles,interruptionRecovered,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,notFoundVisible,offlineRecoveryVisible,offlineStateVisible,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
   if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
