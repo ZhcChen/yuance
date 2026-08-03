@@ -35,13 +35,14 @@ async function executePreload() {
     },
     Object,
     Set,
+    crypto: { randomUUID: () => "12345678-1234-4123-8123-123456789abc" },
   });
   return { bridge: exposed, invocations, listeners };
 }
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 4);
+  assert.equal(bridge.schemaVersion, 5);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.notifications), true);
@@ -69,7 +70,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "uploadCanary"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "uploadCanary", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();
@@ -78,6 +79,20 @@ test("file bridge exposes only fixed host-delegated commands", async () => {
     ["yuance:file-upload-canary", "yfc_opaque"],
     ["yuance:file-download-canary", undefined],
   ]);
+});
+
+test("attachment upload correlates fixed progress stages and removes its listener", async () => {
+  const { bridge, invocations, listeners } = await executePreload();
+  const stages = [];
+  const pending = bridge.files.uploadWorkItemAttachment({ itemKey: "YCE-TASK-2", fileCapability: "yfc_opaque" }, (stage) => stages.push(stage));
+  const payload = invocations[0][1];
+  listeners.get("yuance:file-attachment-progress")({}, { operationId: "other", stage: "signing" });
+  listeners.get("yuance:file-attachment-progress")({}, { operationId: payload.operationId, stage: "private-stage" });
+  listeners.get("yuance:file-attachment-progress")({}, { operationId: payload.operationId, stage: "uploading", url: "https://secret" });
+  await pending;
+  assert.deepEqual(stages, ["uploading"]);
+  assert.equal(listeners.has("yuance:file-attachment-progress"), false);
+  assert.deepEqual({ ...payload.input }, { itemKey: "YCE-TASK-2", fileCapability: "yfc_opaque" });
 });
 
 test("auth bridge exposes only parameter-free semantic commands", async () => {

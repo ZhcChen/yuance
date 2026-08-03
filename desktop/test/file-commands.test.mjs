@@ -6,7 +6,8 @@ import { FILE_CHANNELS, registerFileCommandHandlers } from "../src/ipc/file-comm
 function fixture() {
   const handlers = new Map();
   const calls = [];
-  const event = { sender: { id: 7 }, senderFrame: { routingId: 11 } };
+  const senderListeners = new Map();
+  const event = { sender: { id: 7, send: (...args) => calls.push(["send", ...args]), once: (name, listener) => senderListeners.set(name, listener), removeListener: (name, listener) => { if (senderListeners.get(name) === listener) senderListeners.delete(name); }, isDestroyed: () => false }, senderFrame: { routingId: 11 } };
   const dispose = registerFileCommandHandlers({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), removeHandler: (channel) => handlers.delete(channel) },
     assertSender: (actual) => { calls.push(["sender", actual]); if (actual !== event) throw new Error("untrusted secret"); },
@@ -16,6 +17,12 @@ function fixture() {
     issueTransferGrant: async (purpose, binding) => { calls.push(["grant", purpose, binding]); return `ytg_${purpose}`; },
     uploadExecutor: { execute: async (input) => { calls.push(["upload", input]); return { status: "completed", byteSize: 34, url: "https://secret" }; } },
     downloadExecutor: { execute: async (input) => { calls.push(["download", input]); return { status: "completed", byteSize: 34, filename: "canary.txt", path: "/secret" }; } },
+    attachmentCoordinator: {
+      uploadWorkItemAttachment: async (input) => { calls.push(["attachment-upload", input]); input.onStage("registering"); input.onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
+      uploadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-upload", input]); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
+      downloadWorkItemAttachment: async (input) => { calls.push(["attachment-download", input]); return { status: "completed", filename: "report.txt", byteSize: 12, path: "/secret" }; },
+      downloadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-download", input]); return { status: "cancelled" }; },
+    },
   });
   return { handlers, calls, event, dispose };
 }
@@ -45,3 +52,28 @@ test("file commands reject extensible payloads and invalid opaque IDs", async ()
   await assert.rejects(value.handlers.get(FILE_CHANNELS.uploadCanary)(value.event, "C:\\secret"), (error) => error.code === "file_capability_invalid");
   assert.equal(value.calls.some(([name]) => ["choose", "grant", "upload", "download"].includes(name)), false);
 });
+
+test("business attachment commands publish bounded progress and public results", async () => {
+  const value = fixture();
+  const operationId = "12345678-1234-4123-8123-123456789abc";
+  const result = await value.handlers.get(FILE_CHANNELS.uploadWorkItemAttachment)(value.event, { operationId, input: { itemKey: "YCE-TASK-2", fileCapability: `yfc_${"a".repeat(32)}` } });
+  assert.deepEqual(result, { created: attachment("pending"), uploaded: attachment("uploaded") });
+  assert.deepEqual(value.calls.filter(([name]) => name === "send"), [
+    ["send", FILE_CHANNELS.attachmentProgress, { operationId, stage: "registering" }],
+    ["send", FILE_CHANNELS.attachmentProgress, { operationId, stage: "uploading" }],
+  ]);
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadWorkItemAttachment)(value.event, { itemKey: "YCE-TASK-2", attachmentId: 9, suggestedFilename: "ignored.txt" }), { status: "completed", filename: "report.txt", byteSize: 12 });
+  assert.equal(JSON.stringify(result).includes("/secret"), false);
+});
+
+test("business attachment commands reject injected primitives before coordinator access", async () => {
+  const value = fixture();
+  const channel = value.handlers.get(FILE_CHANNELS.uploadWorkItemAttachment);
+  await assert.rejects(channel(value.event, { operationId: "not-random", input: { itemKey: "YCE-TASK-2", fileCapability: `yfc_${"a".repeat(32)}` } }), (error) => error.code === "file_unavailable");
+  await assert.rejects(channel(value.event, { operationId: "12345678-1234-4123-8123-123456789abc", input: { itemKey: "YCE-TASK-2", fileCapability: `yfc_${"a".repeat(32)}`, url: "https://secret" } }), (error) => error.code === "file_unavailable");
+  assert.equal(value.calls.some(([name]) => name === "attachment-upload"), false);
+});
+
+function attachment(status) {
+  return { id: 9, filename: "report.txt", content_type: "text/plain", byte_size: 12, status, created_by: "Alice", created_at: "2026-08-03T00:00:00Z" };
+}

@@ -4,6 +4,8 @@ const HOST_STATE_CHANNEL = "yuance:host-state";
 const NOTIFICATION_CLICK_CHANNEL = "yuance:notification-click";
 const NETWORK_STATE_CHANNEL = "yuance:network-state";
 const BUSINESS_EXECUTE_CHANNEL = "yuance:business-execute";
+const ATTACHMENT_PROGRESS_CHANNEL = "yuance:file-attachment-progress";
+const ATTACHMENT_STAGES = new Set(["registering", "signing", "uploading", "confirming"]);
 const PUBLIC_HOST_STATES = new Set([
   "starting",
   "unauthenticated",
@@ -46,7 +48,7 @@ ipcRenderer.on(NETWORK_STATE_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 4,
+  schemaVersion: 5,
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
@@ -85,6 +87,10 @@ const bridge = Object.freeze({
     choose() { return ipcRenderer.invoke("yuance:file-choose"); },
     uploadCanary(capability) { return ipcRenderer.invoke("yuance:file-upload-canary", capability); },
     downloadCanary() { return ipcRenderer.invoke("yuance:file-download-canary"); },
+    uploadWorkItemAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-work-item-attachment", input, onStage); },
+    uploadWorkItemCommentAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-work-item-comment-attachment", input, onStage); },
+    downloadWorkItemAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-attachment", input); },
+    downloadWorkItemCommentAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-comment-attachment", input); },
   }),
   notifications: Object.freeze({
     show(payload) {
@@ -100,5 +106,14 @@ const bridge = Object.freeze({
     },
   }),
 });
+
+function invokeAttachmentUpload(channel, input, onStage) {
+  const operationId = globalThis.crypto.randomUUID();
+  const listener = (_event, value) => {
+    if (value && value.operationId === operationId && ATTACHMENT_STAGES.has(value.stage) && typeof onStage === "function") onStage(value.stage);
+  };
+  ipcRenderer.on(ATTACHMENT_PROGRESS_CHANNEL, listener);
+  return ipcRenderer.invoke(channel, { operationId, input }).finally(() => ipcRenderer.removeListener(ATTACHMENT_PROGRESS_CHANNEL, listener));
+}
 
 contextBridge.exposeInMainWorld("yuanceDesktop", bridge);

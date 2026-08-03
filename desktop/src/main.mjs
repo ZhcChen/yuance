@@ -58,6 +58,8 @@ import { createTransferGrantVault } from "./files/transfer-grant-vault.mjs";
 import { parseTransferContract } from "./files/transfer-contract.mjs";
 import { createUploadExecutor } from "./files/upload-executor.mjs";
 import { createDownloadExecutor } from "./files/download-executor.mjs";
+import { createBusinessAttachmentCoordinator } from "./files/business-attachment-coordinator.mjs";
+import { createAttachmentOperationRegistry } from "./network/attachment-operation-registry.mjs";
 import { createDownloadTargetManager } from "./files/download-target.mjs";
 import { loadWindowsFileGuard } from "./files/windows-file-guard.mjs";
 import {
@@ -743,6 +745,17 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
   const fileDialog = createFileDialog({ dialog, spool, vault: fileVault });
   const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
   const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
+  const attachmentRestTransport = createRestTransport({ profile, credentialRuntime: runtime, fetchImpl: network.fetch, registry: createAttachmentOperationRegistry() });
+  const attachmentCoordinator = createBusinessAttachmentCoordinator({
+    restTransport: attachmentRestTransport,
+    fileVault,
+    grantVault,
+    uploadExecutor,
+    downloadExecutor,
+    apiOrigin: profile.origin,
+    allowLoopbackHttp: isDevRuntime,
+    allowedRelativePaths: isDevRuntime ? { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" } : {},
+  });
   const getBinding = (event, purpose) => Object.freeze({
     ...runtime.fileBindingVersion(),
     webContentsId: event.sender.id,
@@ -754,7 +767,7 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
     const contract = parseTransferContract(raw, { apiOrigin: profile.origin, expectedPurpose: purpose, allowLoopbackHttp: isDevRuntime });
     return grantVault.issue(contract, binding).grant;
   };
-  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor });
+  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator });
   const onSuspend = () => { state.invalidateAll().catch(() => {}); };
   powerMonitor.on("suspend", onSuspend);
   disposeFilePowerLifecycle = () => powerMonitor.removeListener("suspend", onSuspend);
