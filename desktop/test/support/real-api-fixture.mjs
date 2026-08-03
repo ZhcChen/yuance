@@ -108,7 +108,8 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         if (response.status !== 200) throw new Error(`test storage activation failed with ${response.status}`);
       },
       async stopApi() {
-        await stopChild(child);
+        await stopChild(child, { force: true });
+        child = undefined;
       },
       async startApi() {
         await launchApi();
@@ -167,8 +168,9 @@ function run(command, args, options) {
   });
 }
 
-function stopChild(child) {
+function stopChild(child, { force = false } = {}) {
   if (!child || child.exitCode !== null) return Promise.resolve();
+  if (force) return forceStopChild(child);
   return new Promise((resolve) => {
     let settled = false;
     const finish = () => {
@@ -188,8 +190,11 @@ function stopChild(child) {
 
 function forceStopChild(child) {
   if (process.platform !== "win32") {
-    child.kill("SIGKILL");
-    return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, 2_000);
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
+      child.kill("SIGKILL");
+    });
   }
   return new Promise((resolve) => {
     const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
