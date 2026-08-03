@@ -124,10 +124,8 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
     const finishReport = () => {
       if (platform !== "win32") return;
       setTimeout(() => {
-        sideEffect.then(() => finish(() => {
-          child.kill();
-          resolve(report);
-        })).catch((error) => finish(() => reject(error)));
+        sideEffect.then(() => terminateChildProcessTree(child, platform)).then(() => finish(() => resolve(report)))
+          .catch((error) => finish(() => reject(error)));
       }, 5_000).unref();
     };
     child.stdout.setEncoding("utf8").on("data", (chunk) => {
@@ -154,6 +152,20 @@ function runUiSmoke(executable, origin, profile, platform, onValue) {
       try { await sideEffect; } catch (error) { finish(() => reject(error)); return; }
       finish(() => code === 0 && !signal && report ? resolve(report) : reject(new Error(`packaged feature parity UI smoke failed (${signal || code}): ${stderr || stdout}`)));
     });
+  });
+}
+
+function terminateChildProcessTree(child, platform) {
+  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return Promise.resolve();
+  if (platform !== "win32") {
+    child.kill("SIGKILL");
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const killer = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    const timer = setTimeout(resolve, 10_000);
+    killer.once("error", () => { clearTimeout(timer); resolve(); });
+    killer.once("exit", () => { clearTimeout(timer); resolve(); });
   });
 }
 
