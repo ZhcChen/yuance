@@ -34,6 +34,23 @@ test("duplicate auth commands are single-flight in the main process", async () =
   assert.deepEqual(await first, { status: "authenticated" }); assert.deepEqual(await second, { status: "authenticated" });
 });
 
+test("auth commands keep a main-only user-code observer outside renderer payloads", async () => {
+  const handlers = new Map();
+  const observer = () => {};
+  let authorizationOptions;
+  const runtime = runtimeFixture([]);
+  runtime.authorize = async (options) => { authorizationOptions = options; return { status: "authenticated" }; };
+  registerAuthCommandHandlers({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), removeHandler() {} },
+    assertSender() {}, getRuntime: () => runtime, getNetworkCoordinator: () => undefined,
+    openExternal: async () => {}, onUserCode: observer,
+  });
+  assert.deepEqual(await handlers.get(AUTH_CHANNELS.authorize)({}, undefined), { status: "authenticated" });
+  assert.equal(authorizationOptions.onUserCode, observer);
+  assert.deepEqual(Object.keys(authorizationOptions).sort(), ["onUserCode", "openExternal"]);
+  assert.throws(() => registerAuthCommandHandlers({ ipcMain: { handle() {}, removeHandler() {} }, assertSender() {}, getRuntime() {}, getNetworkCoordinator() {}, openExternal() {}, onUserCode: "renderer" }), /onUserCode/);
+});
+
 test("network publisher strips private fields and ignores destroyed windows", () => {
   const publisher = createNetworkStatePublisher();
   assert.deepEqual(publisher.update({ status: "online", token: "secret", endpoint: "https://secret" }), { status: "online" });
