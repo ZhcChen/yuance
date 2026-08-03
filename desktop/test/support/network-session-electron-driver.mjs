@@ -535,6 +535,7 @@ function reportFailure(error) {
     ok: false,
     name: error?.name,
     code: error?.code,
+    diagnosticCode: error?.diagnosticCode,
     status: error?.status,
   })}\n`);
   app.exit(0);

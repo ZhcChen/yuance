@@ -31,7 +31,7 @@ test("fails closed on signed metadata drift before issuing a grant", async () =>
   const coordinator = fixture({ calls, signedAttachment: { ...attachment("pending"), byte_size: 13 } });
   await assert.rejects(
     coordinator.uploadWorkItemAttachment({ itemKey: "YCE-TASK-2", fileCapability: capability, binding, onStage: () => {}, signal: undefined }),
-    (error) => error.code === "attachment_upload_partial" && error.created.id === 9,
+    (error) => error.code === "attachment_upload_partial" && error.created.id === 9 && error.diagnosticCode === "TypeError" && !JSON.stringify(error).includes("diagnosticCode"),
   );
   assert.equal(calls.some(([name]) => name === "issue"), false);
   assert.equal(calls.some(([name]) => name === "upload"), false);

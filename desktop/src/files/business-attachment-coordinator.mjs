@@ -60,7 +60,7 @@ export function createBusinessAttachmentCoordinator({
       return Object.freeze({ created, uploaded });
     } catch (error) {
       if (error?.code === "attachment_confirm_uncertain") throw error;
-      throw publicError("attachment_upload_partial", created);
+      throw publicError("attachment_upload_partial", created, error);
     }
   }
 
@@ -168,8 +168,11 @@ function exactInput(value, keys) {
   if (!isPlainObject(value) || !sameKeys(value, keys)) throw new TypeError("Attachment input is invalid");
 }
 
-function publicError(code, created) {
-  return Object.assign(new Error("Attachment operation failed"), { code, ...(created === undefined ? {} : { created }) });
+function publicError(code, created, cause) {
+  const error = Object.assign(new Error("Attachment operation failed"), { code, ...(created === undefined ? {} : { created }) });
+  const diagnosticCode = typeof cause?.code === "string" && /^[a-z][a-z0-9_]{0,63}$/u.test(cause.code) ? cause.code : cause?.name;
+  if (typeof diagnosticCode === "string" && diagnosticCode.length <= 64) Object.defineProperty(error, "diagnosticCode", { value: diagnosticCode });
+  return error;
 }
 
 function sameKeys(value, expected) {
