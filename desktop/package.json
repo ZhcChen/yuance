@@ -38,7 +38,9 @@
     "verify:release-tag": "node ./scripts/verify-release-version.mjs"
   },
   "dependencies": {
+    "@yuance/frontend-api-client": "file:../frontend/packages/api-client",
     "@yuance/frontend-app-core": "file:../frontend/packages/app-core",
+    "@yuance/frontend-app-shell": "file:../frontend/packages/app-shell",
     "@yuance/frontend-platform-contract": "file:../frontend/packages/platform-contract",
     "@yuance/frontend-ui": "file:../frontend/packages/ui",
     "eventsource-parser": "^3.1.0",
