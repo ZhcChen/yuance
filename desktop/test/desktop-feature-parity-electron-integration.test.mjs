@@ -10,7 +10,7 @@ test("feature parity report accepts only bounded public metrics", () => {
   const report = validReport();
   assert.equal(assertFeatureParityReport(report), report);
   for (const mutation of [
-    { network: false }, { files: false }, { businessFiles: false }, { messageRefresh: false },
+    { network: false }, { files: false }, { businessFiles: false }, { sharedUi: false }, { keyboardFocus: false }, { liveRegions: 0 }, { messageRefresh: false },
     { releaseVersion: false }, { foregroundSuppressed: false }, { activeOperations: 1 },
     { spoolFiles: 1 }, { durationMs: 180_001 }, { reportBytes: 131_073 }, { url: "https://secret" },
   ]) assert.throws(() => assertFeatureParityReport({ ...report, ...mutation }), /invalid/);
@@ -37,8 +37,13 @@ test("desktop security workflow runs the same feature parity gate on every runne
   assert.match(workflow, /verify:desktop-feature-parity-artifacts/u);
 });
 
+test("packaged UI smoke requires an explicit loopback port", async () => {
+  const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(main, /origin\.hostname !== "127\.0\.0\.1" \|\| !origin\.port/u);
+});
+
 function validReport() {
-  return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
+  return { kind: "yuance-desktop-feature-parity-smoke", network: true, files: true, businessFiles: true, sharedUi: true, keyboardFocus: true, liveRegions: 1, messageRefresh: true, releaseVersion: true, foregroundSuppressed: true, activeOperations: 0, spoolFiles: 0, durationMs: 10_000, reportBytes: 1024 };
 }
 
 function childArtifacts() {
@@ -50,5 +55,7 @@ function childArtifacts() {
     "desktop-file-transfer-cleanup.json": { kind: "yuance-desktop-file-cleanup", apiProcess: "stopped", profile: "removed" },
     "desktop-business-file-smoke.json": { kind: "yuance-desktop-business-file-smoke", itemUploaded: true, commentUploaded: true, downloadsMatch: true, revealCount: 2, cancelled: true, stageCount: 8, activeOperations: 0, spoolFiles: 0 },
     "desktop-business-file-cleanup.json": { kind: "yuance-desktop-business-file-cleanup", apiProcess: "stopped", profile: "removed" },
+    "desktop-feature-parity-ui-smoke.json": { kind: "yuance-desktop-feature-parity-ui-smoke", sharedApp: true, restrictedBridge: true, semanticMain: true, semanticNavigation: true, liveRegions: 1, keyboardFocus: true, genericBridgeMethods: 0 },
+    "desktop-feature-parity-ui-cleanup.json": { kind: "yuance-desktop-feature-parity-ui-cleanup", apiProcess: "stopped", profile: "removed" },
   };
 }

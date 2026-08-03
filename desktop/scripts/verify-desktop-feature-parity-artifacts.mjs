@@ -20,18 +20,23 @@ export async function verifyDesktopFeatureParityArtifacts(root) {
   if (bytes.length > MAX_REPORT_BYTES) throw new Error("desktop feature parity report exceeds its size budget");
   const report = JSON.parse(bytes.toString("utf8"));
   assertFeatureParityReport(report);
+  const ui = JSON.parse(await fs.readFile(path.join(root, "desktop-feature-parity-ui-smoke.json"), "utf8"));
+  const uiCleanup = JSON.parse(await fs.readFile(path.join(root, "desktop-feature-parity-ui-cleanup.json"), "utf8"));
+  if (ui?.kind !== "yuance-desktop-feature-parity-ui-smoke" || !ui.sharedApp || !ui.restrictedBridge || !ui.semanticMain || !ui.semanticNavigation || !ui.keyboardFocus || !Number.isSafeInteger(ui.liveRegions) || ui.liveRegions < 1 || ui.genericBridgeMethods !== 0) throw new Error("desktop feature parity UI evidence is incomplete");
+  if (uiCleanup?.kind !== "yuance-desktop-feature-parity-ui-cleanup" || uiCleanup.apiProcess !== "stopped" || uiCleanup.profile !== "removed") throw new Error("desktop feature parity UI cleanup evidence is incomplete");
   if (report.reportBytes !== await supportingReportBytes(root)) throw new Error("desktop feature parity report byte count drifted");
-  return Object.freeze({ report, network, file, businessFile });
+  return Object.freeze({ report, network, file, businessFile, ui, uiCleanup });
 }
 
 export function assertFeatureParityReport(report) {
   if (report?.kind !== "yuance-desktop-feature-parity-smoke"
     || !report.network || !report.files || !report.businessFiles
+    || !report.sharedUi || !report.keyboardFocus || !Number.isSafeInteger(report.liveRegions) || report.liveRegions < 1
     || !report.messageRefresh || !report.releaseVersion || !report.foregroundSuppressed
     || report.activeOperations !== 0 || report.spoolFiles !== 0
     || !Number.isSafeInteger(report.durationMs) || report.durationMs < 0 || report.durationMs > MAX_DURATION_MS
     || !Number.isSafeInteger(report.reportBytes) || report.reportBytes < 1 || report.reportBytes > MAX_REPORT_BYTES
-    || Object.keys(report).sort().join(",") !== "activeOperations,businessFiles,durationMs,files,foregroundSuppressed,kind,messageRefresh,network,releaseVersion,reportBytes,spoolFiles") {
+    || Object.keys(report).sort().join(",") !== "activeOperations,businessFiles,durationMs,files,foregroundSuppressed,keyboardFocus,kind,liveRegions,messageRefresh,network,releaseVersion,reportBytes,sharedUi,spoolFiles") {
     throw new Error("desktop feature parity report is invalid");
   }
   return report;
@@ -46,6 +51,8 @@ async function supportingReportBytes(root) {
     "desktop-file-transfer-cleanup.json",
     "desktop-business-file-smoke.json",
     "desktop-business-file-cleanup.json",
+    "desktop-feature-parity-ui-smoke.json",
+    "desktop-feature-parity-ui-cleanup.json",
   ];
   const stats = await Promise.all(names.map((name) => fs.stat(path.join(root, name))));
   return stats.reduce((total, stat) => total + stat.size, 0);
