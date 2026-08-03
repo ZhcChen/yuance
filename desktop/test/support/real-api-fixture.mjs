@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const DEFAULT_REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
-export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchImpl = fetch } = {}) {
+export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchImpl = fetch, seedDemo = false } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-real-api-"));
   const databasePath = path.join(root, "yuance.db");
   const logPath = path.join(root, "api.log");
@@ -31,6 +31,7 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
   let stopped = false;
   try {
     await run(path.join(repoRoot, "target", "debug", process.platform === "win32" ? "yuance-api.exe" : "yuance-api"), ["migrate", "up"], { cwd: repoRoot, env });
+    if (seedDemo) await run(binary, ["seed", "demo"], { cwd: repoRoot, env });
     child = spawn(binary, ["serve", `--http-addr=127.0.0.1:${port}`], { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] });
     logStream = createWriteStream(logPath, { flags: "a", mode: 0o600 });
     child.stdout.pipe(logStream, { end: false });
@@ -50,6 +51,16 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         const cookies = response.headers.getSetCookie?.() ?? [];
         const csrfToken = response.headers.get("x-yuance-csrf-token") || (await response.json()).data?.csrf_token;
         return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken });
+      },
+      async loginDemoAdmin() {
+        const response = await fetchImpl(`${origin}/api/v1/auth/login`, {
+          method: "POST", redirect: "manual", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username: "yuance_admin", password: "Yuance@2026Dev!" }),
+        });
+        if (response.status !== 200) throw new Error(`demo admin login failed with ${response.status}`);
+        const cookies = response.headers.getSetCookie?.() ?? [];
+        const body = await response.json();
+        return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken: response.headers.get("x-yuance-csrf-token") || body.data?.csrf_token });
       },
       async activateTestStorage(session) {
         const body = new URLSearchParams({

@@ -1,5 +1,6 @@
 const JSON_CONTENT_TYPE = /^application\/json(?:\s*;|$)/iu;
 const ERROR_CODE = /^[a-z][a-z0-9_]{0,63}$/u;
+const DATA_KINDS = new Set(["object", "array", "nullable-object"]);
 
 export class ResponseContractError extends Error {
   constructor(code, message, { status } = {}) {
@@ -16,10 +17,12 @@ export async function parseJsonResponse(response, {
   signal = new AbortController().signal,
   errorFactory = defaultErrorFactory,
   allowEmptyUrl = false,
+  dataKind = "object",
 } = {}) {
   if (!response || typeof response.status !== "number") throw new TypeError("response is required");
   if (typeof expectedUrl !== "string" || expectedUrl.length === 0) throw new TypeError("expectedUrl is required");
   if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1) throw new TypeError("maxResponseBytes is invalid");
+  if (!DATA_KINDS.has(dataKind)) throw new TypeError("dataKind is invalid");
   if (response.redirected || (response.status >= 300 && response.status < 400)) {
     throw errorFactory("redirect_not_allowed", "Response redirects are not allowed", { status: response.status });
   }
@@ -35,10 +38,16 @@ export async function parseJsonResponse(response, {
     const code = parsed.error.code;
     throw errorFactory(code, "Request failed", { status: response.status, body: parsed, response });
   }
-  if (!isPlainObject(parsed) || Object.keys(parsed).length !== 1 || !isPlainObject(parsed.data)) {
+  if (!isPlainObject(parsed) || Object.keys(parsed).length !== 1 || !validDataRoot(parsed.data, dataKind)) {
     throw errorFactory("invalid_response", "Response envelope is invalid", { status: response.status });
   }
   return parsed.data;
+}
+
+function validDataRoot(value, dataKind) {
+  if (dataKind === "array") return Array.isArray(value);
+  if (dataKind === "nullable-object") return value === null || isPlainObject(value);
+  return isPlainObject(value);
 }
 
 async function readBoundedJson(response, limit, signal, errorFactory) {

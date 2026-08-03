@@ -70,6 +70,10 @@ async function run() {
       await runRealFileApi({ origin, mode, network, observations });
       return;
     }
+    if (process.argv.includes("--business-api")) {
+      await runRealBusinessApi({ origin, mode, network });
+      return;
+    }
     if (process.argv.includes("--upload")) {
       const content = Buffer.from("yuance-electron-upload-canary");
       const sourcePath = path.join(userDataPath, "upload-source.bin");
@@ -207,6 +211,70 @@ async function runRealFileApi({ origin, mode, network, observations }) {
   runtime.dispose();
   const temporaryFiles = (await fs.readdir(userDataPath)).filter((name) => name.startsWith(".yuance-download-"));
   process.stdout.write(`${JSON.stringify({ kind: "yuance-file-api-result", upload: uploaded.status === "completed", download: downloaded.status === "completed", byteSize: content.length, hashMatch: sourceHash === downloadHash, temporaryFiles: temporaryFiles.length, activeOperations: registry.snapshot().active, observations: observations.filter((value) => value.phase === "transfer") })}\n`);
+  app.exit(0);
+}
+
+async function runRealBusinessApi({ origin, mode, network }) {
+  const stage = (value) => process.stdout.write(`${JSON.stringify({ kind: "yuance-business-stage", stage: value })}\n`);
+  const enrolled = await enrollDesktop({ origin, mode, fetchImpl: network.fetch });
+  stage("enrolled");
+  const runtime = createCredentialRuntime({
+    profile: enrolled.profile,
+    fetchImpl: network.fetch,
+    safeStorage: process.platform === "darwin" ? createEphemeralStorage() : safeStorage,
+    fs,
+    userDataPath,
+    platform: process.platform,
+    installationId: async () => randomUUID(),
+    deviceName: "Yuance Business Integration",
+    clientVersion: "0.1.0",
+  });
+  await runtime.initialize();
+  await runtime.authorize({
+    openExternal: async () => {},
+    onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-business-user-code", userCode })}\n`),
+  });
+  stage("authorized");
+  const rest = createRestTransport({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch });
+  stage("identity");
+  const user = await rest.execute("identity.current", {});
+  stage("topbar");
+  const topbar = await rest.execute("shell.topbar", {});
+  stage("projects");
+  const projects = await rest.execute("project.list", { page: 1, perPage: 20 });
+  stage("current-project");
+  const currentProject = await rest.execute("project.current", {});
+  stage("notifications");
+  const notifications = await rest.execute("notification.list", { filter: "all", page: 1, perPage: 20 });
+  stage("work-items");
+  const workItems = await rest.execute("workitem.list", { projectKey: "YCE", page: 1, perPage: 20 });
+  const itemKey = workItems.items.find((item) => item.key === "YCE-TASK-2")?.key;
+  if (!itemKey) throw new Error("seeded work item is unavailable");
+  stage("detail");
+  const detail = await rest.execute("workitem.detail", { itemKey });
+  stage("comments");
+  const comments = await rest.execute("workitem.comments", { itemKey });
+  stage("attachments");
+  const attachments = await rest.execute("workitem.attachments", { itemKey });
+  stage("comment-attachments");
+  const commentAttachments = comments.length > 0
+    ? await rest.execute("workitem.commentattachments", { itemKey, commentId: comments[0].id })
+    : [];
+  await runtime.logout();
+  runtime.dispose();
+  process.stdout.write(`${JSON.stringify({
+    kind: "yuance-business-api-result",
+    user: user.username === "yuance_admin",
+    topbar: Number.isSafeInteger(topbar.tasks_count),
+    projects: projects.items.length,
+    currentProject: currentProject?.key === "YCE",
+    notifications: notifications.items.length,
+    workItems: workItems.items.length,
+    detail: detail.key === itemKey,
+    comments: comments.length,
+    attachments: attachments.length,
+    commentAttachments: commentAttachments.length,
+  })}\n`);
   app.exit(0);
 }
 

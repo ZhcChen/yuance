@@ -56,6 +56,9 @@ test("builds fixed read-only business paths from validated domain input", () => 
       idempotent: true, method: "GET", path,
     });
   }
+  assert.equal(registry.resolve("workitem.comments", { itemKey: "DEMO-1" }).dataKind, "array");
+  assert.equal(registry.resolve("workitem.attachments", { itemKey: "DEMO-1" }).dataKind, "array");
+  assert.equal(registry.resolve("project.current", {}).dataKind, "nullable-object");
 });
 
 test("rejects invalid business identifiers, filters and pagination", () => {

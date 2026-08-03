@@ -10,6 +10,16 @@ test("parses a bounded same-URL JSON data envelope", async () => {
   }), { ok: true });
 });
 
+test("accepts only the operation-declared data root kind", async () => {
+  const options = { expectedUrl: "https://yuance.example/api/v1/device-session" };
+  assert.deepEqual(await parseJsonResponse(jsonResponse({ data: [1, 2] }), { ...options, dataKind: "array" }), [1, 2]);
+  assert.equal(await parseJsonResponse(jsonResponse({ data: null }), { ...options, dataKind: "nullable-object" }), null);
+  for (const [data, dataKind] of [[[], "object"], [{}, "array"], [[], "nullable-object"]]) {
+    await assert.rejects(parseJsonResponse(jsonResponse({ data }), { ...options, dataKind }), (error) => error.code === "invalid_response");
+  }
+  await assert.rejects(parseJsonResponse(jsonResponse({ data: {} }), { ...options, dataKind: "anything" }), /dataKind is invalid/);
+});
+
 test("rejects redirects, URL drift, content type, oversized JSON, and malformed envelopes", async () => {
   const cases = [
     jsonResponse({ data: {} }, { status: 302 }),

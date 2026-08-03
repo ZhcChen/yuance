@@ -21,7 +21,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["identity.current", noInputOperation("GET", "/api/v1/auth/me", parseUser)],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["project.list", projectListOperation],
-    ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject)],
+    ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["notification.list", notificationListOperation],
     ["notification.target", notificationTargetOperation],
     ["workitem.list", workItemListOperation],
@@ -54,12 +54,12 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
   return Object.freeze({ resolve, begin, abortAll, snapshot: () => Object.freeze({ active: active.size }) });
 }
 
-function descriptor(method, path, parse, idempotent = true) {
-  return Object.freeze({ idempotent, method, path, parse });
+function descriptor(method, path, parse, idempotent = true, dataKind = "object") {
+  return Object.freeze({ idempotent, method, path, parse, ...(dataKind === "object" ? {} : { dataKind }) });
 }
 
-function noInputOperation(method, path, parse, idempotent = true) {
-  return (input) => { exactKeys(input, []); return descriptor(method, path, parse, idempotent); };
+function noInputOperation(method, path, parse, idempotent = true, dataKind = "object") {
+  return (input) => { exactKeys(input, []); return descriptor(method, path, parse, idempotent, dataKind); };
 }
 
 function projectListOperation(input) {
@@ -105,17 +105,17 @@ function workItemDetailOperation(input) {
 
 function workItemCommentsOperation(input) {
   exactKeys(input, ["itemKey"]);
-  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments`, parseComments);
+  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments`, parseComments, true, "array");
 }
 
 function workItemAttachmentsOperation(input) {
   exactKeys(input, ["itemKey"]);
-  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/attachments`, parseAttachments);
+  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/attachments`, parseAttachments, true, "array");
 }
 
 function workItemCommentAttachmentsOperation(input) {
   exactKeys(input, ["commentId", "itemKey"]);
-  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments`, parseAttachments);
+  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments`, parseAttachments, true, "array");
 }
 
 function parseSessionProbe(data, profile) {
