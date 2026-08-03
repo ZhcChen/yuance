@@ -481,6 +481,8 @@ async function runFeatureParityUiSmoke(window) {
       commentAttachmentUploaded: ${business.commentAttachmentUploaded},
       commentAttachmentDownloaded: ${business.commentAttachmentDownloaded},
       commentAttachmentRevealed: ${business.commentAttachmentRevealed},
+      messageTargetOpened: ${business.messageTargetOpened},
+      messageTargetFocused: ${business.messageTargetFocused},
       liveRegions: document.querySelectorAll("[aria-live]").length,
       keyboardFocus: Boolean(active && ["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"].includes(active.tagName)),
       genericBridgeMethods: ["invoke", "request", "fetch", "openExternal", "readFile", "writeFile"].filter((name) => name in bridge).length,
@@ -537,14 +539,14 @@ async function runFeatureParityBusinessUiSmoke(window) {
     const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
     const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
     if (!textarea || !button) throw new Error("comment create form is unavailable");
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI comment");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "@yuance_admin Desktop packaged UI comment");
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
   })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "Desktop packaged UI comment")`), 30_000, "comment create");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), 30_000, "comment create");
 
   await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment");
     const button = row?.querySelector('button[data-comment-edit]');
     if (!button) throw new Error("comment edit action is unavailable");
     button.click();
@@ -554,11 +556,11 @@ async function runFeatureParityBusinessUiSmoke(window) {
     const textarea = document.querySelector('.work-item-comment-edit-form textarea');
     const button = [...document.querySelectorAll('.work-item-comment-edit-form button')].find((value) => value.textContent.trim() === "保存评论");
     if (!textarea || !button) throw new Error("comment edit form is unavailable");
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "Desktop packaged UI comment updated");
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "@yuance_admin Desktop packaged UI comment updated");
     textarea.dispatchEvent(new Event("input", { bubbles: true }));
     button.click();
   })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "Desktop packaged UI comment updated")`), 30_000, "comment edit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), 30_000, "comment edit");
 
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "选择工作项附件")?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"))`), 30_000, "work item attachment upload");
@@ -571,29 +573,38 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-attachments-panel .work-item-attachment-status')?.textContent.includes("已在文件夹中定位")`), 10_000, "work item attachment reveal");
 
   await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "选择评论附件")?.click();
   })()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     return [...(row?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
   })()`), 30_000, "comment attachment upload");
   await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     row?.querySelector('button[aria-label^="下载评论附件"]')?.click();
   })()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     return [...(row?.querySelectorAll('button') || [])].some((value) => value.textContent.trim() === "在文件夹中显示");
   })()`), 30_000, "comment attachment download");
   await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "在文件夹中显示")?.click();
   })()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "Desktop packaged UI comment updated");
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
     return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
   })()`), 10_000, "comment attachment reveal");
+
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "开始授权")`), 30_000, "member authorization shell");
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "开始授权")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.host-status-shell') && Boolean(document.querySelector('main'))`), 30_000, "member shared app load");
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('nav[aria-label="应用导航"] a')].find((value) => value.textContent.includes("消息中心"))?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.message-row button'))`), 30_000, "message list");
+  await window.webContents.executeJavaScript(`document.querySelector('.message-row button')?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.message-list') && document.querySelector('h1') === document.activeElement`), 30_000, "message target focus");
   return Object.freeze({
     workItemDetail: true,
     workItemEdited: true,
@@ -606,6 +617,8 @@ async function runFeatureParityBusinessUiSmoke(window) {
     commentAttachmentUploaded: true,
     commentAttachmentDownloaded: true,
     commentAttachmentRevealed: true,
+    messageTargetOpened: true,
+    messageTargetFocused: true,
   });
 }
 

@@ -62,6 +62,29 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         const body = await response.json();
         return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken: response.headers.get("x-yuance-csrf-token") || body.data?.csrf_token });
       },
+      async prepareDemoDesktopMember(adminSession) {
+        const headers = { cookie: adminSession.cookie, "content-type": "application/json", "x-yuance-csrf-token": adminSession.csrfToken };
+        await expectStatus(fetchImpl(`${origin}/api/v1/system/users`, {
+          method: "POST", redirect: "manual", headers,
+          body: JSON.stringify({ username: "desktop_parity_member", display_name: "Desktop Parity Member", email: "desktop-parity@example.test", mobile: "", password: "DesktopParity2026!", role_code: "member" }),
+        }), 201, "desktop parity member creation");
+        await expectStatus(fetchImpl(`${origin}/api/v1/projects/YCE/members`, {
+          method: "POST", redirect: "manual", headers,
+          body: JSON.stringify({ username: "desktop_parity_member", member_role: "member" }),
+        }), 201, "desktop parity project membership");
+        await expectStatus(fetchImpl(`${origin}/api/v1/work-items/YCE-TASK-2/handoff`, {
+          method: "POST", redirect: "manual", headers,
+          body: JSON.stringify({ status: "in_progress", assignee_username: "desktop_parity_member", body: "Desktop parity notification fixture" }),
+        }), 200, "desktop parity notification handoff");
+        const response = await fetchImpl(`${origin}/api/v1/auth/login`, {
+          method: "POST", redirect: "manual", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ username: "desktop_parity_member", password: "DesktopParity2026!" }),
+        });
+        if (response.status !== 200) throw new Error(`desktop parity member login failed with ${response.status}`);
+        const cookies = response.headers.getSetCookie?.() ?? [];
+        const body = await response.json();
+        return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken: response.headers.get("x-yuance-csrf-token") || body.data?.csrf_token });
+      },
       async activateTestStorage(session) {
         const body = new URLSearchParams({
           _csrf: session.csrfToken,
@@ -152,6 +175,10 @@ function stopChild(child) {
 }
 
 function cookiePair(value) { return value.split(";", 1)[0]; }
+async function expectStatus(responsePromise, expected, label) {
+  const response = await responsePromise;
+  if (response.status !== expected) throw new Error(`${label} failed with ${response.status}`);
+}
 function endStream(stream) {
   if (stream.closed) return Promise.resolve();
   return new Promise((resolve) => stream.end(resolve));
