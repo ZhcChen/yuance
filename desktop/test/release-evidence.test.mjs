@@ -168,11 +168,11 @@ test("normalizes and binds Syft CycloneDX output to the installer", async (t) =>
         { name: CYCLONEDX_ASSET_DIGEST_PROPERTY, value: "0".repeat(64) },
       ],
     },
-    components: [],
   }));
   const digest = "a".repeat(64);
   const document = await bindCycloneDxSbom(filePath, "Yuance-0.1.0-mac-x64.dmg", digest);
   assert.equal(document.metadata.component.name, "Yuance-0.1.0-mac-x64.dmg");
+  assert.deepEqual(document.components, []);
   assert.deepEqual(document.metadata.properties, [
     { name: "syft:source", value: "archive" },
     { name: CYCLONEDX_ASSET_DIGEST_PROPERTY, value: digest },

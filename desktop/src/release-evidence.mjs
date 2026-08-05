@@ -216,7 +216,8 @@ export async function bindCycloneDxSbom(filePath, assetFilename, assetDigest) {
     throw new Error(`CycloneDX SBOM is not valid JSON: ${path.basename(filePath)}.`);
   }
   if (!isPlainObject(document) || document.bomFormat !== "CycloneDX"
-    || typeof document.specVersion !== "string" || !Array.isArray(document.components)) {
+    || typeof document.specVersion !== "string"
+    || (document.components !== undefined && !Array.isArray(document.components))) {
     throw new Error(`CycloneDX SBOM contract is invalid: ${path.basename(filePath)}.`);
   }
   const metadata = isPlainObject(document.metadata) ? document.metadata : {};
@@ -226,6 +227,7 @@ export async function bindCycloneDxSbom(filePath, assetFilename, assetDigest) {
   ) : [];
   const bound = {
     ...document,
+    components: document.components ?? [],
     metadata: {
       ...metadata,
       component: { ...component, name: assetFilename },
