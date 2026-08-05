@@ -1,4 +1,4 @@
-name: Release Desktop
+name: Release Desktop Internal
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - "desktop-v*.*.*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-desktop-${{ github.ref_name }}
@@ -18,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -30,13 +30,12 @@ jobs:
             desktop/package-lock.json
 
       - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
 
-      - name: Install shared frontend dependencies
-        run: npm --prefix frontend ci
-
-      - name: Install desktop dependencies
-        run: npm --prefix desktop ci
+      - name: Install dependencies
+        run: |
+          npm --prefix frontend ci
+          npm --prefix desktop ci
 
       - name: Verify release tag
         run: npm --prefix desktop run verify:release-tag
@@ -44,11 +43,6 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
 
       - name: Run desktop tests
-        if: runner.os != 'Linux'
-        run: npm --prefix desktop test
-
-      - name: Run Linux desktop tests
-        if: runner.os == 'Linux'
         run: xvfb-run -a npm --prefix desktop test
 
   build:
@@ -98,10 +92,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
           cache: npm
@@ -110,13 +104,12 @@ jobs:
             desktop/package-lock.json
 
       - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@166cdcfd11aee3cb47222f9ddb555ce30ddb9659 # v1
 
-      - name: Install shared frontend dependencies
-        run: npm --prefix frontend ci
-
-      - name: Install desktop dependencies
-        run: npm --prefix desktop ci
+      - name: Install dependencies
+        run: |
+          npm --prefix frontend ci
+          npm --prefix desktop ci
 
       - name: Run desktop tests
         if: runner.os != 'Linux'
@@ -157,37 +150,200 @@ jobs:
         run: node desktop/scripts/collect-release-assets.mjs desktop/dist .artifacts/release-assets
 
       - name: Upload release asset
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: ${{ matrix.platform.artifact }}
           path: .artifacts/release-assets/*
           if-no-files-found: error
+          retention-days: 7
 
-  publish:
-    name: Publish GitHub Release
+  assemble-sign:
+    name: Assemble and sign internal release
     needs: build
     runs-on: ubuntu-latest
+    environment: desktop-internal-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
 
       - name: Download installer assets
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: .artifacts/downloaded-assets
 
       - name: Normalize release assets
-        run: node desktop/scripts/collect-release-assets.mjs .artifacts/downloaded-assets .artifacts/publish-assets --require-complete
+        run: node desktop/scripts/collect-release-assets.mjs .artifacts/downloaded-assets .artifacts/release-evidence --require-complete
 
-      - name: Create or update GitHub Release
+      - name: Attest installer provenance
+        id: attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: .artifacts/release-evidence/*
+
+      - name: Record provenance references
+        run: node desktop/scripts/create-release-provenance-map.mjs "$RUNNER_TEMP/release-provenance.json"
+        env:
+          YUANCE_RELEASE_ATTESTATION_URL: ${{ steps.attest.outputs.attestation-url }}
+
+      - name: Install verified release tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes minisign
+          mkdir -p "$RUNNER_TEMP/release-tools" "$RUNNER_TEMP/release-bin"
+          curl --fail --show-error --location \
+            --output "$RUNNER_TEMP/release-tools/minisign.tar.gz" \
+            https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz
+          curl --fail --show-error --location \
+            --output "$RUNNER_TEMP/release-tools/minisign.tar.gz.minisig" \
+            https://github.com/jedisct1/minisign/releases/download/0.12/minisign-0.12-linux.tar.gz.minisig
+          minisign -Vm "$RUNNER_TEMP/release-tools/minisign.tar.gz" \
+            -x "$RUNNER_TEMP/release-tools/minisign.tar.gz.minisig" \
+            -P RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3
+          echo "9a599b48ba6eb7b1e80f12f36b94ceca7c00b7a5173c95c3efc88d9822957e73  $RUNNER_TEMP/release-tools/minisign.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/release-tools/minisign.tar.gz" -C "$RUNNER_TEMP/release-tools"
+          install -m 0755 "$RUNNER_TEMP/release-tools/minisign-linux/x86_64/minisign" "$RUNNER_TEMP/release-bin/minisign"
+          curl --fail --show-error --location \
+            --output "$RUNNER_TEMP/release-tools/syft.tar.gz" \
+            https://github.com/anchore/syft/releases/download/v1.50.0/syft_1.50.0_linux_amd64.tar.gz
+          curl --fail --show-error --location \
+            --output "$RUNNER_TEMP/release-tools/syft-checksums.txt" \
+            https://github.com/anchore/syft/releases/download/v1.50.0/syft_1.50.0_checksums.txt
+          (cd "$RUNNER_TEMP/release-tools" && grep ' syft_1.50.0_linux_amd64.tar.gz$' syft-checksums.txt > selected-checksum.txt)
+          cp "$RUNNER_TEMP/release-tools/syft.tar.gz" "$RUNNER_TEMP/release-tools/syft_1.50.0_linux_amd64.tar.gz"
+          (cd "$RUNNER_TEMP/release-tools" && sha256sum --check --strict selected-checksum.txt)
+          tar -xzf "$RUNNER_TEMP/release-tools/syft.tar.gz" -C "$RUNNER_TEMP/release-bin" syft
+          echo "$RUNNER_TEMP/release-bin" >> "$GITHUB_PATH"
+
+      - name: Upload verified minisign tool
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: desktop-release-minisign-linux-x64
+          path: ${{ runner.temp }}/release-bin/minisign
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Generate digest-bound SBOMs
+        shell: bash
+        run: |
+          export YUANCE_DESKTOP_VERSION="${GITHUB_REF_NAME#desktop-v}"
+          npm --prefix desktop run generate:release-sboms -- "$GITHUB_WORKSPACE/.artifacts/release-evidence"
+
+      - name: Materialize protected signing key
+        shell: bash
+        env:
+          YUANCE_MINISIGN_PRIVATE_KEY_BASE64: ${{ secrets.YUANCE_MINISIGN_PRIVATE_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
+          test -n "$YUANCE_MINISIGN_PRIVATE_KEY_BASE64"
+          umask 077
+          printf '%s' "$YUANCE_MINISIGN_PRIVATE_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/yuance-minisign.key"
+
+      - name: Assemble, sign and verify evidence
+        shell: bash
+        run: |
+          export YUANCE_DESKTOP_VERSION="${GITHUB_REF_NAME#desktop-v}"
+          npm --prefix desktop run assemble:release-evidence -- "$GITHUB_WORKSPACE/.artifacts/release-evidence"
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          YUANCE_RELEASE_PROVENANCE_FILE: ${{ runner.temp }}/release-provenance.json
+          YUANCE_MINISIGN_SECRET_KEY_FILE: ${{ runner.temp }}/yuance-minisign.key
+
+      - name: Remove signing key
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/yuance-minisign.key" ]; then
+            chmod 600 "$RUNNER_TEMP/yuance-minisign.key"
+            dd if=/dev/zero of="$RUNNER_TEMP/yuance-minisign.key" bs=4096 count=1 conv=notrunc status=none || true
+            unlink "$RUNNER_TEMP/yuance-minisign.key"
+          fi
+
+      - name: Upload signed release evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: desktop-internal-release-evidence
+          path: .artifacts/release-evidence/*
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish immutable GitHub Release
+    needs: assemble-sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+
+      - name: Download signed release evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-internal-release-evidence
+          path: .artifacts/release-evidence
+
+      - name: Download verified minisign tool
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: desktop-release-minisign-linux-x64
+          path: .artifacts/release-tools
+
+      - name: Enable minisign verifier
+        run: chmod 0755 .artifacts/release-tools/minisign
+
+      - name: Verify signed evidence before upload
+        run: npm --prefix desktop run verify:release-evidence -- "$GITHUB_WORKSPACE/.artifacts/release-evidence"
+        env:
+          MINISIGN_BIN: ${{ github.workspace }}/.artifacts/release-tools/minisign
+
+      - name: Create immutable draft release
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
+          MINISIGN_BIN: ${{ github.workspace }}/.artifacts/release-tools/minisign
+        shell: bash
         run: |
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" .artifacts/publish-assets/* --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$RELEASE_TAG" --title "元策桌面端 $RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
-          else
-            gh release create "$RELEASE_TAG" .artifacts/publish-assets/* --title "元策桌面端 $RELEASE_TAG" --generate-notes --repo "$GITHUB_REPOSITORY"
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" .artifacts/release-evidence/* \
+              --draft \
+              --title "元策桌面端 $RELEASE_TAG（内部开发制品）" \
+              --notes "内部开发制品：macOS 仅 ad-hoc，Windows 未签名，Linux 使用 minisign 完整性签名；可能触发 Gatekeeper 或 SmartScreen。" \
+              --repo "$GITHUB_REPOSITORY"
           fi
+
+      - name: Read back and verify draft bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          MINISIGN_BIN: ${{ github.workspace }}/.artifacts/release-tools/minisign
+        run: |
+          mkdir -p .artifacts/release-readback
+          gh release download "$RELEASE_TAG" --dir .artifacts/release-readback --repo "$GITHUB_REPOSITORY"
+          npm --prefix desktop run verify:release-evidence -- "$GITHUB_WORKSPACE/.artifacts/release-readback"
+          diff -qr .artifacts/release-evidence .artifacts/release-readback
+
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"

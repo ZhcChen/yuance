@@ -34,9 +34,20 @@ GitHub Release 与系统版本管理是两层独立发布：GitHub Token 只用�
 - minisign 版本：`0.12`
 - Syft 版本：`v1.50.0`
 - GitHub protected Environment：`desktop-internal-release`
-- Environment secret：`YUANCE_MINISIGN_PRIVATE_KEY`
+- Environment secret：`YUANCE_MINISIGN_PRIVATE_KEY_BASE64`
 
-发布私钥不得提交到仓库、GitHub artifact、Release、日志或 runner cache，也不得在 CI 临时生成。build job 不得引用该 secret；只有受保护的 assemble/sign job 可读取。公钥文件必须来自同一持久私钥，并记录 16 位大写 key ID。工具二进制下载必须验证发布者 checksum，第三方 Action 必须固定审核后的 commit SHA。
+发布私钥不得提交到仓库、GitHub artifact、Release、日志或 runner cache，也不得在 CI 临时生成。build job 不得引用该 secret；只有受保护的 assemble/sign job 可读取。公钥文件必须来自同一持久私钥，并记录 16 位大写 key ID。工具二进制下载必须验证发布者 checksum/签名，第三方 Action 必须固定审核后的 commit SHA。
+
+`desktop-internal-release` Environment 必须：
+
+1. 只允许 `desktop-v*` tag 对应的 workflow 部署。
+2. 配置至少一名 required reviewer，且发起发布者不能自行绕过审批。
+3. 禁止管理员绕过保护规则，除非执行已记录的应急撤回流程。
+4. 保存 `YUANCE_MINISIGN_PRIVATE_KEY_BASE64`，其值为持久、未加密 minisign 私钥文件的单行 base64。原始私钥不得留在仓库工作区。
+
+签名 job 只在 `$RUNNER_TEMP` 以 `0600` 权限短暂还原私钥，签名后立即清理；生成的 artifact 只能包含安装包、SBOM、签名、`SHA256SUMS` 和 manifest。
+
+GitHub Release 使用两阶段发布：先创建 draft 并上传完整证据集，再重新下载、全量验签和逐字节比较，最后转为公开 Release。同一 tag 已存在时只允许远端证据与本次证据完全一致，禁止 `--clobber` 或原地替换资产。
 
 密钥尚未配置或公钥缺失时，发行 Gate 必须保持阻塞，不能生成临时密钥绕过。
 
