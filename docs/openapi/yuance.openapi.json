@@ -3,12 +3,12 @@
   "info": {
     "title": "元策 API",
     "summary": "元策项目、需求、任务、Bug、资料库和消息通知 API。",
-    "description": "元策 API 面向 Web 客户端、程序化集成和 Desktop。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Device access token 只允许调用 x-yuance-device-business-allowlist 显式登记的 method + path，并继续执行相同 RBAC、项目成员和业务状态校验。",
+    "description": "元策 API 面向 Web 客户端、程序化集成、Codex Skill 和 Desktop。成功响应统一包裹在 data 字段中，错误响应统一包裹在 error 字段中。Personal Access Token 绑定创建用户，Token 名称会作为该用户的 AI 助手标识；Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机执行创建、更新、流转和评论等操作。Device access token 只允许调用 x-yuance-device-business-allowlist 显式登记的 method + path，并继续执行相同 RBAC、项目成员和业务状态校验。",
     "version": "1.0.0"
   },
   "externalDocs": {
-    "description": "AI 接入指南（MCP + Skill）",
-    "url": "https://github.com/ZhcChen/yuance/blob/main/docs/mcp/ai-mcp-setup.md"
+    "description": "Codex Skill 接入指南",
+    "url": "https://github.com/ZhcChen/yuance/blob/main/docs/runbooks/yuance-agent-codex-installation.md"
   },
   "servers": [
     {
@@ -39,7 +39,7 @@
     },
     {
       "name": "work-items",
-      "description": "需求、任务、Bug 与评论。Bearer Token / MCP 在具备对应 scope、项目范围和业务权限时，可按工作项状态机读写。"
+      "description": "需求、任务、Bug 与评论。Bearer Token 在具备对应 scope、项目范围和业务权限时，可按工作项状态机读写。"
     },
     {
       "name": "resources",
@@ -1106,7 +1106,7 @@
           "resources"
         ],
         "summary": "验证访问密码并读取受保护资料",
-        "description": "仅当用户明确提供该条资料访问密码时调用。MCP server 不应缓存或记录 access_password。",
+        "description": "仅当用户明确提供该条资料访问密码时调用。调用方不应缓存或记录 access_password。",
         "parameters": [
           {
             "$ref": "#/components/parameters/ProjectKey"

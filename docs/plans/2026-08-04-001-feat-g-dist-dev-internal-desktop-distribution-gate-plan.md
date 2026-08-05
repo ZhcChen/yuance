@@ -325,7 +325,7 @@ git diff --check
 - 公开 Release 精确包含 22 个文件。独立下载后，仓库 verifier、`SHA256SUMS`、manifest/SHA256SUMS minisign 和六安装包 provenance attestation 全部通过；key ID 为 `03488FB6A3DAD35A`。
 - `desktop-v0.1.4` 与 `desktop-v0.1.5` 的完整 22 文件集合均通过 `publish-desktop-release.mjs` 无副作用 preflight，可分别作为后续 N-1 与 current 演练输入。
 - 尚未完成 System/OSS 正式发布、5 分钟撤回 SLO、N-1 自动回退、最终 review 和主线回填。
-- 正式分发前置存在运行时漂移：`yuance.quanxinfu.com` 当前经 Caddy/FRP 转发到本机旧 `target/debug/yuance-api` 进程，runbook 指向的 `qfy-sc-test` Compose 容器已停止，`scripts/deploy-production.sh` 当前不会更新实际承载流量的进程。必须先确认正式部署拓扑并更新运行实例。
+- 正式拓扑已由主线 WSL 迁移记录和 FRPS 实时日志交叉确认：`yuance.quanxinfu.com` 经 `qfy-sc-test` Caddy、FRPS `127.0.0.1:40000` 转发到 `DESKTOP-H0KSULB` 的 Ubuntu WSL，正式运行目录为 `/srv/yuance/backend`；公网服务器旧 Compose 容器仅作冷回滚。当前 `dev` 尚未部署到该 WSL 实例，且本终端现有 SSH key 无权登录 `core-wsl-ssh`，因此不得把 macOS 本地同端口进程或公网服务器旧容器当作正式后端执行迁移。
 - 当前仅配置普通 `YUANCE_API_TOKEN`，调用 system release API 返回 `403`；正式演练还需通过系统管理页创建仅含 `system_release:read` 与 `system_release:write` 的专用 token。
 
 ---

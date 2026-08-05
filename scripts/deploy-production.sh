@@ -1,9 +1,33 @@
 #!/usr/bin/env sh
 set -eu
 
-ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+ROOT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 
-REMOTE_HOST="${YUANCE_DEPLOY_HOST:-qfy-sc-test}"
+DEPLOY_MODE="${YUANCE_DEPLOY_MODE:-local-wsl}"
+LOCAL_WSL_ROOT="${YUANCE_LOCAL_WSL_ROOT:-/srv/yuance}"
+LOCAL_BACKEND_DIR="$LOCAL_WSL_ROOT/backend"
+LOCAL_RELEASE_DIR="$LOCAL_WSL_ROOT/releases"
+
+case "$DEPLOY_MODE" in
+  local-wsl)
+    if [ "${YUANCE_DEPLOY_HOST+x}" = "x" ]; then
+      echo "local-wsl 模式不接受 YUANCE_DEPLOY_HOST，请移除该变量。" >&2
+      exit 1
+    fi
+    ;;
+  remote)
+    if [ -z "${YUANCE_DEPLOY_HOST:-}" ]; then
+      echo "remote 模式必须显式设置 YUANCE_DEPLOY_HOST。" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "YUANCE_DEPLOY_MODE 仅支持 local-wsl 或 remote：$DEPLOY_MODE" >&2
+    exit 1
+    ;;
+esac
+
+REMOTE_HOST="${YUANCE_DEPLOY_HOST:-}"
 REMOTE_ROOT="${YUANCE_DEPLOY_ROOT:-/srv/yuance}"
 # 服务器目录名沿用首次部署路径；发布流程只使用 SSH/SCP + Docker Compose，不调用 easy-deploy 平台。
 REMOTE_BACKEND_DIR="$REMOTE_ROOT/easy-deploy/production/backend"
@@ -84,6 +108,100 @@ fi
 LOCAL_SHA="$(local_sha256 "$ROOT_DIR/$IMAGE_TAR")"
 echo "本地镜像 tar: $IMAGE_TAR"
 echo "本地 SHA256: $LOCAL_SHA"
+
+if [ "$DEPLOY_MODE" = "local-wsl" ]; then
+  if ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+    echo "local-wsl 模式只能在 WSL 内执行。" >&2
+    exit 1
+  fi
+  if [ "$(command -v docker 2>/dev/null || true)" != "/usr/bin/docker" ]; then
+    echo "local-wsl 模式必须使用 WSL 原生 /usr/bin/docker。" >&2
+    exit 1
+  fi
+  for command_name in docker timeout sha256sum install; do
+    if ! command -v "$command_name" >/dev/null 2>&1; then
+      echo "WSL 缺少命令：$command_name" >&2
+      exit 1
+    fi
+  done
+  if ! docker compose version >/dev/null 2>&1; then
+    echo "WSL 缺少 Docker Compose 插件。" >&2
+    exit 1
+  fi
+  if [ ! -s "$LOCAL_BACKEND_DIR/.env" ]; then
+    echo "WSL 缺少 $LOCAL_BACKEND_DIR/.env，拒绝部署。" >&2
+    exit 1
+  fi
+
+  run install -d -m 0750 "$LOCAL_BACKEND_DIR" "$LOCAL_BACKEND_DIR/backups" "$LOCAL_RELEASE_DIR"
+  run install -m 0644 "$ROOT_DIR/deploy/easy-deploy/production/backend/app.yaml.example" "$LOCAL_BACKEND_DIR/app.yaml"
+  run install -m 0644 "$ROOT_DIR/deploy/easy-deploy/production/backend/compose.yaml.example" "$LOCAL_BACKEND_DIR/compose.yaml"
+  run install -d -m 0750 "$LOCAL_BACKEND_DIR/scripts"
+  for script in "$ROOT_DIR"/deploy/easy-deploy/production/backend/scripts/*.sh; do
+    run install -m 0750 "$script" "$LOCAL_BACKEND_DIR/scripts/$(basename "$script")"
+  done
+  chmod 600 "$LOCAL_BACKEND_DIR/.env"
+
+  LOCAL_IMAGE_TAR="$LOCAL_RELEASE_DIR/$(basename "$IMAGE_TAR")"
+  if [ -f "$LOCAL_IMAGE_TAR" ]; then
+    stamp="$(date +%Y%m%d%H%M%S)"
+    run cp "$LOCAL_IMAGE_TAR" "${LOCAL_IMAGE_TAR%.tar}.before-$stamp.tar"
+  fi
+  run cp "$ROOT_DIR/$IMAGE_TAR" "$LOCAL_IMAGE_TAR"
+  WSL_SHA="$(sha256sum "$LOCAL_IMAGE_TAR" | awk '{print $1}')"
+  if [ "$LOCAL_SHA" != "$WSL_SHA" ]; then
+    echo "WSL 镜像 tar SHA256 不一致：$WSL_SHA" >&2
+    exit 1
+  fi
+
+  cd "$LOCAL_BACKEND_DIR"
+  run timeout -k 30s 300s docker load -i "$LOCAL_IMAGE_TAR"
+  run timeout -k 30s 300s ./scripts/00-backup-sqlite.sh
+  maintenance="yuance-api-maintenance-$(date +%Y%m%d%H%M%S)"
+  trap 'docker rm -f "$maintenance" >/dev/null 2>&1 || true' EXIT HUP INT TERM
+  run timeout -k 30s 900s docker compose --env-file .env -f compose.yaml run --rm --no-deps --name "$maintenance" api sh -eu -c '
+    ./yuance-api migrate status
+    ./yuance-api migrate up
+    ./yuance-api seed core
+  '
+  docker rm -f "$maintenance" >/dev/null 2>&1 || true
+  trap - EXIT HUP INT TERM
+  run timeout -k 30s 300s docker compose --env-file .env -f compose.yaml up -d --force-recreate --remove-orphans api
+  run timeout -k 30s 120s ./scripts/90-healthcheck.sh
+  run timeout -k 30s 120s ./scripts/80-files-audit.sh
+
+  latest="$(docker image inspect "$IMAGE" --format '{{.Id}}')"
+  running="$(docker inspect yuance-api --format '{{.Image}}')"
+  if [ "$latest" != "$running" ]; then
+    echo "运行容器镜像不是最新镜像：latest=$latest running=$running" >&2
+    exit 1
+  fi
+
+  case "$KEEP_RELEASE_BACKUPS" in
+    ''|*[!0-9]*)
+      echo "YUANCE_KEEP_RELEASE_BACKUPS 必须是非负整数：$KEEP_RELEASE_BACKUPS" >&2
+      exit 1
+      ;;
+  esac
+  image_file="$(basename "$LOCAL_IMAGE_TAR")"
+  image_backup_prefix="${image_file%.tar}.before-"
+  old_backups="$(
+    cd "$LOCAL_RELEASE_DIR"
+    # 文件名由本脚本固定生成，按 mtime 保留最近的回滚制品。
+    # shellcheck disable=SC2012
+    ls -1t "$image_backup_prefix"*.tar 2>/dev/null | tail -n "+$((KEEP_RELEASE_BACKUPS + 1))" || true
+  )"
+  if [ -n "$old_backups" ]; then
+    echo "$old_backups" | while IFS= read -r file; do
+      rm -f "$LOCAL_RELEASE_DIR/$file"
+    done
+  fi
+  if [ "$PRUNE_DANGLING_IMAGES" = "1" ]; then
+    run timeout -k 30s 300s docker image prune -f
+  fi
+  echo "正式环境部署完成：WSL $LOCAL_BACKEND_DIR"
+  exit 0
+fi
 
 run ssh "$REMOTE_HOST" "set -eu; mkdir -p '$REMOTE_RELEASE_DIR' '$REMOTE_BACKEND_DIR' '$REMOTE_GATEWAY_DIR'; if [ -f '$REMOTE_IMAGE_TAR' ]; then ts=\$(date +%Y%m%d%H%M%S); backup='${REMOTE_IMAGE_TAR%.tar}.before-'\$ts'.tar'; cp '$REMOTE_IMAGE_TAR' \"\$backup\"; echo \"已备份当前镜像 tar: \$(basename \"\$backup\")\"; fi"
 

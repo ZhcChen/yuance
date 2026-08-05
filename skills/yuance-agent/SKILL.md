@@ -1,292 +1,53 @@
 ---
-name: "yuance-agent"
-description: "Use when the user asks to analyze or operate the Yuance project through its MCP tools or OpenAPI, including projects, work items, comments, notifications, and project resources."
+name: yuance-agent
+description: 通过元策 OpenAPI 分析和操作项目、需求、任务、Bug 与工作项评论。用户要求查询项目或工作项、创建或更新需求/任务/Bug、发表评论或回复、流转状态、指派处理人时使用；也适用于未点名元策但明确要求处理元策工作项的场景。普通本地代码任务或首版不支持的元策能力不要使用。
 ---
 
-# 元策 AI Agent Skill
+# 元策项目协作
 
-本 skill 用于把元策的 OpenAPI 契约和 MCP 工具组织成稳定的 AI 工作流。
+通过 Skill 自带的 `yuance-agent` CLI 操作元策，不手写 HTTP 请求。
 
-默认职责分层：
+## 定位 CLI
 
-1. MCP：负责真实读写操作。
-2. OpenAPI：负责确认字段、状态枚举、响应结构和权限语义。
-3. Web 页面：只在用户明确要求验证前端表现时才介入。
+从当前已加载 `SKILL.md` 的所在目录确定 `<skill-dir>`，不要依赖当前工作目录或源码仓库：
 
-详细规则见 `docs/mcp/ai-agent-playbook.md`。
+- macOS/Linux：`<skill-dir>/scripts/yuance-agent`
+- Windows：`<skill-dir>\scripts\yuance-agent.exe`
 
-真实输出样例见 `docs/mcp/agent-output-examples.md`。
+执行前确认 `YUANCE_API_TOKEN` 已配置；仅在用户需要覆盖默认正式环境时使用 `YUANCE_BASE_URL`。不得读取、回显、记录或写入 Token。
 
-## Preconditions
+首次使用或排查安装时运行 `doctor --installation`；需要验证凭证与服务连通性时运行 `doctor`。
 
-- `yuance` MCP server 已连接。
-- `YUANCE_BASE_URL` 与 `YUANCE_API_TOKEN` 已正确配置。
-- Bearer Token 的项目范围、scope 和业务权限已经由用户提前配置。
-- 涉及受保护资料正文时，只有用户明确授权并提供该条资料密码，才允许调用解锁工具。
+## 核心流程
 
-## Source Priority
+1. 从用户输入中提取 `project_key`、`item_key`、动作和筛选条件。
+2. 标识不明确时先执行窄范围查询；不要猜测项目、工作项、评论或用户标识。
+3. 分析项目时先读取项目，再按显式项目范围和分页查询工作项。
+4. 任何写操作前读取目标工作项；评论、回复、流转或指派前还要读取评论上下文。
+5. 检查写操作所需字段。缺项目、标题、目标状态、处理人或回复目标时，先询问用户。
+6. 执行一次最小写操作，解析 stdout 的 JSON envelope，并报告服务端实际结果。
+7. 服务端拒绝状态转换、权限或范围时停止，不通过改用其他接口规避。
 
-1. 优先使用元策 MCP 工具。
-2. 需要确认契约时，再查看 `docs/openapi/yuance.openapi.json` 或 `/api/openapi.json`。
-3. 不为了拿业务数据而抓取 Web 页面、猜测接口或跳过权限边界。
+完整命令参数见 [references/commands.md](references/commands.md)。按任务选择性读取 [references/workflows.md](references/workflows.md)，错误处理见 [references/errors.md](references/errors.md)。
 
-## Standard Workflow
+## 写入边界
 
-### 1. 建立任务上下文
+- 创建前必须明确 `project_key`、`item_type` 和 `title`。
+- 更新只用于标题、描述、优先级、截止日期和父工作项。
+- 状态变化或处理人变化只使用 `work-items handoff`。
+- 不在本地重建状态机；允许的转换以服务端当前校验为准。
+- 回复评论前必须从评论列表确认 `parent_comment_id` 属于同一工作项。
+- 正文较长或包含 HTML 时使用 `--description-file` / `--body-file`；传 `-` 可从 stdin 读取。
+- 不重试可能重复创建、评论或流转的写操作，除非先读取并确认前一次未成功。
 
-- 如果用户没有明确给出 `project_key`，先调用 `yuance_list_projects` 缩小范围。
-- 如果用户给的是工作项编号，例如 `YCE-BUG-12`，直接调用 `yuance_get_work_item`。
-- 如果用户关注“我的待处理 / 被指派 / 被回复”，先调用 `yuance_list_notifications`。
+## 输出规则
 
-### 2. 分析项目
+- 只把 stdout 当作成功 JSON；只把 stderr 当作错误 JSON 或参数解析诊断。
+- 分析结果说明结论、关键证据、风险和下一步。
+- 写入结果说明动作、目标、关键参数和服务端返回的实际标识或状态。
+- 缺信息时说明已确认内容和唯一必要的补充信息，不伪造成功结果。
+- 认证、权限、范围、状态机和网络错误按错误类型处理，不盲目重试。
 
-推荐顺序：
+## 范围控制
 
-1. `yuance_get_project`
-2. `yuance_list_work_items`
-3. 对关键工作项调用 `yuance_get_work_item`
-4. 必要时调用 `yuance_list_work_item_comments`
-5. 需要项目沉淀资料时调用 `yuance_list_project_resources` 与 `yuance_get_project_resource`
-
-工作项列表尽量显式传：
-
-- `project_key`
-- `item_type`
-- `status`
-- `assignee_username`
-- `page`
-- `per_page`
-
-不要一开始就全量扫全部项目。
-
-### 3. 处理工作项
-
-处理前默认先读：
-
-1. `yuance_get_work_item`
-2. `yuance_list_work_item_comments`
-
-写入时遵守：
-
-- 评论使用 `yuance_create_work_item_comment`
-- 编辑已有评论使用 `yuance_update_work_item_comment`
-- 回复时传 `parent_comment_id`
-- 流转 / 指派使用 `yuance_handoff_work_item`
-- 不猜测 `comment_id`、`assignee_username`、目标状态
-
-`yuance_handoff_work_item` 可用状态：
-
-- `open`
-- `in_progress`
-- `pending_confirmation`
-- `done`
-- `resolved`
-- `verified`
-- `closed`
-- `cancelled`
-
-状态是否允许，不由 skill 猜测，实际以当前工作项状态机和服务端校验为准。
-
-### 4. 编写评论正文
-
-评论正文默认使用简洁 HTML：
-
-- 段落用 `<p>`
-- 列表用 `<ul>` / `<ol>` / `<li>`
-- 强调用 `<strong>`
-- 简短代码或标识可用 `<code>`
-
-除非用户明确要求，否则不要塞入冗长内联样式、脚本、外部嵌入或无关 HTML。
-
-### 5. 使用资料库
-
-推荐顺序：
-
-1. `yuance_list_project_resources`
-2. `yuance_get_project_resource`
-3. 如资料受保护，暂停并向用户索取该条资料密码
-4. 只有得到明确授权后，才调用 `yuance_unlock_project_resource`
-
-默认规则：
-
-- 不猜密码
-- 不重复尝试密码
-- 不缓存密码
-- 不在输出中泄露密码
-
-### 6. 使用消息通知
-
-- `yuance_list_notifications` 用于读取当前用户的消息和未读数量。
-- 如果消息指向工作项，继续调用 `yuance_get_work_item`。
-- 如果需要定位上下文，再调用 `yuance_list_work_item_comments`。
-
-## Working Rules
-
-- 只在和当前任务相关的项目范围内操作。
-- 工具支持筛选时，优先传筛选条件和分页，避免无意义大范围枚举。
-- 如果 MCP 工具已经覆盖某个动作，不要改走手写 HTTP 请求。
-- 如果服务端返回业务错误，先解释错误与下一步，而不是盲目重试。
-- 需要写入前，优先读取当前状态，避免基于过期假设操作。
-- 涉及受保护资料时，宁可停下询问，也不要越权推断。
-
-## Pre-write Checklist
-
-在执行评论、回复、流转、指派、资料解锁前，默认先自检：
-
-1. 当前对象是否已经读取过详情
-2. 当前评论上下文是否已经读取过
-3. `project_key` / `item_key` / `resource_id` 是否明确
-4. 目标状态是否合法且有依据
-5. 目标处理人是否明确
-6. 是否涉及受保护资料
-7. 是否需要先向用户确认缺失信息
-
-如果以上任一项答案不明确，优先进入阻塞说明，而不是直接写入。
-
-## Response Modes
-
-默认把输出分成三类，不要混写：
-
-1. 分析模式
-2. 执行模式
-3. 阻塞模式
-
-### 1. 分析模式
-
-适用于：
-
-- 项目分析
-- 工作项分析
-- 资料库分析
-- 通知梳理
-
-默认输出结构：
-
-- 结论
-- 关键证据
-- 当前风险 / 缺口
-- 建议下一步
-
-### 2. 执行模式
-
-适用于：
-
-- 已发表评论
-- 已回复评论
-- 已流转工作项
-- 已指派工作项
-- 已读取通知后完成定位
-
-默认输出结构：
-
-- 已执行动作
-- 目标对象
-- 关键参数
-- 执行结果
-- 建议下一步
-
-### 3. 阻塞模式
-
-适用于：
-
-- 缺少 `project_key`
-- 缺少 `item_key`
-- 缺少目标状态
-- 缺少目标处理人
-- 缺少资料访问密码
-- 服务端返回业务错误，当前无法安全继续
-
-默认输出结构：
-
-- 当前阻塞点
-- 已确认信息
-- 缺失信息
-- 建议用户补充什么
-
-## Output Templates
-
-### 项目分析
-
-```text
-结论：
-- <一句话总结当前项目状态>
-
-关键证据：
-- <需求/任务/Bug/资料中的关键事实 1>
-- <关键事实 2>
-
-当前风险 / 缺口：
-- <主要阻塞或不确定点>
-
-建议下一步：
-- <建议动作 1>
-- <建议动作 2>
-```
-
-### 工作项处理
-
-```text
-结论：
-- <一句话总结当前工作项状态>
-
-关键上下文：
-- 当前状态：<status>
-- 当前责任人：<assignee>
-- 最近关键评论 / 流转：<summary>
-
-建议下一步：
-- <建议动作 1>
-- <建议动作 2>
-```
-
-### 资料库分析
-
-```text
-结论：
-- <找到的资料及其价值>
-
-已确认内容：
-- <资料 1>
-- <资料 2>
-
-受保护内容：
-- <哪些资料受保护>
-
-当前缺口：
-- <还缺什么信息>
-```
-
-### 执行结果
-
-```text
-已执行动作：
-- <评论 / 回复 / 流转 / 指派 / 解锁>
-
-目标对象：
-- <project_key / item_key / resource_id>
-
-关键参数：
-- <status / assignee / parent_comment_id / 其他关键参数>
-
-执行结果：
-- <成功结果摘要>
-
-建议下一步：
-- <后续建议>
-```
-
-### 阻塞说明
-
-```text
-当前阻塞点：
-- <阻塞原因>
-
-已确认信息：
-- <已经知道的上下文>
-
-缺失信息：
-- <缺少的字段/密码/目标状态/目标处理人>
-
-建议补充：
-- <请用户提供什么>
-```
+首版只支持项目、工作项和工作项评论命令。用户要求其他元策能力时，明确说明当前 Skill 不支持并停止，不猜测隐藏命令或直接调用未知端点。

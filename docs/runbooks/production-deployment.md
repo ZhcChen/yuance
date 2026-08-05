@@ -2,36 +2,45 @@
 title: 元策正式环境部署运行手册
 type: runbook
 status: active
-date: 2026-07-07
+date: 2026-08-02
 ---
 
 # 元策正式环境部署运行手册
 
-本文记录元策正式环境的完整部署命令。部署方式参考 qfy-sc 测试环境，但元策当前只部署一个 `api` 模块。
+元策正式环境运行在本机 Ubuntu WSL，由 WSL 原生 Docker Engine 承载。
+公网服务器 `qfy-sc-test` 只保留 Caddy、FRPS 和已停止的旧环境作为冷回滚。
 
-## 环境口径
+## 当前拓扑
 
 ```text
-仓库：yuance
-参考项目：qfy-sc
-部署服务器别名：qfy-sc-test
-元策环境：production
-Compose 应用名：yuance
-Compose name：yuance
-服务名：api
-容器名：yuance-api
-镜像名：yuance-api:latest
-镜像目标架构：linux/amd64
-镜像 tar：dist/yuance-api-linux-amd64.tar
-API 端口：127.0.0.1:33033
-正式域名：yuance.quanxinfu.com
+yuance.quanxinfu.com
+-> qfy-sc-test Caddy :443
+-> FRPS 127.0.0.1:40000
+-> WSL FRPC
+-> WSL Docker 127.0.0.1:33033
+-> yuance-api
 ```
 
-`qfy-sc-test` 是服务器别名，不代表元策环境是测试环境。
+运行口径：
 
-当前服务器目录仍沿用 `/srv/yuance/easy-deploy/production/*` 命名，原因是首次部署已经在该目录保存 SQLite 数据和 Compose 文件；这只是目录名，不代表依赖 easy-deploy 平台。正式发布流程只依赖本地构建、SSH/SCP、`docker load` 和服务器上的 Docker Compose。
+```text
+WSL 发行版：Ubuntu-24.04
+运行目录：/srv/yuance/backend
+镜像目录：/srv/yuance/releases
+迁移包目录：/srv/yuance/incoming
+Compose 服务：api
+容器：yuance-api
+镜像：yuance-api:latest
+SQLite：/srv/yuance/backend/data/yuance.sqlite3
+FRP Web：http://127.0.0.1:8067
+域名：yuance.quanxinfu.com
+```
 
-## 架构边界
+SQLite 数据必须位于 WSL Linux 文件系统，不得迁到 `/mnt/c`。`.env` 必须
+保持 `600`，并保持 `YUANCE_SECURITY_MASTER_KEY` 不变，否则已有 OSS Secret
+无法解密。
+
+## 运行边界
 
 - 只部署 `api` 一个 Rust 单体服务。
 - SQLite 是唯一数据库。
@@ -41,48 +50,52 @@ API 端口：127.0.0.1:33033
 - OSS 不写入部署环境变量，部署后由超级管理员在 `/web/system/storage` 动态配置。
 - 必须保持 `YUANCE_SECURITY_MASTER_KEY` 稳定，否则已保存的 OSS Secret 无法解密。
 - 必须显式配置并保持 `YUANCE_SERVER_INSTANCE_ID` 稳定；它绑定 Desktop device credential，变更后现有设备必须重新授权。
-- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览。DOC、PPT 属于 legacy 实验性纯前端预览，默认关闭，灰度验证时才开启 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true`。
+- 文档预览已改为站内离线处理；PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 走稳定纯前端预览。DOC、PPT 属于 legacy 实验性纯前端预览，默认关闭。
 
-## 本地构建镜像 tar
+## 自动启动
 
-服务器禁止源码编译和镜像构建。本地或 CI 执行：
+Windows 计划任务 `WSL-Ubuntu-KeepAlive` 启动 `Ubuntu-24.04`；WSL systemd
+随后启动 Docker、FRPC 和 FRP Web。`yuance-api` 使用 Compose
+`restart: unless-stopped`，Docker 恢复后自动启动。
+
+检查命令：
 
 ```bash
-cd <yuance-repo>
+systemctl is-enabled docker frpc frp-web
+systemctl is-active docker frpc frp-web
+docker inspect -f '{{.State.Status}} {{.State.Health.Status}}' yuance-api
+```
+
+## 构建镜像
+
+在 WSL 内从仓库执行：
+
+```bash
+cd /mnt/c/Users/Administrator/code/yuance
 ./scripts/build-api-image-amd64.sh
 ```
 
-可选覆盖：
+服务器和 `/srv/yuance` 运行目录内禁止执行 `cargo build` 或
+`docker build`。
+
+## 一键发布
+
+默认模式是 `local-wsl`：
 
 ```bash
-YUANCE_API_IMAGE=yuance-api:latest \
-YUANCE_API_IMAGE_TAR=dist/yuance-api-linux-amd64.tar \
-YUANCE_API_PLATFORM=linux/amd64 \
-./scripts/build-api-image-amd64.sh
-```
-
-arm 开发机可以通过 Docker Buildx 构建 `linux/amd64`。这会使用跨架构构建，Rust 编译会比原生慢。
-
-该脚本会先执行根 `npm run check:frontend`，再通过 `api/Dockerfile` 的多阶段构建在镜像内生成 `web/dist` 并复制到最终 `yuance-api` 镜像的 `/app/web/dist`。
-
-## 一键发布脚本
-
-后续说“部署正式环境”时，默认执行本地脚本：
-
-```bash
-cd <yuance-repo>
+cd /mnt/c/Users/Administrator/code/yuance
 ./scripts/deploy-production.sh
 ```
 
-脚本保证：
+脚本要求 `main` 工作区干净并与 `origin/main` 一致，使用 WSL 原生
+`/usr/bin/docker`，然后执行：
 
-- 本地工作区必须在 `main`、干净且与 `origin/main` 一致。
-- 镜像只在本地构建为 `linux/amd64`，服务器不执行 `cargo build` 或 `docker build`。
-- 上传前备份服务器当前镜像 tar。
-- 远程步骤使用 `timeout`，并通过单次 `yuance-api-maintenance-*` 维护容器完成 `migrate status`、`migrate up`、`seed core`，避免连续多次 `docker compose run` 造成额外磁盘 IO。
-- 开始和退出时清理 `yuance-api-maintenance-*` 以及历史 `yuance-api-run-*` 临时容器，降低 SSH 中断后的残留风险。
-- 发布后校验 `yuance-api` 运行镜像等于新加载的 `yuance-api:latest`，并检查 `/api/healthz` 与 `/api/readyz`。
-- 默认保留最近 1 个旧 release tar 作为回滚制品。
+1. 构建并校验 `linux/amd64` 镜像 tar。
+2. 备份 `/srv/yuance/releases` 中当前镜像 tar。
+3. 同步 Compose、app 元数据和运维脚本，但不覆盖 `.env` 或数据。
+4. 加载镜像并备份 SQLite 主库、WAL、SHM。
+5. 在单次维护容器内执行 `migrate status`、`migrate up`、`seed core`。
+6. 重建 `yuance-api`，检查 health、ready、文件对象审计和镜像 ID。
 
 可选参数：
 
@@ -92,50 +105,33 @@ YUANCE_KEEP_RELEASE_BACKUPS=2 ./scripts/deploy-production.sh
 YUANCE_PRUNE_DANGLING_IMAGES=1 ./scripts/deploy-production.sh
 ```
 
-其中 `YUANCE_PRUNE_DANGLING_IMAGES=1` 会在发布成功后执行 `docker image prune -f`，只清理未被容器使用、没有标签的镜像；该操作可能造成短时间磁盘 IO 升高，默认不启用。
-
-## 上传模板和制品
-
-以下命令是手工 Compose 部署目录同步；目录名中出现 `easy-deploy` 只是历史路径，不需要也不会调用 easy-deploy 平台。
+保留的旧远程流程只能显式调用，不会默认回退到旧服务器：
 
 ```bash
-ssh qfy-sc-test 'mkdir -p /srv/yuance/releases /srv/yuance/easy-deploy/production/backend /srv/yuance/easy-deploy/production/gateway'
-
-scp dist/yuance-api-linux-amd64.tar qfy-sc-test:/srv/yuance/releases/
-scp deploy/easy-deploy/production/backend/app.yaml.example qfy-sc-test:/srv/yuance/easy-deploy/production/backend/app.yaml
-scp deploy/easy-deploy/production/backend/compose.yaml.example qfy-sc-test:/srv/yuance/easy-deploy/production/backend/compose.yaml
-scp deploy/easy-deploy/production/backend/.env.example qfy-sc-test:/srv/yuance/easy-deploy/production/backend/.env.example
-scp -r deploy/easy-deploy/production/backend/scripts qfy-sc-test:/srv/yuance/easy-deploy/production/backend/
-scp deploy/easy-deploy/production/gateway/Caddyfile.yuance.example qfy-sc-test:/srv/yuance/easy-deploy/production/gateway/Caddyfile.yuance
+YUANCE_DEPLOY_MODE=remote \
+YUANCE_DEPLOY_HOST=<明确目标主机> \
+./scripts/deploy-production.sh
 ```
 
-## 服务器初始化
+`local-wsl` 模式设置 `YUANCE_DEPLOY_HOST` 会被拒绝；`remote` 模式缺少目标
+主机也会被拒绝。
+
+## 手工检查
 
 ```bash
-ssh qfy-sc-test
-cd /srv/yuance/easy-deploy/production/backend
+cd /srv/yuance/backend
 
-docker load -i /srv/yuance/releases/yuance-api-linux-amd64.tar
-
-cp .env.example .env
-chmod 600 .env
-mkdir -p data backups
+sqlite3 data/yuance.sqlite3 'PRAGMA integrity_check;'
+docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api migrate status
+./scripts/80-files-audit.sh
+./scripts/90-healthcheck.sh
 ```
 
-编辑 `.env`，至少填写：
-
-```text
-YUANCE_SESSION_SECRET
-YUANCE_SECURITY_MASTER_KEY
-YUANCE_SERVER_INSTANCE_ID
-```
-
-说明：
+运行说明：
 
 - 当前部署不再依赖 `LibreOffice`、`soffice`、ONLYOFFICE 或服务端文档转换缓存。
 - PDF、TXT、LOG、MD、JSON、XML、YAML、YML、CSV、XLS、XLSX、ODS、DOCX、PPTX 统一走站内前端离线预览。
-- DOC、PPT 只有在 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true` 时才展示实验性预览入口；关闭时 `/preview` 页面友好降级为下载。
-- DOC、PPT 复杂版式兼容性有限，PPT 当前运行时会带可见水印；该能力不得按稳定预览能力默认发布。
+- DOC、PPT 只有在 `YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=true` 时才展示实验性预览入口；复杂版式兼容性有限，PPT 当前运行时会带可见水印。
 - 文档预览页只负责生成临时可访问地址，实际解析与渲染全部由浏览器完成。
 - 如果当前仍使用测试内存存储，文档预览页会自动回退到同源读取，不依赖外部文档服务。
 
@@ -159,167 +155,105 @@ YUANCE_DEVICE_REFRESH_SLIDING_TTL=30d
 YUANCE_DEVICE_REFRESH_ABSOLUTE_TTL=90d
 YUANCE_DEVICE_IDEMPOTENCY_TTL=24h
 YUANCE_DEVICE_POLL_INTERVAL=5s
-```
-
-Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。设备授权发起、Browser 批准/拒绝和凭证交换路由已经开放，均受凭证边界、速率限制和 `private, no-store` 约束。
-
-legacy `doc/ppt` 实验预览为可选项，默认不写入或保持关闭：
-
-```text
 YUANCE_EXPERIMENTAL_LEGACY_PREVIEW_ENABLED=false
 ```
 
-只有完成 `docs/runbooks/legacy-document-preview-rollout.md` 的灰度前检查后，才允许在指定环境临时设置为 `true`。
+Device session 配置在进程启动时校验：authorization TTL 必须为 5-15 分钟，access TTL 必须为 1-60 分钟，poll interval 必须为 2-15 秒；refresh absolute TTL 不得短于 sliding TTL，幂等恢复 TTL 不得短于 authorization TTL 或长于 refresh sliding TTL。`YUANCE_DEVICE_TRUSTED_PROXY_CIDRS` 只填写直接连接 API 的反向代理网段；留空表示不信任任何代理，此时忽略 `X-Forwarded-For`。
 
-## 首次发布
-
-```bash
-cd /srv/yuance/easy-deploy/production/backend
-
-docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
-docker compose --env-file .env -f compose.yaml run --rm --no-deps --name yuance-api-maintenance api sh -eu -c '
-  ./yuance-api migrate status
-  ./yuance-api migrate up
-  ./yuance-api seed core
-'
-docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
-docker compose --env-file .env -f compose.yaml up -d
-docker compose --env-file .env -f compose.yaml ps
-
-curl -fsS http://127.0.0.1:33033/api/healthz
-curl -fsS http://127.0.0.1:33033/api/readyz
-```
-
-首次访问：
-
-```text
-https://yuance.quanxinfu.com/web
-```
-
-页面会进入首个超级管理员初始化流程，由用户填写账号密码。
-
-## Caddy 配置
-
-如果服务器 Caddy 主配置支持 `Caddyfile.d`：
-
-```bash
-sudo mkdir -p /etc/caddy/Caddyfile.d
-sudo cp /srv/yuance/easy-deploy/production/gateway/Caddyfile.yuance /etc/caddy/Caddyfile.d/yuance.caddy
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
-```
-
-如果不支持，把以下站点块追加到 `/etc/caddy/Caddyfile`：
-
-```caddy
-yuance.quanxinfu.com {
-  encode zstd gzip
-
-  reverse_proxy 127.0.0.1:33033
-}
-```
-
-外部验证：
+公网检查：
 
 ```bash
 curl -fsS https://yuance.quanxinfu.com/api/healthz
+curl -fsS https://yuance.quanxinfu.com/api/readyz
 curl -I https://yuance.quanxinfu.com/web
+curl -I https://yuance.quanxinfu.com/static/app.css
 ```
 
-## 后续发布
+## FRP 与 Caddy
 
-本地构建并上传新 tar 后，在服务器执行：
+Yuance 路由由 FRP Web 管理：
+
+```text
+route id：6b1c1c6f-59b4-486d-9e00-a1dd5546ae4d
+名称：yuance
+域名：yuance.quanxinfu.com
+本地端口：33033
+远端端口：40000
+```
+
+WSL 受管 FRPC 片段位于 `/etc/frp/conf.d/frp-web/*.toml`。主配置必须同时
+加载顶层人工片段与该受管子目录：
+
+```toml
+includes = ["/etc/frp/conf.d/*.toml", "/etc/frp/conf.d/frp-web/*.toml"]
+```
+
+服务器受管 Caddy 片段位于 `/etc/caddy/Caddyfile.d/frp-web/*.caddy`。
+原 `/etc/caddy/Caddyfile.d/yuance.caddy` 已移出加载范围并保留备份。
+FRPS 的代理端口只监听 `127.0.0.1`，禁止向公网开放 `40000-40999`。
+
+## 数据备份
+
+发布前执行：
 
 ```bash
-ssh qfy-sc-test
-cd /srv/yuance/easy-deploy/production/backend
-
-docker load -i /srv/yuance/releases/yuance-api-linux-amd64.tar
-
+cd /srv/yuance/backend
 ./scripts/00-backup-sqlite.sh
-docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
-docker compose --env-file .env -f compose.yaml run --rm --no-deps --name yuance-api-maintenance api sh -eu -c '
-  ./yuance-api migrate status
-  ./yuance-api migrate up
-  ./yuance-api seed core
-'
-docker rm -f yuance-api-maintenance >/dev/null 2>&1 || true
-
-docker compose --env-file .env -f compose.yaml up -d
-./scripts/90-healthcheck.sh
 ```
 
-可选文件对象盘点：
+SQLite 主库、`-wal`、`-shm` 是一个恢复单元。复制前必须停止唯一写入进程，
+恢复后必须重新执行 integrity、migration status 和文件对象审计。
+
+## 文件维护
+
+对象关系盘点：
 
 ```bash
+cd /srv/yuance/backend
 ./scripts/80-files-audit.sh
-```
-
-包含已删除对象：
-
-```bash
 YUANCE_INCLUDE_DELETED_FILES=1 ./scripts/80-files-audit.sh
 ```
 
-## 文件 pending 清理
-
-先 dry-run：
+pending 清理先 dry-run：
 
 ```bash
+docker compose --env-file .env -f compose.yaml exec -T api \
+  ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
+```
+
+确认后去掉 `--dry-run`。当前命令只做数据库软删除，不删除 OSS 物理对象。
+
+## 回滚到公网旧环境
+
+观察期内不得删除公网服务器的旧容器、旧数据、镜像、迁移包或 Caddy 备份。
+回滚遵循单写原则：
+
+1. 在 WSL 停止 `yuance-api`。
+2. 在 FRP Web 停用 Yuance 路由，或把受管 FRPC/Caddy 片段移出加载范围。
+3. 恢复服务器旧 `yuance.caddy`，执行 Caddy validate/reload。
+4. 在 `qfy-sc-test` 启动旧 `yuance-api`，不执行 migrate 或 seed。
+5. 验证 health、ready、登录、项目数据和 OSS 文件读取。
+
+关键命令：
+
+```bash
+# WSL
+cd /srv/yuance/backend
+docker compose --env-file .env -f compose.yaml stop api
+
+# qfy-sc-test
 cd /srv/yuance/easy-deploy/production/backend
-docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24 --dry-run
+docker compose --env-file .env -f compose.yaml up -d api
 ```
 
-确认后执行：
-
-```bash
-docker compose --env-file .env -f compose.yaml exec -T api ./yuance-api files cleanup-pending --older-than-hours 24
-```
-
-如需每天凌晨执行，可在服务器 crontab 中调用上述命令。当前清理只做数据库软删除，不删除 OSS 物理对象。
-
-## OSS 上线后配置
-
-服务部署完成并初始化管理员后：
-
-1. 登录 `/web`。
-2. 进入 `/web/system/storage`。
-3. 填写阿里云 OSS Endpoint、Region、Bucket、AccessKey ID、AccessKey Secret。
-4. 保存并激活。
-5. 点击“检测桶状态”。
-6. 如提示需要初始化，点击“初始化桶”。
-
-点击“初始化桶”会按需创建私有 Bucket、补齐浏览器直传 CORS，并写入初始化标记。
+如只回滚 WSL 应用版本，加载 `/srv/yuance/releases` 中上一版 tar 后重建
+容器。若还需回滚数据库，必须先停服务，再成组恢复主库、WAL 和 SHM。
 
 ## 禁止事项
 
-- 禁止在服务器执行 `cargo build`。
-- 禁止在服务器执行 `docker build`。
-- 禁止提交或上传真实 `.env` 到仓库。
-- 禁止在正式环境执行 `seed demo`。
-- 禁止在正式环境执行 `seed local-admin`。
-- 禁止更换 `YUANCE_SECURITY_MASTER_KEY` 后继续使用旧加密配置。
-- 禁止修改已经发布过的 SQL migration 文件。
-
-## 回滚
-
-如果发布后需要回滚应用版本且没有执行破坏性数据修复：
-
-```bash
-cd /srv/yuance/easy-deploy/production/backend
-
-docker compose --env-file .env -f compose.yaml stop api
-docker load -i /srv/yuance/releases/<上一版镜像>.tar
-docker compose --env-file .env -f compose.yaml up -d
-./scripts/90-healthcheck.sh
-```
-
-如果迁移后需要回滚数据库：
-
-1. 停止服务。
-2. 从 `backups/<时间戳>/` 恢复 `yuance.sqlite3`、`yuance.sqlite3-wal`、`yuance.sqlite3-shm` 到 `data/`。
-3. 加载上一版镜像。
-4. 启动服务。
-5. 检查 `/api/readyz`、登录页、项目列表和系统管理入口。
-
-SQLite 迁移当前只支持向前执行；数据库回滚必须依赖发布前备份。
+- 禁止提交、打印或记录真实 `.env`、OSS AccessKey、FRP token。
+- 禁止在正式环境执行 `seed demo` 或 `seed local-admin`。
+- 禁止修改已经发布的 SQL migration。
+- 禁止新旧两端同时提供写服务。
+- 禁止把 `qfy-sc-test` 作为部署脚本的隐式默认目标。
+- 禁止手工创建第二个同域名 Caddy 站点。

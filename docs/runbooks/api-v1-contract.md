@@ -33,7 +33,7 @@ date: 2026-06-30
 
 - 认证：支持 Web Cookie session、Personal Access Token 和独立的设备会话凭证。
   - 浏览器 Web 调用默认使用 `yuance_session` Cookie。
-  - MCP / 外部脚本建议使用 `Authorization: Bearer yuance_pat_xxx`。
+  - Codex Skill / 外部脚本建议使用 `Authorization: Bearer yuance_pat_xxx`。
   - Desktop 设备授权使用独立的 `yuance_dat_` access 与 `yuance_drt_` refresh namespace；Device access 仅可调用下文 D2 显式矩阵，且设备凭证不能作为 PAT 使用。
 - CSRF：所有会改变状态的 Cookie API 必须提供 CSRF。
   - 登录和初始化成功响应会设置 `yuance_csrf` cookie，并在 JSON 中返回 `csrf_token`。
@@ -190,13 +190,13 @@ npm --prefix desktop run auth:headless -- \
 
 ## Personal Access Token
 
-PAT 用于 MCP 和外部脚本调用。Token 明文只在创建成功时返回一次，服务端只保存哈希。
+PAT 用于 Codex Skill 和外部脚本调用。Token 明文只在创建成功时返回一次，服务端只保存哈希。
 
 创建请求：
 
 ```json
 {
-  "name": "MCP 本地访问",
+  "name": "Codex Skill",
   "scopes": [
     "project:read",
     "work_item:read",
@@ -216,7 +216,7 @@ PAT 用于 MCP 和外部脚本调用。Token 明文只在创建成功时返回�
   "data": {
     "token": {
       "id": 1,
-      "name": "MCP 本地访问",
+      "name": "Codex Skill",
       "scopes": ["project:read"],
       "project_scope": "all",
       "token_suffix": "abcd1234",
@@ -417,7 +417,7 @@ status=active|archived|all
 - 访问密码长度为 `4..=128`，服务端只保存 Argon2 哈希。
 - 设置访问密码的资料，列表只返回元信息和受保护摘要；普通详情 API 返回 `403 forbidden`。
 - `POST .../unlock` 需要显式提交该条资料访问密码，验证成功后才返回正文。
-- MCP 默认不得调用 unlock；只有用户明确授权并提供该条资料访问密码时才允许调用。
+- 自动化客户端默认不得调用 unlock；只有用户明确授权并提供该条资料访问密码时才允许调用。
 - `DELETE` 和 `POST .../archive` 业务效果一致：归档资料，保留记录和历史动态，不物理删除。
 
 解锁请求：
@@ -794,6 +794,7 @@ DELETE /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attac
 
 ```text
 PUT /api/v1/test-storage/upload?object_key=...
+GET /api/v1/test-storage/download?object_key=...
 ```
 
 该入口只用于浏览器冒烟和集成测试：

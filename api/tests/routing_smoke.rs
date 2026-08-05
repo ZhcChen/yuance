@@ -166,7 +166,7 @@ async fn system_openapi_json_is_served_for_system_api_reference() {
 }
 
 #[tokio::test]
-async fn api_docs_page_embeds_scalar_and_mcp_setup_summary() {
+async fn api_docs_page_embeds_scalar_and_skill_setup_summary() {
     let app = build_router(AppState::for_tests());
 
     let response = app
@@ -188,8 +188,12 @@ async fn api_docs_page_embeds_scalar_and_mcp_setup_summary() {
     let body = response_body(response).await;
     assert!(body.contains("Scalar.createApiReference"));
     assert!(body.contains("url: '/api/openapi.json'"));
-    assert!(body.contains("MCP 初始化指南"));
+    assert!(body.contains("Codex Skill 指南"));
+    assert!(body.contains("install-codex-skill.sh"));
+    assert!(body.contains("install-codex-skill.ps1"));
     assert!(body.contains("YUANCE_API_TOKEN"));
+    assert!(!body.contains("npm install"));
+    assert!(!body.contains("yuance-mcp-server"));
 }
 
 #[tokio::test]
