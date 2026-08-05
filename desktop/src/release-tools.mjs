@@ -44,13 +44,17 @@ export async function signWithMinisign(messagePath, signaturePath, secretKeyPath
   ]);
 }
 
-async function run(binary, args) {
+export async function generateSyftCycloneDx(sourcePath, outputPath, binary = "syft") {
+  await run(binary, ["scan", sourcePath, "-o", `cyclonedx-json=${outputPath}`], 300_000);
+}
+
+async function run(binary, args, timeout = 60_000) {
   try {
     return await execFileAsync(binary, args, {
       encoding: "utf8",
       maxBuffer: 1024 * 1024,
       windowsHide: true,
-      timeout: 60_000,
+      timeout,
     });
   } catch (error) {
     const code = error && typeof error === "object" && "code" in error ? String(error.code) : "unknown";

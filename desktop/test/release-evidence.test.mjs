@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  bindCycloneDxSbom,
   CYCLONEDX_ASSET_DIGEST_PROPERTY,
   createReleaseEvidenceManifest,
   createSha256Sums,
@@ -117,6 +118,18 @@ test("rejects missing provenance before producing a manifest", async (t) => {
   }), /Missing release provenance for linux:arm64/);
 });
 
+test("rejects unexpected provenance targets", async (t) => {
+  const evidence = await fixture(t);
+  evidence.provenanceByTarget.set("other:x64", "https://github.com/ZhcChen/yuance/attestations/9");
+  await assert.rejects(() => createReleaseEvidenceManifest({
+    ...evidence,
+    version: "0.1.0",
+    tag: "desktop-v0.1.0",
+    source: { commit: "c".repeat(40), repository: "ZhcChen/yuance", workflow_run: "123" },
+    signing: { algorithm: "minisign", key_id: "0123456789ABCDEF" },
+  }), /exactly the six desktop targets/);
+});
+
 test("rejects SBOM digest drift and component identity drift", async (t) => {
   const evidence = await fixture(t);
   const filename = canonicalReleaseAssetName({ version: "0.1.0", ...DESKTOP_RELEASE_TARGETS[0] });
@@ -139,6 +152,31 @@ test("rejects SBOM digest drift and component identity drift", async (t) => {
     source: { commit: "c".repeat(40), repository: "ZhcChen/yuance", workflow_run: "123" },
     signing: { algorithm: "minisign", key_id: "0123456789ABCDEF" },
   }), /not bound/);
+});
+
+test("normalizes and binds Syft CycloneDX output to the installer", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "yuance-release-sbom-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = path.join(directory, "asset.cdx.json");
+  await writeFile(filePath, JSON.stringify({
+    bomFormat: "CycloneDX",
+    specVersion: "1.6",
+    metadata: {
+      component: { type: "application", name: "original" },
+      properties: [
+        { name: "syft:source", value: "archive" },
+        { name: CYCLONEDX_ASSET_DIGEST_PROPERTY, value: "0".repeat(64) },
+      ],
+    },
+    components: [],
+  }));
+  const digest = "a".repeat(64);
+  const document = await bindCycloneDxSbom(filePath, "Yuance-0.1.0-mac-x64.dmg", digest);
+  assert.equal(document.metadata.component.name, "Yuance-0.1.0-mac-x64.dmg");
+  assert.deepEqual(document.metadata.properties, [
+    { name: "syft:source", value: "archive" },
+    { name: CYCLONEDX_ASSET_DIGEST_PROPERTY, value: digest },
+  ]);
 });
 
 test("rejects empty evidence files", async (t) => {

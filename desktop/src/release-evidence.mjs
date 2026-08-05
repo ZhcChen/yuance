@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readFile, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -47,6 +47,17 @@ export async function createReleaseEvidenceManifest({
 }) {
   if (!(provenanceByTarget instanceof Map)) {
     throw new Error("Release provenance must be provided as a target map.");
+  }
+  const expectedProvenanceKeys = new Set(
+    DESKTOP_RELEASE_TARGETS.map((target) => releaseAssetKey(target.platform, target.architecture)),
+  );
+  const missingProvenance = [...expectedProvenanceKeys].filter((key) => !provenanceByTarget.has(key));
+  if (missingProvenance.length > 0) {
+    throw new Error(`Missing release provenance for ${missingProvenance.join(", ")}.`);
+  }
+  const unexpectedProvenance = [...provenanceByTarget.keys()].filter((key) => !expectedProvenanceKeys.has(key));
+  if (unexpectedProvenance.length > 0) {
+    throw new Error(`Release provenance must contain exactly the six desktop targets; unexpected: ${unexpectedProvenance.join(", ") || "none"}.`);
   }
   const assets = [];
   for (const target of DESKTOP_RELEASE_TARGETS) {
@@ -195,6 +206,34 @@ export async function readCycloneDxSbom(filePath, expectedAssetDigest) {
     throw new Error(`CycloneDX SBOM is not bound to its release asset: ${path.basename(filePath)}.`);
   }
   return document;
+}
+
+export async function bindCycloneDxSbom(filePath, assetFilename, assetDigest) {
+  let document;
+  try {
+    document = JSON.parse(await readFile(filePath, "utf8"));
+  } catch {
+    throw new Error(`CycloneDX SBOM is not valid JSON: ${path.basename(filePath)}.`);
+  }
+  if (!isPlainObject(document) || document.bomFormat !== "CycloneDX"
+    || typeof document.specVersion !== "string" || !Array.isArray(document.components)) {
+    throw new Error(`CycloneDX SBOM contract is invalid: ${path.basename(filePath)}.`);
+  }
+  const metadata = isPlainObject(document.metadata) ? document.metadata : {};
+  const component = isPlainObject(metadata.component) ? metadata.component : { type: "file" };
+  const properties = Array.isArray(metadata.properties) ? metadata.properties.filter(
+    (property) => !isPlainObject(property) || property.name !== CYCLONEDX_ASSET_DIGEST_PROPERTY,
+  ) : [];
+  const bound = {
+    ...document,
+    metadata: {
+      ...metadata,
+      component: { ...component, name: assetFilename },
+      properties: [...properties, { name: CYCLONEDX_ASSET_DIGEST_PROPERTY, value: assetDigest }],
+    },
+  };
+  await writeFile(filePath, `${JSON.stringify(bound, null, 2)}\n`, { mode: 0o600 });
+  return readCycloneDxSbom(filePath, assetDigest);
 }
 
 export async function assertRegularEvidenceFile(filePath) {
