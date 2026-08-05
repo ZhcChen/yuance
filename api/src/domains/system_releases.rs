@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use sqlx::SqlitePool;
 
 use crate::{
@@ -32,6 +34,12 @@ pub const RELEASE_PLATFORM_IOS: &str = "ios";
 pub const RELEASE_ARCHITECTURE_X64: &str = "x64";
 pub const RELEASE_ARCHITECTURE_ARM64: &str = "arm64";
 pub const RELEASE_ARCHITECTURE_UNIVERSAL: &str = "universal";
+
+pub const RELEASE_ARTIFACT_INSTALLER: &str = "installer";
+pub const RELEASE_ARTIFACT_SIGNATURE: &str = "signature";
+pub const RELEASE_ARTIFACT_SBOM: &str = "sbom";
+pub const RELEASE_ARTIFACT_MANIFEST: &str = "manifest";
+pub const RELEASE_ARTIFACT_CHECKSUMS: &str = "checksums";
 
 const DESKTOP_RELEASE_PLATFORMS: [&str; 3] = [
     RELEASE_PLATFORM_WINDOWS,
@@ -83,11 +91,13 @@ pub struct SystemReleaseAssetSummary {
     pub file_object_id: i64,
     pub platform: String,
     pub architecture: String,
+    pub artifact_kind: String,
     pub object_key: String,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
     pub status: String,
+    pub checksum_sha256: String,
     pub created_at: String,
 }
 
@@ -121,9 +131,11 @@ pub struct UpdateSystemReleaseInput {
 pub struct CreateSystemReleaseAssetInput {
     pub platform: String,
     pub architecture: String,
+    pub artifact_kind: String,
     pub original_filename: String,
     pub content_type: String,
     pub byte_size: i64,
+    pub checksum_sha256: String,
     pub created_by_user_id: i64,
 }
 
@@ -383,9 +395,20 @@ pub async fn update_release(
     let notes = validate_notes(&input.notes)?;
     ensure_version_name_available(pool, &version_name, Some(release_id)).await?;
 
-    let current = sqlx::query_as::<_, (String, String, String, Option<String>)>(
+    let current = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            Option<String>,
+            String,
+            String,
+            String,
+        ),
+    >(
         r#"
-        SELECT status, channel, verification_status, withdrawn_at
+        SELECT status, channel, verification_status, withdrawn_at, version_name, title, notes
         FROM system_release_versions
         WHERE id = ?1
         "#,
@@ -398,6 +421,13 @@ pub async fn update_release(
     if current.3.is_some() {
         return Err(AppError::Conflict(
             "已撤回版本不能修改或重新发布".to_string(),
+        ));
+    }
+    if current.0 == RELEASE_STATUS_PUBLISHED
+        && (current.4 != version_name || current.5 != title || current.6 != notes)
+    {
+        return Err(AppError::Conflict(
+            "已发布版本不可修改；请创建新版本或显式撤回".to_string(),
         ));
     }
     let publish_now = current.0 == RELEASE_STATUS_DRAFT && input.publish;
@@ -491,23 +521,39 @@ pub async fn create_release_asset(
     }
     let platform = validate_platform(&input.platform)?;
     let architecture = validate_architecture(&input.architecture)?;
-    let release_status = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT status, withdrawn_at FROM system_release_versions WHERE id = ?1",
+    let artifact_kind = validate_artifact_kind(&input.artifact_kind)?;
+    let release_status = sqlx::query_as::<_, (String, Option<String>, String, String)>(
+        "SELECT status, withdrawn_at, channel, verification_status FROM system_release_versions WHERE id = ?1",
     )
     .bind(release_id)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::NotFound("版本不存在".to_string()))?;
-    if release_status.0 != RELEASE_STATUS_DRAFT || release_status.1.is_some() {
+    if release_status.0 != RELEASE_STATUS_DRAFT
+        || release_status.1.is_some()
+        || (release_status.2 == RELEASE_CHANNEL_INTERNAL
+            && release_status.3 == RELEASE_VERIFICATION_VERIFIED)
+    {
         return Err(AppError::Conflict(
             "只有未撤回的草稿版本可以新增资产".to_string(),
+        ));
+    }
+    if release_status.2 == RELEASE_CHANNEL_INTERNAL
+        && (input.checksum_sha256.len() != 64
+            || !input
+                .checksum_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
+    {
+        return Err(AppError::BadRequest(
+            "内部发行资产必须提供 64 位小写 SHA-256".to_string(),
         ));
     }
     let active_config = storage::active_config(pool)
         .await?
         .ok_or_else(|| AppError::BadRequest("对象存储未激活，请先完成系统存储配置".to_string()))?;
 
-    let file_object = files::create_file_object(
+    let file_object = files::create_file_object_with_checksum(
         pool,
         &active_config,
         CreateFileObjectInput {
@@ -517,6 +563,7 @@ pub async fn create_release_asset(
             byte_size: input.byte_size,
             created_by_user_id: input.created_by_user_id,
         },
+        &input.checksum_sha256,
     )
     .await?;
 
@@ -526,9 +573,10 @@ pub async fn create_release_asset(
             release_id,
             file_object_id,
             platform,
-            architecture
+            architecture,
+            artifact_kind
         )
-        VALUES (?1, ?2, ?3, ?4)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         RETURNING id
         "#,
     )
@@ -536,6 +584,7 @@ pub async fn create_release_asset(
     .bind(file_object.id)
     .bind(platform)
     .bind(architecture)
+    .bind(artifact_kind)
     .fetch_one(pool)
     .await?;
 
@@ -555,14 +604,16 @@ pub async fn get_release_asset(
         SELECT
             sa.id,
             sa.release_id,
-            fo.id,
+            fo.id AS file_object_id,
             sa.platform,
             sa.architecture,
+            sa.artifact_kind,
             fo.object_key,
             fo.original_filename,
             fo.content_type,
             fo.byte_size,
             fo.status,
+            fo.checksum_sha256,
             sa.created_at
         FROM system_release_assets sa
         JOIN file_objects fo ON fo.id = sa.file_object_id
@@ -591,14 +642,16 @@ pub async fn list_release_assets(
         SELECT
             sa.id,
             sa.release_id,
-            fo.id,
+            fo.id AS file_object_id,
             sa.platform,
             sa.architecture,
+            sa.artifact_kind,
             fo.object_key,
             fo.original_filename,
             fo.content_type,
             fo.byte_size,
             fo.status,
+            fo.checksum_sha256,
             sa.created_at
         FROM system_release_assets sa
         JOIN file_objects fo ON fo.id = sa.file_object_id
@@ -640,9 +693,9 @@ pub async fn mark_release_verified(
             "只有待验证的内部草稿版本可以标记为已验证".to_string(),
         ));
     }
-    if !has_complete_desktop_downloads(&detail.assets) {
+    if !has_complete_internal_evidence(&detail) {
         return Err(AppError::BadRequest(
-            "完整六平台架构安装包上传后才能完成验证".to_string(),
+            "完整 22 文件内部发行证据集上传后才能完成验证".to_string(),
         ));
     }
     let result = sqlx::query(
@@ -675,7 +728,7 @@ pub async fn mark_release_verified(
 
 pub async fn ensure_release_is_mutable(pool: &SqlitePool, release_id: i64) -> AppResult<()> {
     let mutable = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM system_release_versions WHERE id = ?1 AND status = 'draft' AND withdrawn_at IS NULL",
+        "SELECT COUNT(*) FROM system_release_versions WHERE id = ?1 AND status = 'draft' AND withdrawn_at IS NULL AND (channel = 'legacy' OR verification_status != 'verified')",
     )
     .bind(release_id)
     .fetch_one(pool)
@@ -781,17 +834,7 @@ pub async fn delete_release_asset(
     asset_id: i64,
 ) -> AppResult<SystemReleaseAssetSummary> {
     let asset = get_release_asset(pool, release_id, asset_id).await?;
-    let mutable = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM system_release_versions WHERE id = ?1 AND status = 'draft' AND withdrawn_at IS NULL",
-    )
-    .bind(release_id)
-    .fetch_one(pool)
-    .await?;
-    if mutable != 1 {
-        return Err(AppError::Conflict(
-            "只有未撤回的草稿版本可以删除资产".to_string(),
-        ));
-    }
+    ensure_release_is_mutable(pool, release_id).await?;
     storage::delete_object_if_exists(pool, settings, &asset.object_key).await?;
     let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM system_release_assets WHERE id = ?1 AND release_id = ?2")
@@ -969,19 +1012,79 @@ fn has_complete_desktop_downloads(assets: &[SystemReleaseAssetSummary]) -> bool 
     DESKTOP_RELEASE_PLATFORMS.iter().all(|platform| {
         let has_universal = assets.iter().any(|asset| {
             asset.status == "uploaded"
+                && asset.artifact_kind == RELEASE_ARTIFACT_INSTALLER
                 && asset.platform == *platform
                 && asset.architecture == RELEASE_ARCHITECTURE_UNIVERSAL
         });
         has_universal
             || (assets.iter().any(|asset| {
                 asset.status == "uploaded"
+                    && asset.artifact_kind == RELEASE_ARTIFACT_INSTALLER
                     && asset.platform == *platform
                     && asset.architecture == RELEASE_ARCHITECTURE_X64
             }) && assets.iter().any(|asset| {
                 asset.status == "uploaded"
+                    && asset.artifact_kind == RELEASE_ARTIFACT_INSTALLER
                     && asset.platform == *platform
                     && asset.architecture == RELEASE_ARCHITECTURE_ARM64
             }))
+    })
+}
+
+fn has_complete_internal_evidence(detail: &SystemReleaseDetail) -> bool {
+    let assets = &detail.assets;
+    if assets.len() != 22 || assets.iter().any(|asset| asset.status != "uploaded") {
+        return false;
+    }
+    let installers = assets
+        .iter()
+        .filter(|asset| asset.artifact_kind == RELEASE_ARTIFACT_INSTALLER)
+        .collect::<Vec<_>>();
+    if installers.len() != 6 || !has_complete_desktop_downloads(assets) {
+        return false;
+    }
+    let mut expected = HashSet::new();
+    for installer in installers {
+        expected.insert((
+            installer.original_filename.clone(),
+            RELEASE_ARTIFACT_INSTALLER,
+        ));
+        expected.insert((
+            format!("{}.minisig", installer.original_filename),
+            RELEASE_ARTIFACT_SIGNATURE,
+        ));
+        expected.insert((
+            format!("{}.cdx.json", installer.original_filename),
+            RELEASE_ARTIFACT_SBOM,
+        ));
+    }
+    expected.extend([
+        (
+            "release-manifest.json".to_string(),
+            RELEASE_ARTIFACT_MANIFEST,
+        ),
+        (
+            "release-manifest.json.minisig".to_string(),
+            RELEASE_ARTIFACT_SIGNATURE,
+        ),
+        ("SHA256SUMS".to_string(), RELEASE_ARTIFACT_CHECKSUMS),
+        ("SHA256SUMS.minisig".to_string(), RELEASE_ARTIFACT_SIGNATURE),
+    ]);
+    let actual = assets
+        .iter()
+        .map(|asset| {
+            (
+                asset.original_filename.clone(),
+                asset.artifact_kind.as_str(),
+            )
+        })
+        .collect::<HashSet<_>>();
+    if expected.len() != 22 || actual != expected {
+        return false;
+    }
+    assets.iter().any(|asset| {
+        asset.original_filename == "release-manifest.json"
+            && asset.checksum_sha256 == detail.release.manifest_sha256
     })
 }
 
@@ -1119,6 +1222,17 @@ fn validate_architecture(value: &str) -> AppResult<&'static str> {
     }
 }
 
+fn validate_artifact_kind(value: &str) -> AppResult<&'static str> {
+    match value.trim() {
+        "" | RELEASE_ARTIFACT_INSTALLER => Ok(RELEASE_ARTIFACT_INSTALLER),
+        RELEASE_ARTIFACT_SIGNATURE => Ok(RELEASE_ARTIFACT_SIGNATURE),
+        RELEASE_ARTIFACT_SBOM => Ok(RELEASE_ARTIFACT_SBOM),
+        RELEASE_ARTIFACT_MANIFEST => Ok(RELEASE_ARTIFACT_MANIFEST),
+        RELEASE_ARTIFACT_CHECKSUMS => Ok(RELEASE_ARTIFACT_CHECKSUMS),
+        _ => Err(AppError::BadRequest("版本资产类型无效".to_string())),
+    }
+}
+
 fn validate_retention_count(value: i64) -> AppResult<i64> {
     if !(MIN_RETENTION_COUNT..=MAX_RETENTION_COUNT).contains(&value) {
         return Err(AppError::BadRequest(format!(
@@ -1164,17 +1278,19 @@ fn release_summary_from_row(row: ReleaseSummaryRow) -> SystemReleaseVersionSumma
 
 fn release_asset_from_row(row: ReleaseAssetRow) -> SystemReleaseAssetSummary {
     SystemReleaseAssetSummary {
-        id: row.0,
-        release_id: row.1,
-        file_object_id: row.2,
-        platform: row.3,
-        architecture: row.4,
-        object_key: row.5,
-        original_filename: row.6,
-        content_type: row.7,
-        byte_size: row.8,
-        status: row.9,
-        created_at: row.10,
+        id: row.id,
+        release_id: row.release_id,
+        file_object_id: row.file_object_id,
+        platform: row.platform,
+        architecture: row.architecture,
+        artifact_kind: row.artifact_kind,
+        object_key: row.object_key,
+        original_filename: row.original_filename,
+        content_type: row.content_type,
+        byte_size: row.byte_size,
+        status: row.status,
+        checksum_sha256: row.checksum_sha256,
+        created_at: row.created_at,
     }
 }
 
@@ -1204,17 +1320,20 @@ struct ReleaseSummaryRow {
     platform_count: i64,
 }
 
-type ReleaseAssetRow = (
-    i64,
-    i64,
-    i64,
-    String,
-    String,
-    String,
-    String,
-    String,
-    i64,
-    String,
-    String,
-);
+#[derive(sqlx::FromRow)]
+struct ReleaseAssetRow {
+    id: i64,
+    release_id: i64,
+    file_object_id: i64,
+    platform: String,
+    architecture: String,
+    artifact_kind: String,
+    object_key: String,
+    original_filename: String,
+    content_type: String,
+    byte_size: i64,
+    status: String,
+    checksum_sha256: String,
+    created_at: String,
+}
 type ReleaseAssetObjectRow = (i64, i64, i64, String);

@@ -2783,6 +2783,66 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
         mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
     }
 
+    for (platform, architecture, filename) in targets {
+        create_and_upload_system_release_evidence_asset(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            "signature",
+            &format!("{filename}.minisig"),
+            "c".repeat(64),
+        )
+        .await;
+        create_and_upload_system_release_evidence_asset(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            "sbom",
+            &format!("{filename}.cdx.json"),
+            "d".repeat(64),
+        )
+        .await;
+    }
+    let mut manifest_asset_id = 0;
+    for (kind, filename, checksum) in [
+        ("manifest", "release-manifest.json", "a".repeat(64)),
+        ("signature", "release-manifest.json.minisig", "e".repeat(64)),
+        ("checksums", "SHA256SUMS", "f".repeat(64)),
+        ("signature", "SHA256SUMS.minisig", "1".repeat(64)),
+    ] {
+        let evidence_asset_id = create_and_upload_system_release_evidence_asset(
+            &app,
+            &admin_cookie,
+            release_id,
+            "linux",
+            "universal",
+            kind,
+            filename,
+            checksum,
+        )
+        .await;
+        if filename == "release-manifest.json" {
+            manifest_asset_id = evidence_asset_id;
+        }
+    }
+    let readback = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!("/api/v1/system/releases/{release_id}/assets/{manifest_asset_id}/download-url"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(readback.0, StatusCode::OK);
+    assert_eq!(
+        json_string(&readback.1, &["data", "checksum_sha256"]),
+        "a".repeat(64)
+    );
+
     let verified = system_release_json_request(
         &app,
         &admin_cookie,
@@ -2802,6 +2862,21 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
         serde_json::json!({"version_name":"v3.0.0","title":"内部桌面版","notes":"仅供内部验证","publish":true}),
     ).await;
     assert_eq!(published.0, StatusCode::OK);
+
+    let rewrite_published = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "PATCH",
+        &format!("/api/v1/system/releases/{release_id}"),
+        serde_json::json!({
+            "version_name":"v3.0.0",
+            "title":"被改写的标题",
+            "notes":"仅供内部验证",
+            "publish":false
+        }),
+    )
+    .await;
+    assert_eq!(rewrite_published.0, StatusCode::CONFLICT);
 
     let mutate_published = system_release_json_request(
         &app, &admin_cookie, "POST", &format!("/api/v1/system/releases/{release_id}/assets"),
@@ -2936,6 +3011,48 @@ async fn system_release_json_request(
     (status, response_json(response).await)
 }
 
+async fn create_and_upload_system_release_evidence_asset(
+    app: &axum::Router,
+    admin_cookie: &str,
+    release_id: i64,
+    platform: &str,
+    architecture: &str,
+    artifact_kind: &str,
+    filename: &str,
+    checksum_sha256: String,
+) -> i64 {
+    let created = system_release_json_request(
+        app,
+        admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/assets"),
+        serde_json::json!({
+            "platform": platform,
+            "architecture": architecture,
+            "artifact_kind": artifact_kind,
+            "original_filename": filename,
+            "content_type": "application/octet-stream",
+            "byte_size": 8,
+            "checksum_sha256": checksum_sha256
+        }),
+    )
+    .await;
+    assert_eq!(created.0, StatusCode::CREATED);
+    let asset_id = json_i64(&created.1, &["data", "id"]);
+    let upload =
+        get_system_release_asset_upload_url_api(app, admin_cookie, release_id, asset_id).await;
+    upload_test_storage_object(
+        app,
+        admin_cookie,
+        &json_string(&upload, &["data", "request", "url"]),
+        b"evidence",
+        "application/octet-stream",
+    )
+    .await;
+    mark_system_release_asset_uploaded_api(app, admin_cookie, release_id, asset_id).await;
+    asset_id
+}
+
 async fn update_system_release_api(
     app: &axum::Router,
     admin_cookie: &str,
@@ -3018,7 +3135,8 @@ async fn create_system_release_asset_api_with_architecture(
                         "architecture": architecture,
                         "original_filename": filename,
                         "content_type": content_type,
-                        "byte_size": byte_size
+                        "byte_size": byte_size,
+                        "checksum_sha256": "0".repeat(64)
                     })
                     .to_string(),
                 ))

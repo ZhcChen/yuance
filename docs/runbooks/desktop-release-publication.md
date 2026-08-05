@@ -61,7 +61,9 @@ GitHub Release 使用两阶段发布：先创建 draft 并上传完整证据集�
 | `YUANCE_GITHUB_REPOSITORY` | GitHub Release 来源时必填 | `owner/repository`，例如 `ZhcChen/yuance`。未设置时复用 `GITHUB_REPOSITORY`。 |
 | `YUANCE_GITHUB_TOKEN` | 建议 | 读取私有 GitHub Release 的 token；也可使用 `GH_TOKEN` 或本机 `gh auth login`。 |
 | `YUANCE_DESKTOP_RELEASE_TAG` | 否 | GitHub Release 标签，默认 `desktop-v$YUANCE_DESKTOP_VERSION`。 |
-| `YUANCE_DESKTOP_ASSET_DIR` | 否 | 本地构建产物目录。设置后跳过 GitHub Release 下载。 |
+| `YUANCE_DESKTOP_ASSET_DIR` | 否 | 本地完整发行证据目录。设置后跳过 GitHub Release 下载，目录必须精确包含 22 个文件。 |
+| `YUANCE_MINISIGN_PUBLIC_KEY_FILE` | 是 | 完整 preflight 使用的 minisign 公钥文件。 |
+| `YUANCE_DESKTOP_SOURCE_COMMIT` | 本地执行时是 | 预期的 40 位小写 source commit；Actions 中复用 `GITHUB_SHA`。 |
 | `YUANCE_RELEASE_TITLE` | 否 | 系统版本标题，默认 `元策桌面端 v<版本号>`。 |
 | `YUANCE_RELEASE_NOTES` | 否 | 系统版本说明。 |
 | `YUANCE_RELEASE_NOTES_FILE` | 否 | 版本说明文件路径，优先级高于 `YUANCE_RELEASE_NOTES`。 |
@@ -82,13 +84,16 @@ export YUANCE_RELEASE_NOTES='首个 Electron 桌面端版本。'
 node scripts/publish-desktop-release.mjs
 ```
 
-脚本会下载 `desktop-v0.1.0` 对应 GitHub Release 的资产，并严格校验六个 `平台 + 架构` 组合。缺少包、包名不匹配、存在重复目标或版本号不一致时都会在写入系统版本前失败。
+脚本会下载 `desktop-v0.1.0` 对应 GitHub Release 的完整证据，并在任何 System API / OSS 副作用前验证 minisign 版本、公钥、manifest、`SHA256SUMS`、六安装包签名、SBOM 绑定、provenance、source commit/tag/repository 和精确 22 文件集合。
 
 ## 从本地构建目录发布
 
 ```bash
 export YUANCE_DESKTOP_VERSION=0.1.0
-export YUANCE_DESKTOP_ASSET_DIR="$PWD/desktop/dist"
+export YUANCE_DESKTOP_ASSET_DIR="$PWD/desktop/.artifacts/release-evidence"
+export YUANCE_MINISIGN_PUBLIC_KEY_FILE="$PWD/desktop/release/minisign.pub"
+export YUANCE_DESKTOP_SOURCE_COMMIT='<40 位 commit SHA>'
+export YUANCE_GITHUB_REPOSITORY=ZhcChen/yuance
 export YUANCE_API_BASE_URL=https://yuance.quanxinfu.com
 export YUANCE_SYSTEM_API_TOKEN='system-token-value'
 
@@ -99,7 +104,10 @@ node scripts/publish-desktop-release.mjs
 
 ```bash
 YUANCE_DESKTOP_VERSION=0.1.0 \
-YUANCE_DESKTOP_ASSET_DIR="$PWD/desktop/dist" \
+YUANCE_DESKTOP_ASSET_DIR="$PWD/desktop/.artifacts/release-evidence" \
+YUANCE_MINISIGN_PUBLIC_KEY_FILE="$PWD/desktop/release/minisign.pub" \
+YUANCE_DESKTOP_SOURCE_COMMIT='<40 位 commit SHA>' \
+YUANCE_GITHUB_REPOSITORY=ZhcChen/yuance \
 YUANCE_DRY_RUN=1 \
 node scripts/publish-desktop-release.mjs
 ```
@@ -107,9 +115,10 @@ node scripts/publish-desktop-release.mjs
 ## 重试与恢复
 
 - 上传或发布中断后，脚本会保留系统中的草稿版本。
-- 对于文件名、平台、架构、大小都一致且状态为 `uploaded` 的资产，重试会复用已有资产。
-- 草稿中存在同目标但未完成或大小不匹配的资产时，脚本会停止，避免重复或错误发布；先在系统版本管理页清理该草稿资产再重试。
-- 已发布版本不可由脚本覆盖。需要修正时发布新的版本号。
+- 对于文件名、证据类型、平台、架构、大小、SHA-256 都一致且状态为 `uploaded` 的资产，重试会回读验证后复用。
+- 草稿中存在未完成、额外或 digest 不匹配的资产时，脚本停止且不覆盖；保留草稿供审计和显式清理。
+- 每个对象上传后通过受控下载 URL 回读并重新计算 SHA-256；22 个对象全部一致后才调用 verify 和 publish。
+- 已发布版本只有在 metadata 与 22 文件集合完全一致时才幂等成功，任何冲突都要求新版本或显式撤回。
 
 ## 验收
 

@@ -165,9 +165,19 @@ pub async fn create_file_object(
     storage_config: &StorageConfig,
     input: CreateFileObjectInput,
 ) -> AppResult<FileObject> {
+    create_file_object_with_checksum(pool, storage_config, input, "").await
+}
+
+pub async fn create_file_object_with_checksum(
+    pool: &SqlitePool,
+    storage_config: &StorageConfig,
+    input: CreateFileObjectInput,
+    checksum_sha256: &str,
+) -> AppResult<FileObject> {
     let original_filename = validate_filename(&input.original_filename)?;
     let content_type = validate_content_type(&input.content_type)?;
     validate_byte_size(input.byte_size)?;
+    let checksum_sha256 = validate_checksum_sha256(checksum_sha256)?;
 
     let object_key = generate_object_key(&original_filename);
     let id = sqlx::query_scalar::<_, i64>(
@@ -181,10 +191,11 @@ pub async fn create_file_object(
             original_filename,
             content_type,
             byte_size,
+            checksum_sha256,
             status,
             created_by_user_id
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending', ?9)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'pending', ?10)
         RETURNING id
         "#,
     )
@@ -196,6 +207,7 @@ pub async fn create_file_object(
     .bind(&original_filename)
     .bind(&content_type)
     .bind(input.byte_size)
+    .bind(checksum_sha256)
     .bind(input.created_by_user_id)
     .fetch_one(pool)
     .await?;

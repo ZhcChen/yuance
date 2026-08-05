@@ -709,6 +709,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::system_release_asset_upload_url),
         )
         .route(
+            "/api/v1/system/releases/{release_id}/assets/{asset_id}/download-url",
+            get(web::api::system_release_asset_download_url),
+        )
+        .route(
             "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded",
             post(web::api::system_release_asset_mark_uploaded),
         )

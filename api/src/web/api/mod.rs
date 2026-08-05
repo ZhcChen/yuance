@@ -866,11 +866,13 @@ pub struct SystemReleaseAssetPayload {
     pub file_object_id: i64,
     pub platform: String,
     pub architecture: String,
+    pub artifact_kind: String,
     pub object_key: String,
     pub filename: String,
     pub content_type: String,
     pub byte_size: i64,
     pub status: String,
+    pub checksum_sha256: String,
     pub created_at: String,
 }
 
@@ -1351,9 +1353,13 @@ pub struct UpdateSystemReleaseSettingsRequest {
 pub struct CreateSystemReleaseAssetRequest {
     platform: String,
     architecture: String,
+    #[serde(default = "default_release_artifact_kind")]
+    artifact_kind: String,
     original_filename: String,
     content_type: String,
     byte_size: i64,
+    #[serde(default)]
+    checksum_sha256: String,
 }
 
 pub async fn healthz() -> axum::Json<ApiEnvelope<HealthPayload<'static>>> {
@@ -4169,9 +4175,11 @@ pub async fn create_system_release_asset(
         system_releases::CreateSystemReleaseAssetInput {
             platform: payload.platform,
             architecture: payload.architecture,
+            artifact_kind: payload.artifact_kind,
             original_filename: payload.original_filename,
             content_type: payload.content_type,
             byte_size: payload.byte_size,
+            checksum_sha256: payload.checksum_sha256,
             created_by_user_id: principal.actor_user_id(),
         },
     )
@@ -4229,6 +4237,56 @@ pub async fn system_release_asset_upload_url(
         expires_in_seconds,
         expires_at,
         checksum_sha256: String::new(),
+    }))
+}
+
+pub async fn system_release_asset_download_url(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((release_id, asset_id)): Path<(i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
+    if asset.status != "uploaded" {
+        return Err(AppError::BadRequest(
+            "版本资产尚未上传完成，不能回读".to_string(),
+        ));
+    }
+    let expires_in_seconds =
+        normalize_signed_url_expiration(SignedUrlKind::Download, query.expires_in_seconds)?;
+    let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    let mut request =
+        storage::presign_download_url(pool, &state.settings, &asset.object_key, expires_in_seconds)
+            .await?;
+    bind_test_storage_download_grant(
+        &state,
+        &asset.object_key,
+        &asset.content_type,
+        principal.actor_user_id(),
+        expires_in_seconds,
+        &mut request,
+    )?;
+    Ok(json(AttachmentSignedUrlPayload {
+        attachment: AttachmentPayload {
+            id: asset.id,
+            file_object_id: asset.file_object_id,
+            object_key: asset.object_key,
+            filename: asset.original_filename,
+            content_type: asset.content_type,
+            byte_size: asset.byte_size,
+            status: asset.status,
+            created_by: String::new(),
+            created_at: asset.created_at,
+        },
+        request,
+        expires_in_seconds,
+        expires_at,
+        checksum_sha256: asset.checksum_sha256,
     }))
 }
 
@@ -5734,11 +5792,13 @@ fn system_release_asset_payload(
         file_object_id: asset.file_object_id,
         platform: asset.platform,
         architecture: asset.architecture,
+        artifact_kind: asset.artifact_kind,
         object_key: asset.object_key,
         filename: asset.original_filename,
         content_type: asset.content_type,
         byte_size: asset.byte_size,
         status: asset.status,
+        checksum_sha256: asset.checksum_sha256,
         created_at: asset.created_at,
     }
 }
@@ -5791,6 +5851,10 @@ fn default_project_status() -> String {
 
 fn default_release_channel() -> String {
     system_releases::RELEASE_CHANNEL_LEGACY.to_string()
+}
+
+fn default_release_artifact_kind() -> String {
+    system_releases::RELEASE_ARTIFACT_INSTALLER.to_string()
 }
 
 fn default_github_withdrawal_status() -> String {

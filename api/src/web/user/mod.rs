@@ -11432,12 +11432,14 @@ fn desktop_download_link_view(
 ) -> DesktopDownloadLinkView {
     let matching_asset = assets.iter().find(|asset| {
         asset.status == "uploaded"
+            && asset.artifact_kind == system_releases::RELEASE_ARTIFACT_INSTALLER
             && asset.platform == platform
             && asset.architecture == architecture
     });
     let matching_asset = matching_asset.or_else(|| {
         assets.iter().find(|asset| {
             asset.status == "uploaded"
+                && asset.artifact_kind == system_releases::RELEASE_ARTIFACT_INSTALLER
                 && asset.platform == platform
                 && asset.architecture == system_releases::RELEASE_ARCHITECTURE_UNIVERSAL
         })

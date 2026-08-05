@@ -359,6 +359,23 @@
           }
         }
       }
+    },
+    "/api/v1/system/releases/{release_id}/assets/{asset_id}/download-url": {
+      "get": {
+        "tags": ["releases"],
+        "summary": "获取版本资产受控回读地址",
+        "parameters": [
+          {"$ref": "#/components/parameters/ReleaseId"},
+          {"$ref": "#/components/parameters/AssetId"},
+          {"name": "expires_in_seconds", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 600}}
+        ],
+        "responses": {
+          "200": {"description": "回读签名地址及预期 SHA-256", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
     }
   },
   "components": {
@@ -583,6 +600,10 @@
               "universal"
             ]
           },
+          "artifact_kind": {
+            "type": "string",
+            "enum": ["installer", "signature", "sbom", "manifest", "checksums"]
+          },
           "object_key": {
             "type": "string"
           },
@@ -598,6 +619,7 @@
           "status": {
             "type": "string"
           },
+          "checksum_sha256": {"type": "string"},
           "created_at": {
             "type": "string"
           }
@@ -608,11 +630,13 @@
           "file_object_id",
           "platform",
           "architecture",
+          "artifact_kind",
           "object_key",
           "filename",
           "content_type",
           "byte_size",
           "status",
+          "checksum_sha256",
           "created_at"
         ]
       },
@@ -722,12 +746,16 @@
           },
           "expires_in_seconds": {
             "type": "integer"
-          }
+          },
+          "expires_at": {"type": "string"},
+          "checksum_sha256": {"type": "string"}
         },
         "required": [
           "attachment",
           "request",
           "expires_in_seconds"
+          ,"expires_at"
+          ,"checksum_sha256"
         ]
       },
       "CreateSystemReleaseRequest": {
@@ -810,6 +838,11 @@
             ],
             "default": "universal"
           },
+          "artifact_kind": {
+            "type": "string",
+            "enum": ["installer", "signature", "sbom", "manifest", "checksums"],
+            "default": "installer"
+          },
           "original_filename": {
             "type": "string"
           },
@@ -818,6 +851,10 @@
           },
           "byte_size": {
             "type": "integer"
+          },
+          "checksum_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
