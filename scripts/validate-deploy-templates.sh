@@ -6,6 +6,8 @@ PRODUCTION_DIR="$ROOT_DIR/deploy/easy-deploy/production"
 BACKEND_DIR="$PRODUCTION_DIR/backend"
 GATEWAY_DIR="$PRODUCTION_DIR/gateway"
 COMPOSE_FILE="$BACKEND_DIR/compose.yaml.example"
+PRODUCTION_README="$PRODUCTION_DIR/README.md"
+APP_METADATA="$BACKEND_DIR/app.yaml.example"
 
 require_file() {
   if [ ! -f "$ROOT_DIR/$1" ]; then
@@ -91,6 +93,18 @@ fi
 
 if grep -q 'YUANCE_DEPLOY_HOST:-qfy-sc-test' "$ROOT_DIR/scripts/deploy-production.sh"; then
   echo "正式部署禁止隐式回退到旧服务器 qfy-sc-test。" >&2
+  exit 1
+fi
+
+for file in "$PRODUCTION_README" "$APP_METADATA"; do
+  if ! grep -q '/srv/yuance/backend' "$file"; then
+    echo "正式部署说明必须声明 WSL 运行目录 /srv/yuance/backend: $file" >&2
+    exit 1
+  fi
+done
+
+if grep -Eq '(当前部署机器|部署服务器当前).*qfy-sc-test' "$PRODUCTION_README" "$APP_METADATA"; then
+  echo "正式部署说明不得把 qfy-sc-test 描述为当前应用运行节点。" >&2
   exit 1
 fi
 
