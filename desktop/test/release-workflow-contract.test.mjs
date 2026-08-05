@@ -55,3 +55,9 @@ test("workflow keeps internal trust labels and excludes updater metadata", async
   assert.match(source, /macOS 仅 ad-hoc，Windows 未签名，Linux 使用 minisign 完整性签名/u);
   assert.doesNotMatch(source, /latest(?:-mac)?\.yml|electron-updater|notariz|authenticode/iu);
 });
+
+test("Linux release tests run with the secure storage runtime", async () => {
+  const source = await workflow();
+  assert.match(source, /apt-get install --yes dbus-x11 gnome-keyring/u);
+  assert.match(source, /dbus-run-session -- bash -euo pipefail -c[\s\S]*gnome-keyring-daemon --unlock --components=secrets[\s\S]*xvfb-run -a npm --prefix desktop test/u);
+});
