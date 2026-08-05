@@ -53,7 +53,7 @@ test("workflow keeps internal trust labels and excludes updater metadata", async
   const source = await workflow();
   assert.match(source, /内部开发制品/u);
   assert.match(source, /macOS 仅 ad-hoc，Windows 未签名，Linux 使用 minisign 完整性签名/u);
-  assert.doesNotMatch(source, /latest(?:-mac)?\.yml|electron-updater|notariz|authenticode/iu);
+  assert.doesNotMatch(source, /latest(?:-mac)?\.yml|electron-updater|notariz|signtool(?:\.exe)?\s+sign/iu);
 });
 
 test("Linux release tests run with the secure storage runtime", async () => {
@@ -66,4 +66,13 @@ test("macOS release jobs never invoke safeStorage", async () => {
   const source = await workflow();
   assert.match(source, /Verify Windows native safeStorage boundary[\s\S]*if: runner\.os == 'Windows'[\s\S]*smoke:safe-storage/u);
   assert.doesNotMatch(source, /if: runner\.os != 'Linux'[\s\S]{0,160}smoke:safe-storage/u);
+});
+
+test("platform runners prove native signing boundaries before upload", async () => {
+  const source = await workflow();
+  assert.match(source, /Verify macOS ad-hoc signature boundary[\s\S]*codesign --verify --deep --strict[\s\S]*Signature=adhoc[\s\S]*TeamIdentifier=not set[\s\S]*Authority=/u);
+  assert.match(source, /Verify Windows unsigned boundary[\s\S]*Get-AuthenticodeSignature[\s\S]*SignatureStatus\]::NotSigned/u);
+  const nativeChecks = source.indexOf("Verify macOS ad-hoc signature boundary");
+  const upload = source.indexOf("Upload release asset");
+  assert.ok(nativeChecks > 0 && upload > nativeChecks);
 });

@@ -180,6 +180,40 @@ jobs:
       - name: Collect release asset
         run: node desktop/scripts/collect-release-assets.mjs desktop/dist .artifacts/release-assets
 
+      - name: Verify macOS ad-hoc signature boundary
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_count="$(find desktop/dist -mindepth 2 -maxdepth 2 -type d -name '*.app' | wc -l | tr -d ' ')"
+          if [ "$app_count" -ne 1 ]; then
+            echo "Expected exactly one packaged macOS app, found $app_count." >&2
+            exit 1
+          fi
+          app_path="$(find desktop/dist -mindepth 2 -maxdepth 2 -type d -name '*.app' -print -quit)"
+          codesign --verify --deep --strict "$app_path"
+          signature="$(codesign -dv --verbose=4 "$app_path" 2>&1)"
+          grep -q '^Signature=adhoc$' <<<"$signature"
+          grep -q '^TeamIdentifier=not set$' <<<"$signature"
+          if grep -q '^Authority=' <<<"$signature"; then
+            echo "macOS internal artifact unexpectedly contains a certificate authority." >&2
+            exit 1
+          fi
+
+      - name: Verify Windows unsigned boundary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem .artifacts/release-assets -Filter '*.exe' -File)
+          if ($installers.Count -ne 1) {
+            throw "Expected exactly one Windows installer, found $($installers.Count)."
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installers[0].FullName
+          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::NotSigned) {
+            throw "Windows internal artifact must be unsigned; status=$($signature.Status)."
+          }
+          Write-Output "Verified Windows installer is unsigned: $($installers[0].Name)"
+
       - name: Upload release asset
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
