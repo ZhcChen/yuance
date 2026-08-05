@@ -1,19 +1,44 @@
 # 桌面端版本发布
 
-本手册说明如何将 GitHub Release 中的 Electron 安装包发布到元策的系统版本管理，并由 Web 下载页提供下载入口。
+本手册说明如何将 GitHub Release 中的 Electron 安装包发布到元策的系统版本管理，并由 Web 下载页提供下载入口。当前发行渠道为 `internal`，属于 `G-DIST-DEV` 开发制品，不是生产可信发行。
+
+## 信任边界
+
+- macOS 安装包只使用 ad-hoc 签名，不使用 Apple Developer ID、notarization、stapling、Keychain 或 Electron `safeStorage`。
+- Windows 安装包不使用 Authenticode。
+- Linux 不做 OS 级签名。
+- 六个平台/架构安装包统一使用 minisign detached signature 校验项目来源与字节完整性。minisign 不是 Apple、Windows 或 Linux 的系统签名。
+- macOS Gatekeeper 和 Windows SmartScreen 仍可能提示来源未知；不得把本渠道描述为“生产可信”或“已通过系统签名”。
+
+生产 `G-DIST` 和自动更新 `G-UPDATE` 仍是独立的后续 Gate。
 
 ## 发布模型
 
 1. 推送 `desktop-v<版本号>` 标签，例如 `desktop-v0.1.0`。
-2. GitHub Actions 构建并创建 GitHub Release，必须包含六个安装包：
+2. GitHub Actions 构建六个安装包：
    - macOS `x64` / `arm64`：`.dmg`
    - Windows `x64` / `arm64`：`.exe`
    - Linux `x64` / `arm64`：`.AppImage`
-3. 在可信发布环境执行 `scripts/publish-desktop-release.mjs`。
-4. 脚本通过 system OpenAPI 创建草稿、申请 OSS 直传地址、上传资产、确认上传并发布版本。
-5. `/web/downloads` 自动展示最新含桌面安装包的已发布版本。
+3. 汇总 job 校验六目标矩阵，生成 SHA-256、minisign、CycloneDX SBOM、provenance 和 `release-manifest.json`，然后创建 GitHub draft Release。
+4. 发布 job 回读并验证完整证据集后公开 GitHub Release。
+5. 在可信发布环境执行 `scripts/publish-desktop-release.mjs`，脚本必须在系统或 OSS 副作用前验证同一证据集。
+6. 脚本通过 system OpenAPI 创建草稿、申请 OSS 直传地址、上传资产、确认上传并发布版本。
+7. `/web/downloads` 自动展示最新含桌面安装包的已发布版本。
 
 GitHub Release 与系统版本管理是两层独立发布：GitHub Token 只用于读取构建产物，system token 只用于写入元策版本管理。
+
+## Manifest 与密钥
+
+- manifest schema：`desktop/release/release-manifest.schema.json`
+- minisign 公钥：`desktop/release/minisign.pub`（创建 protected Environment 与发布密钥时提交）
+- minisign 版本：`0.12`
+- Syft 版本：`v1.50.0`
+- GitHub protected Environment：`desktop-internal-release`
+- Environment secret：`YUANCE_MINISIGN_PRIVATE_KEY`
+
+发布私钥不得提交到仓库、GitHub artifact、Release、日志或 runner cache，也不得在 CI 临时生成。build job 不得引用该 secret；只有受保护的 assemble/sign job 可读取。公钥文件必须来自同一持久私钥，并记录 16 位大写 key ID。工具二进制下载必须验证发布者 checksum，第三方 Action 必须固定审核后的 commit SHA。
+
+密钥尚未配置或公钥缺失时，发行 Gate 必须保持阻塞，不能生成临时密钥绕过。
 
 ## 环境变量
 

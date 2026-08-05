@@ -4,7 +4,10 @@
 /web/dist/
 /desktop/dist/
 /desktop/renderer-dist/
-/desktop/release/
+!/desktop/release/
+/desktop/release/*
+!/desktop/release/release-manifest.schema.json
+!/desktop/release/minisign.pub
 /.context/
 node_modules/
 /.env
