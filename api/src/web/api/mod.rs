@@ -378,9 +378,10 @@ fn notification_filter_from_query(
     match value.trim().to_ascii_lowercase().as_str() {
         "" | "all" => Ok((notifications::NotificationFilter::All, "all")),
         "unread" => Ok((notifications::NotificationFilter::Unread, "unread")),
-        "pending" | "pending_discussion" => {
-            Ok((notifications::NotificationFilter::PendingDiscussion, "pending"))
-        }
+        "pending" | "pending_discussion" => Ok((
+            notifications::NotificationFilter::PendingDiscussion,
+            "pending",
+        )),
         "read" => Ok((notifications::NotificationFilter::Read, "read")),
         _ => Err(AppError::BadRequest("消息筛选条件无效".to_string())),
     }
@@ -408,7 +409,10 @@ pub async fn list_notifications(
 
     let (filter, filter_value) = notification_filter_from_query(&query.filter)?;
     let page = query.page.unwrap_or(1);
-    let per_page = query.per_page.or(query.limit).unwrap_or(default_notification_limit());
+    let per_page = query
+        .per_page
+        .or(query.limit)
+        .unwrap_or(default_notification_limit());
     if page < 1 {
         return Err(AppError::BadRequest("页码不能小于 1".to_string()));
     }
@@ -421,11 +425,12 @@ pub async fn list_notifications(
     let total_items = notifications::count_for_user_filtered(pool, user.id, filter).await?;
     let total_pages = total_pages(total_items, per_page);
     let resolved_page = page.min(total_pages.max(1));
-    let items = notifications::list_for_user_page_filtered(pool, user.id, filter, resolved_page, per_page)
-        .await?
-        .into_iter()
-        .map(notification_payload)
-        .collect();
+    let items =
+        notifications::list_for_user_page_filtered(pool, user.id, filter, resolved_page, per_page)
+            .await?
+            .into_iter()
+            .map(notification_payload)
+            .collect();
     let unread_count = notifications::unread_count(pool, user.id).await?;
     let pending_count = notifications::count_for_user_filtered(
         pool,
@@ -455,7 +460,9 @@ pub async fn get_notification_target(
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     let notification = notifications::get_for_user(pool, user.id, notification_id).await?;
-    Ok(no_store_json(notification_target_result_payload(notification)))
+    Ok(no_store_json(notification_target_result_payload(
+        notification,
+    )))
 }
 
 pub async fn mark_notification_read(
@@ -469,7 +476,9 @@ pub async fn mark_notification_read(
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     ensure_api_csrf(&headers)?;
     let notification = notifications::mark_read(pool, user.id, notification_id).await?;
-    Ok(no_store_json(notification_target_result_payload(notification)))
+    Ok(no_store_json(notification_target_result_payload(
+        notification,
+    )))
 }
 
 pub async fn mark_all_notifications_read(
@@ -872,7 +881,17 @@ pub struct SystemReleasePayload {
     pub title: String,
     pub notes: String,
     pub status: String,
+    pub channel: String,
+    pub verification_status: String,
+    pub manifest_sha256: String,
+    pub signing_key_id: String,
+    pub source_commit: String,
+    pub source_tag: String,
     pub published_at: String,
+    pub verified_at: String,
+    pub withdrawn_at: String,
+    pub withdrawal_reason: String,
+    pub github_withdrawal_status: String,
     pub created_by: String,
     pub updated_by: String,
     pub created_at: String,
@@ -924,9 +943,7 @@ impl ApiPrincipal {
     fn audit_details(&self) -> String {
         match &self.kind {
             ApiPrincipalKind::Session => serde_json::json!({"source": "session"}).to_string(),
-            ApiPrincipalKind::ApiToken(_) => {
-                serde_json::json!({"source": "api_token"}).to_string()
-            }
+            ApiPrincipalKind::ApiToken(_) => serde_json::json!({"source": "api_token"}).to_string(),
             ApiPrincipalKind::Device(device) => serde_json::json!({
                 "source": "device",
                 "device_id": device.device_id,
@@ -1290,6 +1307,16 @@ pub struct CreateSystemReleaseRequest {
     title: String,
     #[serde(default)]
     notes: String,
+    #[serde(default = "default_release_channel")]
+    channel: String,
+    #[serde(default)]
+    manifest_sha256: String,
+    #[serde(default)]
+    signing_key_id: String,
+    #[serde(default)]
+    source_commit: String,
+    #[serde(default)]
+    source_tag: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1301,6 +1328,18 @@ pub struct UpdateSystemReleaseRequest {
     notes: String,
     #[serde(default)]
     publish: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WithdrawSystemReleaseRequest {
+    reason: String,
+    #[serde(default = "default_github_withdrawal_status")]
+    github_withdrawal_status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemReleaseWithdrawalRequest {
+    github_withdrawal_status: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1524,10 +1563,7 @@ pub async fn login(
     ))
 }
 
-pub async fn me(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<impl IntoResponse> {
+pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> AppResult<impl IntoResponse> {
     let user = require_d2_api_principal(&state, &headers).await?.user;
 
     Ok(no_store_json(auth_user_payload(user)))
@@ -3034,15 +3070,13 @@ pub async fn update_project_resource(
             access_password_action: payload.access_password_action,
             access_password: payload.access_password,
             tags: payload.tags.unwrap_or_else(|| resource.tags.clone()),
-            related_work_item_key: payload
-                .related_work_item_key
-                .unwrap_or_else(|| {
-                    resource
-                        .related_work_item
-                        .as_ref()
-                        .map(|item| item.item_key.clone())
-                        .unwrap_or_default()
-                }),
+            related_work_item_key: payload.related_work_item_key.unwrap_or_else(|| {
+                resource
+                    .related_work_item
+                    .as_ref()
+                    .map(|item| item.item_key.clone())
+                    .unwrap_or_default()
+            }),
             related_cycle_id: parse_api_optional_cycle_id_with_fallback(
                 payload.related_cycle_id,
                 resource.related_cycle.as_ref().map(|cycle| cycle.id),
@@ -3928,6 +3962,11 @@ pub async fn create_system_release(
             version_name: payload.version_name,
             title: payload.title,
             notes: payload.notes,
+            channel: payload.channel,
+            manifest_sha256: payload.manifest_sha256,
+            signing_key_id: payload.signing_key_id,
+            source_commit: payload.source_commit,
+            source_tag: payload.source_tag,
         },
     )
     .await?;
@@ -4016,6 +4055,103 @@ pub async fn update_system_release(
     Ok(json(system_release_detail_payload(updated)))
 }
 
+pub async fn verify_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let verified =
+        system_releases::mark_release_verified(pool, principal.actor_user_id(), release_id).await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(principal.actor_user_id()),
+        "system.release.verify",
+        "system_release",
+        &release_id.to_string(),
+        &format!(r#"{{{}}}"#, system_release_audit_source(&principal)),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(verified)))
+}
+
+pub async fn withdraw_system_release(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Json(payload): Json<WithdrawSystemReleaseRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let withdrawn = system_releases::withdraw_release(
+        pool,
+        principal.actor_user_id(),
+        release_id,
+        system_releases::WithdrawSystemReleaseInput {
+            reason: payload.reason,
+            github_withdrawal_status: payload.github_withdrawal_status,
+        },
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(principal.actor_user_id()),
+        "system.release.withdraw",
+        "system_release",
+        &release_id.to_string(),
+        &format!(r#"{{{}}}"#, system_release_audit_source(&principal)),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(withdrawn)))
+}
+
+pub async fn update_system_release_withdrawal(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(release_id): Path<i64>,
+    Json(payload): Json<UpdateSystemReleaseWithdrawalRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleaseDetailPayload>>> {
+    let principal = require_system_release_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
+        .await?;
+    let updated = system_releases::update_withdrawal_status(
+        pool,
+        principal.actor_user_id(),
+        release_id,
+        &payload.github_withdrawal_status,
+    )
+    .await?;
+    let request_context = audit_context::from_headers(&headers);
+    audit::record_with_context(
+        pool,
+        Some(principal.actor_user_id()),
+        "system.release.withdrawal.update",
+        "system_release",
+        &release_id.to_string(),
+        &format!(
+            r#"{{{},"github_withdrawal_status":"{}"}}"#,
+            system_release_audit_source(&principal),
+            updated.release.github_withdrawal_status
+        ),
+        &request_context,
+    )
+    .await?;
+    Ok(json(system_release_detail_payload(updated)))
+}
+
 pub async fn create_system_release_asset(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4056,6 +4192,7 @@ pub async fn system_release_asset_upload_url(
     let pool = state.pool()?;
     ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
         .await?;
+    system_releases::ensure_release_is_mutable(pool, release_id).await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
     let expires_in_seconds =
         normalize_signed_url_expiration(SignedUrlKind::Upload, query.expires_in_seconds)?;
@@ -4982,12 +5119,11 @@ async fn signed_attachment_url_payload(
         )?;
     }
 
-    let checksum_sha256 = sqlx::query_scalar::<_, String>(
-        "SELECT checksum_sha256 FROM file_objects WHERE id = ?1",
-    )
-    .bind(attachment.file_object_id)
-    .fetch_one(pool)
-    .await?;
+    let checksum_sha256 =
+        sqlx::query_scalar::<_, String>("SELECT checksum_sha256 FROM file_objects WHERE id = ?1")
+            .bind(attachment.file_object_id)
+            .fetch_one(pool)
+            .await?;
 
     Ok(AttachmentSignedUrlPayload {
         attachment: attachment_payload(attachment),
@@ -5055,9 +5191,7 @@ fn parse_api_optional_i64(value: &str) -> AppResult<Option<i64>> {
     Ok(Some(parsed))
 }
 
-fn parse_api_optional_cycle_id(
-    value: Option<serde_json::Value>,
-) -> AppResult<Option<i64>> {
+fn parse_api_optional_cycle_id(value: Option<serde_json::Value>) -> AppResult<Option<i64>> {
     parse_api_optional_cycle_id_with_fallback(value, None)
 }
 
@@ -5618,7 +5752,17 @@ fn system_release_payload(
         title: release.title,
         notes: release.notes,
         status: release.status,
+        channel: release.channel,
+        verification_status: release.verification_status,
+        manifest_sha256: release.manifest_sha256,
+        signing_key_id: release.signing_key_id,
+        source_commit: release.source_commit,
+        source_tag: release.source_tag,
         published_at: release.published_at,
+        verified_at: release.verified_at,
+        withdrawn_at: release.withdrawn_at,
+        withdrawal_reason: release.withdrawal_reason,
+        github_withdrawal_status: release.github_withdrawal_status,
         created_by: release.created_by_display_name,
         updated_by: release.updated_by_display_name,
         created_at: release.created_at,
@@ -5643,6 +5787,14 @@ fn system_release_detail_payload(
 
 fn default_project_status() -> String {
     "not_started".to_string()
+}
+
+fn default_release_channel() -> String {
+    system_releases::RELEASE_CHANNEL_LEGACY.to_string()
+}
+
+fn default_github_withdrawal_status() -> String {
+    "pending".to_string()
 }
 
 fn default_true() -> bool {

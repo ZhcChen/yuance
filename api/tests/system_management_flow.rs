@@ -2679,6 +2679,182 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
     assert_eq!(file_object_count, 1);
 }
 
+#[tokio::test]
+async fn internal_system_release_requires_verification_and_supports_withdrawal() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let admin_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let invalid = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        "/api/v1/system/releases",
+        serde_json::json!({"version_name":"v3.0.0","channel":"internal"}),
+    )
+    .await;
+    assert_eq!(invalid.0, StatusCode::BAD_REQUEST);
+
+    let created = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        "/api/v1/system/releases",
+        serde_json::json!({
+            "version_name": "v3.0.0",
+            "title": "内部桌面版",
+            "notes": "仅供内部验证",
+            "channel": "internal",
+            "manifest_sha256": "a".repeat(64),
+            "signing_key_id": "ABCDEF0123456789",
+            "source_commit": "b".repeat(40),
+            "source_tag": "desktop-v3.0.0"
+        }),
+    )
+    .await;
+    assert_eq!(created.0, StatusCode::CREATED);
+    let release_id = json_i64(&created.1, &["data", "release", "id"]);
+    assert_eq!(
+        json_string(&created.1, &["data", "release", "verification_status"]),
+        "pending"
+    );
+
+    let publish_before_verify = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "PATCH",
+        &format!("/api/v1/system/releases/{release_id}"),
+        serde_json::json!({
+            "version_name": "v3.0.0", "title": "内部桌面版",
+            "notes": "仅供内部验证", "publish": true
+        }),
+    )
+    .await;
+    assert_eq!(publish_before_verify.0, StatusCode::CONFLICT);
+
+    let verify_incomplete = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/verify"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(verify_incomplete.0, StatusCode::BAD_REQUEST);
+
+    let targets = [
+        ("macos", "x64", "Yuance-3.0.0-mac-x64.dmg"),
+        ("macos", "arm64", "Yuance-3.0.0-mac-arm64.dmg"),
+        ("windows", "x64", "Yuance-3.0.0-win-x64.exe"),
+        ("windows", "arm64", "Yuance-3.0.0-win-arm64.exe"),
+        ("linux", "x64", "Yuance-3.0.0-linux-x64.AppImage"),
+        ("linux", "arm64", "Yuance-3.0.0-linux-arm64.AppImage"),
+    ];
+    let mut first_asset_id = 0;
+    for (platform, architecture, filename) in targets {
+        let asset = create_system_release_asset_api_with_architecture(
+            &app,
+            &admin_cookie,
+            release_id,
+            platform,
+            architecture,
+            filename,
+            "application/octet-stream",
+            8,
+        )
+        .await;
+        let asset_id = json_i64(&asset, &["data", "id"]);
+        if first_asset_id == 0 {
+            first_asset_id = asset_id;
+        }
+        let upload =
+            get_system_release_asset_upload_url_api(&app, &admin_cookie, release_id, asset_id)
+                .await;
+        upload_test_storage_object(
+            &app,
+            &admin_cookie,
+            &json_string(&upload, &["data", "request", "url"]),
+            b"internal",
+            "application/octet-stream",
+        )
+        .await;
+        mark_system_release_asset_uploaded_api(&app, &admin_cookie, release_id, asset_id).await;
+    }
+
+    let verified = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/verify"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(verified.0, StatusCode::OK);
+    assert_eq!(
+        json_string(&verified.1, &["data", "release", "verification_status"]),
+        "verified"
+    );
+
+    let published = system_release_json_request(
+        &app, &admin_cookie, "PATCH", &format!("/api/v1/system/releases/{release_id}"),
+        serde_json::json!({"version_name":"v3.0.0","title":"内部桌面版","notes":"仅供内部验证","publish":true}),
+    ).await;
+    assert_eq!(published.0, StatusCode::OK);
+
+    let mutate_published = system_release_json_request(
+        &app, &admin_cookie, "POST", &format!("/api/v1/system/releases/{release_id}/assets"),
+        serde_json::json!({"platform":"linux","architecture":"x64","original_filename":"late.AppImage","content_type":"application/octet-stream","byte_size":1}),
+    ).await;
+    assert_eq!(mutate_published.0, StatusCode::CONFLICT);
+
+    let withdrawn = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "POST",
+        &format!("/api/v1/system/releases/{release_id}/withdraw"),
+        serde_json::json!({"reason":"内部验证发现阻塞问题","github_withdrawal_status":"pending"}),
+    )
+    .await;
+    assert_eq!(withdrawn.0, StatusCode::OK);
+    assert_eq!(
+        json_string(&withdrawn.1, &["data", "release", "status"]),
+        "withdrawn"
+    );
+
+    let withdrawal_updated = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "PATCH",
+        &format!("/api/v1/system/releases/{release_id}/withdrawal"),
+        serde_json::json!({"github_withdrawal_status":"succeeded"}),
+    )
+    .await;
+    assert_eq!(withdrawal_updated.0, StatusCode::OK);
+    assert_eq!(
+        json_string(
+            &withdrawal_updated.1,
+            &["data", "release", "github_withdrawal_status"]
+        ),
+        "succeeded"
+    );
+
+    let download = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/web/downloads/{release_id}/assets/{first_asset_id}"
+                ))
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(download.status(), StatusCode::NOT_FOUND);
+}
+
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     let result = bootstrap::bootstrap_init(
         pool,
@@ -2733,6 +2909,31 @@ async fn create_system_release_api(
         .expect("router should respond");
     assert_eq!(response.status(), StatusCode::CREATED);
     response_json(response).await
+}
+
+async fn system_release_json_request(
+    app: &axum::Router,
+    admin_cookie: &str,
+    method: &str,
+    uri: &str,
+    payload: Value,
+) -> (StatusCode, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::COOKIE, admin_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(payload.to_string()))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let status = response.status();
+    (status, response_json(response).await)
 }
 
 async fn update_system_release_api(

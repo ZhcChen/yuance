@@ -105,6 +105,13 @@
             </td>
             <td>
               <span class="status status-{{ release.status_tone }}">{{ release.status }}</span>
+              <div class="muted-line">{{ release.channel }} · {{ release.verification_status }}</div>
+              {% if release.signing_key_id != "" %}
+              <div class="muted-line">Key {{ release.signing_key_id }}</div>
+              {% endif %}
+              {% if release.github_withdrawal_status != "" %}
+              <div class="muted-line">GitHub 撤回：{{ release.github_withdrawal_status }}</div>
+              {% endif %}
               <div class="muted-line">{{ release.published_at }}</div>
             </td>
             <td>{{ release.platform_count }} 个平台</td>

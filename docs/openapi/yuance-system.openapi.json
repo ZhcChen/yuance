@@ -190,6 +190,47 @@
         }
       }
     },
+    "/api/v1/system/releases/{release_id}/verify": {
+      "post": {
+        "tags": ["releases"],
+        "summary": "确认内部版本发行证据已验证",
+        "parameters": [{"$ref": "#/components/parameters/ReleaseId"}],
+        "responses": {
+          "200": {"description": "验证成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemReleaseDetailEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/system/releases/{release_id}/withdraw": {
+      "post": {
+        "tags": ["releases"],
+        "summary": "撤回已发布版本",
+        "parameters": [{"$ref": "#/components/parameters/ReleaseId"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WithdrawSystemReleaseRequest"}}}},
+        "responses": {
+          "200": {"description": "撤回成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemReleaseDetailEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/system/releases/{release_id}/withdrawal": {
+      "patch": {
+        "tags": ["releases"],
+        "summary": "更新 GitHub Release 撤回结果",
+        "parameters": [{"$ref": "#/components/parameters/ReleaseId"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateSystemReleaseWithdrawalRequest"}}}},
+        "responses": {
+          "200": {"description": "更新成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/SystemReleaseDetailEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/api/v1/system/releases/{release_id}/assets": {
       "post": {
         "tags": [
@@ -451,12 +492,23 @@
             "type": "string",
             "enum": [
               "draft",
-              "published"
+              "published",
+              "withdrawn"
             ]
           },
+          "channel": {"type": "string", "enum": ["legacy", "internal"]},
+          "verification_status": {"type": "string", "enum": ["unverified", "pending", "verified", "failed"]},
+          "manifest_sha256": {"type": "string"},
+          "signing_key_id": {"type": "string"},
+          "source_commit": {"type": "string"},
+          "source_tag": {"type": "string"},
           "published_at": {
             "type": "string"
           },
+          "verified_at": {"type": "string"},
+          "withdrawn_at": {"type": "string"},
+          "withdrawal_reason": {"type": "string"},
+          "github_withdrawal_status": {"type": "string", "enum": ["", "pending", "succeeded", "failed", "not_required"]},
           "created_by": {
             "type": "string"
           },
@@ -482,7 +534,17 @@
           "title",
           "notes",
           "status",
+          "channel",
+          "verification_status",
+          "manifest_sha256",
+          "signing_key_id",
+          "source_commit",
+          "source_tag",
           "published_at",
+          "verified_at",
+          "withdrawn_at",
+          "withdrawal_reason",
+          "github_withdrawal_status",
           "created_by",
           "updated_by",
           "created_at",
@@ -679,7 +741,12 @@
           },
           "notes": {
             "type": "string"
-          }
+          },
+          "channel": {"type": "string", "enum": ["legacy", "internal"], "default": "legacy"},
+          "manifest_sha256": {"type": "string"},
+          "signing_key_id": {"type": "string"},
+          "source_commit": {"type": "string"},
+          "source_tag": {"type": "string"}
         },
         "required": [
           "version_name"
@@ -705,6 +772,21 @@
         "required": [
           "version_name"
         ]
+      },
+      "WithdrawSystemReleaseRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {"type": "string", "minLength": 1, "maxLength": 500},
+          "github_withdrawal_status": {"type": "string", "enum": ["pending", "succeeded", "failed", "not_required"], "default": "pending"}
+        },
+        "required": ["reason"]
+      },
+      "UpdateSystemReleaseWithdrawalRequest": {
+        "type": "object",
+        "properties": {
+          "github_withdrawal_status": {"type": "string", "enum": ["succeeded", "failed", "not_required"]}
+        },
+        "required": ["github_withdrawal_status"]
       },
       "CreateSystemReleaseAssetRequest": {
         "type": "object",

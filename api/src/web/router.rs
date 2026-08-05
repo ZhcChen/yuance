@@ -107,9 +107,15 @@ impl AppState {
     }
 
     pub(crate) fn try_device_stream_permit(&self, family_id: &str) -> Option<DeviceStreamPermit> {
-        let global = self.device_stream_concurrency.clone().try_acquire_owned().ok()?;
+        let global = self
+            .device_stream_concurrency
+            .clone()
+            .try_acquire_owned()
+            .ok()?;
         let mut active = self.active_device_stream_families.lock().ok()?;
-        if !active.insert(family_id.to_string()) { return None; }
+        if !active.insert(family_id.to_string()) {
+            return None;
+        }
         drop(active);
         Some(DeviceStreamPermit {
             family_id: family_id.to_string(),
@@ -127,7 +133,9 @@ pub(crate) struct DeviceStreamPermit {
 
 impl Drop for DeviceStreamPermit {
     fn drop(&mut self) {
-        if let Ok(mut active) = self.active.lock() { active.remove(&self.family_id); }
+        if let Ok(mut active) = self.active.lock() {
+            active.remove(&self.family_id);
+        }
     }
 }
 
@@ -681,6 +689,18 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::get_system_release).patch(web::api::update_system_release),
         )
         .route(
+            "/api/v1/system/releases/{release_id}/verify",
+            post(web::api::verify_system_release),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}/withdraw",
+            post(web::api::withdraw_system_release),
+        )
+        .route(
+            "/api/v1/system/releases/{release_id}/withdrawal",
+            patch(web::api::update_system_release_withdrawal),
+        )
+        .route(
             "/api/v1/system/releases/{release_id}/assets",
             post(web::api::create_system_release_asset),
         )
@@ -963,8 +983,8 @@ async fn device_auth_boundary_middleware(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    let is_browser_device_revoke = path.starts_with("/web/me/device-sessions/")
-        && path.ends_with("/revoke");
+    let is_browser_device_revoke =
+        path.starts_with("/web/me/device-sessions/") && path.ends_with("/revoke");
     let boundary = match path {
         "/api/v1/device-authorizations" => (120, 20, true, true, false),
         "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
@@ -973,9 +993,7 @@ async fn device_auth_boundary_middleware(
         | "/api/v1/device-session/logout"
         | "/api/v1/device-session/events"
         | "/api/v1/device-file-transfer/canary/upload-request"
-        | "/api/v1/device-file-transfer/canary/download-request" => {
-            (1200, 120, true, false, false)
-        }
+        | "/api/v1/device-file-transfer/canary/download-request" => (1200, 120, true, false, false),
         "/api/v1/device-file-transfer/canary/upload"
         | "/api/v1/device-file-transfer/canary/download" => (1200, 120, true, true, false),
         "/web/device-authorization"
@@ -984,7 +1002,8 @@ async fn device_auth_boundary_middleware(
         _ if is_browser_device_revoke => (600, 30, false, false, true),
         _ => return next.run(request).await,
     };
-    let (global_limit, peer_limit, reject_cookie, reject_authorization, browser_response) = boundary;
+    let (global_limit, peer_limit, reject_cookie, reject_authorization, browser_response) =
+        boundary;
     if (reject_cookie && request.headers().contains_key(header::COOKIE))
         || (reject_authorization && request.headers().contains_key(header::AUTHORIZATION))
     {
@@ -1612,9 +1631,10 @@ fn normalize_web_app_path(requested_path: &str) -> Option<String> {
     }
 
     let candidate = PathBuf::from(trimmed);
-    if candidate.components().any(|component| {
-        !matches!(component, std::path::Component::Normal(_))
-    }) {
+    if candidate
+        .components()
+        .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
         return None;
     }
 

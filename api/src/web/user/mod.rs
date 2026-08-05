@@ -881,6 +881,10 @@ struct SystemReleaseRow {
     status_code: String,
     status: String,
     status_tone: &'static str,
+    channel: String,
+    verification_status: String,
+    signing_key_id: String,
+    github_withdrawal_status: String,
     published_at: String,
     created_by: String,
     updated_by: String,
@@ -1448,6 +1452,8 @@ struct DesktopDownloadsTemplate {
     title: String,
     notes: String,
     published_at: String,
+    is_internal: bool,
+    signing_key_id: String,
     platforms: Vec<DesktopDownloadPlatformView>,
 }
 
@@ -2743,16 +2749,17 @@ pub(crate) async fn me_device_session_revoke(
             }
             Err(error) => return Err(AppError::Conflict(error.to_string())),
         };
-        if revoked_now && let Err(error) = audit::record_with_context(
-            pool,
-            Some(context.user_id),
-            "device_session.revoke",
-            "device_credential_family",
-            &family_id,
-            r#"{"source":"web"}"#,
-            &audit_context::from_headers_with_client_ip(&headers, client_ip),
-        )
-        .await
+        if revoked_now
+            && let Err(error) = audit::record_with_context(
+                pool,
+                Some(context.user_id),
+                "device_session.revoke",
+                "device_credential_family",
+                &family_id,
+                r#"{"source":"web"}"#,
+                &audit_context::from_headers_with_client_ip(&headers, client_ip),
+            )
+            .await
         {
             tracing::warn!(%error, "failed to record device session revocation audit");
         }
@@ -2855,7 +2862,11 @@ pub async fn messages_page(
 ) -> AppResult<Response> {
     let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
     let filter = MessageFilter::from_query(&query.filter, query.unread);
-    let return_to = message_page_url(filter, requested_pagination.page, requested_pagination.per_page);
+    let return_to = message_page_url(
+        filter,
+        requested_pagination.page,
+        requested_pagination.per_page,
+    );
     let web_app_owner_enabled = state.settings.web_app_shell_v1_enabled();
     let csrf_token = csrf::ensure_token(&headers);
 
@@ -4120,8 +4131,13 @@ pub async fn project_attachment_preview_content(
         ensure_project_access(pool, &context, project.id).await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
-        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
-            .await;
+        return attachment_document_preview_content_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+        )
+        .await;
     }
 
     Ok(Redirect::to("/web/projects/YCE").into_response())
@@ -4200,7 +4216,9 @@ async fn render_project_resource_detail_response(
     let cycle_options = projects::list_project_cycles(pool, project.id)
         .await?
         .into_iter()
-        .map(|cycle| project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle)))
+        .map(|cycle| {
+            project_cycle_option_from_view(&project_cycle_from_domain(&project.project_key, cycle))
+        })
         .collect::<Vec<_>>();
     let resource_work_item_options = projects::list_project_work_items(pool, project.id, None)
         .await?
@@ -4742,8 +4760,13 @@ pub async fn project_resource_attachment_preview_content(
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
                 .await?;
-        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
-            .await;
+        return attachment_document_preview_content_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+        )
+        .await;
     }
 
     Ok(Redirect::to("/web/projects/YCE?tab=library").into_response())
@@ -5012,10 +5035,11 @@ pub async fn work_item_batch_update(
         .await?;
     }
 
-    Ok(
-        Redirect::to(work_item_saved_view_return_to(&form.return_to, Some(&form.item_type)))
-            .into_response(),
-    )
+    Ok(Redirect::to(work_item_saved_view_return_to(
+        &form.return_to,
+        Some(&form.item_type),
+    ))
+    .into_response())
 }
 
 pub async fn work_item_detail_page(
@@ -5855,8 +5879,13 @@ pub async fn work_item_attachment_preview_content(
         .await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
-        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
-            .await;
+        return attachment_document_preview_content_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+        )
+        .await;
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -6053,8 +6082,13 @@ pub async fn work_item_comment_attachment_preview_content(
         .await?;
         let attachment =
             files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-        return attachment_document_preview_content_response(&state, pool, context.user_id, attachment)
-            .await;
+        return attachment_document_preview_content_response(
+            &state,
+            pool,
+            context.user_id,
+            attachment,
+        )
+        .await;
     }
 
     Ok(Redirect::to("/web/work-items/YCE-TASK-2").into_response())
@@ -6473,6 +6507,11 @@ pub async fn system_releases_create(
             version_name: form.version_name,
             title: form.title,
             notes: form.notes,
+            channel: system_releases::RELEASE_CHANNEL_LEGACY.to_string(),
+            manifest_sha256: String::new(),
+            signing_key_id: String::new(),
+            source_commit: String::new(),
+            source_tag: String::new(),
         },
     )
     .await?;
@@ -6651,7 +6690,8 @@ pub async fn system_release_asset_download(
 }
 
 pub async fn desktop_downloads_page(State(state): State<AppState>) -> AppResult<Response> {
-    let latest_release = system_releases::get_latest_published_release_detail(state.pool()?).await?;
+    let latest_release =
+        system_releases::get_latest_published_release_detail(state.pool()?).await?;
     Ok(response::html(desktop_downloads_template(latest_release))?.into_response())
 }
 
@@ -8135,7 +8175,16 @@ async fn work_item_list_page(
             .await?;
             views
                 .into_iter()
-                .map(|view| work_item_saved_view_from_domain(meta.active, &filters, per_page, &assignee_options, &cycle_options, view))
+                .map(|view| {
+                    work_item_saved_view_from_domain(
+                        meta.active,
+                        &filters,
+                        per_page,
+                        &assignee_options,
+                        &cycle_options,
+                        view,
+                    )
+                })
                 .collect::<Vec<_>>()
         }
         _ => Vec::new(),
@@ -8323,101 +8372,96 @@ async fn render_dashboard(
     state: &AppState,
     context: DashboardRenderContext<'_>,
 ) -> AppResult<Html<String>> {
-    let (
-        metrics,
-        projects,
-        pending_discussions,
-        pending_discussion_count,
-        activities,
-    ) = match context.pool {
-        Some(pool) => {
-            let can_view_projects =
-                rbac::user_has_permission(pool, context.user_id, "project.view").await?;
-            let can_view_work_items =
-                rbac::user_has_permission(pool, context.user_id, "work_item.view").await?;
-            let all_project_summaries = if can_view_projects {
-                projects::list_project_summaries_for_user(
-                    pool,
-                    context.user_id,
-                    context.can_access_all_projects,
-                )
-                .await?
-            } else {
-                Vec::new()
-            };
-            let pending_by_project =
-                projects::list_project_pending_counts_for_user(pool, context.user_id)
+    let (metrics, projects, pending_discussions, pending_discussion_count, activities) =
+        match context.pool {
+            Some(pool) => {
+                let can_view_projects =
+                    rbac::user_has_permission(pool, context.user_id, "project.view").await?;
+                let can_view_work_items =
+                    rbac::user_has_permission(pool, context.user_id, "work_item.view").await?;
+                let all_project_summaries = if can_view_projects {
+                    projects::list_project_summaries_for_user(
+                        pool,
+                        context.user_id,
+                        context.can_access_all_projects,
+                    )
                     .await?
-                    .into_iter()
-                    .map(|counts| (counts.project_id, counts))
-                    .collect::<HashMap<_, _>>();
-            let assigned_pending_counts = if can_view_work_items {
-                projects::count_pending_assigned_work_items(
+                } else {
+                    Vec::new()
+                };
+                let pending_by_project =
+                    projects::list_project_pending_counts_for_user(pool, context.user_id)
+                        .await?
+                        .into_iter()
+                        .map(|counts| (counts.project_id, counts))
+                        .collect::<HashMap<_, _>>();
+                let assigned_pending_counts = if can_view_work_items {
+                    projects::count_pending_assigned_work_items(
+                        pool,
+                        context.user_id,
+                        context.can_access_all_projects,
+                        None,
+                    )
+                    .await?
+                } else {
+                    projects::WorkItemAssignmentCounts::default()
+                };
+                let activity_summaries = if can_view_projects {
+                    projects::list_recent_activities_for_user(
+                        pool,
+                        context.user_id,
+                        context.can_access_all_projects,
+                        5,
+                    )
+                    .await?
+                } else {
+                    Vec::new()
+                };
+                let pending_discussion_count = notifications::count_for_user_filtered(
                     pool,
                     context.user_id,
-                    context.can_access_all_projects,
-                    None,
+                    notifications::NotificationFilter::PendingDiscussion,
                 )
-                .await?
-            } else {
-                projects::WorkItemAssignmentCounts::default()
-            };
-            let activity_summaries = if can_view_projects {
-                projects::list_recent_activities_for_user(
+                .await?;
+                let pending_discussions = notifications::list_for_user_page_filtered(
                     pool,
                     context.user_id,
-                    context.can_access_all_projects,
+                    notifications::NotificationFilter::PendingDiscussion,
+                    1,
                     5,
                 )
                 .await?
-            } else {
-                Vec::new()
-            };
-            let pending_discussion_count = notifications::count_for_user_filtered(
-                pool,
-                context.user_id,
-                notifications::NotificationFilter::PendingDiscussion,
-            )
-            .await?;
-            let pending_discussions = notifications::list_for_user_page_filtered(
-                pool,
-                context.user_id,
-                notifications::NotificationFilter::PendingDiscussion,
-                1,
-                5,
-            )
-            .await?
-            .into_iter()
-            .map(notification_view)
-            .collect::<Vec<_>>();
-            (
-                metrics_from_data(&all_project_summaries, &assigned_pending_counts),
-                all_project_summaries
-                    .into_iter()
-                    .map(|project| {
-                        let pending = pending_by_project
-                            .get(&project.id)
-                            .cloned()
-                            .unwrap_or_default();
-                        project_from_summary_with_pending(project, pending)
-                    })
-                    .collect(),
-                pending_discussions,
-                pending_discussion_count,
-                activity_summaries
-                    .into_iter()
-                    .map(activity_from_summary)
-                    .collect(),
-            )
-        }
-        None => (
-            sample_metrics(),
-            sample_projects(),
-            sample_pending_discussions(),
-            2,
-            sample_activities(),
-        ),
-    };
+                .into_iter()
+                .map(notification_view)
+                .collect::<Vec<_>>();
+                (
+                    metrics_from_data(&all_project_summaries, &assigned_pending_counts),
+                    all_project_summaries
+                        .into_iter()
+                        .map(|project| {
+                            let pending = pending_by_project
+                                .get(&project.id)
+                                .cloned()
+                                .unwrap_or_default();
+                            project_from_summary_with_pending(project, pending)
+                        })
+                        .collect(),
+                    pending_discussions,
+                    pending_discussion_count,
+                    activity_summaries
+                        .into_iter()
+                        .map(activity_from_summary)
+                        .collect(),
+                )
+            }
+            None => (
+                sample_metrics(),
+                sample_projects(),
+                sample_pending_discussions(),
+                2,
+                sample_activities(),
+            ),
+        };
     let can_manage_projects = match context.pool {
         Some(pool) => rbac::user_has_permission(pool, context.user_id, "project.manage").await?,
         None => true,
@@ -9913,18 +9957,20 @@ fn project_cycle_board_columns(
                 ("Bug", "bug", data.bug_count),
             ]
             .into_iter()
-            .map(|(type_label, item_type, count)| ProjectCycleBoardTypeLinkView {
-                label: type_label,
-                count_label: format!("{count}"),
-                url: project_cycle_filtered_work_item_list_url(
-                    project_key,
-                    item_type,
-                    cycle.id,
-                    status_filter,
-                    None,
-                ),
-                enabled: count > 0,
-            })
+            .map(
+                |(type_label, item_type, count)| ProjectCycleBoardTypeLinkView {
+                    label: type_label,
+                    count_label: format!("{count}"),
+                    url: project_cycle_filtered_work_item_list_url(
+                        project_key,
+                        item_type,
+                        cycle.id,
+                        status_filter,
+                        None,
+                    ),
+                    enabled: count > 0,
+                },
+            )
             .collect::<Vec<_>>();
             ProjectCycleBoardColumnView {
                 key: bucket_key,
@@ -10177,7 +10223,13 @@ fn project_resource_from_summary(
             .unwrap_or_default(),
         related_cycle_url: related_cycle
             .as_ref()
-            .map(|cycle| format!("{}#cycle-{}", project_cycles_url(&resource.project_key), cycle.id))
+            .map(|cycle| {
+                format!(
+                    "{}#cycle-{}",
+                    project_cycles_url(&resource.project_key),
+                    cycle.id
+                )
+            })
             .unwrap_or_default(),
         created_by: fallback_text(resource.created_by_display_name, "系统"),
         updated_by: fallback_text(resource.updated_by_display_name, "系统"),
@@ -11294,6 +11346,10 @@ fn system_release_row_from_domain(
         status_code: release.status.clone(),
         status: status.to_string(),
         status_tone,
+        channel: release.channel,
+        verification_status: release.verification_status,
+        signing_key_id: release.signing_key_id,
+        github_withdrawal_status: release.github_withdrawal_status,
         published_at: if release.published_at.trim().is_empty() {
             "未发布".to_string()
         } else {
@@ -11320,6 +11376,8 @@ fn desktop_downloads_template(
             title: String::new(),
             notes: String::new(),
             published_at: String::new(),
+            is_internal: false,
+            signing_key_id: String::new(),
             platforms: desktop_download_platforms(&[], 0),
         };
     };
@@ -11332,6 +11390,8 @@ fn desktop_downloads_template(
         title: fallback_text(release.title, "元策桌面端"),
         notes: fallback_text(release.notes, "此版本包含桌面端安装包。"),
         published_at: display_timestamp(release.published_at),
+        is_internal: release.channel == system_releases::RELEASE_CHANNEL_INTERNAL,
+        signing_key_id: release.signing_key_id,
         platforms,
     }
 }
@@ -11772,15 +11832,10 @@ fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy) -> String {
         AttachmentPreviewStrategy::Spreadsheet => {
             "表格内容将由站内前端模块直接解析并渲染。".to_string()
         }
-        AttachmentPreviewStrategy::Docx => {
-            "Word 文档将由站内前端模块直接解析并渲染。".to_string()
-        }
-        AttachmentPreviewStrategy::Pptx => {
-            "演示文稿将由站内前端模块直接解析并渲染。".to_string()
-        }
+        AttachmentPreviewStrategy::Docx => "Word 文档将由站内前端模块直接解析并渲染。".to_string(),
+        AttachmentPreviewStrategy::Pptx => "演示文稿将由站内前端模块直接解析并渲染。".to_string(),
         AttachmentPreviewStrategy::LegacyDoc => {
-            "旧版 Word 文档将走实验性前端解析链路，复杂版式与图片兼容性可能有限。"
-                .to_string()
+            "旧版 Word 文档将走实验性前端解析链路，复杂版式与图片兼容性可能有限。".to_string()
         }
         AttachmentPreviewStrategy::LegacyPpt => {
             "旧版演示文稿将走实验性前端解析链路，复杂版式兼容性有限，且当前运行时会带可见水印。"
@@ -13338,7 +13393,8 @@ fn work_item_saved_view_from_domain(
         },
         clear_default: false,
     };
-    let summary = work_item_saved_view_summary(&filters, view.per_page, assignee_options, cycle_options);
+    let summary =
+        work_item_saved_view_summary(&filters, view.per_page, assignee_options, cycle_options);
     let is_current = filters.q == current_filters.q
         && filters.status == current_filters.status
         && filters.priority == current_filters.priority
@@ -13370,10 +13426,16 @@ fn work_item_saved_view_summary(
         parts.push(format!("关键词：{}", filters.q));
     }
     if !filters.status.is_empty() {
-        parts.push(format!("状态：{}", work_item_status_filter_label(&filters.status)));
+        parts.push(format!(
+            "状态：{}",
+            work_item_status_filter_label(&filters.status)
+        ));
     }
     if !filters.priority.is_empty() {
-        parts.push(format!("优先级：{}", work_item_priority_filter_label(&filters.priority)));
+        parts.push(format!(
+            "优先级：{}",
+            work_item_priority_filter_label(&filters.priority)
+        ));
     }
     if !filters.assignee_username.is_empty() {
         let assignee = assignee_options
@@ -13647,7 +13709,8 @@ fn work_item_type_label(value: &str) -> &'static str {
 }
 
 fn parse_resource_tags_input(value: &str) -> Vec<String> {
-    value.split([',', '，', ';', '；', '\n', '\r'])
+    value
+        .split([',', '，', ';', '；', '\n', '\r'])
         .map(str::trim)
         .filter(|tag| !tag.is_empty())
         .map(ToOwned::to_owned)
@@ -13949,6 +14012,7 @@ fn system_release_status_label(status: &str) -> (&'static str, &'static str) {
     match status {
         "draft" => ("草稿", "warning"),
         "published" => ("已发布", "ok"),
+        "withdrawn" => ("已撤回", "danger"),
         _ => ("未知", "info"),
     }
 }
@@ -14575,9 +14639,7 @@ fn sample_project_cycle_members() -> Vec<ProjectMemberView> {
     ]
 }
 
-fn sample_project_cycle_snapshots(
-    cycle_id: i64,
-) -> Vec<projects::ProjectCycleWorkItemSnapshot> {
+fn sample_project_cycle_snapshots(cycle_id: i64) -> Vec<projects::ProjectCycleWorkItemSnapshot> {
     match cycle_id {
         1 => vec![
             projects::ProjectCycleWorkItemSnapshot {
