@@ -367,7 +367,7 @@
         "parameters": [
           {"$ref": "#/components/parameters/ReleaseId"},
           {"$ref": "#/components/parameters/AssetId"},
-          {"name": "expires_in_seconds", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 600}}
+          {"name": "expires_in_seconds", "in": "query", "required": false, "schema": {"type": "integer", "minimum": 60, "maximum": 300, "default": 300}}
         ],
         "responses": {
           "200": {"description": "回读签名地址及预期 SHA-256", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AttachmentSignedUrlEnvelope"}}}},

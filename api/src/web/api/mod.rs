@@ -4250,6 +4250,7 @@ pub async fn system_release_asset_download_url(
     let pool = state.pool()?;
     ensure_system_release_api_permission(pool, &headers, &principal, "system.releases.manage")
         .await?;
+    system_releases::ensure_release_allows_download(pool, release_id).await?;
     let asset = system_releases::get_release_asset(pool, release_id, asset_id).await?;
     if asset.status != "uploaded" {
         return Err(AppError::BadRequest(
@@ -4257,7 +4258,7 @@ pub async fn system_release_asset_download_url(
         ));
     }
     let expires_in_seconds =
-        normalize_signed_url_expiration(SignedUrlKind::Download, query.expires_in_seconds)?;
+        normalize_system_release_download_expiration(query.expires_in_seconds)?;
     let expires_at = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_seconds as i64))
         .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let mut request =
@@ -5201,6 +5202,16 @@ fn normalize_signed_url_expiration(kind: SignedUrlKind, value: Option<u64>) -> A
     if !(60..=3600).contains(&value) {
         return Err(AppError::BadRequest(
             "签名有效期必须在 60-3600 秒之间".to_string(),
+        ));
+    }
+    Ok(value)
+}
+
+fn normalize_system_release_download_expiration(value: Option<u64>) -> AppResult<u64> {
+    let value = value.unwrap_or(system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS);
+    if !(60..=system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS).contains(&value) {
+        return Err(AppError::BadRequest(
+            "版本资产下载签名有效期必须在 60-300 秒之间".to_string(),
         ));
     }
     Ok(value)

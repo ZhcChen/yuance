@@ -50,6 +50,7 @@ const DESKTOP_RELEASE_PLATFORMS: [&str; 3] = [
 pub const DEFAULT_RETENTION_COUNT: i64 = 5;
 pub const MIN_RETENTION_COUNT: i64 = 1;
 pub const MAX_RETENTION_COUNT: i64 = 50;
+pub const INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS: u64 = 300;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SystemReleaseSettings {
@@ -322,6 +323,20 @@ pub async fn get_published_release_asset(
         return Err(AppError::NotFound("版本安装包不存在".to_string()));
     }
     Ok(asset)
+}
+
+pub async fn ensure_release_allows_download(pool: &SqlitePool, release_id: i64) -> AppResult<()> {
+    let state = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT status, withdrawn_at FROM system_release_versions WHERE id = ?1",
+    )
+    .bind(release_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound("版本不存在".to_string()))?;
+    if state.1.is_some() {
+        return Err(AppError::NotFound("版本不存在或已撤回".to_string()));
+    }
+    Ok(())
 }
 
 pub async fn create_release(
@@ -912,8 +927,27 @@ async fn prune_published_releases(
         FROM system_release_versions
         WHERE status = 'published'
           AND withdrawn_at IS NULL
+          AND id NOT IN (
+              SELECT id FROM (
+                  SELECT id
+                  FROM system_release_versions
+                  WHERE status = 'published' AND withdrawn_at IS NULL
+                  ORDER BY published_at DESC, id DESC
+                  LIMIT ?1
+              )
+              UNION
+              SELECT id FROM (
+                  SELECT id
+                  FROM system_release_versions
+                  WHERE status = 'published'
+                    AND withdrawn_at IS NULL
+                    AND channel = 'internal'
+                    AND verification_status = 'verified'
+                  ORDER BY published_at DESC, id DESC
+                  LIMIT 2
+              )
+          )
         ORDER BY published_at DESC, id DESC
-        LIMIT -1 OFFSET ?1
         "#,
     )
     .bind(retention_count)
@@ -938,8 +972,27 @@ async fn prune_published_releases(
             FROM system_release_versions
             WHERE status = 'published'
               AND withdrawn_at IS NULL
+              AND id NOT IN (
+                  SELECT id FROM (
+                      SELECT id
+                      FROM system_release_versions
+                      WHERE status = 'published' AND withdrawn_at IS NULL
+                      ORDER BY published_at DESC, id DESC
+                      LIMIT ?1
+                  )
+                  UNION
+                  SELECT id FROM (
+                      SELECT id
+                      FROM system_release_versions
+                      WHERE status = 'published'
+                        AND withdrawn_at IS NULL
+                        AND channel = 'internal'
+                        AND verification_status = 'verified'
+                      ORDER BY published_at DESC, id DESC
+                      LIMIT 2
+                  )
+              )
             ORDER BY published_at DESC, id DESC
-            LIMIT -1 OFFSET ?1
         )
         "#,
     )

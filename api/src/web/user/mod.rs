@@ -6650,12 +6650,13 @@ pub async fn system_release_asset_download(
         Ok(context) => context,
         Err(response) => return Ok(response),
     };
+    system_releases::ensure_release_allows_download(state.pool()?, release_id).await?;
     let asset = system_releases::get_release_asset(state.pool()?, release_id, asset_id).await?;
     let mut request = storage::presign_download_url(
         state.pool()?,
         &state.settings,
         &asset.object_key,
-        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS,
     )
     .await?;
     bind_test_storage_download_grant(
@@ -6663,7 +6664,7 @@ pub async fn system_release_asset_download(
         &asset.object_key,
         &asset.content_type,
         context.user_id,
-        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS,
         &mut request,
     )?;
     if !request.headers.is_empty() {
@@ -6717,7 +6718,7 @@ pub async fn desktop_download_asset(
         state.pool()?,
         &state.settings,
         &asset.object_key,
-        storage::DEFAULT_DOWNLOAD_URL_TTL_SECONDS as u64,
+        system_releases::INTERNAL_RELEASE_DOWNLOAD_TTL_SECONDS,
     )
     .await?;
     if !request.headers.is_empty() {

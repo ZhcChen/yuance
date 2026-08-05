@@ -120,6 +120,8 @@ node scripts/publish-desktop-release.mjs
 - 每个对象上传后通过受控下载 URL 回读并重新计算 SHA-256；22 个对象全部一致后才调用 verify 和 publish。
 - 已发布版本只有在 metadata 与 22 文件集合完全一致时才幂等成功，任何冲突都要求新版本或显式撤回。
 
+版本撤回、GitHub Release 转 draft、5 分钟残余 URL 验证和 N-1 回退按 `docs/runbooks/desktop-release-withdrawal.md` 执行。
+
 ## 验收
 
 发布完成后验证：

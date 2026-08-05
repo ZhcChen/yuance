@@ -328,7 +328,7 @@
       </div>
     </section>
     {% if is_internal %}
-    <p class="trust-notice"><strong>Internal development release.</strong> macOS 使用 ad-hoc 签名，Windows 未使用 Authenticode，Linux 及全部制品使用 minisign 完整性签名。此版本不代表生产发行商身份验证。{% if signing_key_id != "" %} Minisign Key ID：{{ signing_key_id }}。{% endif %}</p>
+    <p class="trust-notice"><strong>Internal development release.</strong> macOS 使用 ad-hoc 签名，Windows 未使用 Authenticode，Linux 及全部制品使用 minisign 完整性签名。此版本不代表生产发行商身份验证；版本撤回前已签发的下载地址最长可能继续有效 5 分钟。{% if signing_key_id != "" %} Minisign Key ID：{{ signing_key_id }}。{% endif %}</p>
     {% endif %}
 
     <section class="platform-grid" aria-label="桌面端安装包">

@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, projects, rbac, storage, system_api_tokens},
+    domains::{auth, bootstrap, projects, rbac, storage, system_api_tokens, system_releases},
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -2680,6 +2680,174 @@ async fn api_system_release_flow_supports_publish_and_retention_prune() {
 }
 
 #[tokio::test]
+async fn internal_release_retention_preserves_current_and_verified_n_minus_one() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let mut release_ids = Vec::new();
+    for (index, age_days) in [(1, 3), (2, 2), (3, 1)] {
+        let id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO system_release_versions (
+                version_name, title, status, channel, verification_status,
+                manifest_sha256, signing_key_id, source_commit, source_tag,
+                verified_at, published_at, created_by_user_id, updated_by_user_id
+            )
+            VALUES (
+                ?1, ?1, 'published', 'internal', 'verified',
+                ?2, '0123456789ABCDEF', ?3, ?4,
+                datetime('now', ?5), datetime('now', ?5), ?6, ?6
+            )
+            RETURNING id
+            "#,
+        )
+        .bind(format!("v4.0.{index}"))
+        .bind(format!("{index:064x}"))
+        .bind(format!("{index:040x}"))
+        .bind(format!("desktop-v4.0.{index}"))
+        .bind(format!("-{age_days} days"))
+        .bind(initialized.user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("internal release should seed");
+        release_ids.push(id);
+    }
+
+    for release_id in &release_ids[1..] {
+        for (platform, architecture) in [
+            ("macos", "x64"),
+            ("macos", "arm64"),
+            ("windows", "x64"),
+            ("windows", "arm64"),
+            ("linux", "x64"),
+            ("linux", "arm64"),
+        ] {
+            let file_object_id = sqlx::query_scalar::<_, i64>(
+                r#"
+                INSERT INTO file_objects (
+                    object_key, original_filename, content_type, byte_size,
+                    checksum_sha256, status, created_by_user_id
+                )
+                VALUES (?1, ?2, 'application/octet-stream', 1, ?3, 'uploaded', ?4)
+                RETURNING id
+                "#,
+            )
+            .bind(format!("release/{release_id}/{platform}-{architecture}"))
+            .bind(format!("Yuance-{release_id}-{platform}-{architecture}.bin"))
+            .bind("0".repeat(64))
+            .bind(initialized.user_id)
+            .fetch_one(&pool)
+            .await
+            .expect("installer file should seed");
+            sqlx::query(
+                r#"
+                INSERT INTO system_release_assets (
+                    release_id, file_object_id, platform, architecture, artifact_kind
+                )
+                VALUES (?1, ?2, ?3, ?4, 'installer')
+                "#,
+            )
+            .bind(release_id)
+            .bind(file_object_id)
+            .bind(platform)
+            .bind(architecture)
+            .execute(&pool)
+            .await
+            .expect("installer asset should seed");
+        }
+    }
+
+    system_releases::update_settings(&pool, &test_settings(), initialized.user_id, 1)
+        .await
+        .expect("retention update should succeed");
+
+    let remaining = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM system_release_versions ORDER BY published_at, id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("remaining releases should load");
+    assert_eq!(remaining, release_ids[1..]);
+
+    system_releases::withdraw_release(
+        &pool,
+        initialized.user_id,
+        release_ids[2],
+        system_releases::WithdrawSystemReleaseInput {
+            reason: "回退演练".to_string(),
+            github_withdrawal_status: "pending".to_string(),
+        },
+    )
+    .await
+    .expect("current release should withdraw");
+    let failed_withdrawal = system_releases::update_withdrawal_status(
+        &pool,
+        initialized.user_id,
+        release_ids[2],
+        "failed",
+    )
+    .await
+    .expect("GitHub withdrawal failure should remain visible");
+    assert_eq!(failed_withdrawal.release.github_withdrawal_status, "failed");
+    let recovered = system_releases::get_latest_published_release_detail(&pool)
+        .await
+        .expect("latest query should succeed")
+        .expect("N-1 should become latest");
+    assert_eq!(recovered.release.id, release_ids[1]);
+}
+
+#[tokio::test]
+async fn concurrent_release_download_check_converges_to_withdrawn_denial() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let release_id = sqlx::query_scalar::<_, i64>(
+        r#"
+        INSERT INTO system_release_versions (
+            version_name, title, status, published_at,
+            created_by_user_id, updated_by_user_id
+        )
+        VALUES ('v4.1.0', '并发撤回', 'published', datetime('now'), ?1, ?1)
+        RETURNING id
+        "#,
+    )
+    .bind(initialized.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("release should seed");
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(2));
+    let withdraw_pool = pool.clone();
+    let withdraw_barrier = barrier.clone();
+    let actor_user_id = initialized.user_id;
+    let withdraw = tokio::spawn(async move {
+        withdraw_barrier.wait().await;
+        system_releases::withdraw_release(
+            &withdraw_pool,
+            actor_user_id,
+            release_id,
+            system_releases::WithdrawSystemReleaseInput {
+                reason: "并发撤回演练".to_string(),
+                github_withdrawal_status: "pending".to_string(),
+            },
+        )
+        .await
+    });
+    let download_pool = pool.clone();
+    let download = tokio::spawn(async move {
+        barrier.wait().await;
+        system_releases::ensure_release_allows_download(&download_pool, release_id).await
+    });
+    withdraw
+        .await
+        .expect("withdraw task should join")
+        .expect("withdraw should succeed");
+    let _concurrent_result = download.await.expect("download task should join");
+    assert!(
+        system_releases::ensure_release_allows_download(&pool, release_id)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn internal_system_release_requires_verification_and_supports_withdrawal() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
@@ -2838,10 +3006,23 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
     )
     .await;
     assert_eq!(readback.0, StatusCode::OK);
+    assert_eq!(json_i64(&readback.1, &["data", "expires_in_seconds"]), 300);
     assert_eq!(
         json_string(&readback.1, &["data", "checksum_sha256"]),
         "a".repeat(64)
     );
+    let old_readback_url = json_string(&readback.1, &["data", "request", "url"]);
+    let excessive_ttl = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!(
+            "/api/v1/system/releases/{release_id}/assets/{manifest_asset_id}/download-url?expires_in_seconds=301"
+        ),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(excessive_ttl.0, StatusCode::BAD_REQUEST);
 
     let verified = system_release_json_request(
         &app,
@@ -2897,6 +3078,26 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
         json_string(&withdrawn.1, &["data", "release", "status"]),
         "withdrawn"
     );
+    let new_readback = system_release_json_request(
+        &app,
+        &admin_cookie,
+        "GET",
+        &format!("/api/v1/system/releases/{release_id}/assets/{manifest_asset_id}/download-url"),
+        serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(new_readback.0, StatusCode::NOT_FOUND);
+    let residual_readback = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(old_readback_url)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(residual_readback.status(), StatusCode::OK);
 
     let withdrawal_updated = system_release_json_request(
         &app,
