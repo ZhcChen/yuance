@@ -11,6 +11,7 @@ depends_on:
   - docs/plans/2026-08-03-001-feat-d2-desktop-feature-parity-plan.md
   - docs/reviews/2026-08-03-d2-desktop-feature-parity-review.md
   - docs/plans/2026-07-23-003-feat-system-release-management-plan.md
+execution_status: in-progress
 ---
 
 # G-DIST-DEV Desktop 内部制品发行 Gate
@@ -316,13 +317,26 @@ git diff --check
 
 ---
 
+## 执行进度（2026-08-05）
+
+- U1-U6 已实现并提交；U7 的 GitHub 发行链路已由 `desktop-v0.1.5` 完成最终 canary。
+- 最终 commit：`eebeb0414bbb3d27bd27dad7302f94c1fc26a7fc`；workflow run：`30995988291`；公开 Release：`desktop-v0.1.5`。
+- macOS/Windows/Linux 的 `x64`/`arm64` 六 runner 全部通过；macOS runner 原生验证 ad-hoc 且无 Authority/Team，Windows runner 通过 `Get-AuthenticodeSignature` 验证为 `NotSigned`。
+- 公开 Release 精确包含 22 个文件。独立下载后，仓库 verifier、`SHA256SUMS`、manifest/SHA256SUMS minisign 和六安装包 provenance attestation 全部通过；key ID 为 `03488FB6A3DAD35A`。
+- `desktop-v0.1.4` 与 `desktop-v0.1.5` 的完整 22 文件集合均通过 `publish-desktop-release.mjs` 无副作用 preflight，可分别作为后续 N-1 与 current 演练输入。
+- 尚未完成 System/OSS 正式发布、5 分钟撤回 SLO、N-1 自动回退、最终 review 和主线回填。
+- 正式分发前置存在运行时漂移：`yuance.quanxinfu.com` 当前经 Caddy/FRP 转发到本机旧 `target/debug/yuance-api` 进程，runbook 指向的 `qfy-sc-test` Compose 容器已停止，`scripts/deploy-production.sh` 当前不会更新实际承载流量的进程。必须先确认正式部署拓扑并更新运行实例。
+- 当前仅配置普通 `YUANCE_API_TOKEN`，调用 system release API 返回 `403`；正式演练还需通过系统管理页创建仅含 `system_release:read` 与 `system_release:write` 的专用 token。
+
+---
+
 ## Definition of Done
 
-- [ ] `internal` manifest schema、六目标规范名、OS/完整性签名语义和公钥/key ID 已冻结并测试。
-- [ ] 六个安装包、六个 `.minisig`、六个 CycloneDX SBOM、SHA256SUMS、签名 manifest 和 digest-bound provenance 可重复生成并全量复验。
-- [ ] minisign `0.12`、Syft `v1.50.0` 及第三方 Action 均固定版本/commit，并验证供应链 checksum。
-- [ ] build job 无发布密钥；assemble/sign/publish 使用 protected Environment 和最小权限，不在 PR 运行。
-- [ ] GitHub Release 采用 draft -> 回读验证 -> publish，已删除 `--clobber`，同 tag 不同字节无法覆盖。
+- [x] `internal` manifest schema、六目标规范名、OS/完整性签名语义和公钥/key ID 已冻结并测试。
+- [x] 六个安装包、六个 `.minisig`、六个 CycloneDX SBOM、SHA256SUMS、签名 manifest 和 digest-bound provenance 可重复生成并全量复验。
+- [x] minisign `0.12`、Syft `v1.50.0` 及第三方 Action 均固定版本/commit，并验证供应链 checksum。
+- [x] build job 无发布密钥；assemble/sign/publish 使用 protected Environment 和最小权限，不在 PR 运行。
+- [x] GitHub Release 采用 draft -> 回读验证 -> publish，已删除 `--clobber`，同 tag 不同字节无法覆盖。
 - [ ] system release 记录 verification metadata，未验证版本不能 published；GitHub 与 OSS 使用同一 manifest/digest 集合。
 - [ ] `publish-desktop-release.mjs` 在任何副作用前验证完整证据，且上传后回读验证。
 - [ ] `withdrawn` 状态、latest/download 拒绝、5 分钟 URL TTL/SLO、GitHub 处置审计已实现并演练。
