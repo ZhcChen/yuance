@@ -8,15 +8,17 @@ import {
   CYCLONEDX_ASSET_DIGEST_PROPERTY,
   createReleaseEvidenceManifest,
   createSha256Sums,
+  readMinisignPublicKeyId,
   readCycloneDxSbom,
   sha256File,
+  verifyReleaseEvidence,
 } from "../src/release-evidence.mjs";
 import {
   DESKTOP_RELEASE_TARGETS,
   canonicalReleaseAssetName,
   releaseAssetKey,
 } from "../src/release-assets.mjs";
-import { releaseAssetEvidenceNames } from "../src/release-manifest.mjs";
+import { releaseAssetEvidenceNames, serializeDesktopReleaseManifest } from "../src/release-manifest.mjs";
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "yuance-release-evidence-"));
@@ -47,20 +49,43 @@ async function fixture(t) {
 
 async function buildManifest(t) {
   const evidence = await fixture(t);
+  const manifest = await createReleaseEvidenceManifest({
+    ...evidence,
+    version: "0.1.0",
+    tag: "desktop-v0.1.0",
+    source: {
+      commit: "c".repeat(40),
+      repository: "ZhcChen/yuance",
+      workflow_run: "123",
+    },
+    signing: { algorithm: "minisign", key_id: "0123456789ABCDEF" },
+  });
   return {
     ...evidence,
-    manifest: await createReleaseEvidenceManifest({
-      ...evidence,
-      version: "0.1.0",
-      tag: "desktop-v0.1.0",
-      source: {
-        commit: "c".repeat(40),
-        repository: "ZhcChen/yuance",
-        workflow_run: "123",
-      },
-      signing: { algorithm: "minisign", key_id: "0123456789ABCDEF" },
-    }),
+    manifest,
   };
+}
+
+async function completeEvidenceFixture(t) {
+  const evidence = await buildManifest(t);
+  await writeFile(path.join(evidence.directory, "release-manifest.json"), serializeDesktopReleaseManifest(evidence.manifest));
+  await writeFile(path.join(evidence.directory, "release-manifest.json.minisig"), "manifest signature");
+  await writeFile(path.join(evidence.directory, "SHA256SUMS"), createSha256Sums(evidence.manifest));
+  await writeFile(path.join(evidence.directory, "SHA256SUMS.minisig"), "sums signature");
+  for (const asset of evidence.manifest.assets) {
+    await writeFile(path.join(evidence.directory, asset.integrity_signature), "asset signature");
+  }
+  const publicKeyPath = `${evidence.directory}.pub`;
+  t.after(() => rm(publicKeyPath, { force: true }));
+  await writeFile(publicKeyPath, minisignPublicKey("0123456789ABCDEF"));
+  return { ...evidence, publicKeyPath };
+}
+
+function minisignPublicKey(keyId, commentKeyId = keyId) {
+  const payload = Buffer.alloc(42, 1);
+  payload.write("Ed", 0, "ascii");
+  Buffer.from(keyId, "hex").reverse().copy(payload, 2);
+  return `untrusted comment: minisign public key ${commentKeyId}\n${payload.toString("base64")}\n`;
 }
 
 test("streams installer and SBOM digests into a complete manifest", async (t) => {
@@ -130,4 +155,63 @@ test("rejects symbolic-link evidence", async (t) => {
   await writeFile(path.join(directory, "target.bin"), "content");
   await symlink(path.join(directory, "target.bin"), path.join(directory, "asset.bin"));
   await assert.rejects(() => sha256File(path.join(directory, "asset.bin")), /must be a regular file/);
+});
+
+test("verifies the exact signed evidence set", async (t) => {
+  const evidence = await completeEvidenceFixture(t);
+  const calls = [];
+  const manifest = await verifyReleaseEvidence({
+    directory: evidence.directory,
+    publicKeyPath: evidence.publicKeyPath,
+    expectedVersion: "0.1.0",
+    verifySignature: async (...args) => calls.push(args.map((value) => path.basename(value))),
+  });
+  assert.equal(manifest.tag, "desktop-v0.1.0");
+  assert.equal(calls.length, 8);
+  assert.deepEqual(calls[0].slice(0, 2), ["release-manifest.json", "release-manifest.json.minisig"]);
+});
+
+test("rejects public key drift and unexpected evidence", async (t) => {
+  const evidence = await completeEvidenceFixture(t);
+  assert.equal(await readMinisignPublicKeyId(evidence.publicKeyPath), "0123456789ABCDEF");
+  await writeFile(evidence.publicKeyPath, minisignPublicKey("FEDCBA9876543210"));
+  await assert.rejects(() => verifyReleaseEvidence({
+    directory: evidence.directory,
+    publicKeyPath: evidence.publicKeyPath,
+    verifySignature: async () => {},
+  }), /does not match/);
+
+  await writeFile(evidence.publicKeyPath, minisignPublicKey("0123456789ABCDEF"));
+  await writeFile(path.join(evidence.directory, "secret.key"), "private");
+  await assert.rejects(() => verifyReleaseEvidence({
+    directory: evidence.directory,
+    publicKeyPath: evidence.publicKeyPath,
+    verifySignature: async () => {},
+  }), /unexpected: secret.key/);
+});
+
+test("rejects a public key comment that does not match its payload", async (t) => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "yuance-release-key-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const publicKeyPath = path.join(directory, "minisign.pub");
+  await writeFile(publicKeyPath, minisignPublicKey("0123456789ABCDEF", "FEDCBA9876543210"));
+  await assert.rejects(() => readMinisignPublicKeyId(publicKeyPath), /does not match its payload/);
+});
+
+test("rejects SHA256SUMS and asset byte drift", async (t) => {
+  const evidence = await completeEvidenceFixture(t);
+  await writeFile(path.join(evidence.directory, "SHA256SUMS"), "tampered\n");
+  await assert.rejects(() => verifyReleaseEvidence({
+    directory: evidence.directory,
+    publicKeyPath: evidence.publicKeyPath,
+    verifySignature: async () => {},
+  }), /SHA256SUMS does not match/);
+
+  await writeFile(path.join(evidence.directory, "SHA256SUMS"), createSha256Sums(evidence.manifest));
+  await writeFile(path.join(evidence.directory, evidence.manifest.assets[0].filename), "tampered installer");
+  await assert.rejects(() => verifyReleaseEvidence({
+    directory: evidence.directory,
+    publicKeyPath: evidence.publicKeyPath,
+    verifySignature: async () => {},
+  }), /asset digest mismatch/);
 });

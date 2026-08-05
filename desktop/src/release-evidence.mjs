@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -11,6 +11,7 @@ import {
 } from "./release-assets.mjs";
 import {
   createDesktopReleaseManifest,
+  parseDesktopReleaseManifest,
   releaseAssetEvidenceNames,
   releaseAssetOsSignature,
 } from "./release-manifest.mjs";
@@ -92,6 +93,85 @@ export function createSha256Sums(manifest) {
   return `${lines.join("\n")}\n`;
 }
 
+export async function verifyReleaseEvidence({
+  directory,
+  publicKeyPath,
+  verifySignature,
+  expectedVersion,
+}) {
+  if (typeof verifySignature !== "function") throw new Error("Release signature verifier is required.");
+  const keyId = await readMinisignPublicKeyId(publicKeyPath);
+  const manifestPath = safeEvidencePath(directory, "release-manifest.json");
+  const manifestSignaturePath = safeEvidencePath(directory, "release-manifest.json.minisig");
+  await verifySignature(manifestPath, manifestSignaturePath, publicKeyPath);
+
+  let manifest;
+  try {
+    manifest = parseDesktopReleaseManifest(JSON.parse(await readFile(manifestPath, "utf8")));
+  } catch (error) {
+    throw new Error(`Desktop release manifest is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (manifest.signing.key_id !== keyId) throw new Error("Manifest signing key does not match the public key.");
+  if (expectedVersion !== undefined && manifest.version !== expectedVersion) {
+    throw new Error("Manifest version does not match the expected release version.");
+  }
+
+  const sumsPath = safeEvidencePath(directory, "SHA256SUMS");
+  await verifySignature(sumsPath, safeEvidencePath(directory, "SHA256SUMS.minisig"), publicKeyPath);
+  const expectedSums = createSha256Sums(manifest);
+  if (await readFile(sumsPath, "utf8") !== expectedSums) throw new Error("SHA256SUMS does not match the manifest.");
+
+  const expectedFiles = new Set([
+    "release-manifest.json",
+    "release-manifest.json.minisig",
+    "SHA256SUMS",
+    "SHA256SUMS.minisig",
+  ]);
+  for (const asset of manifest.assets) {
+    expectedFiles.add(asset.filename);
+    expectedFiles.add(asset.integrity_signature);
+    expectedFiles.add(asset.sbom.filename);
+  }
+  await assertExactEvidenceFiles(directory, expectedFiles);
+
+  for (const asset of manifest.assets) {
+    const assetPath = safeEvidencePath(directory, asset.filename);
+    const assetDigest = await sha256File(assetPath);
+    if (assetDigest.byteSize !== asset.byte_size || assetDigest.sha256 !== asset.sha256) {
+      throw new Error(`Release asset digest mismatch: ${asset.filename}.`);
+    }
+    const sbomPath = safeEvidencePath(directory, asset.sbom.filename);
+    await readCycloneDxSbom(sbomPath, asset.sha256);
+    const sbomDigest = await sha256File(sbomPath);
+    if (sbomDigest.sha256 !== asset.sbom.sha256) {
+      throw new Error(`Release SBOM digest mismatch: ${asset.sbom.filename}.`);
+    }
+    await verifySignature(
+      assetPath,
+      safeEvidencePath(directory, asset.integrity_signature),
+      publicKeyPath,
+    );
+  }
+  return manifest;
+}
+
+export async function readMinisignPublicKeyId(publicKeyPath) {
+  const content = await readFile(publicKeyPath, "utf8");
+  const lines = content.trimEnd().split(/\r?\n/u);
+  if (lines.length !== 2 || !/^untrusted comment: minisign public key [0-9A-F]{16}$/u.test(lines[0])
+    || !/^[A-Za-z0-9+/]{56}$/u.test(lines[1])) {
+    throw new Error("Minisign public key file is invalid.");
+  }
+  const payload = Buffer.from(lines[1], "base64");
+  if (payload.length !== 42 || payload.subarray(0, 2).toString("ascii") !== "Ed") {
+    throw new Error("Minisign public key file is invalid.");
+  }
+  const encodedKeyId = Buffer.from(payload.subarray(2, 10)).reverse().toString("hex").toUpperCase();
+  const commentKeyId = lines[0].slice(-16);
+  if (encodedKeyId !== commentKeyId) throw new Error("Minisign public key ID does not match its payload.");
+  return encodedKeyId;
+}
+
 export async function readCycloneDxSbom(filePath, expectedAssetDigest) {
   let document;
   try {
@@ -130,6 +210,22 @@ function safeEvidencePath(directory, filename) {
   const resolved = path.resolve(root, filename);
   if (path.dirname(resolved) !== root) throw new Error("Release evidence path escapes its directory.");
   return resolved;
+}
+
+async function assertExactEvidenceFiles(directory, expectedFiles) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const actualFiles = new Set();
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.isSymbolicLink()) {
+      throw new Error(`Unexpected release evidence entry: ${entry.name}.`);
+    }
+    actualFiles.add(entry.name);
+  }
+  const missing = [...expectedFiles].filter((name) => !actualFiles.has(name));
+  const unexpected = [...actualFiles].filter((name) => !expectedFiles.has(name));
+  if (missing.length > 0 || unexpected.length > 0) {
+    throw new Error(`Release evidence file set mismatch; missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"}.`);
+  }
 }
 
 function isPlainObject(value) {
