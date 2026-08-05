@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { approveDeviceAuthorization } from "./support/browser-approval-driver.mjs";
 import { buildRealApi, startRealApiFixture } from "./support/real-api-fixture.mjs";
 
-test("real API completes authorization, REST, SSE, and revoke-close flow", { timeout: 60_000 }, async (t) => {
+test("real API completes authorization, REST, SSE, and revoke-close flow", { timeout: 120_000 }, async (t) => {
   await buildRealApi();
   const fixture = await startRealApiFixture();
   t.after(() => fixture.stop());

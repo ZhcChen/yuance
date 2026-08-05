@@ -16,6 +16,7 @@ jobs:
   validate-tag:
     name: Validate desktop release tag
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -42,6 +43,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
 
+      - name: Build real API integration fixture
+        run: cargo build --package yuance-api --bin yuance-api
+
       - name: Run desktop tests
         run: xvfb-run -a npm --prefix desktop test
 
@@ -49,6 +53,7 @@ jobs:
     name: Build ${{ matrix.platform.name }} ${{ matrix.platform.arch }}
     needs: validate-tag
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -111,6 +116,9 @@ jobs:
           npm --prefix frontend ci
           npm --prefix desktop ci
 
+      - name: Build real API integration fixture
+        run: cargo build --package yuance-api --bin yuance-api
+
       - name: Run desktop tests
         if: runner.os != 'Linux'
         run: npm --prefix desktop test
@@ -161,6 +169,7 @@ jobs:
     name: Assemble and sign internal release
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: desktop-internal-release
     permissions:
       contents: read
@@ -281,6 +290,7 @@ jobs:
     name: Publish immutable GitHub Release
     needs: assemble-sign
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:

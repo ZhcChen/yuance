@@ -11,7 +11,7 @@ import electron from "electron";
 import { approveDeviceAuthorization } from "./support/browser-approval-driver.mjs";
 import { buildRealApi, startRealApiFixture } from "./support/real-api-fixture.mjs";
 
-test("real API and Electron complete work item and comment attachment flows", { timeout: 90_000 }, async (t) => {
+test("real API and Electron complete work item and comment attachment flows", { timeout: 120_000 }, async (t) => {
   await buildRealApi();
   const fixture = await startRealApiFixture({ seedDemo: true });
   t.after(() => fixture.stop());
