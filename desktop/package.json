@@ -1,6 +1,6 @@
 {
   "name": "@yuance/desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "元策桌面端 Electron 壳",
   "author": "元策",

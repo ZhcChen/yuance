@@ -61,3 +61,9 @@ test("Linux release tests run with the secure storage runtime", async () => {
   assert.match(source, /apt-get install --yes dbus-x11 gnome-keyring/u);
   assert.match(source, /dbus-run-session -- bash -euo pipefail -c[\s\S]*gnome-keyring-daemon --unlock --components=secrets[\s\S]*xvfb-run -a npm --prefix desktop test/u);
 });
+
+test("macOS release jobs never invoke safeStorage", async () => {
+  const source = await workflow();
+  assert.match(source, /Verify Windows native safeStorage boundary[\s\S]*if: runner\.os == 'Windows'[\s\S]*smoke:safe-storage/u);
+  assert.doesNotMatch(source, /if: runner\.os != 'Linux'[\s\S]{0,160}smoke:safe-storage/u);
+});

@@ -144,8 +144,8 @@ jobs:
             xvfb-run -a npm --prefix desktop test
           '
 
-      - name: Verify native safeStorage boundary
-        if: runner.os != 'Linux'
+      - name: Verify Windows native safeStorage boundary
+        if: runner.os == 'Windows'
         run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
 
       - name: Verify Linux safeStorage fail-closed boundary
