@@ -2233,7 +2233,7 @@ test('shared system audit preserves filters pagination and read-only evidence', 
     } }) });
   });
 
-  await login(page, '/web/app/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&per_page=20');
+  await login(page, '/web/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&per_page=20');
   await expect(page).toHaveTitle('审计日志 - 元策');
   const table = page.getByRole('table', { name: '审计日志列表' });
   await expect(table).toContainText('Alice Chen @alice');
@@ -2245,15 +2245,15 @@ test('shared system audit preserves filters pagination and read-only evidence', 
   await expect(table).toContainText('{"result":"success"}');
 
   await page.getByRole('button', { name: '下一页' }).click();
-  await expect(page).toHaveURL('/web/app/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20');
+  await expect(page).toHaveURL('/web/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20');
 
   await page.locator('input[name="actor"]').fill('Nobody');
   await page.getByRole('button', { name: '筛选', exact: true }).click();
-  await expect(page).toHaveURL('/web/app/system/audit?actor=Nobody&action=auth.login&target_type=user&target_id=7&per_page=20');
+  await expect(page).toHaveURL('/web/system/audit?actor=Nobody&action=auth.login&target_type=user&target_id=7&per_page=20');
   await expect(table).toContainText('暂无审计记录。');
 
   await page.getByRole('button', { name: '重置' }).click();
-  await expect(page).toHaveURL('/web/app/system/audit');
+  await expect(page).toHaveURL('/web/system/audit');
   await expect.poll(() => requests.length).toBeGreaterThanOrEqual(4);
   expect(requests.every(({ method }) => method === 'GET')).toBe(true);
   expect(requests.some(({ search }) => search === '?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20')).toBe(true);

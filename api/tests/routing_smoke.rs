@@ -583,6 +583,7 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/system/roles/member/permissions",
             "/web/system/permissions?q=roles",
             "/web/system/database-stats",
+            "/web/system/audit?actor=admin&action=auth.login&target_type=user&target_id=7&page=2&per_page=20",
             "/web/system/storage?page=2&per_page=20",
             "/web/system/openapi",
             "/web/system/releases?page=2&per_page=20",

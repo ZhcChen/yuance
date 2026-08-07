@@ -365,6 +365,7 @@ async fn audit_page_can_filter_and_paginate_logs() {
     assert!(body.contains("target_id=oss"));
     assert!(body.contains("page=2"));
     assert!(body.contains("per_page=1"));
+    assert!(!body.contains("/web/app/assets/"));
 }
 
 #[tokio::test]
