@@ -408,6 +408,13 @@ pub struct UpdateApiTokenRequest {
     project_scope: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UpdateOwnPasswordRequest {
+    current_password: String,
+    new_password: String,
+    new_password_confirm: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct DeviceSessionPayload {
     pub family_id: String,
@@ -1683,6 +1690,52 @@ pub async fn update_own_profile(
     )
     .await?;
     Ok(json(own_profile_payload(profile)))
+}
+
+pub async fn update_own_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateOwnPasswordRequest>,
+) -> AppResult<StatusCode> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    if payload.new_password != payload.new_password_confirm {
+        return Err(AppError::BadRequest("两次输入的新密码不一致".to_string()));
+    }
+    let current_session = match &principal.kind {
+        ApiPrincipalKind::Session => {
+            let raw_session = auth::session_cookie(&headers).ok_or(AppError::Unauthorized)?;
+            let raw_refresh = auth::refresh_cookie(&headers);
+            users::CurrentPasswordSession::Browser {
+                raw_session,
+                raw_refresh,
+            }
+        }
+        ApiPrincipalKind::Device(device) => users::CurrentPasswordSession::Device {
+            family_id: device.family_id.clone(),
+        },
+        ApiPrincipalKind::ApiToken(_) => unreachable!("account principal was checked"),
+    };
+    users::change_own_password(
+        state.pool()?,
+        principal.user.id,
+        &payload.current_password,
+        &payload.new_password,
+        current_session,
+    )
+    .await?;
+    audit::record_with_context(
+        state.pool()?,
+        Some(principal.user.id),
+        "me.password.update",
+        "user",
+        &principal.user.username,
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn logout(

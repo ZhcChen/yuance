@@ -624,6 +624,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/me/profile",
             get(web::api::get_own_profile).patch(web::api::update_own_profile),
         )
+        .route(
+            "/api/v1/me/password",
+            patch(web::api::update_own_password),
+        )
         .route("/api/v1/auth/csrf", get(web::auth_api::csrf_token))
         .route("/api/v1/auth/logout", post(web::api::logout))
         .route(

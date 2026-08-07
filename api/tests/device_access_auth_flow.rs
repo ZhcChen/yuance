@@ -134,6 +134,53 @@ async fn device_access_manages_personal_tokens_and_device_sessions() {
 }
 
 #[tokio::test]
+async fn device_password_change_preserves_current_family_and_revokes_other_sessions() {
+    let pool = test_pool().await;
+    let (user_id, browser_cookie) = bootstrap_admin_session(&pool).await;
+    let current = issue_device_credentials(&pool, user_id, "Current Desktop").await;
+    let other = issue_device_credentials(&pool, user_id, "Other Desktop").await;
+    let app = test_app(pool.clone());
+
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        "/api/v1/me/password",
+        &current.access_token,
+        serde_json::json!({
+            "current_password": "AdminPass2026!",
+            "new_password": "UpdatedPass2026!",
+            "new_password_confirm": "UpdatedPass2026!"
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    let response = device_request(&app, "GET", PROBE_PATH, &current.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = device_request(&app, "GET", PROBE_PATH, &other.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/auth/me")
+                .header(header::COOKIE, browser_cookie)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let password_hash: String = sqlx::query_scalar("SELECT password_hash FROM users WHERE id = ?1")
+        .bind(user_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(auth::verify_password("UpdatedPass2026!", &password_hash).unwrap());
+}
+
+#[tokio::test]
 async fn device_business_routes_preserve_project_membership_and_viewer_write_denial() {
     let pool = test_pool().await;
     let (admin_id, _) = bootstrap_admin_session(&pool).await;

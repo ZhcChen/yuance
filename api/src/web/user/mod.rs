@@ -2578,8 +2578,10 @@ pub async fn me_password_update(
             context.user_id,
             &form.current_password,
             &form.new_password,
-            &raw_session,
-            raw_refresh.as_deref(),
+            users::CurrentPasswordSession::Browser {
+                raw_session,
+                raw_refresh,
+            },
         )
         .await?;
         audit::record(
