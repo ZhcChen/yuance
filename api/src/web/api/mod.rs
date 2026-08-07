@@ -1936,7 +1936,8 @@ pub async fn create_project(
     headers: HeaderMap,
     Json(payload): Json<CreateProjectRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -1958,7 +1959,7 @@ pub async fn create_project(
         "project.create",
         "project",
         &project.project_key,
-        "{}",
+        &principal.audit_details(),
     )
     .await?;
 

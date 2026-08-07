@@ -181,6 +181,43 @@ async fn device_password_change_preserves_current_family_and_revokes_other_sessi
 }
 
 #[tokio::test]
+async fn device_access_creates_project_with_the_same_validation_and_permission_boundary() {
+    let pool = test_pool().await;
+    let (user_id, _) = bootstrap_admin_session(&pool).await;
+    let credentials = issue_device_credentials(&pool, user_id, "Project Creator Desktop").await;
+    let app = test_app(pool.clone());
+
+    let response = device_json_request(
+        &app,
+        "POST",
+        "/api/v1/projects",
+        &credentials.access_token,
+        serde_json::json!({
+            "name": "Desktop 创建项目",
+            "description": "共享项目创建契约",
+            "status": "not_started",
+            "start_date": "2026-08-08",
+            "due_date": "2026-08-31"
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    assert_eq!(created["data"]["name"], "Desktop 创建项目");
+    assert_eq!(created["data"]["owner_username"], "admin");
+
+    let invalid = device_json_request(
+        &app,
+        "POST",
+        "/api/v1/projects",
+        &credentials.access_token,
+        serde_json::json!({ "name": "日期错误", "start_date": "2026-09-01", "due_date": "2026-08-01" }),
+    )
+    .await;
+    assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn device_business_routes_preserve_project_membership_and_viewer_write_denial() {
     let pool = test_pool().await;
     let (admin_id, _) = bootstrap_admin_session(&pool).await;
