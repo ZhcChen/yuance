@@ -21,6 +21,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["file.canarydownload", noInputOperation("GET", "/api/v1/device-file-transfer/canary/download-request", parseTransferEnvelope)],
     ["identity.current", noInputOperation("GET", "/api/v1/auth/me", parseUser)],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
+    ["search.list", searchListOperation],
     ["project.list", projectListOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
@@ -77,6 +78,14 @@ function projectListOperation(input) {
   if (status !== "all") query.set("status", status);
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/projects", query), parseProjectPage);
+}
+
+function searchListOperation(input) {
+  exactKeys(input, ["page", "perPage", "q"]);
+  const query = new URLSearchParams();
+  appendOptionalString(query, "q", optionalText(input.q, "q", 128));
+  appendPagination(query, input);
+  return descriptor("GET", withQuery("/api/v1/search", query), parseSearchPage);
 }
 
 function notificationListOperation(input) {
@@ -204,6 +213,10 @@ function parseTopbar(data) {
   return value;
 }
 function parseProjectPage(data) { return parsePage(data, parseProject); }
+function parseSearchPage(data) { return parsePage(data, parseSearchResult); }
+function parseSearchResult(value) { return freezeDto(value, {
+  kind: shortString, key: shortString, title: textString, context: longString, target: textString, updated_at: shortString,
+}); }
 function parseProject(value) { return freezeDto(value, {
   key: shortString, name: shortString, status: shortString, owner: shortString,
   work_item_count: nonNegativeInteger, active_work_item_count: nonNegativeInteger, updated_at: shortString,

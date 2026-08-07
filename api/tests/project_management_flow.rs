@@ -6535,6 +6535,53 @@ async fn web_search_respects_project_membership_scope() {
 }
 
 #[tokio::test]
+async fn api_v1_search_returns_visible_paginated_results() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/search?q=%2Fweb&per_page=1")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&response_body(response).await)
+        .expect("search response should be JSON");
+    let data = &body["data"];
+    assert_eq!(data["items"].as_array().map(Vec::len), Some(1));
+    assert_eq!(data["pagination"]["per_page"], 1);
+    assert!(data["pagination"]["total_items"].as_i64().unwrap_or_default() > 0);
+    assert!(data["items"][0]["target"]
+        .as_str()
+        .is_some_and(|target| target.starts_with("/web/")));
+    assert!(data["items"][0].get("kind").is_some());
+
+    let oversized = format!("/api/v1/search?q={}", "x".repeat(129));
+    let invalid_response = app
+        .oneshot(
+            Request::builder()
+                .uri(oversized)
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn api_v1_lists_projects_and_work_items_for_authenticated_user() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

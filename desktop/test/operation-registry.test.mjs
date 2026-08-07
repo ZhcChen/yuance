@@ -34,6 +34,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
   const cases = [
     ["identity.current", {}, "/api/v1/auth/me"],
     ["shell.topbar", {}, "/api/v1/topbar/status"],
+    ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
     ["project.list", { status: "in_progress", page: 2, perPage: 25 }, "/api/v1/projects?status=in_progress&page=2&per_page=25"],
     ["project.current", {}, "/api/v1/current-project"],
@@ -70,6 +71,7 @@ test("rejects invalid business identifiers, filters and pagination", () => {
     ["notification.list", { filter: "secret" }],
     ["notification.list", { limit: 101 }],
     ["notification.target", { notificationId: 0 }],
+    ["search.list", { q: "x".repeat(129) }],
     ["workitem.list", { projectKey: "demo" }],
     ["workitem.list", { itemType: "incident" }],
     ["workitem.list", { priority: "urgent" }],
@@ -108,6 +110,12 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   assert.equal("local_path" in page.items[0], false);
   assert.equal("next_url" in page.pagination, false);
   assert.equal("response_headers" in page, false);
+
+  const search = registry.resolve("search.list", { q: "crash" }).parse({
+    items: [{ kind: "bug", key: "DEMO-1", title: "Crash", context: "Details", target: "/web/work-items/DEMO-1", updated_at: "2026-08-07T00:00:00Z", signed_url: "https://evil.example" }],
+    pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 },
+  });
+  assert.deepEqual(search.items[0], { kind: "bug", key: "DEMO-1", title: "Crash", context: "Details", target: "/web/work-items/DEMO-1", updated_at: "2026-08-07T00:00:00Z" });
 
   const attachments = registry.resolve("workitem.attachments", { itemKey: "DEMO-1" }).parse([{
     id: 3, filename: "report.txt", content_type: "text/plain", byte_size: 12,

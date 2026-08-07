@@ -16,6 +16,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/topbar/status", "shell.topbar", {}],
     ["/api/v1/current-project", "project.current", {}],
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
+    ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
     ["/api/v1/notifications?filter=unread&limit=10", "notification.list", { filter: "unread", limit: 10 }],
     ["/api/v1/notifications/7/target", "notification.target", { notificationId: 7 }],
     ["/api/v1/work-items?item_type=bug&q=crash&priority=P1&project_key=DEMO", "workitem.list", { itemType: "bug", q: "crash", priority: "P1", projectKey: "DEMO" }],

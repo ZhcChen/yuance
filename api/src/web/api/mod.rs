@@ -108,6 +108,26 @@ pub struct ProjectQuery {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    page: Option<i64>,
+    #[serde(default)]
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SearchResultPayload {
+    pub kind: String,
+    pub key: String,
+    pub title: String,
+    pub context: String,
+    pub target: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct AuditLogQuery {
     #[serde(default)]
     actor: String,
@@ -1665,6 +1685,48 @@ pub async fn list_projects(
     .await?;
     let total_pages = page.total_pages();
     let items = page.items.into_iter().map(project_payload).collect();
+
+    Ok(json(PaginatedPayload {
+        items,
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+    }))
+}
+
+pub async fn search(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SearchQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<PaginatedPayload<SearchResultPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    let pagination = normalize_api_pagination(query.page, query.per_page)?;
+    let search_query = query.q.trim();
+    if search_query.chars().count() > 128 {
+        return Err(AppError::BadRequest(
+            "搜索关键词不能超过 128 个字符".to_string(),
+        ));
+    }
+    let include_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
+    let include_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let page = projects::search_visible_paginated(
+        pool,
+        user.id,
+        can_access_all_projects,
+        search_query,
+        include_projects,
+        include_work_items,
+        pagination,
+    )
+    .await?;
+    let total_pages = page.total_pages();
+    let items = page.items.into_iter().map(search_result_payload).collect();
 
     Ok(json(PaginatedPayload {
         items,
@@ -4804,6 +4866,17 @@ async fn api_user_can_access_all_projects(
     }
 
     rbac::user_has_all_data_scope(pool, user.id).await
+}
+
+fn search_result_payload(hit: projects::SearchHit) -> SearchResultPayload {
+    SearchResultPayload {
+        kind: hit.hit_type,
+        key: hit.key,
+        title: hit.title,
+        context: hit.context,
+        target: hit.url,
+        updated_at: hit.updated_at,
+    }
 }
 
 async fn require_api_work_item_context(

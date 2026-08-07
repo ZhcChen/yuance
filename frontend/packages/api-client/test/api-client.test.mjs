@@ -94,6 +94,16 @@ test('notification write client prepares host write and posts expected path', as
   assert.equal(calls[0].options.method, 'POST');
 });
 
+test('search uses a normalized read-only query contract', async () => {
+  const { client, calls, writes } = createRecordedClient();
+
+  await client.search({ q: '  登录失败  ', page: 2, perPage: 20 });
+
+  assert.deepEqual(writes, []);
+  assert.equal(calls[0].url, '/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20');
+  assert.deepEqual(calls[0].options, {});
+});
+
 test('apiErrorFromPayload preserves server error code and message', () => {
   const error = apiErrorFromPayload({
     error: {

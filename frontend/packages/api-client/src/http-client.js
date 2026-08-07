@@ -1,6 +1,7 @@
 // @ts-check
 
 import { createNotificationClient } from './notifications.js';
+import { createSearchClient } from './search.js';
 import { createTopbarClient } from './topbar.js';
 import { createWorkItemClient } from './work-items.js';
 
@@ -10,8 +11,9 @@ import { createWorkItemClient } from './work-items.js';
 /** @typedef {{ id: number, username: string, display_name: string, is_super_admin: boolean }} AuthUser */
 /** @typedef {import('./work-items.js').WorkItemClient} WorkItemClient */
 /** @typedef {import('./notifications.js').NotificationClient} NotificationClient */
+/** @typedef {import('./search.js').SearchClient} SearchClient */
 /** @typedef {import('./topbar.js').TopbarClient} TopbarClient */
-/** @typedef {WorkItemClient & NotificationClient & TopbarClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
+/** @typedef {WorkItemClient & NotificationClient & SearchClient & TopbarClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**
  * @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies
@@ -20,6 +22,7 @@ import { createWorkItemClient } from './work-items.js';
 export function createApiClient({ request, prepareWrite = async () => {} }) {
   const workItems = createWorkItemClient({ request, prepareWrite });
   const notifications = createNotificationClient({ request, prepareWrite });
+  const search = createSearchClient({ request });
   const topbar = createTopbarClient({ request });
 
   return {
@@ -68,5 +71,6 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
     ...topbar,
     ...workItems,
     ...notifications,
+    ...search,
   };
 }

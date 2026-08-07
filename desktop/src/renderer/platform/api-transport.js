@@ -49,6 +49,9 @@ function resolveReadOperation(url, options) {
   if (parsed.pathname === "/api/v1/projects") return { operation: "project.list", input: parseQuery(parsed.searchParams, {
     status: "status", page: "page", per_page: "perPage",
   }) };
+  if (parsed.pathname === "/api/v1/search") return { operation: "search.list", input: parseQuery(parsed.searchParams, {
+    q: "q", page: "page", per_page: "perPage",
+  }) };
   if (parsed.pathname === "/api/v1/notifications") return { operation: "notification.list", input: parseQuery(parsed.searchParams, {
     limit: "limit", filter: "filter", page: "page", per_page: "perPage",
   }) };
