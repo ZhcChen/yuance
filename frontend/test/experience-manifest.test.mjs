@@ -82,3 +82,20 @@ test('完成态清单不得留下空页面或动作基线', async () => {
     assert.ok(manifest.actions.length > 0);
   }
 });
+
+test('页面只拥有读取入口且每个 route method 只有一个 contract owner', async () => {
+  const manifest = await readJson(manifestUrl);
+  const owners = new Map();
+  const register = (signature, owner) => {
+    assert.equal(owners.has(signature), false, `${signature} 同时被 ${owners.get(signature)} 和 ${owner} 登记`);
+    owners.set(signature, owner);
+  };
+
+  for (const page of manifest.pages) {
+    assert.deepEqual(page.methods, ['GET'], `${page.id} 的写操作必须拆成 action`);
+    register(`GET ${page.route}`, page.id);
+  }
+  for (const action of manifest.actions) {
+    register(`${action.request.method} ${action.request.path}`, action.id);
+  }
+});
