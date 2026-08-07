@@ -142,9 +142,9 @@ function deviceSessionRevokeOperation(input) {
 
 function apiTokenBody(input, includeExpiration) {
   if (!Array.isArray(input.scopes) || input.scopes.length < 1 || input.scopes.length > API_TOKEN_SCOPES.size || input.scopes.some((scope) => !API_TOKEN_SCOPES.has(scope))) throw new TypeError("scopes is invalid");
-  const projectScope = boundedRequiredText(input.projectScope, "projectScope", 4096);
+  const projectScope = boundedRequiredText(input.projectScope, "projectScope", 128);
   return {
-    name: boundedRequiredText(input.name, "name", 64), scopes: [...new Set(input.scopes)], project_scope: projectScope,
+    name: boundedRequiredText(input.name, "name", 80), scopes: [...new Set(input.scopes)], project_scope: projectScope,
     ...(includeExpiration ? { expires_at: boundedText(input.expiresAt, "expiresAt", 64) } : {}),
   };
 }
