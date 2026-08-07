@@ -57,7 +57,7 @@ ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 8,
+  schemaVersion: 9,
   appearance: Object.freeze({
     getTheme() { return ipcRenderer.invoke("yuance:appearance-get-theme"); },
     setTheme(theme) { return ipcRenderer.invoke("yuance:appearance-set-theme", theme); },
@@ -106,6 +106,8 @@ const bridge = Object.freeze({
     downloadWorkItemAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-attachment", input); },
     downloadWorkItemCommentAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-comment-attachment", input); },
     downloadProjectAttachment(input) { return ipcRenderer.invoke("yuance:file-download-project-attachment", input); },
+    openProjectAttachmentPreview(input) { return ipcRenderer.invoke("yuance:file-open-project-attachment-preview", input); },
+    releaseProjectAttachmentPreview(capability) { return ipcRenderer.invoke("yuance:file-release-project-attachment-preview", capability); },
     revealDownload(capability) { return ipcRenderer.invoke("yuance:file-reveal-download", capability); },
   }),
   events: Object.freeze({

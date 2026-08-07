@@ -8,6 +8,8 @@ export const FILE_CHANNELS = Object.freeze({
   downloadWorkItemAttachment: "yuance:file-download-work-item-attachment",
   downloadWorkItemCommentAttachment: "yuance:file-download-work-item-comment-attachment",
   downloadProjectAttachment: "yuance:file-download-project-attachment",
+  openProjectAttachmentPreview: "yuance:file-open-project-attachment-preview",
+  releaseProjectAttachmentPreview: "yuance:file-release-project-attachment-preview",
   attachmentProgress: "yuance:file-attachment-progress",
   revealDownload: "yuance:file-reveal-download",
 });
@@ -15,9 +17,9 @@ export const FILE_CHANNELS = Object.freeze({
 const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const STAGES = new Set(["registering", "signing", "uploading", "confirming"]);
 
-export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding, getWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, revealController } = {}) {
+export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding, getWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, previewCoordinator, revealController } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function" || typeof ipcMain.removeHandler !== "function") throw new TypeError("ipcMain is required");
-  if (typeof assertSender !== "function" || typeof getBinding !== "function" || typeof getWindow !== "function" || typeof fileDialog?.choose !== "function" || typeof issueTransferGrant !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || !hasAttachmentOperations(attachmentCoordinator) || typeof revealController?.reveal !== "function") {
+  if (typeof assertSender !== "function" || typeof getBinding !== "function" || typeof getWindow !== "function" || typeof fileDialog?.choose !== "function" || typeof issueTransferGrant !== "function" || typeof uploadExecutor?.execute !== "function" || typeof downloadExecutor?.execute !== "function" || !hasAttachmentOperations(attachmentCoordinator) || !hasPreviewOperations(previewCoordinator) || typeof revealController?.reveal !== "function") {
     throw new TypeError("file command dependencies are required");
   }
 
@@ -47,6 +49,21 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
     [FILE_CHANNELS.downloadWorkItemAttachment]: attachmentDownloadHandler("downloadWorkItemAttachment", "workitem"),
     [FILE_CHANNELS.downloadWorkItemCommentAttachment]: attachmentDownloadHandler("downloadWorkItemCommentAttachment", "comment"),
     [FILE_CHANNELS.downloadProjectAttachment]: attachmentDownloadHandler("downloadProjectAttachment", "project"),
+    [FILE_CHANNELS.openProjectAttachmentPreview]: async (event, payload) => {
+      assertSender(event);
+      const reference = parseProjectPreview(payload);
+      const binding = stripPurpose(getBinding(event, "preview"));
+      const controller = new AbortController();
+      const onDestroyed = () => controller.abort();
+      event.sender.once?.("destroyed", onDestroyed);
+      try { return normalizePreview(await previewCoordinator.openProjectAttachmentPreview({ ...reference, binding, signal: controller.signal })); }
+      finally { event.sender.removeListener?.("destroyed", onDestroyed); }
+    },
+    [FILE_CHANNELS.releaseProjectAttachmentPreview]: async (event, capability) => {
+      assertSender(event);
+      if (typeof capability !== "string" || !/^ypv_[A-Za-z0-9_-]{32}$/u.test(capability)) throw publicError("preview_capability_invalid");
+      return previewCoordinator.releaseProjectAttachmentPreview({ capability, binding: stripPurpose(getBinding(event, "preview")) });
+    },
     [FILE_CHANNELS.revealDownload]: async (event, capability) => {
       assertSender(event);
       if (typeof capability !== "string" || !/^yrd_[A-Za-z0-9_-]{32}$/u.test(capability)) throw publicError("file_reveal_invalid");
@@ -111,6 +128,10 @@ function parseAttachmentDownload(value, target) {
   if (!isPlainObject(value) || !sameKeys(value, keys) || typeof value.suggestedFilename !== "string") throw new TypeError("attachment download request is invalid");
   return attachmentReference(value, target, true);
 }
+function parseProjectPreview(value) {
+  if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "projectKey"]) || typeof value.projectKey !== "string" || !/^[A-Z][A-Z0-9-]{1,31}$/u.test(value.projectKey) || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1) throw new TypeError("preview request is invalid");
+  return Object.freeze({ projectKey: value.projectKey, attachmentId: value.attachmentId });
+}
 function attachmentReference(value, target, attachment) {
   return Object.freeze({ ...(target === "project" ? { projectKey: value.projectKey } : { itemKey: value.itemKey }), ...(target === "comment" ? { commentId: value.commentId } : {}), ...(attachment ? { attachmentId: value.attachmentId } : {}) });
 }
@@ -135,6 +156,15 @@ function normalizeRevealResult(value) {
   if (!value || value.status !== "revealed") throw publicError("file_unavailable");
   return Object.freeze({ status: "revealed" });
 }
+function normalizePreview(value) {
+  if (!isPlainObject(value) || typeof value.capability !== "string" || !/^ypv_[A-Za-z0-9_-]{32}$/u.test(value.capability) || value.source !== `app://yuance/.preview/${value.capability}` || typeof value.contentType !== "string" || !Number.isSafeInteger(value.byteSize)) throw publicError("preview_unavailable");
+  const preview = value.preview;
+  const navigation = value.navigation;
+  if (!isPlainObject(preview) || ![null, "image", "video", "document"].includes(preview.kind) || !isPlainObject(navigation) || !Number.isSafeInteger(navigation.position) || !Number.isSafeInteger(navigation.total)) throw publicError("preview_unavailable");
+  return Object.freeze({ capability: value.capability, source: value.source, contentType: value.contentType, byteSize: value.byteSize, attachment: normalizeAttachment(value.attachment), preview: Object.freeze({ kind: preview.kind, strategy: nullableText(preview.strategy), file_type: nullableText(preview.file_type), kind_label: nullableText(preview.kind_label), is_experimental: preview.is_experimental === true, legacy_preview_enabled: preview.legacy_preview_enabled === true, content_enabled: preview.content_enabled === true }), navigation: Object.freeze({ position: navigation.position, total: navigation.total, previous: normalizePreviewLink(navigation.previous), next: normalizePreviewLink(navigation.next) }) });
+}
+function normalizePreviewLink(value) { if (value === null) return null; if (!isPlainObject(value) || !Number.isSafeInteger(value.id) || value.id < 1 || typeof value.title !== "string" || typeof value.url !== "string" || !value.url.startsWith("/api/v1/")) throw publicError("preview_unavailable"); return Object.freeze({ id: value.id, title: value.title, url: value.url }); }
+function nullableText(value) { if (value === null) return null; if (typeof value !== "string" || value.length > 256) throw publicError("preview_unavailable"); return value; }
 function normalizeAttachment(value) {
   if (!isPlainObject(value)) throw publicError("file_unavailable");
   return Object.freeze({ id: value.id, filename: value.filename, content_type: value.content_type, byte_size: value.byte_size, status: value.status, created_by: value.created_by, created_at: value.created_at });
@@ -142,6 +172,7 @@ function normalizeAttachment(value) {
 function hasAttachmentOperations(value) {
   return ["uploadWorkItemAttachment", "uploadWorkItemCommentAttachment", "uploadProjectAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "downloadProjectAttachment"].every((name) => typeof value?.[name] === "function");
 }
+function hasPreviewOperations(value) { return ["openProjectAttachmentPreview", "releaseProjectAttachmentPreview"].every((name) => typeof value?.[name] === "function"); }
 function rejectPayload(payload) { if (payload !== undefined) throw new TypeError("file command does not accept payload"); }
 function normalizeSelection(value) {
   if (value === null) return null;

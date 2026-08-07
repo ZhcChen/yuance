@@ -111,6 +111,8 @@ export function defineHostDelegatedFileCapabilities(capabilities) {
  * @property {(input: { itemKey: string, commentId: number, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadWorkItemCommentAttachment
  * @property {(input: { projectKey: string, fileCapability: FileCapability, attachmentId?: number }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming', created?: any) => void) => Promise<{ created: any, uploaded: any }>} uploadProjectAttachment
  * @property {(input: { projectKey: string, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadProjectAttachment
+ * @property {(input: { projectKey: string, attachmentId: number }) => Promise<{ capability: string, source: string, contentType: string, byteSize: number, attachment: any, preview: any, navigation: any }>} openProjectAttachmentPreview
+ * @property {(capability: string) => Promise<{ status: 'released' }>} releaseProjectAttachmentPreview
  * @property {(capability: RevealDownloadCapability) => Promise<{ status: 'revealed' }>} revealDownload
  */
 
@@ -126,6 +128,8 @@ export function defineHostDelegatedAttachmentCapabilities(capabilities) {
   requireOperation(capabilities, 'downloadWorkItemCommentAttachment');
   requireOperation(capabilities, 'uploadProjectAttachment');
   requireOperation(capabilities, 'downloadProjectAttachment');
+  requireOperation(capabilities, 'openProjectAttachmentPreview');
+  requireOperation(capabilities, 'releaseProjectAttachmentPreview');
   requireOperation(capabilities, 'revealDownload');
   return /** @type {HostDelegatedAttachmentCapabilities} */ (capabilities);
 }

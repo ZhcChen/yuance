@@ -63,6 +63,11 @@ import { parseTransferContract } from "./files/transfer-contract.mjs";
 import { createUploadExecutor } from "./files/upload-executor.mjs";
 import { createDownloadExecutor } from "./files/download-executor.mjs";
 import { createBusinessAttachmentCoordinator } from "./files/business-attachment-coordinator.mjs";
+import { createPreviewCapabilityVault } from "./files/preview-capability-vault.mjs";
+import { createPreviewSpool } from "./files/preview-spool.mjs";
+import { createPreviewContentLoader } from "./files/preview-content-loader.mjs";
+import { createProjectAttachmentPreviewCoordinator } from "./files/project-attachment-preview-coordinator.mjs";
+import { createPreviewProtocolHandler } from "./protocol/preview-protocol-handler.mjs";
 import { createAttachmentOperationRegistry } from "./network/attachment-operation-registry.mjs";
 import { createDownloadTargetManager } from "./files/download-target.mjs";
 import { loadWindowsFileGuard } from "./files/windows-file-guard.mjs";
@@ -298,6 +303,9 @@ function createMainWindow() {
   window.webContents.on("render-process-gone", () => {
     rendererReadiness.reset();
     fileRuntime?.state.invalidateAll().catch(() => {});
+  });
+  window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) fileRuntime?.state.invalidateAll().catch(() => {});
   });
   window.on("closed", () => {
     rendererReadiness.reset();
@@ -1050,6 +1058,9 @@ async function runDesktopBusinessFileSmoke() {
   const fileVault = createFileCapabilityVault();
   const grantVault = createTransferGrantVault();
   const revealVault = createRevealDownloadVault();
+  const previewVault = createPreviewCapabilityVault();
+  const previewSpool = createPreviewSpool({ rootDirectory: path.join(app.getPath("userData"), "Preview Spool"), platform: process.platform, windowsGuard });
+  await previewSpool.cleanupOrphans();
   const registry = createOperationRegistry();
   const baseBinding = Object.freeze({ ...runtime.fileBindingVersion(), webContentsId: 1, frameRoutingId: 1 });
   const binding = (purpose) => Object.freeze({ ...baseBinding, purpose });
@@ -1291,7 +1302,7 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
   const runtimeShell = desktopFeatureParityUiSmokeProfile ? { showItemInFolder: () => {} } : shell;
   const revealController = createRevealDownloadController({ vault: revealVault, shell: runtimeShell });
   const registry = createOperationRegistry();
-  const state = createFileStateController({ fileVault, grantVault, revealVault, registry });
+  const state = createFileStateController({ fileVault, grantVault, revealVault, previewVault, registry });
   const fileDialog = createFileDialog({ dialog: runtimeDialog, spool, vault: fileVault });
   const uploadExecutor = createUploadExecutor({ fileVault, grantVault, fetchImpl: network.transferFetch, registry, platform: process.platform, windowsGuard, spoolRoot });
   const downloadExecutor = createDownloadExecutor({ grantVault, targetManager: createDownloadTargetManager({ dialog: runtimeDialog, platform: process.platform, windowsGuard }), fetchImpl: network.transferFetch, registry });
@@ -1307,6 +1318,11 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
     allowLoopbackHttp: isDevRuntime || Boolean(desktopFeatureParityUiSmokeOrigin),
     allowedRelativePaths: isDevRuntime || desktopFeatureParityUiSmokeOrigin ? { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" } : {},
   });
+  const previewCoordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport,
+    loader: createPreviewContentLoader({ profile, credentialRuntime: runtime, fetchImpl: network.fetch, spool: previewSpool }),
+    vault: previewVault,
+  });
   const getBinding = (event, purpose) => Object.freeze({
     ...runtime.fileBindingVersion(),
     webContentsId: event.sender.id,
@@ -1318,11 +1334,11 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
     const contract = parseTransferContract(raw, { apiOrigin: profile.origin, expectedPurpose: purpose, allowLoopbackHttp: isDevRuntime || Boolean(desktopFeatureParityUiSmokeOrigin) });
     return grantVault.issue(contract, binding).grant;
   };
-  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, revealController });
+  disposeFileCommands = registerFileCommandHandlers({ ipcMain, assertSender: assertTrustedIpcSender, getBinding, getWindow: () => mainWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, previewCoordinator, revealController });
   const onSuspend = () => { state.invalidateAll().catch(() => {}); };
   powerMonitor.on("suspend", onSuspend);
   disposeFilePowerLifecycle = () => powerMonitor.removeListener("suspend", onSuspend);
-  fileRuntime = Object.freeze({ state });
+  fileRuntime = Object.freeze({ state, preview: Object.freeze({ runtime, vault: previewVault }) });
 }
 
 async function disposeCurrentFileRuntime() {
@@ -1486,6 +1502,12 @@ if (singleInstanceProbe) {
             fs,
             rendererRoot,
             manifestPath: path.join(rendererRoot, "resource-manifest.json"),
+            previewHandler: createPreviewProtocolHandler({ resolveSnapshot: (capability) => {
+              const current = fileRuntime?.preview;
+              const window = mainWindow;
+              if (!current || !window || window.isDestroyed()) throw new Error("preview unavailable");
+              return current.vault.resolve(capability, Object.freeze({ ...current.runtime.fileBindingVersion(), webContentsId: window.webContents.id, frameRoutingId: window.webContents.mainFrame.routingId }));
+            } }),
           });
           if (appProtocolSmoke) {
             rendererSession.webRequest.onBeforeRequest((details, callback) => {

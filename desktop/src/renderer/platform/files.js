@@ -19,6 +19,8 @@ export function createDesktopAppFiles(bridge, hostFiles = createDesktopFiles(bri
     downloadWorkItemAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadWorkItemAttachment")(input)),
     downloadWorkItemCommentAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadWorkItemCommentAttachment")(input)),
     downloadProjectAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadProjectAttachment")(input)),
+    openProjectAttachmentPreview: async (input) => normalizePreview(await requireOperation(bridge, "openProjectAttachmentPreview")(input)),
+    releaseProjectAttachmentPreview: async (capability) => normalizeRelease(await requireOperation(bridge, "releaseProjectAttachmentPreview")(capability)),
     revealDownload: async (capability) => normalizeReveal(await requireOperation(bridge, "revealDownload")(capability)),
   });
   return Object.freeze({
@@ -62,3 +64,8 @@ function normalizeReveal(value) {
   if (!value || value.status !== "revealed") throw new Error("reveal result is invalid");
   return Object.freeze({ status: "revealed" });
 }
+function normalizePreview(value) {
+  if (!value || typeof value !== "object" || typeof value.capability !== "string" || value.source !== `app://yuance/.preview/${value.capability}` || typeof value.contentType !== "string" || !Number.isSafeInteger(value.byteSize) || !value.preview || !value.navigation) throw new Error("preview result is invalid");
+  return Object.freeze({ capability: value.capability, source: value.source, contentType: value.contentType, byteSize: value.byteSize, attachment: normalizeAttachment(value.attachment), preview: Object.freeze({ ...value.preview }), navigation: Object.freeze({ ...value.navigation }) });
+}
+function normalizeRelease(value) { if (!value || value.status !== "released") throw new Error("preview release is invalid"); return Object.freeze({ status: "released" }); }

@@ -9,10 +9,11 @@ test("file state aborts operations before invalidating grants and snapshots", as
     registry: { abortAll: () => calls.push("abort") },
     grantVault: { invalidateAll: () => calls.push("grant") },
     revealVault: { invalidateAll: () => calls.push("reveal") },
+    previewVault: { invalidateAll: async () => calls.push("preview") },
     fileVault: { invalidateAll: async () => calls.push("file") },
   });
   await state.invalidateAll();
-  assert.deepEqual(calls, ["abort", "grant", "reveal", "file"]);
+  assert.deepEqual(calls, ["abort", "grant", "reveal", "file", "preview"]);
 });
 
 test("file state serializes asynchronous snapshot cleanup", async () => {
@@ -20,6 +21,7 @@ test("file state serializes asynchronous snapshot cleanup", async () => {
   const calls = [];
   const state = createFileStateController({
     registry: { abortAll() {} }, grantVault: { invalidateAll() {} }, revealVault: { invalidateAll() {} },
+    previewVault: { invalidateAll: async () => {} },
     fileVault: { invalidateAll: async () => { calls.push("start"); await new Promise((resolve) => { release = resolve; }); calls.push("end"); } },
   });
   const first = state.invalidateAll();

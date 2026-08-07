@@ -42,7 +42,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 8);
+  assert.equal(bridge.schemaVersion, 9);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -82,7 +82,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "revealDownload", "uploadCanary", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();
@@ -90,6 +90,16 @@ test("file bridge exposes only fixed host-delegated commands", async () => {
     ["yuance:file-choose", undefined],
     ["yuance:file-upload-canary", "yfc_opaque"],
     ["yuance:file-download-canary", undefined],
+  ]);
+});
+
+test("preview bridge forwards only semantic references and opaque capabilities", async () => {
+  const { bridge, invocations } = await executePreload();
+  await bridge.files.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 7 });
+  await bridge.files.releaseProjectAttachmentPreview("ypv_opaque");
+  assert.deepEqual(invocations, [
+    ["yuance:file-open-project-attachment-preview", { projectKey: "YCE", attachmentId: 7 }],
+    ["yuance:file-release-project-attachment-preview", "ypv_opaque"],
   ]);
 });
 
