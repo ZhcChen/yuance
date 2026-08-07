@@ -578,6 +578,7 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/bugs?assignee_username=yuance_admin",
             "/web/work-items/YCE-TASK-2?focus=comment-7",
             "/web/system",
+            "/web/system/users?page=2&per_page=20",
         ] {
             migrated_route_responses.push(
                 app.clone()
