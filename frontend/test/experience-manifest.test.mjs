@@ -61,6 +61,7 @@ test('体验清单 ID 和引用保持唯一且闭合', async () => {
   assert.equal(new Set(actionIds).size, actionIds.length, 'action id 不得重复');
   for (const page of manifest.pages) {
     assert.ok(routeMethods.has(page.route), `${page.id} 引用了不存在的正式 Web route ${page.route}`);
+    assert.ok(page.sourceTemplates.length > 0 || (page.sourceHandlers?.length ?? 0) > 0, `${page.id} 必须登记模板或运行时 handler`);
     for (const method of page.methods) {
       assert.ok(routeMethods.get(page.route).includes(method), `${page.id} 登记了不存在的 ${method} ${page.route}`);
     }

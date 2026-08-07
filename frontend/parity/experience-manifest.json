@@ -257,6 +257,39 @@
       "migrationUnit": "U5",
       "status": "baseline",
       "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.dashboard", "route": "/web/system", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/dashboard.html"], "actors": ["super-administrator"], "permissions": ["system.manage"], "controls": ["system-navigation", "summary", "health-links"], "states": ["ready", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.users", "route": "/web/system/users", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/users.html", "partials/pagination_pages.html", "partials/pagination_size_jump.html"], "actors": ["super-administrator"], "permissions": ["system.user.manage"], "controls": ["filters", "user-list", "create-user", "status", "role", "password-reset", "project-assignments", "pagination"], "states": ["loading", "ready", "empty", "submitting", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.roles", "route": "/web/system/roles", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/roles.html"], "actors": ["super-administrator"], "permissions": ["system.role.manage"], "controls": ["role-list", "create-role", "status", "permission-tree"], "states": ["ready", "empty", "submitting", "protected-role", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.role-permissions", "route": "/web/system/roles/{role_code}/permissions", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/roles.html"], "actors": ["super-administrator"], "permissions": ["system.role.manage"], "controls": ["role-summary", "permission-tree", "parent-child-selection", "save"], "states": ["ready", "submitting", "protected-role", "not-found", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.permissions", "route": "/web/system/permissions", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/permissions.html"], "actors": ["super-administrator"], "permissions": ["system.permission.read"], "controls": ["permission-groups", "permission-list", "search"], "states": ["ready", "empty", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.storage", "route": "/web/system/storage", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/storage.html"], "actors": ["super-administrator"], "permissions": ["system.storage.manage"], "controls": ["provider-settings", "secret-fields", "probe", "initialize", "versions", "rollback"], "states": ["unconfigured", "ready", "probing", "initializing", "rolling-back", "degraded", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.openapi", "route": "/web/system/openapi", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/openapi.html"], "actors": ["super-administrator"], "permissions": ["system.openapi.manage"], "controls": ["token-list", "create-token", "project-scope", "scopes", "edit", "delete"], "states": ["ready", "empty", "token-secret", "limit", "submitting", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.releases", "route": "/web/system/releases", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/releases.html", "partials/pagination_pages.html", "partials/pagination_size_jump.html"], "actors": ["super-administrator"], "permissions": ["system.release.manage"], "controls": ["release-list", "create-release", "settings", "edit", "asset-upload", "asset-download", "asset-delete", "pagination"], "states": ["ready", "empty", "uploading", "publishing", "submitting", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.database-stats", "route": "/web/system/database-stats", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/database_stats.html"], "actors": ["super-administrator"], "permissions": ["system.database.read"], "controls": ["summary", "table-selector", "statistics", "refresh", "pagination"], "states": ["loading", "ready", "empty", "cache-stale", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.audit", "route": "/web/system/audit", "methods": ["GET"], "family": "system", "sourceTemplates": ["system/audit.html", "partials/pagination_pages.html", "partials/pagination_size_jump.html"], "actors": ["super-administrator"], "permissions": ["system.audit.read"], "controls": ["filters", "audit-list", "actor", "action", "target", "time-range", "pagination"], "states": ["loading", "ready", "filtered", "empty", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.system.api-docs", "route": "/web/system/api-docs", "methods": ["GET"], "family": "system", "sourceTemplates": [], "sourceHandlers": ["api/src/web/router.rs::system_api_docs"], "actors": ["super-administrator"], "permissions": ["system.openapi.manage"], "controls": ["openapi-document", "endpoint-navigation"], "states": ["ready", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "actions": [
