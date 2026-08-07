@@ -315,6 +315,10 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "projects:DEMO" }, "PATCH", "/api/v1/me/tokens/7", { name: "Agent 2", scopes: ["work_item:read"], project_scope: "projects:DEMO" }],
     ["identity.tokendelete", { tokenId: 7 }, "DELETE", "/api/v1/me/tokens/7", undefined],
     ["identity.devicesessionrevoke", { familyId: "family-1" }, "DELETE", "/api/v1/me/device-sessions/family-1", undefined],
+    ["system.usercreate", { username: "alice", displayName: "Alice", email: "alice@example.test", mobile: "", password: "AlicePass2026!", roleCode: "member" }, "POST", "/api/v1/system/users", { username: "alice", display_name: "Alice", email: "alice@example.test", mobile: "", password: "AlicePass2026!", role_code: "member" }],
+    ["system.userstatusupdate", { username: "alice", status: "disabled" }, "PATCH", "/api/v1/system/users/alice/status", { status: "disabled" }],
+    ["system.userroleupdate", { username: "alice", roleCode: "viewer" }, "PATCH", "/api/v1/system/users/alice/role", { role_code: "viewer" }],
+    ["system.userpasswordreset", { username: "alice", password: "NewAlicePass2026!" }, "POST", "/api/v1/system/users/alice/password", { password: "NewAlicePass2026!" }],
     ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }, "POST", "/api/v1/projects", { name: "New project", description: "Description", status: "not_started", start_date: "2026-08-08", due_date: "2026-08-31" }],
     ["project.update", { projectKey: "DEMO", name: "Updated", ownerUsername: "alice", status: "in_progress" }, "PATCH", "/api/v1/projects/DEMO", { name: "Updated", owner_username: "alice", status: "in_progress" }],
     ["project.memberadd", { projectKey: "DEMO", username: "bob", memberRole: "member" }, "POST", "/api/v1/projects/DEMO/members", { username: "bob", member_role: "member" }],
@@ -361,6 +365,8 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
   assert.equal(registry.resolve("workitem.savedviewdelete", { savedViewId: 7 }).allowNoContent, true);
   assert.equal(registry.resolve("workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }).editorContext, "work-item-comment-edit");
   assert.equal(registry.resolve("workitem.primarypostattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }).editorContext, "work-item-primary-post");
+  assert.throws(() => registry.resolve("system.userstatusupdate", { username: "alice", status: "admin" }), /status is invalid/);
+  assert.throws(() => registry.resolve("system.usercreate", { username: "alice", displayName: "Alice", email: "", mobile: "", password: "", roleCode: "member" }), /password is invalid/);
 });
 
 test("rejects invalid mutation fields before a descriptor is created", () => {

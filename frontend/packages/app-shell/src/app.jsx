@@ -770,6 +770,14 @@ export function SharedApp({ services }) {
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
+  const [systemUserCreateOpen, setSystemUserCreateOpen] = useState(false);
+  const [systemUserCreateForm, setSystemUserCreateForm] = useState({ username: '', displayName: '', email: '', mobile: '', password: '', passwordConfirm: '', roleCode: '' });
+  const [systemUserAction, setSystemUserAction] = useState(/** @type {{ kind: 'status' | 'role' | 'password', user: any } | null} */ (null));
+  const [systemUserRoleCode, setSystemUserRoleCode] = useState('');
+  const [systemUserPasswordForm, setSystemUserPasswordForm] = useState({ password: '', passwordConfirm: '' });
+  const [systemUserSubmitting, setSystemUserSubmitting] = useState(false);
+  const [systemUserError, setSystemUserError] = useState('');
+  const systemUserMutationRef = useRef(false);
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemCreateOpen, setWorkItemCreateOpen] = useState(false);
   const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
@@ -1798,6 +1806,81 @@ export function SharedApp({ services }) {
       }
       setTokenModalOpen(false);
     } catch { return; }
+  }
+
+  async function refreshSystemUsersAfterMutation() {
+    const current = routeRef.current;
+    if (current.id !== 'system-users') return;
+    const view = await api.getSystemUsersView({ page: current.page, perPage: current.perPage });
+    if (routeRef.current.id === 'system-users' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) setSystemUsersView(view);
+  }
+
+  async function runSystemUserMutation(action, successMessage) {
+    if (systemUserMutationRef.current) return false;
+    systemUserMutationRef.current = true;
+    setSystemUserSubmitting(true);
+    setSystemUserError('');
+    try {
+      await action();
+      setStatusMessage(successMessage);
+      try {
+        await refreshSystemUsersAfterMutation();
+      } catch (caught) {
+        const detail = errorMessage(caught instanceof Error ? caught : new Error('用户列表刷新失败。'));
+        setSystemUserError(`操作已成功，但用户列表刷新失败：${detail}`);
+      }
+      return true;
+    } catch (caught) {
+      setSystemUserError(errorMessage(caught instanceof Error ? caught : new Error('用户操作失败。')));
+      return false;
+    } finally {
+      systemUserMutationRef.current = false;
+      setSystemUserSubmitting(false);
+    }
+  }
+
+  async function submitSystemUserCreate(event) {
+    event.preventDefault();
+    if (systemUserCreateForm.password !== systemUserCreateForm.passwordConfirm) { setSystemUserError('两次输入的密码不一致。'); return; }
+    const completed = await runSystemUserMutation(() => api.createSystemUser(systemUserCreateForm), `用户 ${systemUserCreateForm.username} 已创建。`);
+    if (completed) { setSystemUserCreateOpen(false); setSystemUserCreateForm({ username: '', displayName: '', email: '', mobile: '', password: '', passwordConfirm: '', roleCode: '' }); }
+  }
+
+  function closeSystemUserCreate() {
+    if (systemUserSubmitting) return;
+    setSystemUserCreateOpen(false);
+    setSystemUserCreateForm({ username: '', displayName: '', email: '', mobile: '', password: '', passwordConfirm: '', roleCode: '' });
+    setSystemUserError('');
+  }
+
+  function closeSystemUserAction() {
+    if (systemUserSubmitting) return;
+    setSystemUserAction(null);
+    setSystemUserRoleCode('');
+    setSystemUserPasswordForm({ password: '', passwordConfirm: '' });
+    setSystemUserError('');
+  }
+
+  async function submitSystemUserRole(event) {
+    event.preventDefault();
+    if (!systemUserAction || systemUserAction.kind !== 'role') return;
+    const completed = await runSystemUserMutation(() => api.updateSystemUserRole(systemUserAction.user.username, systemUserRoleCode), `${systemUserAction.user.display_name} 的全局角色已更新。`);
+    if (completed) setSystemUserAction(null);
+  }
+
+  async function submitSystemUserPassword(event) {
+    event.preventDefault();
+    if (!systemUserAction || systemUserAction.kind !== 'password') return;
+    if (systemUserPasswordForm.password !== systemUserPasswordForm.passwordConfirm) { setSystemUserError('两次输入的密码不一致。'); return; }
+    const completed = await runSystemUserMutation(() => api.resetSystemUserPassword(systemUserAction.user.username, systemUserPasswordForm.password), `${systemUserAction.user.display_name} 的密码已重置，现有会话已撤销。`);
+    if (completed) { setSystemUserAction(null); setSystemUserPasswordForm({ password: '', passwordConfirm: '' }); }
+  }
+
+  async function confirmSystemUserStatus() {
+    if (!systemUserAction || systemUserAction.kind !== 'status') return;
+    const targetStatus = systemUserAction.user.status === 'active' ? 'disabled' : 'active';
+    const completed = await runSystemUserMutation(() => api.updateSystemUserStatus(systemUserAction.user.username, targetStatus), `${systemUserAction.user.display_name} 已${targetStatus === 'active' ? '启用' : '停用'}。`);
+    if (completed) setSystemUserAction(null);
   }
 
   async function submitProjectResourceFilters(event) {
@@ -3974,7 +4057,9 @@ export function SharedApp({ services }) {
             <section className="shell-card shell-panel-wide" aria-labelledby="system-users-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-users-title">用户列表</h2><p className="shell-muted">按创建时间倒序排列。</p></div>
+                {systemUsersView?.can_manage_users ? <Button onClick={() => { setSystemUserError(''); setSystemUserCreateForm((current) => ({ ...current, roleCode: current.roleCode || systemUsersView.roles.find((role) => role.status === 'active')?.role_code || '' })); setSystemUserCreateOpen(true); }}>新建用户</Button> : null}
               </div>
+              {systemUserError && !systemUserCreateOpen && !systemUserAction ? <Feedback tone="danger" title="用户操作失败">{systemUserError}</Feedback> : null}
               <DataTable
                 caption="系统用户列表"
                 rows={systemUsersView?.items || []}
@@ -3987,12 +4072,35 @@ export function SharedApp({ services }) {
                   { key: 'roles', label: '角色', render: (item) => item.role_names || '未分配' },
                   { key: 'status', label: '状态', render: (item) => item.status },
                   { key: 'updated', label: '更新', render: (item) => formatTimestamp(item.updated_at) },
+                  { key: 'actions', label: '操作', render: (item) => systemUsersView?.can_manage_users ? <div className="shell-actions-inline">
+                    {!item.is_super_admin ? <><Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserRoleCode(item.role_code); setSystemUserAction({ kind: 'role', user: item }); }}>角色</Button><Button variant={item.status === 'active' ? 'danger' : 'secondary'} disabled={systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserAction({ kind: 'status', user: item }); }}>{item.status === 'active' ? '停用' : '启用'}</Button></> : null}
+                    <Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserPasswordForm({ password: '', passwordConfirm: '' }); setSystemUserAction({ kind: 'password', user: item }); }}>重置密码</Button>
+                  </div> : '无权限' },
                 ]}
               />
               {systemUsersView ? <div className="shell-panel-header">
                 <Pagination page={systemUsersView.pagination.page} totalPages={systemUsersView.pagination.total_pages} totalItems={systemUsersView.pagination.total_items} onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)} />
                 <label className="shell-page-size">每页<select value={systemUsersView.pagination.per_page} onChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
               </div> : null}
+              <Modal open={systemUserCreateOpen} title="新建用户" onClose={closeSystemUserCreate} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserCreate}>取消</Button><Button loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
+                <form id="system-user-create-form" onSubmit={submitSystemUserCreate}>
+                  {systemUserError ? <Feedback tone="danger" title="创建失败">{systemUserError}</Feedback> : null}
+                  <Field id="system-user-username" label="用户名" required><input value={systemUserCreateForm.username} maxLength={64} autoComplete="off" onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, username: event.target.value }))} /></Field>
+                  <Field id="system-user-display-name" label="显示名称" required><input value={systemUserCreateForm.displayName} maxLength={64} onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, displayName: event.target.value }))} /></Field>
+                  <Field id="system-user-email" label="邮箱"><input type="email" value={systemUserCreateForm.email} maxLength={254} onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, email: event.target.value }))} /></Field>
+                  <Field id="system-user-mobile" label="手机号"><input value={systemUserCreateForm.mobile} maxLength={32} onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, mobile: event.target.value }))} /></Field>
+                  <Field id="system-user-role" label="全局角色" required><select value={systemUserCreateForm.roleCode} onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, roleCode: event.target.value }))}>{(systemUsersView?.roles || []).filter((role) => role.status === 'active').map((role) => <option key={role.role_code} value={role.role_code}>{role.role_name}</option>)}</select></Field>
+                  <Field id="system-user-password" label="初始密码" required><input type="password" autoComplete="new-password" value={systemUserCreateForm.password} maxLength={256} onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, password: event.target.value }))} /></Field>
+                  <Field id="system-user-password-confirm" label="确认初始密码" required><input type="password" autoComplete="new-password" value={systemUserCreateForm.passwordConfirm} maxLength={256} onChange={(event) => setSystemUserCreateForm((current) => ({ ...current, passwordConfirm: event.target.value }))} /></Field>
+                </form>
+              </Modal>
+              <Modal open={systemUserAction?.kind === 'role'} title="调整全局角色" onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-role-form')); form?.requestSubmit(); }}>保存</Button></>}>
+                <form id="system-user-role-form" onSubmit={submitSystemUserRole}>{systemUserError ? <Feedback tone="danger" title="更新失败">{systemUserError}</Feedback> : null}<p>{systemUserAction?.user.display_name} @{systemUserAction?.user.username}</p><Field id="system-user-role-value" label="全局角色" required><select value={systemUserRoleCode} onChange={(event) => setSystemUserRoleCode(event.target.value)}>{(systemUsersView?.roles || []).filter((role) => role.status === 'active').map((role) => <option key={role.role_code} value={role.role_code}>{role.role_name}</option>)}</select></Field></form>
+              </Modal>
+              <Modal open={systemUserAction?.kind === 'password'} title="重置用户密码" onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button variant="danger" loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-password-form')); form?.requestSubmit(); }}>确认重置</Button></>}>
+                <form id="system-user-password-form" onSubmit={submitSystemUserPassword}>{systemUserError ? <Feedback tone="danger" title="重置失败">{systemUserError}</Feedback> : null}<p>重置“{systemUserAction?.user.display_name}”的密码后，该用户现有会话将立即撤销，新密码不会再次显示。</p><Field id="system-user-new-password" label="新密码" required><input type="password" autoComplete="new-password" maxLength={256} value={systemUserPasswordForm.password} onChange={(event) => setSystemUserPasswordForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field id="system-user-new-password-confirm" label="确认新密码" required><input type="password" autoComplete="new-password" maxLength={256} value={systemUserPasswordForm.passwordConfirm} onChange={(event) => setSystemUserPasswordForm((current) => ({ ...current, passwordConfirm: event.target.value }))} /></Field></form>
+              </Modal>
+              <Modal open={systemUserAction?.kind === 'status'} title={systemUserAction?.user.status === 'active' ? '停用用户' : '启用用户'} onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button variant={systemUserAction?.user.status === 'active' ? 'danger' : 'primary'} loading={systemUserSubmitting} onClick={() => void confirmSystemUserStatus()}>确认{systemUserAction?.user.status === 'active' ? '停用' : '启用'}</Button></>}><p>{systemUserAction?.user.status === 'active' ? `停用“${systemUserAction?.user.display_name}”将立即撤销其 Browser/Desktop 会话、Token 和设备访问。` : `确认重新启用“${systemUserAction?.user.display_name}”？`}</p>{systemUserError ? <Feedback tone="danger" title="状态更新失败">{systemUserError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-dashboard' ? (
             <section className="shell-panel-wide" aria-labelledby="system-dashboard-title">

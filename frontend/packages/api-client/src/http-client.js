@@ -38,7 +38,7 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
   const profile = createProfileClient({ request, prepareWrite });
   const search = createSearchClient({ request });
   const topbar = createTopbarClient({ request });
-  const system = createSystemClient({ request });
+  const system = createSystemClient({ request, prepareWrite });
 
   return {
     /** @returns {Promise<AuthUser>} */

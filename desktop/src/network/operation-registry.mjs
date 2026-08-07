@@ -23,6 +23,7 @@ const WORK_ITEM_SAVED_VIEW_STATUSES = new Set(["", "pending", ...WORK_ITEM_STATU
 const WORK_ITEM_SORTS = new Set(["", "updated_desc", "created_desc", "priority_desc", "due_date_asc"]);
 const WORK_ITEM_BATCH_ACTIONS = new Set(["assignee", "status", "priority", "cycle"]);
 const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
+const SYSTEM_USER_STATUSES = new Set(["active", "disabled", "locked"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
   if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
@@ -43,6 +44,10 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["system.usersview", systemUsersViewOperation],
+    ["system.usercreate", systemUserCreateOperation],
+    ["system.userstatusupdate", systemUserStatusUpdateOperation],
+    ["system.userroleupdate", systemUserRoleUpdateOperation],
+    ["system.userpasswordreset", systemUserPasswordResetOperation],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
     ["project.create", projectCreateOperation],
@@ -416,6 +421,36 @@ function systemUsersViewOperation(input) {
   return descriptor("GET", withQuery("/api/v1/system/users-view", query), parseSystemUsersView);
 }
 
+function systemUserCreateOperation(input) {
+  exactKeys(input, ["displayName", "email", "mobile", "password", "roleCode", "username"]);
+  return descriptor("POST", "/api/v1/system/users", parseSystemUser, false, "object", jsonBody({
+    username: username(input.username), display_name: boundedRequiredText(input.displayName, "displayName", 64),
+    email: boundedText(input.email, "email", 254), mobile: boundedText(input.mobile, "mobile", 32),
+    password: boundedRequiredText(input.password, "password", 256), role_code: username(input.roleCode),
+  }));
+}
+
+function systemUserStatusUpdateOperation(input) {
+  exactKeys(input, ["status", "username"]);
+  return descriptor("PATCH", `/api/v1/system/users/${username(input.username)}/status`, parseSystemUser, false, "object", jsonBody({
+    status: requiredEnum(input.status, SYSTEM_USER_STATUSES, "status", false),
+  }));
+}
+
+function systemUserRoleUpdateOperation(input) {
+  exactKeys(input, ["roleCode", "username"]);
+  return descriptor("PATCH", `/api/v1/system/users/${username(input.username)}/role`, parseSystemUser, false, "object", jsonBody({
+    role_code: username(input.roleCode),
+  }));
+}
+
+function systemUserPasswordResetOperation(input) {
+  exactKeys(input, ["password", "username"]);
+  return descriptor("POST", `/api/v1/system/users/${username(input.username)}/password`, parseSystemUser, false, "object", jsonBody({
+    password: boundedRequiredText(input.password, "password", 256),
+  }));
+}
+
 function notificationTargetOperation(input) {
   exactKeys(input, ["notificationId"]);
   return descriptor("GET", `/api/v1/notifications/${integer(input.notificationId, 1, "notificationId")}/target`, parseNotificationTargetResult);
@@ -723,6 +758,11 @@ function parseSystemDashboard(data) {
     }), 16, "system dashboard links"),
   });
 }
+function parseSystemUser(data) { return freezeExactDto(data, {
+  id: positiveInteger, username: shortString, display_name: textString, email: shortString,
+  mobile: shortString, status: shortString, is_super_admin: boolean, role_code: shortString,
+  role_names: textString, created_at: shortString, updated_at: shortString,
+}); }
 function parseSystemUsersView(data) {
   return freezeExactDto(data, {
     items: (items) => boundedArray(items, (item) => freezeExactDto(item, {

@@ -50,6 +50,10 @@ export const getCurrentUser = /** @type {() => Promise<AuthUser>} */ (apiClient.
 export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiClient.getTopbarStatus);
 export const getSystemDashboard = apiClient.getSystemDashboard;
 export const getSystemUsersView = apiClient.getSystemUsersView;
+export const createSystemUser = apiClient.createSystemUser;
+export const updateSystemUserStatus = apiClient.updateSystemUserStatus;
+export const updateSystemUserRole = apiClient.updateSystemUserRole;
+export const resetSystemUserPassword = apiClient.resetSystemUserPassword;
 
 export const getProjects = /** @type {(query?: { status?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
 export const createProject = apiClient.createProject;
@@ -220,6 +224,10 @@ export const webApi = {
   getTopbarStatus,
   getSystemDashboard,
   getSystemUsersView,
+  createSystemUser,
+  updateSystemUserStatus,
+  updateSystemUserRole,
+  resetSystemUserPassword,
   getWorkItem,
   getWorkItemDetailView,
   restoreWorkItem,

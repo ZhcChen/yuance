@@ -2188,6 +2188,76 @@ test('shared system users view renders atomic rows and preserves pagination in t
   await expect.poll(() => requests).toContain('?per_page=20');
 });
 
+test('shared system users core mutations use the same confirmed interaction contract', async ({ page }) => {
+  const mutations = [];
+  const user = {
+    id: 7, username: 'shared_member', display_name: '共享成员', email: 'member@example.test', mobile: '', status: 'active',
+    is_super_admin: false, role_code: 'member', role_names: '项目成员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z', assigned_projects: [],
+  };
+  await page.route('**/api/v1/system/users-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+    items: [user], roles: [
+      { role_code: 'member', role_name: '项目成员', status: 'active', is_system: true, data_scope_type: 'project', permission_count: 1 },
+      { role_code: 'viewer', role_name: '只读成员', status: 'active', is_system: true, data_scope_type: 'project', permission_count: 1 },
+    ], project_options: [], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, can_manage_users: true, can_manage_user_projects: true,
+  } }) }));
+  await page.route('**/api/v1/system/users', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    mutations.push({ method: route.request().method(), path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: user }) });
+  });
+  await page.route(/\/api\/v1\/system\/users\/shared_member\/(status|role|password)$/u, async (route) => {
+    mutations.push({ method: route.request().method(), path: new URL(route.request().url()).pathname, body: route.request().postDataJSON() });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: user }) });
+  });
+
+  await login(page, '/web/app/system/users');
+  await page.getByRole('button', { name: '新建用户' }).click();
+  const createDialog = page.getByRole('dialog', { name: '新建用户' });
+  await createDialog.locator('#system-user-password').fill('DiscardedPass2026!');
+  await createDialog.getByRole('button', { name: '取消' }).click();
+  await page.getByRole('button', { name: '新建用户' }).click();
+  await expect(createDialog.locator('#system-user-password')).toHaveValue('');
+  await createDialog.getByLabel('用户名').fill('new_member');
+  await createDialog.getByLabel('显示名称').fill('新成员');
+  await createDialog.getByLabel('邮箱').fill('new@example.test');
+  await createDialog.getByLabel('全局角色').selectOption('member');
+  await createDialog.locator('#system-user-password').fill('NewMemberPass2026!');
+  await createDialog.locator('#system-user-password-confirm').fill('NewMemberPass2026!');
+  await createDialog.getByRole('button', { name: '创建' }).click();
+  await expect(createDialog).not.toBeVisible();
+
+  const table = page.getByRole('table', { name: '系统用户列表' });
+  await table.getByRole('button', { name: '角色' }).click();
+  const roleDialog = page.getByRole('dialog', { name: '调整全局角色' });
+  await roleDialog.getByLabel('全局角色').selectOption('viewer');
+  await roleDialog.getByRole('button', { name: '保存' }).click();
+  await expect(roleDialog).not.toBeVisible();
+
+  await table.getByRole('button', { name: '停用' }).click();
+  const statusDialog = page.getByRole('dialog', { name: '停用用户' });
+  await expect(statusDialog).toContainText('Browser/Desktop 会话、Token 和设备访问');
+  await statusDialog.getByRole('button', { name: '确认停用' }).click();
+  await expect(statusDialog).not.toBeVisible();
+
+  await table.getByRole('button', { name: '重置密码' }).click();
+  const passwordDialog = page.getByRole('dialog', { name: '重置用户密码' });
+  await passwordDialog.locator('#system-user-new-password').fill('DiscardedReset2026!');
+  await passwordDialog.getByRole('button', { name: '取消' }).click();
+  await table.getByRole('button', { name: '重置密码' }).click();
+  await expect(passwordDialog.locator('#system-user-new-password')).toHaveValue('');
+  await passwordDialog.locator('#system-user-new-password').fill('ResetMemberPass2026!');
+  await passwordDialog.locator('#system-user-new-password-confirm').fill('ResetMemberPass2026!');
+  await passwordDialog.getByRole('button', { name: '确认重置' }).click();
+  await expect(passwordDialog).not.toBeVisible();
+
+  expect(mutations).toEqual([
+    { method: 'POST', path: '/api/v1/system/users', body: { username: 'new_member', display_name: '新成员', email: 'new@example.test', mobile: '', password: 'NewMemberPass2026!', role_code: 'member' } },
+    { method: 'PATCH', path: '/api/v1/system/users/shared_member/role', body: { role_code: 'viewer' } },
+    { method: 'PATCH', path: '/api/v1/system/users/shared_member/status', body: { status: 'disabled' } },
+    { method: 'POST', path: '/api/v1/system/users/shared_member/password', body: { password: 'ResetMemberPass2026!' } },
+  ]);
+});
+
 test('project list can switch current project inside the app shell', async ({ page }) => {
   await login(page, '/web/app/projects');
 

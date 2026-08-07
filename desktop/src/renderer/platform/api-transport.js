@@ -112,6 +112,26 @@ function resolveReadOperation(url, options) {
 
 function resolveMutationOperation(parsed, method, options) {
   rejectQuery(parsed.searchParams, []);
+  if (method === "POST" && parsed.pathname === "/api/v1/system/users") {
+    const body = parseJsonBody(options, ["display_name", "email", "mobile", "password", "role_code", "username"]);
+    return { operation: "system.usercreate", input: renameBody(body, { display_name: "displayName", role_code: "roleCode" }) };
+  }
+  const systemUserAction = parsed.pathname.match(/^\/api\/v1\/system\/users\/([^/]+)\/(status|role|password)$/u);
+  if (systemUserAction) {
+    const username = decodeSegment(systemUserAction[1]);
+    if (method === "PATCH" && systemUserAction[2] === "status") {
+      const body = parseJsonBody(options, ["status"]);
+      return { operation: "system.userstatusupdate", input: { username, status: body.status } };
+    }
+    if (method === "PATCH" && systemUserAction[2] === "role") {
+      const body = parseJsonBody(options, ["role_code"]);
+      return { operation: "system.userroleupdate", input: { username, roleCode: body.role_code } };
+    }
+    if (method === "POST" && systemUserAction[2] === "password") {
+      const body = parseJsonBody(options, ["password"]);
+      return { operation: "system.userpasswordreset", input: { username, password: body.password } };
+    }
+  }
   if (method === "PATCH" && parsed.pathname === "/api/v1/me/profile") {
     const body = parseJsonBody(options, ["display_name", "email", "mobile"]);
     return { operation: "identity.profileupdate", input: renameBody(body, { display_name: "displayName" }) };

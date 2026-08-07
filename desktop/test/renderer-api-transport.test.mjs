@@ -182,6 +182,25 @@ test("api-client mutations map to fixed domain operations without request primit
   assert.equal(JSON.stringify(calls).includes("/api/v1/"), false);
 });
 
+test("system user mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: { id: 7, username: "alice", display_name: "Alice", email: "", mobile: "", status: "active", is_super_admin: false, role_code: "member", role_names: "项目成员", created_at: "2026-08-08", updated_at: "2026-08-08" } };
+  } });
+  const api = createApiClient({ request: transport.request });
+  await api.createSystemUser({ username: "alice", displayName: "Alice", password: "AlicePass2026!", roleCode: "member" });
+  await api.updateSystemUserStatus("alice", "disabled");
+  await api.updateSystemUserRole("alice", "viewer");
+  await api.resetSystemUserPassword("alice", "NewAlicePass2026!");
+  assert.deepEqual(calls, [
+    ["system.usercreate", { username: "alice", displayName: "Alice", email: "", mobile: "", password: "AlicePass2026!", roleCode: "member" }],
+    ["system.userstatusupdate", { username: "alice", status: "disabled" }],
+    ["system.userroleupdate", { username: "alice", roleCode: "viewer" }],
+    ["system.userpasswordreset", { username: "alice", password: "NewAlicePass2026!" }],
+  ]);
+});
+
 test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
   let calls = 0;
   const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });
