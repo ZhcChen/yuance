@@ -43,6 +43,11 @@ test('system roles route preserves owner selection and pagination', () => {
     id: 'system-roles', owner: 'web', pathname: '/web/system/roles', search: '?role=qa_lead&page=2&per_page=20',
     role: 'qa_lead', page: 2, perPage: 20, title: '角色权限',
   });
+  assert.deepEqual(parseAppRoute('/web/system/roles/qa_lead/permissions', '?page=2&per_page=20'), {
+    id: 'system-roles', owner: 'web', pathname: '/web/system/roles/qa_lead/permissions', search: '?page=2&per_page=20',
+    role: 'qa_lead', page: 2, perPage: 20, title: '角色权限',
+  });
+  assert.equal(parseAppRoute('/web/app/system/roles/qa%5Flead/permissions').role, 'qa_lead');
 });
 
 test('parseAppRoute recognizes browser shell home owners', () => {

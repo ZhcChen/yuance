@@ -2220,6 +2220,11 @@ test('shared system roles view renders atomic selection and permissions in the a
   await expect(permissions.getByRole('checkbox', { name: '查看系统管理 已授权' })).toBeChecked();
   await expect(permissions.getByRole('checkbox', { name: '管理用户 未授权' })).not.toBeChecked();
   await expect.poll(() => requests).toContain('?role=qa_lead&page=2&per_page=20');
+
+  await page.goto('/web/system/roles/system_viewer/permissions?per_page=20');
+  await expect(page).toHaveURL(/\/web\/system\/roles\/system_viewer\/permissions\?per_page=20$/);
+  await expect(page.getByRole('table', { name: '角色权限集合' })).toBeVisible();
+  await expect.poll(() => requests).toContain('?role=system_viewer&per_page=20');
 });
 
 test('shared system role mutations preserve permission parent and confirmation semantics', async ({ page }) => {

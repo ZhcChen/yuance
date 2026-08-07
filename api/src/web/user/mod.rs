@@ -7299,8 +7299,18 @@ pub async fn system_user_project_role_update(
 pub async fn system_roles_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<RoleWorkbenchQuery>,
 ) -> AppResult<Response> {
+    let return_to = original_uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| original_uri.path());
+    if let Some(response) =
+        shared_system_web_app_response(&state, &headers, return_to, "system.roles.view").await?
+    {
+        return Ok(response);
+    }
     let context = match system_context_or_redirect(&state, &headers, "system.roles.view").await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
@@ -7469,8 +7479,18 @@ pub async fn system_role_status_update(
 pub async fn system_role_permissions_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Path(role_code): Path<String>,
 ) -> AppResult<Response> {
+    let return_to = original_uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| original_uri.path());
+    if let Some(response) =
+        shared_system_web_app_response(&state, &headers, return_to, "system.roles.view").await?
+    {
+        return Ok(response);
+    }
     let context = match system_context_or_redirect(&state, &headers, "system.roles.view").await? {
         Ok(context) => context,
         Err(response) => return Ok(response),

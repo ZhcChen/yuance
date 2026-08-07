@@ -579,6 +579,8 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/work-items/YCE-TASK-2?focus=comment-7",
             "/web/system",
             "/web/system/users?page=2&per_page=20",
+            "/web/system/roles?role=member&page=2&per_page=20",
+            "/web/system/roles/member/permissions",
         ] {
             migrated_route_responses.push(
                 app.clone()

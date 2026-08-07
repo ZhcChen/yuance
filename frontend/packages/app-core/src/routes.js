@@ -334,13 +334,14 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
     };
   }
 
-  if (pathname === '/web/system/roles' || pathname === '/web/app/system/roles') {
+  const systemRolePermissionsMatch = pathname.match(/^\/web\/(?:app\/)?system\/roles\/([^/]+)\/permissions$/u);
+  if (pathname === '/web/system/roles' || pathname === '/web/app/system/roles' || systemRolePermissionsMatch) {
     return {
       id: 'system-roles',
       owner,
       pathname,
       search,
-      role: (query.get('role') || '').trim(),
+      role: systemRolePermissionsMatch ? decodeURIComponent(systemRolePermissionsMatch[1]) : (query.get('role') || '').trim(),
       page,
       perPage,
       title: '角色权限',
