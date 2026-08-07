@@ -52,6 +52,10 @@ function resolveReadOperation(url, options) {
   if (parsed.pathname === "/api/v1/projects") return { operation: "project.list", input: parseQuery(parsed.searchParams, {
     status: "status", page: "page", per_page: "perPage",
   }) };
+  const projectMembers = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/members$/u, "project.members", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
+  if (projectMembers) return projectMembers;
+  const projectDetail = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)$/u, "project.detail", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
+  if (projectDetail) return projectDetail;
   if (parsed.pathname === "/api/v1/search") return { operation: "search.list", input: parseQuery(parsed.searchParams, {
     q: "q", page: "page", per_page: "perPage",
   }) };
@@ -96,6 +100,27 @@ function resolveMutationOperation(parsed, method, options) {
   if (method === "POST" && parsed.pathname === "/api/v1/projects") {
     const body = parseJsonBody(options, ["description", "due_date", "name", "start_date", "status"]);
     return { operation: "project.create", input: renameBody(body, { due_date: "dueDate", start_date: "startDate" }) };
+  }
+  const projectMember = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/members\/([^/]+)$/u);
+  if (method === "PATCH" && projectMember) {
+    const body = parseJsonBody(options, ["member_role"]);
+    return { operation: "project.memberroleupdate", input: { projectKey: decodeSegment(projectMember[1]), username: decodeSegment(projectMember[2]), memberRole: body.member_role } };
+  }
+  if (method === "DELETE" && projectMember) {
+    rejectBody(options);
+    return { operation: "project.memberremove", input: { projectKey: decodeSegment(projectMember[1]), username: decodeSegment(projectMember[2]) } };
+  }
+  const projectMembers = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/members$/u);
+  if (method === "POST" && projectMembers) {
+    const body = parseJsonBody(options, ["member_role", "username"]);
+    return { operation: "project.memberadd", input: { projectKey: decodeSegment(projectMembers[1]), username: body.username, memberRole: body.member_role } };
+  }
+  const project = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)$/u);
+  if (method === "PATCH" && project) {
+    const body = parseJsonBody(options, ["description", "due_date", "name", "owner_username", "start_date", "status"]);
+    return { operation: "project.update", input: { projectKey: decodeSegment(project[1]), ...renameBody(body, {
+      due_date: "dueDate", owner_username: "ownerUsername", start_date: "startDate",
+    }) } };
   }
   const token = parsed.pathname.match(/^\/api\/v1\/me\/tokens\/(\d+)$/u);
   if (method === "PATCH" && token) {

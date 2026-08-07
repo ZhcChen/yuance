@@ -17,6 +17,8 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/topbar/status", "shell.topbar", {}],
     ["/api/v1/current-project", "project.current", {}],
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
+    ["/api/v1/projects/DEMO", "project.detail", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/members", "project.members", { projectKey: "DEMO" }],
     ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
     ["/api/v1/notifications?filter=unread&limit=10", "notification.list", { filter: "unread", limit: 10 }],
     ["/api/v1/notifications/7/target", "notification.target", { notificationId: 7 }],
@@ -71,6 +73,12 @@ test("api-client mutations map to fixed domain operations without request primit
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
   await client.createProject({ name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" });
+  await client.getProject("DEMO");
+  await client.getProjectMembers("DEMO");
+  await client.updateProject("DEMO", { name: "Updated", ownerUsername: "alice" });
+  await client.addProjectMember("DEMO", { username: "bob", memberRole: "member" });
+  await client.updateProjectMemberRole("DEMO", "bob", "maintainer");
+  await client.removeProjectMember("DEMO", "bob");
   await client.updateOwnPassword({ currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" });
   await client.createApiToken({ name: "Agent", scopes: ["project:read"], projectScope: "all" });
   await client.updateApiToken(7, { name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" });
@@ -86,6 +94,12 @@ test("api-client mutations map to fixed domain operations without request primit
   assert.deepEqual(calls, [
     ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
     ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }],
+    ["project.detail", { projectKey: "DEMO" }],
+    ["project.members", { projectKey: "DEMO" }],
+    ["project.update", { projectKey: "DEMO", name: "Updated", ownerUsername: "alice" }],
+    ["project.memberadd", { projectKey: "DEMO", username: "bob", memberRole: "member" }],
+    ["project.memberroleupdate", { projectKey: "DEMO", username: "bob", memberRole: "maintainer" }],
+    ["project.memberremove", { projectKey: "DEMO", username: "bob" }],
     ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }],
     ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }],
     ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" }],

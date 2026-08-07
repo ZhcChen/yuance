@@ -9,6 +9,7 @@ const PROJECT_KEY = /^[A-Z][A-Z0-9-]{1,31}$/u;
 const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
 const PROJECT_STATUSES = new Set(["all", "not_started", "in_progress", "acceptance", "completed", "on_hold", "cancelled", "archived"]);
 const PROJECT_WRITE_STATUSES = new Set([...PROJECT_STATUSES].filter((status) => status !== "all"));
+const PROJECT_MEMBER_ROLES = new Set(["maintainer", "member", "viewer"]);
 const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
@@ -35,6 +36,12 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
     ["project.create", projectCreateOperation],
+    ["project.detail", projectDetailOperation],
+    ["project.update", projectUpdateOperation],
+    ["project.members", projectMembersOperation],
+    ["project.memberadd", projectMemberAddOperation],
+    ["project.memberroleupdate", projectMemberRoleUpdateOperation],
+    ["project.memberremove", projectMemberRemoveOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -101,6 +108,50 @@ function projectCreateOperation(input) {
     name: boundedRequiredText(input.name, "name", 120), description: boundedText(input.description, "description", 2000),
     status: requiredEnum(input.status, PROJECT_WRITE_STATUSES, "status", false), start_date: startDate, due_date: dueDate,
   }));
+}
+
+function projectDetailOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}`, parseProjectDetail);
+}
+
+function projectUpdateOperation(input) {
+  exactKeys(input, ["description", "dueDate", "name", "ownerUsername", "projectKey", "startDate", "status"]);
+  const body = optionalBodyFields(input, {
+    name: (value) => boundedRequiredText(value, "name", 120),
+    description: (value) => boundedText(value, "description", 2000),
+    status: (value) => requiredEnum(value, PROJECT_WRITE_STATUSES, "status", false),
+    ownerUsername: username,
+    startDate: dateText,
+    dueDate: dateText,
+  }, { ownerUsername: "owner_username", startDate: "start_date", dueDate: "due_date" });
+  if (Object.keys(body).length === 0) throw new TypeError("project update is invalid");
+  if (body.start_date && body.due_date && body.due_date < body.start_date) throw new TypeError("dueDate is invalid");
+  return descriptor("PATCH", `/api/v1/projects/${projectKey(input.projectKey)}`, parseProjectDetail, false, "object", jsonBody(body));
+}
+
+function projectMembersOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/members`, parseProjectMembers);
+}
+
+function projectMemberAddOperation(input) {
+  exactKeys(input, ["memberRole", "projectKey", "username"]);
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/members`, parseProjectMember, false, "object", jsonBody({
+    username: username(input.username), member_role: requiredEnum(input.memberRole, PROJECT_MEMBER_ROLES, "memberRole", false),
+  }));
+}
+
+function projectMemberRoleUpdateOperation(input) {
+  exactKeys(input, ["memberRole", "projectKey", "username"]);
+  return descriptor("PATCH", `/api/v1/projects/${projectKey(input.projectKey)}/members/${username(input.username)}`, parseProjectMember, false, "object", jsonBody({
+    member_role: requiredEnum(input.memberRole, PROJECT_MEMBER_ROLES, "memberRole", false),
+  }));
+}
+
+function projectMemberRemoveOperation(input) {
+  exactKeys(input, ["projectKey", "username"]);
+  return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/members/${username(input.username)}`, parseNoContent, false, "nullable-object");
 }
 
 function searchListOperation(input) {
@@ -318,6 +369,11 @@ function parseProjectDetail(value) { return freezeDto(value, {
   owner_username: shortString, owner: shortString, start_date: shortString, due_date: shortString,
   created_at: shortString, updated_at: shortString,
 }); }
+function parseProjectMembers(data) { return boundedArray(data, parseProjectMember, 500, "project members"); }
+function parseProjectMember(value) { return freezeDto(value, {
+  user_id: positiveInteger, display_name: textString, username: shortString,
+  member_role: shortString, joined_at: shortString,
+}); }
 function parseWorkItemPage(data) { return parsePage(data, parseWorkItemSummary); }
 function parseWorkItemSummary(value) { return freezeDto(value, {
   key: shortString, item_type: shortString, title: textString, status: shortString, priority: shortString,
@@ -390,6 +446,7 @@ function optionalText(value, name, maximum) { if (value === undefined || value =
 function optionalEnum(value, allowed, name, fallback) { const normalized = value === undefined ? fallback : value; if (typeof normalized !== "string" || !allowed.has(normalized)) throw new TypeError(`${name} is invalid`); return normalized; }
 function requiredEnum(value, allowed, name, allowEmpty = true) { if (typeof value !== "string" || !allowed.has(value) || (!allowEmpty && value === "")) throw new TypeError(`${name} is invalid`); return value; }
 function projectKey(value) { if (typeof value !== "string" || !PROJECT_KEY.test(value)) throw new TypeError("projectKey is invalid"); return value; }
+function username(value) { if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(value)) throw new TypeError("username is invalid"); return value; }
 function itemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
 function optionalItemKey(value) { return value === "" ? "" : itemKey(value); }
 function boundedText(value, name, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError(`${name} is invalid`); return value; }

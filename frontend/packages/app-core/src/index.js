@@ -7,6 +7,7 @@ export {
   buildHomePath,
   buildMessagesPath,
   buildProfilePath,
+  buildProjectDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,

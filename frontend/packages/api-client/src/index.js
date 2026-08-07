@@ -10,6 +10,7 @@ export { ApiError, apiErrorFromPayload } from './errors.js';
 export { createApiClient } from './http-client.js';
 export { createAccountSecurityClient } from './account-security.js';
 export { createProfileClient } from './profile.js';
+export { createProjectClient, projectApiPath, projectMemberApiPath, projectUpdateBody } from './projects.js';
 export { createSearchClient } from './search.js';
 export {
   attachmentCreateRequestBody,

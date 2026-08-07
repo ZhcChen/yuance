@@ -5,6 +5,7 @@ import {
   buildHomePath,
   buildMessagesPath,
   buildProfilePath,
+  buildProjectDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -47,18 +48,21 @@ test('parseAppRoute normalizes message center filters and pagination', () => {
   );
 });
 
-test('parseAppRoute maps app-side unknown routes back to legacy fallback', () => {
+test('parseAppRoute supports owner-aware project detail tabs', () => {
   assert.deepEqual(
-    parseAppRoute('/web/app/projects/YCE', '?view=kanban'),
+    parseAppRoute('/web/app/projects/YCE', '?tab=members'),
     {
-      id: 'unsupported',
+      id: 'project-detail',
       owner: 'app',
       pathname: '/web/app/projects/YCE',
-      search: '?view=kanban',
-      legacyPath: '/web/projects/YCE',
-      title: '未迁移路由',
+      search: '?tab=members',
+      projectKey: 'YCE',
+      tab: 'members',
+      title: '项目详情',
     },
   );
+  assert.equal(buildProjectDetailPath({ owner: 'web', projectKey: 'YCE / 1', tab: 'members' }), '/web/projects/YCE%20%2F%201?tab=members');
+  assert.equal(buildProjectDetailPath({ owner: 'app' }), '/web/app/projects');
 });
 
 test('parseAppRoute supports projects route and owner-aware builders', () => {

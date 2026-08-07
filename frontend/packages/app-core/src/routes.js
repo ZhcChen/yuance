@@ -162,6 +162,17 @@ export function buildProjectsPath({ owner = 'app', status = '', page = DEFAULT_P
   return query ? `${basePath}?${query}` : basePath;
 }
 
+export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = 'info' } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  if (!normalizedKey) {
+    return buildProjectsPath({ owner });
+  }
+  const basePath = owner === 'app'
+    ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
+    : `/web/projects/${encodeURIComponent(normalizedKey)}`;
+  return tab === 'members' ? `${basePath}?tab=members` : basePath;
+}
+
 export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const meta = routeMetaForItemType(itemType);
   const basePath = owner === 'app' ? meta.appPath : meta.webPath;
@@ -249,6 +260,20 @@ export function parseAppRoute(pathname = '/web', search = '') {
       page,
       perPage,
       title: '项目列表',
+    };
+  }
+
+
+  const projectDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)$/);
+  if (projectDetailMatch) {
+    return {
+      id: 'project-detail',
+      owner,
+      pathname,
+      search,
+      projectKey: decodeURIComponent(projectDetailMatch[1]),
+      tab: query.get('tab') === 'members' ? 'members' : 'info',
+      title: '项目详情',
     };
   }
 
