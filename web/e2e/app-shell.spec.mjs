@@ -91,6 +91,22 @@ test('browser shell restores login return_to for direct /web/app/messages entry'
   await expect(page.getByRole('button', { name: '打开', exact: true })).toBeVisible();
 });
 
+test('browser shell preserves the shared deep link when the session expires', async ({ page }) => {
+  await login(page, '/web/app');
+  await page.route('**/api/v1/auth/me', async (route) => {
+    await route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'unauthorized', message: '登录已失效。' } }),
+    });
+  });
+
+  await page.goto('/web/app/search?q=YCE-TASK-2');
+
+  await expect(page).toHaveURL(/\/web\/login\?return_to=%2Fweb%2Fapp%2Fsearch%3Fq%3DYCE-TASK-2/);
+  await expect(page.getByRole('heading', { name: '登录' })).toBeVisible();
+});
+
 test('browser shell supports root navigation and logout on /web owner route', async ({ page }) => {
   await login(page, '/web');
 

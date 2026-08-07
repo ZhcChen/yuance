@@ -19,6 +19,8 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   const report = await runElectronBusinessApi(fixture.origin, (userCode) => approveDeviceAuthorization({ origin: fixture.origin, userCode, session }));
   assert.equal(report.kind, "yuance-business-api-result");
   assert.equal(report.user, true);
+  assert.equal(report.profile, true);
+  assert.equal(report.search, true);
   assert.equal(report.topbar, true);
   assert.ok(report.projects >= 1);
   assert.equal(report.currentProject, true);
@@ -29,6 +31,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.ok(report.attachments >= 0);
   assert.ok(report.commentAttachments >= 0);
   assert.equal(report.projectSelected, true);
+  assert.equal(report.profileUpdated, true);
   assert.equal(report.workItemUpdated, true);
   assert.equal(report.workItemHandedOff, true);
   assert.equal(report.commentCreated, true);
@@ -43,6 +46,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   const serialized = JSON.stringify(report);
   assert.equal(serialized.includes("yuance_dat_"), false);
   assert.equal(serialized.includes("Desktop mutation integration"), false);
+  assert.equal(serialized.includes("Desktop profile integration"), false);
   assert.equal(serialized.includes("Desktop comment integration"), false);
   assert.equal(serialized.includes(fixture.origin), false);
   assert.equal(serialized.includes(fixture.root), false);

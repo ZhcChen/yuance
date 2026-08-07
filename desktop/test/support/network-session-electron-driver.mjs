@@ -395,12 +395,16 @@ async function runRealBusinessApi({ origin, mode, network }) {
     && businessFacts.some((fact) => fact.type === "release-version"));
   stage("identity");
   const user = await rest.execute("identity.current", {});
+  stage("profile");
+  const profile = await rest.execute("identity.profile", {});
   stage("topbar");
   const topbar = await rest.execute("shell.topbar", {});
   stage("projects");
   const projects = await rest.execute("project.list", { page: 1, perPage: 20 });
   stage("current-project");
   const currentProject = await rest.execute("project.current", {});
+  stage("search");
+  const search = await rest.execute("search.list", { q: "YCE-TASK-2", page: 1, perPage: 20 });
   stage("notifications");
   const notifications = await rest.execute("notification.list", { filter: "all", page: 1, perPage: 20 });
   stage("work-items");
@@ -419,6 +423,12 @@ async function runRealBusinessApi({ origin, mode, network }) {
     : [];
   stage("select-project");
   const selectedProject = await rest.execute("project.select", { projectKey: "YCE" });
+  stage("update-profile");
+  const updatedProfile = await rest.execute("identity.profileupdate", {
+    displayName: "Desktop profile integration",
+    email: "desktop@yuance.test",
+    mobile: "13800000000",
+  });
   stage("update-work-item");
   const updated = await rest.execute("workitem.update", {
     itemKey,
@@ -451,6 +461,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
   });
   stage("verify-mutations");
   const verifiedDetail = await rest.execute("workitem.detail", { itemKey });
+  const verifiedProfile = await rest.execute("identity.profile", {});
   const verifiedComments = await rest.execute("workitem.comments", { itemKey });
   const notificationsAfterMutation = await rest.execute("notification.list", { filter: "all", page: 1, perPage: 20 });
   let notificationRead = true;
@@ -461,6 +472,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const readAllResult = await rest.execute("notification.readall", {});
   const mutationOperations = [
     "project.select",
+    "identity.profileupdate",
     "workitem.update",
     "workitem.handoff",
     "workitem.commentcreate",
@@ -475,6 +487,8 @@ async function runRealBusinessApi({ origin, mode, network }) {
   process.stdout.write(`${JSON.stringify({
     kind: "yuance-business-api-result",
     user: user.username === "yuance_admin",
+    profile: profile.username === "yuance_admin",
+    search: search.items.some((item) => item.key === "YCE-TASK-2"),
     topbar: Number.isSafeInteger(topbar.tasks_count),
     projects: projects.items.length,
     currentProject: currentProject?.key === "YCE",
@@ -485,6 +499,8 @@ async function runRealBusinessApi({ origin, mode, network }) {
     attachments: attachments.length,
     commentAttachments: commentAttachments.length,
     projectSelected: selectedProject.key === "YCE",
+    profileUpdated: updatedProfile.display_name === "Desktop profile integration"
+      && verifiedProfile.display_name === updatedProfile.display_name,
     workItemUpdated: updated.key === itemKey && updated.priority === "P1",
     workItemHandedOff: handedOff.key === itemKey && handedOff.status === nextStatus,
     commentCreated: createdComment.id > 0 && createdComment.body_format === "plain",
