@@ -1,9 +1,7 @@
 :root {
-  color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   line-height: 1.5;
-  color: #111827;
-  background: #eef2f8;
+  color: var(--yc-text);
+  background: var(--yc-bg);
 }
 
 * {
@@ -13,7 +11,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: #eef2f8;
+  background: var(--yc-bg);
 }
 
 button,
@@ -57,9 +55,9 @@ button:disabled {
   align-items: center;
   margin-bottom: 16px;
   padding: 14px 18px;
-  border: 1px solid #d7deea;
+  border: 1px solid var(--yc-line);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--yc-panel);
 }
 
 .app-topbar-group {
@@ -70,7 +68,7 @@ button:disabled {
 }
 
 .app-topbar-meta {
-  color: #6b7280;
+  color: var(--yc-muted);
   font-size: 13px;
 }
 
@@ -81,13 +79,13 @@ button:disabled {
   min-height: 36px;
   padding: 0 12px;
   border-radius: 8px;
-  color: #334155;
+  color: var(--yc-muted-strong);
   text-decoration: none;
 }
 
 .app-nav-link.active {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--yc-brand-soft);
+  color: var(--yc-brand-strong);
   font-weight: 600;
 }
 
@@ -99,7 +97,7 @@ button:disabled {
   border-radius: 999px;
   align-items: center;
   justify-content: center;
-  background: #1d4ed8;
+  background: var(--yc-danger);
   color: #ffffff;
   font-size: 12px;
 }

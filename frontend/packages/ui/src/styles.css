@@ -1,8 +1,58 @@
+:root {
+  color-scheme: light;
+  --yc-bg: #edf1f5;
+  --yc-panel: #ffffff;
+  --yc-panel-soft: #f8fafc;
+  --yc-text: #17212b;
+  --yc-muted: #6b7785;
+  --yc-muted-strong: #435060;
+  --yc-line: #dfe6ed;
+  --yc-line-strong: #c9d3df;
+  --yc-brand: #376b9b;
+  --yc-brand-strong: #285579;
+  --yc-brand-soft: #edf4f9;
+  --yc-brand-line: #cbdce9;
+  --yc-success: #2d8a68;
+  --yc-warning: #a85b00;
+  --yc-danger: #b42318;
+  --yc-control-height: 40px;
+  --yc-control-height-sm: 32px;
+  --yc-control-radius: 8px;
+  --yc-radius: 8px;
+  --yc-shadow: 0 16px 40px rgb(24 39 58 / 10%);
+  --yc-shadow-soft: 0 10px 26px rgb(22 34 50 / 7%), 0 2px 8px rgb(22 34 50 / 4%);
+  --yc-motion-fast: 150ms;
+  --yc-motion-base: 220ms;
+  --yc-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--yc-font);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --yc-bg: #0f1723;
+  --yc-panel: #151f2d;
+  --yc-panel-soft: #101826;
+  --yc-text: #e6edf5;
+  --yc-muted: #91a1b4;
+  --yc-muted-strong: #c1ccda;
+  --yc-line: #293548;
+  --yc-line-strong: #3a485d;
+  --yc-brand: #78a7cf;
+  --yc-brand-strong: #a9c8e2;
+  --yc-brand-soft: #1c3244;
+  --yc-brand-line: #36556f;
+  --yc-success: #5ad09a;
+  --yc-warning: #f1b45f;
+  --yc-danger: #ff8078;
+  --yc-shadow: 0 18px 48px rgb(0 0 0 / 36%);
+  --yc-shadow-soft: 0 14px 34px rgb(0 0 0 / 24%), 0 2px 8px rgb(0 0 0 / 18%);
+}
+
 .host-status-shell {
   min-height: 100vh;
   display: grid;
-  background: #d8e0ea;
-  color: #17212b;
+  background: var(--yc-bg);
+  color: var(--yc-text);
 }
 
 .host-status-workspace {
