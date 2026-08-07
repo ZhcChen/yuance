@@ -31,3 +31,4 @@ export {
   uploadProjectAttachment,
   uploadProjectResourceAttachment,
 } from './work-item-collaboration.js';
+export { createProjectResourceWithAttachments } from './project-resource-creation.js';
