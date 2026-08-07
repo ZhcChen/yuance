@@ -429,6 +429,17 @@ async function runRealBusinessApi({ origin, mode, network }) {
     email: "desktop@yuance.test",
     mobile: "13800000000",
   });
+  stage("account-security");
+  const deviceSessions = await rest.execute("identity.devicesessions", {});
+  const existingTokens = await rest.execute("identity.tokens", {});
+  const createdToken = await rest.execute("identity.tokencreate", {
+    name: "Desktop integration token", scopes: ["project:read"], projectScope: "all", expiresAt: "",
+  });
+  const updatedToken = await rest.execute("identity.tokenupdate", {
+    tokenId: createdToken.token.id, name: "Desktop integration token updated",
+    scopes: ["work_item:read"], projectScope: "all",
+  });
+  const deletedToken = await rest.execute("identity.tokendelete", { tokenId: createdToken.token.id });
   stage("update-work-item");
   const updated = await rest.execute("workitem.update", {
     itemKey,
@@ -478,6 +489,9 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "workitem.commentcreate",
     "workitem.commentupdate",
     "notification.readall",
+    "identity.tokencreate",
+    "identity.tokenupdate",
+    "identity.tokendelete",
   ];
   if (notificationsAfterMutation.items.length > 0) mutationOperations.push("notification.read");
   networkCoordinator.stop();
@@ -501,6 +515,11 @@ async function runRealBusinessApi({ origin, mode, network }) {
     projectSelected: selectedProject.key === "YCE",
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"
       && verifiedProfile.display_name === updatedProfile.display_name,
+    accountSecurity: deviceSessions.some((session) => session.is_current)
+      && Array.isArray(existingTokens)
+      && createdToken.raw_token.startsWith("yuance_pat_")
+      && updatedToken.name === "Desktop integration token updated"
+      && deletedToken.id === createdToken.token.id,
     workItemUpdated: updated.key === itemKey && updated.priority === "P1",
     workItemHandedOff: handedOff.key === itemKey && handedOff.status === nextStatus,
     commentCreated: createdComment.id > 0 && createdComment.body_format === "plain",

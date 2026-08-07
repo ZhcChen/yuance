@@ -32,6 +32,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.ok(report.commentAttachments >= 0);
   assert.equal(report.projectSelected, true);
   assert.equal(report.profileUpdated, true);
+  assert.equal(report.accountSecurity, true);
   assert.equal(report.workItemUpdated, true);
   assert.equal(report.workItemHandedOff, true);
   assert.equal(report.commentCreated, true);
@@ -47,6 +48,8 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.equal(serialized.includes("yuance_dat_"), false);
   assert.equal(serialized.includes("Desktop mutation integration"), false);
   assert.equal(serialized.includes("Desktop profile integration"), false);
+  assert.equal(serialized.includes("Desktop integration token"), false);
+  assert.equal(serialized.includes("yuance_pat_"), false);
   assert.equal(serialized.includes("Desktop comment integration"), false);
   assert.equal(serialized.includes(fixture.origin), false);
   assert.equal(serialized.includes(fixture.root), false);
