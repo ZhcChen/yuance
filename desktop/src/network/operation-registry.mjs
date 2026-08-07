@@ -42,6 +42,11 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.memberadd", projectMemberAddOperation],
     ["project.memberroleupdate", projectMemberRoleUpdateOperation],
     ["project.memberremove", projectMemberRemoveOperation],
+    ["project.cycles", projectCyclesOperation],
+    ["project.cycledetail", projectCycleDetailOperation],
+    ["project.cyclecreate", projectCycleCreateOperation],
+    ["project.cycleupdate", projectCycleUpdateOperation],
+    ["project.cycleclose", projectCycleCloseOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -152,6 +157,41 @@ function projectMemberRoleUpdateOperation(input) {
 function projectMemberRemoveOperation(input) {
   exactKeys(input, ["projectKey", "username"]);
   return Object.freeze({ ...descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/members/${username(input.username)}`, parseNoContent, false, "nullable-object"), allowNoContent: true });
+}
+
+function projectCyclesOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/cycles`, parseProjectCycles, true, "array");
+}
+
+function projectCycleDetailOperation(input) {
+  exactKeys(input, ["cycleId", "projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/cycles/${positiveInteger(input.cycleId)}`, parseProjectCycle);
+}
+
+function projectCycleCreateOperation(input) {
+  exactKeys(input, ["description", "endDate", "goal", "name", "ownerUsername", "projectKey", "startDate"]);
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/cycles`, parseProjectCycle, false, "object", jsonBody(projectCycleBody(input)));
+}
+
+function projectCycleUpdateOperation(input) {
+  exactKeys(input, ["cycleId", "description", "endDate", "goal", "name", "ownerUsername", "projectKey", "startDate"]);
+  return descriptor("PATCH", `/api/v1/projects/${projectKey(input.projectKey)}/cycles/${positiveInteger(input.cycleId)}`, parseProjectCycle, false, "object", jsonBody(projectCycleBody(input)));
+}
+
+function projectCycleCloseOperation(input) {
+  exactKeys(input, ["cycleId", "projectKey"]);
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/cycles/${positiveInteger(input.cycleId)}/close`, parseProjectCycle, false);
+}
+
+function projectCycleBody(input) {
+  const startDate = dateText(input.startDate); const endDate = dateText(input.endDate);
+  if (!startDate || !endDate || endDate < startDate) throw new TypeError("cycle date range is invalid");
+  return {
+    name: boundedRequiredText(input.name, "name", 120), goal: boundedText(input.goal, "goal", 240),
+    description: boundedText(input.description, "description", 5_000), owner_username: optionalUsername(input.ownerUsername),
+    start_date: startDate, end_date: endDate,
+  };
 }
 
 function searchListOperation(input) {
@@ -374,6 +414,19 @@ function parseProjectMember(value) { return freezeDto(value, {
   user_id: positiveInteger, display_name: textString, username: shortString,
   member_role: shortString, joined_at: shortString,
 }); }
+function parseProjectCycles(data) { return boundedArray(data, parseProjectCycle, 500, "project cycles"); }
+function parseProjectCycle(value) { return freezeDto(value, {
+  id: positiveInteger, name: textString, goal: textString, description: longString,
+  owner_username: shortString, owner: textString, start_date: shortString, end_date: shortString,
+  closed_at: shortString, is_closed: boolean, total_items: nonNegativeInteger,
+  requirement_count: nonNegativeInteger, task_count: nonNegativeInteger, bug_count: nonNegativeInteger,
+  pending_count: nonNegativeInteger, created_at: shortString, updated_at: shortString,
+  work_items: projectCycleWorkItems,
+}); }
+function projectCycleWorkItems(value) { return boundedArray(value, (item) => freezeDto(item, {
+  key: shortString, item_type: shortString, title: textString, status: shortString, priority: shortString,
+  assignee_username: shortString, assignee: textString, due_date: shortString, updated_at: shortString,
+}), 2_000, "cycle work items"); }
 function parseWorkItemPage(data) { return parsePage(data, parseWorkItemSummary); }
 function parseWorkItemSummary(value) { return freezeDto(value, {
   key: shortString, item_type: shortString, title: textString, status: shortString, priority: shortString,
@@ -447,6 +500,7 @@ function optionalEnum(value, allowed, name, fallback) { const normalized = value
 function requiredEnum(value, allowed, name, allowEmpty = true) { if (typeof value !== "string" || !allowed.has(value) || (!allowEmpty && value === "")) throw new TypeError(`${name} is invalid`); return value; }
 function projectKey(value) { if (typeof value !== "string" || !PROJECT_KEY.test(value)) throw new TypeError("projectKey is invalid"); return value; }
 function username(value) { if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(value)) throw new TypeError("username is invalid"); return value; }
+function optionalUsername(value) { return value === "" ? "" : username(value); }
 function itemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
 function optionalItemKey(value) { return value === "" ? "" : itemKey(value); }
 function boundedText(value, name, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError(`${name} is invalid`); return value; }

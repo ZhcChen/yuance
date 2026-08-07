@@ -19,6 +19,8 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
     ["/api/v1/projects/DEMO", "project.detail", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/members", "project.members", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/cycles", "project.cycles", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/cycles/7", "project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
     ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
     ["/api/v1/notifications?filter=unread&limit=10", "notification.list", { filter: "unread", limit: 10 }],
     ["/api/v1/notifications/7/target", "notification.target", { notificationId: 7 }],
@@ -79,6 +81,8 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.addProjectMember("DEMO", { username: "bob", memberRole: "member" });
   await client.updateProjectMemberRole("DEMO", "bob", "maintainer");
   await client.removeProjectMember("DEMO", "bob");
+  const cycle = { name: "Sprint", goal: "Ship", description: "Cycle", ownerUsername: "alice", startDate: "2026-08-01", endDate: "2026-08-31" };
+  await client.getProjectCycles("DEMO"); await client.getProjectCycle("DEMO", 7); await client.createProjectCycle("DEMO", cycle); await client.updateProjectCycle("DEMO", 7, cycle); await client.closeProjectCycle("DEMO", 7);
   await client.updateOwnPassword({ currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" });
   await client.createApiToken({ name: "Agent", scopes: ["project:read"], projectScope: "all" });
   await client.updateApiToken(7, { name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" });
@@ -100,6 +104,11 @@ test("api-client mutations map to fixed domain operations without request primit
     ["project.memberadd", { projectKey: "DEMO", username: "bob", memberRole: "member" }],
     ["project.memberroleupdate", { projectKey: "DEMO", username: "bob", memberRole: "maintainer" }],
     ["project.memberremove", { projectKey: "DEMO", username: "bob" }],
+    ["project.cycles", { projectKey: "DEMO" }],
+    ["project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
+    ["project.cyclecreate", { projectKey: "DEMO", ...cycle }],
+    ["project.cycleupdate", { projectKey: "DEMO", cycleId: 7, ...cycle }],
+    ["project.cycleclose", { projectKey: "DEMO", cycleId: 7 }],
     ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }],
     ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }],
     ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" }],

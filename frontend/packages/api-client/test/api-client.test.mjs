@@ -8,6 +8,7 @@ import {
   attachmentFromPayload,
   createApiClient,
   projectApiPath,
+  projectCycleApiPath,
   projectMemberApiPath,
   workItemApiPath,
 } from '@yuance/frontend-api-client';
@@ -48,6 +49,21 @@ function createRecordedClient() {
 
 test('api-client exposes package root marker', () => {
   assert.equal(API_CLIENT_PACKAGE_NAME, '@yuance/frontend-api-client');
+});
+
+test('project cycle methods share fixed paths and write payloads', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  const payload = { name: 'Sprint 1', goal: 'Ship', description: 'Cycle', ownerUsername: 'alice', startDate: '2026-08-01', endDate: '2026-08-31' };
+  await client.getProjectCycles('YCE'); await client.getProjectCycle('YCE', 7);
+  await client.createProjectCycle('YCE', payload); await client.updateProjectCycle('YCE', 7, payload); await client.closeProjectCycle('YCE', 7);
+  assert.equal(projectCycleApiPath('YCE', 7), '/api/v1/projects/YCE/cycles/7');
+  assert.deepEqual(writes, ['prepare', 'prepare', 'prepare']);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET', options.body ? JSON.parse(options.body) : undefined]), [
+    ['/api/v1/projects/YCE/cycles', 'GET', undefined], ['/api/v1/projects/YCE/cycles/7', 'GET', undefined],
+    ['/api/v1/projects/YCE/cycles', 'POST', { name: 'Sprint 1', goal: 'Ship', description: 'Cycle', owner_username: 'alice', start_date: '2026-08-01', end_date: '2026-08-31' }],
+    ['/api/v1/projects/YCE/cycles/7', 'PATCH', { name: 'Sprint 1', goal: 'Ship', description: 'Cycle', owner_username: 'alice', start_date: '2026-08-01', end_date: '2026-08-31' }],
+    ['/api/v1/projects/YCE/cycles/7/close', 'POST', undefined],
+  ]);
 });
 
 test('work item paths encode item keys', () => {

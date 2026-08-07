@@ -12,6 +12,11 @@ export function projectMemberApiPath(projectKey, username) {
   return username === undefined ? base : `${base}/${encodeURIComponent(String(username))}`;
 }
 
+export function projectCycleApiPath(projectKey, cycleId) {
+  const base = `${projectApiPath(projectKey)}/cycles`;
+  return cycleId === undefined ? base : `${base}/${encodeURIComponent(String(cycleId))}`;
+}
+
 export function createProjectClient({ request, prepareWrite }) {
   return {
     getProject(projectKey) {
@@ -19,6 +24,20 @@ export function createProjectClient({ request, prepareWrite }) {
     },
     getProjectMembers(projectKey) {
       return request(projectMemberApiPath(projectKey));
+    },
+    getProjectCycles(projectKey) { return request(projectCycleApiPath(projectKey)); },
+    getProjectCycle(projectKey, cycleId) { return request(projectCycleApiPath(projectKey, cycleId)); },
+    async createProjectCycle(projectKey, payload) {
+      await prepareWrite();
+      return request(projectCycleApiPath(projectKey), jsonRequest('POST', projectCycleBody(payload)));
+    },
+    async updateProjectCycle(projectKey, cycleId, payload) {
+      await prepareWrite();
+      return request(projectCycleApiPath(projectKey, cycleId), jsonRequest('PATCH', projectCycleBody(payload)));
+    },
+    async closeProjectCycle(projectKey, cycleId) {
+      await prepareWrite();
+      return request(`${projectCycleApiPath(projectKey, cycleId)}/close`, { method: 'POST' });
     },
     async updateProject(projectKey, payload) {
       await prepareWrite();
@@ -50,6 +69,13 @@ export function projectUpdateBody(payload) {
   return Object.fromEntries(Object.entries(fields)
     .filter(([name]) => payload[name] !== undefined)
     .map(([name, wireName]) => [wireName, payload[name]]));
+}
+
+export function projectCycleBody(payload) {
+  return {
+    name: payload.name, goal: payload.goal || '', description: payload.description || '',
+    owner_username: payload.ownerUsername || '', start_date: payload.startDate, end_date: payload.endDate,
+  };
 }
 
 function jsonRequest(method, body) {

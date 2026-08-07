@@ -8,6 +8,7 @@ export {
   buildMessagesPath,
   buildProfilePath,
   buildProjectDetailPath,
+  buildProjectCycleDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
