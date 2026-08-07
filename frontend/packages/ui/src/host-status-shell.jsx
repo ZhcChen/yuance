@@ -11,13 +11,6 @@ export function HostStatusShell({ productName, hostLabel, status, title, detail,
 
   return (
     <main className="host-status-shell">
-      <header className="host-status-header">
-        <div className="host-status-brand-mark" aria-hidden="true">Y</div>
-        <div className="host-status-brand-copy">
-          <strong>{productName}</strong>
-          <span>{hostLabel}</span>
-        </div>
-      </header>
       <div className="host-status-workspace">
         <aside className="host-status-guide" aria-label="设备连接进度">
           <div>
