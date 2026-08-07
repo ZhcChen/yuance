@@ -48,6 +48,10 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.userstatusupdate", systemUserStatusUpdateOperation],
     ["system.userroleupdate", systemUserRoleUpdateOperation],
     ["system.userpasswordreset", systemUserPasswordResetOperation],
+    ["system.userprojectsassign", systemUserProjectsAssignOperation],
+    ["system.userprojectsremove", systemUserProjectsRemoveOperation],
+    ["system.userprojectremove", systemUserProjectRemoveOperation],
+    ["system.userprojectroleupdate", systemUserProjectRoleUpdateOperation],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
     ["project.create", projectCreateOperation],
@@ -451,6 +455,33 @@ function systemUserPasswordResetOperation(input) {
   }));
 }
 
+function systemUserProjectsAssignOperation(input) {
+  exactKeys(input, ["memberRole", "projectKeys", "username"]);
+  return descriptor("POST", `/api/v1/system/users/${username(input.username)}/projects`, parseSystemUserView, false, "object", jsonBody({
+    project_keys: boundedArray(input.projectKeys, projectKey, 100, "projectKeys"),
+    member_role: requiredEnum(input.memberRole, PROJECT_MEMBER_ROLES, "memberRole", false),
+  }));
+}
+
+function systemUserProjectsRemoveOperation(input) {
+  exactKeys(input, ["projectKeys", "username"]);
+  return descriptor("DELETE", `/api/v1/system/users/${username(input.username)}/projects`, parseSystemUserView, false, "object", jsonBody({
+    project_keys: boundedArray(input.projectKeys, projectKey, 100, "projectKeys"),
+  }));
+}
+
+function systemUserProjectRemoveOperation(input) {
+  exactKeys(input, ["projectKey", "username"]);
+  return descriptor("DELETE", `/api/v1/system/users/${username(input.username)}/projects/${projectKey(input.projectKey)}`, parseSystemUserView, false);
+}
+
+function systemUserProjectRoleUpdateOperation(input) {
+  exactKeys(input, ["memberRole", "projectKey", "username"]);
+  return descriptor("PATCH", `/api/v1/system/users/${username(input.username)}/projects/${projectKey(input.projectKey)}/role`, parseSystemUserView, false, "object", jsonBody({
+    member_role: requiredEnum(input.memberRole, PROJECT_MEMBER_ROLES, "memberRole", false),
+  }));
+}
+
 function notificationTargetOperation(input) {
   exactKeys(input, ["notificationId"]);
   return descriptor("GET", `/api/v1/notifications/${integer(input.notificationId, 1, "notificationId")}/target`, parseNotificationTargetResult);
@@ -765,16 +796,7 @@ function parseSystemUser(data) { return freezeExactDto(data, {
 }); }
 function parseSystemUsersView(data) {
   return freezeExactDto(data, {
-    items: (items) => boundedArray(items, (item) => freezeExactDto(item, {
-      id: positiveInteger, username: shortString, display_name: textString, email: shortString,
-      mobile: shortString, status: shortString, is_super_admin: boolean, role_code: shortString,
-      role_names: textString, created_at: shortString, updated_at: shortString,
-      assigned_projects: (projects) => boundedArray(projects, (project) => freezeExactDto(project, {
-        key: shortString, name: textString, status: shortString, role_code: shortString,
-        active_assigned_count: nonNegativeInteger, can_remove: boolean, can_update_role: boolean,
-        remove_block_reason: longString,
-      }), 500, "assigned projects"),
-    }), 100, "system users"),
+    items: (items) => boundedArray(items, parseSystemUserView, 100, "system users"),
     roles: (roles) => boundedArray(roles, (role) => freezeExactDto(role, {
       role_code: shortString, role_name: textString, status: shortString, is_system: boolean,
       data_scope_type: shortString, permission_count: nonNegativeInteger,
@@ -789,6 +811,16 @@ function parseSystemUsersView(data) {
     can_manage_user_projects: boolean,
   });
 }
+function parseSystemUserView(data) { return freezeExactDto(data, {
+  id: positiveInteger, username: shortString, display_name: textString, email: shortString,
+  mobile: shortString, status: shortString, is_super_admin: boolean, role_code: shortString,
+  role_names: textString, created_at: shortString, updated_at: shortString,
+  assigned_projects: (projects) => boundedArray(projects, (project) => freezeExactDto(project, {
+    key: shortString, name: textString, status: shortString, role_code: shortString,
+    active_assigned_count: nonNegativeInteger, can_remove: boolean, can_update_role: boolean,
+    remove_block_reason: longString,
+  }), 500, "assigned projects"),
+}); }
 function systemWebPath(value) {
   if (typeof value !== "string" || !/^\/web\/system(?:\/[a-z-]+)?$/u.test(value) || value.length > 128) throw new TypeError("system web path is invalid");
   return value;

@@ -35,6 +35,10 @@ test('system user mutations use fixed JSON contracts after write preparation', a
   await client.updateSystemUserStatus('alice', 'disabled');
   await client.updateSystemUserRole('alice', 'viewer');
   await client.resetSystemUserPassword('alice', 'NewAlicePass2026!');
+  await client.assignSystemUserProjects('alice', ['YCE', 'OPS'], 'viewer');
+  await client.removeSystemUserProjects('alice', ['OPS']);
+  await client.removeSystemUserProject('alice', 'YCE');
+  await client.updateSystemUserProjectRole('alice', 'OPS', 'maintainer');
 
   assert.deepEqual(calls, [
     ['prepare'],
@@ -42,5 +46,9 @@ test('system user mutations use fixed JSON contracts after write preparation', a
     ['prepare'], ['/api/v1/system/users/alice/status', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"status":"disabled"}' }],
     ['prepare'], ['/api/v1/system/users/alice/role', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"role_code":"viewer"}' }],
     ['prepare'], ['/api/v1/system/users/alice/password', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"password":"NewAlicePass2026!"}' }],
+    ['prepare'], ['/api/v1/system/users/alice/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"project_keys":["YCE","OPS"],"member_role":"viewer"}' }],
+    ['prepare'], ['/api/v1/system/users/alice/projects', { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: '{"project_keys":["OPS"]}' }],
+    ['prepare'], ['/api/v1/system/users/alice/projects/YCE', { method: 'DELETE' }],
+    ['prepare'], ['/api/v1/system/users/alice/projects/OPS/role', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"member_role":"maintainer"}' }],
   ]);
 });

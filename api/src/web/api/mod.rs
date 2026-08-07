@@ -10,7 +10,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::{collections::HashMap, convert::Infallible};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::Infallible,
+};
 
 use crate::{
     domains::{
@@ -1733,6 +1736,22 @@ pub struct SetUserRoleRequest {
 #[derive(Debug, Deserialize)]
 pub struct ResetUserPasswordRequest {
     password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AssignSystemUserProjectsRequest {
+    project_keys: Vec<String>,
+    member_role: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RemoveSystemUserProjectsRequest {
+    project_keys: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetSystemUserProjectRoleRequest {
+    member_role: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -5607,49 +5626,7 @@ pub async fn get_system_users_view(
 
     let mut items = Vec::with_capacity(summaries.len());
     for summary in summaries {
-        let assigned_projects = if summary.is_super_admin {
-            Vec::new()
-        } else {
-            let active_counts =
-                projects::count_pending_assigned_work_items_by_project(pool, summary.id, false)
-                    .await?
-                    .into_iter()
-                    .map(|entry| (entry.project_key, entry.total))
-                    .collect::<HashMap<_, _>>();
-            projects::list_user_project_memberships(pool, summary.id)
-                .await?
-                .into_iter()
-                .map(|project| {
-                    let active_assigned_count =
-                        active_counts.get(&project.project_key).copied().unwrap_or(0);
-                    let can_update_role = project.member_role != "owner";
-                    let can_remove = can_update_role && active_assigned_count <= 0;
-                    let remove_block_reason = if !can_update_role {
-                        "该成员当前是项目负责人，请先在项目详情中转移负责人".to_string()
-                    } else if can_remove {
-                        String::new()
-                    } else {
-                        format!(
-                            "该成员在此项目仍有 {active_assigned_count} 个待处理 / 进行中 / 待确认工作项，需先转交处理人"
-                        )
-                    };
-                    SystemUserProjectPayload {
-                        key: project.project_key,
-                        name: project.project_name,
-                        status: project.project_status,
-                        role_code: project.member_role,
-                        active_assigned_count,
-                        can_remove,
-                        can_update_role,
-                        remove_block_reason,
-                    }
-                })
-                .collect()
-        };
-        items.push(SystemUserViewPayload {
-            user: system_user_payload(summary),
-            assigned_projects,
-        });
+        items.push(system_user_view_payload(pool, summary).await?);
     }
 
     let roles = rbac::list_roles(pool)
@@ -5878,6 +5855,152 @@ pub async fn reset_system_user_password(
         .ok_or_else(|| AppError::NotFound("用户不存在".to_string()))?;
 
     Ok(json(system_user_payload(updated)))
+}
+
+pub async fn assign_system_user_projects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    Json(payload): Json<AssignSystemUserProjectsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    let project_keys = normalize_unique_non_empty_strings(&payload.project_keys);
+    if project_keys.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要分配的项目".to_string(),
+        ));
+    }
+
+    let mut assigned_project_keys = Vec::new();
+    for project_key in project_keys {
+        projects::add_project_member(
+            pool,
+            actor.id,
+            &project_key,
+            &target.username,
+            &payload.member_role,
+        )
+        .await?;
+        assigned_project_keys.push(project_key);
+    }
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.assign",
+        "user",
+        &target.username,
+        &serde_json::json!({
+            "source": "api",
+            "project_keys": assigned_project_keys,
+            "member_role": payload.member_role,
+        })
+        .to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
+pub async fn remove_system_user_projects(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(username): Path<String>,
+    Json(payload): Json<RemoveSystemUserProjectsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    let project_keys = normalize_unique_non_empty_strings(&payload.project_keys);
+    if project_keys.is_empty() {
+        return Err(AppError::BadRequest(
+            "请至少选择一个要移除的项目".to_string(),
+        ));
+    }
+    ensure_system_user_projects_removable(pool, target.id, &project_keys).await?;
+
+    for project_key in &project_keys {
+        projects::remove_project_member(pool, actor.id, project_key, &target.username).await?;
+    }
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.remove.batch",
+        "user",
+        &target.username,
+        &serde_json::json!({ "source": "api", "project_keys": project_keys }).to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
+pub async fn remove_system_user_project(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((username, project_key)): Path<(String, String)>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    ensure_system_user_projects_removable(pool, target.id, std::slice::from_ref(&project_key))
+        .await?;
+    projects::remove_project_member(pool, actor.id, &project_key, &target.username).await?;
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.remove",
+        "user",
+        &target.username,
+        &serde_json::json!({ "source": "api", "project_key": project_key }).to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
+}
+
+pub async fn update_system_user_project_role(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((username, project_key)): Path<(String, String)>,
+    Json(payload): Json<SetSystemUserProjectRoleRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUserViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_system_user_project_management(pool, &headers, &actor).await?;
+    let target = require_manageable_system_user(pool, &username).await?;
+    projects::update_project_member_role(
+        pool,
+        actor.id,
+        &project_key,
+        &target.username,
+        &payload.member_role,
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(actor.id),
+        "user.project.role.update",
+        "user",
+        &target.username,
+        &serde_json::json!({
+            "source": "api",
+            "project_key": project_key,
+            "member_role": payload.member_role,
+        })
+        .to_string(),
+    )
+    .await?;
+
+    Ok(json(system_user_view_payload(pool, target).await?))
 }
 
 pub async fn list_system_roles(
@@ -8483,6 +8606,133 @@ fn system_user_payload(user: users::UserSummary) -> SystemUserPayload {
         created_at: user.created_at,
         updated_at: user.updated_at,
     }
+}
+
+async fn system_user_view_payload(
+    pool: &SqlitePool,
+    user: users::UserSummary,
+) -> AppResult<SystemUserViewPayload> {
+    if user.is_super_admin {
+        return Ok(SystemUserViewPayload {
+            user: system_user_payload(user),
+            assigned_projects: Vec::new(),
+        });
+    }
+    let active_counts =
+        projects::count_pending_assigned_work_items_by_project(pool, user.id, false)
+            .await?
+            .into_iter()
+            .map(|entry| (entry.project_key, entry.total))
+            .collect::<HashMap<_, _>>();
+    let assigned_projects = projects::list_user_project_memberships(pool, user.id)
+        .await?
+        .into_iter()
+        .map(|project| system_user_project_payload(project, &active_counts))
+        .collect();
+    Ok(SystemUserViewPayload {
+        user: system_user_payload(user),
+        assigned_projects,
+    })
+}
+
+fn system_user_project_payload(
+    project: projects::UserProjectMembershipSummary,
+    active_counts: &HashMap<String, i64>,
+) -> SystemUserProjectPayload {
+    let active_assigned_count = active_counts
+        .get(&project.project_key)
+        .copied()
+        .unwrap_or(0);
+    let can_update_role = project.member_role != "owner";
+    let can_remove = can_update_role && active_assigned_count <= 0;
+    let remove_block_reason = if !can_update_role {
+        "该成员当前是项目负责人，请先在项目详情中转移负责人".to_string()
+    } else if can_remove {
+        String::new()
+    } else {
+        format!(
+            "该成员在此项目仍有 {active_assigned_count} 个待处理 / 进行中 / 待确认工作项，需先转交处理人"
+        )
+    };
+    SystemUserProjectPayload {
+        key: project.project_key,
+        name: project.project_name,
+        status: project.project_status,
+        role_code: project.member_role,
+        active_assigned_count,
+        can_remove,
+        can_update_role,
+        remove_block_reason,
+    }
+}
+
+async fn ensure_system_user_project_management(
+    pool: &SqlitePool,
+    headers: &HeaderMap,
+    actor: &auth::AuthUser,
+) -> AppResult<()> {
+    ensure_api_permission(pool, headers, actor.id, "system.users.manage").await?;
+    ensure_api_permission(pool, headers, actor.id, "project.manage").await?;
+    if api_user_can_access_all_projects(pool, actor).await? {
+        return Ok(());
+    }
+    Err(AppError::Forbidden(
+        "需要全项目管理权限才能管理用户项目关系".to_string(),
+    ))
+}
+
+async fn require_manageable_system_user(
+    pool: &SqlitePool,
+    username: &str,
+) -> AppResult<users::UserSummary> {
+    let user = users::get_user_summary_by_username(pool, username)
+        .await?
+        .ok_or_else(|| AppError::BadRequest("用户不存在".to_string()))?;
+    if user.is_super_admin {
+        return Err(AppError::BadRequest(
+            "超级管理员默认拥有全项目访问，无需管理项目关系".to_string(),
+        ));
+    }
+    Ok(user)
+}
+
+async fn ensure_system_user_projects_removable(
+    pool: &SqlitePool,
+    user_id: i64,
+    project_keys: &[String],
+) -> AppResult<()> {
+    let active_counts =
+        projects::count_pending_assigned_work_items_by_project(pool, user_id, false)
+            .await?
+            .into_iter()
+            .map(|entry| (entry.project_key, entry.total))
+            .collect::<HashMap<_, _>>();
+    let memberships = projects::list_user_project_memberships(pool, user_id)
+        .await?
+        .into_iter()
+        .map(|project| (project.project_key.clone(), project))
+        .collect::<HashMap<_, _>>();
+    for project_key in project_keys {
+        let project = memberships
+            .get(project_key)
+            .ok_or_else(|| AppError::BadRequest(format!("用户当前未加入项目 {project_key}")))?;
+        let relation = system_user_project_payload(project.clone(), &active_counts);
+        if !relation.can_remove {
+            return Err(AppError::BadRequest(relation.remove_block_reason));
+        }
+    }
+    Ok(())
+}
+
+fn normalize_unique_non_empty_strings(values: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .filter(|value| seen.insert((*value).to_string()))
+        .map(str::to_string)
+        .collect()
 }
 
 fn system_role_payload(role: rbac::RoleSummary) -> SystemRolePayload {

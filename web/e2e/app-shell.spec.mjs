@@ -2258,6 +2258,89 @@ test('shared system users core mutations use the same confirmed interaction cont
   ]);
 });
 
+test('shared system user project relationships preserve batch and blocking semantics', async ({ page }) => {
+  const mutations = [];
+  const project = (key, name, roleCode = 'member', overrides = {}) => ({
+    key, name, status: 'in_progress', role_code: roleCode, active_assigned_count: 0,
+    can_remove: true, can_update_role: true, remove_block_reason: '', ...overrides,
+  });
+  const user = {
+    id: 8, username: 'project_member', display_name: '项目成员', email: '', mobile: '', status: 'active', is_super_admin: false,
+    role_code: 'member', role_names: '项目成员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z',
+    assigned_projects: [
+      project('YCE-A', '项目 A'),
+      project('YCE-BLOCK', '阻塞项目', 'member', { active_assigned_count: 2, can_remove: false, remove_block_reason: '仍有 2 个活跃工作项，需先转交处理人' }),
+    ],
+  };
+  const view = () => ({
+    items: [user], roles: [{ role_code: 'member', role_name: '项目成员', status: 'active', is_system: true, data_scope_type: 'project', permission_count: 1 }],
+    project_options: [
+      { key: 'YCE-A', name: '项目 A', owner: '管理员', status: 'in_progress' },
+      { key: 'YCE-B', name: '项目 B', owner: '管理员', status: 'in_progress' },
+      { key: 'YCE-C', name: '项目 C', owner: '管理员', status: 'in_progress' },
+      { key: 'YCE-BLOCK', name: '阻塞项目', owner: '管理员', status: 'in_progress' },
+    ],
+    pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, can_manage_users: true, can_manage_user_projects: true,
+  });
+  await page.route('**/api/v1/system/users-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) }));
+  await page.route(/\/api\/v1\/system\/users\/project_member\/projects(?:\/[^/]+(?:\/role)?)?$/u, async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    const body = request.postData() ? request.postDataJSON() : undefined;
+    mutations.push({ method: request.method(), path, body });
+    if (request.method() === 'POST') {
+      for (const key of body.project_keys) user.assigned_projects.push(project(key, `项目 ${key.at(-1)}`, body.member_role));
+    } else if (request.method() === 'PATCH') {
+      const key = decodeURIComponent(path.split('/').at(-2));
+      const relation = user.assigned_projects.find((entry) => entry.key === key);
+      if (relation) relation.role_code = body.member_role;
+    } else if (path.endsWith('/projects')) {
+      user.assigned_projects = user.assigned_projects.filter((entry) => !body.project_keys.includes(entry.key));
+    } else {
+      const key = decodeURIComponent(path.split('/').at(-1));
+      user.assigned_projects = user.assigned_projects.filter((entry) => entry.key !== key);
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: user }) });
+  });
+
+  await login(page, '/web/app/system/users');
+  await page.getByRole('table', { name: '系统用户列表' }).getByRole('button', { name: '项目' }).click();
+  const manageDialog = page.getByRole('dialog', { name: '管理用户项目' });
+  await expect(manageDialog).toContainText('仍有 2 个活跃工作项');
+  await expect(manageDialog.getByLabel('选择移除 阻塞项目')).toBeDisabled();
+  await manageDialog.getByLabel(/YCE-B · 项目 B/u).check();
+  await manageDialog.getByLabel(/YCE-C · 项目 C/u).check();
+  await manageDialog.getByLabel('项目角色').selectOption('viewer');
+  await manageDialog.getByRole('button', { name: '分配所选项目' }).click();
+  await expect(manageDialog.getByRole('table', { name: '已分配项目' })).toContainText('YCE-C');
+
+  const assignedTable = manageDialog.getByRole('table', { name: '已分配项目' });
+  await assignedTable.getByRole('row').filter({ hasText: /YCE-B ·/u }).getByRole('button', { name: '角色' }).click();
+  const roleDialog = page.getByRole('dialog', { name: '调整项目角色' });
+  await roleDialog.getByLabel('项目角色').selectOption('maintainer');
+  await roleDialog.getByRole('button', { name: '保存' }).click();
+  await expect(manageDialog).toBeVisible();
+
+  await assignedTable.getByRole('row').filter({ hasText: /YCE-A ·/u }).getByRole('button', { name: '移除' }).click();
+  let removeDialog = page.getByRole('dialog', { name: '移除项目关系' });
+  await expect(removeDialog).toContainText('1 个项目关系');
+  await removeDialog.getByRole('button', { name: '确认移除' }).click();
+  await expect(manageDialog.getByRole('table', { name: '已分配项目' })).not.toContainText('YCE-A');
+
+  await manageDialog.getByLabel('选择移除 项目 C').check();
+  await manageDialog.getByRole('button', { name: '移除所选项目' }).click();
+  removeDialog = page.getByRole('dialog', { name: '移除项目关系' });
+  await removeDialog.getByRole('button', { name: '确认移除' }).click();
+  await expect(manageDialog.getByRole('table', { name: '已分配项目' })).not.toContainText('YCE-C');
+
+  expect(mutations).toEqual([
+    { method: 'POST', path: '/api/v1/system/users/project_member/projects', body: { project_keys: ['YCE-B', 'YCE-C'], member_role: 'viewer' } },
+    { method: 'PATCH', path: '/api/v1/system/users/project_member/projects/YCE-B/role', body: { member_role: 'maintainer' } },
+    { method: 'DELETE', path: '/api/v1/system/users/project_member/projects/YCE-A', body: undefined },
+    { method: 'DELETE', path: '/api/v1/system/users/project_member/projects', body: { project_keys: ['YCE-C'] } },
+  ]);
+});
+
 test('project list can switch current project inside the app shell', async ({ page }) => {
   await login(page, '/web/app/projects');
 

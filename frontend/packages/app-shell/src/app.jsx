@@ -775,6 +775,11 @@ export function SharedApp({ services }) {
   const [systemUserAction, setSystemUserAction] = useState(/** @type {{ kind: 'status' | 'role' | 'password', user: any } | null} */ (null));
   const [systemUserRoleCode, setSystemUserRoleCode] = useState('');
   const [systemUserPasswordForm, setSystemUserPasswordForm] = useState({ password: '', passwordConfirm: '' });
+  const [systemUserProjectDialog, setSystemUserProjectDialog] = useState(/** @type {{ kind: 'manage' | 'remove-one' | 'remove-batch' | 'role', username: string, projectKey?: string } | null} */ (null));
+  const [systemUserProjectAssignKeys, setSystemUserProjectAssignKeys] = useState(/** @type {string[]} */ ([]));
+  const [systemUserProjectAssignRole, setSystemUserProjectAssignRole] = useState('member');
+  const [systemUserProjectRemoveKeys, setSystemUserProjectRemoveKeys] = useState(/** @type {string[]} */ ([]));
+  const [systemUserProjectRole, setSystemUserProjectRole] = useState('member');
   const [systemUserSubmitting, setSystemUserSubmitting] = useState(false);
   const [systemUserError, setSystemUserError] = useState('');
   const systemUserMutationRef = useRef(false);
@@ -956,6 +961,11 @@ export function SharedApp({ services }) {
     path: buildWorkItemListPath({ owner: route.owner, itemType: item.itemType, projectKey: projectScopeKey, status: 'pending', assigneeUsername: projectPersonalAnalysis.username }),
   })) : [];
   const currentProjectMember = user ? projectMembers.find((member) => member.username === user.username) : null;
+  const systemUserProjectTarget = systemUserProjectDialog
+    ? systemUsersView?.items.find((item) => item.username === systemUserProjectDialog.username) || null
+    : null;
+  const systemUserAssignedProjectKeys = new Set((systemUserProjectTarget?.assigned_projects || []).map((project) => project.key));
+  const systemUserAssignableProjects = (systemUsersView?.project_options || []).filter((project) => !systemUserAssignedProjectKeys.has(project.key));
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
   const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
   const cycleMemberLoad = projectCycleDetail ? projectCycleMemberLoad(projectCycleDetail, projectMembers) : [];
@@ -1831,7 +1841,13 @@ export function SharedApp({ services }) {
       }
       return true;
     } catch (caught) {
-      setSystemUserError(errorMessage(caught instanceof Error ? caught : new Error('用户操作失败。')));
+      let detail = errorMessage(caught instanceof Error ? caught : new Error('用户操作失败。'));
+      try {
+        await refreshSystemUsersAfterMutation();
+      } catch (refreshError) {
+        detail = `${detail}；最终状态刷新失败：${errorMessage(refreshError instanceof Error ? refreshError : new Error('用户列表刷新失败。'))}`;
+      }
+      setSystemUserError(detail);
       return false;
     } finally {
       systemUserMutationRef.current = false;
@@ -1859,6 +1875,58 @@ export function SharedApp({ services }) {
     setSystemUserRoleCode('');
     setSystemUserPasswordForm({ password: '', passwordConfirm: '' });
     setSystemUserError('');
+  }
+
+  function closeSystemUserProjects() {
+    if (systemUserSubmitting) return;
+    setSystemUserProjectDialog(null);
+    setSystemUserProjectAssignKeys([]);
+    setSystemUserProjectRemoveKeys([]);
+    setSystemUserProjectRole('member');
+    setSystemUserError('');
+  }
+
+  function openSystemUserProjects(item) {
+    setSystemUserError('');
+    setSystemUserProjectAssignKeys([]);
+    setSystemUserProjectRemoveKeys([]);
+    setSystemUserProjectAssignRole('member');
+    setSystemUserProjectDialog({ kind: 'manage', username: item.username });
+  }
+
+  async function submitSystemUserProjectAssign(event) {
+    event.preventDefault();
+    if (!systemUserProjectTarget || systemUserProjectAssignKeys.length === 0) { setSystemUserError('请至少选择一个要分配的项目。'); return; }
+    const completed = await runSystemUserMutation(
+      () => api.assignSystemUserProjects(systemUserProjectTarget.username, systemUserProjectAssignKeys, systemUserProjectAssignRole),
+      `已为 ${systemUserProjectTarget.display_name} 分配 ${systemUserProjectAssignKeys.length} 个项目。`,
+    );
+    if (completed) setSystemUserProjectAssignKeys([]);
+  }
+
+  async function confirmSystemUserProjectRemove() {
+    if (!systemUserProjectTarget || !systemUserProjectDialog) return;
+    const keys = systemUserProjectDialog.kind === 'remove-one'
+      ? [systemUserProjectDialog.projectKey || '']
+      : systemUserProjectRemoveKeys;
+    const completed = await runSystemUserMutation(
+      () => systemUserProjectDialog.kind === 'remove-one'
+        ? api.removeSystemUserProject(systemUserProjectTarget.username, keys[0])
+        : api.removeSystemUserProjects(systemUserProjectTarget.username, keys),
+      `已移除 ${systemUserProjectTarget.display_name} 的 ${keys.length} 个项目关系。`,
+    );
+    if (completed) { setSystemUserProjectRemoveKeys([]); setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }
+  }
+
+  async function submitSystemUserProjectRole(event) {
+    event.preventDefault();
+    const projectKey = systemUserProjectDialog?.projectKey;
+    if (!systemUserProjectTarget || !projectKey) return;
+    const completed = await runSystemUserMutation(
+      () => api.updateSystemUserProjectRole(systemUserProjectTarget.username, projectKey, systemUserProjectRole),
+      `${systemUserProjectTarget.display_name} 的项目角色已更新。`,
+    );
+    if (completed) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username });
   }
 
   async function submitSystemUserRole(event) {
@@ -4073,6 +4141,7 @@ export function SharedApp({ services }) {
                   { key: 'status', label: '状态', render: (item) => item.status },
                   { key: 'updated', label: '更新', render: (item) => formatTimestamp(item.updated_at) },
                   { key: 'actions', label: '操作', render: (item) => systemUsersView?.can_manage_users ? <div className="shell-actions-inline">
+                    {systemUsersView.can_manage_user_projects && !item.is_super_admin ? <Button variant="secondary" disabled={systemUserSubmitting} onClick={() => openSystemUserProjects(item)}>项目</Button> : null}
                     {!item.is_super_admin ? <><Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserRoleCode(item.role_code); setSystemUserAction({ kind: 'role', user: item }); }}>角色</Button><Button variant={item.status === 'active' ? 'danger' : 'secondary'} disabled={systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserAction({ kind: 'status', user: item }); }}>{item.status === 'active' ? '停用' : '启用'}</Button></> : null}
                     <Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserPasswordForm({ password: '', passwordConfirm: '' }); setSystemUserAction({ kind: 'password', user: item }); }}>重置密码</Button>
                   </div> : '无权限' },
@@ -4101,6 +4170,23 @@ export function SharedApp({ services }) {
                 <form id="system-user-password-form" onSubmit={submitSystemUserPassword}>{systemUserError ? <Feedback tone="danger" title="重置失败">{systemUserError}</Feedback> : null}<p>重置“{systemUserAction?.user.display_name}”的密码后，该用户现有会话将立即撤销，新密码不会再次显示。</p><Field id="system-user-new-password" label="新密码" required><input type="password" autoComplete="new-password" maxLength={256} value={systemUserPasswordForm.password} onChange={(event) => setSystemUserPasswordForm((current) => ({ ...current, password: event.target.value }))} /></Field><Field id="system-user-new-password-confirm" label="确认新密码" required><input type="password" autoComplete="new-password" maxLength={256} value={systemUserPasswordForm.passwordConfirm} onChange={(event) => setSystemUserPasswordForm((current) => ({ ...current, passwordConfirm: event.target.value }))} /></Field></form>
               </Modal>
               <Modal open={systemUserAction?.kind === 'status'} title={systemUserAction?.user.status === 'active' ? '停用用户' : '启用用户'} onClose={closeSystemUserAction} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserAction}>取消</Button><Button variant={systemUserAction?.user.status === 'active' ? 'danger' : 'primary'} loading={systemUserSubmitting} onClick={() => void confirmSystemUserStatus()}>确认{systemUserAction?.user.status === 'active' ? '停用' : '启用'}</Button></>}><p>{systemUserAction?.user.status === 'active' ? `停用“${systemUserAction?.user.display_name}”将立即撤销其 Browser/Desktop 会话、Token 和设备访问。` : `确认重新启用“${systemUserAction?.user.display_name}”？`}</p>{systemUserError ? <Feedback tone="danger" title="状态更新失败">{systemUserError}</Feedback> : null}</Modal>
+              <Modal open={systemUserProjectDialog?.kind === 'manage'} title="管理用户项目" onClose={() => { if (systemUserProjectDialog?.kind === 'manage') closeSystemUserProjects(); }} footer={<Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserProjects}>关闭</Button>}>
+                {systemUserError ? <Feedback tone="danger" title="项目关系操作失败">{systemUserError}</Feedback> : null}
+                <p><strong>{systemUserProjectTarget?.display_name}</strong> @{systemUserProjectTarget?.username}</p>
+                <form id="system-user-project-assign-form" onSubmit={submitSystemUserProjectAssign}>
+                  <fieldset disabled={systemUserSubmitting || systemUserAssignableProjects.length === 0}><legend>分配项目</legend>{systemUserAssignableProjects.length ? systemUserAssignableProjects.map((project) => <label key={project.key}><input type="checkbox" checked={systemUserProjectAssignKeys.includes(project.key)} onChange={(event) => setSystemUserProjectAssignKeys((current) => event.target.checked ? [...current, project.key] : current.filter((key) => key !== project.key))} /> {project.key} · {project.name}</label>) : <p className="shell-muted">没有可分配项目。</p>}<Field id="system-user-project-assign-role" label="项目角色"><select value={systemUserProjectAssignRole} onChange={(event) => setSystemUserProjectAssignRole(event.target.value)}><option value="viewer">只读成员</option><option value="member">项目成员</option><option value="maintainer">项目管理员</option></select></Field><Button loading={systemUserSubmitting} disabled={systemUserProjectAssignKeys.length === 0} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-project-assign-form'))?.requestSubmit()}>分配所选项目</Button></fieldset>
+                </form>
+                <DataTable caption="已分配项目" rows={systemUserProjectTarget?.assigned_projects || []} rowKey={(project) => project.key} emptyText="尚未分配项目。" columns={[
+                  { key: 'select', label: '选择', render: (project) => <input type="checkbox" aria-label={`选择移除 ${project.name}`} disabled={!project.can_remove || systemUserSubmitting} checked={systemUserProjectRemoveKeys.includes(project.key)} title={project.remove_block_reason || ''} onChange={(event) => setSystemUserProjectRemoveKeys((current) => event.target.checked ? [...current, project.key] : current.filter((key) => key !== project.key))} /> },
+                  { key: 'project', label: '项目', render: (project) => <><strong>{project.name}</strong><br /><span className="shell-muted">{project.key} · {project.status}</span></> },
+                  { key: 'role', label: '角色', render: (project) => projectMemberRoleLabel(project.role_code) },
+                  { key: 'constraint', label: '约束', render: (project) => project.remove_block_reason || (project.active_assigned_count ? `${project.active_assigned_count} 个活跃工作项` : '可调整') },
+                  { key: 'actions', label: '操作', render: (project) => <div className="shell-actions-inline"><Button variant="secondary" disabled={!project.can_update_role || systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserProjectRole(project.role_code); setSystemUserProjectDialog({ kind: 'role', username: systemUserProjectTarget?.username || '', projectKey: project.key }); }}>角色</Button><Button variant="danger" disabled={!project.can_remove || systemUserSubmitting} onClick={() => { setSystemUserError(''); setSystemUserProjectDialog({ kind: 'remove-one', username: systemUserProjectTarget?.username || '', projectKey: project.key }); }}>移除</Button></div> },
+                ]} />
+                <Button variant="danger" disabled={systemUserProjectRemoveKeys.length === 0 || systemUserSubmitting} onClick={() => setSystemUserProjectDialog({ kind: 'remove-batch', username: systemUserProjectTarget?.username || '' })}>移除所选项目</Button>
+              </Modal>
+              <Modal open={systemUserProjectDialog?.kind === 'role'} title="调整项目角色" onClose={() => { if (!systemUserSubmitting && systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { if (systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }}>取消</Button><Button loading={systemUserSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-project-role-form'))?.requestSubmit()}>保存</Button></>}><form id="system-user-project-role-form" onSubmit={submitSystemUserProjectRole}><p>{systemUserProjectTarget?.display_name} · {systemUserProjectDialog?.projectKey}</p><Field id="system-user-project-role" label="项目角色"><select value={systemUserProjectRole} onChange={(event) => setSystemUserProjectRole(event.target.value)}><option value="viewer">只读成员</option><option value="member">项目成员</option><option value="maintainer">项目管理员</option></select></Field>{systemUserError ? <Feedback tone="danger" title="角色更新失败">{systemUserError}</Feedback> : null}</form></Modal>
+              <Modal open={systemUserProjectDialog?.kind === 'remove-one' || systemUserProjectDialog?.kind === 'remove-batch'} title="移除项目关系" onClose={() => { if (!systemUserSubmitting && systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { if (systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }}>取消</Button><Button variant="danger" loading={systemUserSubmitting} onClick={() => void confirmSystemUserProjectRemove()}>确认移除</Button></>}><p>确认移除 {systemUserProjectTarget?.display_name} 的 {systemUserProjectDialog?.kind === 'remove-one' ? '1' : systemUserProjectRemoveKeys.length} 个项目关系？目标用户将立即失去对应项目访问和实时订阅。</p>{systemUserError ? <Feedback tone="danger" title="移除失败">{systemUserError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-dashboard' ? (
             <section className="shell-panel-wide" aria-labelledby="system-dashboard-title">

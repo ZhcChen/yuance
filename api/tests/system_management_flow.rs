@@ -260,6 +260,174 @@ async fn api_system_users_view_returns_atomic_pagination_permissions_and_project
 }
 
 #[tokio::test]
+async fn api_system_user_project_relationship_flow_preserves_constraints() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id =
+        create_user_with_role(&pool, "api_member", "API 成员", "MemberPass2026!", "member").await;
+    let mut project_keys = Vec::new();
+    for name in ["关系项目 A", "关系项目 B", "关系项目 C"] {
+        let project = projects::create_project(
+            &pool,
+            initialized.user_id,
+            projects::CreateProjectInput {
+                name: name.to_string(),
+                description: "系统用户项目关系 API".to_string(),
+                status: "in_progress".to_string(),
+                start_date: String::new(),
+                due_date: String::new(),
+            },
+        )
+        .await
+        .expect("project should create");
+        project_keys.push(project.project_key);
+    }
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let cookie = with_csrf_cookie(&initialized.cookie);
+
+    let assigned = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/users/api_member/projects")
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "project_keys": project_keys,
+                        "member_role": "viewer",
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(assigned.status(), StatusCode::OK);
+    let assigned_payload = response_json(assigned).await;
+    assert_eq!(
+        assigned_payload["data"]["assigned_projects"]
+            .as_array()
+            .map(Vec::len),
+        Some(3)
+    );
+
+    let role_updated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!(
+                    "/api/v1/system/users/api_member/projects/{}/role",
+                    project_keys[0]
+                ))
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"member_role":"maintainer"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(role_updated.status(), StatusCode::OK);
+    assert_eq!(
+        projects::project_member_role(
+            &pool,
+            projects::get_project_detail(&pool, &project_keys[0])
+                .await
+                .expect("project should load")
+                .expect("project should exist")
+                .id,
+            member_user_id,
+        )
+        .await
+        .expect("member role should load"),
+        Some("maintainer".to_string())
+    );
+
+    projects::create_work_item(
+        &pool,
+        member_user_id,
+        projects::CreateWorkItemInput {
+            project_key: project_keys[1].clone(),
+            item_type: "task".to_string(),
+            title: "阻塞项目关系移除".to_string(),
+            description: String::new(),
+            priority: "P2".to_string(),
+            assignee_username: "api_member".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("blocking work item should create");
+    let blocked = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/system/users/api_member/projects")
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "project_keys": [project_keys[1].clone(), project_keys[2].clone()] }).to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(blocked.status(), StatusCode::BAD_REQUEST);
+    let memberships = projects::list_user_project_memberships(&pool, member_user_id)
+        .await
+        .expect("memberships should load");
+    assert_eq!(memberships.len(), 3);
+
+    let removed_one = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/system/users/api_member/projects/{}",
+                    project_keys[0]
+                ))
+                .header(header::COOKIE, &cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(removed_one.status(), StatusCode::OK);
+
+    let removed_batch = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri("/api/v1/system/users/api_member/projects")
+                .header(header::COOKIE, cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "project_keys": [project_keys[2].clone()] }).to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(removed_batch.status(), StatusCode::OK);
+    let remaining = projects::list_user_project_memberships(&pool, member_user_id)
+        .await
+        .expect("memberships should load");
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].project_key, project_keys[1]);
+}
+
+#[tokio::test]
 async fn system_users_page_renders_accounts_and_roles_for_admin() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

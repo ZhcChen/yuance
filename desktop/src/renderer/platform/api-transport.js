@@ -132,6 +132,25 @@ function resolveMutationOperation(parsed, method, options) {
       return { operation: "system.userpasswordreset", input: { username, password: body.password } };
     }
   }
+  const systemUserProjectRole = parsed.pathname.match(/^\/api\/v1\/system\/users\/([^/]+)\/projects\/([^/]+)\/role$/u);
+  if (method === "PATCH" && systemUserProjectRole) {
+    const body = parseJsonBody(options, ["member_role"]);
+    return { operation: "system.userprojectroleupdate", input: { username: decodeSegment(systemUserProjectRole[1]), projectKey: decodeSegment(systemUserProjectRole[2]), memberRole: body.member_role } };
+  }
+  const systemUserProject = parsed.pathname.match(/^\/api\/v1\/system\/users\/([^/]+)\/projects\/([^/]+)$/u);
+  if (method === "DELETE" && systemUserProject) {
+    rejectBody(options);
+    return { operation: "system.userprojectremove", input: { username: decodeSegment(systemUserProject[1]), projectKey: decodeSegment(systemUserProject[2]) } };
+  }
+  const systemUserProjects = parsed.pathname.match(/^\/api\/v1\/system\/users\/([^/]+)\/projects$/u);
+  if (systemUserProjects && method === "POST") {
+    const body = parseJsonBody(options, ["member_role", "project_keys"]);
+    return { operation: "system.userprojectsassign", input: { username: decodeSegment(systemUserProjects[1]), projectKeys: body.project_keys, memberRole: body.member_role } };
+  }
+  if (systemUserProjects && method === "DELETE") {
+    const body = parseJsonBody(options, ["project_keys"]);
+    return { operation: "system.userprojectsremove", input: { username: decodeSegment(systemUserProjects[1]), projectKeys: body.project_keys } };
+  }
   if (method === "PATCH" && parsed.pathname === "/api/v1/me/profile") {
     const body = parseJsonBody(options, ["display_name", "email", "mobile"]);
     return { operation: "identity.profileupdate", input: renameBody(body, { display_name: "displayName" }) };

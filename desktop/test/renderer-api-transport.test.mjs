@@ -201,6 +201,29 @@ test("system user mutations map to fixed Desktop operations", async () => {
   ]);
 });
 
+test("system user project mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => {
+    calls.push([operation, input]);
+    return { ok: true, data: {
+      id: 7, username: "alice", display_name: "Alice", email: "", mobile: "", status: "active", is_super_admin: false,
+      role_code: "member", role_names: "项目成员", created_at: "2026-08-08", updated_at: "2026-08-08",
+      assigned_projects: [{ key: "OPS", name: "Operations", status: "in_progress", role_code: "maintainer", active_assigned_count: 0, can_remove: true, can_update_role: true, remove_block_reason: "" }],
+    } };
+  } });
+  const api = createApiClient({ request: transport.request });
+  await api.assignSystemUserProjects("alice", ["YCE", "OPS"], "viewer");
+  await api.removeSystemUserProjects("alice", ["OPS"]);
+  await api.removeSystemUserProject("alice", "YCE");
+  await api.updateSystemUserProjectRole("alice", "OPS", "maintainer");
+  assert.deepEqual(calls, [
+    ["system.userprojectsassign", { username: "alice", projectKeys: ["YCE", "OPS"], memberRole: "viewer" }],
+    ["system.userprojectsremove", { username: "alice", projectKeys: ["OPS"] }],
+    ["system.userprojectremove", { username: "alice", projectKey: "YCE" }],
+    ["system.userprojectroleupdate", { username: "alice", projectKey: "OPS", memberRole: "maintainer" }],
+  ]);
+});
+
 test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
   let calls = 0;
   const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });

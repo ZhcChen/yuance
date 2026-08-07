@@ -4,7 +4,7 @@
 /** @typedef {{ links: SystemDashboardLink[] }} SystemDashboard */
 /** @typedef {{ page?: number, perPage?: number }} SystemUsersQuery */
 /** @typedef {{ username: string, displayName: string, email?: string, mobile?: string, password: string, roleCode: string }} CreateSystemUserPayload */
-/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any> }} SystemClient */
+/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
 
 /**
  * @param {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite?: () => Promise<void> }} dependencies
@@ -13,7 +13,9 @@
 export function createSystemClient({ request, prepareWrite = async () => {} }) {
   const write = async (url, method, body) => {
     await prepareWrite();
-    return request(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return body === undefined
+      ? request(url, { method })
+      : request(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   };
   return {
     getSystemDashboard() {
@@ -40,6 +42,18 @@ export function createSystemClient({ request, prepareWrite = async () => {} }) {
     },
     resetSystemUserPassword(username, password) {
       return write(`/api/v1/system/users/${encodeURIComponent(username)}/password`, 'POST', { password });
+    },
+    assignSystemUserProjects(username, projectKeys, memberRole) {
+      return write(`/api/v1/system/users/${encodeURIComponent(username)}/projects`, 'POST', { project_keys: projectKeys, member_role: memberRole });
+    },
+    removeSystemUserProjects(username, projectKeys) {
+      return write(`/api/v1/system/users/${encodeURIComponent(username)}/projects`, 'DELETE', { project_keys: projectKeys });
+    },
+    removeSystemUserProject(username, projectKey) {
+      return write(`/api/v1/system/users/${encodeURIComponent(username)}/projects/${encodeURIComponent(projectKey)}`, 'DELETE');
+    },
+    updateSystemUserProjectRole(username, projectKey, memberRole) {
+      return write(`/api/v1/system/users/${encodeURIComponent(username)}/projects/${encodeURIComponent(projectKey)}/role`, 'PATCH', { member_role: memberRole });
     },
   };
 }

@@ -671,6 +671,19 @@ pub fn build_router(state: AppState) -> Router {
             post(web::api::reset_system_user_password),
         )
         .route(
+            "/api/v1/system/users/{username}/projects",
+            post(web::api::assign_system_user_projects)
+                .delete(web::api::remove_system_user_projects),
+        )
+        .route(
+            "/api/v1/system/users/{username}/projects/{project_key}",
+            delete(web::api::remove_system_user_project),
+        )
+        .route(
+            "/api/v1/system/users/{username}/projects/{project_key}/role",
+            patch(web::api::update_system_user_project_role),
+        )
+        .route(
             "/api/v1/system/roles",
             get(web::api::list_system_roles).post(web::api::create_system_role),
         )
