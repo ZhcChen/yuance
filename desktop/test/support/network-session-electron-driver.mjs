@@ -449,6 +449,19 @@ async function runRealBusinessApi({ origin, mode, network }) {
   await rest.execute("project.memberremove", { projectKey: createdProject.key, username: "desktop_parity_member" });
   stage("verify-project-member-remove");
   const projectMembersAfterRemove = await rest.execute("project.members", { projectKey: createdProject.key });
+  stage("manage-project-cycle");
+  const createdCycle = await rest.execute("project.cyclecreate", {
+    projectKey: createdProject.key, name: "Desktop cycle integration", goal: "Verify shared cycle",
+    description: "Cycle contract", ownerUsername: "yuance_admin", startDate: "2026-08-01", endDate: "2026-08-31",
+  });
+  const updatedCycle = await rest.execute("project.cycleupdate", {
+    projectKey: createdProject.key, cycleId: createdCycle.id, name: "Desktop cycle integration updated",
+    goal: "Verify shared cycle", description: "Cycle contract updated", ownerUsername: "yuance_admin",
+    startDate: "2026-08-01", endDate: "2026-08-31",
+  });
+  const cycleDetail = await rest.execute("project.cycledetail", { projectKey: createdProject.key, cycleId: createdCycle.id });
+  const cycles = await rest.execute("project.cycles", { projectKey: createdProject.key });
+  const closedCycle = await rest.execute("project.cycleclose", { projectKey: createdProject.key, cycleId: createdCycle.id });
   stage("update-profile");
   const updatedProfile = await rest.execute("identity.profileupdate", {
     displayName: "Desktop profile integration",
@@ -514,6 +527,9 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "project.memberadd",
     "project.memberroleupdate",
     "project.memberremove",
+    "project.cyclecreate",
+    "project.cycleupdate",
+    "project.cycleclose",
     "identity.profileupdate",
     "workitem.update",
     "workitem.handoff",
@@ -552,6 +568,9 @@ async function runRealBusinessApi({ origin, mode, network }) {
       && updatedProjectMember.member_role === "maintainer"
       && projectMembers.some((member) => member.username === "desktop_parity_member")
       && !projectMembersAfterRemove.some((member) => member.username === "desktop_parity_member"),
+    projectCycleManaged: updatedCycle.name === "Desktop cycle integration updated"
+      && cycleDetail.id === createdCycle.id && Array.isArray(cycleDetail.work_items)
+      && cycles.some((cycle) => cycle.id === createdCycle.id) && closedCycle.is_closed,
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"
       && verifiedProfile.display_name === updatedProfile.display_name,
     accountSecurity: deviceSessions.some((session) => session.is_current)

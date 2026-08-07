@@ -34,6 +34,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.equal(report.projectSelected, true);
   assert.equal(report.projectCreated, true);
   assert.equal(report.projectManaged, true);
+  assert.equal(report.projectCycleManaged, true);
   assert.equal(report.profileUpdated, true);
   assert.equal(report.accountSecurity, true);
   assert.equal(report.workItemUpdated, true);

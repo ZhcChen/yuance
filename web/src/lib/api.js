@@ -57,6 +57,11 @@ export const updateProject = apiClient.updateProject;
 export const addProjectMember = apiClient.addProjectMember;
 export const updateProjectMemberRole = apiClient.updateProjectMemberRole;
 export const removeProjectMember = apiClient.removeProjectMember;
+export const getProjectCycles = apiClient.getProjectCycles;
+export const getProjectCycle = apiClient.getProjectCycle;
+export const createProjectCycle = apiClient.createProjectCycle;
+export const updateProjectCycle = apiClient.updateProjectCycle;
+export const closeProjectCycle = apiClient.closeProjectCycle;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -129,8 +134,10 @@ export function openTopbarEvents(callbacks) {
 
 export const webApi = {
   addProjectMember,
+  closeProjectCycle,
   createApiToken,
   createProject,
+  createProjectCycle,
   createWorkItemAttachment,
   createWorkItemComment,
   createWorkItemCommentAttachment,
@@ -142,6 +149,8 @@ export const webApi = {
   getNotifications,
   getOwnProfile,
   getProject,
+  getProjectCycle,
+  getProjectCycles,
   getProjectMembers,
   getProjects,
   getTopbarStatus,
@@ -170,6 +179,7 @@ export const webApi = {
   updateOwnProfile,
   updateOwnPassword,
   updateProject,
+  updateProjectCycle,
   updateProjectMemberRole,
   updateWorkItem,
   updateWorkItemComment,

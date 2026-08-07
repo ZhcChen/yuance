@@ -6,6 +6,7 @@ import {
   buildMessagesPath,
   buildProfilePath,
   buildProjectDetailPath,
+  buildProjectCycleDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -113,6 +114,28 @@ import { errorMessage } from './errors.js';
  * @property {number} work_item_count
  * @property {number} active_work_item_count
  * @property {string} updated_at
+ */
+
+/**
+ * @typedef AppProjectCycle
+ * @property {number} id
+ * @property {string} name
+ * @property {string} goal
+ * @property {string} description
+ * @property {string} owner_username
+ * @property {string} owner
+ * @property {string} start_date
+ * @property {string} end_date
+ * @property {string} closed_at
+ * @property {boolean} is_closed
+ * @property {number} total_items
+ * @property {number} requirement_count
+ * @property {number} task_count
+ * @property {number} bug_count
+ * @property {number} pending_count
+ * @property {string} created_at
+ * @property {string} updated_at
+ * @property {Array<{ key: string, item_type: string, title: string, status: string, priority: string, assignee_username: string, assignee: string, due_date: string, updated_at: string }>} work_items
  */
 
 /**
@@ -283,6 +306,55 @@ function projectMemberRoleLabel(role) {
   return { owner: '项目负责人', maintainer: '项目管理员', member: '项目成员', viewer: '只读成员' }[role] || role;
 }
 
+function projectCycleStatusLabel(cycle) { return cycle.is_closed ? '已关闭' : '进行中'; }
+
+function shanghaiToday(today = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(today);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function projectCyclePace(cycle, today = new Date()) {
+  const start = new Date(`${cycle.start_date}T00:00:00Z`);
+  const end = new Date(`${cycle.end_date}T00:00:00Z`);
+  const current = new Date(`${shanghaiToday(today)}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return { percent: 0, duration: '日期范围不可用', hint: '请检查周期日期' };
+  }
+  const day = 86_400_000;
+  const durationDays = Math.floor((end.getTime() - start.getTime()) / day) + 1;
+  if (current < start) return { percent: 0, duration: `共 ${durationDays} 天`, hint: `${Math.ceil((start.getTime() - current.getTime()) / day)} 天后开始` };
+  if (cycle.is_closed) return { percent: 100, duration: `共 ${durationDays} 天`, hint: '周期已关闭' };
+  if (current > end) return { percent: 100, duration: `共 ${durationDays} 天`, hint: `已超计划 ${Math.floor((current.getTime() - end.getTime()) / day)} 天` };
+  const elapsedDays = Math.floor((current.getTime() - start.getTime()) / day) + 1;
+  const remainingDays = Math.floor((end.getTime() - current.getTime()) / day);
+  return { percent: Math.max(1, Math.min(100, Math.floor((elapsedDays * 100) / durationDays))), duration: `共 ${durationDays} 天`, hint: remainingDays ? `剩余 ${remainingDays} 天` : '今天结束' };
+}
+
+function projectCycleMemberLoad(cycle, members, today = new Date()) {
+  const todayText = shanghaiToday(today);
+  const activeStatuses = new Set(['open', 'in_progress', 'pending_confirmation']);
+  const rows = new Map(members.map((member) => [member.username, {
+    key: member.username, member: member.display_name, subtitle: `@${member.username} · ${projectMemberRoleLabel(member.member_role)}`,
+    open: 0, in_progress: 0, pending_confirmation: 0, high: 0, overdue: 0, active: 0,
+  }]));
+  const unassigned = { key: '', member: '未指派', subtitle: '当前周期仍有工作项未绑定处理人', open: 0, in_progress: 0, pending_confirmation: 0, high: 0, overdue: 0, active: 0 };
+  for (const item of cycle.work_items) {
+    if (!activeStatuses.has(item.status)) continue;
+    const key = item.assignee_username || '';
+    const row = key ? rows.get(key) : unassigned;
+    if (!row) continue;
+    row[item.status] += 1; row.active += 1;
+    if (['P0', 'P1'].includes(item.priority)) row.high += 1;
+    if (item.due_date && item.due_date < todayText) row.overdue += 1;
+  }
+  const result = [...rows.values()];
+  if (!result.some((row) => row.active > 0) && unassigned.active === 0) return [];
+  result.sort((left, right) => right.active - left.active || right.overdue - left.overdue || right.high - left.high || left.member.localeCompare(right.member));
+  if (unassigned.active > 0) result.push(unassigned);
+  return result;
+}
+
 function workItemTypeLabel(itemType) {
   switch (itemType) {
     case 'requirement':
@@ -419,6 +491,8 @@ function routeDescription(route) {
       return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
     case 'project-detail':
       return '项目资料和成员管理由 Browser 与 Desktop 共用同一页面、表单和确认流程。';
+    case 'project-cycle-detail':
+      return '周期指标、状态看板和工作项入口由两个宿主共用同一派生视图。';
     case 'requirements':
     case 'tasks':
     case 'bugs':
@@ -443,6 +517,7 @@ function routeEyebrow(route) {
       return 'Personal Workspace';
     case 'projects':
     case 'project-detail':
+    case 'project-cycle-detail':
       return 'Projects';
     case 'requirements':
     case 'tasks':
@@ -525,6 +600,12 @@ export function SharedApp({ services }) {
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
   const [projectDetail, setProjectDetail] = useState(/** @type {AppProjectDetail | null} */ (null));
   const [projectMembers, setProjectMembers] = useState(/** @type {AppProjectMember[]} */ ([]));
+  const [projectCycles, setProjectCycles] = useState(/** @type {AppProjectCycle[]} */ ([]));
+  const [projectCycleDetail, setProjectCycleDetail] = useState(/** @type {AppProjectCycle | null} */ (null));
+  const [projectCycleOpen, setProjectCycleOpen] = useState(false);
+  const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
+  const [projectCycleCloseTarget, setProjectCycleCloseTarget] = useState(/** @type {AppProjectCycle | null} */ (null));
+  const [previousPath, setPreviousPath] = useState('');
   const [projectMutationSubmitting, setProjectMutationSubmitting] = useState(false);
   const [projectMutationError, setProjectMutationError] = useState('');
   const [projectEditOpen, setProjectEditOpen] = useState(false);
@@ -667,6 +748,12 @@ export function SharedApp({ services }) {
   const activeProjectDetail = projectDetailRoute && projectDetail?.key === projectDetailRoute.projectKey ? projectDetail : null;
   const currentProjectMember = user ? projectMembers.find((member) => member.username === user.username) : null;
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
+  const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
+  const cycleMemberLoad = projectCycleDetail ? projectCycleMemberLoad(projectCycleDetail, projectMembers) : [];
+  const cycleFallbackPath = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab: 'cycles' });
+  const cycleBackPath = previousPath && previousPath !== router.currentPath()
+    ? previousPath
+    : cycleFallbackPath;
   const detailBackPath = buildWorkItemListPath({
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
@@ -701,6 +788,15 @@ export function SharedApp({ services }) {
         setProjectMemberOpen(false);
         setProjectMemberTarget(null);
         setProjectMemberRemoveTarget(null);
+        setProjectCycles([]);
+        setProjectCycleOpen(false);
+        setProjectCycleCloseTarget(null);
+      }
+      if (targetRoute.id === 'project-cycle-detail') {
+        setProjectMutationSubmitting(projectMutationRef.current);
+        setProjectCycleDetail(null);
+        setProjectMembers([]);
+        setProjectMutationError('');
       }
       if (targetRoute.id === 'work-item-detail') {
         workItemActionRef.current += 1;
@@ -738,11 +834,11 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
-        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
+        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? api.getNotifications({
@@ -790,7 +886,10 @@ export function SharedApp({ services }) {
           ? Promise.all([api.getApiTokens(), api.getDeviceSessions()])
           : Promise.resolve(null),
         targetRoute.id === 'project-detail'
-          ? Promise.all([api.getProject(targetRoute.projectKey), api.getProjectMembers(targetRoute.projectKey)])
+          ? Promise.all([api.getProject(targetRoute.projectKey), api.getProjectMembers(targetRoute.projectKey), api.getProjectCycles(targetRoute.projectKey)])
+          : Promise.resolve(null),
+        targetRoute.id === 'project-cycle-detail'
+          ? Promise.all([api.getProjectCycle(targetRoute.projectKey, targetRoute.cycleId), api.getProjectMembers(targetRoute.projectKey)])
           : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
@@ -815,6 +914,11 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'project-detail') {
         setProjectDetail(nextProjectBundle?.[0] || null);
         setProjectMembers(nextProjectBundle?.[1] || []);
+        setProjectCycles(nextProjectBundle?.[2] || []);
+      }
+      if (targetRoute.id === 'project-cycle-detail') {
+        setProjectCycleDetail(nextCycleDetailBundle?.[0] || null);
+        setProjectMembers(nextCycleDetailBundle?.[1] || []);
       }
       if (targetRoute.id === 'search') {
         setSearchPage(nextSearch);
@@ -856,6 +960,7 @@ export function SharedApp({ services }) {
    * @param {boolean} [replace]
    */
   function navigate(path, nextStatusMessage = '', replace = false) {
+    if (!replace && path !== router.currentPath()) setPreviousPath(router.currentPath());
     router.navigate(path, { replace });
     setStatusMessage(nextStatusMessage);
     syncRouteFromLocation();
@@ -977,6 +1082,59 @@ export function SharedApp({ services }) {
     } catch { return; }
   }
 
+  /** @param {AppProjectCycle | null} [cycle] */
+  function openProjectCycle(cycle = null) {
+    setProjectMutationError('');
+    setProjectCycleForm(cycle ? {
+      id: cycle.id, name: cycle.name, goal: cycle.goal, description: cycle.description,
+      ownerUsername: cycle.owner_username, startDate: cycle.start_date, endDate: cycle.end_date,
+    } : { id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
+    setProjectCycleOpen(true);
+  }
+
+  async function runCycleMutation(action, successMessage) {
+    const current = routeRef.current;
+    if (!['project-detail', 'project-cycle-detail'].includes(current.id) || projectMutationRef.current) return false;
+    const projectKey = current.projectKey;
+    projectMutationRef.current = true; setProjectMutationSubmitting(true); setProjectMutationError('');
+    try {
+      await action();
+      if (current.id === 'project-cycle-detail') {
+        const cycle = await api.getProjectCycle(projectKey, current.cycleId);
+        if (routeRef.current.id !== current.id || routeRef.current.projectKey !== projectKey || routeRef.current.cycleId !== current.cycleId) return false;
+        setProjectCycleDetail(cycle);
+      } else {
+        const cycles = await api.getProjectCycles(projectKey);
+        if (routeRef.current.id !== current.id || routeRef.current.projectKey !== projectKey) return false;
+        setProjectCycles(cycles);
+      }
+      setStatusMessage(successMessage); return true;
+    } catch (caught) {
+      if (routeRef.current.id === current.id && routeRef.current.projectKey === projectKey) setProjectMutationError(errorMessage(caught instanceof Error ? caught : new Error('周期操作失败。')));
+      throw caught;
+    } finally { projectMutationRef.current = false; setProjectMutationSubmitting(false); }
+  }
+
+  async function submitProjectCycle(event) {
+    event.preventDefault();
+    const projectKey = routeRef.current.projectKey;
+    if (!projectKey) return;
+    try {
+      const action = projectCycleForm.id
+        ? () => api.updateProjectCycle(projectKey, projectCycleForm.id, projectCycleForm)
+        : () => api.createProjectCycle(projectKey, projectCycleForm);
+      if (await runCycleMutation(action, projectCycleForm.id ? '项目周期已更新。' : '项目周期已创建。')) setProjectCycleOpen(false);
+    } catch { return; }
+  }
+
+  async function confirmProjectCycleClose() {
+    if (!projectCycleCloseTarget) return;
+    const projectKey = routeRef.current.projectKey;
+    try {
+      if (await runCycleMutation(() => api.closeProjectCycle(projectKey, projectCycleCloseTarget.id), '项目周期已关闭。')) setProjectCycleCloseTarget(null);
+    } catch { return; }
+  }
+
   /** @param {() => Promise<any>} action @param {string} successMessage */
   async function runAccountSecurity(action, successMessage) {
     if (accountSecurityActionRef.current) return;
@@ -1033,8 +1191,12 @@ export function SharedApp({ services }) {
           ? '项目列表 - 元策'
           : route.id === 'project-detail' && activeProjectDetail
             ? `${activeProjectDetail.key} · ${activeProjectDetail.name} - 元策`
-            : route.id === 'project-detail'
+          : route.id === 'project-detail'
               ? '项目详情 - 元策'
+          : route.id === 'project-cycle-detail' && projectCycleDetail
+            ? `${projectCycleDetail.name} - 元策`
+            : route.id === 'project-cycle-detail'
+              ? '项目周期详情 - 元策'
           : route.id === 'requirements'
             ? '需求列表 - 元策'
             : route.id === 'tasks'
@@ -1049,7 +1211,7 @@ export function SharedApp({ services }) {
                       ? '未迁移路由 - 元策'
                       : '元策浏览器工作台 - 元策';
     router.setTitle(title);
-  }, [route, activeProjectDetail, activeWorkItemDetail, router]);
+  }, [route, activeProjectDetail, activeWorkItemDetail, projectCycleDetail, router]);
 
   useEffect(() => {
     void loadRouteState(route, 'load');
@@ -2145,7 +2307,7 @@ export function SharedApp({ services }) {
         links={[
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
-          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' },
+          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' },
         ]}
         currentProject={currentProject}
         projectsHref={projectsPath}
@@ -2176,7 +2338,7 @@ export function SharedApp({ services }) {
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
-          ) : route.id === 'projects' || route.id === 'project-detail' ? (
+          ) : route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -2574,7 +2736,7 @@ export function SharedApp({ services }) {
               </div>
 
               <nav className="message-tabs" aria-label="项目详情导航">
-                {[['info', '项目信息'], ['members', '项目成员']].map(([tab, label]) => {
+                {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <a key={tab} className={`message-tab ${route.tab === tab ? 'active' : ''}`} href={path} aria-current={route.tab === tab ? 'page' : undefined} onClick={(event) => handleNavigate(event, path, `已切换到${label}。`)}><span>{label}</span></a>;
                 })}
@@ -2613,6 +2775,20 @@ export function SharedApp({ services }) {
                 </section>
               ) : null}
 
+              {activeProjectDetail && route.tab === 'cycles' ? (
+                <section aria-labelledby="project-cycles-title">
+                  <div className="shell-panel-header"><div><h3 id="project-cycles-title">项目周期</h3><p className="shell-muted">共 {projectCycles.length} 个周期</p></div>{canManageProject ? <Button variant="secondary" onClick={() => openProjectCycle()}>新建周期</Button> : null}</div>
+                  <DataTable caption="项目周期" rows={projectCycles} rowKey={(cycle) => cycle.id} emptyText="当前项目暂无周期。" columns={[
+                    { key: 'cycle', label: '周期', render: (cycle) => <><a className="shell-link" href={buildProjectCycleDetailPath({ owner: route.owner, projectKey: route.projectKey, cycleId: cycle.id })} onClick={(event) => handleNavigate(event, buildProjectCycleDetailPath({ owner: route.owner, projectKey: route.projectKey, cycleId: cycle.id }), `已打开周期 ${cycle.name}。`)}>{cycle.name}</a><br /><span className="shell-muted">{cycle.goal || '暂无目标'}</span></> },
+                    { key: 'range', label: '日期', render: (cycle) => `${cycle.start_date} - ${cycle.end_date}` },
+                    { key: 'owner', label: '负责人', render: (cycle) => cycle.owner || '未设置' },
+                    { key: 'items', label: '工作项', render: (cycle) => `${cycle.total_items}（待处理 ${cycle.pending_count}）` },
+                    { key: 'status', label: '状态', render: projectCycleStatusLabel },
+                    { key: 'actions', label: '操作', render: (cycle) => canManageProject && !cycle.is_closed ? <div className="shell-actions-inline"><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => openProjectCycle(cycle)}>编辑</Button><Button variant="danger" disabled={projectMutationSubmitting} onClick={() => setProjectCycleCloseTarget(cycle)}>关闭</Button></div> : <span className="shell-muted">{cycle.is_closed ? '已关闭' : '只读'}</span> },
+                  ]} />
+                </section>
+              ) : null}
+
               <Modal open={projectEditOpen} title="编辑项目" onClose={() => { if (!projectMutationSubmitting) setProjectEditOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectEditOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-edit-form'))?.requestSubmit()}>保存</Button></>}>
                 <form id="project-edit-form" onSubmit={submitProjectEdit}>
                   <Field id="project-edit-name" label="项目名称" required><input value={projectEditForm.name} maxLength={120} onChange={(event) => setProjectEditForm((current) => ({ ...current, name: event.target.value }))} /></Field>
@@ -2630,6 +2806,21 @@ export function SharedApp({ services }) {
                 <form id="project-member-role-form" onSubmit={submitProjectMemberRole}><p>{projectMemberTarget?.display_name} @{projectMemberTarget?.username}</p><Field id="project-member-role-value" label="项目角色" required><select key={`${projectMemberTarget?.username || ''}:${projectMemberTarget?.member_role || ''}`} name="memberRole" defaultValue={projectMemberTarget?.member_role || 'member'}><option value="viewer">只读成员</option><option value="member">项目成员</option><option value="maintainer">项目管理员</option></select></Field></form>
               </Modal>
               <Modal open={Boolean(projectMemberRemoveTarget)} title="移除项目成员" onClose={() => { if (!projectMutationSubmitting) setProjectMemberRemoveTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberRemoveTarget(null)}>取消</Button><Button variant="danger" loading={projectMutationSubmitting} onClick={() => void confirmProjectMemberRemove()}>确认移除</Button></>}><p>确认从项目中移除 {projectMemberRemoveTarget?.display_name} @{projectMemberRemoveTarget?.username}？</p></Modal>
+              <Modal open={projectCycleOpen} title={projectCycleForm.id ? '编辑项目周期' : '新建项目周期'} onClose={() => { if (!projectMutationSubmitting) setProjectCycleOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectCycleOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-cycle-form'))?.requestSubmit()}>保存</Button></>}>
+                <form id="project-cycle-form" onSubmit={submitProjectCycle}><Field id="project-cycle-name" label="周期名称" required><input value={projectCycleForm.name} maxLength={120} onChange={(event) => setProjectCycleForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field id="project-cycle-goal" label="周期目标"><input value={projectCycleForm.goal} maxLength={240} onChange={(event) => setProjectCycleForm((current) => ({ ...current, goal: event.target.value }))} /></Field><Field id="project-cycle-owner" label="负责人用户名"><input value={projectCycleForm.ownerUsername} maxLength={64} onChange={(event) => setProjectCycleForm((current) => ({ ...current, ownerUsername: event.target.value }))} /></Field><Field id="project-cycle-start" label="开始日期" required><input type="date" value={projectCycleForm.startDate} onChange={(event) => setProjectCycleForm((current) => ({ ...current, startDate: event.target.value }))} /></Field><Field id="project-cycle-end" label="结束日期" required><input type="date" min={projectCycleForm.startDate || undefined} value={projectCycleForm.endDate} onChange={(event) => setProjectCycleForm((current) => ({ ...current, endDate: event.target.value }))} /></Field><Field id="project-cycle-description" label="周期说明"><textarea value={projectCycleForm.description} maxLength={5000} onChange={(event) => setProjectCycleForm((current) => ({ ...current, description: event.target.value }))} /></Field></form>
+              </Modal>
+              <Modal open={Boolean(projectCycleCloseTarget)} title="关闭项目周期" onClose={() => { if (!projectMutationSubmitting) setProjectCycleCloseTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectCycleCloseTarget(null)}>取消</Button><Button variant="danger" loading={projectMutationSubmitting} onClick={() => void confirmProjectCycleClose()}>确认关闭</Button></>}><p>确认关闭周期“{projectCycleCloseTarget?.name}”？关闭后不能继续编辑。</p></Modal>
+            </section>
+          ) : route.id === 'project-cycle-detail' ? (
+            <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-cycle-detail-title">
+              <div className="shell-panel-header"><div><h2 id="project-cycle-detail-title">{projectCycleDetail?.name || `周期 #${route.cycleId}`}</h2><p className="shell-muted">{projectCycleDetail ? `${projectCycleStatusLabel(projectCycleDetail)} · ${projectCycleDetail.start_date} - ${projectCycleDetail.end_date}` : '正在加载周期详情。'}</p></div><a className="shell-link" href={cycleBackPath} onClick={(event) => handleNavigate(event, cycleBackPath, cycleBackPath === cycleFallbackPath ? '已返回项目周期。' : '已返回上一页。')}>{cycleBackPath === cycleFallbackPath ? '返回周期列表' : '返回上一页'}</a></div>
+              {projectMutationError ? <Feedback tone="danger" title="周期操作失败">{projectMutationError}</Feedback> : null}
+              {projectCycleDetail ? <>
+                <div className="work-item-detail-grid"><article className="work-item-detail-panel"><h3>周期目标</h3><p>{projectCycleDetail.goal || '暂无目标。'}</p><p className="work-item-detail-description">{projectCycleDetail.description || '暂无说明。'}</p></article><article className="work-item-detail-panel"><h3>周期指标</h3><dl className="work-item-detail-meta"><div><dt>工作项</dt><dd>{projectCycleDetail.total_items}</dd></div><div><dt>待处理</dt><dd>{projectCycleDetail.pending_count}</dd></div><div><dt>需求</dt><dd>{projectCycleDetail.requirement_count}</dd></div><div><dt>任务</dt><dd>{projectCycleDetail.task_count}</dd></div><div><dt>Bug</dt><dd>{projectCycleDetail.bug_count}</dd></div><div><dt>负责人</dt><dd>{projectCycleDetail.owner || '未设置'}</dd></div></dl></article></div>
+                <section aria-labelledby="cycle-pace-title"><h3 id="cycle-pace-title">当前节奏</h3><article className="work-item-detail-panel"><div className="shell-panel-header"><strong>时间进度 {cyclePace?.percent}%</strong><span className="shell-muted">{cyclePace?.duration} · {cyclePace?.hint}</span></div><progress max="100" value={cyclePace?.percent || 0} aria-label="周期时间进度">{cyclePace?.percent}%</progress></article></section>
+                <section><h3>工作项状态看板</h3><div className="work-item-action-grid">{[['open', '待处理'], ['in_progress', '进行中'], ['pending_confirmation', '待确认'], ['done', '已完成']].map(([status, label]) => { const items = projectCycleDetail.work_items.filter((item) => status === 'done' ? !['open', 'in_progress', 'pending_confirmation'].includes(item.status) : item.status === status); return <article className="work-item-detail-panel" key={status}><h4>{label} · {items.length}</h4>{items.length ? <ul className="project-list">{items.map((item) => { const itemPath = buildWorkItemDetailPath({ owner: /** @type {'app' | 'web'} */ (route.owner), itemKey: item.key }); return <li key={item.key}><a className="shell-link" href={itemPath} onClick={(event) => handleNavigate(event, itemPath, `已打开 ${item.key}。`)}>{item.key} · {item.title}</a><p className="shell-muted">{item.priority} · {item.assignee || '未指派'} · {item.due_date || '无截止日期'}</p></li>; })}</ul> : <p className="shell-empty">暂无工作项。</p>}</article>; })}</div></section>
+                <section aria-labelledby="cycle-member-load-title"><h3 id="cycle-member-load-title">成员负载</h3><DataTable caption="周期成员负载" rows={cycleMemberLoad} rowKey={(row) => row.key || 'unassigned'} emptyText="当前周期暂无待推进负载。" columns={[{ key: 'member', label: '成员', render: (row) => <><strong>{row.member}</strong><br /><span className="shell-muted">{row.subtitle}</span></> }, { key: 'open', label: '待处理', render: (row) => row.open }, { key: 'in_progress', label: '进行中', render: (row) => row.in_progress }, { key: 'pending_confirmation', label: '待确认', render: (row) => row.pending_confirmation }, { key: 'high', label: '高优先级', render: (row) => row.high }, { key: 'overdue', label: '逾期', render: (row) => row.overdue }, { key: 'active', label: '活跃合计', render: (row) => row.active }]} /></section>
+              </> : null}
             </section>
           ) : isWorkItemListRouteId(route.id) ? (
             <section className="shell-card shell-panel-wide work-item-center" aria-labelledby="work-item-center-title">

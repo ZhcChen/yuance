@@ -181,8 +181,8 @@
       "states": ["loading", "ready", "empty-work-items", "closed", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md"] }
     },
     {
       "id": "page.project.resource-detail",
@@ -616,8 +616,8 @@
       "realtimeEffect": "项目周期和工作项周期候选缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md"] }
     },
     {
       "id": "action.project.cycle.update",
@@ -632,8 +632,8 @@
       "realtimeEffect": "周期详情和关联工作项缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md"] }
     },
     {
       "id": "action.project.cycle.close",
@@ -648,8 +648,8 @@
       "realtimeEffect": "周期状态和工作项周期候选缓存失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md"] }
     },
     {
       "id": "action.project.attachment.create",

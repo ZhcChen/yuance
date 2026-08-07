@@ -1526,6 +1526,50 @@ test('shared project detail manages project information and member lifecycle', a
   expect(mutations.map(([kind]) => kind)).toEqual(['update', 'add', 'role', 'remove']);
 });
 
+test('shared project cycle creates updates closes and opens the status board', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  let cycles = [];
+  const cyclePayload = () => ({ id: 7, name: '迭代一', goal: '交付周期', description: '共享周期', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '2026-08-01', end_date: '2026-08-31', closed_at: '', is_closed: false, total_items: 1, requirement_count: 0, task_count: 1, bug_count: 0, pending_count: 1, created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z', work_items: [{ key: 'YCE-TASK-2', item_type: 'task', title: '周期任务', status: 'in_progress', priority: 'P1', assignee_username: 'yuance_admin', assignee: '元策开发管理员', due_date: '2026-08-20', updated_at: '2026-08-08T00:00:00Z' }] });
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE/cycles', async (route) => {
+    if (route.request().method() === 'POST') { cycles = [{ ...cyclePayload(), work_items: [] }]; await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: cycles[0] }) }); return; }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: cycles }) });
+  });
+  await page.route('**/api/v1/projects/YCE/cycles/7', async (route) => {
+    if (route.request().method() === 'PATCH') { const body = route.request().postDataJSON(); cycles = [{ ...cycles[0], ...body, owner: '元策开发管理员' }]; await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: cycles[0] }) }); return; }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...cyclePayload(), ...cycles[0], work_items: cyclePayload().work_items } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/cycles/7/close', async (route) => { cycles = [{ ...cycles[0], is_closed: true, closed_at: '2026-08-08T12:00:00Z' }]; await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: cycles[0] }) }); });
+
+  await login(page, '/web/app/projects/YCE?tab=cycles');
+  await page.getByRole('button', { name: '新建周期' }).click();
+  const createDialog = page.getByRole('dialog', { name: '新建项目周期' });
+  await createDialog.getByLabel('周期名称').fill('迭代一'); await createDialog.getByLabel('周期目标').fill('交付周期'); await createDialog.getByLabel('负责人用户名').fill('yuance_admin'); await createDialog.getByLabel('开始日期').fill('2026-08-01'); await createDialog.getByLabel('结束日期').fill('2026-08-31'); await createDialog.getByLabel('周期说明').fill('共享周期'); await createDialog.getByRole('button', { name: '保存' }).click();
+  const cycleRow = page.getByRole('row', { name: /迭代一/ }); await expect(cycleRow).toBeVisible();
+  await cycleRow.getByRole('button', { name: '编辑' }).click(); const editDialog = page.getByRole('dialog', { name: '编辑项目周期' }); await editDialog.getByLabel('周期名称').fill('迭代一更新'); await editDialog.getByRole('button', { name: '保存' }).click(); await expect(page.getByRole('row', { name: /迭代一更新/ })).toBeVisible();
+  await page.getByRole('link', { name: '迭代一更新' }).click(); await expect(page.getByRole('heading', { level: 3, name: '当前节奏' })).toBeVisible(); await expect(page.getByRole('progressbar', { name: '周期时间进度' })).toBeVisible(); await expect(page.getByRole('heading', { level: 3, name: '工作项状态看板' })).toBeVisible(); await expect(page.getByText('YCE-TASK-2 · 周期任务')).toBeVisible(); await expect(page.getByRole('table', { name: '周期成员负载' })).toContainText('元策开发管理员');
+  await page.getByRole('link', { name: 'YCE-TASK-2 · 周期任务' }).click(); await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/); await page.goBack(); await expect(page.getByRole('heading', { level: 2, name: '迭代一更新' })).toBeVisible();
+  await page.getByRole('link', { name: '返回周期列表' }).click(); const updatedRow = page.getByRole('row', { name: /迭代一更新/ }); await updatedRow.getByRole('button', { name: '关闭' }).click(); await page.getByRole('dialog', { name: '关闭项目周期' }).getByRole('button', { name: '确认关闭' }).click(); await expect(page.getByRole('row', { name: /迭代一更新/ })).toContainText('已关闭'); await expect(updatedRow.getByRole('button', { name: '编辑' })).toHaveCount(0); await expect(updatedRow.getByRole('button', { name: '关闭' })).toHaveCount(0);
+});
+
+test('shared project cycles keep viewer access read only', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const cycle = { id: 7, name: '只读周期', goal: '', description: '', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '2026-08-01', end_date: '2026-08-31', closed_at: '', is_closed: false, total_items: 0, requirement_count: 0, task_count: 0, bug_count: 0, pending_count: 0, created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', work_items: [] };
+  await login(page, '/web/app');
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: 2, username: 'cycle_viewer', display_name: '周期只读成员', email: '', mobile: '', status: 'active', is_super_admin: false, roles: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' } }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ user_id: 2, display_name: '周期只读成员', username: 'cycle_viewer', member_role: 'viewer', joined_at: '2026-08-01T00:00:00Z' }] }) }));
+  await page.route('**/api/v1/projects/YCE/cycles', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [cycle] }) }));
+  await page.goto('/web/app/projects/YCE?tab=cycles');
+  await expect(page.getByRole('heading', { level: 3, name: '项目周期' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '新建周期' })).toHaveCount(0);
+  const row = page.getByRole('row', { name: /只读周期/ });
+  await expect(row).toContainText('只读');
+  await expect(row.getByRole('button')).toHaveCount(0);
+});
+
 test('project switch serializes repeated input and refreshes the current context', async ({ page }) => {
   await login(page, '/web/app/projects');
   let patchCount = 0;

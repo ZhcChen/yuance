@@ -4,6 +4,7 @@ export {
   buildHomePath,
   buildMessagesPath,
   buildProjectsPath,
+  buildProjectCycleDetailPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
 } from '@yuance/frontend-app-core';
