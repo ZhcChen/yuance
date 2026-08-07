@@ -1,0 +1,1168 @@
+{
+  "version": 1,
+  "routes": [
+    {
+      "route": "/web",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/api-docs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/app",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/app/",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/app/{*path}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/bootstrap",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/bootstrap/init",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/bugs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/current-project",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/device-authorization",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/device-authorization/approve",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/device-authorization/deny",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/downloads",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/downloads/{release_id}/assets/{asset_id}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/login",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/logout",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/me/api-tokens",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me/api-tokens/{token_id}/delete",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me/api-tokens/{token_id}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me/device-sessions/{family_id}/revoke",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me/password",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/me/profile",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/messages",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/messages/{notification_id}/open",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/messages/read-all",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/partials/work-items",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/partials/work-items/{item_key}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/delete",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/cycles",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/cycles/{cycle_id}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/cycles/{cycle_id}/close",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/cycles/{cycle_id}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/members",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/members/{username}/remove",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/members/{username}/role",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/my-analysis",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/archive",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/password/reset",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/projects/{project_key}/resources/{resource_id}/unlock",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/requirements",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/search",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/api-docs",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/audit",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/database-stats",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/openapi",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/openapi/tokens/{token_id}/delete",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/openapi/tokens/{token_id}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/permissions",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/releases",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/releases/{release_id}/assets/{asset_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/system/releases/{release_id}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/releases/settings",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/roles",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/roles/{role_code}/permissions",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/roles/{role_code}/status",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/storage",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/storage/initialize",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/storage/probe",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/storage/versions/{version}/rollback",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users",
+      "methods": [
+        "GET",
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/password",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/projects",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/projects/{project_key}/remove",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/projects/{project_key}/role",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/projects/remove",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/role",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/system/users/{username}/status",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/tasks",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-item-views",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-item-views/{saved_view_id}/default",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-item-views/{saved_view_id}/delete",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-item-views/{saved_view_id}/rename",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/comments/{comment_id}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/edit",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/flow-records",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/handoff",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/restore",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/{item_key}/status",
+      "methods": [
+        "POST"
+      ]
+    },
+    {
+      "route": "/web/work-items/batch",
+      "methods": [
+        "POST"
+      ]
+    }
+  ],
+  "templates": [
+    "bootstrap.html",
+    "dashboard.html",
+    "desktop_downloads.html",
+    "device_authorization.html",
+    "device_authorization_result.html",
+    "document_preview.html",
+    "login.html",
+    "me.html",
+    "messages.html",
+    "partials/pagination_pages.html",
+    "partials/pagination_size_jump.html",
+    "partials/project_create_modal.html",
+    "partials/rich_text_toolbar.html",
+    "partials/work_item_detail.html",
+    "partials/work_item_flow_history.html",
+    "partials/work_item_pagination.html",
+    "partials/work_item_table.html",
+    "partials/work_items.html",
+    "projects.html",
+    "projects/cycle_detail.html",
+    "projects/detail.html",
+    "projects/personal_analysis.html",
+    "projects/resource_detail.html",
+    "search.html",
+    "system/audit.html",
+    "system/dashboard.html",
+    "system/database_stats.html",
+    "system/openapi.html",
+    "system/permissions.html",
+    "system/releases.html",
+    "system/roles.html",
+    "system/storage.html",
+    "system/users.html",
+    "work_items/detail.html",
+    "work_items/list.html"
+  ],
+  "appInteractionMarkers": [
+    "data-app-update-current",
+    "data-app-update-later",
+    "data-app-update-modal",
+    "data-app-update-next",
+    "data-app-update-refresh",
+    "data-attachment-byte-size",
+    "data-attachment-complete-url-template",
+    "data-attachment-content-type",
+    "data-attachment-file",
+    "data-attachment-filename",
+    "data-attachment-id",
+    "data-attachment-upload-url-template",
+    "data-avatar-name",
+    "data-bug-report-add",
+    "data-bug-report-body",
+    "data-bug-report-description",
+    "data-bug-report-form",
+    "data-bug-report-group",
+    "data-bug-report-group-title",
+    "data-bug-report-groups",
+    "data-bug-report-image",
+    "data-bug-report-image-name",
+    "data-bug-report-immutable",
+    "data-bug-report-locked",
+    "data-bug-report-remove",
+    "data-bug-report-status",
+    "data-composer-file-list",
+    "data-composer-file-remove",
+    "data-confirm-action",
+    "data-confirm-message",
+    "data-confirm-modal",
+    "data-confirm-submit",
+    "data-confirm-submit-form",
+    "data-confirm-title",
+    "data-content-tab",
+    "data-content-tab-indicator",
+    "data-content-tabs",
+    "data-content-tabs-pending",
+    "data-copy-target",
+    "data-copy-text",
+    "data-current-project-badge",
+    "data-database-stats-body",
+    "data-database-stats-cache-state",
+    "data-database-stats-empty",
+    "data-database-stats-page",
+    "data-database-stats-refresh",
+    "data-database-stats-sheet-wrap",
+    "data-database-stats-summary",
+    "data-direct-upload",
+    "data-discussion-assign",
+    "data-discussion-assign-status",
+    "data-discussion-body",
+    "data-discussion-body-format",
+    "data-discussion-count",
+    "data-discussion-files",
+    "data-discussion-form",
+    "data-discussion-list-region",
+    "data-discussion-main-composer",
+    "data-discussion-modals",
+    "data-discussion-reply-cancel",
+    "data-discussion-reply-toggle",
+    "data-discussion-scroll-composer",
+    "data-discussion-status",
+    "data-discussion-submit",
+    "data-discussion-typing",
+    "data-display-name",
+    "data-document-preview-experimental",
+    "data-document-preview-title",
+    "data-document-preview-url",
+    "data-drawer-close",
+    "data-drawer-open",
+    "data-dropdown-menu",
+    "data-dropdown-root",
+    "data-dropdown-trigger",
+    "data-existing-attachment-id",
+    "data-experimental-legacy-preview-enabled",
+    "data-file-content",
+    "data-file-folder-item",
+    "data-file-folder-open",
+    "data-file-folder-tree-list",
+    "data-file-folder-tree-toggle",
+    "data-file-manager",
+    "data-file-move",
+    "data-file-move-file-object-id",
+    "data-file-object-id",
+    "data-file-preview",
+    "data-file-preview-icon",
+    "data-file-preview-image",
+    "data-file-preview-meta",
+    "data-file-preview-name",
+    "data-file-preview-video",
+    "data-folder-id",
+    "data-hx-get",
+    "data-hx-post",
+    "data-image-gallery",
+    "data-image-preview",
+    "data-image-preview-frame",
+    "data-image-preview-image",
+    "data-image-preview-state",
+    "data-image-preview-status",
+    "data-image-source",
+    "data-image-title",
+    "data-image-viewer",
+    "data-image-viewer-action",
+    "data-image-viewer-caption",
+    "data-image-viewer-image",
+    "data-image-viewer-image-action",
+    "data-image-viewer-pan",
+    "data-image-viewer-stage",
+    "data-image-viewer-status",
+    "data-image-viewer-title",
+    "data-image-viewer-video",
+    "data-item-key",
+    "data-local-image-preview",
+    "data-local-media-preview",
+    "data-media-kind",
+    "data-media-preview",
+    "data-member-batch-form",
+    "data-member-batch-submit",
+    "data-member-candidate",
+    "data-member-candidate-checkbox",
+    "data-member-candidate-empty",
+    "data-member-candidate-search",
+    "data-member-selected-count",
+    "data-message-center",
+    "data-message-center-form",
+    "data-message-read-all-form",
+    "data-modal",
+    "data-modal-close",
+    "data-modal-open",
+    "data-notification-badge",
+    "data-notification-list",
+    "data-notification-read-all",
+    "data-notification-root",
+    "data-notification-summary",
+    "data-page-transition",
+    "data-pagination-form",
+    "data-pagination-size",
+    "data-permission-group",
+    "data-permission-node",
+    "data-permission-page",
+    "data-permission-parent",
+    "data-permission-tree",
+    "data-project-empty",
+    "data-project-key",
+    "data-project-name",
+    "data-project-option",
+    "data-project-option-badge",
+    "data-project-owner",
+    "data-project-role",
+    "data-project-search-input",
+    "data-project-status",
+    "data-project-switcher",
+    "data-release-architecture",
+    "data-release-files",
+    "data-release-platform",
+    "data-release-upload-list",
+    "data-release-upload-submit",
+    "data-resource-body",
+    "data-resource-body-format",
+    "data-resource-form",
+    "data-resource-status",
+    "data-rich-attachment",
+    "data-rich-attachment-menu",
+    "data-rich-attachment-menu-action",
+    "data-rich-attachment-menu-title",
+    "data-rich-attachment-overlay-status",
+    "data-rich-attachment-remove",
+    "data-rich-attachment-retry",
+    "data-rich-attachment-status",
+    "data-rich-command",
+    "data-rich-mention-option",
+    "data-rich-mention-panel",
+    "data-rich-progress-circle",
+    "data-rich-progress-value",
+    "data-rich-ready",
+    "data-rich-selected",
+    "data-rich-text-editor",
+    "data-rich-text-input",
+    "data-roles",
+    "data-search-history",
+    "data-search-history-clear",
+    "data-search-history-empty",
+    "data-search-history-list",
+    "data-select-control-trigger",
+    "data-select-control-value",
+    "data-select-empty",
+    "data-select-option",
+    "data-select-options",
+    "data-select-search",
+    "data-select-searchable",
+    "data-selected-username",
+    "data-skip-success-toast",
+    "data-smart-back",
+    "data-success-redirect",
+    "data-system-release-asset-delete",
+    "data-system-release-upload",
+    "data-tab-key",
+    "data-tab-panel",
+    "data-tab-target",
+    "data-tabs",
+    "data-tabs-sync-url",
+    "data-theme-label",
+    "data-theme-toggle",
+    "data-toast-region",
+    "data-token-project-all",
+    "data-token-project-option",
+    "data-token-project-scope",
+    "data-token-project-summary",
+    "data-topbar-badge",
+    "data-topbar-project-link",
+    "data-topbar-search-input",
+    "data-upload-progress-circle",
+    "data-upload-progress-description",
+    "data-upload-progress-label",
+    "data-upload-progress-ring",
+    "data-upload-progress-value",
+    "data-upload-state",
+    "data-upload-status",
+    "data-upload-submit",
+    "data-upload-transfer",
+    "data-user-avatar",
+    "data-user-combobox",
+    "data-user-combobox-empty",
+    "data-user-combobox-input",
+    "data-user-combobox-panel",
+    "data-user-combobox-value",
+    "data-user-option",
+    "data-user-project-assign-form",
+    "data-user-project-assign-summary",
+    "data-user-project-assign-trigger",
+    "data-user-project-checkbox",
+    "data-user-project-current-batch-form",
+    "data-user-project-current-batch-inputs",
+    "data-user-project-current-batch-submit",
+    "data-user-project-current-card",
+    "data-user-project-current-checkbox",
+    "data-user-project-current-count",
+    "data-user-project-current-filter-empty",
+    "data-user-project-current-list",
+    "data-user-project-current-page",
+    "data-user-project-current-per-page",
+    "data-user-project-current-search",
+    "data-user-project-current-selected",
+    "data-user-project-empty",
+    "data-user-project-option",
+    "data-user-project-page",
+    "data-user-project-per-page",
+    "data-user-project-search",
+    "data-user-project-selected-count",
+    "data-user-project-submit",
+    "data-username",
+    "data-work-item-batch-action",
+    "data-work-item-batch-checkbox",
+    "data-work-item-batch-form",
+    "data-work-item-batch-select-all",
+    "data-work-item-batch-selected-count",
+    "data-work-item-batch-submit",
+    "data-work-item-batch-target",
+    "data-work-item-batch-toolbar",
+    "data-work-item-comment-edit-form",
+    "data-work-item-discussion",
+    "data-work-item-edit-body",
+    "data-work-item-edit-body-format",
+    "data-work-item-edit-description",
+    "data-work-item-edit-form",
+    "data-work-item-edit-status",
+    "data-work-item-primary-comment-id",
+    "data-yuance-attachment-kind",
+    "data-yuance-mention-username"
+  ],
+  "templateInteractionMarkers": [
+    "data-api-url",
+    "data-asset-id",
+    "data-assign-target",
+    "data-assigned-projects",
+    "data-avatar-name",
+    "data-bug-report-create-url",
+    "data-bug-report-description",
+    "data-bug-report-form",
+    "data-bug-report-immutable",
+    "data-bug-report-item-field",
+    "data-bug-report-status",
+    "data-cache-key",
+    "data-category",
+    "data-comment-id",
+    "data-comment-parent-id",
+    "data-confirm-action",
+    "data-confirm-message",
+    "data-confirm-submit-form",
+    "data-confirm-title",
+    "data-content-tab",
+    "data-content-tab-indicator",
+    "data-content-tabs",
+    "data-copy-idle-label",
+    "data-copy-label-target",
+    "data-copy-meta-idle-label",
+    "data-copy-meta-success-label",
+    "data-copy-meta-target",
+    "data-copy-primary",
+    "data-copy-secondary",
+    "data-copy-success-label",
+    "data-copy-text",
+    "data-copy-toast-success",
+    "data-copy-unavailable-message",
+    "data-cycle-status",
+    "data-database-stats-body",
+    "data-database-stats-cache-state",
+    "data-database-stats-empty",
+    "data-database-stats-page",
+    "data-database-stats-refresh",
+    "data-database-stats-sheet-wrap",
+    "data-database-stats-summary",
+    "data-discussion-assign",
+    "data-discussion-assign-status",
+    "data-discussion-body",
+    "data-discussion-body-format",
+    "data-discussion-count",
+    "data-discussion-current-username",
+    "data-discussion-form",
+    "data-discussion-has-composer",
+    "data-discussion-list-region",
+    "data-discussion-main-composer",
+    "data-discussion-mention-options",
+    "data-discussion-modals",
+    "data-discussion-reply-cancel",
+    "data-discussion-reply-toggle",
+    "data-discussion-scroll-composer",
+    "data-discussion-status",
+    "data-discussion-submit",
+    "data-discussion-typing",
+    "data-display-name",
+    "data-document-preview-experimental",
+    "data-document-preview-root",
+    "data-document-preview-title",
+    "data-document-preview-url",
+    "data-experimental-legacy-preview-enabled",
+    "data-fallback-url",
+    "data-filename",
+    "data-image-gallery",
+    "data-image-preview",
+    "data-image-preview-frame",
+    "data-image-preview-image",
+    "data-image-preview-status",
+    "data-image-source",
+    "data-image-title",
+    "data-item-key",
+    "data-kind",
+    "data-media-kind",
+    "data-media-preview",
+    "data-member-batch-form",
+    "data-member-batch-submit",
+    "data-member-candidate",
+    "data-member-candidate-checkbox",
+    "data-member-candidate-empty",
+    "data-member-candidate-list",
+    "data-member-candidate-search",
+    "data-member-selected-count",
+    "data-message-center",
+    "data-message-center-form",
+    "data-message-read-all-form",
+    "data-modal",
+    "data-modal-close",
+    "data-modal-open",
+    "data-page",
+    "data-page-url",
+    "data-pagination-form",
+    "data-pagination-size",
+    "data-pdf-preview",
+    "data-pdf-sidebar-panel",
+    "data-pdf-sidebar-tab",
+    "data-pdf-url",
+    "data-per-page",
+    "data-permission-group",
+    "data-permission-group-key",
+    "data-permission-node",
+    "data-permission-page",
+    "data-permission-parent",
+    "data-permission-tree",
+    "data-placeholder",
+    "data-preview-experimental",
+    "data-preview-file-type",
+    "data-preview-host",
+    "data-preview-kind-label",
+    "data-preview-metric",
+    "data-preview-nav",
+    "data-preview-reload",
+    "data-preview-status",
+    "data-preview-status-copy",
+    "data-preview-title",
+    "data-preview-type",
+    "data-preview-url",
+    "data-primary-comment-id",
+    "data-priority",
+    "data-project-key",
+    "data-project-name",
+    "data-project-owner",
+    "data-project-status",
+    "data-release-architecture",
+    "data-release-files",
+    "data-release-id",
+    "data-release-platform",
+    "data-release-upload-list",
+    "data-release-upload-submit",
+    "data-resource-body",
+    "data-resource-body-format",
+    "data-resource-create-url",
+    "data-resource-field",
+    "data-resource-form",
+    "data-resource-id",
+    "data-resource-project-key",
+    "data-resource-rich-editor",
+    "data-resource-status",
+    "data-resource-submit",
+    "data-resource-update-url",
+    "data-return-url",
+    "data-rich-command",
+    "data-rich-initial-html",
+    "data-rich-mention-options",
+    "data-rich-text-editor",
+    "data-rich-text-input",
+    "data-roles",
+    "data-select-panel-min-width",
+    "data-select-search-placeholder",
+    "data-select-searchable",
+    "data-skip-success-toast",
+    "data-smart-back",
+    "data-smart-back-key",
+    "data-status",
+    "data-success-message",
+    "data-success-redirect",
+    "data-success-redirect-template",
+    "data-system-release-asset-delete",
+    "data-system-release-upload",
+    "data-tab-key",
+    "data-tab-panel",
+    "data-tab-target",
+    "data-table",
+    "data-tabs",
+    "data-tabs-sync-url",
+    "data-token-project-all",
+    "data-token-project-option",
+    "data-token-project-scope",
+    "data-token-project-summary",
+    "data-tone",
+    "data-user-avatar",
+    "data-user-project-assign-form",
+    "data-user-project-assign-summary",
+    "data-user-project-assign-trigger",
+    "data-user-project-checkbox",
+    "data-user-project-current-batch-form",
+    "data-user-project-current-batch-inputs",
+    "data-user-project-current-batch-submit",
+    "data-user-project-current-count",
+    "data-user-project-current-filter-empty",
+    "data-user-project-current-list",
+    "data-user-project-current-page",
+    "data-user-project-current-per-page",
+    "data-user-project-current-search",
+    "data-user-project-current-selected",
+    "data-user-project-empty",
+    "data-user-project-option",
+    "data-user-project-option-list",
+    "data-user-project-page",
+    "data-user-project-per-page",
+    "data-user-project-search",
+    "data-user-project-selected-count",
+    "data-user-project-submit",
+    "data-username",
+    "data-work-item-batch-action",
+    "data-work-item-batch-checkbox",
+    "data-work-item-batch-form",
+    "data-work-item-batch-select-all",
+    "data-work-item-batch-selected-count",
+    "data-work-item-batch-submit",
+    "data-work-item-batch-target",
+    "data-work-item-batch-toolbar",
+    "data-work-item-comment-edit-form",
+    "data-work-item-discussion",
+    "data-work-item-edit-body",
+    "data-work-item-edit-body-format",
+    "data-work-item-edit-description",
+    "data-work-item-edit-form",
+    "data-work-item-edit-status",
+    "data-work-item-label",
+    "data-work-item-primary-comment-id"
+  ]
+}

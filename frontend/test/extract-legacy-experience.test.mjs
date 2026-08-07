@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 import {
   extractLegacyExperience,
@@ -46,4 +47,21 @@ test('正式 Web 来源可被稳定提取且不存在无 method 路由', async (
   assert.ok(inventory.routes.some(({ route, methods }) => route === '/web/login' && methods.join(',') === 'GET,POST'));
   assert.ok(inventory.templates.includes('system/users.html'));
   assert.ok(inventory.templates.includes('partials/work_item_detail.html'));
+});
+
+test('版本化来源清单与正式 Web 运行时来源完全一致', async () => {
+  const [actual, expected] = await Promise.all([
+    extractLegacyExperience({
+      routerPath: new URL('api/src/web/router.rs', repositoryUrl),
+      templatesPath: new URL('api/templates/web', repositoryUrl),
+      appScriptPath: new URL('api/static/app.js', repositoryUrl),
+    }),
+    readFile(new URL('../parity/legacy-source-inventory.json', import.meta.url), 'utf8').then(JSON.parse),
+  ]);
+
+  assert.equal(expected.version, 1);
+  assert.deepEqual(actual.routes, expected.routes, 'Web route/method 已漂移，请更新体验来源清单');
+  assert.deepEqual(actual.templates, expected.templates, 'Askama 模板已漂移，请更新体验来源清单');
+  assert.deepEqual(actual.appInteractionMarkers, expected.appInteractionMarkers, 'app.js 交互标记已漂移，请更新体验来源清单');
+  assert.deepEqual(actual.templateInteractionMarkers, expected.templateInteractionMarkers, '模板交互标记已漂移，请更新体验来源清单');
 });

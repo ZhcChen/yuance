@@ -10,6 +10,7 @@
     "check:source": "node ./scripts/assert-js-only.mjs packages scripts test",
     "check:boundaries": "node ./scripts/assert-package-boundaries.mjs",
     "check:packages": "npm run check --workspaces --if-present",
+    "generate:experience-inventory": "node ./scripts/extract-legacy-experience.mjs",
     "lint": "eslint \"scripts/**/*.mjs\" \"test/**/*.mjs\" eslint.config.js",
     "test": "node --test test/**/*.test.mjs",
     "check": "npm run check:source && npm run check:boundaries && npm run check:packages && npm run lint && npm run test"

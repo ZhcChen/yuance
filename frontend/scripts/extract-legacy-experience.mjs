@@ -1,6 +1,6 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HTTP_METHOD_PATTERN = /(?:axum::routing::)?\b(get|post|put|patch|delete)\s*\(/g;
 const DATA_MARKER_PATTERN = /\bdata-[a-z][a-z0-9-]*/g;
@@ -98,4 +98,21 @@ export async function extractLegacyExperience({ routerPath, templatesPath, appSc
     appInteractionMarkers: [...new Set(appScript.match(DATA_MARKER_PATTERN) ?? [])].sort(),
     templateInteractionMarkers: [...templateMarkers].sort(),
   };
+}
+
+export async function writeLegacyExperienceInventory(repositoryDirectory) {
+  const inventory = await extractLegacyExperience({
+    routerPath: path.join(repositoryDirectory, 'api/src/web/router.rs'),
+    templatesPath: path.join(repositoryDirectory, 'api/templates/web'),
+    appScriptPath: path.join(repositoryDirectory, 'api/static/app.js'),
+  });
+  const outputPath = path.join(repositoryDirectory, 'frontend/parity/legacy-source-inventory.json');
+  await writeFile(outputPath, `${JSON.stringify({ version: 1, ...inventory }, null, 2)}\n`);
+  return outputPath;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const repositoryDirectory = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+  const outputPath = await writeLegacyExperienceInventory(repositoryDirectory);
+  process.stdout.write(`${path.relative(repositoryDirectory, outputPath)}\n`);
 }
