@@ -994,6 +994,30 @@
     },
     {
       "id": "action.work-item.comment-attachment.preview-content", "pageId": "page.work-item-detail.detail", "trigger": "preview renderer requests comment attachment", "inputs": ["item-key", "comment-id", "attachment-id", "range"], "validation": "附件属于该评论且预览会话有效。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content" }, "successEffect": "流式返回受控附件内容。", "errorEffects": ["range 无效", "对象缺失", "附件已删除"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.create", "pageId": "page.system.users", "trigger": "submit system user creation form", "inputs": ["username", "display-name", "email", "mobile", "password", "role-code", "csrf-token"], "validation": "仅超级管理员；用户名唯一，密码满足策略，角色存在且可分配。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/users" }, "successEffect": "创建用户、分配角色并记录审计，密码不回显。", "errorEffects": ["用户名冲突", "密码或字段无效", "角色失效", "普通用户 403"], "realtimeEffect": "用户候选和成员分配列表失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.status", "pageId": "page.system.users", "trigger": "confirm user status change", "inputs": ["username", "status", "csrf-token"], "validation": "状态受控，不允许停用最后一个有效超级管理员或当前安全边界禁止的账号。", "confirmation": "停用时提示 session、Token 和设备访问将失效。", "request": { "method": "POST", "path": "/web/system/users/{username}/status" }, "successEffect": "更新状态、撤销失效凭证并记录审计。", "errorEffects": ["保护账号不可停用", "用户不存在", "并发状态冲突", "普通用户 403"], "realtimeEffect": "目标用户所有宿主 session、菜单和实时连接失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.role", "pageId": "page.system.users", "trigger": "submit global user role", "inputs": ["username", "role-code", "csrf-token"], "validation": "角色存在且可分配，不得移除最后一个有效超级管理员。", "confirmation": "降权时提示全局权限立即变化。", "request": { "method": "POST", "path": "/web/system/users/{username}/role" }, "successEffect": "替换全局角色并记录审计。", "errorEffects": ["保护账号或最后超管", "角色不存在", "用户不存在", "普通用户 403"], "realtimeEffect": "目标用户权限、菜单和所有资源缓存失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.password-reset", "pageId": "page.system.users", "trigger": "confirm administrator password reset", "inputs": ["username", "new-password", "new-password-confirmation", "csrf-token"], "validation": "两次密码一致并满足策略，目标用户存在。", "confirmation": "提示旧密码和现有 session 将失效，且新密码不会再次展示。", "request": { "method": "POST", "path": "/web/system/users/{username}/password" }, "successEffect": "重置密码、撤销现有 session 并记录高风险审计。", "errorEffects": ["密码策略失败", "用户不存在", "保护边界拒绝", "普通用户 403"], "realtimeEffect": "目标用户 Browser/Desktop 认证立即失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.project-assign", "pageId": "page.system.users", "trigger": "submit selected project assignments", "inputs": ["username", "project-keys", "member-role", "page", "per-page", "csrf-token"], "validation": "用户和项目存在，项目去重，角色仅允许 viewer/member/maintainer。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/users/{username}/projects" }, "successEffect": "批量加入项目并保持分页筛选上下文，逐项记录审计。", "errorEffects": ["用户或项目失效", "角色无效", "已加入项目按最终状态处理", "部分失败逐项报告"], "realtimeEffect": "目标用户项目列表、权限和项目切换候选失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.project-remove-batch", "pageId": "page.system.users", "trigger": "confirm selected project removals", "inputs": ["username", "project-keys", "page", "per-page", "csrf-token"], "validation": "项目去重，不能移除用户负责或仍有活跃工作项的项目关系。", "confirmation": "展示用户和选中项目数量。", "request": { "method": "POST", "path": "/web/system/users/{username}/projects/remove" }, "successEffect": "逐项移除允许的项目关系并报告部分失败。", "errorEffects": ["项目负责人不可移除", "活跃工作项需先移交", "部分失败保留失败项", "用户不存在"], "realtimeEffect": "目标用户项目访问和对应实时订阅失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.project-remove", "pageId": "page.system.users", "trigger": "confirm one project assignment removal", "inputs": ["username", "project-key", "page", "per-page", "csrf-token"], "validation": "关系存在，用户不是项目负责人且无待移交活跃工作项。", "confirmation": "展示用户和项目名称。", "request": { "method": "POST", "path": "/web/system/users/{username}/projects/{project_key}/remove" }, "successEffect": "移除项目关系并记录审计。", "errorEffects": ["项目负责人不可移除", "活跃工作项需先移交", "关系已移除时刷新最终状态"], "realtimeEffect": "目标用户该项目访问和实时订阅失效。", "repeatSubmitPolicy": "reject", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.user.project-role", "pageId": "page.system.users", "trigger": "submit project membership role", "inputs": ["username", "project-key", "member-role", "page", "per-page", "csrf-token"], "validation": "关系存在，用户不是项目负责人，角色受控。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/users/{username}/projects/{project_key}/role" }, "successEffect": "更新项目角色并记录审计。", "errorEffects": ["负责人必须先转移", "角色无效", "关系不存在", "普通用户 403"], "realtimeEffect": "目标用户该项目权限和菜单立即失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "hostExceptions": [
