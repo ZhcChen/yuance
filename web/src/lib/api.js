@@ -62,6 +62,7 @@ export const getProjectCycle = apiClient.getProjectCycle;
 export const createProjectCycle = apiClient.createProjectCycle;
 export const updateProjectCycle = apiClient.updateProjectCycle;
 export const closeProjectCycle = apiClient.closeProjectCycle;
+export const getProjectPersonalAnalysis = apiClient.getProjectPersonalAnalysis;
 export const getProjectAttachments = apiClient.getProjectAttachments;
 export const getProjectAttachmentPreview = apiClient.getProjectAttachmentPreview;
 export const createProjectAttachment = apiClient.createProjectAttachment;
@@ -189,6 +190,7 @@ export const webApi = {
   getProjectCycle,
   getProjectCycles,
   getProjectMembers,
+  getProjectPersonalAnalysis,
   getProjectResource,
   getProjectResources,
   getProjects,

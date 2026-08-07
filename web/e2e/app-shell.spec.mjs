@@ -2153,6 +2153,94 @@ test('shared project file upload failure keeps registered file context', async (
   expect(uploadCount).toBe(2);
 });
 
+test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  let recentCompletions = [{ key: 'YCE-TASK-2', item_type: 'task', title: '完成共享体验', completed_at: '2026-08-07T08:00:00Z' }];
+  const currentProjectMutations = [];
+  let projectSwitchCompleted = false;
+  let analysisReadBeforeProjectSwitch = false;
+  await page.route('**/api/v1/current-project', async (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    currentProjectMutations.push(route.request().postDataJSON());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    projectSwitchCompleted = true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { key: 'YCE', name: '元策研发平台', pending_count: 0 } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/my-analysis', (route) => {
+    analysisReadBeforeProjectSwitch ||= !projectSwitchCompleted;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+    username: 'yuance_admin', display_name: '元策开发管理员', joined_at: '2026-08-01T00:00:00Z',
+    completed_total: 12, completed_requirements: 3, completed_tasks: 7, completed_bugs: 2, completed_last_30_days: 5,
+    pending: { requirements: 0, tasks: 3, bugs: 1 }, daily_average: 0.5, daily_peak: 3, daily_peak_date: '2026-08-06',
+    monthly_average: 6, monthly_peak: 12, monthly_peak_month: '2026-08', active_days: 8, comment_count: 21, handoff_count: 4,
+    recent_completions: recentCompletions,
+    } }) });
+  });
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE/my-analysis');
+  await expect(page).toHaveTitle('我的项目分析 - 元策研发平台 - 元策');
+  await expect(page.getByRole('heading', { level: 2, name: '元策研发平台' })).toBeVisible();
+  await expect(page.getByText('仅统计 元策开发管理员 在该项目中的实际处理与协作记录。')).toBeVisible();
+  await expect(page.getByLabel('个人处理产出')).toContainText('累计处理12');
+  await expect(page.getByLabel('个人处理产出')).toContainText('当前待处理4');
+  await expect(page.getByText('日平均处理').locator('..')).toContainText('0.50');
+  await expect(page.getByText('月平均处理').locator('..')).toContainText('6.00');
+  await expect(page.getByRole('heading', { level: 3, name: '沟通与推进' }).locator('..')).toContainText('活跃天数8');
+  const pending = page.getByRole('heading', { level: 3, name: '我的待处理' }).locator('..');
+  await expect(pending.getByRole('link', { name: '需求 0' })).toHaveAttribute('href', '/web/app/requirements?status=pending&assignee_username=yuance_admin&project_key=YCE');
+  await expect(pending.getByRole('link', { name: '任务 3' })).toHaveAttribute('href', '/web/app/tasks?status=pending&assignee_username=yuance_admin&project_key=YCE');
+  await expect(pending.getByRole('link', { name: 'Bug 1' })).toHaveAttribute('href', '/web/app/bugs?status=pending&assignee_username=yuance_admin&project_key=YCE');
+  await expect(page.getByRole('link', { name: /YCE-TASK-2.*完成共享体验/ })).toHaveAttribute('href', '/web/app/work-items/YCE-TASK-2');
+  await expect(page.getByText('处理量按你实际执行的终态流转事件统计')).toBeVisible();
+  expect(currentProjectMutations).toEqual([{ project_key: 'YCE' }]);
+  expect(analysisReadBeforeProjectSwitch).toBe(false);
+
+  await page.goto('/web/projects/YCE/my-analysis');
+  await expect(page).toHaveURL(/\/web\/projects\/YCE\/my-analysis$/);
+  await expect(page.getByRole('heading', { level: 2, name: '元策研发平台' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 3, name: '我的待处理' }).locator('..').getByRole('link', { name: '任务 3' })).toHaveAttribute('href', '/web/tasks?status=pending&assignee_username=yuance_admin&project_key=YCE');
+  await expect(page.getByRole('link', { name: /YCE-TASK-2.*完成共享体验/ })).toHaveAttribute('href', '/web/work-items/YCE-TASK-2');
+
+  recentCompletions = [];
+  await page.getByRole('button', { name: '刷新' }).click();
+  await expect(page.getByText('暂无完成记录')).toBeVisible();
+  await expect(page.getByText('工作项由你推进到完成、解决、验证或关闭后会记录在这里。')).toBeVisible();
+});
+
+test('project personal analysis serializes current project changes across rapid navigation', async ({ page }) => {
+  let releaseFirstSwitch = () => {};
+  let markFirstSwitchStarted = () => {};
+  const firstSwitchStarted = new Promise((resolve) => { markFirstSwitchStarted = resolve; });
+  const firstSwitchGate = new Promise((resolve) => { releaseFirstSwitch = resolve; });
+  const order = [];
+  await page.route('**/api/v1/current-project', async (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    const projectKey = route.request().postDataJSON().project_key;
+    order.push(`start:${projectKey}`);
+    if (projectKey === 'YCE') { markFirstSwitchStarted(); await firstSwitchGate; }
+    order.push(`finish:${projectKey}`);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { key: projectKey, name: `${projectKey} 项目`, pending_count: 0 } }) });
+  });
+  await page.route(/\/api\/v1\/projects\/(YCE|OPS)\/my-analysis$/u, (route) => {
+    const projectKey = route.request().url().includes('/OPS/') ? 'OPS' : 'YCE';
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { username: 'yuance_admin', display_name: '元策开发管理员', joined_at: '2026-08-01T00:00:00Z', completed_total: 0, completed_requirements: 0, completed_tasks: 0, completed_bugs: 0, completed_last_30_days: 0, pending: { requirements: 0, tasks: 0, bugs: 0 }, daily_average: 0, daily_peak: 0, daily_peak_date: '', monthly_average: 0, monthly_peak: 0, monthly_peak_month: '', active_days: 0, comment_count: 0, handoff_count: 0, recent_completions: [], project_key: projectKey } }) });
+  });
+  await page.route(/\/api\/v1\/projects\/(YCE|OPS)$/u, (route) => {
+    const projectKey = route.request().url().endsWith('/OPS') ? 'OPS' : 'YCE';
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { key: projectKey, name: `${projectKey} 项目`, description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' } }) });
+  });
+
+  await login(page, '/web/app');
+  await page.evaluate(() => { history.pushState({}, '', '/web/app/projects/YCE/my-analysis'); dispatchEvent(new PopStateEvent('popstate')); });
+  await firstSwitchStarted;
+  await page.evaluate(() => { history.pushState({}, '', '/web/app/projects/OPS/my-analysis'); dispatchEvent(new PopStateEvent('popstate')); });
+  await expect.poll(() => order).toEqual(['start:YCE']);
+  releaseFirstSwitch();
+  await expect(page.getByRole('heading', { level: 2, name: 'OPS 项目' })).toBeVisible();
+  await expect.poll(() => order).toEqual(['start:YCE', 'finish:YCE', 'start:OPS', 'finish:OPS']);
+});
+
 test('shared project cycle creates updates closes and opens the status board', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];

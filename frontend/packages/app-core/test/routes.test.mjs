@@ -8,6 +8,7 @@ import {
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
   buildProjectResourceDetailPath,
+  buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -68,6 +69,8 @@ test('parseAppRoute supports owner-aware project detail tabs', () => {
   assert.equal(buildProjectCycleDetailPath({ owner: 'web', projectKey: 'YCE', cycleId: 7 }), '/web/projects/YCE/cycles/7');
   assert.equal(buildProjectDetailPath({ owner: 'app', projectKey: 'YCE', tab: 'resources' }), '/web/app/projects/YCE?tab=resources');
   assert.equal(buildProjectResourceDetailPath({ owner: 'app', projectKey: 'YCE', resourceId: 9 }), '/web/app/projects/YCE/resources/9');
+  assert.equal(buildProjectPersonalAnalysisPath({ owner: 'web', projectKey: 'YCE / 1' }), '/web/projects/YCE%20%2F%201/my-analysis');
+  assert.equal(buildProjectPersonalAnalysisPath({ owner: 'app' }), '/web/app/projects');
   assert.deepEqual(parseAppRoute('/web/app/projects/YCE/cycles/7', ''), {
     id: 'project-cycle-detail', owner: 'app', pathname: '/web/app/projects/YCE/cycles/7', search: '',
     projectKey: 'YCE', cycleId: 7, title: '项目周期详情',
@@ -75,6 +78,12 @@ test('parseAppRoute supports owner-aware project detail tabs', () => {
   assert.equal(buildProjectDetailPath({ owner: 'app' }), '/web/app/projects');
   assert.deepEqual(parseAppRoute('/web/app/projects/YCE/resources/9', ''), {
     id: 'project-resource-detail', owner: 'app', pathname: '/web/app/projects/YCE/resources/9', search: '', projectKey: 'YCE', resourceId: 9, title: '项目资料详情',
+  });
+  assert.deepEqual(parseAppRoute('/web/app/projects/YCE/my-analysis', ''), {
+    id: 'project-personal-analysis', owner: 'app', pathname: '/web/app/projects/YCE/my-analysis', search: '', projectKey: 'YCE', title: '个人项目分析',
+  });
+  assert.deepEqual(parseAppRoute('/web/projects/YCE%20%2F%201/my-analysis', ''), {
+    id: 'project-personal-analysis', owner: 'web', pathname: '/web/projects/YCE%20%2F%201/my-analysis', search: '', projectKey: 'YCE / 1', title: '个人项目分析',
   });
 });
 
@@ -96,6 +105,10 @@ test('parseAppRoute supports projects route and owner-aware builders', () => {
     buildProjectsPath({ owner: 'app', status: 'on_hold', page: 2, perPage: 20 }),
     '/web/app/projects?status=on_hold&page=2&per_page=20',
   );
+  assert.equal(
+    buildWorkItemListPath(parseAppRoute('/web/bugs', '?status=pending&assignee_username=admin&project_key=YCE')),
+    '/web/bugs?status=pending&assignee_username=admin&project_key=YCE',
+  );
 });
 
 test('parseAppRoute supports work item list filters and detail routes', () => {
@@ -111,10 +124,15 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
       status: 'in_progress',
       priority: 'P0',
       assigneeUsername: 'admin',
+      projectKey: '',
       page: 2,
       perPage: 20,
       title: '任务列表',
     },
+  );
+  assert.equal(
+    buildWorkItemListPath({ owner: 'web', itemType: 'bug', status: 'pending', assigneeUsername: 'admin', projectKey: 'YCE' }),
+    '/web/bugs?status=pending&assignee_username=admin&project_key=YCE',
   );
   assert.deepEqual(
     parseAppRoute('/web/app/work-items/YCE-TASK-2', ''),

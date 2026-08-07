@@ -85,6 +85,7 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
       status: 'in_progress',
       priority: 'P0',
       assigneeUsername: 'admin',
+      projectKey: '',
       page: 2,
       perPage: 20,
       title: '任务列表',

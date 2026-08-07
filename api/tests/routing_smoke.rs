@@ -529,7 +529,7 @@ async fn web_app_entry_serves_index_and_deep_links_without_cache() {
 }
 
 #[tokio::test]
-async fn web_shell_owner_serves_root_and_messages_from_same_app_entry() {
+async fn web_shell_owner_serves_root_messages_and_project_analysis_from_same_app_entry() {
     with_web_dist_dir(|dist_dir| async move {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
         fs::write(
@@ -557,9 +557,19 @@ async fn web_shell_owner_serves_root_and_messages_from_same_app_entry() {
             .await
             .expect("router should respond");
         let messages_response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .uri("/web/messages?filter=unread&page=2&per_page=20")
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        let analysis_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/web/projects/YCE/my-analysis")
                     .body(Body::empty())
                     .expect("request should build"),
             )
@@ -575,14 +585,14 @@ async fn web_shell_owner_serves_root_and_messages_from_same_app_entry() {
 
         assert_eq!(root_response.status(), StatusCode::OK);
         assert_eq!(messages_response.status(), StatusCode::OK);
+        assert_eq!(analysis_response.status(), StatusCode::OK);
         assert_eq!(
             root_response.headers().get(header::CACHE_CONTROL).unwrap(),
             "no-store, max-age=0, must-revalidate"
         );
-        assert_eq!(
-            response_body(messages_response).await,
-            response_body(root_response).await
-        );
+        let root_body = response_body(root_response).await;
+        assert_eq!(response_body(messages_response).await, root_body);
+        assert_eq!(response_body(analysis_response).await, root_body);
     })
     .await;
 }

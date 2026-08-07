@@ -211,8 +211,8 @@
       "states": ["loading", "ready", "empty-load", "empty-completions", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/routing_smoke.rs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/renderer-composition.test.mjs"], "reviews": ["docs/reviews/2026-08-07-017-web-desktop-u3-project-personal-analysis-review.md"] }
     },
     {
       "id": "page.work-item-list.requirements",

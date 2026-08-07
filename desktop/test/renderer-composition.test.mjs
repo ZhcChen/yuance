@@ -59,6 +59,7 @@ test("auth commands and network state adapters remain semantic and fail closed",
 test("desktop router translates shared app paths and rejects absolute or encoded paths", () => {
   assert.equal(normalizeDesktopRoute("/projects/YCE"), "/projects/YCE");
   assert.equal(normalizeDesktopRoute("/projects/YCE/resources/9"), "/projects/YCE/resources/9");
+  assert.equal(normalizeDesktopRoute("/projects/YCE/my-analysis"), "/projects/YCE/my-analysis");
   for (const value of ["https://attacker.test", "//attacker.test", "/projects/%2e%2e/auth", "/unknown", "/projects//YCE", "/projects/x?admin", "/projects/x#admin", "/projects/\0admin", "/projects/／admin", "/projects/⁄admin", "/projects/∕admin", "/projects/项目", "/projects/é", "/projects/\nadmin"]) {
     assert.equal(normalizeDesktopRoute(value), "/", value);
   }
@@ -84,8 +85,9 @@ test("desktop router translates shared app paths and rejects absolute or encoded
   });
   router.navigate("/web/app/messages?filter=unread");
   router.navigate("/web/app/projects/YCE/resources/9");
-  assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9"]);
-  assert.equal(updates, 2);
+  router.navigate("/web/app/projects/YCE/my-analysis");
+  assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9", "/projects/YCE/my-analysis"]);
+  assert.equal(updates, 3);
   assert.throws(() => router.navigate("https://attacker.test"), /not allowed/);
   assert.throws(() => router.navigate("/web/projects"), /not allowed/);
   assert.throws(() => router.navigate("/web/app/unknown"), /not allowed/);

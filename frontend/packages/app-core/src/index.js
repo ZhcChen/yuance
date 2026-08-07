@@ -10,6 +10,7 @@ export {
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
   buildProjectResourceDetailPath,
+  buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,

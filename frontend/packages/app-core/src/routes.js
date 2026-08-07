@@ -54,7 +54,7 @@ function routeMetaForItemType(itemType = 'task') {
   return WORK_ITEM_ROUTE_META[itemType] || WORK_ITEM_ROUTE_META.task;
 }
 
-function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
   const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
@@ -69,6 +69,9 @@ function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUserna
   }
   if (typeof assigneeUsername === 'string' && assigneeUsername.trim()) {
     params.set('assignee_username', assigneeUsername.trim());
+  }
+  if (typeof projectKey === 'string' && projectKey.trim()) {
+    params.set('project_key', projectKey.trim());
   }
   if (normalizedPage > DEFAULT_PAGE) {
     params.set('page', String(normalizedPage));
@@ -191,10 +194,16 @@ export function buildProjectResourceDetailPath({ owner = 'app', projectKey = '',
   return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/resources/${normalizedId}`;
 }
 
-export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+export function buildProjectPersonalAnalysisPath({ owner = 'app', projectKey = '' } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  if (!normalizedKey) return buildProjectsPath({ owner });
+  return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/my-analysis`;
+}
+
+export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const meta = routeMetaForItemType(itemType);
   const basePath = owner === 'app' ? meta.appPath : meta.webPath;
-  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, page, perPage });
+  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, projectKey, page, perPage });
   return query ? `${basePath}?${query}` : basePath;
 }
 
@@ -300,6 +309,11 @@ export function parseAppRoute(pathname = '/web', search = '') {
     return { id: 'project-resource-detail', owner, pathname, search, projectKey: decodeURIComponent(projectResourceDetailMatch[1]), resourceId: normalizePositiveInt(projectResourceDetailMatch[2], 0), title: '项目资料详情' };
   }
 
+  const projectPersonalAnalysisMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/my-analysis$/);
+  if (projectPersonalAnalysisMatch) {
+    return { id: 'project-personal-analysis', owner, pathname, search, projectKey: decodeURIComponent(projectPersonalAnalysisMatch[1]), title: '个人项目分析' };
+  }
+
 
   const projectCycleDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/cycles\/(\d+)$/);
   if (projectCycleDetailMatch) {
@@ -323,6 +337,7 @@ export function parseAppRoute(pathname = '/web', search = '') {
         status: (query.get('status') || '').trim(),
         priority: (query.get('priority') || '').trim().toUpperCase(),
         assigneeUsername: (query.get('assignee_username') || '').trim(),
+        projectKey: (query.get('project_key') || '').trim(),
         page,
         perPage,
         title: meta.title,

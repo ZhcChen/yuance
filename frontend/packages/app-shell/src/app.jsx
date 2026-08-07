@@ -9,6 +9,7 @@ import {
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
   buildProjectResourceDetailPath,
+  buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -177,6 +178,29 @@ import { errorMessage } from './errors.js';
  */
 
 /**
+ * @typedef AppProjectPersonalAnalysis
+ * @property {string} username
+ * @property {string} display_name
+ * @property {string} joined_at
+ * @property {number} completed_total
+ * @property {number} completed_requirements
+ * @property {number} completed_tasks
+ * @property {number} completed_bugs
+ * @property {number} completed_last_30_days
+ * @property {{ requirements: number, tasks: number, bugs: number }} pending
+ * @property {number} daily_average
+ * @property {number} daily_peak
+ * @property {string} daily_peak_date
+ * @property {number} monthly_average
+ * @property {number} monthly_peak
+ * @property {string} monthly_peak_month
+ * @property {number} active_days
+ * @property {number} comment_count
+ * @property {number} handoff_count
+ * @property {Array<{ key: string, item_type: string, title: string, completed_at: string }>} recent_completions
+ */
+
+/**
  * @typedef AppProjectDetail
  * @property {string} key
  * @property {string} name
@@ -288,6 +312,10 @@ function formatTimestamp(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(date);
+}
+
+function formatAnalysisAverage(value) {
+  return value.toFixed(2);
 }
 
 /**
@@ -533,6 +561,8 @@ function routeDescription(route) {
       return '周期指标、状态看板和工作项入口由两个宿主共用同一派生视图。';
     case 'project-resource-detail':
       return '资料正文、关联信息和受保护内容解锁由两个宿主共用同一读取流程。';
+    case 'project-personal-analysis':
+      return '仅统计当前用户在该项目中的实际处理与协作记录，所有口径由服务端统一聚合。';
     case 'requirements':
     case 'tasks':
     case 'bugs':
@@ -559,6 +589,7 @@ function routeEyebrow(route) {
     case 'project-detail':
     case 'project-cycle-detail':
     case 'project-resource-detail':
+    case 'project-personal-analysis':
       return 'Projects';
     case 'requirements':
     case 'tasks':
@@ -635,6 +666,7 @@ export function SharedApp({ services }) {
   const projectAttachmentPreviewCapabilityRef = useRef('');
   const projectResourceActionRef = useRef(0);
   const projectResourceMutationRef = useRef(0);
+  const projectPersonalAnalysisSelectionRef = useRef(/** @type {{ projectKey: string, promise: Promise<unknown> } | null} */ (null));
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -685,6 +717,7 @@ export function SharedApp({ services }) {
   const [projectAttachmentReveal, setProjectAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [projectAttachmentPreview, setProjectAttachmentPreview] = useState(/** @type {{ open: boolean, loading: boolean, error: string, attachment: AppAttachment | null, source: string, kind: AppPreviewKind, fileType: string | null, position: number, total: number, previousId: number | null, nextId: number | null } | null} */ (null));
   const [projectCycleDetail, setProjectCycleDetail] = useState(/** @type {AppProjectCycle | null} */ (null));
+  const [projectPersonalAnalysis, setProjectPersonalAnalysis] = useState(/** @type {AppProjectPersonalAnalysis | null} */ (null));
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
   const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
   const [projectCycleCloseTarget, setProjectCycleCloseTarget] = useState(/** @type {AppProjectCycle | null} */ (null));
@@ -773,6 +806,7 @@ export function SharedApp({ services }) {
   const projectRoute = route.id === 'projects' ? route : null;
   const projectDetailRoute = route.id === 'project-detail' ? route : null;
   const projectResourceDetailRoute = route.id === 'project-resource-detail' ? route : null;
+  const projectPersonalAnalysisRoute = route.id === 'project-personal-analysis' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
   const workItemOwner = workItemOwnerForRoute(route);
@@ -782,6 +816,7 @@ export function SharedApp({ services }) {
       status: workItemListRoute.status,
       priority: workItemListRoute.priority,
       assigneeUsername: workItemListRoute.assigneeUsername,
+      projectKey: workItemListRoute.projectKey,
       perPage: workItemListRoute.perPage,
     }
     : {};
@@ -819,6 +854,7 @@ export function SharedApp({ services }) {
       status: workItemListRoute.status,
       priority: workItemListRoute.priority,
       assigneeUsername: workItemListRoute.assigneeUsername,
+      projectKey: workItemListRoute.projectKey,
       page: workItemListRoute.page,
       perPage: workItemListRoute.perPage,
     })
@@ -829,8 +865,20 @@ export function SharedApp({ services }) {
   const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
     ? workItemDetail
     : null;
-  const projectScopeKey = projectDetailRoute?.projectKey || projectResourceDetailRoute?.projectKey || '';
+  const projectScopeKey = projectDetailRoute?.projectKey || projectResourceDetailRoute?.projectKey || projectPersonalAnalysisRoute?.projectKey || '';
   const activeProjectDetail = projectScopeKey && projectDetail?.key === projectScopeKey ? projectDetail : null;
+  const personalAnalysisPath = buildProjectPersonalAnalysisPath({ owner: route.owner, projectKey: projectScopeKey });
+  const personalAnalysisPendingTotal = projectPersonalAnalysis
+    ? projectPersonalAnalysis.pending.requirements + projectPersonalAnalysis.pending.tasks + projectPersonalAnalysis.pending.bugs
+    : 0;
+  const personalAnalysisPendingLinks = projectPersonalAnalysis ? [
+    { itemType: 'requirement', label: '需求', count: projectPersonalAnalysis.pending.requirements },
+    { itemType: 'task', label: '任务', count: projectPersonalAnalysis.pending.tasks },
+    { itemType: 'bug', label: 'Bug', count: projectPersonalAnalysis.pending.bugs },
+  ].map((item) => ({
+    ...item,
+    path: buildWorkItemListPath({ owner: route.owner, itemType: item.itemType, projectKey: projectScopeKey, status: 'pending', assigneeUsername: projectPersonalAnalysis.username }),
+  })) : [];
   const currentProjectMember = user ? projectMembers.find((member) => member.username === user.username) : null;
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
   const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
@@ -861,6 +909,9 @@ export function SharedApp({ services }) {
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     if (mode === 'load') {
+      if (targetRoute.id !== 'project-personal-analysis' && projectPersonalAnalysisSelectionRef.current) {
+        projectPersonalAnalysisSelectionRef.current = { projectKey: '', promise: projectPersonalAnalysisSelectionRef.current.promise };
+      }
       void releaseProjectAttachmentPreview();
       setLoading(true);
       if (targetRoute.id === 'search') {
@@ -928,6 +979,10 @@ export function SharedApp({ services }) {
         setProjectMembers([]);
         setProjectMutationError('');
       }
+      if (targetRoute.id === 'project-personal-analysis') {
+        setProjectDetail(null);
+        setProjectPersonalAnalysis(null);
+      }
       if (targetRoute.id === 'work-item-detail') {
         workItemActionRef.current += 1;
         workItemAttachmentActionRef.current += 1;
@@ -964,11 +1019,30 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle] = await Promise.all([
+      if (targetRoute.id === 'project-personal-analysis') {
+        const projectKey = String(targetRoute.projectKey);
+        let selection = projectPersonalAnalysisSelectionRef.current;
+        if (!selection || selection.projectKey !== projectKey) {
+          const previous = selection?.promise || Promise.resolve();
+          selection = {
+            projectKey,
+            promise: previous.catch(() => {}).then(() => api.updateCurrentProject(projectKey)),
+          };
+          projectPersonalAnalysisSelectionRef.current = selection;
+        }
+        try {
+          await selection.promise;
+        } catch (caught) {
+          if (projectPersonalAnalysisSelectionRef.current === selection) projectPersonalAnalysisSelectionRef.current = null;
+          throw caught;
+        }
+        if (requestRef.current !== requestId) return;
+      }
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
-        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
+        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'project-personal-analysis' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? api.getNotifications({
@@ -994,6 +1068,7 @@ export function SharedApp({ services }) {
             status: targetRoute.status,
             priority: targetRoute.priority,
             assigneeUsername: targetRoute.assigneeUsername,
+            projectKey: targetRoute.projectKey,
             page: targetRoute.page,
             perPage: targetRoute.perPage,
           })
@@ -1055,6 +1130,12 @@ export function SharedApp({ services }) {
             };
           })()
           : Promise.resolve(null),
+        targetRoute.id === 'project-personal-analysis'
+          ? Promise.all([
+            api.getProject(targetRoute.projectKey),
+            api.getProjectPersonalAnalysis(targetRoute.projectKey),
+          ])
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1093,6 +1174,10 @@ export function SharedApp({ services }) {
         setProjectResourceDetail(nextResourceDetailBundle?.resource || null);
         setProjectResourceLocked(Boolean(nextResourceDetailBundle?.locked));
         setProjectResourceAttachments(nextResourceDetailBundle?.attachments || []);
+      }
+      if (targetRoute.id === 'project-personal-analysis') {
+        setProjectDetail(nextPersonalAnalysisBundle?.[0] || null);
+        setProjectPersonalAnalysis(nextPersonalAnalysisBundle?.[1] || null);
       }
       if (targetRoute.id === 'search') {
         setSearchPage(nextSearch);
@@ -1971,6 +2056,10 @@ export function SharedApp({ services }) {
             ? `${projectResourceDetail.title} - 元策`
             : route.id === 'project-resource-detail'
               ? '项目资料详情 - 元策'
+          : route.id === 'project-personal-analysis' && activeProjectDetail
+            ? `我的项目分析 - ${activeProjectDetail.name} - 元策`
+            : route.id === 'project-personal-analysis'
+              ? '个人项目分析 - 元策'
           : route.id === 'requirements'
             ? '需求列表 - 元策'
             : route.id === 'tasks'
@@ -3005,6 +3094,7 @@ export function SharedApp({ services }) {
         status: runtime.readFormValue(event.currentTarget, 'status'),
         priority: runtime.readFormValue(event.currentTarget, 'priority'),
         assigneeUsername: runtime.readFormValue(event.currentTarget, 'assignee_username'),
+        projectKey: workItemListRoute.projectKey,
         page: 1,
         perPage: workItemListRoute.perPage,
       }),
@@ -3017,7 +3107,7 @@ export function SharedApp({ services }) {
       return;
     }
     navigate(
-      buildWorkItemListPath({ owner: workItemOwner, itemType: workItemListRoute.itemType }),
+      buildWorkItemListPath({ owner: workItemOwner, itemType: workItemListRoute.itemType, projectKey: workItemListRoute.projectKey }),
       '已重置工作项筛选。',
     );
   }
@@ -3035,6 +3125,7 @@ export function SharedApp({ services }) {
         status: workItemListRoute.status,
         priority: workItemListRoute.priority,
         assigneeUsername: workItemListRoute.assigneeUsername,
+        projectKey: workItemListRoute.projectKey,
         page: nextPage,
         perPage: workItemListRoute.perPage,
       }),
@@ -3056,6 +3147,7 @@ export function SharedApp({ services }) {
         status: workItemListRoute.status,
         priority: workItemListRoute.priority,
         assigneeUsername: workItemListRoute.assigneeUsername,
+        projectKey: workItemListRoute.projectKey,
         page: 1,
         perPage: nextPerPage,
       }),
@@ -3087,7 +3179,7 @@ export function SharedApp({ services }) {
         links={[
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
-          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' },
+          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
         ]}
         currentProject={currentProject}
         projectsHref={projectsPath}
@@ -3118,7 +3210,7 @@ export function SharedApp({ services }) {
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
-          ) : route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' ? (
+          ) : route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -3511,6 +3603,7 @@ export function SharedApp({ services }) {
                 </div>
                 <div className="shell-actions-inline">
                   <a className="shell-link" href={buildProjectsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildProjectsPath({ owner: route.owner }), '已返回项目列表。')}>返回项目列表</a>
+                  <a className="shell-link" href={personalAnalysisPath} onClick={(event) => handleNavigate(event, personalAnalysisPath, '已打开个人项目分析。')}>个人分析</a>
                   {canManageProject ? <Button variant="secondary" onClick={openProjectEdit}>编辑项目</Button> : null}
                 </div>
               </div>
@@ -3622,6 +3715,61 @@ export function SharedApp({ services }) {
               </Modal>
               <Modal open={Boolean(projectCycleCloseTarget)} title="关闭项目周期" onClose={() => { if (!projectMutationSubmitting) setProjectCycleCloseTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectCycleCloseTarget(null)}>取消</Button><Button variant="danger" loading={projectMutationSubmitting} onClick={() => void confirmProjectCycleClose()}>确认关闭</Button></>}><p>确认关闭周期“{projectCycleCloseTarget?.name}”？关闭后不能继续编辑。</p></Modal>
               <Modal open={Boolean(projectAttachmentArchiveTarget)} title="归档项目文件" onClose={() => { if (!projectAttachmentArchiving) setProjectAttachmentArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectAttachmentArchiving} onClick={() => setProjectAttachmentArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectAttachmentArchiving} onClick={() => void confirmProjectAttachmentArchive()}>确认归档</Button></>}><p>确认归档文件“{projectAttachmentArchiveTarget?.filename}”？归档后不能继续下载，但文件记录会保留。</p></Modal>
+            </section>
+          ) : route.id === 'project-personal-analysis' ? (
+            <section className="shell-card shell-panel-wide project-center personal-analysis" aria-labelledby="personal-analysis-title">
+              <div className="shell-panel-header project-center-header">
+                <div>
+                  <p className="shell-eyebrow">{projectScopeKey} / 个人项目分析</p>
+                  <h2 id="personal-analysis-title">{activeProjectDetail?.name || projectScopeKey}</h2>
+                  <p className="shell-muted">仅统计 {projectPersonalAnalysis?.display_name || user?.display_name || '当前用户'} 在该项目中的实际处理与协作记录。</p>
+                </div>
+                <div className="shell-actions-inline">
+                  {activeProjectDetail ? <span className="project-status-pill">{projectStatusLabel(activeProjectDetail.status)}</span> : null}
+                  <a className="shell-link" href={buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey }), '已返回项目详情。')}>返回项目详情</a>
+                </div>
+              </div>
+              {projectPersonalAnalysis ? <>
+                <section aria-label="个人处理产出">
+                  <div className="personal-analysis-metrics">
+                    {[
+                      ['累计处理', projectPersonalAnalysis.completed_total],
+                      ['近 30 日', projectPersonalAnalysis.completed_last_30_days],
+                      ['已处理 Bug', projectPersonalAnalysis.completed_bugs],
+                      ['当前待处理', personalAnalysisPendingTotal],
+                    ].map(([label, value]) => <article className="work-item-detail-panel personal-analysis-metric" key={label}><span className="shell-muted">{label}</span><strong>{value}</strong></article>)}
+                  </div>
+                </section>
+
+                <section className="personal-analysis-section" aria-labelledby="personal-analysis-efficiency-title">
+                  <div className="shell-panel-header"><div><p className="shell-eyebrow">处理效率</p><h3 id="personal-analysis-efficiency-title">自然周期效率</h3></div><span className="shell-muted">统计起点：{projectPersonalAnalysis.joined_at}</span></div>
+                  <div className="personal-analysis-metrics">
+                    {[
+                      ['日平均处理', formatAnalysisAverage(projectPersonalAnalysis.daily_average)],
+                      ['单日最大处理', projectPersonalAnalysis.daily_peak],
+                      ['月平均处理', formatAnalysisAverage(projectPersonalAnalysis.monthly_average)],
+                      ['单月最大处理', projectPersonalAnalysis.monthly_peak],
+                    ].map(([label, value]) => <article className="work-item-detail-panel personal-analysis-metric" key={label}><span className="shell-muted">{label}</span><strong>{value}</strong></article>)}
+                  </div>
+                </section>
+
+                <div className="personal-analysis-columns">
+                  <section className="work-item-detail-panel" aria-labelledby="personal-analysis-pending-title">
+                    <p className="shell-eyebrow">当前负载</p><h3 id="personal-analysis-pending-title">我的待处理</h3>
+                    <div className="personal-analysis-pending-list">{personalAnalysisPendingLinks.map((item) => <a className="shell-link" href={item.path} key={item.itemType} onClick={(event) => handleNavigate(event, item.path, `已打开待处理${item.label}。`)}><span>{item.label}</span><strong>{item.count}</strong></a>)}</div>
+                  </section>
+                  <section className="work-item-detail-panel" aria-labelledby="personal-analysis-collaboration-title">
+                    <p className="shell-eyebrow">协作参与</p><h3 id="personal-analysis-collaboration-title">沟通与推进</h3>
+                    <dl className="personal-analysis-collaboration"><div><dt>活跃天数</dt><dd>{projectPersonalAnalysis.active_days}</dd></div><div><dt>评论 / 回复</dt><dd>{projectPersonalAnalysis.comment_count}</dd></div><div><dt>指派 / 流转</dt><dd>{projectPersonalAnalysis.handoff_count}</dd></div></dl>
+                  </section>
+                </div>
+
+                <section className="personal-analysis-section" aria-labelledby="personal-analysis-completions-title">
+                  <div className="shell-panel-header"><div><p className="shell-eyebrow">最近产出</p><h3 id="personal-analysis-completions-title">最近完成记录</h3></div><span className="shell-muted">以实际终态操作时间排序</span></div>
+                  {projectPersonalAnalysis.recent_completions.length ? <ul className="project-list personal-analysis-completions">{projectPersonalAnalysis.recent_completions.map((item) => { const itemPath = buildWorkItemDetailPath({ owner: /** @type {'app' | 'web'} */ (route.owner), itemKey: item.key }); return <li key={`${item.key}-${item.completed_at}`}><a className="shell-link" href={itemPath} onClick={(event) => handleNavigate(event, itemPath, `已打开 ${item.key}。`)}><span className="message-kind">{workItemTypeLabel(item.item_type)}</span><code>{item.key}</code><strong>{item.title}</strong><time>{formatTimestamp(item.completed_at)}</time></a></li>; })}</ul> : <div className="shell-empty"><strong>暂无完成记录</strong><span>工作项由你推进到完成、解决、验证或关闭后会记录在这里。</span></div>}
+                </section>
+                <p className="personal-analysis-note">处理量按你实际执行的终态流转事件统计；日均和月均从加入项目起按自然周期计算，并包含无处理记录的日期。</p>
+              </> : null}
             </section>
           ) : route.id === 'project-resource-detail' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-resource-detail-title">
