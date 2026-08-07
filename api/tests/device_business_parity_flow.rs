@@ -116,13 +116,20 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         &credentials.access_token,
         Some(serde_json::json!({
             "title": "Device parity resource", "category": "integration",
-            "body": "device-resource-body", "body_format": "plain",
+            "body": "<h2 onclick=\"alert(1)\">device-resource-body</h2><script>alert(2)</script><a href=\"javascript:alert(3)\">bad</a><pre><code>cargo test</code></pre>", "body_format": "html",
             "tags": ["device-parity"]
         })),
     )
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
-    let resource_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    let created_resource = json_body(response).await;
+    let resource_id = created_resource["data"]["id"].as_i64().unwrap();
+    let sanitized_body = created_resource["data"]["body"].as_str().unwrap();
+    assert!(sanitized_body.contains("<h2>device-resource-body</h2>"));
+    assert!(sanitized_body.contains("<pre><code>cargo test</code></pre>"));
+    assert!(!sanitized_body.contains("onclick"));
+    assert!(!sanitized_body.contains("<script"));
+    assert!(!sanitized_body.contains("javascript:"));
     let response = request(
         &app,
         "PATCH",

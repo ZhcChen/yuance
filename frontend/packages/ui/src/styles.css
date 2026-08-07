@@ -659,6 +659,108 @@ html[data-theme="dark"] {
   justify-content: flex-end;
 }
 
+.yc-rich-text-editor {
+  overflow: hidden;
+  border: 1px solid var(--yc-line);
+  border-radius: var(--yc-control-radius);
+  background: var(--yc-panel);
+}
+
+.yc-rich-text-editor:focus-within {
+  border-color: var(--yc-brand);
+  box-shadow: 0 0 0 3px var(--yc-brand-soft);
+}
+
+.yc-rich-text-editor.is-disabled {
+  opacity: 0.7;
+}
+
+.yc-rich-text-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--yc-line);
+  background: var(--yc-panel-soft);
+}
+
+.yc-rich-text-toolbar button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--yc-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.yc-rich-text-toolbar button:hover,
+.yc-rich-text-toolbar button:focus-visible {
+  background: var(--yc-brand-soft);
+}
+
+.yc-rich-text-input {
+  min-height: 180px;
+  padding: 14px;
+  outline: 0;
+  overflow-wrap: anywhere;
+}
+
+.yc-rich-text-input:empty::before {
+  color: var(--yc-muted);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.yc-rich-text-content,
+.yc-rich-text-plain {
+  min-width: 0;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.yc-rich-text-plain {
+  white-space: pre-wrap;
+}
+
+.yc-rich-text-content > :first-child {
+  margin-top: 0;
+}
+
+.yc-rich-text-content > :last-child {
+  margin-bottom: 0;
+}
+
+.yc-rich-text-content pre,
+.yc-rich-text-input pre {
+  overflow-x: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--yc-panel-soft);
+  white-space: pre-wrap;
+}
+
+.yc-rich-text-content table,
+.yc-rich-text-input table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.yc-rich-text-content th,
+.yc-rich-text-content td,
+.yc-rich-text-input th,
+.yc-rich-text-input td {
+  padding: 8px;
+  border: 1px solid var(--yc-line);
+}
+
+.yc-rich-text-content [data-yuance-align="center"],
+.yc-rich-text-input [data-yuance-align="center"] { text-align: center; }
+.yc-rich-text-content [data-yuance-align="right"],
+.yc-rich-text-input [data-yuance-align="right"] { text-align: right; }
+.yc-rich-text-content [data-yuance-align="left"],
+.yc-rich-text-input [data-yuance-align="left"] { text-align: left; }
+
 .work-item-comment-actions {
   display: flex;
   gap: 8px;

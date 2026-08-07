@@ -1800,7 +1800,7 @@ test('shared project resources create edit password actions and archive', async 
     if (request.method() === 'POST') {
       const payload = request.postDataJSON();
       mutations.push(['create', payload]);
-      resource = projectResourceFixture({ id: 930, title: payload.title, category: payload.category, body: payload.body, body_format: payload.body_format, summary: payload.body, is_protected: Boolean(payload.access_password), tags: payload.tags, related_work_item: payload.related_work_item_key ? { key: payload.related_work_item_key, item_type: 'task', title: '关联工作项', url: `/web/work-items/${payload.related_work_item_key}` } : null, related_cycle: payload.related_cycle_id ? { id: payload.related_cycle_id, name: '迭代一', start_date: '2026-08-01', end_date: '2026-08-15', url: `/web/projects/YCE/cycles/${payload.related_cycle_id}` } : null, url: '/web/projects/YCE/resources/930' });
+      resource = projectResourceFixture({ id: 930, title: payload.title, category: payload.category, body: `${payload.body}<img src="/broken-rich-image" onerror="window.__resourceRichXss=true"><script>window.__resourceRichXss=true</script>`, body_format: payload.body_format, summary: payload.body, is_protected: Boolean(payload.access_password), tags: payload.tags, related_work_item: payload.related_work_item_key ? { key: payload.related_work_item_key, item_type: 'task', title: '关联工作项', url: `/web/work-items/${payload.related_work_item_key}` } : null, related_cycle: payload.related_cycle_id ? { id: payload.related_cycle_id, name: '迭代一', start_date: '2026-08-01', end_date: '2026-08-15', url: `/web/projects/YCE/cycles/${payload.related_cycle_id}` } : null, url: '/web/projects/YCE/resources/930' });
       resources = [resource];
       await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
       return;
@@ -1848,11 +1848,14 @@ test('shared project resources create edit password actions and archive', async 
   await createDialog.getByLabel('标签').fill('发布，运维');
   await createDialog.getByLabel('关联工作项 Key').fill('YCE-TASK-2');
   await createDialog.getByLabel('关联周期 ID').fill('7');
-  await createDialog.getByLabel('资料正文').fill('release=v1');
+  await createDialog.getByLabel('资料正文').evaluate((input) => {
+    input.innerHTML = '<h2>发布方案</h2><pre><code>release=v1</code></pre>';
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+  });
   await createDialog.getByLabel('初始访问密码').fill('safe-pass');
   await createDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('部署手册');
-  expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: 'release=v1', body_format: 'plain', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: 'YCE-TASK-2', related_cycle_id: 7 }]);
+  expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: '<h2>发布方案</h2><pre><code>release=v1</code></pre>', body_format: 'html', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: 'YCE-TASK-2', related_cycle_id: 7 }]);
 
   await page.getByRole('link', { name: '部署手册' }).click();
   await page.getByRole('button', { name: '重置访问密码' }).click();
@@ -1869,6 +1872,11 @@ test('shared project resources create edit password actions and archive', async 
   await resetDialog.getByRole('button', { name: '确认重置' }).click();
   await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
   expect(mutations[2]).toEqual(['reset', { access_password_action: 'clear', access_password: '' }]);
+  await expect(page.getByRole('heading', { level: 2, name: '发布方案' })).toBeVisible();
+  await expect(page.locator('.yc-rich-text-content code')).toHaveText('release=v1');
+  await expect(page.locator('.yc-rich-text-content script')).toHaveCount(0);
+  await expect(page.locator('.yc-rich-text-content img')).not.toHaveAttribute('onerror');
+  expect(await page.evaluate(() => window.__resourceRichXss === true)).toBe(false);
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
   await editDialog.getByLabel('资料标题').fill('部署手册 2.0');

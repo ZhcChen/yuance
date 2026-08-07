@@ -525,12 +525,12 @@ async function runRealBusinessApi({ origin, mode, network }) {
   stage("project-resource-mutations");
   const createdProjectResource = await rest.execute("project.resourcecreate", {
     projectKey: "YCE", title: "Desktop writable resource integration", category: "implementation",
-    body: "desktop-resource-created", bodyFormat: "plain", accessPassword: "",
+    body: "<h2 onclick=\"alert(1)\">desktop-resource-created</h2><script>alert(2)</script><pre><code>cargo test</code></pre>", bodyFormat: "html", accessPassword: "",
     tags: ["desktop-write"], relatedWorkItemKey: "YCE-TASK-2", relatedCycleId: null,
   });
   const updatedProjectResource = await rest.execute("project.resourceupdate", {
     projectKey: "YCE", resourceId: createdProjectResource.id, title: "Desktop writable resource updated",
-    category: "implementation", body: "desktop-resource-updated", bodyFormat: "plain",
+    category: "implementation", body: "<h2>desktop-resource-updated</h2><pre><code>cargo test</code></pre>", bodyFormat: "html",
     accessPasswordAction: "set", accessPassword: "DesktopWrite2026!", tags: ["desktop-write", "updated"],
     relatedWorkItemKey: "YCE-TASK-2", relatedCycleId: null,
   });
@@ -663,6 +663,11 @@ async function runRealBusinessApi({ origin, mode, network }) {
     projectResourcesManaged: createdProjectResource.id > 0
       && updatedProjectResource.id === createdProjectResource.id
       && updatedProjectResource.title === "Desktop writable resource updated"
+      && createdProjectResource.body_format === "html"
+      && createdProjectResource.body.includes("<h2>desktop-resource-created</h2>")
+      && createdProjectResource.body.includes("<pre><code>cargo test</code></pre>")
+      && !createdProjectResource.body.includes("onclick")
+      && !createdProjectResource.body.includes("<script")
       && updatedProjectResource.is_protected
       && !resetProjectResource.is_protected
       && archivedProjectResource.id === createdProjectResource.id
