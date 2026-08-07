@@ -242,6 +242,21 @@
       "migrationUnit": "U4",
       "status": "baseline",
       "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.work-item-detail.detail",
+      "route": "/web/work-items/{item_key}",
+      "methods": ["GET"],
+      "family": "work-item-detail",
+      "sourceTemplates": ["work_items/detail.html", "partials/work_item_detail.html", "partials/work_item_flow_history.html", "partials/rich_text_toolbar.html"],
+      "actors": ["project-member", "project-manager"],
+      "permissions": ["project.view", "work-item.manage", "comment.write"],
+      "controls": ["metadata", "previous-next", "status-flow", "handoff", "edit", "restore", "history", "rich-description", "comments", "reply", "mentions", "attachments"],
+      "states": ["loading", "ready", "editing", "submitting", "deleted", "restoring", "uploading", "upload-error", "realtime-update", "conflict", "forbidden", "not-found", "error"],
+      "responsiveStates": ["compact", "regular", "wide"],
+      "migrationUnit": "U5",
+      "status": "baseline",
+      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "actions": [
@@ -901,6 +916,51 @@
       "migrationUnit": "U4",
       "status": "baseline",
       "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.flow-history.load", "pageId": "page.work-item-detail.detail", "trigger": "open flow history", "inputs": ["item-key"], "validation": "工作项存在且用户可访问所属项目。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/flow-records" }, "successEffect": "加载按时间排序的状态、移交和编辑记录。", "errorEffects": ["工作项不存在", "项目无权限", "加载失败可重试"], "realtimeEffect": "新流转事件使历史失效。", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.status.update", "pageId": "page.work-item-detail.detail", "trigger": "submit status transition", "inputs": ["item-key", "status", "comment", "csrf-token"], "validation": "目标状态是当前角色可执行的合法流转，项目允许写入。", "confirmation": "关闭或终止流转展示目标状态和影响。", "request": { "method": "POST", "path": "/web/work-items/{item_key}/status" }, "successEffect": "原子流转状态、记录 flow 和活动并定向刷新详情。", "errorEffects": ["非法流转", "并发状态冲突", "项目只读", "权限不足"], "realtimeEffect": "广播工作项更新并失效列表指标。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.handoff", "pageId": "page.work-item-detail.detail", "trigger": "submit work item handoff", "inputs": ["item-key", "assignee-username", "reason", "csrf-token"], "validation": "接收人是可处理该项目工作项的成员且工作项可写。", "confirmation": "展示接收人和移交原因。", "request": { "method": "POST", "path": "/web/work-items/{item_key}/handoff" }, "successEffect": "更新处理人、记录移交历史和通知。", "errorEffects": ["接收人不合法", "工作项已删除或关闭", "并发冲突", "权限不足"], "realtimeEffect": "通知接收人并广播详情、列表和 badge 更新。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.update", "pageId": "page.work-item-detail.detail", "trigger": "submit work item edit form", "inputs": ["item-key", "title", "description", "priority", "assignee-username", "cycle-id", "parent-item-key", "due-date", "csrf-token"], "validation": "字段、关联项目、父子类型、处理人和日期有效，富文本已消毒。", "confirmation": "none", "request": { "method": "POST", "path": "/web/work-items/{item_key}/edit" }, "successEffect": "更新字段、记录 flow 和活动并保持详情上下文。", "errorEffects": ["字段校验错误", "并发冲突", "关联对象失效", "项目只读或权限不足"], "realtimeEffect": "广播详情更新并失效相关列表。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.restore", "pageId": "page.work-item-detail.detail", "trigger": "confirm deleted work item restore", "inputs": ["item-key", "csrf-token"], "validation": "工作项处于可恢复删除态且项目允许写入。", "confirmation": "明确展示将恢复的工作项。", "request": { "method": "POST", "path": "/web/work-items/{item_key}/restore" }, "successEffect": "恢复工作项及可见性并记录审计。", "errorEffects": ["已恢复时刷新最终状态", "父对象不可用", "项目只读", "权限不足"], "realtimeEffect": "工作项重新进入列表并广播恢复事件。", "repeatSubmitPolicy": "reject", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.comment.create", "pageId": "page.work-item-detail.detail", "trigger": "submit comment or reply", "inputs": ["item-key", "parent-comment-id", "body", "body-format", "mentions", "attachments", "csrf-token"], "validation": "正文或附件至少一项存在，回复目标属于工作项，富文本和提及有效。", "confirmation": "none", "request": { "method": "POST", "path": "/web/work-items/{item_key}/comments" }, "apiEffects": [{ "phase": "fallback", "method": "POST", "path": "/api/v1/work-items/{item_key}/comments", "purpose": "共享 composer 创建评论并返回统一 DTO" }], "successEffect": "创建评论或回复、关联附件并通知被提及和相关成员。", "errorEffects": ["空评论", "回复目标失效", "附件上传未完成", "权限或项目状态变化"], "realtimeEffect": "广播评论新增、计数和通知 badge。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.comment.update", "pageId": "page.work-item-detail.detail", "trigger": "submit comment edit", "inputs": ["item-key", "comment-id", "body", "body-format", "mentions", "csrf-token"], "validation": "评论属于工作项且当前用户可编辑，正文有效并通过消毒。", "confirmation": "none", "request": { "method": "POST", "path": "/web/work-items/{item_key}/comments/{comment_id}/edit" }, "successEffect": "更新评论、标记编辑状态并同步提及。", "errorEffects": ["评论不存在", "编辑权限不足", "并发删除", "字段错误"], "realtimeEffect": "广播评论更新并去重自身事件。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.attachment.create", "pageId": "page.work-item-detail.detail", "trigger": "upload work item attachment", "inputs": ["item-key", "filename", "content-type", "byte-size", "file", "csrf-token"], "validation": "工作项可写，文件元数据和大小有效。", "confirmation": "none", "request": { "method": "POST", "path": "/web/work-items/{item_key}/attachments" }, "apiEffects": [{ "phase": "register", "method": "POST", "path": "/api/v1/work-items/{item_key}/attachments", "purpose": "登记工作项附件" }, { "phase": "sign", "method": "POST", "path": "/api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url", "purpose": "获取上传 URL" }, { "phase": "complete", "method": "POST", "path": "/api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded", "purpose": "确认上传完成" }], "successEffect": "附件显示在工作项详情并记录活动。", "errorEffects": ["登记失败", "传输失败可重试", "完成确认失败", "工作项不可写"], "realtimeEffect": "广播附件和详情更新。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.attachment.download", "pageId": "page.work-item-detail.detail", "trigger": "download work item attachment", "inputs": ["item-key", "attachment-id"], "validation": "附件属于可访问工作项、已上传且未归档。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/attachments/{attachment_id}/download" }, "successEffect": "记录审计并跳转短时签名 URL。", "errorEffects": ["附件不存在", "对象缺失", "项目无权限"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.attachment.preview", "pageId": "page.work-item-detail.detail", "trigger": "open work item attachment preview", "inputs": ["item-key", "attachment-id"], "validation": "附件属于可访问工作项且类型支持预览或降级。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/attachments/{attachment_id}/preview" }, "successEffect": "打开预览并保留工作项附件前后项。", "errorEffects": ["不支持预览时提供下载", "附件不存在", "实验格式禁用"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.attachment.preview-content", "pageId": "page.work-item-detail.detail", "trigger": "preview renderer requests work item attachment", "inputs": ["item-key", "attachment-id", "range"], "validation": "附件属于可访问工作项且预览会话有效。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/attachments/{attachment_id}/preview/content" }, "successEffect": "流式返回受控附件内容。", "errorEffects": ["range 无效", "对象缺失", "附件已归档"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.comment-attachment.create", "pageId": "page.work-item-detail.detail", "trigger": "upload comment rich attachment", "inputs": ["item-key", "comment-id", "filename", "content-type", "byte-size", "file", "csrf-token"], "validation": "评论草稿属于当前用户和工作项，文件元数据有效。", "confirmation": "none", "request": { "method": "POST", "path": "/web/work-items/{item_key}/comments/{comment_id}/attachments" }, "apiEffects": [{ "phase": "register", "method": "POST", "path": "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments", "purpose": "登记评论附件" }, { "phase": "sign", "method": "POST", "path": "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url", "purpose": "获取上传 URL" }, { "phase": "complete", "method": "POST", "path": "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded", "purpose": "确认上传完成" }], "successEffect": "附件进入 composer 并在评论提交后成为正式引用。", "errorEffects": ["草稿失效", "传输失败可重试", "取消时清理未引用附件"], "realtimeEffect": "评论提交前不广播，提交后随评论事件同步。", "repeatSubmitPolicy": "lock", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.comment-attachment.download", "pageId": "page.work-item-detail.detail", "trigger": "download comment attachment", "inputs": ["item-key", "comment-id", "attachment-id"], "validation": "附件属于该评论和可访问工作项。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download" }, "successEffect": "跳转短时签名 URL。", "errorEffects": ["附件或评论不存在", "对象缺失", "项目无权限"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.comment-attachment.preview", "pageId": "page.work-item-detail.detail", "trigger": "open comment attachment preview", "inputs": ["item-key", "comment-id", "attachment-id"], "validation": "附件属于该评论且支持预览或降级。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview" }, "successEffect": "打开预览并保留同评论附件导航。", "errorEffects": ["不支持预览时提供下载", "附件不存在", "实验格式禁用"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.work-item.comment-attachment.preview-content", "pageId": "page.work-item-detail.detail", "trigger": "preview renderer requests comment attachment", "inputs": ["item-key", "comment-id", "attachment-id", "range"], "validation": "附件属于该评论且预览会话有效。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content" }, "successEffect": "流式返回受控附件内容。", "errorEffects": ["range 无效", "对象缺失", "附件已删除"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "hostExceptions": [
