@@ -4,6 +4,7 @@ import { access, readFile } from 'node:fs/promises';
 
 const manifestUrl = new URL('../parity/experience-manifest.json', import.meta.url);
 const schemaUrl = new URL('../parity/experience-manifest.schema.json', import.meta.url);
+const sourceInventoryUrl = new URL('../parity/legacy-source-inventory.json', import.meta.url);
 
 const allowedExceptionCodes = [
   'auth.transport',
@@ -47,14 +48,29 @@ test('体验清单登记全部且仅登记允许的宿主差异', async () => {
 });
 
 test('体验清单 ID 和引用保持唯一且闭合', async () => {
-  const manifest = await readJson(manifestUrl);
+  const [manifest, sourceInventory] = await Promise.all([
+    readJson(manifestUrl),
+    readJson(sourceInventoryUrl),
+  ]);
   const pageIds = manifest.pages.map(({ id }) => id);
   const actionIds = manifest.actions.map(({ id }) => id);
+  const routeMethods = new Map(sourceInventory.routes.map(({ route, methods }) => [route, methods]));
+  const templates = new Set(sourceInventory.templates);
 
   assert.equal(new Set(pageIds).size, pageIds.length, 'page id 不得重复');
   assert.equal(new Set(actionIds).size, actionIds.length, 'action id 不得重复');
+  for (const page of manifest.pages) {
+    assert.ok(routeMethods.has(page.route), `${page.id} 引用了不存在的正式 Web route ${page.route}`);
+    for (const method of page.methods) {
+      assert.ok(routeMethods.get(page.route).includes(method), `${page.id} 登记了不存在的 ${method} ${page.route}`);
+    }
+    for (const template of page.sourceTemplates) {
+      assert.ok(templates.has(template), `${page.id} 引用了不存在的模板 ${template}`);
+    }
+  }
   for (const action of manifest.actions) {
     assert.ok(pageIds.includes(action.pageId), `${action.id} 引用了不存在的页面 ${action.pageId}`);
+    assert.ok(routeMethods.get(action.request.path)?.includes(action.request.method), `${action.id} 引用了不存在的正式 Web 请求 ${action.request.method} ${action.request.path}`);
   }
 });
 
