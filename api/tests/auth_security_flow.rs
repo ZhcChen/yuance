@@ -174,6 +174,32 @@ async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_retur
 }
 
 #[tokio::test]
+async fn web_app_project_owner_preserves_deep_link_query_for_unauthenticated_request() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/projects/YCE/resources/9?access=opaque-token")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fprojects%2FYCE%2Fresources%2F9%3Faccess%3Dopaque-token"
+    );
+}
+
+#[tokio::test]
 async fn login_submit_rejects_missing_csrf() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;

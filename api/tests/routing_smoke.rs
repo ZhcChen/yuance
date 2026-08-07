@@ -529,7 +529,7 @@ async fn web_app_entry_serves_index_and_deep_links_without_cache() {
 }
 
 #[tokio::test]
-async fn web_shell_owner_serves_root_messages_and_project_analysis_from_same_app_entry() {
+async fn web_shell_owner_serves_root_messages_and_project_routes_from_same_app_entry() {
     with_web_dist_dir(|dist_dir| async move {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
         fs::write(
@@ -566,15 +566,26 @@ async fn web_shell_owner_serves_root_messages_and_project_analysis_from_same_app
             )
             .await
             .expect("router should respond");
-        let analysis_response = app
-            .oneshot(
-                Request::builder()
-                    .uri("/web/projects/YCE/my-analysis")
-                    .body(Body::empty())
-                    .expect("request should build"),
-            )
-            .await
-            .expect("router should respond");
+        let mut project_responses = Vec::new();
+        for uri in [
+            "/web/projects?status=in_progress&page=2&per_page=20",
+            "/web/projects/YCE?tab=library",
+            "/web/projects/YCE/cycles/7",
+            "/web/projects/YCE/resources/9?access=opaque-token",
+            "/web/projects/YCE/my-analysis",
+        ] {
+            project_responses.push(
+                app.clone()
+                    .oneshot(
+                        Request::builder()
+                            .uri(uri)
+                            .body(Body::empty())
+                            .expect("request should build"),
+                    )
+                    .await
+                    .expect("router should respond"),
+            );
+        }
 
         unsafe {
             match previous {
@@ -585,14 +596,16 @@ async fn web_shell_owner_serves_root_messages_and_project_analysis_from_same_app
 
         assert_eq!(root_response.status(), StatusCode::OK);
         assert_eq!(messages_response.status(), StatusCode::OK);
-        assert_eq!(analysis_response.status(), StatusCode::OK);
+        assert!(project_responses.iter().all(|response| response.status() == StatusCode::OK));
         assert_eq!(
             root_response.headers().get(header::CACHE_CONTROL).unwrap(),
             "no-store, max-age=0, must-revalidate"
         );
         let root_body = response_body(root_response).await;
         assert_eq!(response_body(messages_response).await, root_body);
-        assert_eq!(response_body(analysis_response).await, root_body);
+        for response in project_responses {
+            assert_eq!(response_body(response).await, root_body);
+        }
     })
     .await;
 }

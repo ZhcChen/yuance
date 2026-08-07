@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use askama::Template;
 use axum::{
     Form,
-    extract::{Extension, Path, Query, RawForm, State},
+    extract::{Extension, OriginalUri, Path, Query, RawForm, State},
     http::{HeaderMap, StatusCode, header},
     response::{Html, IntoResponse, Redirect, Response},
 };
@@ -3013,8 +3013,20 @@ pub async fn message_open(
 pub async fn projects_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<ProjectListQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
@@ -3236,9 +3248,21 @@ pub async fn current_project_update(
 pub async fn project_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Path(project_key): Path<String>,
     Query(query): Query<ProjectDetailQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let mut context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
@@ -3416,8 +3440,20 @@ pub async fn project_detail_page(
 pub async fn project_cycle_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Path((project_key, cycle_id)): Path<(String, i64)>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let mut context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
@@ -3512,24 +3548,19 @@ pub async fn project_cycle_detail_page(
 pub async fn project_personal_analysis_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Path(project_key): Path<String>,
 ) -> AppResult<Response> {
-    if state.settings.web_app_shell_v1_enabled() {
-        let return_to = format!("/web/projects/{project_key}/my-analysis");
-        let csrf_token = csrf::ensure_token(&headers);
-        if let Some(pool) = state.pool.as_ref() {
-            if bootstrap::bootstrap_required(pool).await? {
-                return bootstrap_redirect(&headers);
-            }
-            if auth::user_from_headers(pool, &headers).await?.is_none() {
-                return login_redirect_to(&headers, &return_to);
-            }
-        }
-        return with_csrf_cookie(
-            &state,
-            &csrf_token,
-            crate::web::router::web_app_entry_response(&state),
-        );
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
     }
     let mut context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
@@ -4290,9 +4321,21 @@ async fn render_project_resource_detail_response(
 pub async fn project_resource_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Path((project_key, resource_id)): Path<(String, i64)>,
     Query(query): Query<ResourceAccessQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let mut context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),
@@ -8848,6 +8891,31 @@ fn login_redirect_to(headers: &HeaderMap, return_to: &str) -> AppResult<Response
         format!("/web/login?{query}")
     };
     redirect_for_web_to(headers, &location)
+}
+
+async fn shared_web_app_response(
+    state: &AppState,
+    headers: &HeaderMap,
+    return_to: &str,
+) -> AppResult<Option<Response>> {
+    if !state.settings.web_app_shell_v1_enabled() {
+        return Ok(None);
+    }
+    let csrf_token = csrf::ensure_token(headers);
+    if let Some(pool) = state.pool.as_ref() {
+        if bootstrap::bootstrap_required(pool).await? {
+            return bootstrap_redirect(headers).map(Some);
+        }
+        if auth::user_from_headers(pool, headers).await?.is_none() {
+            return login_redirect_to(headers, return_to).map(Some);
+        }
+    }
+    with_csrf_cookie(
+        state,
+        &csrf_token,
+        crate::web::router::web_app_entry_response(state),
+    )
+    .map(Some)
 }
 
 fn bootstrap_redirect(headers: &HeaderMap) -> AppResult<Response> {
