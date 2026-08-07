@@ -20,6 +20,8 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["file.canaryupload", noInputOperation("POST", "/api/v1/device-file-transfer/canary/upload-request", parseTransferEnvelope, false)],
     ["file.canarydownload", noInputOperation("GET", "/api/v1/device-file-transfer/canary/download-request", parseTransferEnvelope)],
     ["identity.current", noInputOperation("GET", "/api/v1/auth/me", parseUser)],
+    ["identity.profile", noInputOperation("GET", "/api/v1/me/profile", parseProfile)],
+    ["identity.profileupdate", profileUpdateOperation],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
@@ -86,6 +88,16 @@ function searchListOperation(input) {
   appendOptionalString(query, "q", optionalText(input.q, "q", 128));
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/search", query), parseSearchPage);
+}
+
+function profileUpdateOperation(input) {
+  exactKeys(input, ["displayName", "email", "mobile"]);
+  const body = {
+    display_name: boundedRequiredText(input.displayName, "displayName", 64),
+    email: boundedText(input.email, "email", 254),
+    mobile: boundedText(input.mobile, "mobile", 32),
+  };
+  return descriptor("PATCH", "/api/v1/me/profile", parseProfile, false, "object", jsonBody(body));
 }
 
 function notificationListOperation(input) {
@@ -201,6 +213,10 @@ function parseSessionProbe(data, profile) {
 }
 function parseTransferEnvelope(data) { if (!isPlainObject(data)) throw new TypeError("transfer envelope is invalid"); return data; }
 function parseUser(data) { return freezeDto(data, { id: positiveInteger, username: shortString, display_name: shortString, is_super_admin: boolean }); }
+function parseProfile(data) { return freezeDto(data, {
+  id: positiveInteger, username: shortString, display_name: shortString, email: shortString, mobile: shortString,
+  status: shortString, is_super_admin: boolean, roles: shortString, created_at: shortString, updated_at: shortString,
+}); }
 function parseCurrentProject(data) {
   if (data === null) return null;
   return freezeDto(data, { key: shortString, name: shortString });

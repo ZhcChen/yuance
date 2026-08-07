@@ -6228,6 +6228,58 @@ async fn web_me_can_update_profile_and_change_password() {
 }
 
 #[tokio::test]
+async fn api_v1_own_profile_supports_read_and_update() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let read_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/me/profile")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(read_response.status(), StatusCode::OK);
+    let read: serde_json::Value = serde_json::from_str(&response_body(read_response).await)
+        .expect("profile response should be JSON");
+    assert_eq!(read["data"]["username"], "admin");
+    assert_eq!(read["data"]["display_name"], "系统管理员");
+
+    let update_response = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/me/profile")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"display_name":"管理员新名称","email":"admin@yuance.test","mobile":"13800000000"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(update_response.status(), StatusCode::OK);
+    let updated: serde_json::Value = serde_json::from_str(&response_body(update_response).await)
+        .expect("updated profile should be JSON");
+    assert_eq!(updated["data"]["display_name"], "管理员新名称");
+    assert_eq!(updated["data"]["email"], "admin@yuance.test");
+    assert_eq!(updated["data"]["mobile"], "13800000000");
+
+    let stored = users::get_user_summary(&pool, initialized.user_id)
+        .await
+        .expect("profile should load")
+        .expect("profile should exist");
+    assert_eq!(stored.display_name, "管理员新名称");
+}
+
+#[tokio::test]
 async fn web_me_api_tokens_can_render_copy_button_and_be_deleted() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

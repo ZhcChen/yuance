@@ -4,6 +4,7 @@ import { ApiError } from "@yuance/frontend-api-client";
 
 const STATIC_ROUTES = new Map([
   ["/api/v1/auth/me", ["identity.current", []]],
+  ["/api/v1/me/profile", ["identity.profile", []]],
   ["/api/v1/topbar/status", ["shell.topbar", []]],
   ["/api/v1/current-project", ["project.current", []]],
 ]);
@@ -78,6 +79,10 @@ function resolveReadOperation(url, options) {
 
 function resolveMutationOperation(parsed, method, options) {
   rejectQuery(parsed.searchParams, []);
+  if (method === "PATCH" && parsed.pathname === "/api/v1/me/profile") {
+    const body = parseJsonBody(options, ["display_name", "email", "mobile"]);
+    return { operation: "identity.profileupdate", input: renameBody(body, { display_name: "displayName" }) };
+  }
   if (method === "PATCH" && parsed.pathname === "/api/v1/current-project") {
     const body = parseJsonBody(options, ["project_key"]);
     return { operation: "project.select", input: { projectKey: body.project_key } };

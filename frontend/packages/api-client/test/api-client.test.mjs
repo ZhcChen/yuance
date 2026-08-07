@@ -104,6 +104,21 @@ test('search uses a normalized read-only query contract', async () => {
   assert.deepEqual(calls[0].options, {});
 });
 
+test('profile client reads and updates through the shared write preparation', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.getOwnProfile();
+  await client.updateOwnProfile({ displayName: '管理员', email: 'admin@example.com', mobile: '13800000000' });
+
+  assert.deepEqual(writes, ['prepare']);
+  assert.equal(calls[0].url, '/api/v1/me/profile');
+  assert.deepEqual(calls[0].options, {});
+  assert.equal(calls[1].url, '/api/v1/me/profile');
+  assert.equal(calls[1].options.method, 'PATCH');
+  assert.deepEqual(JSON.parse(String(calls[1].options.body)), {
+    display_name: '管理员', email: 'admin@example.com', mobile: '13800000000',
+  });
+});
+
 test('apiErrorFromPayload preserves server error code and message', () => {
   const error = apiErrorFromPayload({
     error: {

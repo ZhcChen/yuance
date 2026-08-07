@@ -61,6 +61,29 @@ pub struct AuthUserPayload {
     pub is_super_admin: bool,
 }
 
+#[derive(Debug, Serialize)]
+pub struct OwnProfilePayload {
+    pub id: i64,
+    pub username: String,
+    pub display_name: String,
+    pub email: String,
+    pub mobile: String,
+    pub status: String,
+    pub is_super_admin: bool,
+    pub roles: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateOwnProfileRequest {
+    display_name: String,
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    mobile: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     username: String,
@@ -1593,6 +1616,50 @@ pub async fn me(State(state): State<AppState>, headers: HeaderMap) -> AppResult<
     let user = require_d2_api_principal(&state, &headers).await?.user;
 
     Ok(no_store_json(auth_user_payload(user)))
+}
+
+pub async fn get_own_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<OwnProfilePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    let profile = users::get_user_summary(state.pool()?, principal.user.id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    Ok(json(own_profile_payload(profile)))
+}
+
+pub async fn update_own_profile(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<UpdateOwnProfileRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<OwnProfilePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    let profile = users::update_own_profile(
+        pool,
+        principal.user.id,
+        users::UpdateOwnProfileInput {
+            display_name: payload.display_name,
+            email: payload.email,
+            mobile: payload.mobile,
+        },
+    )
+    .await?;
+    audit::record_with_context(
+        pool,
+        Some(principal.user.id),
+        "me.profile.update",
+        "user",
+        &profile.username,
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(json(own_profile_payload(profile)))
 }
 
 pub async fn logout(
@@ -4696,6 +4763,15 @@ fn ensure_cookie_api_auth(headers: &HeaderMap) -> AppResult<()> {
     Ok(())
 }
 
+fn ensure_account_principal(principal: &ApiPrincipal) -> AppResult<()> {
+    match &principal.kind {
+        ApiPrincipalKind::Session | ApiPrincipalKind::Device(_) => Ok(()),
+        ApiPrincipalKind::ApiToken(_) => Err(AppError::Forbidden(
+            "访问 Token 不能读取或修改账户资料".to_string(),
+        )),
+    }
+}
+
 fn ensure_api_csrf(headers: &HeaderMap) -> AppResult<()> {
     if api_tokens::bearer_token(headers).is_some() {
         return Ok(());
@@ -5423,6 +5499,21 @@ fn auth_user_payload(user: auth::AuthUser) -> AuthUserPayload {
         username: user.username,
         display_name: user.display_name,
         is_super_admin: user.is_super_admin,
+    }
+}
+
+fn own_profile_payload(profile: users::UserSummary) -> OwnProfilePayload {
+    OwnProfilePayload {
+        id: profile.id,
+        username: profile.username,
+        display_name: profile.display_name,
+        email: profile.email,
+        mobile: profile.mobile,
+        status: profile.status,
+        is_super_admin: profile.is_super_admin,
+        roles: profile.role_names,
+        created_at: profile.created_at,
+        updated_at: profile.updated_at,
     }
 }
 

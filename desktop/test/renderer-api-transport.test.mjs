@@ -13,6 +13,7 @@ test("desktop API transport maps only known read routes to domain operations", a
   /** @type {Array<[string, string, Record<string, unknown>]>} */
   const cases = [
     ["/api/v1/auth/me", "identity.current", {}],
+    ["/api/v1/me/profile", "identity.profile", {}],
     ["/api/v1/topbar/status", "shell.topbar", {}],
     ["/api/v1/current-project", "project.current", {}],
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
@@ -68,6 +69,7 @@ test("api-client mutations map to fixed domain operations without request primit
     return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : {} };
   } });
   const client = createApiClient({ request: transport.request });
+  await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
   await client.updateCurrentProject("DEMO");
   await client.markNotificationRead(7);
   await client.markAllNotificationsRead();
@@ -76,6 +78,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.createWorkItemComment("DEMO-1", { body: "New comment" });
   await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
   assert.deepEqual(calls, [
+    ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
     ["project.select", { projectKey: "DEMO" }],
     ["notification.read", { notificationId: 7 }],
     ["notification.readall", {}],

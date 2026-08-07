@@ -33,6 +33,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
   const registry = createOperationRegistry();
   const cases = [
     ["identity.current", {}, "/api/v1/auth/me"],
+    ["identity.profile", {}, "/api/v1/me/profile"],
     ["shell.topbar", {}, "/api/v1/topbar/status"],
     ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
@@ -92,6 +93,13 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   });
   assert.deepEqual(user, { id: 7, username: "alice", display_name: "Alice", is_super_admin: false });
   assert.equal(Object.isFrozen(user), true);
+  const profile = registry.resolve("identity.profile", {}).parse({
+    id: 7, username: "alice", display_name: "Alice", email: "alice@example.com", mobile: "13800000000",
+    status: "active", is_super_admin: false, roles: "成员", created_at: "2026-08-01", updated_at: "2026-08-07",
+    password_hash: "leak",
+  });
+  assert.equal(profile.email, "alice@example.com");
+  assert.equal("password_hash" in profile, false);
 
   const page = registry.resolve("workitem.list", {}).parse({
     items: [{
@@ -152,6 +160,7 @@ test("rejects malformed or oversized business responses", () => {
 test("builds non-idempotent mutation descriptors from bounded domain payloads", () => {
   const registry = createOperationRegistry();
   const cases = [
+    ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }, "PATCH", "/api/v1/me/profile", { display_name: "Alice", email: "alice@example.com", mobile: "13800000000" }],
     ["project.select", { projectKey: "DEMO" }, "PATCH", "/api/v1/current-project", { project_key: "DEMO" }],
     ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
     ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
@@ -174,6 +183,7 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
   const registry = createOperationRegistry();
   for (const [name, input] of [
     ["project.select", { projectKey: "demo" }],
+    ["identity.profileupdate", { displayName: " ", email: "", mobile: "" }],
     ["notification.read", { notificationId: 0 }],
     ["workitem.update", { itemKey: "DEMO-1", payload: {} }],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: " " } }],
