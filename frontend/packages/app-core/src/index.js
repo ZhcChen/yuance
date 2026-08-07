@@ -12,6 +12,7 @@ export {
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,
+  routePathForOwner,
 } from './routes.js';
 export {
   createWorkItemComment,

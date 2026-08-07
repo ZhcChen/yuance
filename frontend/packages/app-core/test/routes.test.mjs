@@ -10,6 +10,7 @@ import {
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,
+  routePathForOwner,
 } from '@yuance/frontend-app-core';
 
 test('parseAppRoute recognizes browser shell home owners', () => {
@@ -145,4 +146,21 @@ test('profile and search builders preserve the route owner and normalize query v
     buildSearchPath({ owner: 'app', page: 0, perPage: -1 }),
     '/web/app/search',
   );
+});
+
+test('search route parser and result targets preserve owner semantics', () => {
+  assert.deepEqual(parseAppRoute('/web/app/search', '?q=%E7%99%BB%E5%BD%95&page=2&per_page=20'), {
+    id: 'search',
+    owner: 'app',
+    pathname: '/web/app/search',
+    search: '?q=%E7%99%BB%E5%BD%95&page=2&per_page=20',
+    q: '登录',
+    page: 2,
+    perPage: 20,
+    title: '全局搜索',
+  });
+  assert.equal(routePathForOwner('/web/work-items/YCE-TASK-2#comment-7', 'app'), '/web/app/work-items/YCE-TASK-2#comment-7');
+  assert.equal(routePathForOwner('/web/projects/YCE?tab=members', 'web'), '/web/projects/YCE?tab=members');
+  assert.equal(routePathForOwner('https://evil.example/web/projects/YCE', 'app'), '/web/app');
+  assert.equal(routePathForOwner('/web/app/projects', 'app'), '/web/app');
 });

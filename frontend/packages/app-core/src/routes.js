@@ -105,6 +105,26 @@ export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, pe
   return query ? `${basePath}?${query}` : basePath;
 }
 
+export function routePathForOwner(path, owner = 'web') {
+  if (typeof path !== 'string' || !(path === '/web' || path.startsWith('/web/')) || path.startsWith('/web/app')) {
+    return buildHomePath(owner);
+  }
+  let parsed;
+  try {
+    parsed = new globalThis.URL(path, 'https://routes.invalid');
+  } catch {
+    return buildHomePath(owner);
+  }
+  if (parsed.origin !== 'https://routes.invalid' || `${parsed.pathname}${parsed.search}${parsed.hash}` !== path) {
+    return buildHomePath(owner);
+  }
+  if (owner === 'app') {
+    const suffix = parsed.pathname === '/web' ? '' : parsed.pathname.slice('/web'.length);
+    return `/web/app${suffix}${parsed.search}${parsed.hash}`;
+  }
+  return path;
+}
+
 export function buildMessagesPath({ owner = 'web', filter = DEFAULT_FILTER, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedFilter = normalizeFilter(filter);
@@ -193,6 +213,19 @@ export function parseAppRoute(pathname = '/web', search = '') {
       page,
       perPage,
       title: '消息中心',
+    };
+  }
+
+  if (pathname === '/web/search' || pathname === '/web/app/search') {
+    return {
+      id: 'search',
+      owner,
+      pathname,
+      search,
+      q: (query.get('q') || '').trim(),
+      page,
+      perPage,
+      title: '全局搜索',
     };
   }
 

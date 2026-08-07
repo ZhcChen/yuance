@@ -107,6 +107,23 @@ test('browser shell supports root navigation and logout on /web owner route', as
   await expect(page).toHaveURL(/\/web\/login/);
 });
 
+test('app-owner global search loads shared results and resolves result targets', async ({ page }) => {
+  await login(page, '/web/app');
+
+  await page.getByRole('search').getByRole('searchbox', { name: '全局搜索' }).fill('YCE-TASK-2');
+  await page.getByRole('search').getByRole('button', { name: '搜索' }).click();
+
+  await expect(page).toHaveURL(/\/web\/app\/search\?q=YCE-TASK-2/);
+  await expect(page).toHaveTitle('全局搜索 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
+  const result = page.getByRole('list', { name: '搜索结果列表' }).locator('li', { hasText: 'YCE-TASK-2' });
+  await expect(result).toContainText('设计项目与工作项数据模型');
+  await result.getByRole('link', { name: '打开' }).click();
+
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
+  await expect(page.getByRole('heading', { level: 2, name: /YCE-TASK-2/ })).toBeVisible();
+});
+
 test('app-owner task list can filter and open read-only work item detail', async ({ page }) => {
   await login(page, '/web/app/projects');
   await ensureCurrentProject(page, 'YCE');

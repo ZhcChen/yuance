@@ -14,6 +14,7 @@ import {
   downloadWorkItemCommentAttachment as downloadWorkItemCommentAttachmentUseCase,
   handoffWorkItem as handoffWorkItemUseCase,
   notificationTargetPath,
+  routePathForOwner,
   saveWorkItem,
   updateWorkItemComment as updateWorkItemCommentUseCase,
   uploadWorkItemAttachment,
@@ -377,6 +378,8 @@ function routeDescription(route) {
   switch (route.id) {
     case 'messages':
       return '通过 JSON 契约加载、筛选和处理通知，兼容旧 URL 与前进后退。';
+    case 'search':
+      return '按当前权限搜索项目、工作项和资料，并在两个宿主中使用同一分页与目标解析。';
     case 'projects':
       return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
     case 'requirements':
@@ -397,6 +400,8 @@ function routeEyebrow(route) {
   switch (route.id) {
     case 'messages':
       return 'Message Center';
+    case 'search':
+      return 'Global Search';
     case 'projects':
       return 'Projects';
     case 'requirements':
@@ -474,6 +479,7 @@ export function SharedApp({ services }) {
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
+  const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
@@ -525,6 +531,7 @@ export function SharedApp({ services }) {
     ? buildProjectsPath({ owner: route.owner, status: route.status, page: route.page, perPage: route.perPage })
     : buildProjectsPath({ owner: 'app' });
   const messageRoute = route.id === 'messages' ? route : null;
+  const searchRoute = route.id === 'search' ? route : null;
   const projectRoute = route.id === 'projects' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
@@ -604,6 +611,9 @@ export function SharedApp({ services }) {
     requestRef.current = requestId;
     if (mode === 'load') {
       setLoading(true);
+      if (targetRoute.id === 'search') {
+        setSearchPage(null);
+      }
       if (targetRoute.id === 'work-item-detail') {
         workItemActionRef.current += 1;
         workItemAttachmentActionRef.current += 1;
@@ -640,10 +650,10 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextFeed, nextProjects, nextWorkItems, nextWorkItemBundle] = await Promise.all([
+      const [nextUser, nextTopbar, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
-        targetRoute.id === 'projects' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
+        targetRoute.id === 'projects' || targetRoute.id === 'search' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? api.getNotifications({
@@ -658,6 +668,9 @@ export function SharedApp({ services }) {
             page: targetRoute.page,
             perPage: targetRoute.perPage,
           })
+          : Promise.resolve(null),
+        targetRoute.id === 'search'
+          ? api.search({ q: targetRoute.q, page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
         isWorkItemListRouteId(targetRoute.id)
           ? api.getWorkItems({
@@ -697,6 +710,9 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'projects') {
         setProjectPage(nextProjects);
+      }
+      if (targetRoute.id === 'search') {
+        setSearchPage(nextSearch);
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -743,21 +759,23 @@ export function SharedApp({ services }) {
   useEffect(() => {
     const title = route.id === 'messages'
       ? '消息中心 - 元策'
-      : route.id === 'projects'
-        ? '项目列表 - 元策'
-        : route.id === 'requirements'
-          ? '需求列表 - 元策'
-          : route.id === 'tasks'
-            ? '任务列表 - 元策'
-            : route.id === 'bugs'
-              ? '缺陷列表 - 元策'
-              : route.id === 'work-item-detail' && activeWorkItemDetail
-                ? `${activeWorkItemDetail.key} · ${activeWorkItemDetail.title} - 元策`
-                : route.id === 'work-item-detail'
-                  ? '工作项详情 - 元策'
-                  : route.id === 'unsupported'
-                    ? '未迁移路由 - 元策'
-                    : '元策浏览器工作台 - 元策';
+      : route.id === 'search'
+        ? '全局搜索 - 元策'
+        : route.id === 'projects'
+          ? '项目列表 - 元策'
+          : route.id === 'requirements'
+            ? '需求列表 - 元策'
+            : route.id === 'tasks'
+              ? '任务列表 - 元策'
+              : route.id === 'bugs'
+                ? '缺陷列表 - 元策'
+                : route.id === 'work-item-detail' && activeWorkItemDetail
+                  ? `${activeWorkItemDetail.key} · ${activeWorkItemDetail.title} - 元策`
+                  : route.id === 'work-item-detail'
+                    ? '工作项详情 - 元策'
+                    : route.id === 'unsupported'
+                      ? '未迁移路由 - 元策'
+                      : '元策浏览器工作台 - 元策';
     router.setTitle(title);
   }, [route, activeWorkItemDetail, router]);
 
@@ -1868,7 +1886,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' ? (
+          {route.id === 'messages' || route.id === 'search' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -2027,6 +2045,53 @@ export function SharedApp({ services }) {
                 </>
               ) : (
                 <p className="shell-empty">{emptyMessageTitle(route)}</p>
+              )}
+            </section>
+          ) : route.id === 'search' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="search-results-title">
+              <div className="shell-panel-header">
+                <div>
+                  <h2 id="search-results-title">搜索结果</h2>
+                  <p className="shell-muted">
+                    {searchRoute?.q ? `“${searchRoute.q}” 共 ${searchPage?.pagination.total_items || 0} 条结果` : '在顶部搜索框输入关键词。'}
+                  </p>
+                </div>
+              </div>
+              {searchPage?.items.length ? (
+                <>
+                  <ul className="message-list" aria-label="搜索结果列表">
+                    {searchPage.items.map((item) => {
+                      const target = routePathForOwner(item.target, route.owner);
+                      return (
+                        <li key={`${item.kind}:${item.key}`} className="message-row">
+                          <div className="message-body">
+                            <div className="message-heading"><span className="message-kind">{item.kind}</span></div>
+                            <strong>{item.title}</strong>
+                            <p>{item.context}</p>
+                            <p className="shell-muted">{item.key} · {formatTimestamp(item.updated_at)}</p>
+                          </div>
+                          <a className="shell-link" href={target} onClick={(event) => handleNavigate(event, target, `已打开 ${item.key}。`)}>打开</a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <div className="message-pagination" aria-label="搜索结果分页">
+                    <div className="message-pagination-meta"><strong>共 {searchPage.pagination.total_items} 条</strong></div>
+                    <div className="message-pagination-controls">
+                      <button className="shell-button shell-button-secondary" type="button" disabled={searchPage.pagination.page <= 1}
+                        onClick={() => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page: searchPage.pagination.page - 1, perPage: searchPage.pagination.per_page }))}>
+                        上一页
+                      </button>
+                      <span className="shell-meta">第 {searchPage.pagination.page} / {searchPage.pagination.total_pages} 页</span>
+                      <button className="shell-button shell-button-secondary" type="button" disabled={searchPage.pagination.page >= searchPage.pagination.total_pages}
+                        onClick={() => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page: searchPage.pagination.page + 1, perPage: searchPage.pagination.per_page }))}>
+                        下一页
+                      </button>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="shell-empty">{searchRoute?.q ? '没有找到匹配结果。' : '请输入搜索关键词。'}</p>
               )}
             </section>
           ) : route.id === 'projects' ? (

@@ -28,6 +28,7 @@ export { ApiError };
 /** @typedef {{ body: string, bodyFormat?: string, parentCommentId?: number | null }} CommentRequestPayload */
 /** @typedef {{ originalFilename: string, contentType: string, byteSize: number }} AttachmentCreatePayload */
 /** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
+/** @typedef {{ kind: string, key: string, title: string, context: string, target: string, updated_at: string }} SearchResult */
 
 const browserApiTransport = createBrowserApiTransport();
 const browserEvents = createBrowserEvents();
@@ -49,6 +50,8 @@ export const getCurrentUser = /** @type {() => Promise<AuthUser>} */ (apiClient.
 export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiClient.getTopbarStatus);
 
 export const getProjects = /** @type {(query?: { status?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
+
+export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
 export const updateCurrentProject = /** @type {(projectKey: string) => Promise<{ key: string, name: string }>} */ (apiClient.updateCurrentProject);
 
@@ -133,6 +136,7 @@ export const webApi = {
   markWorkItemCommentAttachmentUploaded,
   refreshCsrfToken,
   restorePendingReturnToHash,
+  search,
   updateCurrentProject,
   updateWorkItem,
   updateWorkItemComment,
