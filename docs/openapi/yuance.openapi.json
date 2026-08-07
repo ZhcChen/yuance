@@ -64,6 +64,9 @@
     "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview",
     "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
     "HEAD /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
+    "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+    "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+    "HEAD /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
     "GET /api/v1/current-project",
     "PATCH /api/v1/current-project",
     "GET /api/v1/topbar/status",
@@ -1603,6 +1606,62 @@
       "head": {
         "tags": ["projects"],
         "summary": "读取项目附件预览内容响应头",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview": {
+      "get": {
+        "tags": ["resources"],
+        "summary": "获取资料附件预览元数据",
+        "description": "复用资料访问权限与短时 access grant，返回预览分类、受控内容地址和同资料附件前后项。",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/ProjectKey"},
+          {"$ref": "#/components/parameters/ResourceId"},
+          {"$ref": "#/components/parameters/AttachmentId"},
+          {"name": "access", "in": "query", "required": false, "schema": {"type": "string", "maxLength": 4096}}
+        ],
+        "responses": {
+          "200": {"description": "资料附件预览元数据", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectAttachmentPreviewEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content": {
+      "parameters": [
+        {"$ref": "#/components/parameters/ProjectKey"},
+        {"$ref": "#/components/parameters/ResourceId"},
+        {"$ref": "#/components/parameters/AttachmentId"},
+        {"name": "access", "in": "query", "required": false, "schema": {"type": "string", "maxLength": 4096}}
+      ],
+      "get": {
+        "tags": ["resources"],
+        "summary": "读取资料附件预览内容",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "head": {
+        "tags": ["resources"],
+        "summary": "读取资料附件预览内容响应头",
         "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {

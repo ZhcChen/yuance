@@ -93,12 +93,14 @@ test('project resource attachments use scoped fixed paths and access grants', as
   const writes = [];
   const attachment = { id: 11, filename: 'notes.txt', content_type: 'text/plain', byte_size: 12, status: 'uploaded', created_by: 'Alice', created_at: '2026-08-07T00:00:00Z' };
   const signed = { attachment, request: { method: 'GET', url: '/signed', headers: [] }, expires_in_seconds: 60 };
-  const client = createApiClient({ request: async (url, options = {}) => { calls.push({ url, options }); return options.method === undefined && /\/attachments(?:\?|$)/u.test(url) ? [attachment] : url.includes('-url') ? signed : attachment; }, prepareWrite: async () => { writes.push('prepare'); } });
+  const preview = { attachment, preview: { kind: 'document', strategy: 'text', file_type: 'txt', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/9/attachments/11/preview/content?access=grant+token', download_url: '/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token' };
+  const client = createApiClient({ request: async (url, options = {}) => { calls.push({ url, options }); return url.includes('/preview?') ? preview : options.method === undefined && /\/attachments(?:\?|$)/u.test(url) ? [attachment] : url.includes('-url') ? signed : attachment; }, prepareWrite: async () => { writes.push('prepare'); } });
   await client.getProjectResourceAttachments('YCE', 9, 'grant token');
   await client.createProjectResourceAttachment('YCE', 9, { originalFilename: 'notes.txt', contentType: 'text/plain', byteSize: 12, checksumSha256: 'a'.repeat(64) });
   await client.getProjectResourceAttachmentUploadUrl('YCE', 9, 11);
   await client.markProjectResourceAttachmentUploaded('YCE', 9, 11);
   await client.getProjectResourceAttachmentDownloadUrl('YCE', 9, 11, 'grant token');
+  await client.getProjectResourceAttachmentPreview('YCE', 9, 11, 'grant token');
   await client.deleteProjectResourceAttachment('YCE', 9, 11);
   assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET']), [
     ['/api/v1/projects/YCE/resources/9/attachments?access=grant+token', 'GET'],
@@ -106,6 +108,7 @@ test('project resource attachments use scoped fixed paths and access grants', as
     ['/api/v1/projects/YCE/resources/9/attachments/11/upload-url', 'GET'],
     ['/api/v1/projects/YCE/resources/9/attachments/11/uploaded', 'POST'],
     ['/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token', 'GET'],
+    ['/api/v1/projects/YCE/resources/9/attachments/11/preview?access=grant+token', 'GET'],
     ['/api/v1/projects/YCE/resources/9/attachments/11', 'DELETE'],
   ]);
   assert.deepEqual(writes, ['prepare', 'prepare', 'prepare']);

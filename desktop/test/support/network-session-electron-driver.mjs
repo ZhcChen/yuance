@@ -13,6 +13,10 @@ import { createTransferGrantVault } from "../../src/files/transfer-grant-vault.m
 import { createRevealDownloadVault } from "../../src/files/reveal-download-vault.mjs";
 import { createRevealDownloadController } from "../../src/files/reveal-download-controller.mjs";
 import { createBusinessAttachmentCoordinator } from "../../src/files/business-attachment-coordinator.mjs";
+import { createProjectAttachmentPreviewCoordinator } from "../../src/files/project-attachment-preview-coordinator.mjs";
+import { createPreviewCapabilityVault } from "../../src/files/preview-capability-vault.mjs";
+import { createPreviewContentLoader } from "../../src/files/preview-content-loader.mjs";
+import { createPreviewSpool } from "../../src/files/preview-spool.mjs";
 import { parseTransferContract } from "../../src/files/transfer-contract.mjs";
 import { createOperationRegistry } from "../../src/network/operation-registry.mjs";
 import { createAttachmentOperationRegistry } from "../../src/network/attachment-operation-registry.mjs";
@@ -244,6 +248,14 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     allowLoopbackHttp: true,
     allowedRelativePaths: { upload: "/api/v1/test-storage/upload", download: "/api/v1/test-storage/download" },
   });
+  const previewSpool = createPreviewSpool({ rootDirectory: path.join(userDataPath, "Preview Spool"), platform: process.platform, windowsGuard });
+  await previewSpool.cleanupOrphans();
+  const previewVault = createPreviewCapabilityVault();
+  const previewCoordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport: rest,
+    loader: createPreviewContentLoader({ profile: enrolled.profile, credentialRuntime: runtime, fetchImpl: network.fetch, spool: previewSpool }),
+    vault: previewVault,
+  });
   const stages = [];
   const recordStage = (target) => (value) => {
     stages.push(`${target}:${value}`);
@@ -267,6 +279,11 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     rest.execute("project.attachments", { projectKey: "YCE" }),
     rest.execute("project.resourceattachments", { projectKey: "YCE", resourceId: resource.id, accessToken: "" }),
   ]);
+  stage("resource-preview");
+  const resourcePreview = await previewCoordinator.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: resource.id, attachmentId: resourceUpload.uploaded.id, accessToken: "", binding: baseBinding, signal: undefined });
+  const resourcePreviewSnapshot = previewVault.resolve(resourcePreview.capability, baseBinding);
+  const resourcePreviewBytes = await fs.readFile(resourcePreviewSnapshot.privatePath);
+  previewCoordinator.releaseProjectAttachmentPreview({ capability: resourcePreview.capability, binding: baseBinding });
   stage("downloads");
   const itemDownload = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const commentDownload = await coordinator.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
@@ -298,6 +315,7 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     commentListed: commentList.some((value) => value.id === commentUpload.uploaded.id),
     projectListAdded: !projectListInitial.some((value) => value.id === projectUpload.uploaded.id) && projectList.some((value) => value.id === projectUpload.uploaded.id && value.status === "uploaded"),
     resourceListed: resourceList.some((value) => value.id === resourceUpload.uploaded.id && value.status === "uploaded"),
+    resourcePreviewed: resourcePreview.attachment.id === resourceUpload.uploaded.id && hash(resourcePreviewBytes) === hash(resourceContent) && previewVault.snapshot().entries === 0,
     projectArchived: projectArchived.id === projectUpload.uploaded.id && projectArchived.status === "deleted" && projectListArchived.some((value) => value.id === projectUpload.uploaded.id && value.status === "deleted"),
     resourceDeleted: resourceDeleted.id === resourceUpload.uploaded.id && resourceDeleted.status === "deleted" && resourceListDeleted.some((value) => value.id === resourceUpload.uploaded.id && value.status === "deleted"),
     hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent) && hash(downloaded[2]) === hash(projectContent) && hash(downloaded[3]) === hash(resourceContent),

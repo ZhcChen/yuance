@@ -63,6 +63,7 @@ test('host-delegated attachment capabilities require the complete business matri
     downloadProjectAttachment: async () => ({ status: 'completed' }),
     downloadProjectResourceAttachment: async () => ({ status: 'completed' }),
     openProjectAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
+    openProjectResourceAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
     releaseProjectAttachmentPreview: async () => ({ status: 'released' }),
     revealDownload: async () => ({ status: 'revealed' }),
   });
@@ -72,6 +73,7 @@ test('host-delegated attachment capabilities require the complete business matri
     'downloadWorkItemAttachment',
     'downloadWorkItemCommentAttachment',
     'openProjectAttachmentPreview',
+    'openProjectResourceAttachmentPreview',
     'releaseProjectAttachmentPreview',
     'revealDownload',
     'uploadProjectAttachment',

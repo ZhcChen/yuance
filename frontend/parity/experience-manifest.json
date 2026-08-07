@@ -860,8 +860,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/renderer-composition.test.mjs", "desktop/test/file-commands.test.mjs", "desktop/test/project-attachment-preview-coordinator.test.mjs", "desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-013-web-desktop-u3-project-resource-attachment-preview-review.md"] }
     },
     {
       "id": "action.project.resource-attachment.preview-content",
@@ -876,8 +876,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/preview-content-loader.test.mjs", "desktop/test/preview-capability-vault.test.mjs", "desktop/test/preview-protocol.test.mjs", "desktop/test/preview-spool.test.mjs", "desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-013-web-desktop-u3-project-resource-attachment-preview-review.md"] }
     },
     {
       "id": "action.work-item.create",

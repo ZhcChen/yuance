@@ -433,6 +433,9 @@ fn openapi_freezes_d2_device_business_allowlist() {
         "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview",
         "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
         "HEAD /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
+        "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview",
+        "GET /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
+        "HEAD /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
         "GET /api/v1/current-project",
         "PATCH /api/v1/current-project",
         "GET /api/v1/topbar/status",
@@ -499,6 +502,20 @@ fn openapi_publishes_project_attachment_preview_metadata_and_range_content() {
         }
         assert_eq!(
             content[method]["responses"]["206"]["$ref"],
+            "#/components/responses/PreviewPartialContent"
+        );
+    }
+    let resource_preview = &document["paths"]["/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview"];
+    assert_eq!(
+        resource_preview["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ProjectAttachmentPreviewEnvelope"
+    );
+    assert_eq!(resource_preview["get"]["parameters"][3]["name"], "access");
+    let resource_content = &document["paths"]["/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content"];
+    assert_eq!(resource_content["parameters"][3]["name"], "access");
+    for method in ["get", "head"] {
+        assert_eq!(
+            resource_content[method]["responses"]["206"]["$ref"],
             "#/components/responses/PreviewPartialContent"
         );
     }

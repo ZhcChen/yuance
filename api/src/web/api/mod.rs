@@ -9,6 +9,7 @@ use axum::{
     },
 };
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::convert::Infallible;
 
 use crate::{
@@ -3380,11 +3381,16 @@ pub async fn project_attachment_preview(
         legacy_preview_enabled,
     );
     let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
-    let navigation = project_attachment_preview_navigation(
+    let navigation = attachment_preview_navigation(
         files::list_attachments(pool, "project", project.id).await?,
         attachment.id,
         legacy_preview_enabled,
-        &project_key,
+        |sibling| {
+            format!(
+                "/api/v1/projects/{project_key}/attachments/{}/preview",
+                sibling.id
+            )
+        },
     );
     let content_url =
         format!("/api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content");
@@ -3436,6 +3442,31 @@ pub async fn project_attachment_preview_content(
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "project",
+        &project_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
+async fn attachment_preview_content_response(
+    state: &AppState,
+    pool: &SqlitePool,
+    headers: &HeaderMap,
+    method: Method,
+    attachment: files::FileAttachmentSummary,
+    user_id: i64,
+    audit_target_type: &str,
+    audit_target_id: &str,
+    audit_detail: &str,
+) -> AppResult<Response> {
     ensure_attachment_preview_content_enabled(
         &attachment,
         state.settings.experimental_legacy_preview_enabled(),
@@ -3494,11 +3525,11 @@ pub async fn project_attachment_preview_content(
     }
     audit::record(
         pool,
-        Some(user.id),
+        Some(user_id),
         "file.preview.content",
-        "project",
-        &project_key,
-        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+        audit_target_type,
+        audit_target_id,
+        audit_detail,
     )
     .await?;
     Ok(response)
@@ -4061,6 +4092,104 @@ pub async fn project_resource_attachment_download_url(
     .await?;
 
     Ok(json(payload))
+}
+
+pub async fn project_resource_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let (user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    ensure_project_resource_access_grant(&state, pool, &user, &resource, &query.access).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let access_suffix = resource_access_query_suffix(&query.access);
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "project_resource", resource.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{}/preview{access_suffix}",
+                sibling.id
+            )
+        },
+    );
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"source":"api","project":"{project_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url: format!(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content{access_suffix}"
+        ),
+        download_url: format!(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url{access_suffix}"
+        ),
+    }))
+}
+
+pub async fn project_resource_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<Response> {
+    let (user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    ensure_project_resource_access_grant(&state, pool, &user, &resource, &query.access).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
+            .await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "project_resource",
+        &resource.id.to_string(),
+        &format!(r#"{{"source":"api","project":"{project_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await
 }
 
 pub async fn project_resource_attachment_delete(
@@ -6603,11 +6732,11 @@ fn attachment_payload(attachment: files::FileAttachmentSummary) -> AttachmentPay
     }
 }
 
-fn project_attachment_preview_navigation(
+fn attachment_preview_navigation(
     attachments: Vec<files::FileAttachmentSummary>,
     current_attachment_id: i64,
     legacy_preview_enabled: bool,
-    project_key: &str,
+    link_url: impl Fn(&files::FileAttachmentSummary) -> String,
 ) -> AttachmentPreviewNavigationPayload {
     let previewable = attachments
         .into_iter()
@@ -6636,10 +6765,7 @@ fn project_attachment_preview_navigation(
     let link = |attachment: &files::FileAttachmentSummary| AttachmentPreviewNavigationLinkPayload {
         id: attachment.id,
         title: attachment.original_filename.clone(),
-        url: format!(
-            "/api/v1/projects/{project_key}/attachments/{}/preview",
-            attachment.id
-        ),
+        url: link_url(attachment),
     };
 
     AttachmentPreviewNavigationPayload {
@@ -6650,6 +6776,42 @@ fn project_attachment_preview_navigation(
             .and_then(|index| previewable.get(index))
             .map(link),
         next: previewable.get(current_index + 1).map(link),
+    }
+}
+
+async fn ensure_project_resource_access_grant(
+    state: &AppState,
+    pool: &SqlitePool,
+    user: &auth::AuthUser,
+    resource: &project_resources::ProjectResourceDetail,
+    access_token: &str,
+) -> AppResult<()> {
+    if resource.is_protected
+        && !project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
+            access_token,
+            user.id,
+            resource.id,
+        )
+        .await?
+    {
+        return Err(AppError::Forbidden(
+            "受保护资料附件需要先验证访问密码".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn resource_access_query_suffix(access_token: &str) -> String {
+    if access_token.trim().is_empty() {
+        return String::new();
+    }
+    let encoded = serde_urlencoded::to_string([("access", access_token)]).unwrap_or_default();
+    if encoded.is_empty() {
+        String::new()
+    } else {
+        format!("?{encoded}")
     }
 }
 

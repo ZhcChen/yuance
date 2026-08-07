@@ -26,3 +26,18 @@ test("rejects disabled or substituted content metadata before loading bytes", as
   await assert.rejects(coordinator.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 7, binding, signal: undefined }), (error) => error.code === "preview_unavailable");
   assert.equal(loaded, false);
 });
+
+test("resource preview binds the access grant to metadata and content paths", async () => {
+  const calls = [];
+  const snapshot = Object.freeze({ privatePath: "/private/resource-preview", contentType: "application/pdf", byteSize: 12, remove: async () => {} });
+  const contentPath = "/api/v1/projects/YCE/resources/8/attachments/7/preview/content?access=grant+token";
+  const coordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport: { execute: async (operation, input) => { calls.push([operation, input]); return { attachment, preview: { kind: "document", content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: contentPath }; } },
+    loader: { load: async (input) => { calls.push(["load", input]); return snapshot; } },
+    vault: { issue: () => ({ capability: "ypv_resource", source: "app://yuance/.preview/ypv_resource", contentType: "application/pdf", byteSize: 12 }), release: () => {} },
+  });
+  const result = await coordinator.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: 8, attachmentId: 7, accessToken: "grant token", binding, signal: undefined });
+  assert.equal(result.source, "app://yuance/.preview/ypv_resource");
+  assert.deepEqual(calls[0], ["project.resourceattachmentpreview", { projectKey: "YCE", resourceId: 8, attachmentId: 7, accessToken: "grant token" }]);
+  assert.equal(calls[1][1].contentPath, contentPath);
+});

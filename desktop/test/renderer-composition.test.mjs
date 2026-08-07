@@ -121,10 +121,13 @@ test("desktop app file adapter delegates business attachments and rejects signed
     uploadWorkItemAttachment: async (input, onStage) => { calls.push(input); onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded"), url: "https://secret" }; },
     uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadProjectAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadProjectResourceAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
     downloadProjectAttachment: async () => ({ status: "cancelled" }),
+    downloadProjectResourceAttachment: async () => ({ status: "cancelled" }),
     openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
+    openProjectResourceAttachmentPreview: async () => ({ capability: `ypv_${"d".repeat(32)}`, source: `app://yuance/.preview/ypv_${"d".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
     releaseProjectAttachmentPreview: async (capability) => { calls.push(capability); return { status: "released", privatePath: "/secret" }; },
     revealDownload: async (capability) => { calls.push(capability); return { status: "revealed", path: "/secret" }; },
   };
@@ -143,6 +146,8 @@ test("desktop app file adapter delegates business attachments and rejects signed
   assert.equal(preview.source, `app://yuance/.preview/${preview.capability}`);
   assert.equal(preview.preview.kind, "image");
   assert.equal(JSON.stringify(preview).includes("secret"), false);
+  const resourcePreview = await platform.attachments.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant" });
+  assert.equal(resourcePreview.source, `app://yuance/.preview/ypv_${"d".repeat(32)}`);
   assert.deepEqual(await platform.attachments.releaseProjectAttachmentPreview(preview.capability), { status: "released" });
   assert.throws(() => platform.transfers.authorizeSignedRequest(), /unavailable/);
   assert.equal(JSON.stringify(result).includes("secret"), false);
@@ -157,10 +162,13 @@ test("desktop preview adapter rejects a content source that is not bound to its 
     uploadWorkItemAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadProjectAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadProjectResourceAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     downloadWorkItemAttachment: async () => ({ status: "cancelled" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
     downloadProjectAttachment: async () => ({ status: "cancelled" }),
+    downloadProjectResourceAttachment: async () => ({ status: "cancelled" }),
     openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: "https://example.test/private", contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
+    openProjectResourceAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: "https://example.test/private", contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
     releaseProjectAttachmentPreview: async () => ({ status: "released" }),
     revealDownload: async () => ({ status: "revealed" }),
   };

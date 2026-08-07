@@ -45,6 +45,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["project.resources", { projectKey: "DEMO", q: "发布", category: "development", relatedCycleId: 7 }, "/api/v1/projects/DEMO/resources?q=%E5%8F%91%E5%B8%83&category=development&related_cycle_id=7"],
     ["project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }, "/api/v1/projects/DEMO/resources/9"],
     ["project.resourceattachments", { projectKey: "DEMO", resourceId: 9, accessToken: "grant-token" }, "/api/v1/projects/DEMO/resources/9/attachments?access=grant-token"],
+    ["project.resourceattachmentpreview", { projectKey: "DEMO", resourceId: 9, attachmentId: 11, accessToken: "grant token" }, "/api/v1/projects/DEMO/resources/9/attachments/11/preview?access=grant+token"],
     ["project.current", {}, "/api/v1/current-project"],
     ["notification.list", {}, "/api/v1/notifications?filter=all"],
     ["notification.list", { filter: "unread", limit: 20, page: 2, perPage: 10 }, "/api/v1/notifications?limit=20&filter=unread&page=2&per_page=10"],
@@ -144,6 +145,15 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   });
   assert.equal(Object.isFrozen(attachments), true);
   assert.equal(Object.isFrozen(attachments[0]), true);
+  const resourcePreview = registry.resolve("project.resourceattachmentpreview", { projectKey: "DEMO", resourceId: 9, attachmentId: 3, accessToken: "grant" }).parse({
+    attachment: { id: 3, filename: "report.txt", content_type: "text/plain", byte_size: 12, status: "uploaded", created_by: "Alice", created_at: "2026-08-03T00:00:00Z" },
+    preview: { kind: "document", strategy: "text", file_type: "txt", kind_label: "文本", is_experimental: false, legacy_preview_enabled: false, content_enabled: true },
+    navigation: { position: 1, total: 2, previous: null, next: { id: 4, title: "next.txt", url: "/api/v1/projects/DEMO/resources/9/attachments/4/preview?access=private-grant" } },
+    content_url: "/api/v1/projects/DEMO/resources/9/attachments/3/preview/content?access=private-grant",
+    download_url: "/api/v1/projects/DEMO/resources/9/attachments/3/download-url?access=private-grant",
+  });
+  assert.deepEqual(resourcePreview.navigation.next, { id: 4, title: "next.txt" });
+  assert.equal(JSON.stringify(resourcePreview.navigation).includes("private-grant"), false);
 });
 
 test("rejects malformed or oversized business responses", () => {

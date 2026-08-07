@@ -32,3 +32,18 @@ test("rejects arbitrary paths and mismatched response metadata", async () => {
   await assert.rejects(loader.load({ contentPath: "https://attacker.invalid/file", contentType: "text/plain", byteSize: 7 }), (error) => error.code === "preview_request_invalid");
   await assert.rejects(loader.load({ contentPath: "/api/v1/projects/YCE/attachments/7/preview/content", contentType: "text/plain", byteSize: 7 }), (error) => error.code === "preview_response_invalid");
 });
+
+test("accepts one canonical resource access grant and rejects query injection", async () => {
+  const calls = [];
+  const fetchImpl = await trustedFetch(async (url) => {
+    calls.push(url);
+    return new Response("preview", { status: 200, headers: { "content-type": "text/plain", "content-length": "7", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
+  });
+  const loader = createPreviewContentLoader({ profile, fetchImpl, credentialRuntime: { withAccessLease: (operation) => operation({ accessToken: "token", epoch: 1 }), refreshAccess: async () => false }, spool: { capture: async () => Object.freeze({ privatePath: "/private/resource-preview", contentType: "text/plain", byteSize: 7, remove: async () => {} }) } });
+  const path = "/api/v1/projects/YCE/resources/8/attachments/7/preview/content?access=grant+token";
+  await loader.load({ contentPath: path, contentType: "text/plain", byteSize: 7 });
+  assert.equal(calls[0], `${profile.origin}${path}`);
+  for (const invalid of [`${path}&url=https%3A%2F%2Fattacker.invalid`, `${path}&access=second`, `${path}#fragment`]) {
+    await assert.rejects(loader.load({ contentPath: invalid, contentType: "text/plain", byteSize: 7 }), (error) => error.code === "preview_request_invalid");
+  }
+});

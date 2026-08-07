@@ -81,6 +81,7 @@ export const createProjectResourceAttachment = apiClient.createProjectResourceAt
 export const getProjectResourceAttachmentUploadUrl = apiClient.getProjectResourceAttachmentUploadUrl;
 export const markProjectResourceAttachmentUploaded = apiClient.markProjectResourceAttachmentUploaded;
 export const getProjectResourceAttachmentDownloadUrl = apiClient.getProjectResourceAttachmentDownloadUrl;
+export const getProjectResourceAttachmentPreview = apiClient.getProjectResourceAttachmentPreview;
 export const deleteProjectResourceAttachment = apiClient.deleteProjectResourceAttachment;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
@@ -162,6 +163,7 @@ export const webApi = {
   getProjectResourceAttachmentUploadUrl,
   markProjectResourceAttachmentUploaded,
   getProjectResourceAttachmentDownloadUrl,
+  getProjectResourceAttachmentPreview,
   deleteProjectResourceAttachment,
   closeProjectCycle,
   createApiToken,

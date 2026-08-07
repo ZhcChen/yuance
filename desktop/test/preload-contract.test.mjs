@@ -42,7 +42,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 10);
+  assert.equal(bridge.schemaVersion, 11);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -82,7 +82,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();
@@ -96,9 +96,11 @@ test("file bridge exposes only fixed host-delegated commands", async () => {
 test("preview bridge forwards only semantic references and opaque capabilities", async () => {
   const { bridge, invocations } = await executePreload();
   await bridge.files.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 7 });
+  await bridge.files.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: 8, attachmentId: 7, accessToken: "grant" });
   await bridge.files.releaseProjectAttachmentPreview("ypv_opaque");
   assert.deepEqual(invocations, [
     ["yuance:file-open-project-attachment-preview", { projectKey: "YCE", attachmentId: 7 }],
+    ["yuance:file-open-project-resource-attachment-preview", { projectKey: "YCE", resourceId: 8, attachmentId: 7, accessToken: "grant" }],
     ["yuance:file-release-project-attachment-preview", "ypv_opaque"],
   ]);
 });

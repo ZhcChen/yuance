@@ -14,6 +14,7 @@ import {
   getProjectResource,
   getProjectResourceAttachmentDownloadUrl,
   getProjectResourceAttachmentUploadUrl,
+  getProjectResourceAttachmentPreview,
   getProjectResourceAttachments,
   getProjectResources,
   getWorkItemCommentAttachmentDownloadUrl,
@@ -159,6 +160,7 @@ test('project resource attachments use fixed Browser paths and access grants', a
     jsonResponse({ csrf_token: 'resource-attachment-confirm' }, { csrfToken: 'resource-attachment-confirm' }),
     jsonResponse(attachment),
     jsonResponse(signedUrlPayload({ attachment })),
+    jsonResponse({ attachment, preview: { kind: 'document', strategy: 'text', file_type: 'txt', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/9/attachments/11/preview/content?access=grant+token', download_url: '/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token' }),
     jsonResponse({ csrf_token: 'resource-attachment-delete' }, { csrfToken: 'resource-attachment-delete' }),
     jsonResponse({ ...attachment, status: 'deleted' }),
   ], async (calls) => {
@@ -167,6 +169,7 @@ test('project resource attachments use fixed Browser paths and access grants', a
     await getProjectResourceAttachmentUploadUrl('YCE', 9, 11);
     await markProjectResourceAttachmentUploaded('YCE', 9, 11);
     await getProjectResourceAttachmentDownloadUrl('YCE', 9, 11, 'grant token');
+    await getProjectResourceAttachmentPreview('YCE', 9, 11, 'grant token');
     await deleteProjectResourceAttachment('YCE', 9, 11);
 
     const businessCalls = calls.filter(({ url }) => url !== '/api/v1/auth/csrf');
@@ -176,6 +179,7 @@ test('project resource attachments use fixed Browser paths and access grants', a
       ['/api/v1/projects/YCE/resources/9/attachments/11/upload-url', undefined],
       ['/api/v1/projects/YCE/resources/9/attachments/11/uploaded', 'POST'],
       ['/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token', undefined],
+      ['/api/v1/projects/YCE/resources/9/attachments/11/preview?access=grant+token', undefined],
       ['/api/v1/projects/YCE/resources/9/attachments/11', 'DELETE'],
     ]);
     assert.deepEqual(businessCalls.filter(({ options }) => options.method && options.method !== 'GET').map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), [

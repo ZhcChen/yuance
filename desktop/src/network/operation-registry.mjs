@@ -62,6 +62,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.resourcearchive", projectResourceArchiveOperation],
     ["project.resourcepasswordreset", projectResourcePasswordResetOperation],
     ["project.resourceattachments", projectResourceAttachmentsOperation],
+    ["project.resourceattachmentpreview", projectResourceAttachmentPreviewOperation],
     ["project.resourceattachmentdelete", projectResourceAttachmentDeleteOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
@@ -268,6 +269,13 @@ function projectResourceAttachmentsOperation(input) {
   const query = new URLSearchParams();
   appendOptionalString(query, "access", optionalAccessToken(input.accessToken));
   return descriptor("GET", withQuery(`/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/attachments`, query), parseAttachments, true, "array");
+}
+
+function projectResourceAttachmentPreviewOperation(input) {
+  exactKeys(input, ["accessToken", "attachmentId", "projectKey", "resourceId"]);
+  const query = new URLSearchParams();
+  appendOptionalString(query, "access", optionalAccessToken(input.accessToken));
+  return descriptor("GET", withQuery(`/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/attachments/${positiveInteger(input.attachmentId)}/preview`, query), parseAttachmentPreview);
 }
 
 function projectResourceAttachmentDeleteOperation(input) {
@@ -582,7 +590,14 @@ function parseAttachmentPreview(value) { return freezeDto(value, {
   }),
   content_url: apiPath, download_url: apiPath,
 }); }
-function nullablePreviewNavigationLink(value) { return value === null ? null : freezeDto(value, { id: positiveInteger, title: textString, url: apiPath }); }
+function nullablePreviewNavigationLink(value) {
+  if (value === null) return null;
+  if (!isPlainObject(value)) throw new TypeError("preview navigation link is invalid");
+  const id = positiveInteger(value.id);
+  const title = textString(value.title);
+  apiPath(value.url);
+  return Object.freeze({ id, title });
+}
 function nullablePreviewKind(value) { if (value === null || ["image", "video", "document"].includes(value)) return value; throw new TypeError("preview kind is invalid"); }
 function nullableShortString(value) { return value === null ? null : shortString(value); }
 function apiPath(value) { if (typeof value !== "string" || !value.startsWith("/api/v1/") || value.length > 2048) throw new TypeError("API path is invalid"); return value; }

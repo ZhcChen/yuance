@@ -1,6 +1,7 @@
 // @ts-check
 
 import { attachmentCreateRequestBody, attachmentFromPayload, attachmentSignedUrlFromPayload, attachmentsFromPayload } from './work-items.js';
+import { projectAttachmentPreviewFromPayload } from './projects.js';
 
 /** @typedef {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite: () => Promise<void> }} ResourceClientDependencies */
 /** @typedef {ReturnType<typeof createResourceClient>} ResourceClient */
@@ -65,6 +66,9 @@ export function createResourceClient({ request, prepareWrite }) {
     },
     async getProjectResourceAttachmentDownloadUrl(projectKey, resourceId, attachmentId, accessToken = '') {
       return attachmentSignedUrlFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/download-url${resourceAccessSuffix(accessToken)}`));
+    },
+    async getProjectResourceAttachmentPreview(projectKey, resourceId, attachmentId, accessToken = '') {
+      return projectAttachmentPreviewFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/preview${resourceAccessSuffix(accessToken)}`));
     },
     async deleteProjectResourceAttachment(projectKey, resourceId, attachmentId) {
       await prepareWrite();

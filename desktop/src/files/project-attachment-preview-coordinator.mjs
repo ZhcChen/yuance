@@ -18,6 +18,21 @@ export function createProjectAttachmentPreviewCoordinator({ restTransport, loade
     }
   }
 
+  async function openProjectResourceAttachmentPreview(input) {
+    const { projectKey, resourceId, attachmentId, accessToken, binding, signal } = parseResourceOpenInput(input);
+    const metadata = await restTransport.execute("project.resourceattachmentpreview", { projectKey, resourceId, attachmentId, accessToken });
+    const query = accessToken ? `?${new URLSearchParams({ access: accessToken })}` : "";
+    const expectedContentPath = `/api/v1/projects/${projectKey}/resources/${resourceId}/attachments/${attachmentId}/preview/content${query}`;
+    if (metadata?.attachment?.id !== attachmentId || metadata.attachment.status !== "uploaded" || metadata.attachment.byte_size > MAX_PREVIEW_BYTES || metadata.content_url !== expectedContentPath || metadata.preview?.content_enabled !== true || !["image", "video", "document"].includes(metadata.preview.kind)) throw previewError("preview_unavailable");
+    const snapshot = await loader.load({ contentPath: expectedContentPath, contentType: metadata.attachment.content_type, byteSize: metadata.attachment.byte_size, signal });
+    try {
+      return Object.freeze({ ...vault.issue(snapshot, binding), attachment: metadata.attachment, preview: metadata.preview, navigation: metadata.navigation });
+    } catch (error) {
+      await snapshot.remove().catch(() => {});
+      throw error;
+    }
+  }
+
   function releaseProjectAttachmentPreview(input) {
     if (!isPlainObject(input) || !sameKeys(input, ["binding", "capability"]) || typeof input.capability !== "string") throw new TypeError("preview release input is invalid");
     validateBinding(input.binding);
@@ -25,7 +40,12 @@ export function createProjectAttachmentPreviewCoordinator({ restTransport, loade
     return Object.freeze({ status: "released" });
   }
 
-  return Object.freeze({ openProjectAttachmentPreview, releaseProjectAttachmentPreview });
+  return Object.freeze({ openProjectAttachmentPreview, openProjectResourceAttachmentPreview, releaseProjectAttachmentPreview });
+}
+function parseResourceOpenInput(value) {
+  if (!isPlainObject(value) || !sameKeys(value, ["accessToken", "attachmentId", "binding", "projectKey", "resourceId", "signal"]) || typeof value.projectKey !== "string" || !PROJECT_KEY.test(value.projectKey) || !Number.isSafeInteger(value.resourceId) || value.resourceId < 1 || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1 || typeof value.accessToken !== "string" || value.accessToken.length > 4096 || (value.signal !== undefined && !(value.signal instanceof AbortSignal))) throw new TypeError("resource preview open input is invalid");
+  validateBinding(value.binding);
+  return value;
 }
 
 function parseOpenInput(value) {

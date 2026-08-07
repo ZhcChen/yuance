@@ -22,6 +22,7 @@ pub const RESOURCE_ACCESS_PASSWORD_ACTION_SET: &str = "set";
 pub const RESOURCE_ACCESS_PASSWORD_ACTION_CLEAR: &str = "clear";
 const RESOURCE_ACCESS_AAD: &[u8] = b"yuance:project-resource-access:v1";
 const RESOURCE_ACCESS_TTL_SECONDS: i64 = 15 * 60;
+const RESOURCE_ACCESS_TOKEN_MAX_LENGTH: usize = 4096;
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ResourceAccessGrant {
@@ -775,7 +776,7 @@ pub async fn verify_resource_access_token(
     user_id: i64,
     resource_id: i64,
 ) -> AppResult<bool> {
-    if token.trim().is_empty() {
+    if token.trim().is_empty() || token.len() > RESOURCE_ACCESS_TOKEN_MAX_LENGTH {
         return Ok(false);
     }
     let plaintext = match crypto::decrypt_secret(security_master_key, token, RESOURCE_ACCESS_AAD) {

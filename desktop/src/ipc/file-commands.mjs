@@ -11,6 +11,7 @@ export const FILE_CHANNELS = Object.freeze({
   downloadProjectAttachment: "yuance:file-download-project-attachment",
   downloadProjectResourceAttachment: "yuance:file-download-project-resource-attachment",
   openProjectAttachmentPreview: "yuance:file-open-project-attachment-preview",
+  openProjectResourceAttachmentPreview: "yuance:file-open-project-resource-attachment-preview",
   releaseProjectAttachmentPreview: "yuance:file-release-project-attachment-preview",
   attachmentProgress: "yuance:file-attachment-progress",
   revealDownload: "yuance:file-reveal-download",
@@ -61,6 +62,16 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
       const onDestroyed = () => controller.abort();
       event.sender.once?.("destroyed", onDestroyed);
       try { return normalizePreview(await previewCoordinator.openProjectAttachmentPreview({ ...reference, binding, signal: controller.signal })); }
+      finally { event.sender.removeListener?.("destroyed", onDestroyed); }
+    },
+    [FILE_CHANNELS.openProjectResourceAttachmentPreview]: async (event, payload) => {
+      assertSender(event);
+      const reference = parseProjectResourcePreview(payload);
+      const binding = stripPurpose(getBinding(event, "preview"));
+      const controller = new AbortController();
+      const onDestroyed = () => controller.abort();
+      event.sender.once?.("destroyed", onDestroyed);
+      try { return normalizePreview(await previewCoordinator.openProjectResourceAttachmentPreview({ ...reference, binding, signal: controller.signal })); }
       finally { event.sender.removeListener?.("destroyed", onDestroyed); }
     },
     [FILE_CHANNELS.releaseProjectAttachmentPreview]: async (event, capability) => {
@@ -136,6 +147,10 @@ function parseProjectPreview(value) {
   if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "projectKey"]) || typeof value.projectKey !== "string" || !/^[A-Z][A-Z0-9-]{1,31}$/u.test(value.projectKey) || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1) throw new TypeError("preview request is invalid");
   return Object.freeze({ projectKey: value.projectKey, attachmentId: value.attachmentId });
 }
+function parseProjectResourcePreview(value) {
+  if (!isPlainObject(value) || !sameKeys(value, ["accessToken", "attachmentId", "projectKey", "resourceId"]) || typeof value.projectKey !== "string" || !/^[A-Z][A-Z0-9-]{1,31}$/u.test(value.projectKey) || !Number.isSafeInteger(value.resourceId) || value.resourceId < 1 || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1 || typeof value.accessToken !== "string" || value.accessToken.length > 4096) throw new TypeError("resource preview request is invalid");
+  return Object.freeze({ projectKey: value.projectKey, resourceId: value.resourceId, attachmentId: value.attachmentId, accessToken: value.accessToken });
+}
 function attachmentReference(value, target, attachment) {
   return Object.freeze({ ...(["project", "resource"].includes(target) ? { projectKey: value.projectKey } : { itemKey: value.itemKey }), ...(target === "resource" ? { resourceId: value.resourceId, ...(value.accessToken === undefined ? {} : { accessToken: value.accessToken }) } : {}), ...(target === "comment" ? { commentId: value.commentId } : {}), ...(attachment ? { attachmentId: value.attachmentId } : {}) });
 }
@@ -167,7 +182,7 @@ function normalizePreview(value) {
   if (!isPlainObject(preview) || ![null, "image", "video", "document"].includes(preview.kind) || !isPlainObject(navigation) || !Number.isSafeInteger(navigation.position) || !Number.isSafeInteger(navigation.total)) throw publicError("preview_unavailable");
   return Object.freeze({ capability: value.capability, source: value.source, contentType: value.contentType, byteSize: value.byteSize, attachment: normalizeAttachment(value.attachment), preview: Object.freeze({ kind: preview.kind, strategy: nullableText(preview.strategy), file_type: nullableText(preview.file_type), kind_label: nullableText(preview.kind_label), is_experimental: preview.is_experimental === true, legacy_preview_enabled: preview.legacy_preview_enabled === true, content_enabled: preview.content_enabled === true }), navigation: Object.freeze({ position: navigation.position, total: navigation.total, previous: normalizePreviewLink(navigation.previous), next: normalizePreviewLink(navigation.next) }) });
 }
-function normalizePreviewLink(value) { if (value === null) return null; if (!isPlainObject(value) || !Number.isSafeInteger(value.id) || value.id < 1 || typeof value.title !== "string" || typeof value.url !== "string" || !value.url.startsWith("/api/v1/")) throw publicError("preview_unavailable"); return Object.freeze({ id: value.id, title: value.title, url: value.url }); }
+function normalizePreviewLink(value) { if (value === null) return null; if (!isPlainObject(value) || !sameKeys(value, ["id", "title"]) || !Number.isSafeInteger(value.id) || value.id < 1 || typeof value.title !== "string") throw publicError("preview_unavailable"); return Object.freeze({ id: value.id, title: value.title }); }
 function nullableText(value) { if (value === null) return null; if (typeof value !== "string" || value.length > 256) throw publicError("preview_unavailable"); return value; }
 function normalizeAttachment(value) {
   if (!isPlainObject(value)) throw publicError("file_unavailable");
@@ -176,7 +191,7 @@ function normalizeAttachment(value) {
 function hasAttachmentOperations(value) {
   return ["uploadWorkItemAttachment", "uploadWorkItemCommentAttachment", "uploadProjectAttachment", "uploadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "downloadProjectAttachment", "downloadProjectResourceAttachment"].every((name) => typeof value?.[name] === "function");
 }
-function hasPreviewOperations(value) { return ["openProjectAttachmentPreview", "releaseProjectAttachmentPreview"].every((name) => typeof value?.[name] === "function"); }
+function hasPreviewOperations(value) { return ["openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "releaseProjectAttachmentPreview"].every((name) => typeof value?.[name] === "function"); }
 function rejectPayload(payload) { if (payload !== undefined) throw new TypeError("file command does not accept payload"); }
 function normalizeSelection(value) {
   if (value === null) return null;

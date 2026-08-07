@@ -1,7 +1,8 @@
 import { createProfileKey } from "../auth/profile.mjs";
 import { isTrustedSessionFetch } from "../network/network-session.mjs";
 
-const CONTENT_PATH = /^\/api\/v1\/projects\/[A-Z][A-Z0-9-]{1,31}\/attachments\/[1-9][0-9]*\/preview\/content$/u;
+const PROJECT_CONTENT_PATH = /^\/api\/v1\/projects\/[A-Z][A-Z0-9-]{1,31}\/attachments\/[1-9][0-9]*\/preview\/content$/u;
+const RESOURCE_CONTENT_PATH = /^\/api\/v1\/projects\/[A-Z][A-Z0-9-]{1,31}\/resources\/[1-9][0-9]*\/attachments\/[1-9][0-9]*\/preview\/content$/u;
 const MAX_TIMEOUT_MS = 30_000;
 
 export function createPreviewContentLoader({ profile, credentialRuntime, fetchImpl, spool, timeoutMs = MAX_TIMEOUT_MS } = {}) {
@@ -12,7 +13,7 @@ export function createPreviewContentLoader({ profile, credentialRuntime, fetchIm
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_TIMEOUT_MS) throw new TypeError("preview timeout exceeds the fixed safety limit");
 
   async function load({ contentPath, contentType, byteSize, signal } = {}) {
-    if (typeof contentPath !== "string" || !CONTENT_PATH.test(contentPath) || typeof contentType !== "string" || contentType.length < 1 || contentType.length > 255 || !Number.isSafeInteger(byteSize) || byteSize < 0 || (signal !== undefined && !(signal instanceof AbortSignal))) throw previewError("preview_request_invalid");
+    if (typeof contentPath !== "string" || !isPreviewContentPath(contentPath) || typeof contentType !== "string" || contentType.length < 1 || contentType.length > 255 || !Number.isSafeInteger(byteSize) || byteSize < 0 || (signal !== undefined && !(signal instanceof AbortSignal))) throw previewError("preview_request_invalid");
     const first = await fetchOnce({ contentPath, contentType, byteSize, signal, allowRefresh: true });
     if (!first.expired) return first.snapshot;
     if (!await credentialRuntime.refreshAccess(first.epoch)) throw previewError("preview_session_stale");
@@ -50,6 +51,17 @@ export function createPreviewContentLoader({ profile, credentialRuntime, fetchIm
   }
 
   return Object.freeze({ load });
+}
+function isPreviewContentPath(value) {
+  let parsed;
+  try { parsed = new URL(value, "https://preview.invalid"); } catch { return false; }
+  if (parsed.origin !== "https://preview.invalid" || parsed.hash) return false;
+  if (PROJECT_CONTENT_PATH.test(parsed.pathname)) return parsed.search === "";
+  if (!RESOURCE_CONTENT_PATH.test(parsed.pathname)) return false;
+  const entries = [...parsed.searchParams.entries()];
+  if (entries.length === 0) return parsed.search === "";
+  if (entries.length !== 1 || entries[0][0] !== "access" || entries[0][1].length < 1 || entries[0][1].length > 4096) return false;
+  return parsed.search === `?${new URLSearchParams({ access: entries[0][1] })}`;
 }
 
 function validateResponse(response, url, contentType, byteSize) {

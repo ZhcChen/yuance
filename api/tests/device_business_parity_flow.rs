@@ -246,6 +246,46 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"][0]["id"], attachment_id);
+    let preview_path = format!("{attachment_member}/preview?{access_query}");
+    let response = request(
+        &app,
+        "GET",
+        &format!("{attachment_member}/preview"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = request(&app, "GET", &preview_path, &credentials.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let preview = json_body(response).await;
+    assert_eq!(preview["data"]["attachment"]["id"], attachment_id);
+    assert_eq!(preview["data"]["preview"]["kind"], "document");
+    assert_eq!(preview["data"]["preview"]["content_enabled"], true);
+    assert!(
+        preview["data"]["content_url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/preview/content?{access_query}"))
+    );
+    assert!(
+        preview["data"]["download_url"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/download-url?{access_query}"))
+    );
+    let response = request_with_headers(
+        &app,
+        "GET",
+        &format!("{attachment_member}/preview/content?{access_query}"),
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=10-17")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 10-17/29");
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&body[..], b"resource");
     let response = request(
         &app,
         "GET",
@@ -279,6 +319,8 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         None,
     )
     .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = request(&app, "GET", &preview_path, &credentials.access_token, None).await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response = request(
         &app,
