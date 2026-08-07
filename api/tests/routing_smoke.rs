@@ -581,6 +581,7 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/system/users?page=2&per_page=20",
             "/web/system/roles?role=member&page=2&per_page=20",
             "/web/system/roles/member/permissions",
+            "/web/system/storage?page=2&per_page=20",
         ] {
             migrated_route_responses.push(
                 app.clone()

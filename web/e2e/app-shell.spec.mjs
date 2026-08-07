@@ -2273,6 +2273,34 @@ test('shared system storage view renders one masked paginated snapshot in the ap
   await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=3&per_page=20');
 });
 
+test('formal web system storage owner keeps its route while rendering the shared workspace', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/storage-view*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.pathname + url.search);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      config: {
+        id: 12, provider: 'aliyun_oss', endpoint: 'https://oss-cn-hangzhou.aliyuncs.com', region: 'cn-hangzhou',
+        bucket: 'yuance-formal-files', access_key_id_hint: 'AKIA****E2E1', status: 'active', version: 12,
+        created_by: '系统管理员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z',
+      },
+      versions: [],
+      pagination: { page: 2, per_page: 20, total_items: 21, total_pages: 2 },
+      inspection: { ok: true, needs_initialization: false, message: '对象存储桶运行就绪', checks: [] },
+      inspection_error: '', can_manage_storage: true,
+    } }) });
+  });
+
+  await login(page, '/web/system/storage?page=2&per_page=20');
+
+  await expect(page).toHaveURL(/\/web\/system\/storage\?page=2&per_page=20$/);
+  await expect(page).toHaveTitle('对象存储 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '对象存储' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '存储工作台' })).toContainText('yuance-formal-files');
+  await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=2&per_page=20');
+  expect(page.url()).not.toContain('/web/app/system/storage');
+});
+
 test('shared system storage mutations preserve confirmation lock and final refresh semantics', async ({ page }) => {
   const mutations = [];
   let version = 3;

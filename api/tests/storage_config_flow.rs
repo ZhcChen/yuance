@@ -13,7 +13,7 @@ use yuance_api::{
 const CSRF_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[tokio::test]
-async fn storage_page_renders_empty_state_for_admin() {
+async fn system_storage_keeps_ssr_rollback_when_shared_shell_is_disabled() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -42,6 +42,7 @@ async fn storage_page_renders_empty_state_for_admin() {
     assert!(body.contains(r#"value="yuance-files""#));
     assert!(body.contains("qfy-sc 兼容策略"));
     assert!(body.contains("对象存储尚未激活，请先保存并激活配置。"));
+    assert!(!body.contains("/web/app/assets/"));
 }
 
 #[tokio::test]

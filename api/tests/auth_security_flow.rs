@@ -261,6 +261,32 @@ async fn web_app_system_roles_owners_preserve_unauthenticated_return_paths() {
 }
 
 #[tokio::test]
+async fn web_app_system_storage_owner_preserves_unauthenticated_return_path() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/storage?page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fstorage%3Fpage%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
 async fn web_app_system_owner_keeps_rust_permission_gate() {
     let _guard = env_lock().lock().expect("env lock should acquire");
     let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
@@ -387,6 +413,48 @@ async fn web_app_system_roles_owners_keep_rust_permission_gate() {
 
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
+}
+
+#[tokio::test]
+async fn web_app_system_storage_owner_keeps_rust_permission_gate() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_storage_denied".to_string(),
+            display_name: "存储管理拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/storage")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]
