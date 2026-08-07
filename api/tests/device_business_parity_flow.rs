@@ -31,6 +31,8 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     for path in [
         "/api/v1/auth/me",
         "/api/v1/projects",
+        "/api/v1/projects/YCE",
+        "/api/v1/projects/YCE/members",
         "/api/v1/current-project",
         "/api/v1/topbar/status",
         "/api/v1/notifications",
@@ -53,6 +55,17 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["title"], "Device parity mutation");
+
+    let response = request(
+        &app,
+        "PATCH",
+        "/api/v1/projects/YCE",
+        &credentials.access_token,
+        Some(serde_json::json!({"description": "Device project mutation"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["description"], "Device project mutation");
 
     device_sessions::revoke_family_for_user(
         &pool,
@@ -145,6 +158,24 @@ async fn device_principal_does_not_bypass_project_membership_or_viewer_role() {
         "/api/v1/projects/YCE",
         &credentials.access_token,
         None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = request(
+        &app,
+        "GET",
+        "/api/v1/projects/YCE/members",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = request(
+        &app,
+        "PATCH",
+        "/api/v1/projects/YCE",
+        &credentials.access_token,
+        Some(serde_json::json!({"description": "forbidden viewer project mutation"})),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);

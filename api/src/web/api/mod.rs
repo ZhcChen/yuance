@@ -1029,6 +1029,15 @@ impl ApiPrincipal {
             .to_string(),
         }
     }
+
+    fn audit_details_with(&self, details: serde_json::Value) -> String {
+        let mut base = serde_json::from_str::<serde_json::Value>(&self.audit_details())
+            .unwrap_or_else(|_| serde_json::json!({}));
+        if let (Some(base), Some(details)) = (base.as_object_mut(), details.as_object()) {
+            base.extend(details.clone());
+        }
+        base.to_string()
+    }
 }
 
 fn principal_realtime_display_name(principal: &ApiPrincipal) -> String {
@@ -1985,7 +1994,8 @@ pub async fn get_project(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -2013,7 +2023,8 @@ pub async fn update_project(
     Path(project_key): Path<String>,
     Json(payload): Json<UpdateProjectRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -2048,10 +2059,10 @@ pub async fn update_project(
         "project.update",
         "project",
         &updated.project_key,
-        &format!(
-            r#"{{"status":"{}","owner_username":"{}"}}"#,
-            updated.status, updated.owner_username
-        ),
+        &principal.audit_details_with(serde_json::json!({
+            "status": updated.status,
+            "owner_username": updated.owner_username,
+        })),
     )
     .await?;
 
@@ -2075,7 +2086,8 @@ pub async fn add_project_member(
     Path(project_key): Path<String>,
     Json(payload): Json<AddProjectMemberRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -2098,10 +2110,10 @@ pub async fn add_project_member(
         "project.member.add",
         "project",
         &project_key,
-        &format!(
-            r#"{{"username":"{}","member_role":"{}"}}"#,
-            member.username, member.member_role
-        ),
+        &principal.audit_details_with(serde_json::json!({
+            "username": member.username,
+            "member_role": member.member_role,
+        })),
     )
     .await?;
 
@@ -2113,7 +2125,8 @@ pub async fn list_project_members(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectMemberPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -2135,7 +2148,8 @@ pub async fn update_project_member_role(
     Path((project_key, username)): Path<(String, String)>,
     Json(payload): Json<UpdateProjectMemberRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectMemberPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -2158,10 +2172,10 @@ pub async fn update_project_member_role(
         "project.member.role.update",
         "project",
         &project_key,
-        &format!(
-            r#"{{"username":"{}","member_role":"{}"}}"#,
-            member.username, member.member_role
-        ),
+        &principal.audit_details_with(serde_json::json!({
+            "username": member.username,
+            "member_role": member.member_role,
+        })),
     )
     .await?;
 
@@ -2173,7 +2187,8 @@ pub async fn remove_project_member(
     headers: HeaderMap,
     Path((project_key, username)): Path<(String, String)>,
 ) -> AppResult<StatusCode> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.manage").await?;
@@ -2189,7 +2204,7 @@ pub async fn remove_project_member(
         "project.member.remove",
         "project",
         &project_key,
-        &format!(r#"{{"username":"{}"}}"#, username),
+        &principal.audit_details_with(serde_json::json!({"username": username})),
     )
     .await?;
 
