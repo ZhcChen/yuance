@@ -2259,6 +2259,48 @@ test('shared system audit preserves filters pagination and read-only evidence', 
   expect(requests.some(({ search }) => search === '?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20')).toBe(true);
 });
 
+test('shared system API docs render bounded endpoint navigation without remote Scalar', async ({ page }) => {
+  const methods = [];
+  const document = {
+    openapi: '3.1.0',
+    info: { title: '元策系统 API', version: '1.1.0', description: '面向版本发布自动化的系统契约。' },
+    paths: {
+      '/api/v1/system/releases': {
+        get: { tags: ['releases'], summary: '分页获取版本列表', parameters: [{ $ref: '#/components/parameters/Page' }], responses: { 200: { description: '版本列表' } } },
+        post: { tags: ['releases'], summary: '创建版本草稿', requestBody: { required: true }, responses: { 201: { description: '创建成功' } } },
+      },
+    },
+    components: { parameters: { Page: { name: 'page', in: 'query', schema: { type: 'integer' } } } },
+  };
+  await page.route('**/api/v1/system/api-docs-view', async (route) => {
+    methods.push(route.request().method());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { source: JSON.stringify(document) } }) });
+  });
+
+  await login(page, '/web/app/system/api-docs');
+  await expect(page).toHaveTitle('系统 API 文档 - 元策');
+  await expect(page.getByRole('heading', { level: 2, name: '元策系统 API' })).toBeVisible();
+  const navigation = page.getByRole('navigation', { name: 'API 端点导航' });
+  await expect(navigation.getByRole('link')).toHaveCount(2);
+  await expect(navigation).toContainText('GET');
+  await expect(navigation).toContainText('POST');
+  await expect(navigation).toContainText('/api/v1/system/releases');
+  await expect(navigation).toContainText('创建版本草稿');
+
+  const operations = page.getByLabel('API 操作契约');
+  await expect(operations).toContainText('分页获取版本列表');
+  await operations.locator('details').first().getByText('查看完整操作契约').click();
+  await expect(operations.locator('pre').first()).toContainText('#/components/parameters/Page');
+  await page.getByText('查看 Components').click();
+  await expect(page.locator('details', { hasText: '查看 Components' }).locator('pre')).toContainText('"Page"');
+  await page.getByText('查看完整 OpenAPI JSON').click();
+  await expect(page.locator('details', { hasText: '查看完整 OpenAPI JSON' }).locator('pre')).toContainText('"openapi": "3.1.0"');
+  await expect(page.getByRole('link', { name: '系统 Token 管理' })).toHaveAttribute('href', '/web/app/system/openapi');
+  expect(methods.length).toBeGreaterThan(0);
+  expect(methods.every((method) => method === 'GET')).toBe(true);
+  expect(await page.locator('script[src*="scalar"], iframe').count()).toBe(0);
+});
+
 test('shared system users view renders atomic rows and preserves pagination in the app owner', async ({ page }) => {
   const requests = [];
   await page.route('**/api/v1/system/users-view*', async (route) => {

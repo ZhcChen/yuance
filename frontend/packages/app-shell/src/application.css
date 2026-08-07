@@ -247,6 +247,124 @@ h2 {
   margin-bottom: 16px;
 }
 
+.api-docs-nav {
+  display: grid;
+  gap: 2px;
+  margin: 20px 0 8px;
+  border-top: 1px solid #d7deea;
+  border-bottom: 1px solid #d7deea;
+}
+
+.api-docs-nav a {
+  display: grid;
+  grid-template-columns: 64px minmax(220px, 1fr) minmax(180px, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 4px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.api-docs-nav a:last-child {
+  border-bottom: 0;
+}
+
+.api-docs-method {
+  display: inline-flex;
+  width: 58px;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: #ffffff;
+  background: #475569;
+  font-size: 12px;
+}
+
+.api-docs-method-get { background: #166534; }
+.api-docs-method-post { background: #1d4ed8; }
+.api-docs-method-patch,
+.api-docs-method-put { background: #a16207; }
+.api-docs-method-delete { background: #b91c1c; }
+
+.api-docs-operations {
+  display: grid;
+}
+
+.api-docs-operation {
+  padding: 22px 0;
+  border-bottom: 1px solid #d7deea;
+  scroll-margin-top: 16px;
+}
+
+.api-docs-heading {
+  display: flex;
+  min-width: 0;
+  gap: 12px;
+  align-items: center;
+}
+
+.api-docs-heading h3 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.shell-code-block {
+  max-height: 520px;
+  margin: 12px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid #d7deea;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #172033;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.api-docs-operation details,
+.shell-panel-wide > details {
+  margin-top: 14px;
+}
+
+.api-docs-operation summary,
+.shell-panel-wide > details summary {
+  cursor: pointer;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+html[data-theme="dark"] .api-docs-nav,
+html[data-theme="dark"] .api-docs-operation,
+html[data-theme="dark"] .shell-code-block {
+  border-color: #334155;
+}
+
+html[data-theme="dark"] .api-docs-nav a {
+  border-color: #273449;
+}
+
+html[data-theme="dark"] .shell-code-block {
+  background: #111827;
+  color: #e5e7eb;
+}
+
+@media (max-width: 720px) {
+  .api-docs-nav a {
+    grid-template-columns: 58px minmax(0, 1fr);
+  }
+
+  .api-docs-nav a span {
+    grid-column: 1 / -1;
+  }
+
+  .api-docs-operation .shell-panel-header {
+    align-items: flex-start;
+  }
+}
+
 .shell-link {
   color: #1d4ed8;
   text-decoration: none;

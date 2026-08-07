@@ -38,6 +38,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["system.dashboard", {}, "/api/v1/system/dashboard"],
     ["system.databasestats", {}, "/api/v1/system/database-stats"],
     ["system.audit", { actor: "Alice", action: "auth.login", targetType: "user", targetId: "7", page: 2, perPage: 20 }, "/api/v1/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20"],
+    ["system.apidocs", {}, "/api/v1/system/api-docs-view"],
     ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
     ["system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }, "/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20"],
     ["system.storageview", { page: 2, perPage: 20 }, "/api/v1/system/storage-view?page=2&per_page=20"],
@@ -133,6 +134,12 @@ test("system audit response is bounded to public log fields", () => {
   const payload = { items: [{ id: 1, actor_display_name: "Alice", actor_username: "alice", action: "auth.login", target_type: "user", target_id: "7", metadata: "{}", ip: "127.0.0.1", user_agent: "test", created_at: "2026-08-08T00:00:00Z" }], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 } };
   assert.deepEqual(parse(payload), payload);
   assert.throws(() => parse({ ...payload, items: [{ ...payload.items[0], secret: "no" }] }), /fields/i);
+});
+
+test("system API docs response only accepts one bounded document", () => {
+  const parse = createOperationRegistry().resolve("system.apidocs", {}).parse;
+  assert.deepEqual(parse({ source: '{"openapi":"3.1.0"}' }), { source: '{"openapi":"3.1.0"}' });
+  assert.throws(() => parse({ source: "{}", secret: "no" }), /fields/i);
 });
 
 test("system storage view response excludes raw storage credentials", () => {

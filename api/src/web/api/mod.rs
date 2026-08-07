@@ -1264,6 +1264,11 @@ pub struct SystemOpenApiViewPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SystemApiDocsPayload {
+    pub source: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CreatedSystemApiTokenPayload {
     pub token: SystemApiTokenPayload,
     pub raw_token: String,
@@ -6365,6 +6370,19 @@ pub async fn get_system_openapi_view(
         token_limit: system_api_tokens::MAX_ACTIVE_SYSTEM_TOKENS,
         items,
         can_manage_tokens,
+    }))
+}
+
+pub async fn get_system_api_docs(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<SystemApiDocsPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.view").await?;
+
+    Ok(json(SystemApiDocsPayload {
+        source: include_str!("../../../../docs/openapi/yuance-system.openapi.json").to_string(),
     }))
 }
 

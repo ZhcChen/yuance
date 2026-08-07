@@ -721,6 +721,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::get_system_openapi_view),
         )
         .route(
+            "/api/v1/system/api-docs-view",
+            get(web::api::get_system_api_docs),
+        )
+        .route(
             "/api/v1/system/api-tokens",
             post(web::api::create_system_api_token),
         )

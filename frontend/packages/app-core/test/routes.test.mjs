@@ -13,6 +13,7 @@ import {
   buildSearchPath,
   buildSystemPath,
   buildSystemOpenApiPath,
+  buildSystemApiDocsPath,
   buildSystemDatabaseStatsPath,
   buildSystemAuditPath,
   buildSystemPermissionsPath,
@@ -72,6 +73,13 @@ test('system OpenAPI route preserves Browser and Desktop owners', () => {
     id: 'system-openapi', owner: 'web', pathname: '/web/system/openapi', search: '', title: '系统 OpenAPI',
   });
   assert.equal(parseAppRoute('/web/app/system/openapi').owner, 'app');
+});
+
+test('system API docs route preserves Browser and Desktop owners', () => {
+  assert.equal(buildSystemApiDocsPath('web'), '/web/system/api-docs');
+  assert.equal(buildSystemApiDocsPath('app'), '/web/app/system/api-docs');
+  assert.equal(parseAppRoute('/web/system/api-docs').id, 'system-api-docs');
+  assert.equal(parseAppRoute('/web/app/system/api-docs').owner, 'app');
 });
 
 test('system database stats route preserves Browser and Desktop owners', () => {

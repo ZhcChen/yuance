@@ -146,6 +146,10 @@ export function buildSystemOpenApiPath(owner = 'web') {
   return owner === 'app' ? '/web/app/system/openapi' : '/web/system/openapi';
 }
 
+export function buildSystemApiDocsPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system/api-docs' : '/web/system/api-docs';
+}
+
 export function buildSystemDatabaseStatsPath(owner = 'web') {
   return owner === 'app' ? '/web/app/system/database-stats' : '/web/system/database-stats';
 }
@@ -411,6 +415,12 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
   if (pathname === '/web/system/openapi' || pathname === '/web/app/system/openapi') {
     return {
       id: 'system-openapi', owner, pathname, search, title: '系统 OpenAPI',
+    };
+  }
+
+  if (pathname === '/web/system/api-docs' || pathname === '/web/app/system/api-docs') {
+    return {
+      id: 'system-api-docs', owner, pathname, search, title: '系统 API 文档',
     };
   }
 

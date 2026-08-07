@@ -22,7 +22,7 @@ import { createResourceClient } from './resources.js';
 /** @typedef {import('./account-security.js').AccountSecurityClient} AccountSecurityClient */
 /** @typedef {import('./projects.js').ProjectClient} ProjectClient */
 /** @typedef {import('./resources.js').ResourceClient} ResourceClient */
-/** @typedef {import('./system.js').SystemClient & import('./system.js').SystemAuditClient} SystemClient */
+/** @typedef {import('./system.js').SystemClient & import('./system.js').SystemAuditClient & import('./system.js').SystemApiDocsClient} SystemClient */
 /** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & SystemClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**

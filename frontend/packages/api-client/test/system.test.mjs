@@ -36,6 +36,13 @@ test('system audit logs preserve compact filters and pagination', async () => {
   assert.deepEqual(calls, ['/api/v1/system/audit', '/api/v1/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20']);
 });
 
+test('system API docs use one fixed read contract', async () => {
+  const calls = [];
+  const client = createSystemClient({ request: async (url) => { calls.push(url); return { source: '{}' }; } });
+  await client.getSystemApiDocs();
+  assert.deepEqual(calls, ['/api/v1/system/api-docs-view']);
+});
+
 test('system users view preserves compact pagination query', async () => {
   const calls = [];
   const client = createSystemClient({ request: async (url) => {

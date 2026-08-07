@@ -16,6 +16,8 @@ import {
   buildSearchPath,
   buildSystemPath,
   buildSystemAuditPath,
+  buildSystemApiDocsPath,
+  buildSystemOpenApiPath,
   buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
@@ -593,6 +595,8 @@ function routeDescription(route) {
       return '进入页面只读取当前宿主缓存；手动刷新后才读取最新表清单、备注和数据量。';
     case 'system-audit':
       return '关键系统操作按操作人、动作和对象过滤，两个宿主共用同一只读审计事实。';
+    case 'system-api-docs':
+      return '仓库内置的 system OpenAPI 契约由共享查看器解析，不加载远程脚本或嵌入页面。';
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
     case 'system-openapi':
@@ -632,6 +636,7 @@ function routeEyebrow(route) {
     case 'system-permissions':
     case 'system-database-stats':
     case 'system-audit':
+    case 'system-api-docs':
     case 'system-storage':
     case 'system-openapi':
     case 'system-releases':
@@ -694,6 +699,40 @@ function auditActionLabel(action) {
     'api_token.create': '创建访问 Token', 'api_token.update': '更新访问 Token', 'api_token.delete': '删除访问 Token',
     'project_resource.password.reset': '重置资料保险箱密码',
   })[action] || action;
+}
+
+function normalizeSystemApiDocs(payload) {
+  if (!payload || typeof payload.source !== 'string' || payload.source.length > 128 * 1024) throw new Error('系统 OpenAPI 文档无效。');
+  let spec;
+  try { spec = JSON.parse(payload.source); } catch { throw new Error('系统 OpenAPI 文档不是有效 JSON。'); }
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec) || !spec.info || typeof spec.info !== 'object' || Array.isArray(spec.info) || !spec.paths || typeof spec.paths !== 'object' || Array.isArray(spec.paths)) throw new Error('系统 OpenAPI 文档结构无效。');
+  const title = typeof spec.info.title === 'string' ? spec.info.title : '';
+  const version = typeof spec.info.version === 'string' ? spec.info.version : '';
+  const description = typeof spec.info.description === 'string' ? spec.info.description : '';
+  if (!title || !version || typeof spec.openapi !== 'string') throw new Error('系统 OpenAPI 文档元信息不完整。');
+  const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace']);
+  const operations = [];
+  for (const [path, pathItem] of Object.entries(spec.paths)) {
+    if (operations.length >= 200 || typeof path !== 'string' || !path.startsWith('/') || !pathItem || typeof pathItem !== 'object' || Array.isArray(pathItem)) throw new Error('系统 OpenAPI 端点结构无效。');
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!methods.has(method)) continue;
+      if (!operation || typeof operation !== 'object' || Array.isArray(operation)) throw new Error('系统 OpenAPI 操作结构无效。');
+      operations.push({
+        id: `api-operation-${operations.length + 1}`,
+        method: method.toUpperCase(),
+        path,
+        summary: typeof operation.summary === 'string' ? operation.summary : '未命名操作',
+        description: typeof operation.description === 'string' ? operation.description : '',
+        tags: Array.isArray(operation.tags) ? operation.tags.filter((tag) => typeof tag === 'string').slice(0, 20) : [],
+        contract: JSON.stringify(operation, null, 2),
+      });
+    }
+  }
+  return {
+    title, version, description, openapi: spec.openapi, operations,
+    components: JSON.stringify(spec.components || {}, null, 2),
+    source: JSON.stringify(spec, null, 2),
+  };
 }
 
 /**
@@ -832,6 +871,7 @@ export function SharedApp({ services }) {
   const [systemDatabaseStatsError, setSystemDatabaseStatsError] = useState('');
   const systemDatabaseStatsRefreshRef = useRef(false);
   const [systemAuditPage, setSystemAuditPage] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemAuditLogs']>> | null} */ (null));
+  const [systemApiDocs, setSystemApiDocs] = useState(/** @type {ReturnType<typeof normalizeSystemApiDocs> | null} */ (null));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
@@ -1256,7 +1296,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1386,6 +1426,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-audit'
           ? api.getSystemAuditLogs({ actor: targetRoute.actor, action: targetRoute.action, targetType: targetRoute.targetType, targetId: targetRoute.targetId, page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
+        targetRoute.id === 'system-api-docs'
+          ? api.getSystemApiDocs().then(normalizeSystemApiDocs)
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1460,6 +1503,7 @@ export function SharedApp({ services }) {
         setSystemReleaseSettingsCount(nextSystemReleasesView?.settings.retention_count || 5);
       }
       if (targetRoute.id === 'system-audit') setSystemAuditPage(nextSystemAuditPage);
+      if (targetRoute.id === 'system-api-docs') setSystemApiDocs(nextSystemApiDocs);
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
       }
@@ -2937,6 +2981,8 @@ export function SharedApp({ services }) {
         ? '数据库统计 - 元策'
       : route.id === 'system-audit'
         ? '审计日志 - 元策'
+      : route.id === 'system-api-docs'
+        ? '系统 API 文档 - 元策'
       : route.id === 'system-storage'
         ? '对象存储 - 元策'
       : route.id === 'system-openapi'
@@ -4596,8 +4642,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4625,7 +4671,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4760,13 +4806,38 @@ export function SharedApp({ services }) {
               ]} />
               {systemAuditPage ? <Pagination page={systemAuditPage.pagination.page} totalPages={systemAuditPage.pagination.total_pages} totalItems={systemAuditPage.pagination.total_items} onPageChange={(page) => navigate(buildSystemAuditPath({ owner: route.owner, actor: route.actor, action: route.action, targetType: route.targetType, targetId: route.targetId, page, perPage: route.perPage }), `正在打开第 ${page} 页审计日志。`)} /> : null}
             </section>
+          ) : route.id === 'system-api-docs' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-api-docs-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-api-docs-title">{systemApiDocs?.title || '系统 API 文档'}</h2><p className="shell-muted">OpenAPI {systemApiDocs?.openapi || '-'} · 契约版本 {systemApiDocs?.version || '-'}</p></div>
+                <a className="shell-link" href={buildSystemOpenApiPath(route.owner)} onClick={(event) => handleNavigate(event, buildSystemOpenApiPath(route.owner), '正在打开系统 Token 管理。')}>系统 Token 管理</a>
+              </div>
+              {systemApiDocs ? <>
+                <p>{systemApiDocs.description}</p>
+                <nav className="api-docs-nav" aria-label="API 端点导航">
+                  {systemApiDocs.operations.map((operation) => <a key={operation.id} className="shell-link" href={`#${operation.id}`}><strong className={`api-docs-method api-docs-method-${operation.method.toLowerCase()}`}>{operation.method}</strong> <code>{operation.path}</code><span>{operation.summary}</span></a>)}
+                </nav>
+                {systemApiDocs.operations.length === 0 ? <Feedback tone="info" title="当前契约没有登记 API 操作。" /> : null}
+                <div className="api-docs-operations" aria-label="API 操作契约">
+                  {systemApiDocs.operations.map((operation) => <article id={operation.id} className="api-docs-operation" key={operation.id}>
+                    <div className="shell-panel-header"><div className="api-docs-heading"><span className={`api-docs-method api-docs-method-${operation.method.toLowerCase()}`}>{operation.method}</span><h3><code>{operation.path}</code></h3></div><a className="shell-link" href="#system-api-docs-title">返回顶部</a></div>
+                    <p><strong>{operation.summary}</strong></p>
+                    {operation.description ? <p className="shell-muted">{operation.description}</p> : null}
+                    {operation.tags.length ? <p className="shell-muted">标签：{operation.tags.join('、')}</p> : null}
+                    <details><summary>查看完整操作契约</summary><pre className="shell-code-block">{operation.contract}</pre></details>
+                  </article>)}
+                </div>
+                <details><summary>查看 Components</summary><pre className="shell-code-block">{systemApiDocs.components}</pre></details>
+                <details><summary>查看完整 OpenAPI JSON</summary><pre className="shell-code-block">{systemApiDocs.source}</pre></details>
+              </> : null}
+            </section>
           ) : route.id === 'system-openapi' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-openapi-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-openapi-title">系统 OpenAPI Token</h2><p className="shell-muted">已创建 {systemOpenApiView?.active_count || 0}/{systemOpenApiView?.token_limit || 100} 个</p></div>
                 <div className="shell-actions-inline">
                   <a className="shell-link" href="/api/system/openapi.json" target="_blank" rel="noreferrer">OpenAPI JSON</a>
-                  {route.owner === 'web' ? <a className="shell-link" href="/web/system/api-docs">API 文档</a> : null}
+                  <a className="shell-link" href={buildSystemApiDocsPath(route.owner)} onClick={(event) => handleNavigate(event, buildSystemApiDocsPath(route.owner), '正在打开系统 API 文档。')}>API 文档</a>
                   {systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建 Token</Button> : null}
                 </div>
               </div>

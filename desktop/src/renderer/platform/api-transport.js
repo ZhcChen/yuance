@@ -88,6 +88,7 @@ function resolveReadOperation(url, options) {
   if (parsed.pathname === "/api/v1/system/audit") return { operation: "system.audit", input: parseQuery(parsed.searchParams, {
     actor: "actor", action: "action", target_type: "targetType", target_id: "targetId", page: "page", per_page: "perPage",
   }) };
+  if (parsed.pathname === "/api/v1/system/api-docs-view") return { operation: "system.apidocs", input: {} };
   if (parsed.pathname === "/api/v1/system/roles-view") return { operation: "system.rolesview", input: parseQuery(parsed.searchParams, {
     role: "role", page: "page", per_page: "perPage",
   }) };

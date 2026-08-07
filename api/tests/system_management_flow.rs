@@ -2308,6 +2308,60 @@ async fn api_system_database_stats_requires_permission_and_returns_snapshot() {
 }
 
 #[tokio::test]
+async fn api_system_docs_requires_permission_and_returns_embedded_contract() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    create_user_with_role(
+        &pool,
+        "api_docs_member",
+        "文档普通成员",
+        "ApiDocsPass2026!",
+        "member",
+    )
+    .await;
+    let regular_session = auth::login(&pool, "api_docs_member", "ApiDocsPass2026!")
+        .await
+        .expect("member should login");
+    let regular_cookie = auth::session_cookie_header(&regular_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let success_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/api-docs-view")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(success_response.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_str(&response_body(success_response).await)
+        .expect("API docs response should be JSON");
+    let document: Value = serde_json::from_str(
+        payload["data"]["source"]
+            .as_str()
+            .expect("embedded document should be a string"),
+    )
+    .expect("embedded document should be valid JSON");
+    assert_eq!(document["openapi"], "3.1.0");
+    assert!(document["paths"]["/api/v1/system/releases"].is_object());
+
+    let forbidden_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/api-docs-view")
+                .header(header::COOKIE, regular_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn api_system_roles_view_returns_atomic_selection_permissions_and_capabilities() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

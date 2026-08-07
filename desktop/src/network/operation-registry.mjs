@@ -50,6 +50,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.permissions", noInputOperation("GET", "/api/v1/system/permissions", parseSystemPermissions, true, "array")],
     ["system.databasestats", noInputOperation("GET", "/api/v1/system/database-stats", parseSystemDatabaseStats)],
     ["system.audit", systemAuditOperation],
+    ["system.apidocs", noInputOperation("GET", "/api/v1/system/api-docs-view", parseSystemApiDocs)],
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
@@ -1005,6 +1006,7 @@ function parseSystemAuditPage(data) { return freezeExactDto(data, {
   items: (items) => boundedArray(items, parseSystemAuditLog, 100, "audit logs"),
   pagination: parsePagination,
 }); }
+function parseSystemApiDocs(data) { return freezeExactDto(data, { source: longString }); }
 function parseSystemRolesView(data) {
   return freezeExactDto(data, {
     items: (items) => boundedArray(items, parseSystemRole, 100, "system roles"),
