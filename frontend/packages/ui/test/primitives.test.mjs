@@ -6,9 +6,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Button, DataTable, Feedback, Field, Modal, Pagination, Skeleton } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
-  const html = renderToStaticMarkup(createElement(Button, { loading: true }, '保存'));
+  const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
   assert.match(html, /disabled=""/u);
   assert.match(html, /aria-busy="true"/u);
+  assert.match(html, /form="editor"/u);
   assert.match(html, /处理中/u);
 });
 

@@ -53,6 +53,11 @@ export const getSystemUsersView = apiClient.getSystemUsersView;
 export const getSystemRolesView = apiClient.getSystemRolesView;
 export const getSystemStorageView = apiClient.getSystemStorageView;
 export const getSystemReleasesView = apiClient.getSystemReleasesView;
+export const updateSystemReleaseSettings = apiClient.updateSystemReleaseSettings;
+export const createSystemRelease = apiClient.createSystemRelease;
+export const updateSystemRelease = apiClient.updateSystemRelease;
+export const verifySystemRelease = apiClient.verifySystemRelease;
+export const withdrawSystemRelease = apiClient.withdrawSystemRelease;
 export const saveStorageConfig = apiClient.saveStorageConfig;
 export const probeStorageConfig = apiClient.probeStorageConfig;
 export const initializeStorageConfig = apiClient.initializeStorageConfig;
@@ -241,6 +246,11 @@ export const webApi = {
   getSystemRolesView,
   getSystemStorageView,
   getSystemReleasesView,
+  updateSystemReleaseSettings,
+  createSystemRelease,
+  updateSystemRelease,
+  verifySystemRelease,
+  withdrawSystemRelease,
   saveStorageConfig,
   probeStorageConfig,
   initializeStorageConfig,

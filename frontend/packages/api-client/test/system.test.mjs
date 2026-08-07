@@ -55,6 +55,28 @@ test('system releases view preserves compact version pagination query', async ()
   assert.deepEqual(calls, ['/api/v1/system/releases-view', '/api/v1/system/releases-view?page=3&per_page=20']);
 });
 
+test('system release mutations use fixed JSON contracts after write preparation', async () => {
+  const calls = [];
+  const client = createSystemClient({
+    prepareWrite: async () => { calls.push(['prepare']); },
+    request: async (url, options) => { calls.push([url, options]); return {}; },
+  });
+
+  await client.updateSystemReleaseSettings(8);
+  await client.createSystemRelease({ versionName: 'v2.1.0', title: '桌面版本', notes: '内部验证', channel: 'internal', manifestSha256: 'a'.repeat(64), signingKeyId: 'release-key-1', sourceCommit: 'b'.repeat(40), sourceTag: 'desktop-v2.1.0' });
+  await client.updateSystemRelease(7, { versionName: 'v2.1.0', title: '桌面版本修订', notes: '准备发布', publish: true });
+  await client.verifySystemRelease(7);
+  await client.withdrawSystemRelease(7, '发现阻断缺陷');
+
+  assert.deepEqual(calls, [
+    ['prepare'], ['/api/v1/system/releases/settings', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"retention_count":8}' }],
+    ['prepare'], ['/api/v1/system/releases', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version_name: 'v2.1.0', title: '桌面版本', notes: '内部验证', channel: 'internal', manifest_sha256: 'a'.repeat(64), signing_key_id: 'release-key-1', source_commit: 'b'.repeat(40), source_tag: 'desktop-v2.1.0' }) }],
+    ['prepare'], ['/api/v1/system/releases/7', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"version_name":"v2.1.0","title":"桌面版本修订","notes":"准备发布","publish":true}' }],
+    ['prepare'], ['/api/v1/system/releases/7/verify', { method: 'POST' }],
+    ['prepare'], ['/api/v1/system/releases/7/withdraw', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"reason":"发现阻断缺陷","github_withdrawal_status":"pending"}' }],
+  ]);
+});
+
 test('system storage mutations use fixed JSON contracts after write preparation', async () => {
   const calls = [];
   const client = createSystemClient({

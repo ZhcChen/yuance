@@ -254,6 +254,24 @@ test("system storage mutations map to fixed Desktop operations", async () => {
   ]);
 });
 
+test("system release mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.updateSystemReleaseSettings(8);
+  await api.createSystemRelease({ versionName: "v2.1.0", title: "桌面版本", notes: "内部验证", channel: "internal", manifestSha256: "a".repeat(64), signingKeyId: "release-key-1", sourceCommit: "b".repeat(40), sourceTag: "desktop-v2.1.0" });
+  await api.updateSystemRelease(7, { versionName: "v2.1.0", title: "桌面版本修订", notes: "准备发布", publish: true });
+  await api.verifySystemRelease(7);
+  await api.withdrawSystemRelease(7, "发现阻断缺陷");
+  assert.deepEqual(calls, [
+    ["system.releasesettingsupdate", { retentionCount: 8 }],
+    ["system.releasecreate", { versionName: "v2.1.0", title: "桌面版本", notes: "内部验证", channel: "internal", manifestSha256: "a".repeat(64), signingKeyId: "release-key-1", sourceCommit: "b".repeat(40), sourceTag: "desktop-v2.1.0" }],
+    ["system.releaseupdate", { releaseId: 7, versionName: "v2.1.0", title: "桌面版本修订", notes: "准备发布", publish: true }],
+    ["system.releaseverify", { releaseId: 7 }],
+    ["system.releasewithdraw", { releaseId: 7, reason: "发现阻断缺陷" }],
+  ]);
+});
+
 test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
   let calls = 0;
   const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });

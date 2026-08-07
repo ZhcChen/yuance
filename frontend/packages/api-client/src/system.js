@@ -5,7 +5,8 @@
 /** @typedef {{ page?: number, perPage?: number }} SystemUsersQuery */
 /** @typedef {{ username: string, displayName: string, email?: string, mobile?: string, password: string, roleCode: string }} CreateSystemUserPayload */
 /** @typedef {{ endpoint: string, region: string, bucket: string, accessKeyId: string, accessKeySecret: string, activate: boolean }} SaveStorageConfigPayload */
-/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, getSystemStorageView(query?: SystemUsersQuery): Promise<any>, getSystemReleasesView(query?: SystemUsersQuery): Promise<any>, saveStorageConfig(payload: SaveStorageConfigPayload): Promise<any>, probeStorageConfig(): Promise<any>, initializeStorageConfig(): Promise<any>, rollbackStorageConfig(version: number): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
+/** @typedef {{ versionName: string, title?: string, notes?: string, channel?: string, manifestSha256?: string, signingKeyId?: string, sourceCommit?: string, sourceTag?: string }} CreateSystemReleasePayload */
+/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, getSystemStorageView(query?: SystemUsersQuery): Promise<any>, getSystemReleasesView(query?: SystemUsersQuery): Promise<any>, updateSystemReleaseSettings(retentionCount: number): Promise<any>, createSystemRelease(payload: CreateSystemReleasePayload): Promise<any>, updateSystemRelease(releaseId: number, payload: { versionName: string, title?: string, notes?: string, publish?: boolean }): Promise<any>, verifySystemRelease(releaseId: number): Promise<any>, withdrawSystemRelease(releaseId: number, reason: string): Promise<any>, saveStorageConfig(payload: SaveStorageConfigPayload): Promise<any>, probeStorageConfig(): Promise<any>, initializeStorageConfig(): Promise<any>, rollbackStorageConfig(version: number): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
 
 /**
  * @param {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite?: () => Promise<void> }} dependencies
@@ -50,6 +51,27 @@ export function createSystemClient({ request, prepareWrite = async () => {} }) {
       if (Number.isInteger(query.perPage) && Number(query.perPage) !== 10) params.set('per_page', String(query.perPage));
       const suffix = params.size ? `?${params.toString()}` : '';
       return request(`/api/v1/system/releases-view${suffix}`);
+    },
+    updateSystemReleaseSettings(retentionCount) {
+      return write('/api/v1/system/releases/settings', 'PATCH', { retention_count: retentionCount });
+    },
+    createSystemRelease(payload) {
+      return write('/api/v1/system/releases', 'POST', {
+        version_name: payload.versionName, title: payload.title || '', notes: payload.notes || '', channel: payload.channel || 'legacy',
+        manifest_sha256: payload.manifestSha256 || '', signing_key_id: payload.signingKeyId || '',
+        source_commit: payload.sourceCommit || '', source_tag: payload.sourceTag || '',
+      });
+    },
+    updateSystemRelease(releaseId, payload) {
+      return write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}`, 'PATCH', {
+        version_name: payload.versionName, title: payload.title || '', notes: payload.notes || '', publish: Boolean(payload.publish),
+      });
+    },
+    verifySystemRelease(releaseId) {
+      return write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/verify`, 'POST');
+    },
+    withdrawSystemRelease(releaseId, reason) {
+      return write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/withdraw`, 'POST', { reason, github_withdrawal_status: 'pending' });
     },
     saveStorageConfig(payload) {
       return write('/api/v1/storage/config', 'POST', {

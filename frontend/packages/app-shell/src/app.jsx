@@ -785,6 +785,13 @@ export function SharedApp({ services }) {
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
   const [systemReleasesView, setSystemReleasesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemReleasesView']>> | null} */ (null));
+  const [systemReleaseSettingsCount, setSystemReleaseSettingsCount] = useState(5);
+  const [systemReleaseEditor, setSystemReleaseEditor] = useState(/** @type {{ mode: 'create' | 'edit', releaseId?: number } | null} */ (null));
+  const [systemReleaseForm, setSystemReleaseForm] = useState({ versionName: '', title: '', notes: '', channel: 'legacy', manifestSha256: '', signingKeyId: '', sourceCommit: '', sourceTag: '' });
+  const [systemReleaseConfirmation, setSystemReleaseConfirmation] = useState(/** @type {{ kind: 'publish' | 'verify' | 'withdraw', release: any, reason?: string } | null} */ (null));
+  const [systemReleaseSubmitting, setSystemReleaseSubmitting] = useState(false);
+  const [systemReleaseError, setSystemReleaseError] = useState('');
+  const systemReleaseMutationRef = useRef(false);
   const [systemStorageEditOpen, setSystemStorageEditOpen] = useState(false);
   const [systemStorageForm, setSystemStorageForm] = useState({ endpoint: '', region: '', bucket: '', accessKeyId: '', accessKeySecret: '' });
   const [systemStorageConfirmation, setSystemStorageConfirmation] = useState(/** @type {{ kind: 'save', payload: any } | { kind: 'initialize' } | { kind: 'rollback', version: number, bucket: string } | null} */ (null));
@@ -1362,7 +1369,10 @@ export function SharedApp({ services }) {
         setSystemRoleError('');
       }
       if (targetRoute.id === 'system-storage') setSystemStorageView(nextSystemStorageView);
-      if (targetRoute.id === 'system-releases') setSystemReleasesView(nextSystemReleasesView);
+      if (targetRoute.id === 'system-releases') {
+        setSystemReleasesView(nextSystemReleasesView);
+        setSystemReleaseSettingsCount(nextSystemReleasesView?.settings.retention_count || 5);
+      }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
       }
@@ -1988,6 +1998,95 @@ export function SharedApp({ services }) {
     const view = await api.getSystemStorageView({ page: current.page, perPage: current.perPage });
     if (routeRef.current.id === 'system-storage' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) setSystemStorageView(view);
     return view;
+  }
+
+  async function refreshSystemReleasesAfterMutation() {
+    const current = routeRef.current;
+    if (current.id !== 'system-releases') return null;
+    const view = await api.getSystemReleasesView({ page: current.page, perPage: current.perPage });
+    if (routeRef.current.id === 'system-releases' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) {
+      setSystemReleasesView(view);
+      setSystemReleaseSettingsCount(view.settings.retention_count);
+    }
+    return view;
+  }
+
+  async function runSystemReleaseMutation(action, successMessage) {
+    if (systemReleaseMutationRef.current) return false;
+    systemReleaseMutationRef.current = true;
+    setSystemReleaseSubmitting(true);
+    setSystemReleaseError('');
+    try {
+      await action();
+      setStatusMessage(successMessage);
+      try { await refreshSystemReleasesAfterMutation(); }
+      catch (caught) { setSystemReleaseError(`操作已成功，但发布工作台刷新失败：${errorMessage(caught instanceof Error ? caught : new Error('刷新失败。'))}`); }
+      return true;
+    } catch (caught) {
+      let detail = errorMessage(caught instanceof Error ? caught : new Error('发布操作失败。'));
+      try { await refreshSystemReleasesAfterMutation(); }
+      catch (refreshError) { detail = `${detail}；最终状态刷新失败：${errorMessage(refreshError instanceof Error ? refreshError : new Error('刷新失败。'))}`; }
+      setSystemReleaseError(detail);
+      return false;
+    } finally {
+      systemReleaseMutationRef.current = false;
+      setSystemReleaseSubmitting(false);
+    }
+  }
+
+  function openSystemReleaseCreate() {
+    setSystemReleaseError('');
+    setSystemReleaseForm({ versionName: '', title: '', notes: '', channel: 'legacy', manifestSha256: '', signingKeyId: '', sourceCommit: '', sourceTag: '' });
+    setSystemReleaseEditor({ mode: 'create' });
+  }
+
+  function openSystemReleaseEdit(release) {
+    setSystemReleaseError('');
+    setSystemReleaseForm({
+      versionName: release.version_name, title: release.title, notes: release.notes, channel: release.channel,
+      manifestSha256: release.manifest_sha256, signingKeyId: release.signing_key_id,
+      sourceCommit: release.source_commit, sourceTag: release.source_tag,
+    });
+    setSystemReleaseEditor({ mode: 'edit', releaseId: release.id });
+  }
+
+  async function submitSystemReleaseSettings(event) {
+    event.preventDefault();
+    await runSystemReleaseMutation(() => api.updateSystemReleaseSettings(systemReleaseSettingsCount), '发布保留策略已更新。');
+  }
+
+  async function submitSystemReleaseEditor(event) {
+    event.preventDefault();
+    const releaseId = systemReleaseEditor?.mode === 'edit' ? systemReleaseEditor.releaseId : undefined;
+    if (systemReleaseEditor?.mode === 'edit' && !releaseId) return;
+    const editing = releaseId !== undefined;
+    const saved = await runSystemReleaseMutation(
+      () => editing
+        ? api.updateSystemRelease(releaseId, { versionName: systemReleaseForm.versionName, title: systemReleaseForm.title, notes: systemReleaseForm.notes, publish: false })
+        : api.createSystemRelease(systemReleaseForm),
+      editing ? '版本草稿已更新。' : '版本草稿已创建。',
+    );
+    if (saved) setSystemReleaseEditor(null);
+  }
+
+  async function confirmSystemReleaseAction() {
+    const confirmation = systemReleaseConfirmation;
+    if (!confirmation) return;
+    const release = confirmation.release;
+    let action;
+    let message;
+    if (confirmation.kind === 'publish') {
+      action = () => api.updateSystemRelease(release.id, { versionName: release.version_name, title: release.title, notes: release.notes, publish: true });
+      message = `${release.version_name} 已发布。`;
+    } else if (confirmation.kind === 'verify') {
+      action = () => api.verifySystemRelease(release.id);
+      message = `${release.version_name} 已通过发布校验。`;
+    } else {
+      action = () => api.withdrawSystemRelease(release.id, confirmation.reason || '');
+      message = `${release.version_name} 已撤回。`;
+    }
+    const completed = await runSystemReleaseMutation(action, message);
+    if (completed) setSystemReleaseConfirmation(null);
   }
 
   async function runSystemStorageMutation(action, successMessage) {
@@ -4349,13 +4448,19 @@ export function SharedApp({ services }) {
             <section className="shell-card shell-panel-wide" aria-labelledby="system-releases-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-releases-title">发布工作台</h2><p className="shell-muted">保留策略、版本状态与平台资产</p></div>
+                {systemReleasesView?.can_manage_releases ? <Button disabled={systemReleaseSubmitting} onClick={openSystemReleaseCreate}>新建版本</Button> : null}
               </div>
+              {systemReleaseError && !systemReleaseEditor && !systemReleaseConfirmation ? <Feedback tone="danger" title="发布操作需要处理">{systemReleaseError}</Feedback> : null}
               {systemReleasesView ? <dl className="shell-detail-grid">
                 <div><dt>已发布版本保留数</dt><dd>{systemReleasesView.settings.retention_count}</dd></div>
                 <div><dt>策略更新人</dt><dd>{systemReleasesView.settings.updated_by || '系统'}</dd></div>
                 <div><dt>策略更新时间</dt><dd>{formatTimestamp(systemReleasesView.settings.updated_at)}</dd></div>
                 <div><dt>版本总数</dt><dd>{systemReleasesView.pagination.total_items}</dd></div>
               </dl> : null}
+              {systemReleasesView?.can_manage_releases ? <form className="shell-actions-inline" onSubmit={submitSystemReleaseSettings}>
+                <Field id="system-release-retention" label="已发布版本保留数"><input type="number" min="1" max="50" required value={systemReleaseSettingsCount} onChange={(event) => setSystemReleaseSettingsCount(Number(event.target.value))} /></Field>
+                <Button type="submit" variant="secondary" loading={systemReleaseSubmitting}>保存策略</Button>
+              </form> : null}
               <section aria-labelledby="system-release-list-title">
                 <div className="shell-panel-header"><div><h3 id="system-release-list-title">版本列表</h3><p className="shell-muted">已发布版本优先，其余按更新时间倒序。</p></div></div>
                 <DataTable caption="系统版本列表" rows={systemReleasesView?.items || []} rowKey={(item) => item.release.id} emptyText="暂无版本记录。" columns={[
@@ -4364,6 +4469,12 @@ export function SharedApp({ services }) {
                   { key: 'status', label: '状态', render: (item) => <>{item.release.status}<br /><span className="shell-muted">{item.release.verification_status || '未校验'}</span></> },
                   { key: 'assets', label: '平台 / 资产', render: (item) => <>{item.release.platform_count} 个平台 · {item.release.asset_count} 个文件<br /><span className="shell-muted">{item.assets.map((asset) => `${asset.platform} ${asset.architecture}`).join('，') || '暂无安装包'}</span></> },
                   { key: 'updated', label: '更新', render: (item) => <>{item.release.updated_by || '系统'}<br /><span className="shell-muted">{formatTimestamp(item.release.updated_at)}</span></> },
+                  { key: 'actions', label: '操作', render: (item) => systemReleasesView?.can_manage_releases ? <div className="shell-actions-inline">
+                    {item.release.status === 'draft' ? <Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => openSystemReleaseEdit(item.release)}>编辑</Button> : null}
+                    {item.release.status === 'draft' && item.release.channel === 'internal' && item.release.verification_status === 'pending' ? <Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'verify', release: item.release })}>校验</Button> : null}
+                    {item.release.status === 'draft' && (item.release.channel === 'legacy' || item.release.verification_status === 'verified') ? <Button disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'publish', release: item.release })}>发布</Button> : null}
+                    {item.release.status === 'published' ? <Button variant="danger" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'withdraw', release: item.release, reason: '' })}>撤回</Button> : null}
+                  </div> : null },
                 ]} />
               </section>
               <section aria-labelledby="system-release-assets-title">
@@ -4379,6 +4490,26 @@ export function SharedApp({ services }) {
                 ]} />
               </section>
               {systemReleasesView ? <div className="shell-panel-header"><Pagination page={systemReleasesView.pagination.page} totalPages={systemReleasesView.pagination.total_pages} totalItems={systemReleasesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemReleasesPath({ owner: route.owner, page, perPage: systemReleasesView.pagination.per_page }), `正在加载第 ${page} 页版本。`)} /><label className="shell-page-size">每页<select value={systemReleasesView.pagination.per_page} onChange={(event) => navigate(buildSystemReleasesPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
+              <Modal open={Boolean(systemReleaseEditor)} title={systemReleaseEditor?.mode === 'edit' ? '编辑版本草稿' : '新建版本草稿'} onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseEditor(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseEditor(null)}>取消</Button><Button type="submit" form="system-release-editor-form" loading={systemReleaseSubmitting}>保存草稿</Button></>}>
+                <form id="system-release-editor-form" onSubmit={submitSystemReleaseEditor}>
+                  <Field id="system-release-version" label="版本号" required><input required value={systemReleaseForm.versionName} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, versionName: event.target.value }))} /></Field>
+                  <Field id="system-release-title" label="版本标题"><input value={systemReleaseForm.title} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, title: event.target.value }))} /></Field>
+                  <Field id="system-release-notes" label="版本说明"><textarea rows={6} value={systemReleaseForm.notes} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, notes: event.target.value }))} /></Field>
+                  {systemReleaseEditor?.mode === 'create' ? <Field id="system-release-channel" label="发布通道"><select value={systemReleaseForm.channel} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, channel: event.target.value }))}><option value="legacy">常规发布</option><option value="internal">内部桌面发布</option></select></Field> : <p className="shell-muted">发布通道：{systemReleaseForm.channel}</p>}
+                  {systemReleaseEditor?.mode === 'create' && systemReleaseForm.channel === 'internal' ? <>
+                    <Field id="system-release-manifest" label="Manifest SHA-256" required><input required value={systemReleaseForm.manifestSha256} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, manifestSha256: event.target.value }))} /></Field>
+                    <Field id="system-release-signing-key" label="签名 Key ID" required><input required value={systemReleaseForm.signingKeyId} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, signingKeyId: event.target.value }))} /></Field>
+                    <Field id="system-release-source-commit" label="Source Commit" required><input required value={systemReleaseForm.sourceCommit} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, sourceCommit: event.target.value }))} /></Field>
+                    <Field id="system-release-source-tag" label="Source Tag" required><input required value={systemReleaseForm.sourceTag} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, sourceTag: event.target.value }))} /></Field>
+                  </> : null}
+                  {systemReleaseError ? <Feedback tone="danger" title="版本保存失败">{systemReleaseError}</Feedback> : null}
+                </form>
+              </Modal>
+              <Modal open={Boolean(systemReleaseConfirmation)} title={systemReleaseConfirmation?.kind === 'publish' ? '发布版本' : systemReleaseConfirmation?.kind === 'verify' ? '校验内部版本' : '撤回版本'} onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseConfirmation(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation(null)}>取消</Button><Button variant={systemReleaseConfirmation?.kind === 'withdraw' ? 'danger' : 'primary'} loading={systemReleaseSubmitting} disabled={systemReleaseConfirmation?.kind === 'withdraw' && !systemReleaseConfirmation.reason?.trim()} onClick={() => void confirmSystemReleaseAction()}>确认</Button></>}>
+                <p>{systemReleaseConfirmation?.kind === 'publish' ? `确认发布 ${systemReleaseConfirmation.release.version_name}？发布后版本元数据和资产不可修改。` : systemReleaseConfirmation?.kind === 'verify' ? `确认校验 ${systemReleaseConfirmation.release.version_name} 的平台资产、签名和供应链证据？` : `确认撤回 ${systemReleaseConfirmation?.release.version_name || ''}？下载入口将立即失效。`}</p>
+                {systemReleaseConfirmation?.kind === 'withdraw' ? <Field id="system-release-withdraw-reason" label="撤回原因" required><textarea required rows={4} value={systemReleaseConfirmation.reason || ''} onChange={(event) => setSystemReleaseConfirmation((current) => current ? { ...current, reason: event.target.value } : current)} /></Field> : null}
+                {systemReleaseError ? <Feedback tone="danger" title="操作失败">{systemReleaseError}</Feedback> : null}
+              </Modal>
             </section>
           ) : route.id === 'system-storage' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-storage-title">

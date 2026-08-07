@@ -2339,6 +2339,126 @@ test('shared system releases view renders one atomic policy version and asset sn
   await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.3');
 });
 
+test('shared system release management preserves state transitions, locks, and final refresh semantics', async ({ page }) => {
+  const mutations = [];
+  let retentionCount = 5;
+  let viewRequests = 0;
+  let failNextView = false;
+  let releaseSettingsMutation;
+  const releaseSettingsGate = new Promise((resolve) => { releaseSettingsMutation = resolve; });
+  let holdSettingsMutation = true;
+  const releases = [
+    { id: 7, version_name: 'v2.1.0', title: '待校验版本', notes: '内部桌面发布', status: 'draft', channel: 'internal', verification_status: 'pending', manifest_sha256: 'a'.repeat(64), signing_key_id: 'release-key-1', source_commit: 'b'.repeat(40), source_tag: 'desktop-v2.1.0', published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z', asset_count: 6, platform_count: 3 },
+    { id: 8, version_name: 'v2.0.0', title: '线上版本', notes: '稳定版本', status: 'published', channel: 'legacy', verification_status: 'not_required', manifest_sha256: '', signing_key_id: '', source_commit: '', source_tag: '', published_at: '2026-08-07T01:00:00Z', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T01:00:00Z', asset_count: 1, platform_count: 1 },
+  ];
+  const view = () => ({
+    settings: { retention_count: retentionCount, updated_by: '发布管理员', updated_at: '2026-08-08T01:00:00Z' },
+    items: releases.map((release) => ({ release, assets: [] })),
+    pagination: { page: 1, per_page: 10, total_items: releases.length, total_pages: 1 },
+    can_manage_releases: true,
+  });
+
+  await page.route('**/api/v1/system/releases-view*', async (route) => {
+    viewRequests += 1;
+    if (failNextView) {
+      failNextView = false;
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'temporarily_unavailable', message: '发布视图暂不可用' } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) });
+  });
+  await page.route('**/api/v1/system/releases/settings', async (route) => {
+    const body = route.request().postDataJSON();
+    mutations.push(['settings', body]);
+    if (holdSettingsMutation) await releaseSettingsGate;
+    retentionCount = body.retention_count;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view().settings }) });
+  });
+  await page.route('**/api/v1/system/releases', async (route) => {
+    const body = route.request().postDataJSON();
+    mutations.push(['create', body]);
+    releases.unshift({ id: 9, version_name: body.version_name, title: body.title, notes: body.notes, status: 'draft', channel: body.channel, verification_status: body.channel === 'internal' ? 'pending' : 'not_required', manifest_sha256: body.manifest_sha256, signing_key_id: body.signing_key_id, source_commit: body.source_commit, source_tag: body.source_tag, published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-08T02:00:00Z', updated_at: '2026-08-08T02:00:00Z', asset_count: 0, platform_count: 0 });
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: {} }) });
+  });
+  await page.route(/\/api\/v1\/system\/releases\/\d+(?:\/verify|\/withdraw)?$/u, async (route) => {
+    const url = new URL(route.request().url());
+    const [, releaseIdText, action] = url.pathname.match(/\/releases\/(\d+)(?:\/(verify|withdraw))?$/u);
+    const release = releases.find((item) => item.id === Number(releaseIdText));
+    const body = route.request().postData() ? route.request().postDataJSON() : undefined;
+    mutations.push([action || 'update', Number(releaseIdText), body]);
+    if (action === 'verify') release.verification_status = 'verified';
+    else if (action === 'withdraw') { release.status = 'withdrawn'; release.withdrawal_reason = body.reason; release.github_withdrawal_status = body.github_withdrawal_status; }
+    else { release.version_name = body.version_name; release.title = body.title; release.notes = body.notes; if (body.publish) release.status = 'published'; }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {} }) });
+  });
+
+  await login(page, '/web/app/system/releases');
+  const settingsInput = page.getByLabel('已发布版本保留数');
+  await settingsInput.fill('8');
+  const saveSettings = page.locator('form').filter({ has: settingsInput }).getByRole('button');
+  await saveSettings.evaluate((button) => { button.click(); button.click(); });
+  await expect(saveSettings).toBeDisabled();
+  expect(mutations.filter(([kind]) => kind === 'settings')).toHaveLength(1);
+  holdSettingsMutation = false;
+  releaseSettingsMutation();
+  await expect(page.getByRole('status')).toHaveText('发布保留策略已更新。');
+  await expect(settingsInput).toHaveValue('8');
+
+  await page.getByRole('button', { name: '新建版本' }).click();
+  const createDialog = page.getByRole('dialog', { name: '新建版本草稿' });
+  await createDialog.getByLabel('版本号').fill('v2.2.0');
+  await createDialog.getByLabel('版本标题').fill('下一版本');
+  await createDialog.getByLabel('版本说明').fill('跨宿主一致发布');
+  await createDialog.getByLabel('发布通道').selectOption('internal');
+  await createDialog.getByLabel('Manifest SHA-256').fill('c'.repeat(64));
+  await createDialog.getByLabel('签名 Key ID').fill('release-key-2');
+  await createDialog.getByLabel('Source Commit').fill('d'.repeat(40));
+  await createDialog.getByLabel('Source Tag').fill('desktop-v2.2.0');
+  await createDialog.getByRole('button', { name: '保存草稿' }).click();
+  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.2.0');
+
+  const createdRow = page.getByRole('row').filter({ hasText: 'v2.2.0' });
+  await createdRow.getByRole('button', { name: '编辑' }).click();
+  const editDialog = page.getByRole('dialog', { name: '编辑版本草稿' });
+  await editDialog.getByLabel('版本标题').fill('下一版本修订');
+  await editDialog.getByRole('button', { name: '保存草稿' }).click();
+  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('下一版本修订');
+
+  const verifyRow = page.getByRole('row').filter({ hasText: 'v2.1.0' });
+  await expect(verifyRow.getByRole('button', { name: '发布' })).toHaveCount(0);
+  await verifyRow.getByRole('button', { name: '校验' }).click();
+  await page.getByRole('dialog', { name: '校验内部版本' }).getByRole('button', { name: '确认' }).click();
+  await expect(verifyRow).toContainText('verified');
+  await expect(verifyRow.getByRole('button', { name: '发布' })).toBeVisible();
+  await verifyRow.getByRole('button', { name: '发布' }).click();
+  await page.getByRole('dialog', { name: '发布版本' }).getByRole('button', { name: '确认' }).click();
+  await expect(verifyRow).toContainText('published');
+
+  const publishedRow = page.getByRole('row').filter({ hasText: 'v2.0.0' });
+  await publishedRow.getByRole('button', { name: '撤回' }).click();
+  const withdrawDialog = page.getByRole('dialog', { name: '撤回版本' });
+  await expect(withdrawDialog.getByRole('button', { name: '确认' })).toBeDisabled();
+  await withdrawDialog.getByLabel('撤回原因').fill('发现阻断缺陷');
+  await withdrawDialog.getByRole('button', { name: '确认' }).click();
+  await expect(publishedRow).toContainText('withdrawn');
+
+  failNextView = true;
+  await settingsInput.fill('9');
+  await saveSettings.click();
+  await expect(page.getByRole('status')).toHaveText('发布保留策略已更新。');
+  await expect(page.getByRole('alert').getByText(/操作已成功，但发布工作台刷新失败/u)).toBeVisible();
+  expect(viewRequests).toBeGreaterThanOrEqual(8);
+  expect(mutations).toEqual([
+    ['settings', { retention_count: 8 }],
+    ['create', { version_name: 'v2.2.0', title: '下一版本', notes: '跨宿主一致发布', channel: 'internal', manifest_sha256: 'c'.repeat(64), signing_key_id: 'release-key-2', source_commit: 'd'.repeat(40), source_tag: 'desktop-v2.2.0' }],
+    ['update', 9, { version_name: 'v2.2.0', title: '下一版本修订', notes: '跨宿主一致发布', publish: false }],
+    ['verify', 7, undefined],
+    ['update', 7, { version_name: 'v2.1.0', title: '待校验版本', notes: '内部桌面发布', publish: true }],
+    ['withdraw', 8, { reason: '发现阻断缺陷', github_withdrawal_status: 'pending' }],
+    ['settings', { retention_count: 9 }],
+  ]);
+});
+
 test('shared system storage mutations preserve confirmation lock and final refresh semantics', async ({ page }) => {
   const mutations = [];
   let version = 3;

@@ -138,6 +138,38 @@ test("system releases view response excludes internal object storage fields", ()
   assert.throws(() => parse({ ...payload, items: [{ release, assets: [{ ...asset, file_object_id: 12 }] }] }), /fields are invalid/i);
 });
 
+test("system release mutations use fixed non-idempotent descriptors and redact asset internals", () => {
+  const registry = createOperationRegistry();
+  const cases = [
+    ["system.releasesettingsupdate", { retentionCount: 8 }, "PATCH", "/api/v1/system/releases/settings", '{"retention_count":8}'],
+    ["system.releasecreate", { versionName: "v2.1.0", title: "桌面版本", notes: "内部验证", channel: "internal", manifestSha256: "a".repeat(64), signingKeyId: "release-key-1", sourceCommit: "b".repeat(40), sourceTag: "desktop-v2.1.0" }, "POST", "/api/v1/system/releases", JSON.stringify({ version_name: "v2.1.0", title: "桌面版本", notes: "内部验证", channel: "internal", manifest_sha256: "a".repeat(64), signing_key_id: "release-key-1", source_commit: "b".repeat(40), source_tag: "desktop-v2.1.0" })],
+    ["system.releaseupdate", { releaseId: 7, versionName: "v2.1.0", title: "桌面版本修订", notes: "准备发布", publish: true }, "PATCH", "/api/v1/system/releases/7", '{"version_name":"v2.1.0","title":"桌面版本修订","notes":"准备发布","publish":true}'],
+    ["system.releaseverify", { releaseId: 7 }, "POST", "/api/v1/system/releases/7/verify", undefined],
+    ["system.releasewithdraw", { releaseId: 7, reason: "发现阻断缺陷" }, "POST", "/api/v1/system/releases/7/withdraw", '{"reason":"发现阻断缺陷","github_withdrawal_status":"pending"}'],
+  ];
+  for (const [name, input, method, path, body] of cases) {
+    const operation = registry.resolve(name, input);
+    assert.deepEqual({ method: operation.method, path: operation.path, body: operation.body, idempotent: operation.idempotent }, { method, path, body, idempotent: false });
+  }
+
+  assert.throws(() => registry.resolve("system.releasecreate", { versionName: "v2.1.0", title: "", notes: "", channel: "nightly", manifestSha256: "", signingKeyId: "", sourceCommit: "", sourceTag: "" }), /channel/i);
+  assert.throws(() => registry.resolve("system.releasewithdraw", { releaseId: 7, reason: "" }), /reason/i);
+
+  const release = {
+    id: 7, version_name: "v2.1.0", title: "桌面版本", notes: "内部验证", status: "draft", channel: "internal",
+    verification_status: "pending", manifest_sha256: "a".repeat(64), signing_key_id: "release-key-1", source_commit: "b".repeat(40), source_tag: "desktop-v2.1.0",
+    published_at: "", verified_at: "", withdrawn_at: "", withdrawal_reason: "", github_withdrawal_status: "",
+    created_by: "管理员", updated_by: "管理员", created_at: "2026-08-08", updated_at: "2026-08-08", asset_count: 1, platform_count: 1,
+  };
+  const parsed = registry.resolve("system.releasecreate", cases[1][1]).parse({ release, assets: [{
+    id: 9, release_id: 7, platform: "macos", architecture: "arm64", artifact_kind: "installer", filename: "yuance.dmg",
+    content_type: "application/x-apple-diskimage", byte_size: 1024, status: "uploaded", checksum_sha256: "abc", created_at: "2026-08-08",
+    object_key: "release/private/object-key", file_object_id: 12,
+  }] });
+  assert.equal(parsed.assets[0].object_key, undefined);
+  assert.equal(parsed.assets[0].file_object_id, undefined);
+});
+
 test("system storage mutations are fixed non-idempotent operations", () => {
   const registry = createOperationRegistry();
   const save = registry.resolve("system.storagesave", {

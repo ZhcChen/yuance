@@ -2,9 +2,9 @@
 
 import React, { useEffect, useId, useRef } from 'react';
 
-/** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
-export function Button({ children, variant = 'primary', loading = false, disabled = false, type = 'button', onClick, ariaLabel }) {
-  return <button className={`yc-button yc-button-${variant}`} type={type} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
+/** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
+export function Button({ children, variant = 'primary', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
+  return <button className={`yc-button yc-button-${variant}`} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
 }
 
 /** @param {{ id: string, label: string, hint?: string, error?: string, required?: boolean, children?: React.ReactElement }} props */

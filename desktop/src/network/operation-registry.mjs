@@ -26,6 +26,7 @@ const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:w
 const SYSTEM_USER_STATUSES = new Set(["active", "disabled", "locked"]);
 const SYSTEM_ROLE_STATUSES = new Set(["active", "disabled"]);
 const SYSTEM_ROLE_DATA_SCOPES = new Set(["self", "all"]);
+const SYSTEM_RELEASE_CHANNELS = new Set(["legacy", "internal"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
   if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
@@ -49,6 +50,11 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
     ["system.releasesview", systemReleasesViewOperation],
+    ["system.releasesettingsupdate", systemReleaseSettingsUpdateOperation],
+    ["system.releasecreate", systemReleaseCreateOperation],
+    ["system.releaseupdate", systemReleaseUpdateOperation],
+    ["system.releaseverify", systemReleaseVerifyOperation],
+    ["system.releasewithdraw", systemReleaseWithdrawOperation],
     ["system.storagesave", systemStorageSaveOperation],
     ["system.storageprobe", noInputOperation("POST", "/api/v1/storage/config/probe", parseStorageProbe, false)],
     ["system.storageinitialize", noInputOperation("POST", "/api/v1/storage/config/initialize", parseStorageInitialize, false)],
@@ -457,6 +463,46 @@ function systemReleasesViewOperation(input) {
   const query = new URLSearchParams();
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/releases-view", query), parseSystemReleasesView);
+}
+
+function systemReleaseSettingsUpdateOperation(input) {
+  exactKeys(input, ["retentionCount"]);
+  return descriptor("PATCH", "/api/v1/system/releases/settings", parseSystemReleaseSettings, false, "object", jsonBody({
+    retention_count: integer(input.retentionCount, 1, "retentionCount", 50),
+  }));
+}
+
+function systemReleaseCreateOperation(input) {
+  exactKeys(input, ["channel", "manifestSha256", "notes", "signingKeyId", "sourceCommit", "sourceTag", "title", "versionName"]);
+  return descriptor("POST", "/api/v1/system/releases", parseSystemReleaseMutationDetail, false, "object", jsonBody({
+    version_name: boundedRequiredText(input.versionName, "versionName", 64),
+    title: boundedText(input.title, "title", 200).trim(), notes: boundedText(input.notes, "notes", 20000),
+    channel: requiredEnum(input.channel, SYSTEM_RELEASE_CHANNELS, "channel", false),
+    manifest_sha256: boundedText(input.manifestSha256, "manifestSha256", 64).trim(),
+    signing_key_id: boundedText(input.signingKeyId, "signingKeyId", 128).trim(),
+    source_commit: boundedText(input.sourceCommit, "sourceCommit", 64).trim(),
+    source_tag: boundedText(input.sourceTag, "sourceTag", 128).trim(),
+  }));
+}
+
+function systemReleaseUpdateOperation(input) {
+  exactKeys(input, ["notes", "publish", "releaseId", "title", "versionName"]);
+  return descriptor("PATCH", `/api/v1/system/releases/${positiveInteger(input.releaseId)}`, parseSystemReleaseMutationDetail, false, "object", jsonBody({
+    version_name: boundedRequiredText(input.versionName, "versionName", 64),
+    title: boundedText(input.title, "title", 200).trim(), notes: boundedText(input.notes, "notes", 20000), publish: boolean(input.publish),
+  }));
+}
+
+function systemReleaseVerifyOperation(input) {
+  exactKeys(input, ["releaseId"]);
+  return descriptor("POST", `/api/v1/system/releases/${positiveInteger(input.releaseId)}/verify`, parseSystemReleaseMutationDetail, false);
+}
+
+function systemReleaseWithdrawOperation(input) {
+  exactKeys(input, ["reason", "releaseId"]);
+  return descriptor("POST", `/api/v1/system/releases/${positiveInteger(input.releaseId)}/withdraw`, parseSystemReleaseMutationDetail, false, "object", jsonBody({
+    reason: boundedRequiredText(input.reason, "reason", 2000), github_withdrawal_status: "pending",
+  }));
 }
 
 function systemStorageSaveOperation(input) {
@@ -945,6 +991,18 @@ function parseSystemReleaseViewAsset(data) { return freezeExactDto(data, {
   id: positiveInteger, release_id: positiveInteger, platform: shortString, architecture: shortString,
   artifact_kind: shortString, filename: textString, content_type: shortString,
   byte_size: nonNegativeInteger, status: shortString, checksum_sha256: shortString, created_at: shortString,
+}); }
+function parseSystemReleaseSettings(data) { return freezeExactDto(data, {
+  retention_count: positiveInteger, updated_by: textString, updated_at: shortString,
+}); }
+function parseSystemReleaseMutationAsset(data) { return freezeDto(data, {
+  id: positiveInteger, release_id: positiveInteger, platform: shortString, architecture: shortString,
+  artifact_kind: shortString, filename: textString, content_type: shortString,
+  byte_size: nonNegativeInteger, status: shortString, checksum_sha256: shortString, created_at: shortString,
+}); }
+function parseSystemReleaseMutationDetail(data) { return freezeDto(data, {
+  release: parseSystemRelease,
+  assets: (assets) => boundedArray(assets, parseSystemReleaseMutationAsset, 100, "system release assets"),
 }); }
 function parseSystemReleasesView(data) { return freezeExactDto(data, {
   settings: (settings) => freezeExactDto(settings, {

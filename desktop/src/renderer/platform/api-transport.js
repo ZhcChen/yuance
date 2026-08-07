@@ -138,6 +138,30 @@ function resolveMutationOperation(parsed, method, options) {
     rejectBody(options);
     return { operation: "system.storagerollback", input: { version: positiveInteger(storageRollback[1]) } };
   }
+  if (method === "PATCH" && parsed.pathname === "/api/v1/system/releases/settings") {
+    const body = parseJsonBody(options, ["retention_count"]);
+    return { operation: "system.releasesettingsupdate", input: { retentionCount: body.retention_count } };
+  }
+  if (method === "POST" && parsed.pathname === "/api/v1/system/releases") {
+    const body = parseJsonBody(options, ["channel", "manifest_sha256", "notes", "signing_key_id", "source_commit", "source_tag", "title", "version_name"]);
+    return { operation: "system.releasecreate", input: renameBody(body, {
+      manifest_sha256: "manifestSha256", signing_key_id: "signingKeyId", source_commit: "sourceCommit", source_tag: "sourceTag", version_name: "versionName",
+    }) };
+  }
+  const systemReleaseAction = parsed.pathname.match(/^\/api\/v1\/system\/releases\/(\d+)(?:\/(verify|withdraw))?$/u);
+  if (systemReleaseAction && method === "PATCH" && !systemReleaseAction[2]) {
+    const body = parseJsonBody(options, ["notes", "publish", "title", "version_name"]);
+    return { operation: "system.releaseupdate", input: { releaseId: positiveInteger(systemReleaseAction[1]), ...renameBody(body, { version_name: "versionName" }) } };
+  }
+  if (systemReleaseAction && method === "POST" && systemReleaseAction[2] === "verify") {
+    rejectBody(options);
+    return { operation: "system.releaseverify", input: { releaseId: positiveInteger(systemReleaseAction[1]) } };
+  }
+  if (systemReleaseAction && method === "POST" && systemReleaseAction[2] === "withdraw") {
+    const body = parseJsonBody(options, ["github_withdrawal_status", "reason"]);
+    if (body.github_withdrawal_status !== "pending") throw apiError("invalid_request", 400);
+    return { operation: "system.releasewithdraw", input: { releaseId: positiveInteger(systemReleaseAction[1]), reason: body.reason } };
+  }
   if (method === "POST" && parsed.pathname === "/api/v1/system/users") {
     const body = parseJsonBody(options, ["display_name", "email", "mobile", "password", "role_code", "username"]);
     return { operation: "system.usercreate", input: renameBody(body, { display_name: "displayName", role_code: "roleCode" }) };
