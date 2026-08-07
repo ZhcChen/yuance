@@ -84,6 +84,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.savedviewdefault", workItemSavedViewDefaultOperation],
     ["workitem.savedviewdelete", workItemSavedViewDeleteOperation],
     ["workitem.detail", workItemDetailOperation],
+    ["workitem.detailview", workItemDetailViewOperation],
     ["workitem.update", workItemUpdateOperation],
     ["workitem.handoff", workItemHandoffOperation],
     ["workitem.comments", workItemCommentsOperation],
@@ -515,6 +516,11 @@ function workItemDetailOperation(input) {
   return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetail);
 }
 
+function workItemDetailViewOperation(input) {
+  exactKeys(input, ["itemKey"]);
+  return descriptor("GET", `/api/v1/work-item-detail-view/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetailView);
+}
+
 function workItemUpdateOperation(input) {
   exactKeys(input, ["itemKey", "payload"]);
   const payload = plainPayload(input.payload, "payload");
@@ -716,6 +722,35 @@ function parseWorkItemDetail(value) { return freezeDto(value, {
   parent_title: textString, assignee_username: shortString, assignee: shortString, reporter: shortString,
   due_date: shortString, created_at: shortString, updated_at: shortString, deleted_at: shortString,
 }); }
+function parseWorkItemDetailView(value) {
+  return freezeExactDto(value, {
+    item: parseWorkItemDetail,
+    cycle: nullableDetailOption,
+    assignees: (items) => boundedArray(items, parseDetailOption, 500, "work item detail assignees"),
+    parent_options: (items) => boundedArray(items, (item) => freezeExactDto(item, { key: shortString, title: textString }), 2_000, "work item detail parents"),
+    status_options: (items) => boundedArray(items, parseDetailOption, 16, "work item detail statuses"),
+    permissions: (permissions) => freezeExactDto(permissions, {
+      can_manage_work_items: boolean,
+      can_edit_primary_post: boolean,
+      can_close_work_item: boolean,
+      can_reopen_work_item: boolean,
+      can_restore_work_item: boolean,
+    }),
+    navigation: (navigation) => freezeExactDto(navigation, {
+      previous: nullableDetailNavigationLink,
+      next: nullableDetailNavigationLink,
+    }),
+    flow_history: (history) => freezeExactDto(history, {
+      items: (items) => boundedArray(items, (record) => freezeExactDto(record, {
+        source_kind: shortString, actor: textString, created_at: shortString, summary: longString,
+      }), 100, "work item flow history"),
+      pagination: parsePagination,
+    }),
+  });
+}
+function parseDetailOption(value) { return freezeExactDto(value, { value: shortString, label: textString }); }
+function nullableDetailOption(value) { return value === null ? null : parseDetailOption(value); }
+function nullableDetailNavigationLink(value) { return value === null ? null : freezeExactDto(value, { item_key: shortString, title: textString }); }
 function parseComments(data) { return boundedArray(data, parseComment, 500, "comments"); }
 function parseComment(value) { return freezeDto(value, {
   id: positiveInteger, parent_comment_id: nullablePositiveInteger, parent_author: shortString, body: longString,
@@ -784,6 +819,13 @@ function freezeDto(value, schema) {
   if (!isPlainObject(value)) throw new TypeError("response object is invalid");
   return Object.freeze(Object.fromEntries(Object.entries(schema).map(([key, parser]) => [key, parser(value[key])])));
 }
+function freezeExactDto(value, schema) {
+  if (!isPlainObject(value) || !sameKeys(value, Object.keys(schema).sort())) throw new TypeError("response object fields are invalid");
+  return Object.freeze(Object.fromEntries(Object.entries(schema).map(([key, parser]) => [key, parser(value[key])])));
+}
+function parsePagination(value) { return freezeExactDto(value, {
+  page: positiveInteger, per_page: positiveInteger, total_items: nonNegativeInteger, total_pages: positiveInteger,
+}); }
 function boundedArray(value, parser, maximum, name) { if (!Array.isArray(value) || value.length > maximum) throw new TypeError(`${name} is invalid`); return Object.freeze(value.map(parser)); }
 function requiredString(value, name) { if (typeof value !== "string" || value.length === 0 || value.length > 1024) throw new TypeError(`${name} is invalid`); return value; }
 function shortString(value) { if (typeof value !== "string" || value.length > 256) throw new TypeError("string field is invalid"); return value; }

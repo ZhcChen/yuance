@@ -951,6 +951,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::get_work_item).patch(web::api::update_work_item),
         )
         .route(
+            "/api/v1/work-item-detail-view/{item_key}",
+            get(web::api::get_work_item_detail_view),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/restore",
             post(web::api::restore_work_item),
         )

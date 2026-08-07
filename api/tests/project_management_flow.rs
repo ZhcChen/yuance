@@ -7054,6 +7054,62 @@ async fn api_v1_work_item_list_view_returns_atomic_shared_page_contract() {
 }
 
 #[tokio::test]
+async fn api_v1_work_item_detail_view_returns_atomic_shared_page_contract() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-detail-view/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&response_body(response).await)
+        .expect("detail view response should be json");
+    let data = &body["data"];
+
+    assert_eq!(data["item"]["key"], "YCE-TASK-2");
+    assert_eq!(data["item"]["item_type"], "task");
+    assert_eq!(data["item"]["project_key"], "YCE");
+    let assignee_username = data["item"]["assignee_username"]
+        .as_str()
+        .expect("detail assignee should be a string");
+    assert!(data["assignees"].as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            item["value"] == assignee_username && !item["label"].as_str().unwrap_or("").is_empty()
+        })
+    }));
+    assert!(
+        data["parent_options"]
+            .as_array()
+            .is_some_and(|items| { items.iter().any(|item| item["key"] == "YCE-REQ-1") })
+    );
+    assert!(data["status_options"].as_array().is_some_and(|items| {
+        items.iter().any(|item| item["value"] == "in_progress")
+            && items
+                .iter()
+                .all(|item| !item["label"].as_str().unwrap_or("").is_empty())
+    }));
+    assert_eq!(data["permissions"]["can_manage_work_items"], true);
+    assert_eq!(data["permissions"]["can_edit_primary_post"], true);
+    assert!(data["navigation"].as_object().is_some_and(|navigation| {
+        navigation.contains_key("previous") && navigation.contains_key("next")
+    }));
+    assert!(data["flow_history"]["items"].is_array());
+    assert_eq!(data["flow_history"]["pagination"]["page"], 1);
+    assert_eq!(data["flow_history"]["pagination"]["per_page"], 10);
+}
+
+#[tokio::test]
 async fn api_v1_work_item_saved_view_json_lifecycle_is_user_scoped() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

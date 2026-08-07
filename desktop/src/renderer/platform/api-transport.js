@@ -91,6 +91,8 @@ function resolveReadOperation(url, options) {
   if (target) return target;
   const commentAttachments = matchPath(parsed, /^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)\/attachments$/u, "workitem.commentattachments", ([itemKey, commentId]) => ({ itemKey: decodeSegment(itemKey), commentId: positiveInteger(commentId) }));
   if (commentAttachments) return commentAttachments;
+  const detailView = matchPath(parsed, /^\/api\/v1\/work-item-detail-view\/([^/]+)$/u, "workitem.detailview", ([itemKey]) => ({ itemKey: decodeSegment(itemKey) }));
+  if (detailView) return detailView;
   const childMatch = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/(comments|attachments)$/u);
   if (childMatch) {
     rejectQuery(parsed.searchParams, []);

@@ -466,17 +466,6 @@ function workItemStatusLabel(status) {
   }
 }
 
-const WORK_ITEM_STATUS_OPTIONS = [
-  'open',
-  'in_progress',
-  'pending_confirmation',
-  'done',
-  'resolved',
-  'verified',
-  'closed',
-  'cancelled',
-];
-
 const WORK_ITEM_PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
 
 /** @param {AppWorkItemDetail} item */
@@ -778,6 +767,7 @@ export function SharedApp({ services }) {
   const [workItemBatchSubmitting, setWorkItemBatchSubmitting] = useState(false);
   const [workItemBatchError, setWorkItemBatchError] = useState('');
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
+  const [workItemDetailView, setWorkItemDetailView] = useState(/** @type {Awaited<ReturnType<AppApiService['getWorkItemDetailView']>> | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
   const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
   const [workItemCommentAttachments, setWorkItemCommentAttachments] = useState(/** @type {Record<string, AppAttachment[]>} */ ({}));
@@ -899,6 +889,9 @@ export function SharedApp({ services }) {
     : '';
   const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
     ? workItemDetail
+    : null;
+  const activeWorkItemDetailView = activeWorkItemDetail && workItemDetailView?.item?.key === activeWorkItemDetail.key
+    ? workItemDetailView
     : null;
   const projectScopeKey = projectDetailRoute?.projectKey || projectResourceDetailRoute?.projectKey || projectPersonalAnalysisRoute?.projectKey || '';
   const activeProjectDetail = projectScopeKey && projectDetail?.key === projectScopeKey ? projectDetail : null;
@@ -1117,12 +1110,12 @@ export function SharedApp({ services }) {
             const commentsPromise = api.getWorkItemComments(itemKey);
             const attachmentsPromise = api.getWorkItemAttachments(itemKey);
             void attachmentsPromise.catch(() => {});
-            const [item, comments, attachmentBundle] = await Promise.all([
-              api.getWorkItem(itemKey),
+            const [detailView, comments, attachmentBundle] = await Promise.all([
+              api.getWorkItemDetailView(itemKey),
               commentsPromise,
               commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
             ]);
-            return { item, comments, attachmentBundle };
+            return { detailView, item: detailView.item, comments, attachmentBundle };
           })()
           : Promise.resolve(null),
         targetRoute.id === 'profile'
@@ -1224,6 +1217,7 @@ export function SharedApp({ services }) {
         setWorkItemPage(nextWorkItems);
       }
       if (targetRoute.id === 'work-item-detail') {
+        setWorkItemDetailView(nextWorkItemBundle?.detailView || null);
         setWorkItemDetail(nextWorkItemBundle?.item || null);
         setWorkItemComments(nextWorkItemBundle?.comments || []);
         setWorkItemAttachments(nextWorkItemBundle?.attachmentBundle?.attachments || []);
@@ -2358,9 +2352,11 @@ export function SharedApp({ services }) {
    * @param {string} itemKey
    * @param {string} actionLabel
    * @param {number} actionId
+   * @param {AppWorkItemDetail | null} [committedItem]
    */
-  async function refreshWorkItemCompanionState(itemKey, actionLabel, actionId) {
-    const [commentsResult, topbarResult] = await Promise.allSettled([
+  async function refreshWorkItemCompanionState(itemKey, actionLabel, actionId, committedItem = null) {
+    const [detailViewResult, commentsResult, topbarResult] = await Promise.allSettled([
+      api.getWorkItemDetailView(itemKey),
       api.getWorkItemComments(itemKey),
       api.getTopbarStatus(),
     ]);
@@ -2368,6 +2364,13 @@ export function SharedApp({ services }) {
       return;
     }
     let failed = false;
+    if (detailViewResult.status === 'fulfilled') {
+      setWorkItemDetailView(committedItem
+        ? { ...detailViewResult.value, item: committedItem }
+        : detailViewResult.value);
+    } else {
+      failed = true;
+    }
     if (commentsResult.status === 'fulfilled') {
       setWorkItemComments(commentsResult.value);
     } else {
@@ -2379,7 +2382,7 @@ export function SharedApp({ services }) {
       failed = true;
     }
     if (failed) {
-      setWorkItemActionError(`${actionLabel}，但评论或顶部状态刷新失败，请手动刷新。`);
+      setWorkItemActionError(`${actionLabel}，但详情、评论或顶部状态刷新失败，请手动刷新。`);
     }
   }
 
@@ -2430,6 +2433,7 @@ export function SharedApp({ services }) {
             updated.key,
             '工作项已保存',
             actionId,
+            updated,
           ),
         },
       });
@@ -2479,6 +2483,7 @@ export function SharedApp({ services }) {
             updated.key,
             '工作项已推进并指派',
             actionId,
+            updated,
           ),
         },
       });
@@ -4305,13 +4310,22 @@ export function SharedApp({ services }) {
                     item={activeWorkItemDetail}
                     editForm={workItemEditForm}
                     handoffForm={workItemHandoffForm}
-                    statusOptions={WORK_ITEM_STATUS_OPTIONS}
+                    statusOptions={activeWorkItemDetailView?.status_options || []}
+                    assigneeOptions={activeWorkItemDetailView?.assignees || []}
+                    parentOptions={activeWorkItemDetailView?.parent_options || []}
                     priorityOptions={WORK_ITEM_PRIORITY_OPTIONS}
                     statusLabel={workItemStatusLabel}
                     mutationBusy={workItemMutationSubmitting}
                     editSubmitting={workItemEditSubmitting}
                     handoffSubmitting={workItemHandoffSubmitting}
                     error={workItemActionError}
+                    canManageWorkItems={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items)}
+                    canEditPrimaryPost={Boolean(activeWorkItemDetailView?.permissions.can_edit_primary_post)}
+                    cycleLabel={activeWorkItemDetailView?.cycle?.label || ''}
+                    navigation={activeWorkItemDetailView?.navigation || { previous: null, next: null }}
+                    flowHistory={activeWorkItemDetailView?.flow_history || { items: [], pagination: { page: 1, per_page: 10, total_items: 0, total_pages: 1 } }}
+                    buildDetailHref={(itemKey) => buildWorkItemDetailPath({ owner: workItemOwner, itemKey })}
+                    onOpenDetail={(event, itemKey) => handleNavigate(event, buildWorkItemDetailPath({ owner: workItemOwner, itemKey }), `已打开 ${itemKey}。`)}
                     parentHref={buildWorkItemDetailPath({ owner: workItemOwner, itemKey: activeWorkItemDetail.parent_item_key })}
                     onOpenParent={(event) => handleNavigate(event, buildWorkItemDetailPath({ owner: workItemOwner, itemKey: activeWorkItemDetail.parent_item_key }), `已打开 ${activeWorkItemDetail.parent_item_key}。`)}
                     onChangeEdit={changeWorkItemEditField}

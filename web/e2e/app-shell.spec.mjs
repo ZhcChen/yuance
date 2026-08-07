@@ -453,6 +453,14 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
     due_date: '2026-08-15',
     updated_at: '2026-07-30T12:00:00Z',
   });
+  let refreshedDetail = editedDetail;
+
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.item = refreshedDetail;
+    await route.fulfill({ response, json: payload });
+  });
 
   await page.route('**/api/v1/topbar/status', async (route) => {
     topbarRefreshCount += 1;
@@ -519,9 +527,9 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await editForm.getByLabel('描述').fill(editedDetail.description);
   await editForm.getByLabel('状态').selectOption('in_progress');
   await editForm.getByLabel('优先级').selectOption('P1');
-  await editForm.getByLabel('处理人用户名').fill('yuance_admin');
+  await editForm.getByLabel('处理人').selectOption('yuance_admin');
   await editForm.getByLabel('截止日期').fill('2026-08-15');
-  await editForm.getByLabel('父级工作项 Key').fill('');
+  await editForm.getByLabel('父级需求').selectOption('');
   await editForm.getByRole('button', { name: '保存修改' }).click();
 
   await expect.poll(() => editRequests.length).toBe(1);
@@ -543,6 +551,11 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.locator('.shell-stats')).toContainText(/任务\s*7/);
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/handoff', async (route) => {
+    refreshedDetail = {
+      ...editedDetail,
+      status: 'pending_confirmation',
+      updated_at: '2026-07-30T12:30:00Z',
+    };
     handoffRequests.push({
       headers: route.request().headers(),
       payload: route.request().postDataJSON(),
@@ -551,18 +564,14 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        data: {
-          ...editedDetail,
-          status: 'pending_confirmation',
-          updated_at: '2026-07-30T12:30:00Z',
-        },
+        data: refreshedDetail,
       }),
     });
   });
 
   const handoffForm = page.locator('.work-item-action-form', { hasText: '确认推进' });
   await handoffForm.getByLabel('目标状态').selectOption('pending_confirmation');
-  await handoffForm.getByLabel('指派给用户名').fill('yuance_admin');
+  await handoffForm.getByLabel('指派给').selectOption('yuance_admin');
   await handoffForm.getByLabel('处理说明').fill('请确认 Web shell 表单提交。');
   await handoffForm.getByRole('button', { name: '确认推进' }).click();
 
@@ -646,14 +655,14 @@ test('work item edit success survives comments or topbar refresh failures', asyn
   await expect(page.locator('.work-item-detail-description')).toHaveText(editedDetail.description);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
   await expect(page.locator('.shell-stats')).toContainText(/任务\s*9/);
-  await expect(page.getByRole('alert')).toHaveText('工作项已保存，但评论或顶部状态刷新失败，请手动刷新。');
+  await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
 test('work item detail load failure does not expose stale write forms', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
 
-  await page.route('**/api/v1/work-items/YCE-TASK-1', async (route) => {
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-1', async (route) => {
     await route.fulfill({
       status: 500,
       contentType: 'application/json',
@@ -800,21 +809,26 @@ test('work item mutation result is not rolled back by an older refresh response'
     updated_at: '2026-07-30T14:00:00Z',
   });
 
-  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
-    if (route.request().method() === 'PATCH') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ data: savedDetail }),
-      });
-      return;
-    }
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
     delayedRefreshCount += 1;
     await refreshRelease;
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.item = oldRefreshDetail;
+    await route.fulfill({
+      response,
+      json: payload,
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ data: oldRefreshDetail }),
+      body: JSON.stringify({ data: savedDetail }),
     });
   });
 

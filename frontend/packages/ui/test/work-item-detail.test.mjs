@@ -30,13 +30,22 @@ function renderDetail(overrides = {}) {
     item,
     editForm: { title: item.title, description: item.description, status: item.status, priority: item.priority, assigneeUsername: 'alice', dueDate: item.due_date, parentItemKey: item.parent_item_key },
     handoffForm: { status: 'pending_confirmation', assigneeUsername: 'bob', body: '请确认' },
-    statusOptions: ['in_progress', 'pending_confirmation'],
+    statusOptions: [{ value: 'in_progress', label: '处理中' }, { value: 'pending_confirmation', label: '待确认' }],
+    assigneeOptions: [{ value: 'alice', label: 'Alice' }, { value: 'bob', label: 'Bob' }],
+    parentOptions: [{ key: 'YCE-REQ-1', title: '前端架构' }],
     priorityOptions: ['P0', 'P1'],
     statusLabel: (status) => status === 'in_progress' ? '处理中' : '待确认',
     mutationBusy: false,
     editSubmitting: false,
     handoffSubmitting: false,
     error: '',
+    canManageWorkItems: true,
+    canEditPrimaryPost: true,
+    cycleLabel: 'Sprint 1',
+    navigation: { previous: { item_key: 'YCE-TASK-1', title: '前一任务' }, next: { item_key: 'YCE-TASK-3', title: '后一任务' } },
+    flowHistory: { items: [{ source_kind: 'flow', actor: 'Alice', created_at: '2026-08-01', summary: '状态：待处理 → 进行中' }], pagination: { total_items: 1 } },
+    buildDetailHref: (itemKey) => `/web/app/work-items/${itemKey}`,
+    onOpenDetail: () => {},
     parentHref: '/web/app/work-items/YCE-REQ-1',
     onOpenParent: () => {},
     onChangeEdit: () => {},
@@ -55,7 +64,26 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /YCE-REQ-1/);
   assert.match(html, /编辑工作项/);
   assert.match(html, /推进并指派/);
-  assert.match(html, /父级工作项 Key/);
+  assert.match(html, /父级需求/);
+  assert.match(html, /Sprint 1/);
+  assert.match(html, /上一项 · 前一任务/);
+  assert.match(html, /状态：待处理 → 进行中/);
+});
+
+test('work item detail hides mutations for read-only users', () => {
+  const html = renderDetail({ canManageWorkItems: false, canEditPrimaryPost: false });
+
+  assert.doesNotMatch(html, /编辑工作项/);
+  assert.doesNotMatch(html, /推进并指派/);
+  assert.match(html, /当前项目权限为只读/);
+});
+
+test('work item detail hides mutations until a deleted item is restored', () => {
+  const html = renderDetail({ item: { ...item, deleted_at: '2026-08-07T12:00:00Z' } });
+
+  assert.doesNotMatch(html, /工作项写入操作/);
+  assert.doesNotMatch(html, /推进并指派/);
+  assert.match(html, /该工作项已删除，恢复前不可编辑/);
 });
 
 test('work item detail renders busy and error states', () => {

@@ -40,6 +40,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         "/api/v1/topbar/status",
         "/api/v1/notifications",
         "/api/v1/work-item-list-view?item_type=task&project_key=YCE",
+        "/api/v1/work-item-detail-view/YCE-TASK-2",
         "/api/v1/work-items?project_key=YCE",
         "/api/v1/work-items/YCE-TASK-2",
         "/api/v1/work-items/YCE-TASK-2/comments",

@@ -411,6 +411,59 @@ pub struct WorkItemDetailPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkItemDetailViewOptionPayload {
+    pub value: String,
+    pub label: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailViewPermissionsPayload {
+    pub can_manage_work_items: bool,
+    pub can_edit_primary_post: bool,
+    pub can_close_work_item: bool,
+    pub can_reopen_work_item: bool,
+    pub can_restore_work_item: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailNavigationLinkPayload {
+    pub item_key: String,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailNavigationPayload {
+    pub previous: Option<WorkItemDetailNavigationLinkPayload>,
+    pub next: Option<WorkItemDetailNavigationLinkPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemFlowRecordPayload {
+    pub source_kind: String,
+    pub actor: String,
+    pub created_at: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemFlowHistoryPayload {
+    pub items: Vec<WorkItemFlowRecordPayload>,
+    pub pagination: PaginationPayload,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemDetailViewPayload {
+    pub item: WorkItemDetailPayload,
+    pub cycle: Option<WorkItemDetailViewOptionPayload>,
+    pub assignees: Vec<WorkItemDetailViewOptionPayload>,
+    pub parent_options: Vec<WorkItemParentOptionPayload>,
+    pub status_options: Vec<WorkItemDetailViewOptionPayload>,
+    pub permissions: WorkItemDetailViewPermissionsPayload,
+    pub navigation: WorkItemDetailNavigationPayload,
+    pub flow_history: WorkItemFlowHistoryPayload,
+}
+
+#[derive(Debug, Serialize)]
 pub struct CommentPayload {
     pub id: i64,
     pub parent_comment_id: Option<i64>,
@@ -3184,6 +3237,142 @@ pub async fn get_work_item(
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
 
     Ok(json(work_item_detail_payload(item)))
+}
+
+pub async fn get_work_item_detail_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
+        && ((can_access_all_projects
+            && rbac::user_has_permission(pool, user.id, "work_item.manage").await?)
+            || projects::user_can_write_project_content(
+                pool,
+                project.id,
+                user.id,
+                user.is_super_admin,
+            )
+            .await?);
+    let is_deleted = !item.deleted_at.trim().is_empty();
+    let can_restore_work_item = is_deleted
+        && can_manage_work_items
+        && rbac::user_has_permission(pool, user.id, "work_item.manage").await?;
+    let members = projects::list_project_members(pool, project.id).await?;
+    let parent_options = if item.item_type == "task" {
+        projects::list_work_item_summaries_filtered_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            projects::WorkItemListFilter {
+                item_type: Some("requirement".to_string()),
+                project_key: project.project_key.clone(),
+                ..projects::WorkItemListFilter::default()
+            },
+        )
+        .await?
+        .into_iter()
+        .map(|entry| WorkItemParentOptionPayload {
+            key: entry.item_key,
+            title: entry.title,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
+    let navigation = if is_deleted {
+        WorkItemDetailNavigationPayload {
+            previous: None,
+            next: None,
+        }
+    } else {
+        work_item_detail_navigation(
+            projects::list_work_item_summaries_filtered_for_user(
+                pool,
+                user.id,
+                can_access_all_projects,
+                projects::WorkItemListFilter {
+                    item_type: Some(item.item_type.clone()),
+                    project_key: project.project_key.clone(),
+                    ..projects::WorkItemListFilter::default()
+                },
+            )
+            .await?,
+            &item.item_key,
+        )
+    };
+    let flow_page = projects::list_work_item_operation_records_paginated(
+        pool,
+        item.id,
+        &item.item_key,
+        projects::Pagination {
+            page: 1,
+            per_page: 10,
+        },
+    )
+    .await?;
+    let flow_total_pages = flow_page.total_pages();
+    let current_status = projects::normalize_work_item_status(&item.status)?;
+
+    Ok(json(WorkItemDetailViewPayload {
+        item: work_item_detail_payload(item.clone()),
+        cycle: item
+            .cycle_id
+            .map(|cycle_id| WorkItemDetailViewOptionPayload {
+                value: cycle_id.to_string(),
+                label: item.cycle_name.clone(),
+            }),
+        assignees: members
+            .into_iter()
+            .map(|member| WorkItemDetailViewOptionPayload {
+                value: member.username,
+                label: member.display_name,
+            })
+            .collect(),
+        parent_options,
+        status_options: api_work_item_status_options(&item.item_type, current_status)?,
+        permissions: WorkItemDetailViewPermissionsPayload {
+            can_manage_work_items,
+            can_edit_primary_post: !is_deleted
+                && can_manage_work_items
+                && projects::user_can_edit_work_item_post(item.reporter_user_id, user.id),
+            can_close_work_item: can_manage_work_items
+                && !is_deleted
+                && !matches!(current_status, "closed" | "cancelled")
+                && item.assignee_username == user.username,
+            can_reopen_work_item: can_manage_work_items
+                && !is_deleted
+                && matches!(current_status, "closed" | "cancelled"),
+            can_restore_work_item,
+        },
+        navigation,
+        flow_history: WorkItemFlowHistoryPayload {
+            items: flow_page
+                .items
+                .into_iter()
+                .map(work_item_flow_record_payload)
+                .collect(),
+            pagination: PaginationPayload {
+                page: flow_page.page,
+                per_page: flow_page.per_page,
+                total_items: flow_page.total_items,
+                total_pages: flow_total_pages,
+            },
+        },
+    }))
 }
 
 pub async fn update_work_item(
@@ -7037,6 +7226,119 @@ fn work_item_detail_payload(item: projects::WorkItemDetail) -> WorkItemDetailPay
         created_at: item.created_at,
         updated_at: item.updated_at,
         deleted_at: item.deleted_at,
+    }
+}
+
+fn work_item_detail_navigation(
+    items: Vec<projects::WorkItemSummary>,
+    current_item_key: &str,
+) -> WorkItemDetailNavigationPayload {
+    let Some(index) = items
+        .iter()
+        .position(|entry| entry.item_key == current_item_key)
+    else {
+        return WorkItemDetailNavigationPayload {
+            previous: None,
+            next: None,
+        };
+    };
+    let link = |entry: &projects::WorkItemSummary| WorkItemDetailNavigationLinkPayload {
+        item_key: entry.item_key.clone(),
+        title: entry.title.clone(),
+    };
+    WorkItemDetailNavigationPayload {
+        previous: index
+            .checked_sub(1)
+            .and_then(|value| items.get(value))
+            .map(link),
+        next: items.get(index + 1).map(link),
+    }
+}
+
+fn api_work_item_status_options(
+    item_type: &str,
+    current_status: &str,
+) -> AppResult<Vec<WorkItemDetailViewOptionPayload>> {
+    let selected_status = if current_status == "cancelled" {
+        "in_progress"
+    } else {
+        current_status
+    };
+    let mut values = if current_status == "cancelled" {
+        Vec::new()
+    } else {
+        vec![current_status]
+    };
+    for status in projects::allowed_work_item_status_transitions(current_status)? {
+        let relevant = match item_type {
+            "bug" => matches!(
+                *status,
+                "open"
+                    | "in_progress"
+                    | "pending_confirmation"
+                    | "resolved"
+                    | "verified"
+                    | "closed"
+            ),
+            "requirement" | "task" => matches!(
+                *status,
+                "open" | "in_progress" | "pending_confirmation" | "done" | "closed"
+            ),
+            _ => false,
+        };
+        if relevant && !values.contains(status) {
+            values.push(status);
+        }
+    }
+    if values.is_empty() {
+        values.push(selected_status);
+    }
+    values
+        .into_iter()
+        .map(|status| {
+            Ok(WorkItemDetailViewOptionPayload {
+                value: status.to_string(),
+                label: api_work_item_status_label(status)?.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn api_work_item_status_label(status: &str) -> AppResult<&'static str> {
+    match status {
+        "open" => Ok("待处理"),
+        "in_progress" => Ok("进行中"),
+        "pending_confirmation" => Ok("待确认"),
+        "done" => Ok("已完成"),
+        "resolved" => Ok("已解决"),
+        "verified" => Ok("已验证"),
+        "closed" => Ok("已关闭"),
+        "cancelled" => Ok("已取消"),
+        _ => Err(AppError::BadRequest("工作项状态无效".to_string())),
+    }
+}
+
+fn work_item_flow_record_payload(
+    record: projects::WorkItemOperationSummary,
+) -> WorkItemFlowRecordPayload {
+    let summary = if record.source_kind == "edit" {
+        "作者编辑了主帖内容".to_string()
+    } else {
+        record
+            .body
+            .strip_prefix("[yuance-flow] ")
+            .unwrap_or(&record.body)
+            .to_string()
+    };
+    WorkItemFlowRecordPayload {
+        source_kind: record.source_kind,
+        actor: if record.actor_display_name.trim().is_empty() {
+            "系统".to_string()
+        } else {
+            record.actor_display_name
+        },
+        created_at: record.created_at,
+        summary,
     }
 }
 

@@ -445,6 +445,7 @@ fn openapi_freezes_d2_device_business_allowlist() {
         "POST /api/v1/notifications/{notification_id}/read",
         "POST /api/v1/notifications/read-all",
         "GET /api/v1/work-item-list-view",
+        "GET /api/v1/work-item-detail-view/{item_key}",
         "POST /api/v1/work-item-saved-views",
         "PATCH /api/v1/work-item-saved-views/{saved_view_id}",
         "DELETE /api/v1/work-item-saved-views/{saved_view_id}",

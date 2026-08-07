@@ -58,6 +58,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
       priority: "P1", projectKey: "DEMO", q: " crash ", status: "in_progress", cycleId: 7, sort: "priority_desc",
     }, "/api/v1/work-items?item_type=bug&q=crash&status=in_progress&priority=P1&assignee_username=alice&project_key=DEMO&cycle_id=7&sort=priority_desc&page=3&per_page=50"],
     ["workitem.detail", { itemKey: "DEMO-1" }, "/api/v1/work-items/DEMO-1"],
+    ["workitem.detailview", { itemKey: "DEMO-1" }, "/api/v1/work-item-detail-view/DEMO-1"],
     ["workitem.comments", { itemKey: "DEMO-1" }, "/api/v1/work-items/DEMO-1/comments"],
     ["workitem.attachments", { itemKey: "DEMO-1" }, "/api/v1/work-items/DEMO-1/attachments"],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: 7 }, "/api/v1/work-items/DEMO-1/comments/7/attachments"],
@@ -94,6 +95,7 @@ test("rejects invalid business identifiers, filters and pagination", () => {
     ["workitem.list", { sort: "random" }],
     ["workitem.listview", { sort: "random" }],
     ["workitem.detail", { itemKey: "bad/key" }],
+    ["workitem.detailview", { itemKey: "bad/key" }],
     ["workitem.comments", { itemKey: "A" }],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: -1 }],
   ]) assert.throws(() => registry.resolve(name, input), /invalid/i, `${name} should reject invalid input`);
@@ -161,6 +163,24 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   assert.equal(Object.isFrozen(batchResult.failed_items[0]), true);
   assert.equal("private_trace" in batchResult.failed_items[0], false);
   assert.equal("internal_request" in batchResult, false);
+  const detailView = registry.resolve("workitem.detailview", { itemKey: "DEMO-1" }).parse({
+    item: {
+      key: "DEMO-1", item_type: "task", title: "Task", description: "Body", status: "in_progress", priority: "P1",
+      project_key: "DEMO", project_name: "Demo", parent_item_key: "DEMO-REQ-1", parent_title: "Requirement",
+      assignee_username: "alice", assignee: "Alice", reporter: "Bob", due_date: "", created_at: "2026-08-07", updated_at: "2026-08-07", deleted_at: "",
+    },
+    cycle: { value: "7", label: "Sprint 1" },
+    assignees: [{ value: "alice", label: "Alice" }],
+    parent_options: [{ key: "DEMO-REQ-1", title: "Requirement" }],
+    status_options: [{ value: "in_progress", label: "进行中" }],
+    permissions: { can_manage_work_items: true, can_edit_primary_post: false, can_close_work_item: true, can_reopen_work_item: false, can_restore_work_item: false },
+    navigation: { previous: null, next: { item_key: "DEMO-2", title: "Next" } },
+    flow_history: { items: [{ source_kind: "flow", actor: "Alice", created_at: "2026-08-07", summary: "状态：待处理 → 进行中" }], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 } },
+  });
+  assert.equal(Object.isFrozen(detailView), true);
+  assert.equal(Object.isFrozen(detailView.permissions), true);
+  assert.equal(detailView.navigation.next.item_key, "DEMO-2");
+  assert.throws(() => registry.resolve("workitem.detailview", { itemKey: "DEMO-1" }).parse({ ...detailView, private_token: "leak" }), /fields|invalid/i);
 
   const search = registry.resolve("search.list", { q: "crash" }).parse({
     items: [{ kind: "bug", key: "DEMO-1", title: "Crash", context: "Details", target: "/web/work-items/DEMO-1", updated_at: "2026-08-07T00:00:00Z", signed_url: "https://evil.example" }],
@@ -217,6 +237,7 @@ test("rejects malformed or oversized business responses", () => {
     id: 1, username: "x".repeat(257), display_name: "Alice", is_super_admin: false,
   }), /invalid/i);
   assert.throws(() => registry.resolve("workitem.detail", { itemKey: "DEMO-1" }).parse({}), /invalid/i);
+  assert.throws(() => registry.resolve("workitem.detailview", { itemKey: "DEMO-1" }).parse({}), /invalid/i);
   assert.throws(() => registry.resolve("workitem.comments", { itemKey: "DEMO-1" }).parse("not-an-array"), /invalid/i);
   assert.throws(() => registry.resolve("workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }).parse({ updated_count: 2, updated_item_keys: ["DEMO-1"], failed_count: 0, failed_items: [] }), /invalid/i);
   assert.throws(() => registry.resolve("notification.list", {}).parse({

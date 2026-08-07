@@ -76,6 +76,7 @@
     "POST /api/v1/notifications/{notification_id}/read",
     "POST /api/v1/notifications/read-all",
     "GET /api/v1/work-item-list-view",
+    "GET /api/v1/work-item-detail-view/{item_key}",
     "POST /api/v1/work-item-saved-views",
     "PATCH /api/v1/work-item-saved-views/{saved_view_id}",
     "DELETE /api/v1/work-item-saved-views/{saved_view_id}",
@@ -1327,6 +1328,19 @@
           },
           "400": {"$ref": "#/components/responses/Error"},
           "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-item-detail-view/{item_key}": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取共享工作项详情完整视图",
+        "description": "供 Web 与 Desktop 原子读取详情、周期、候选项、权限、前后项导航和首屏流转历史。",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "共享工作项详情完整视图", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemDetailViewEnvelope"}}}},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -3509,6 +3523,40 @@
             "$ref": "#/components/schemas/WorkItemDetail"
           }
         }
+      },
+      "WorkItemDetailViewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["item", "cycle", "assignees", "parent_options", "status_options", "permissions", "navigation", "flow_history"],
+            "properties": {
+              "item": {"$ref": "#/components/schemas/WorkItemDetail"},
+              "cycle": {"oneOf": [{"$ref": "#/components/schemas/WorkItemDetailOption"}, {"type": "null"}]},
+              "assignees": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemDetailOption"}},
+              "parent_options": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["key", "title"], "properties": {"key": {"type": "string"}, "title": {"type": "string"}}}},
+              "status_options": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemDetailOption"}},
+              "permissions": {"type": "object", "additionalProperties": false, "required": ["can_manage_work_items", "can_edit_primary_post", "can_close_work_item", "can_reopen_work_item", "can_restore_work_item"], "properties": {"can_manage_work_items": {"type": "boolean"}, "can_edit_primary_post": {"type": "boolean"}, "can_close_work_item": {"type": "boolean"}, "can_reopen_work_item": {"type": "boolean"}, "can_restore_work_item": {"type": "boolean"}}},
+              "navigation": {"type": "object", "additionalProperties": false, "required": ["previous", "next"], "properties": {"previous": {"$ref": "#/components/schemas/NullableWorkItemNavigationLink"}, "next": {"$ref": "#/components/schemas/NullableWorkItemNavigationLink"}}},
+              "flow_history": {"type": "object", "additionalProperties": false, "required": ["items", "pagination"], "properties": {"items": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["source_kind", "actor", "created_at", "summary"], "properties": {"source_kind": {"type": "string", "enum": ["flow", "edit"]}, "actor": {"type": "string"}, "created_at": {"type": "string"}, "summary": {"type": "string"}}}}, "pagination": {"$ref": "#/components/schemas/Pagination"}}}
+            }
+          }
+        }
+      },
+      "WorkItemDetailOption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["value", "label"],
+        "properties": {"value": {"type": "string"}, "label": {"type": "string"}}
+      },
+      "NullableWorkItemNavigationLink": {
+        "oneOf": [
+          {"type": "object", "additionalProperties": false, "required": ["item_key", "title"], "properties": {"item_key": {"type": "string"}, "title": {"type": "string"}}},
+          {"type": "null"}
+        ]
       },
       "WorkItemDetail": {
         "allOf": [

@@ -110,6 +110,7 @@ export const setDefaultWorkItemSavedView = apiClient.setDefaultWorkItemSavedView
 export const deleteWorkItemSavedView = apiClient.deleteWorkItemSavedView;
 
 export const getWorkItem = /** @type {(itemKey: string) => Promise<WorkItemDetail>} */ (apiClient.getWorkItem);
+export const getWorkItemDetailView = apiClient.getWorkItemDetailView;
 
 export const getWorkItemComments = /** @type {(itemKey: string) => Promise<WorkItemComment[]>} */ (apiClient.getWorkItemComments);
 
@@ -204,6 +205,7 @@ export const webApi = {
   getProjects,
   getTopbarStatus,
   getWorkItem,
+  getWorkItemDetailView,
   getWorkItemAttachmentDownloadUrl,
   getWorkItemAttachmentUploadUrl,
   getWorkItemAttachments,

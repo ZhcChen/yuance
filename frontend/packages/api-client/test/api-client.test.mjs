@@ -207,6 +207,12 @@ test('work item list view uses the atomic shared page endpoint', async () => {
   assert.equal(calls[0].url, '/api/v1/work-item-list-view?item_type=bug&project_key=YCE&cycle_id=7&sort=updated_desc&page=1&per_page=10');
 });
 
+test('work item detail view uses the atomic shared page endpoint', async () => {
+  const { client, calls } = createRecordedClient();
+  await client.getWorkItemDetailView('YCE-TASK/2');
+  assert.equal(calls[0].url, '/api/v1/work-item-detail-view/YCE-TASK%2F2');
+});
+
 test('createWorkItem uses the complete shared creation contract', async () => {
   const { client, calls, writes } = createRecordedClient();
   await client.createWorkItem({ projectKey: 'YCE', itemType: 'task', title: '实现共享创建', description: '<p>说明</p>', priority: 'P1', assigneeUsername: 'alice', cycleId: 7, dueDate: '2026-08-31', parentItemKey: 'YCE-REQ-1' });
