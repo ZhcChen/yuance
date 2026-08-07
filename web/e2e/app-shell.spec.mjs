@@ -2325,7 +2325,7 @@ test('shared system releases view renders one atomic policy version and asset sn
     } }) });
   });
 
-  await login(page, '/web/app/system/releases?page=2&per_page=20');
+  await login(page, '/web/system/releases?page=2&per_page=20');
   await expect(page).toHaveTitle('版本管理 - 元策');
   await expect(page.getByRole('heading', { level: 1, name: '版本管理' })).toBeVisible();
   await expect(page.getByRole('region', { name: '发布工作台' })).toContainText('发布管理员');
@@ -2335,7 +2335,7 @@ test('shared system releases view renders one atomic policy version and asset sn
   await expect.poll(() => requests).toContain('/api/v1/system/releases-view?page=2&per_page=20');
 
   await page.getByRole('button', { name: '下一页' }).click();
-  await expect(page).toHaveURL('/web/app/system/releases?page=3&per_page=20');
+  await expect(page).toHaveURL('/web/system/releases?page=3&per_page=20');
   await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.3');
 });
 

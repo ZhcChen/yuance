@@ -6545,8 +6545,18 @@ pub async fn system_api_token_delete(
 pub async fn system_releases_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<SystemReleasesQuery>,
 ) -> AppResult<Response> {
+    let return_to = original_uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| original_uri.path());
+    if let Some(response) =
+        shared_system_web_app_response(&state, &headers, return_to, "system.releases.view").await?
+    {
+        return Ok(response);
+    }
     let context = match system_context_or_redirect(&state, &headers, "system.releases.view").await?
     {
         Ok(context) => context,
