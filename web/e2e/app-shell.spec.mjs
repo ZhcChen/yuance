@@ -2227,6 +2227,52 @@ test('shared system roles view renders atomic selection and permissions in the a
   await expect.poll(() => requests).toContain('?role=system_viewer&per_page=20');
 });
 
+test('shared system storage view renders one masked paginated snapshot in the app owner', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/storage-view*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.pathname + url.search);
+    const currentPage = Number(url.searchParams.get('page') || 1);
+    const perPage = Number(url.searchParams.get('per_page') || 10);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      config: {
+        id: 12, provider: 'aliyun_oss', endpoint: 'https://oss-cn-hangzhou.aliyuncs.com', region: 'cn-hangzhou',
+        bucket: 'yuance-shared-files', access_key_id_hint: 'AKIA****E2E1', status: 'active', version: 12,
+        created_by: '系统管理员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z',
+      },
+      versions: [{
+        id: currentPage, provider: 'aliyun_oss', endpoint: 'https://oss-cn-hangzhou.aliyuncs.com', region: 'cn-hangzhou',
+        bucket: `yuance-version-${currentPage}`, access_key_id_hint: 'AKIA****HIST', current_status: 'inactive', version: currentPage,
+        created_by: '系统管理员', created_at: '2026-08-08T00:00:00Z',
+      }],
+      pagination: { page: currentPage, per_page: perPage, total_items: 41, total_pages: Math.ceil(41 / perPage) },
+      inspection: {
+        ok: false, needs_initialization: true, message: 'Bucket 尚未初始化。',
+        checks: [{ code: 'bucket_layout', status: 'missing', message: '缺少元策目录结构。' }],
+      },
+      inspection_error: '', can_manage_storage: true,
+    } }) });
+  });
+
+  await login(page, '/web/app/system/storage?page=2&per_page=20');
+  await expect(page).toHaveTitle('对象存储 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '对象存储' })).toBeVisible();
+  const workspace = page.getByRole('region', { name: '存储工作台' });
+  await expect(workspace).toContainText('yuance-shared-files');
+  await expect(workspace).toContainText('AKIA****E2E1');
+  await expect(workspace).toContainText('需要初始化');
+  await expect(page.getByRole('table', { name: '存储检查项目' })).toContainText('缺少元策目录结构。');
+  await expect(page.getByRole('table', { name: '存储配置版本' })).toContainText('yuance-version-2');
+  await expect(page.locator('body')).not.toContainText('AKIAORIGINALSECRET');
+  await expect(page.locator('body')).not.toContainText('StorageSecret2026!');
+  await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=2&per_page=20');
+
+  await page.getByRole('button', { name: '下一页' }).click();
+  await expect(page).toHaveURL('/web/app/system/storage?page=3&per_page=20');
+  await expect(page.getByRole('table', { name: '存储配置版本' })).toContainText('yuance-version-3');
+  await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=3&per_page=20');
+});
+
 test('shared system role mutations preserve permission parent and confirmation semantics', async ({ page }) => {
   const mutations = [];
   let status = 'active';

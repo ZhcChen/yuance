@@ -957,6 +957,7 @@ DELETE /api/v1/system/releases/{release_id}/assets/{asset_id}
 对象存储：
 
 ```text
+GET  /api/v1/system/storage-view
 GET  /api/v1/storage/config
 POST /api/v1/storage/config
 POST /api/v1/storage/config/probe
@@ -965,6 +966,8 @@ POST /api/v1/storage/config/initialize
 GET  /api/v1/storage/config/versions
 POST /api/v1/storage/config/versions/{version}/rollback
 ```
+
+`system/storage-view` 是 Web 与 Desktop 共享存储工作台的原子读取入口，返回脱敏后的当前配置、版本分页、初始化检查和服务端计算的管理能力；默认每页 10 条。未配置或检查失败时返回稳定页面状态，不返回密文、AccessKey ID 或 Secret 明文。
 
 对象存储配置请求：
 

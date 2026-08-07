@@ -1107,6 +1107,12 @@ pub struct SystemRolesViewQuery {
     per_page: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SystemStorageViewQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SystemUserProjectPayload {
     pub key: String,
@@ -1224,6 +1230,16 @@ pub struct StorageConfigVersionPayload {
     pub current_status: String,
     pub created_by: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemStorageViewPayload {
+    pub config: Option<StorageConfigPayload>,
+    pub versions: Vec<StorageConfigVersionPayload>,
+    pub pagination: PaginationPayload,
+    pub inspection: Option<storage::StorageBucketInspection>,
+    pub inspection_error: String,
+    pub can_manage_storage: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -6712,6 +6728,53 @@ pub async fn get_storage_config(
         .map(storage_config_payload);
 
     Ok(json(payload))
+}
+
+pub async fn get_system_storage_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemStorageViewQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemStorageViewPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.storage.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let total_items = storage::count_config_versions(pool).await?;
+    let total_pages = ((total_items + pagination.per_page - 1) / pagination.per_page).max(1);
+    let page = pagination.page.min(total_pages);
+    let config = storage::latest_config(pool).await?;
+    let versions = storage::list_config_versions_page(pool, page, pagination.per_page)
+        .await?
+        .into_iter()
+        .map(storage_config_version_payload)
+        .collect();
+    let (inspection, inspection_error) = if config.is_some() {
+        match storage::inspect_active_initialization(pool, &state.settings).await {
+            Ok(value) => (Some(value), String::new()),
+            Err(_) => (
+                None,
+                "对象存储检查失败，请确认已激活配置并稍后重试。".to_string(),
+            ),
+        }
+    } else {
+        (None, "对象存储尚未配置，请先保存并激活配置。".to_string())
+    };
+    let can_manage_storage =
+        rbac::user_has_permission(pool, user.id, "system.storage.manage").await?;
+
+    Ok(json(SystemStorageViewPayload {
+        config: config.map(storage_config_payload),
+        versions,
+        pagination: PaginationPayload {
+            page,
+            per_page: pagination.per_page,
+            total_items,
+            total_pages,
+        },
+        inspection,
+        inspection_error,
+        can_manage_storage,
+    }))
 }
 
 pub async fn save_storage_config(

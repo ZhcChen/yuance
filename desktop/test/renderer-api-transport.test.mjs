@@ -21,6 +21,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/system/dashboard", "system.dashboard", {}],
     ["/api/v1/system/users-view?page=2&per_page=20", "system.usersview", { page: 2, perPage: 20 }],
     ["/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20", "system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }],
+    ["/api/v1/system/storage-view?page=2&per_page=20", "system.storageview", { page: 2, perPage: 20 }],
     ["/api/v1/current-project", "project.current", {}],
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
     ["/api/v1/projects/DEMO", "project.detail", { projectKey: "DEMO" }],

@@ -47,6 +47,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
+    ["system.storageview", systemStorageViewOperation],
     ["system.rolecreate", systemRoleCreateOperation],
     ["system.rolestatusupdate", systemRoleStatusUpdateOperation],
     ["system.rolepermissionsupdate", systemRolePermissionsUpdateOperation],
@@ -437,6 +438,13 @@ function systemRolesViewOperation(input) {
   if (input.role !== undefined && boundedText(input.role, "role", 64).trim()) query.set("role", boundedText(input.role, "role", 64).trim());
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/roles-view", query), parseSystemRolesView);
+}
+
+function systemStorageViewOperation(input) {
+  exactKeys(input, ["page", "perPage"]);
+  const query = new URLSearchParams();
+  appendPagination(query, input);
+  return descriptor("GET", withQuery("/api/v1/system/storage-view", query), parseSystemStorageView);
 }
 
 function systemRoleCreateOperation(input) {
@@ -868,6 +876,33 @@ function parseSystemRolesView(data) {
     can_edit_permissions: boolean,
   });
 }
+function parseStorageConfig(data) { return freezeExactDto(data, {
+  id: positiveInteger, provider: shortString, endpoint: shortString, region: shortString,
+  bucket: shortString, access_key_id_hint: shortString, status: shortString,
+  version: positiveInteger, updated_at: shortString,
+}); }
+function parseStorageConfigVersion(data) { return freezeExactDto(data, {
+  id: positiveInteger, storage_config_id: positiveInteger, version: positiveInteger,
+  provider: shortString, endpoint: shortString, region: shortString, bucket: shortString,
+  access_key_id_hint: shortString, snapshot_status: shortString, current_status: shortString,
+  created_by: textString, created_at: shortString,
+}); }
+function parseStorageInspection(data) { return freezeExactDto(data, {
+  ok: boolean, provider: shortString, bucket: shortString, initialized: boolean,
+  needs_initialization: boolean, can_write: boolean, can_read: boolean, can_delete: boolean,
+  marker_key: shortString, checks: (checks) => boundedArray(checks, (check) => freezeExactDto(check, {
+    code: shortString, status: shortString, message: textString,
+  }), 32, "storage checks"), message: textString,
+}); }
+function parseSystemStorageView(data) { return freezeExactDto(data, {
+  config: (config) => config === null ? null : parseStorageConfig(config),
+  versions: (versions) => boundedArray(versions, parseStorageConfigVersion, 100, "storage versions"),
+  pagination: (pagination) => freezeExactDto(pagination, {
+    page: positiveInteger, per_page: positiveInteger, total_items: nonNegativeInteger, total_pages: positiveInteger,
+  }),
+  inspection: (inspection) => inspection === null ? null : parseStorageInspection(inspection),
+  inspection_error: textString, can_manage_storage: boolean,
+}); }
 function parseSystemUserView(data) { return freezeExactDto(data, {
   id: positiveInteger, username: shortString, display_name: textString, email: shortString,
   mobile: shortString, status: shortString, is_super_admin: boolean, role_code: shortString,

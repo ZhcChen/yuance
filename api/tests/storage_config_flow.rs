@@ -968,6 +968,118 @@ async fn api_storage_config_save_masks_secret_and_requires_permission() {
 }
 
 #[tokio::test]
+async fn api_system_storage_view_returns_one_masked_paginated_snapshot() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let settings = test_settings();
+    for index in 1..=12 {
+        storage::save_config(
+            &pool,
+            &settings,
+            initialized.user_id,
+            storage::SaveStorageConfigInput {
+                endpoint: storage::TEST_MEMORY_ENDPOINT.to_string(),
+                region: "test".to_string(),
+                bucket: format!("storage-view-{index:02}"),
+                access_key_id: "AKIASTORAGEVIEWSECRET".to_string(),
+                access_key_secret: "StorageViewSecret2026!".to_string(),
+                activate: true,
+            },
+        )
+        .await
+        .expect("storage config should save");
+    }
+    let app = build_router(AppState::new(settings, Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/storage-view?page=2&per_page=10")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).expect("storage view should be JSON");
+    assert_eq!(payload["data"]["config"]["bucket"], "storage-view-12");
+    assert_eq!(
+        payload["data"]["config"]["access_key_id_hint"],
+        "AKIA****CRET"
+    );
+    assert_eq!(payload["data"]["versions"].as_array().unwrap().len(), 2);
+    assert_eq!(payload["data"]["pagination"]["page"], 2);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 12);
+    assert_eq!(payload["data"]["pagination"]["total_pages"], 2);
+    assert_eq!(payload["data"]["can_manage_storage"], true);
+    assert!(!body.contains("AKIASTORAGEVIEWSECRET"));
+    assert!(!body.contains("StorageViewSecret2026"));
+}
+
+#[tokio::test]
+async fn api_system_storage_view_returns_stable_empty_state_and_requires_view_permission() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_id = create_user_with_role(
+        &pool,
+        "storage_view_member",
+        "存储读取普通成员",
+        "MemberPass2026!",
+        "member",
+    )
+    .await;
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let member_cookie = auth::session_cookie_header(&member_session.raw_token, false);
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let forbidden_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/storage-view")
+                .header(header::COOKIE, member_cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(forbidden_response.status(), StatusCode::FORBIDDEN);
+
+    let empty_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/storage-view")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(empty_response.status(), StatusCode::OK);
+    let body = response_body(empty_response).await;
+    let payload: serde_json::Value =
+        serde_json::from_str(&body).expect("storage view should be JSON");
+    assert!(payload["data"]["config"].is_null());
+    assert_eq!(payload["data"]["versions"], serde_json::json!([]));
+    assert_eq!(payload["data"]["pagination"]["page"], 1);
+    assert_eq!(payload["data"]["pagination"]["per_page"], 10);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 0);
+    assert_eq!(payload["data"]["pagination"]["total_pages"], 1);
+    assert!(payload["data"]["inspection"].is_null());
+    assert_eq!(
+        payload["data"]["inspection_error"],
+        "对象存储尚未配置，请先保存并激活配置。"
+    );
+    assert_eq!(payload["data"]["can_manage_storage"], true);
+}
+
+#[tokio::test]
 async fn api_storage_config_probe_uses_active_config_without_leaking_secret() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

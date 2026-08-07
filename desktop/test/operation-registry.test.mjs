@@ -38,6 +38,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["system.dashboard", {}, "/api/v1/system/dashboard"],
     ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
     ["system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }, "/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20"],
+    ["system.storageview", { page: 2, perPage: 20 }, "/api/v1/system/storage-view?page=2&per_page=20"],
     ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
     ["project.list", { status: "in_progress", page: 2, perPage: 25 }, "/api/v1/projects?status=in_progress&page=2&per_page=25"],
@@ -104,6 +105,20 @@ test("system roles view response is bounded to the atomic role contract", () => 
   assert.deepEqual(result, payload);
   assert.ok(Object.isFrozen(result));
   assert.throws(() => parse({ ...payload, private_key: "secret" }), /fields are invalid/i);
+});
+
+test("system storage view response excludes raw storage credentials", () => {
+  const parse = createOperationRegistry().resolve("system.storageview", {}).parse;
+  const payload = {
+    config: { id: 1, provider: "aliyun_oss", endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", access_key_id_hint: "AKIA****CRET", status: "active", version: 2, updated_at: "2026-08-08" },
+    versions: [{ id: 2, storage_config_id: 1, version: 2, provider: "aliyun_oss", endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", access_key_id_hint: "AKIA****CRET", snapshot_status: "active", current_status: "active", created_by: "管理员", created_at: "2026-08-08" }],
+    pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 },
+    inspection: { ok: true, provider: "aliyun_oss", bucket: "yuance-files", initialized: true, needs_initialization: false, can_write: true, can_read: true, can_delete: true, marker_key: "yuance-system/.initialized", checks: [], message: "检查通过" },
+    inspection_error: "", can_manage_storage: true,
+  };
+  assert.deepEqual(parse(payload), payload);
+  assert.throws(() => parse({ ...payload, access_key_secret: "secret" }), /fields are invalid/i);
+  assert.throws(() => parse({ ...payload, config: { ...payload.config, access_key_id: "raw" } }), /fields are invalid/i);
 });
 
 test("system role mutations use fixed validated descriptors", () => {

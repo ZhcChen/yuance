@@ -16,6 +16,7 @@ import {
   buildSearchPath,
   buildSystemPath,
   buildSystemRolesPath,
+  buildSystemStoragePath,
   buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
@@ -581,6 +582,8 @@ function routeDescription(route) {
       return '用户、角色候选、项目关系和分页由服务端原子读取，两个宿主不拼接管理事实。';
     case 'system-roles':
       return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
+    case 'system-storage':
+      return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -611,6 +614,7 @@ function routeEyebrow(route) {
     case 'system-dashboard':
     case 'system-users':
     case 'system-roles':
+    case 'system-storage':
       return 'System';
     default:
       return 'Web App';
@@ -775,6 +779,7 @@ export function SharedApp({ services }) {
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
+  const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
   const [systemRoleCreateOpen, setSystemRoleCreateOpen] = useState(false);
   const [systemRoleCreateForm, setSystemRoleCreateForm] = useState({ roleCode: '', roleName: '', dataScopeType: 'self' });
   const [systemRoleStatusTarget, setSystemRoleStatusTarget] = useState(/** @type {any | null} */ (null));
@@ -1167,7 +1172,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1282,6 +1287,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-roles'
           ? api.getSystemRolesView({ role: targetRoute.role, page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
+        targetRoute.id === 'system-storage'
+          ? api.getSystemStorageView({ page: targetRoute.page, perPage: targetRoute.perPage })
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1339,6 +1347,7 @@ export function SharedApp({ services }) {
         setSystemRolePermissionKeys((nextSystemRolesView?.permissions || []).filter((permission) => permission.granted).map((permission) => permission.permission_key));
         setSystemRoleError('');
       }
+      if (targetRoute.id === 'system-storage') setSystemStorageView(nextSystemStorageView);
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
       }
@@ -2480,6 +2489,8 @@ export function SharedApp({ services }) {
         ? '用户管理 - 元策'
       : route.id === 'system-roles'
         ? '角色权限 - 元策'
+      : route.id === 'system-storage'
+        ? '对象存储 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
         : route.id === 'profile'
@@ -4133,8 +4144,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4162,7 +4173,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4226,7 +4237,30 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'system-roles' ? (
+          {route.id === 'system-storage' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-storage-title">
+              <div className="shell-panel-header"><div><h2 id="system-storage-title">存储工作台</h2><p className="shell-muted">当前配置与版本记录</p></div></div>
+              {systemStorageView?.config ? <dl className="shell-detail-grid">
+                <div><dt>Provider</dt><dd>{systemStorageView.config.provider}</dd></div>
+                <div><dt>状态</dt><dd>{systemStorageView.config.status}</dd></div>
+                <div><dt>Endpoint</dt><dd>{systemStorageView.config.endpoint}</dd></div>
+                <div><dt>Region</dt><dd>{systemStorageView.config.region || '未填写'}</dd></div>
+                <div><dt>Bucket</dt><dd>{systemStorageView.config.bucket}</dd></div>
+                <div><dt>AccessKey</dt><dd>{systemStorageView.config.access_key_id_hint || '未配置'}</dd></div>
+                <div><dt>版本</dt><dd>v{systemStorageView.config.version}</dd></div>
+                <div><dt>更新时间</dt><dd>{formatTimestamp(systemStorageView.config.updated_at)}</dd></div>
+              </dl> : <Feedback tone="info" title="尚未配置对象存储">{systemStorageView?.inspection_error || '当前没有可用配置。'}</Feedback>}
+              {systemStorageView?.inspection ? <section aria-labelledby="system-storage-inspection-title">
+                <div className="shell-panel-header"><div><h3 id="system-storage-inspection-title">Bucket 检查</h3><p className="shell-muted">{systemStorageView.inspection.message}</p></div><strong>{systemStorageView.inspection.ok ? '运行就绪' : systemStorageView.inspection.needs_initialization ? '需要初始化' : '检测异常'}</strong></div>
+                <DataTable caption="存储检查项目" rows={systemStorageView.inspection.checks} rowKey={(item) => item.code} emptyText="暂无检查项目。" columns={[{ key: 'code', label: '检查', render: (item) => item.code }, { key: 'status', label: '状态', render: (item) => item.status }, { key: 'message', label: '结果', render: (item) => item.message }]} />
+              </section> : systemStorageView?.config ? <Feedback tone="warning" title="Bucket 检查不可用">{systemStorageView.inspection_error}</Feedback> : null}
+              <section aria-labelledby="system-storage-versions-title">
+                <div className="shell-panel-header"><div><h3 id="system-storage-versions-title">配置版本</h3></div></div>
+                <DataTable caption="存储配置版本" rows={systemStorageView?.versions || []} rowKey={(item) => item.id} emptyText="暂无配置版本。" columns={[{ key: 'version', label: '版本', render: (item) => `v${item.version}` }, { key: 'bucket', label: 'Bucket', render: (item) => item.bucket }, { key: 'credential', label: 'AccessKey', render: (item) => item.access_key_id_hint || '未配置' }, { key: 'status', label: '状态', render: (item) => item.current_status }, { key: 'creator', label: '创建人', render: (item) => item.created_by || '系统' }, { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) }]} />
+              </section>
+              {systemStorageView ? <div className="shell-panel-header"><Pagination page={systemStorageView.pagination.page} totalPages={systemStorageView.pagination.total_pages} totalItems={systemStorageView.pagination.total_items} onPageChange={(page) => navigate(buildSystemStoragePath({ owner: route.owner, page, perPage: systemStorageView.pagination.per_page }), `正在加载第 ${page} 页存储版本。`)} /><label className="shell-page-size">每页<select value={systemStorageView.pagination.per_page} onChange={(event) => navigate(buildSystemStoragePath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
+            </section>
+          ) : route.id === 'system-roles' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-roles-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-roles-title">角色工作台</h2><p className="shell-muted">选择角色后查看数据范围和完整权限集合。</p></div>

@@ -709,6 +709,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_system_database_stats),
         )
         .route(
+            "/api/v1/system/storage-view",
+            get(web::api::get_system_storage_view),
+        )
+        .route(
             "/api/v1/system/audit",
             get(web::api::list_system_audit_logs),
         )

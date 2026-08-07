@@ -125,6 +125,16 @@ export function buildSystemRolesPath({ owner = 'web', role = '', page = DEFAULT_
   return params.size ? `${base}?${params.toString()}` : base;
 }
 
+export function buildSystemStoragePath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/storage' : '/web/system/storage';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
 export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -345,6 +355,12 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       page,
       perPage,
       title: '角色权限',
+    };
+  }
+
+  if (pathname === '/web/system/storage' || pathname === '/web/app/system/storage') {
+    return {
+      id: 'system-storage', owner, pathname, search, page, perPage, title: '对象存储',
     };
   }
 

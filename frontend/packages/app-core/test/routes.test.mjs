@@ -13,6 +13,7 @@ import {
   buildSearchPath,
   buildSystemPath,
   buildSystemRolesPath,
+  buildSystemStoragePath,
   buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
@@ -48,6 +49,15 @@ test('system roles route preserves owner selection and pagination', () => {
     role: 'qa_lead', page: 2, perPage: 20, title: '角色权限',
   });
   assert.equal(parseAppRoute('/web/app/system/roles/qa%5Flead/permissions').role, 'qa_lead');
+});
+
+test('system storage route preserves owner and version pagination', () => {
+  assert.equal(buildSystemStoragePath({ owner: 'web' }), '/web/system/storage');
+  assert.equal(buildSystemStoragePath({ owner: 'app', page: 2, perPage: 20 }), '/web/app/system/storage?page=2&per_page=20');
+  assert.deepEqual(parseAppRoute('/web/system/storage', '?page=2&per_page=20'), {
+    id: 'system-storage', owner: 'web', pathname: '/web/system/storage', search: '?page=2&per_page=20',
+    page: 2, perPage: 20, title: '对象存储',
+  });
 });
 
 test('parseAppRoute recognizes browser shell home owners', () => {

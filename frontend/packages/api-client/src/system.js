@@ -4,7 +4,7 @@
 /** @typedef {{ links: SystemDashboardLink[] }} SystemDashboard */
 /** @typedef {{ page?: number, perPage?: number }} SystemUsersQuery */
 /** @typedef {{ username: string, displayName: string, email?: string, mobile?: string, password: string, roleCode: string }} CreateSystemUserPayload */
-/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
+/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, getSystemStorageView(query?: SystemUsersQuery): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
 
 /**
  * @param {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite?: () => Promise<void> }} dependencies
@@ -35,6 +35,13 @@ export function createSystemClient({ request, prepareWrite = async () => {} }) {
       if (Number.isInteger(query.perPage) && Number(query.perPage) !== 10) params.set('per_page', String(query.perPage));
       const suffix = params.size ? `?${params.toString()}` : '';
       return request(`/api/v1/system/roles-view${suffix}`);
+    },
+    getSystemStorageView(query = {}) {
+      const params = new URLSearchParams();
+      if (Number.isInteger(query.page) && Number(query.page) > 1) params.set('page', String(query.page));
+      if (Number.isInteger(query.perPage) && Number(query.perPage) !== 10) params.set('per_page', String(query.perPage));
+      const suffix = params.size ? `?${params.toString()}` : '';
+      return request(`/api/v1/system/storage-view${suffix}`);
     },
     createSystemRole(roleCode, roleName, dataScopeType) {
       return write('/api/v1/system/roles', 'POST', { role_code: roleCode, role_name: roleName, data_scope_type: dataScopeType });
