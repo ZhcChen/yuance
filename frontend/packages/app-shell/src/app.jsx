@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  createNotificationActionCoordinator,
   createNotificationEventCoordinator,
   createProjectResourceWithAttachments,
   buildHomePath,
@@ -650,6 +651,7 @@ export function SharedApp({ services }) {
   const { api, events, files, router, runtime } = services;
   const [route, setRoute] = useState(() => router.currentRoute());
   const routeRef = useRef(route);
+  const topbarRef = useRef(/** @type {AppTopbarStatus | null} */ (null));
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
@@ -681,6 +683,9 @@ export function SharedApp({ services }) {
   const [topbar, setTopbar] = useState(/** @type {AppTopbarStatus | null} */ (null));
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
+  const [messageReadAllSubmitting, setMessageReadAllSubmitting] = useState(false);
+  const [messageOpeningId, setMessageOpeningId] = useState(/** @type {number | null} */ (null));
+  const [messageActionError, setMessageActionError] = useState('');
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
   const [projectDetail, setProjectDetail] = useState(/** @type {AppProjectDetail | null} */ (null));
   const [projectMembers, setProjectMembers] = useState(/** @type {AppProjectMember[]} */ ([]));
@@ -820,6 +825,7 @@ export function SharedApp({ services }) {
   const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
 
   const currentProject = topbar?.current_project || null;
+  topbarRef.current = topbar;
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
   const profilePath = buildProfilePath(route.owner);
@@ -856,6 +862,20 @@ export function SharedApp({ services }) {
   const bugsPath = buildWorkItemListPath({ owner: workItemOwner, itemType: 'bug', ...workItemNavQuery });
   const messageFilter = /** @type {'all' | 'unread' | 'pending' | 'read'} */ (messageRoute ? messageRoute.filter : 'all');
   const previewItems = useMemo(() => (homeFeed?.items || []).slice(0, 8), [homeFeed]);
+  const notificationActions = useMemo(() => createNotificationActionCoordinator({
+    markAllRead: () => api.markAllNotificationsRead(),
+    markRead: (notificationId) => api.markNotificationRead(notificationId),
+    getTarget: (notificationId) => api.getNotificationTarget(notificationId),
+    setCurrentProject: (projectKey) => api.updateCurrentProject(projectKey),
+    currentProjectKey: () => topbarRef.current?.current_project?.key || '',
+    refresh: () => loadRouteState(routeRef.current, 'refresh'),
+    navigate: (path) => navigate(path, '正在打开消息目标。'),
+    targetPath: (target) => notificationTargetPath(target, /** @type {'app' | 'web'} */ (routeRef.current.owner)),
+    onState: (state) => {
+      setMessageReadAllSubmitting(state.readAllPending);
+      setMessageOpeningId(state.openingId);
+    },
+  }), [api]);
   const activeFeed = route.id === 'messages' ? messageFeed : homeFeed;
   const unreadCount = activeFeed?.unread_count ?? topbar?.notifications_count ?? 0;
   const pendingCount = messageFeed?.pending_count ?? 0;
@@ -2296,26 +2316,21 @@ export function SharedApp({ services }) {
 
   /** @param {AppNotification} item */
   async function handleOpenNotification(item) {
+    setMessageActionError('');
     try {
-      const result = item.target ? await api.markNotificationRead(item.id) : await api.getNotificationTarget(item.id);
-      const target = result.target || item.target;
-      const owner = /** @type {'app' | 'web'} */ (
-        target ? workItemOwnerForRoute(routeRef.current) : routeRef.current.owner === 'app' ? 'app' : 'web'
-      );
-      setStatusMessage('正在打开消息目标。');
-      router.assign(notificationTargetPath(target, owner));
-    } catch (_error) {
-      router.assign(messagesPath);
+      await notificationActions.open(item);
+    } catch (caught) {
+      setMessageActionError(errorMessage(caught instanceof Error ? caught : new Error('消息目标暂不可用。')));
     }
   }
 
   async function handleMarkAllRead() {
+    setMessageActionError('');
     try {
-      await api.markAllNotificationsRead();
+      await notificationActions.markAll();
       setStatusMessage('消息已全部标为已读。');
-      await loadRouteState(routeRef.current, 'refresh');
     } catch (caught) {
-      setError(caught instanceof Error ? caught : new Error('标记消息失败。'));
+      setMessageActionError(errorMessage(caught instanceof Error ? caught : new Error('标记消息失败。')));
     }
   }
 
@@ -3924,11 +3939,13 @@ export function SharedApp({ services }) {
                   <p className="shell-muted">未读 {messageFeed?.unread_count || 0} 条，待处理讨论 {pendingCount} 条。</p>
                 </div>
                 <div className="shell-actions-inline">
-                  <button className="shell-button shell-button-secondary" type="button" onClick={handleMarkAllRead}>
-                    全部已读
+                  <button className="shell-button shell-button-secondary" type="button" disabled={messageReadAllSubmitting || (messageFeed?.unread_count || 0) === 0} onClick={handleMarkAllRead}>
+                    {messageReadAllSubmitting ? '处理中…' : '全部已读'}
                   </button>
                 </div>
               </div>
+
+              {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
 
               <nav className="message-tabs" aria-label="消息筛选">
                 {[
@@ -3968,8 +3985,8 @@ export function SharedApp({ services }) {
                           <p>{item.body}</p>
                           <p className="shell-muted">{item.actor} · {formatTimestamp(item.created_at)}</p>
                         </div>
-                        <button className="shell-button shell-button-secondary" type="button" onClick={() => void handleOpenNotification(item)}>
-                          打开
+                        <button className="shell-button shell-button-secondary" type="button" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
+                          {messageOpeningId === item.id ? '打开中…' : '打开'}
                         </button>
                       </li>
                     ))}
@@ -4815,11 +4832,12 @@ export function SharedApp({ services }) {
                   <h2 id="notification-title">最近消息</h2>
                   <div className="shell-actions-inline">
                     <span className="shell-meta">未读 {unreadCount}</span>
-                    <button className="shell-button shell-button-secondary" type="button" onClick={handleMarkAllRead}>
-                      全部已读
+                    <button className="shell-button shell-button-secondary" type="button" disabled={messageReadAllSubmitting || unreadCount === 0} onClick={handleMarkAllRead}>
+                      {messageReadAllSubmitting ? '处理中…' : '全部已读'}
                     </button>
                   </div>
                 </div>
+                {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
                 {previewItems.length ? (
                   <ul className="notification-list">
                     {previewItems.map((item) => (
@@ -4832,8 +4850,8 @@ export function SharedApp({ services }) {
                           <p>{item.body}</p>
                           <p className="shell-muted">{item.actor} · {formatTimestamp(item.created_at)}</p>
                         </div>
-                        <button className="shell-button shell-button-secondary" type="button" onClick={() => void handleOpenNotification(item)}>
-                          打开
+                        <button className="shell-button shell-button-secondary" type="button" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
+                          {messageOpeningId === item.id ? '打开中…' : '打开'}
                         </button>
                       </li>
                     ))}

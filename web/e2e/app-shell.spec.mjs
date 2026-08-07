@@ -2116,10 +2116,10 @@ test('message center opens semantic target and unread filter becomes empty after
   const openButton = page.getByRole('button', { name: '打开', exact: true }).first();
   await expect(openButton).toBeVisible();
   await Promise.all([
-    page.waitForURL(/\/web\/app\/work-items\/YCE-TASK-2/),
+    page.waitForURL(/\/web\/work-items\/YCE-TASK-2/),
     openButton.click(),
   ]);
-  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2(#comment-\d+)?$/);
+  await expect(page).toHaveURL(/\/web\/work-items\/YCE-TASK-2(#comment-\d+)?$/);
 
   await page.goto('/web/messages?filter=unread');
   await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeVisible();
