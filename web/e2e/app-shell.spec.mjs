@@ -1439,6 +1439,33 @@ test('project list can switch current project inside the app shell', async ({ pa
   await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
 });
 
+test('shared project list creates a project with one validated request', async ({ page }) => {
+  await login(page, '/web/app/projects');
+  const requests = [];
+  await page.route('**/api/v1/projects', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    requests.push({ headers: route.request().headers(), payload: route.request().postDataJSON() });
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: {
+      key: 'P260808123456', name: '共享创建项目', description: '项目创建 E2E', status: 'not_started',
+      owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '2026-08-08', due_date: '2026-08-31',
+      created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z',
+    } }) });
+  });
+  await page.getByRole('button', { name: '新建项目' }).click();
+  const dialog = page.getByRole('dialog', { name: '新建项目' });
+  await dialog.getByLabel('项目名称').fill('共享创建项目');
+  await dialog.getByLabel('状态').selectOption('not_started');
+  await dialog.getByLabel('开始日期').fill('2026-08-08');
+  await dialog.getByLabel('截止日期').fill('2026-08-31');
+  await dialog.getByLabel('项目描述').fill('项目创建 E2E');
+  await dialog.getByRole('button', { name: '创建' }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('项目 P260808123456 已创建。');
+  expect(requests).toHaveLength(1);
+  expect(requests[0].headers['x-yuance-csrf-token']).toBeTruthy();
+  expect(requests[0].payload).toEqual({ name: '共享创建项目', description: '项目创建 E2E', status: 'not_started', start_date: '2026-08-08', due_date: '2026-08-31' });
+});
+
 test('project switch serializes repeated input and refreshes the current context', async ({ page }) => {
   await login(page, '/web/app/projects');
   let patchCount = 0;

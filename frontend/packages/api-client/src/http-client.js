@@ -17,7 +17,7 @@ import { createWorkItemClient } from './work-items.js';
 /** @typedef {import('./search.js').SearchClient} SearchClient */
 /** @typedef {import('./topbar.js').TopbarClient} TopbarClient */
 /** @typedef {import('./account-security.js').AccountSecurityClient} AccountSecurityClient */
-/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
+/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**
  * @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies
@@ -53,6 +53,15 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
       }
       const suffix = params.size > 0 ? `?${params.toString()}` : '';
       return request(`/api/v1/projects${suffix}`);
+    },
+
+    /** @param {{ name: string, description?: string, status: string, startDate?: string, dueDate?: string }} payload */
+    async createProject(payload) {
+      await prepareWrite();
+      return request('/api/v1/projects', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: payload.name, description: payload.description || '', status: payload.status, start_date: payload.startDate || '', due_date: payload.dueDate || '' }),
+      });
     },
 
     /** @param {string} projectKey */

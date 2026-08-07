@@ -70,6 +70,15 @@ test('updateWorkItem uses injected transport and JSON payload without CSRF logic
   });
 });
 
+test('createProject uses the shared write contract', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.createProject({ name: '新项目', description: '说明', status: 'not_started', startDate: '2026-08-08', dueDate: '2026-08-31' });
+  assert.deepEqual(writes, ['prepare']);
+  assert.equal(calls[0].url, '/api/v1/projects');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(String(calls[0].options.body)), { name: '新项目', description: '说明', status: 'not_started', start_date: '2026-08-08', due_date: '2026-08-31' });
+});
+
 test('attachment DTO drops internal object storage fields', async () => {
   const { client, calls, writes } = createRecordedClient();
 

@@ -491,6 +491,10 @@ export function SharedApp({ services }) {
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
   const [projectSwitchingKey, setProjectSwitchingKey] = useState('');
+  const [projectCreateOpen, setProjectCreateOpen] = useState(false);
+  const [projectCreateSubmitting, setProjectCreateSubmitting] = useState(false);
+  const [projectCreateError, setProjectCreateError] = useState('');
+  const [projectCreateForm, setProjectCreateForm] = useState({ name: '', description: '', status: 'not_started', startDate: '', dueDate: '' });
   const [profile, setProfile] = useState(/** @type {Awaited<ReturnType<AppApiService['getOwnProfile']>> | null} */ (null));
   const [profileForm, setProfileForm] = useState({ displayName: '', email: '', mobile: '' });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -814,6 +818,21 @@ export function SharedApp({ services }) {
     } finally {
       if (profileActionRef.current === actionId) setProfileSubmitting(false);
     }
+  }
+
+  async function submitProjectCreate(event) {
+    event.preventDefault();
+    if (projectCreateSubmitting) return;
+    setProjectCreateSubmitting(true); setProjectCreateError('');
+    try {
+      const created = await api.createProject(projectCreateForm);
+      const nextProjects = await api.getProjects({ status: projectRoute?.status, page: 1, perPage: projectRoute?.perPage });
+      setProjectPage(nextProjects); setProjectCreateOpen(false);
+      setProjectCreateForm({ name: '', description: '', status: 'not_started', startDate: '', dueDate: '' });
+      setStatusMessage(`项目 ${created.key} 已创建。`);
+    } catch (caught) {
+      setProjectCreateError(errorMessage(caught instanceof Error ? caught : new Error('项目创建失败。')));
+    } finally { setProjectCreateSubmitting(false); }
   }
 
   /** @param {() => Promise<any>} action @param {string} successMessage */
@@ -2294,6 +2313,7 @@ export function SharedApp({ services }) {
                   <p className="shell-muted">当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
                 </div>
                 <div className="shell-actions-inline">
+                  <Button variant="secondary" onClick={() => { setProjectCreateError(''); setProjectCreateOpen(true); }}>新建项目</Button>
                   <label className="page-size-control">
                     <span>状态</span>
                     <select value={projectRoute?.status || ''} onChange={changeProjectStatus}>
@@ -2309,6 +2329,17 @@ export function SharedApp({ services }) {
                   </label>
                 </div>
               </div>
+
+              <Modal open={projectCreateOpen} title="新建项目" onClose={() => { if (!projectCreateSubmitting) setProjectCreateOpen(false); }} footer={<><Button variant="secondary" disabled={projectCreateSubmitting} onClick={() => setProjectCreateOpen(false)}>取消</Button><Button loading={projectCreateSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
+                <form id="project-create-form" onSubmit={submitProjectCreate}>
+                  {projectCreateError ? <Feedback tone="danger" title="创建失败">{projectCreateError}</Feedback> : null}
+                  <Field id="project-create-name" label="项目名称" required><input value={projectCreateForm.name} maxLength={120} onChange={(event) => setProjectCreateForm((current) => ({ ...current, name: event.target.value }))} /></Field>
+                  <Field id="project-create-status" label="状态" required><select value={projectCreateForm.status} onChange={(event) => setProjectCreateForm((current) => ({ ...current, status: event.target.value }))}><option value="not_started">待启动</option><option value="in_progress">进行中</option><option value="acceptance">验收中</option><option value="completed">已完成</option><option value="on_hold">已暂停</option><option value="cancelled">已取消</option><option value="archived">已归档</option></select></Field>
+                  <Field id="project-create-start" label="开始日期"><input type="date" value={projectCreateForm.startDate} onChange={(event) => setProjectCreateForm((current) => ({ ...current, startDate: event.target.value }))} /></Field>
+                  <Field id="project-create-due" label="截止日期"><input type="date" min={projectCreateForm.startDate || undefined} value={projectCreateForm.dueDate} onChange={(event) => setProjectCreateForm((current) => ({ ...current, dueDate: event.target.value }))} /></Field>
+                  <Field id="project-create-description" label="项目描述"><textarea value={projectCreateForm.description} maxLength={2000} onChange={(event) => setProjectCreateForm((current) => ({ ...current, description: event.target.value }))} /></Field>
+                </form>
+              </Modal>
 
               {projectPage?.items?.length ? (
                 <>

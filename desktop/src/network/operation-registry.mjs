@@ -8,6 +8,7 @@ const PROBE_KEYS = [
 const PROJECT_KEY = /^[A-Z][A-Z0-9-]{1,31}$/u;
 const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
 const PROJECT_STATUSES = new Set(["all", "not_started", "in_progress", "acceptance", "completed", "on_hold", "cancelled", "archived"]);
+const PROJECT_WRITE_STATUSES = new Set([...PROJECT_STATUSES].filter((status) => status !== "all"));
 const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
@@ -33,6 +34,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
+    ["project.create", projectCreateOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -88,6 +90,17 @@ function projectListOperation(input) {
   if (status !== "all") query.set("status", status);
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/projects", query), parseProjectPage);
+}
+
+function projectCreateOperation(input) {
+  exactKeys(input, ["description", "dueDate", "name", "startDate", "status"]);
+  const startDate = dateText(input.startDate);
+  const dueDate = dateText(input.dueDate);
+  if (startDate && dueDate && dueDate < startDate) throw new TypeError("dueDate is invalid");
+  return descriptor("POST", "/api/v1/projects", parseProjectDetail, false, "object", jsonBody({
+    name: boundedRequiredText(input.name, "name", 120), description: boundedText(input.description, "description", 2000),
+    status: requiredEnum(input.status, PROJECT_WRITE_STATUSES, "status", false), start_date: startDate, due_date: dueDate,
+  }));
 }
 
 function searchListOperation(input) {
@@ -299,6 +312,11 @@ function parseSearchResult(value) { return freezeDto(value, {
 function parseProject(value) { return freezeDto(value, {
   key: shortString, name: shortString, status: shortString, owner: shortString,
   work_item_count: nonNegativeInteger, active_work_item_count: nonNegativeInteger, updated_at: shortString,
+}); }
+function parseProjectDetail(value) { return freezeDto(value, {
+  key: shortString, name: textString, description: longString, status: shortString,
+  owner_username: shortString, owner: shortString, start_date: shortString, due_date: shortString,
+  created_at: shortString, updated_at: shortString,
 }); }
 function parseWorkItemPage(data) { return parsePage(data, parseWorkItemSummary); }
 function parseWorkItemSummary(value) { return freezeDto(value, {

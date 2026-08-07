@@ -93,6 +93,10 @@ function resolveMutationOperation(parsed, method, options) {
     const body = parseJsonBody(options, ["expires_at", "name", "project_scope", "scopes"]);
     return { operation: "identity.tokencreate", input: renameBody(body, { expires_at: "expiresAt", project_scope: "projectScope" }) };
   }
+  if (method === "POST" && parsed.pathname === "/api/v1/projects") {
+    const body = parseJsonBody(options, ["description", "due_date", "name", "start_date", "status"]);
+    return { operation: "project.create", input: renameBody(body, { due_date: "dueDate", start_date: "startDate" }) };
+  }
   const token = parsed.pathname.match(/^\/api\/v1\/me\/tokens\/(\d+)$/u);
   if (method === "PATCH" && token) {
     const body = parseJsonBody(options, ["name", "project_scope", "scopes"]);

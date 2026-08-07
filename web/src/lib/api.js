@@ -50,6 +50,7 @@ export const getCurrentUser = /** @type {() => Promise<AuthUser>} */ (apiClient.
 export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiClient.getTopbarStatus);
 
 export const getProjects = /** @type {(query?: { status?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
+export const createProject = apiClient.createProject;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -122,6 +123,7 @@ export function openTopbarEvents(callbacks) {
 
 export const webApi = {
   createApiToken,
+  createProject,
   createWorkItemAttachment,
   createWorkItemComment,
   createWorkItemCommentAttachment,

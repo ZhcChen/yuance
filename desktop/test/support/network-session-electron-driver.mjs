@@ -423,6 +423,12 @@ async function runRealBusinessApi({ origin, mode, network }) {
     : [];
   stage("select-project");
   const selectedProject = await rest.execute("project.select", { projectKey: "YCE" });
+  stage("create-project");
+  const createdProject = await rest.execute("project.create", {
+    name: "Desktop project integration", description: "Shared project create contract",
+    status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31",
+  });
+  const projectsAfterCreate = await rest.execute("project.list", { page: 1, perPage: 100 });
   stage("update-profile");
   const updatedProfile = await rest.execute("identity.profileupdate", {
     displayName: "Desktop profile integration",
@@ -483,6 +489,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const readAllResult = await rest.execute("notification.readall", {});
   const mutationOperations = [
     "project.select",
+    "project.create",
     "identity.profileupdate",
     "workitem.update",
     "workitem.handoff",
@@ -513,6 +520,8 @@ async function runRealBusinessApi({ origin, mode, network }) {
     attachments: attachments.length,
     commentAttachments: commentAttachments.length,
     projectSelected: selectedProject.key === "YCE",
+    projectCreated: createdProject.key.startsWith("P")
+      && projectsAfterCreate.items.some((project) => project.key === createdProject.key),
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"
       && verifiedProfile.display_name === updatedProfile.display_name,
     accountSecurity: deviceSessions.some((session) => session.is_current)

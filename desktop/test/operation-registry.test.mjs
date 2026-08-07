@@ -166,6 +166,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "projects:DEMO" }, "PATCH", "/api/v1/me/tokens/7", { name: "Agent 2", scopes: ["work_item:read"], project_scope: "projects:DEMO" }],
     ["identity.tokendelete", { tokenId: 7 }, "DELETE", "/api/v1/me/tokens/7", undefined],
     ["identity.devicesessionrevoke", { familyId: "family-1" }, "DELETE", "/api/v1/me/device-sessions/family-1", undefined],
+    ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }, "POST", "/api/v1/projects", { name: "New project", description: "Description", status: "not_started", start_date: "2026-08-08", due_date: "2026-08-31" }],
     ["project.select", { projectKey: "DEMO" }, "PATCH", "/api/v1/current-project", { project_key: "DEMO" }],
     ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
     ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
@@ -188,6 +189,8 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
   const registry = createOperationRegistry();
   for (const [name, input] of [
     ["project.select", { projectKey: "demo" }],
+    ["project.create", { name: "Project", description: "", status: "all", startDate: "", dueDate: "" }],
+    ["project.create", { name: "Project", description: "", status: "not_started", startDate: "2026-09-01", dueDate: "2026-08-01" }],
     ["identity.profileupdate", { displayName: " ", email: "", mobile: "" }],
     ["notification.read", { notificationId: 0 }],
     ["workitem.update", { itemKey: "DEMO-1", payload: {} }],
