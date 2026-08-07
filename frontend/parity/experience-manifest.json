@@ -1018,6 +1018,48 @@
     },
     {
       "id": "action.system.user.project-role", "pageId": "page.system.users", "trigger": "submit project membership role", "inputs": ["username", "project-key", "member-role", "page", "per-page", "csrf-token"], "validation": "关系存在，用户不是项目负责人，角色受控。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/users/{username}/projects/{project_key}/role" }, "successEffect": "更新项目角色并记录审计。", "errorEffects": ["负责人必须先转移", "角色无效", "关系不存在", "普通用户 403"], "realtimeEffect": "目标用户该项目权限和菜单立即失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.role.create", "pageId": "page.system.roles", "trigger": "submit role creation form", "inputs": ["role-code", "name", "description", "csrf-token"], "validation": "角色编码唯一且格式受控，名称必填。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/roles" }, "successEffect": "创建默认禁用或最小权限角色并记录审计。", "errorEffects": ["编码冲突", "字段无效", "保护编码拒绝", "普通用户 403"], "realtimeEffect": "角色候选列表失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.role.status", "pageId": "page.system.roles", "trigger": "confirm role status change", "inputs": ["role-code", "status", "csrf-token"], "validation": "角色存在、非系统保护角色且状态受控。", "confirmation": "停用时提示已分配用户的权限影响。", "request": { "method": "POST", "path": "/web/system/roles/{role_code}/status" }, "successEffect": "更新角色状态并记录审计。", "errorEffects": ["保护角色不可停用", "角色不存在", "仍有关键用户时拒绝", "普通用户 403"], "realtimeEffect": "使用该角色的所有用户权限和菜单失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.role.permissions", "pageId": "page.system.role-permissions", "trigger": "submit role permission tree", "inputs": ["role-code", "permission-keys", "csrf-token"], "validation": "角色可编辑，权限键存在，父子依赖和系统保护约束满足。", "confirmation": "移除高权限时展示受影响用户范围。", "request": { "method": "POST", "path": "/web/system/roles/{role_code}/permissions" }, "successEffect": "原子替换权限集合并记录差异审计。", "errorEffects": ["保护角色不可编辑", "权限键失效", "父子依赖不满足", "并发角色变化"], "realtimeEffect": "使用该角色的所有用户权限、菜单和请求缓存失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.storage.save", "pageId": "page.system.storage", "trigger": "submit storage settings", "inputs": ["provider", "endpoint", "region", "bucket", "access-key-id", "secret-access-key", "public-base-url", "csrf-token"], "validation": "provider 和地址配置受控；留空密钥表示保留现值，不把掩码写回。", "confirmation": "切换 provider 或 bucket 时提示现有对象不会自动迁移。", "request": { "method": "POST", "path": "/web/system/storage" }, "successEffect": "加密保存配置、仅返回脱敏值并记录审计。", "errorEffects": ["配置格式错误", "密钥永不回显", "保存失败保持旧配置", "普通用户 403"], "realtimeEffect": "文件能力配置和健康状态失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.storage.probe", "pageId": "page.system.storage", "trigger": "probe pending storage settings", "inputs": ["provider-settings", "csrf-token"], "validation": "使用表单中的候选配置，密钥留空时读取现有密钥但不返回。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/storage/probe" }, "successEffect": "返回连接、读写和权限探测结果，不持久化候选配置。", "errorEffects": ["DNS 或连接失败", "认证失败", "bucket 权限不足", "结果不泄露密钥"], "realtimeEffect": "none", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.storage.initialize", "pageId": "page.system.storage", "trigger": "confirm storage initialization", "inputs": ["csrf-token"], "validation": "已保存配置可探测且当前迁移状态允许初始化。", "confirmation": "提示将创建结构并改变正式文件写入目标。", "request": { "method": "POST", "path": "/web/system/storage/initialize" }, "successEffect": "初始化存储结构、记录版本和审计并切换可用状态。", "errorEffects": ["探测未通过", "并发初始化", "部分创建进入可恢复失败态", "普通用户 403"], "realtimeEffect": "文件上传下载能力和系统健康状态失效。", "repeatSubmitPolicy": "reject", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.storage.rollback", "pageId": "page.system.storage", "trigger": "confirm storage version rollback", "inputs": ["version", "csrf-token"], "validation": "目标版本存在、可回滚且没有冲突中的存储操作。", "confirmation": "展示目标版本、影响和不可逆风险。", "request": { "method": "POST", "path": "/web/system/storage/versions/{version}/rollback" }, "successEffect": "回滚到目标配置版本并写入新的审计和版本记录。", "errorEffects": ["版本不可回滚", "活动传输冲突", "回滚失败保持当前有效配置", "普通用户 403"], "realtimeEffect": "所有文件能力配置和健康状态失效。", "repeatSubmitPolicy": "reject", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.openapi.create", "pageId": "page.system.openapi", "trigger": "submit system API token creation", "inputs": ["name", "project-scope", "scopes", "expires-at", "csrf-token"], "validation": "名称、项目范围、scope 和有效期受控，未超过 Token 上限。", "confirmation": "none", "request": { "method": "POST", "path": "/web/system/openapi" }, "successEffect": "创建 Token 并仅在本次响应展示可复制明文，记录审计。", "errorEffects": ["Token 上限", "项目或 scope 失效", "字段错误", "普通用户 403"], "realtimeEffect": "OpenAPI Token 列表失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.openapi.update", "pageId": "page.system.openapi", "trigger": "submit system API token edit", "inputs": ["token-id", "name", "project-scope", "scopes", "status", "csrf-token"], "validation": "Token 存在，字段和 scope 有效；编辑不重新生成或展示明文。", "confirmation": "停用时提示依赖调用立即失效。", "request": { "method": "POST", "path": "/web/system/openapi/tokens/{token_id}/edit" }, "successEffect": "更新元数据、权限或状态并记录审计。", "errorEffects": ["Token 不存在", "scope 失效", "并发删除", "普通用户 403"], "realtimeEffect": "目标 Token 后续 API 授权立即使用新范围。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.openapi.delete", "pageId": "page.system.openapi", "trigger": "confirm system API token deletion", "inputs": ["token-id", "csrf-token"], "validation": "Token 存在且可由当前超级管理员管理。", "confirmation": "提示删除不可恢复且依赖调用立即失败。", "request": { "method": "POST", "path": "/web/system/openapi/tokens/{token_id}/delete" }, "successEffect": "撤销并删除 Token，记录高风险审计。", "errorEffects": ["已删除时刷新最终状态", "Token 不存在", "普通用户 403"], "realtimeEffect": "目标 Token 的后续请求立即被拒绝。", "repeatSubmitPolicy": "reject", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.release.create", "pageId": "page.system.releases", "trigger": "submit desktop release creation", "inputs": ["version", "channel", "notes", "published", "assets", "csrf-token"], "validation": "版本唯一且格式有效，channel 受控，发布前具备支持平台资产。", "confirmation": "直接发布时展示版本、channel 和资产集合。", "request": { "method": "POST", "path": "/web/system/releases" }, "successEffect": "创建版本、上传资产元数据并记录审计。", "errorEffects": ["版本冲突", "资产平台或架构重复", "上传失败可恢复", "普通用户 403"], "realtimeEffect": "桌面下载页和更新检查失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.release.settings", "pageId": "page.system.releases", "trigger": "submit release settings", "inputs": ["enabled-channels", "default-channel", "minimum-version", "csrf-token"], "validation": "channel 和版本格式有效，默认 channel 已启用。", "confirmation": "提高最低版本时提示旧客户端影响。", "request": { "method": "POST", "path": "/web/system/releases/settings" }, "successEffect": "更新更新策略并记录审计。", "errorEffects": ["channel 配置冲突", "版本格式错误", "保存失败保留旧策略"], "realtimeEffect": "Desktop 更新策略缓存失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.release.update", "pageId": "page.system.releases", "trigger": "submit desktop release edit", "inputs": ["release-id", "channel", "notes", "published", "csrf-token"], "validation": "版本存在，channel 受控，发布必须满足资产完整性。", "confirmation": "发布或撤回时展示对下载页和更新检查的影响。", "request": { "method": "POST", "path": "/web/system/releases/{release_id}/edit" }, "successEffect": "更新版本元数据或发布状态并记录审计。", "errorEffects": ["资产不完整", "版本不存在", "状态冲突", "普通用户 403"], "realtimeEffect": "下载页和 Desktop 更新检查失效。", "repeatSubmitPolicy": "lock", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.system.release.asset-download", "pageId": "page.system.releases", "trigger": "download release asset as administrator", "inputs": ["release-id", "asset-id"], "validation": "资产属于版本且对象存在。", "confirmation": "none", "request": { "method": "GET", "path": "/web/system/releases/{release_id}/assets/{asset_id}/download" }, "successEffect": "记录审计并跳转短时签名下载 URL。", "errorEffects": ["资产不存在", "对象缺失", "普通用户 403"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "hostExceptions": [
