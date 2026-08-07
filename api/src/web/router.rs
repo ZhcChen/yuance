@@ -1008,6 +1008,15 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::work_item_comment_attachment_download_url),
         )
         .route(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview",
+            get(web::api::work_item_comment_attachment_preview),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
+            get(web::api::work_item_comment_attachment_preview_content)
+                .head(web::api::work_item_comment_attachment_preview_content),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
             delete(web::api::work_item_comment_attachment_delete),
         )

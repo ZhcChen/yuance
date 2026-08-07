@@ -130,6 +130,7 @@ test("desktop app file adapter delegates business attachments and rejects signed
     downloadProjectResourceAttachment: async () => ({ status: "cancelled" }),
     openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
     openWorkItemAttachmentPreview: async () => ({ capability: `ypv_${"e".repeat(32)}`, source: `app://yuance/.preview/ypv_${"e".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
+    openWorkItemCommentAttachmentPreview: async () => ({ capability: `ypv_${"f".repeat(32)}`, source: `app://yuance/.preview/ypv_${"f".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
     openProjectResourceAttachmentPreview: async () => ({ capability: `ypv_${"d".repeat(32)}`, source: `app://yuance/.preview/ypv_${"d".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
     releaseProjectAttachmentPreview: async (capability) => { calls.push(capability); return { status: "released", privatePath: "/secret" }; },
     revealDownload: async (capability) => { calls.push(capability); return { status: "revealed", path: "/secret" }; },
@@ -151,6 +152,8 @@ test("desktop app file adapter delegates business attachments and rejects signed
   assert.equal(JSON.stringify(preview).includes("secret"), false);
   const workItemPreview = await platform.attachments.openWorkItemAttachmentPreview({ itemKey: "YCE-TASK-2", attachmentId: 9 });
   assert.equal(workItemPreview.source, `app://yuance/.preview/ypv_${"e".repeat(32)}`);
+  const commentPreview = await platform.attachments.openWorkItemCommentAttachmentPreview({ itemKey: "YCE-TASK-2", commentId: 8, attachmentId: 9 });
+  assert.equal(commentPreview.source, `app://yuance/.preview/ypv_${"f".repeat(32)}`);
   const resourcePreview = await platform.attachments.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant" });
   assert.equal(resourcePreview.source, `app://yuance/.preview/ypv_${"d".repeat(32)}`);
   assert.equal(JSON.stringify(resourcePreview).includes("secret"), false);
@@ -176,6 +179,7 @@ test("desktop preview adapter rejects a content source that is not bound to its 
     downloadProjectResourceAttachment: async () => ({ status: "cancelled" }),
     openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: "https://example.test/private", contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
     openWorkItemAttachmentPreview: async () => ({ capability: `ypv_${"e".repeat(32)}`, source: `app://yuance/.preview/ypv_${"e".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
+    openWorkItemCommentAttachmentPreview: async () => ({ capability: `ypv_${"f".repeat(32)}`, source: `app://yuance/.preview/ypv_${"f".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
     openProjectResourceAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: "https://example.test/private", contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
     releaseProjectAttachmentPreview: async () => ({ status: "released" }),
     revealDownload: async () => ({ status: "revealed" }),

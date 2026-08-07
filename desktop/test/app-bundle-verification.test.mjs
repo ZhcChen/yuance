@@ -55,7 +55,8 @@ async function createBundleFixture({
     'const channels = ["yuance:file-choose", "yuance:file-upload-work-item-attachment",',
     '  "yuance:file-upload-work-item-comment-attachment", "yuance:file-download-work-item-attachment",',
     '  "yuance:file-download-work-item-comment-attachment", "yuance:file-upload-project-resource-attachment",',
-    '  "yuance:file-download-project-resource-attachment", "yuance:file-open-project-resource-attachment-preview", "yuance:file-reveal-download"];',
+    '  "yuance:file-download-project-resource-attachment", "yuance:file-open-project-resource-attachment-preview",',
+    '  "yuance:file-open-work-item-comment-attachment-preview", "yuance:file-reveal-download"];',
     "module.exports = channels;",
   ].join("\n"));
   await fs.writeFile(path.join(source, "src", "ipc", "business-commands.mjs"), "export {};\n");
@@ -208,7 +209,7 @@ test("rejects renderer file capabilities, signed requests, and local path fixtur
 });
 
 test("rejects preload network, filesystem, external navigation, and private transfer capabilities", async (context) => {
-  const markers = '"yuance:file-choose yuance:file-upload-work-item-attachment yuance:file-upload-work-item-comment-attachment yuance:file-download-work-item-attachment yuance:file-download-work-item-comment-attachment yuance:file-upload-project-resource-attachment yuance:file-download-project-resource-attachment yuance:file-open-project-resource-attachment-preview yuance:file-reveal-download";';
+  const markers = '"yuance:file-choose yuance:file-upload-work-item-attachment yuance:file-upload-work-item-comment-attachment yuance:file-download-work-item-attachment yuance:file-download-work-item-comment-attachment yuance:file-upload-project-resource-attachment yuance:file-download-project-resource-attachment yuance:file-open-project-resource-attachment-preview yuance:file-open-work-item-comment-attachment-preview yuance:file-reveal-download";';
   for (const source of [
     `${markers}\nfetch('/api/v1/projects');`,
     `${markers}\nrequire('node:fs');`,

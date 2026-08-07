@@ -30,6 +30,13 @@ export function createProjectAttachmentPreviewCoordinator({ restTransport, loade
     return openPreviewSnapshot(metadata, attachmentId, expectedContentPath, binding, signal);
   }
 
+  async function openWorkItemCommentAttachmentPreview(input) {
+    const { itemKey, commentId, attachmentId, binding, signal } = parseWorkItemCommentOpenInput(input);
+    const metadata = await restTransport.execute("workitem.commentattachmentpreview", { itemKey, commentId, attachmentId });
+    const expectedContentPath = `/api/v1/work-items/${itemKey}/comments/${commentId}/attachments/${attachmentId}/preview/content`;
+    return openPreviewSnapshot(metadata, attachmentId, expectedContentPath, binding, signal);
+  }
+
   async function openProjectResourceAttachmentPreview(input) {
     const { projectKey, resourceId, attachmentId, accessToken, binding, signal } = parseResourceOpenInput(input);
     const metadata = await restTransport.execute("project.resourceattachmentpreview", { projectKey, resourceId, attachmentId, accessToken });
@@ -45,7 +52,12 @@ export function createProjectAttachmentPreviewCoordinator({ restTransport, loade
     return Object.freeze({ status: "released" });
   }
 
-  return Object.freeze({ openProjectAttachmentPreview, openWorkItemAttachmentPreview, openProjectResourceAttachmentPreview, releaseProjectAttachmentPreview });
+  return Object.freeze({ openProjectAttachmentPreview, openWorkItemAttachmentPreview, openWorkItemCommentAttachmentPreview, openProjectResourceAttachmentPreview, releaseProjectAttachmentPreview });
+}
+function parseWorkItemCommentOpenInput(value) {
+  if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "binding", "commentId", "itemKey", "signal"]) || typeof value.itemKey !== "string" || !ITEM_KEY.test(value.itemKey) || !Number.isSafeInteger(value.commentId) || value.commentId < 1 || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1 || (value.signal !== undefined && !(value.signal instanceof AbortSignal))) throw new TypeError("work item comment preview open input is invalid");
+  validateBinding(value.binding);
+  return value;
 }
 function parseWorkItemOpenInput(value) {
   if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "binding", "itemKey", "signal"]) || typeof value.itemKey !== "string" || !ITEM_KEY.test(value.itemKey) || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1 || (value.signal !== undefined && !(value.signal instanceof AbortSignal))) throw new TypeError("work item preview open input is invalid");

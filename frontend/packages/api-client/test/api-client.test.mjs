@@ -213,6 +213,23 @@ test('work item attachment preview uses the fixed path and strips private fields
   assert.equal(Object.hasOwn(result.attachment, 'object_key'), false);
 });
 
+test('work item comment attachment preview uses the fixed comment path', async () => {
+  const calls = [];
+  const client = createApiClient({ request: async (url) => {
+    calls.push(url);
+    return {
+      attachment: { id: 7, filename: 'comment.pdf', content_type: 'application/pdf', byte_size: 2048, status: 'uploaded', created_by: 'Alice', created_at: '2026-08-08T00:00:00Z' },
+      preview: { kind: 'document', strategy: 'pdf', file_type: 'pdf', kind_label: 'PDF', is_experimental: false, legacy_preview_enabled: false, content_enabled: true },
+      navigation: { position: 1, total: 1, previous: null, next: null },
+      content_url: '/api/v1/work-items/YCE-TASK-2/comments/9/attachments/7/preview/content',
+      download_url: '/api/v1/work-items/YCE-TASK-2/comments/9/attachments/7/download-url',
+    };
+  } });
+  const result = await client.getWorkItemCommentAttachmentPreview('YCE-TASK-2', 9, 7);
+  assert.deepEqual(calls, ['/api/v1/work-items/YCE-TASK-2/comments/9/attachments/7/preview']);
+  assert.equal(result.attachment.id, 7);
+});
+
 test('work item list preserves cycle and allowlisted sort query', async () => {
   const { client, calls } = createRecordedClient();
   await client.getWorkItems({ itemType: 'task', projectKey: 'yce', cycleId: 7, sort: 'due_date_asc', page: 2, perPage: 20 });

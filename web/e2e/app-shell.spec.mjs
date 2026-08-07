@@ -1611,6 +1611,19 @@ test('work item attachments can list download and upload for item and comments',
       body: JSON.stringify({ data: commentAttachments[commentId] || [] }),
     });
   });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/preview', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        attachment: commentAttachments[901][0],
+        preview: { kind: 'document', strategy: 'text', file_type: 'txt', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true },
+        navigation: { position: 1, total: 1, previous: null, next: null },
+        content_url: '/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/preview/content',
+        download_url: '/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/download-url',
+      } }),
+    });
+  });
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
     await route.fulfill({
       status: 200,
@@ -1650,6 +1663,13 @@ test('work item attachments can list download and upload for item and comments',
   const comment902 = page.locator('#comment-902');
   await expect(comment901).toContainText('comment-log.txt');
   await expect(comment902).not.toContainText('comment-log.txt');
+
+  await comment901.getByRole('button', { name: '预览评论附件 comment-log.txt' }).click();
+  const commentPreview = page.getByRole('dialog', { name: 'comment-log.txt' });
+  await expect(commentPreview).toBeVisible();
+  await expect(commentPreview).toContainText('1 / 1');
+  await commentPreview.getByRole('button', { name: '关闭附件预览' }).click();
+  await expect(commentPreview).toBeHidden();
 
   await attachmentPanel.getByRole('button', { name: '下载附件 spec.pdf' }).click();
   await expect.poll(() => downloadUrlRequests.length).toBe(1);

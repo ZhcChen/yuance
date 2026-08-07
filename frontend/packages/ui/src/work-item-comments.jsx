@@ -54,6 +54,7 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   onStartEdit: (comment: Comment) => void,
  *   onStartReply: (comment: Comment) => void,
  *   onUploadAttachment: (commentId: number) => void,
+ *   onPreviewAttachment: (commentId: number, attachment: Attachment) => void,
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  * }} props
@@ -90,6 +91,7 @@ export function WorkItemComments(props) {
     onStartEdit,
     onStartReply,
     onUploadAttachment,
+    onPreviewAttachment,
     onDownloadAttachment,
     onRevealAttachment,
   } = props;
@@ -140,6 +142,7 @@ export function WorkItemComments(props) {
                     downloadLabel="评论附件"
                     downloadingId={downloadingKey.startsWith(`${comment.id}:`) ? Number(downloadingKey.split(':')[1]) : null}
                     revealableId={revealableKey.startsWith(`${comment.id}:`) ? Number(revealableKey.split(':')[1]) : null}
+                    onPreview={(attachment) => onPreviewAttachment(comment.id, attachment)}
                     onDownload={(attachment) => onDownloadAttachment(comment.id, attachment)}
                     onReveal={(attachment) => onRevealAttachment(comment.id, attachment)}
                     className="work-item-comment-attachment-list"

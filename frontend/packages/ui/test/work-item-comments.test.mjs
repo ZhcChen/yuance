@@ -61,6 +61,7 @@ function renderComments(overrides = {}) {
     onStartEdit: () => {},
     onStartReply: () => {},
     onUploadAttachment: () => {},
+    onPreviewAttachment: () => {},
     onDownloadAttachment: () => {},
     onRevealAttachment: () => {},
     ...overrides,
@@ -74,6 +75,7 @@ test('work item comments render comments, attachment controls and upload state',
   assert.match(html, /开始处理/);
   assert.match(html, /comment\.txt/);
   assert.match(html, /aria-label="下载评论附件 comment\.txt"/);
+  assert.match(html, /aria-label="预览评论附件 comment\.txt"/);
   assert.match(html, /上传完成/);
 });
 

@@ -715,7 +715,7 @@ export function SharedApp({ services }) {
   const [projectAttachmentStatus, setProjectAttachmentStatus] = useState('');
   const [projectAttachmentError, setProjectAttachmentError] = useState('');
   const [projectAttachmentReveal, setProjectAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
-  const [projectAttachmentPreview, setProjectAttachmentPreview] = useState(/** @type {{ open: boolean, loading: boolean, error: string, attachment: AppAttachment | null, source: string, kind: AppPreviewKind, fileType: string | null, position: number, total: number, previousId: number | null, nextId: number | null } | null} */ (null));
+  const [projectAttachmentPreview, setProjectAttachmentPreview] = useState(/** @type {{ open: boolean, loading: boolean, error: string, attachment: AppAttachment | null, source: string, kind: AppPreviewKind, fileType: string | null, position: number, total: number, previousId: number | null, nextId: number | null, commentId?: number } | null} */ (null));
   const [projectCycleDetail, setProjectCycleDetail] = useState(/** @type {AppProjectCycle | null} */ (null));
   const [projectPersonalAnalysis, setProjectPersonalAnalysis] = useState(/** @type {AppProjectPersonalAnalysis | null} */ (null));
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
@@ -1600,6 +1600,43 @@ export function SharedApp({ services }) {
   function navigateWorkItemAttachmentPreview(attachmentId) {
     const attachment = workItemAttachments.find((item) => item.id === attachmentId);
     if (attachment) void openWorkItemAttachmentPreview(attachment);
+  }
+
+  /** @param {number} commentId @param {AppAttachment} attachment */
+  async function openWorkItemCommentAttachmentPreview(commentId, attachment) {
+    if (!activeWorkItemDetail || !attachmentIsUploaded(attachment)) return;
+    const itemKey = activeWorkItemDetail.key;
+    const requestId = projectAttachmentPreviewRequestRef.current + 1;
+    projectAttachmentPreviewRequestRef.current = requestId;
+    const previousCapability = projectAttachmentPreviewCapabilityRef.current;
+    projectAttachmentPreviewCapabilityRef.current = '';
+    if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
+    setProjectAttachmentPreview({ open: true, loading: true, error: '', attachment, source: '', kind: null, fileType: null, position: 0, total: 0, previousId: null, nextId: null, commentId });
+    try {
+      let result;
+      if (typeof files.attachments?.openWorkItemCommentAttachmentPreview === 'function') {
+        const hostResult = await files.attachments.openWorkItemCommentAttachmentPreview({ itemKey, commentId, attachmentId: attachment.id });
+        result = { ...hostResult, capability: hostResult.capability || '' };
+      } else {
+        const browserResult = await api.getWorkItemCommentAttachmentPreview(itemKey, commentId, attachment.id);
+        result = { ...browserResult, source: browserResult.preview.content_enabled ? browserResult.content_url : '', capability: '' };
+      }
+      if (projectAttachmentPreviewRequestRef.current !== requestId || !isCurrentWorkItemDetailRoute(itemKey)) {
+        if (result.capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(result.capability).catch(() => {});
+        return;
+      }
+      projectAttachmentPreviewCapabilityRef.current = result.capability || '';
+      setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: result.attachment, source: result.source, kind: result.preview.kind, fileType: result.preview.file_type, position: result.navigation.position, total: result.navigation.total, previousId: result.navigation.previous?.id || null, nextId: result.navigation.next?.id || null, commentId });
+    } catch (caught) {
+      if (projectAttachmentPreviewRequestRef.current === requestId && isCurrentWorkItemDetailRoute(itemKey)) setProjectAttachmentPreview((current) => current ? { ...current, loading: false, error: errorMessage(caught instanceof Error ? caught : new Error('评论附件预览加载失败。')) } : current);
+    }
+  }
+
+  function navigateWorkItemCommentAttachmentPreview(attachmentId) {
+    const commentId = projectAttachmentPreview?.commentId;
+    if (!commentId) return;
+    const attachment = (workItemCommentAttachments[String(commentId)] || []).find((entry) => entry.id === attachmentId);
+    if (attachment) void openWorkItemCommentAttachmentPreview(commentId, attachment);
   }
 
   async function openProjectResourceAttachmentPreview(attachment) {
@@ -4520,7 +4557,7 @@ export function SharedApp({ services }) {
                     onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
                   />
 
-                  <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadWorkItemAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
+                  <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.previousId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); } }} onNext={() => { if (projectAttachmentPreview?.nextId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.nextId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); } }} onDownload={() => { if (projectAttachmentPreview?.attachment) { if (projectAttachmentPreview.commentId) void downloadWorkItemCommentAttachment(projectAttachmentPreview.commentId, projectAttachmentPreview.attachment); else void downloadWorkItemAttachment(projectAttachmentPreview.attachment); } }} onClose={() => void releaseProjectAttachmentPreview()} />
 
                   <WorkItemComments
                     comments={workItemComments}
@@ -4553,6 +4590,7 @@ export function SharedApp({ services }) {
                     onStartEdit={startWorkItemCommentEdit}
                     onStartReply={startWorkItemCommentReply}
                     onUploadAttachment={(commentId) => void uploadSelectedWorkItemCommentAttachment(commentId)}
+                    onPreviewAttachment={(commentId, attachment) => void openWorkItemCommentAttachmentPreview(commentId, attachment)}
                     onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
                     onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}
                   />

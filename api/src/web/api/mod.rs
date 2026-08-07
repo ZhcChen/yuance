@@ -3964,6 +3964,95 @@ pub async fn work_item_comment_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn work_item_comment_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let (user, _item, _project, comment) =
+        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "comment", comment.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{}/preview",
+                sibling.id
+            )
+        },
+    );
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "comment",
+        &comment_id.to_string(),
+        &format!(r#"{{"source":"api","work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url: format!(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content"
+        ),
+        download_url: format!(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url"
+        ),
+    }))
+}
+
+pub async fn work_item_comment_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
+) -> AppResult<Response> {
+    let (user, _item, _project, comment) =
+        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "comment",
+        &comment_id.to_string(),
+        &format!(r#"{{"source":"api","work_item":"{item_key}","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
 pub async fn work_item_comment_attachment_delete(
     State(state): State<AppState>,
     headers: HeaderMap,

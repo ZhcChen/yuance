@@ -63,6 +63,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["workitem.attachments", { itemKey: "DEMO-1" }, "/api/v1/work-items/DEMO-1/attachments"],
     ["workitem.attachmentpreview", { itemKey: "DEMO-1", attachmentId: 3 }, "/api/v1/work-items/DEMO-1/attachments/3/preview"],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: 7 }, "/api/v1/work-items/DEMO-1/comments/7/attachments"],
+    ["workitem.commentattachmentpreview", { itemKey: "DEMO-1", commentId: 7, attachmentId: 3 }, "/api/v1/work-items/DEMO-1/comments/7/attachments/3/preview"],
   ];
   for (const [name, input, path] of cases) {
     const operation = registry.resolve(name, input);
@@ -100,7 +101,12 @@ test("rejects invalid business identifiers, filters and pagination", () => {
     ["workitem.restore", { itemKey: "bad/key" }],
     ["workitem.comments", { itemKey: "A" }],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: -1 }],
+    ["workitem.commentattachmentpreview", { itemKey: "DEMO-1", commentId: 7, attachmentId: 0 }],
   ]) assert.throws(() => registry.resolve(name, input), /invalid/i, `${name} should reject invalid input`);
+  assert.throws(
+    () => registry.resolve("workitem.commentattachmentpreview", { itemKey: "DEMO-1", commentId: 7, attachmentId: 3, url: "https://evil.example" }),
+    /unknown fields/i,
+  );
 });
 
 test("normalizes and freezes allowlisted business response DTOs", () => {

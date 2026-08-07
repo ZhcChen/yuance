@@ -95,6 +95,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.attachments", workItemAttachmentsOperation],
     ["workitem.attachmentpreview", workItemAttachmentPreviewOperation],
     ["workitem.commentattachments", workItemCommentAttachmentsOperation],
+    ["workitem.commentattachmentpreview", workItemCommentAttachmentPreviewOperation],
   ]);
   const active = new Set();
   function resolve(name, input) {
@@ -598,6 +599,11 @@ function workItemAttachmentPreviewOperation(input) {
 function workItemCommentAttachmentsOperation(input) {
   exactKeys(input, ["commentId", "itemKey"]);
   return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments`, parseAttachments, true, "array");
+}
+
+function workItemCommentAttachmentPreviewOperation(input) {
+  exactKeys(input, ["attachmentId", "commentId", "itemKey"]);
+  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments/${positiveInteger(input.attachmentId)}/preview`, parseAttachmentPreview);
 }
 
 function parseSessionProbe(data, profile) {

@@ -26,6 +26,24 @@ test("loads exact authenticated preview bytes into the private spool", async () 
   assert.deepEqual(snapshots, [{ contentType: "text/plain", expectedBytes: 7 }]);
 });
 
+test("accepts only canonical work item and comment preview content paths", async () => {
+  const calls = [];
+  const fetchImpl = await trustedFetch(async (url) => {
+    calls.push(url);
+    return new Response("preview", { status: 200, headers: { "content-type": "text/plain", "content-length": "7", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } });
+  });
+  const loader = createPreviewContentLoader({ profile, fetchImpl, credentialRuntime: { withAccessLease: (operation) => operation({ accessToken: "token", epoch: 1 }), refreshAccess: async () => false }, spool: { capture: async () => Object.freeze({ privatePath: "/private/work-item-preview", contentType: "text/plain", byteSize: 7, remove: async () => {} }) } });
+  const paths = [
+    "/api/v1/work-items/YCE-TASK-2/attachments/7/preview/content",
+    "/api/v1/work-items/YCE-TASK-2/comments/8/attachments/7/preview/content",
+  ];
+  for (const path of paths) await loader.load({ contentPath: path, contentType: "text/plain", byteSize: 7 });
+  assert.deepEqual(calls, paths.map((path) => `${profile.origin}${path}`));
+  for (const invalid of [`${paths[0]}?url=evil`, `${paths[1]}?access=grant`, `${paths[1]}#fragment`]) {
+    await assert.rejects(loader.load({ contentPath: invalid, contentType: "text/plain", byteSize: 7 }), (error) => error.code === "preview_request_invalid");
+  }
+});
+
 test("rejects arbitrary paths and mismatched response metadata", async () => {
   const fetchImpl = await trustedFetch(async () => new Response("preview", { status: 200, headers: { "content-type": "text/html", "content-length": "7", "cache-control": "private, no-store", "x-content-type-options": "nosniff" } }));
   const loader = createPreviewContentLoader({ profile, fetchImpl, credentialRuntime: { withAccessLease: (operation) => operation({ accessToken: "token", epoch: 1 }), refreshAccess: async () => false }, spool: { capture: async () => assert.fail("invalid response must not reach spool") } });

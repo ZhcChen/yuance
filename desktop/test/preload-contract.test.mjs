@@ -82,7 +82,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "openWorkItemAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "openWorkItemAttachmentPreview", "openWorkItemCommentAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();
@@ -97,11 +97,13 @@ test("preview bridge forwards only semantic references and opaque capabilities",
   const { bridge, invocations } = await executePreload();
   await bridge.files.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 7 });
   await bridge.files.openWorkItemAttachmentPreview({ itemKey: "YCE-TASK-2", attachmentId: 7 });
+  await bridge.files.openWorkItemCommentAttachmentPreview({ itemKey: "YCE-TASK-2", commentId: 8, attachmentId: 7 });
   await bridge.files.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: 8, attachmentId: 7, accessToken: "grant" });
   await bridge.files.releaseProjectAttachmentPreview("ypv_opaque");
   assert.deepEqual(invocations, [
     ["yuance:file-open-project-attachment-preview", { projectKey: "YCE", attachmentId: 7 }],
     ["yuance:file-open-work-item-attachment-preview", { itemKey: "YCE-TASK-2", attachmentId: 7 }],
+    ["yuance:file-open-work-item-comment-attachment-preview", { itemKey: "YCE-TASK-2", commentId: 8, attachmentId: 7 }],
     ["yuance:file-open-project-resource-attachment-preview", { projectKey: "YCE", resourceId: 8, attachmentId: 7, accessToken: "grant" }],
     ["yuance:file-release-project-attachment-preview", "ypv_opaque"],
   ]);

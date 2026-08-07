@@ -279,6 +279,11 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     rest.execute("project.attachments", { projectKey: "YCE" }),
     rest.execute("project.resourceattachments", { projectKey: "YCE", resourceId: resource.id, accessToken: "" }),
   ]);
+  stage("comment-preview");
+  const commentPreview = await previewCoordinator.openWorkItemCommentAttachmentPreview({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined });
+  const commentPreviewSnapshot = previewVault.resolve(commentPreview.capability, baseBinding);
+  const commentPreviewBytes = await fs.readFile(commentPreviewSnapshot.privatePath);
+  previewCoordinator.releaseProjectAttachmentPreview({ capability: commentPreview.capability, binding: baseBinding });
   stage("resource-preview");
   const resourcePreview = await previewCoordinator.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: resource.id, attachmentId: resourceUpload.uploaded.id, accessToken: "", binding: baseBinding, signal: undefined });
   const resourcePreviewSnapshot = previewVault.resolve(resourcePreview.capability, baseBinding);
@@ -313,6 +318,7 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     resourceUploaded: resourceUpload.uploaded.status === "uploaded",
     itemListed: itemList.some((value) => value.id === itemUpload.uploaded.id),
     commentListed: commentList.some((value) => value.id === commentUpload.uploaded.id),
+    commentPreviewed: commentPreview.attachment.id === commentUpload.uploaded.id && hash(commentPreviewBytes) === hash(commentContent),
     projectListAdded: !projectListInitial.some((value) => value.id === projectUpload.uploaded.id) && projectList.some((value) => value.id === projectUpload.uploaded.id && value.status === "uploaded"),
     resourceListed: resourceList.some((value) => value.id === resourceUpload.uploaded.id && value.status === "uploaded"),
     resourcePreviewed: resourcePreview.attachment.id === resourceUpload.uploaded.id && hash(resourcePreviewBytes) === hash(resourceContent) && previewVault.snapshot().entries === 0,

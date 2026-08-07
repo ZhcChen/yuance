@@ -115,6 +115,7 @@ export function defineHostDelegatedFileCapabilities(capabilities) {
  * @property {(input: { projectKey: string, resourceId: number, attachmentId: number, accessToken: string, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadProjectResourceAttachment
  * @property {(input: { projectKey: string, attachmentId: number }) => Promise<{ capability: string, source: string, contentType: string, byteSize: number, attachment: any, preview: any, navigation: any }>} openProjectAttachmentPreview
  * @property {(input: { itemKey: string, attachmentId: number }) => Promise<{ capability: string, source: string, contentType: string, byteSize: number, attachment: any, preview: any, navigation: any }>} openWorkItemAttachmentPreview
+ * @property {(input: { itemKey: string, commentId: number, attachmentId: number }) => Promise<{ capability: string, source: string, contentType: string, byteSize: number, attachment: any, preview: any, navigation: any }>} openWorkItemCommentAttachmentPreview
  * @property {(input: { projectKey: string, resourceId: number, attachmentId: number, accessToken: string }) => Promise<{ capability: string, source: string, contentType: string, byteSize: number, attachment: any, preview: any, navigation: any }>} openProjectResourceAttachmentPreview
  * @property {(capability: string) => Promise<{ status: 'released' }>} releaseProjectAttachmentPreview
  * @property {(capability: RevealDownloadCapability) => Promise<{ status: 'revealed' }>} revealDownload
@@ -136,6 +137,7 @@ export function defineHostDelegatedAttachmentCapabilities(capabilities) {
   requireOperation(capabilities, 'downloadProjectResourceAttachment');
   requireOperation(capabilities, 'openProjectAttachmentPreview');
   requireOperation(capabilities, 'openWorkItemAttachmentPreview');
+  requireOperation(capabilities, 'openWorkItemCommentAttachmentPreview');
   requireOperation(capabilities, 'openProjectResourceAttachmentPreview');
   requireOperation(capabilities, 'releaseProjectAttachmentPreview');
   requireOperation(capabilities, 'revealDownload');

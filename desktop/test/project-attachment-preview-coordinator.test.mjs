@@ -43,6 +43,22 @@ test("work item preview derives content only from its fixed semantic reference",
   await assert.rejects(coordinator.openWorkItemAttachmentPreview({ itemKey: "YCE-TASK-2", attachmentId: 7, binding, signal: undefined, url: "https://evil.example" }), /invalid/);
 });
 
+test("comment preview derives content only from item, comment and attachment identifiers", async () => {
+  const calls = [];
+  const snapshot = Object.freeze({ privatePath: "/private/comment-preview", contentType: "application/pdf", byteSize: 12, remove: async () => {} });
+  const contentPath = "/api/v1/work-items/YCE-TASK-2/comments/8/attachments/7/preview/content";
+  const coordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport: { execute: async (operation, input) => { calls.push([operation, input]); return { attachment, preview: { kind: "document", content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: contentPath }; } },
+    loader: { load: async (input) => { calls.push(["load", input]); return snapshot; } },
+    vault: { issue: () => ({ capability: "ypv_comment", source: "app://yuance/.preview/ypv_comment", contentType: "application/pdf", byteSize: 12 }), release: () => {} },
+  });
+  const result = await coordinator.openWorkItemCommentAttachmentPreview({ itemKey: "YCE-TASK-2", commentId: 8, attachmentId: 7, binding, signal: undefined });
+  assert.equal(result.source, "app://yuance/.preview/ypv_comment");
+  assert.deepEqual(calls[0], ["workitem.commentattachmentpreview", { itemKey: "YCE-TASK-2", commentId: 8, attachmentId: 7 }]);
+  assert.equal(calls[1][1].contentPath, contentPath);
+  await assert.rejects(coordinator.openWorkItemCommentAttachmentPreview({ itemKey: "YCE-TASK-2", commentId: 8, attachmentId: 7, binding, signal: undefined, headers: {} }), /invalid/);
+});
+
 test("resource preview binds the access grant to metadata and content paths", async () => {
   const calls = [];
   const snapshot = Object.freeze({ privatePath: "/private/resource-preview", contentType: "application/pdf", byteSize: 12, remove: async () => {} });

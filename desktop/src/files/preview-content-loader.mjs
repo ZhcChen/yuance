@@ -3,6 +3,8 @@ import { isTrustedSessionFetch } from "../network/network-session.mjs";
 
 const PROJECT_CONTENT_PATH = /^\/api\/v1\/projects\/[A-Z][A-Z0-9-]{1,31}\/attachments\/[1-9][0-9]*\/preview\/content$/u;
 const RESOURCE_CONTENT_PATH = /^\/api\/v1\/projects\/[A-Z][A-Z0-9-]{1,31}\/resources\/[1-9][0-9]*\/attachments\/[1-9][0-9]*\/preview\/content$/u;
+const WORK_ITEM_CONTENT_PATH = /^\/api\/v1\/work-items\/[A-Z][A-Z0-9-]{2,63}\/attachments\/[1-9][0-9]*\/preview\/content$/u;
+const WORK_ITEM_COMMENT_CONTENT_PATH = /^\/api\/v1\/work-items\/[A-Z][A-Z0-9-]{2,63}\/comments\/[1-9][0-9]*\/attachments\/[1-9][0-9]*\/preview\/content$/u;
 const MAX_TIMEOUT_MS = 30_000;
 
 export function createPreviewContentLoader({ profile, credentialRuntime, fetchImpl, spool, timeoutMs = MAX_TIMEOUT_MS } = {}) {
@@ -56,7 +58,7 @@ function isPreviewContentPath(value) {
   let parsed;
   try { parsed = new URL(value, "https://preview.invalid"); } catch { return false; }
   if (parsed.origin !== "https://preview.invalid" || parsed.hash) return false;
-  if (PROJECT_CONTENT_PATH.test(parsed.pathname)) return parsed.search === "";
+  if (PROJECT_CONTENT_PATH.test(parsed.pathname) || WORK_ITEM_CONTENT_PATH.test(parsed.pathname) || WORK_ITEM_COMMENT_CONTENT_PATH.test(parsed.pathname)) return parsed.search === "";
   if (!RESOURCE_CONTENT_PATH.test(parsed.pathname)) return false;
   const entries = [...parsed.searchParams.entries()];
   if (entries.length === 0) return parsed.search === "";

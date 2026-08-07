@@ -1245,6 +1245,222 @@ async fn device_work_item_attachment_preview_enforces_contract_and_ownership() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn device_work_item_comment_attachment_preview_enforces_contract_and_ownership() {
+    let pool = test_pool().await;
+    let admin_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    seed_memory_storage(&pool, admin_id).await;
+    let credentials = issue_device_credentials(&pool, admin_id, "comment-attachment-preview").await;
+    let app = test_app(pool.clone());
+    let comment_id = sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM work_item_comments WHERE work_item_id = (SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2') AND is_draft = 0 ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let collection_path =
+        format!("/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments");
+
+    let first_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        &collection_path,
+        "comment-first.md",
+        "text/markdown",
+        b"first comment preview",
+    )
+    .await;
+    let selected_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        &collection_path,
+        "comment-second.pdf",
+        "application/pdf",
+        b"0123456789",
+    )
+    .await;
+    let unsupported_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        &collection_path,
+        "comment-unsupported.bin",
+        "application/octet-stream",
+        b"unsupported",
+    )
+    .await;
+    let pending_response = request(
+        &app,
+        "POST",
+        &collection_path,
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "original_filename": "comment-pending.png",
+            "content_type": "image/png",
+            "byte_size": 4,
+            "checksum_sha256": format!("{:x}", Sha256::digest(b"png!"))
+        })),
+    )
+    .await;
+    assert_eq!(pending_response.status(), StatusCode::CREATED);
+    let pending_id = json_body(pending_response).await["data"]["id"]
+        .as_i64()
+        .unwrap();
+
+    let preview_path = format!("{collection_path}/{selected_id}/preview");
+    let response = request(&app, "GET", &preview_path, &credentials.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let metadata = json_body(response).await;
+    assert_eq!(metadata["data"]["attachment"]["id"], selected_id);
+    assert_eq!(metadata["data"]["preview"]["kind"], "document");
+    assert_eq!(metadata["data"]["preview"]["strategy"], "pdf");
+    assert_eq!(metadata["data"]["preview"]["content_enabled"], true);
+    assert_eq!(metadata["data"]["navigation"]["position"], 1);
+    assert_eq!(metadata["data"]["navigation"]["total"], 2);
+    assert!(metadata["data"]["navigation"]["previous"].is_null());
+    assert_eq!(metadata["data"]["navigation"]["next"]["id"], first_id);
+    assert_eq!(
+        metadata["data"]["content_url"],
+        format!("{preview_path}/content")
+    );
+
+    for (attachment_id, expected_kind) in [
+        (unsupported_id, serde_json::Value::Null),
+        (pending_id, serde_json::Value::String("image".to_string())),
+    ] {
+        let response = request(
+            &app,
+            "GET",
+            &format!("{collection_path}/{attachment_id}/preview"),
+            &credentials.access_token,
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let metadata = json_body(response).await;
+        assert_eq!(metadata["data"]["preview"]["kind"], expected_kind);
+        assert_eq!(metadata["data"]["preview"]["content_enabled"], false);
+        assert_eq!(metadata["data"]["navigation"]["position"], 0);
+        assert_eq!(metadata["data"]["navigation"]["total"], 2);
+    }
+
+    let content_path = format!("{preview_path}/content");
+    let response = request_with_headers(
+        &app,
+        "GET",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=2-5")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert_eq!(response.headers()[header::CONTENT_LENGTH], "4");
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/pdf");
+    assert_eq!(
+        &response.into_body().collect().await.unwrap().to_bytes()[..],
+        b"2345"
+    );
+
+    let response = request_with_headers(
+        &app,
+        "HEAD",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=2-5")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .is_empty()
+    );
+
+    let response = request_with_headers(
+        &app,
+        "GET",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=20-30")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/work-items/YCE-BUG-1/comments",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "body": "Comment attachment ownership fixture",
+            "body_format": "plain"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let other_comment_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    let other_collection =
+        format!("/api/v1/work-items/YCE-BUG-1/comments/{other_comment_id}/attachments");
+    let other_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        &other_collection,
+        "other-comment.pdf",
+        "application/pdf",
+        b"other",
+    )
+    .await;
+    let response = request(
+        &app,
+        "GET",
+        &format!("{collection_path}/{other_id}/preview"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = request(
+        &app,
+        "GET",
+        &format!(
+            "/api/v1/work-items/YCE-BUG-1/comments/{comment_id}/attachments/{selected_id}/preview"
+        ),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let outsider_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "comment_preview_outsider".to_string(),
+            display_name: "Comment Preview Outsider".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "OutsiderPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let outsider = issue_device_credentials(&pool, outsider_id, "comment-preview-outsider").await;
+    let response = request(&app, "GET", &preview_path, &outsider.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
 async fn run_attachment_lifecycle(
     app: &Router,
     pool: &SqlitePool,
