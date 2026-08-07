@@ -139,6 +139,28 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     );
     let response = request(
         &app,
+        "POST",
+        &format!("/api/v1/projects/YCE/resources/{resource_id}/password/reset"),
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "access_password_action": "set", "access_password": "DeviceReset2026!"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["is_protected"], true);
+    let response = request(
+        &app,
+        "POST",
+        &format!("/api/v1/projects/YCE/resources/{resource_id}/password/reset"),
+        &credentials.access_token,
+        Some(serde_json::json!({"access_password_action": "clear"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["is_protected"], false);
+    let response = request(
+        &app,
         "DELETE",
         &format!("/api/v1/projects/YCE/resources/{resource_id}"),
         &credentials.access_token,
@@ -291,6 +313,40 @@ async fn device_principal_does_not_bypass_project_membership_or_viewer_role() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let admin_credentials = issue_device_credentials(&pool, admin_id, "password-reset-admin").await;
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/projects/YCE/resources",
+        &admin_credentials.access_token,
+        Some(serde_json::json!({
+            "title": "password reset permission fixture", "category": "other", "body": "secret"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let resource_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    for role in ["viewer", "maintainer"] {
+        sqlx::query(
+            "UPDATE project_members SET member_role = ?3 WHERE project_id = ?1 AND user_id = ?2",
+        )
+        .bind(project_id)
+        .bind(viewer_id)
+        .bind(role)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let response = request(
+            &app,
+            "POST",
+            &format!("/api/v1/projects/YCE/resources/{resource_id}/password/reset"),
+            &credentials.access_token,
+            Some(serde_json::json!({"access_password_action": "clear"})),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "role: {role}");
+    }
 }
 
 #[tokio::test]

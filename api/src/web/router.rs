@@ -851,6 +851,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::api::unlock_project_resource),
         )
         .route(
+            "/api/v1/projects/{project_key}/resources/{resource_id}/password/reset",
+            post(web::api::reset_project_resource_password),
+        )
+        .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}/attachments",
             post(web::api::create_project_resource_attachment),
         )

@@ -640,6 +640,7 @@ pub async fn reset_resource_access_password(
     let existing = get_resource(pool, resource_id)
         .await?
         .ok_or_else(|| AppError::NotFound("资料不存在".to_string()))?;
+    ensure_resource_accepts_writes(&existing)?;
     let access_password_action =
         normalize_access_password_reset_action(&input.access_password_action)?;
     let access_password_hash = match access_password_action {

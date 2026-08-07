@@ -1148,6 +1148,34 @@
         }
       }
     },
+    "/api/v1/projects/{project_key}/resources/{resource_id}/password/reset": {
+      "post": {
+        "tags": [
+          "resources"
+        ],
+        "summary": "超级管理员重置项目资料访问密码",
+        "description": "仅超级管理员可调用。动作只允许 set 或 clear，并记录高风险审计。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProjectKey"
+          },
+          {
+            "$ref": "#/components/parameters/ResourceId"
+          }
+        ],
+        "requestBody": {
+          "$ref": "#/components/requestBodies/ResetProjectResourcePassword"
+        },
+        "responses": {
+          "200": {
+            "description": "密码策略已更新"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/api/v1/work-items": {
       "get": {
         "tags": [
@@ -1888,6 +1916,16 @@
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/UpdateProjectResourceRequest"
+            }
+          }
+        }
+      },
+      "ResetProjectResourcePassword": {
+        "required": true,
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ResetProjectResourcePasswordRequest"
             }
           }
         }
@@ -3060,6 +3098,26 @@
           },
           "body_format": {
             "type": "string"
+          }
+        }
+      },
+      "ResetProjectResourcePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "access_password_action"
+        ],
+        "properties": {
+          "access_password_action": {
+            "type": "string",
+            "enum": [
+              "set",
+              "clear"
+            ]
+          },
+          "access_password": {
+            "type": "string",
+            "maxLength": 128
           }
         }
       },

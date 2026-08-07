@@ -1248,6 +1248,13 @@ pub struct UnlockProjectResourceRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ResetProjectResourcePasswordRequest {
+    access_password_action: String,
+    #[serde(default)]
+    access_password: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateCurrentProjectRequest {
     project_key: String,
 }
@@ -3762,6 +3769,53 @@ pub async fn unlock_project_resource(
     }
 
     Ok(json(project_resource_unlocked_payload(resource)))
+}
+
+pub async fn reset_project_resource_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Json(payload): Json<ResetProjectResourcePasswordRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let (user, project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_WRITE).await?;
+    if !user.is_super_admin {
+        return Err(AppError::Forbidden(
+            "只有超级管理员可以重置资料保险箱密码".to_string(),
+        ));
+    }
+    projects::ensure_project_accepts_writes(&project.status)?;
+    let updated = project_resources::reset_resource_access_password(
+        pool,
+        user.id,
+        resource.id,
+        project_resources::ResetProjectResourceAccessPasswordInput {
+            access_password_action: payload.access_password_action,
+            access_password: payload.access_password,
+            actor_display_name_snapshot: principal.actor_display_name_snapshot(),
+        },
+    )
+    .await?;
+    let mode = if updated.is_protected { "set" } else { "clear" };
+    audit::record(
+        pool,
+        Some(user.id),
+        "project_resource.password.reset",
+        "project_resource",
+        &updated.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({
+            "project": project.project_key,
+            "mode": mode,
+            "actor_is_super_admin": true,
+        })),
+    )
+    .await?;
+
+    Ok(json(project_resource_payload(updated)))
 }
 
 pub async fn create_project_resource_attachment(
