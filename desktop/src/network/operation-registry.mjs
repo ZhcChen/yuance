@@ -42,6 +42,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["identity.devicesessionrevoke", deviceSessionRevokeOperation],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
+    ["system.usersview", systemUsersViewOperation],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
     ["project.create", projectCreateOperation],
@@ -408,6 +409,13 @@ function notificationListOperation(input) {
   return descriptor("GET", withQuery("/api/v1/notifications", query), parseNotificationFeed);
 }
 
+function systemUsersViewOperation(input) {
+  exactKeys(input, ["page", "perPage"]);
+  const query = new URLSearchParams();
+  appendPagination(query, input);
+  return descriptor("GET", withQuery("/api/v1/system/users-view", query), parseSystemUsersView);
+}
+
 function notificationTargetOperation(input) {
   exactKeys(input, ["notificationId"]);
   return descriptor("GET", `/api/v1/notifications/${integer(input.notificationId, 1, "notificationId")}/target`, parseNotificationTargetResult);
@@ -713,6 +721,32 @@ function parseSystemDashboard(data) {
     links: (links) => boundedArray(links, (link) => freezeExactDto(link, {
       id: shortString, title: textString, description: longString, path: systemWebPath,
     }), 16, "system dashboard links"),
+  });
+}
+function parseSystemUsersView(data) {
+  return freezeExactDto(data, {
+    items: (items) => boundedArray(items, (item) => freezeExactDto(item, {
+      id: positiveInteger, username: shortString, display_name: textString, email: shortString,
+      mobile: shortString, status: shortString, is_super_admin: boolean, role_code: shortString,
+      role_names: textString, created_at: shortString, updated_at: shortString,
+      assigned_projects: (projects) => boundedArray(projects, (project) => freezeExactDto(project, {
+        key: shortString, name: textString, status: shortString, role_code: shortString,
+        active_assigned_count: nonNegativeInteger, can_remove: boolean, can_update_role: boolean,
+        remove_block_reason: longString,
+      }), 500, "assigned projects"),
+    }), 100, "system users"),
+    roles: (roles) => boundedArray(roles, (role) => freezeExactDto(role, {
+      role_code: shortString, role_name: textString, status: shortString, is_system: boolean,
+      data_scope_type: shortString, permission_count: nonNegativeInteger,
+    }), 100, "system roles"),
+    project_options: (projects) => boundedArray(projects, (project) => freezeExactDto(project, {
+      key: shortString, name: textString, owner: textString, status: shortString,
+    }), 500, "project options"),
+    pagination: (pagination) => freezeExactDto(pagination, {
+      page: positiveInteger, per_page: positiveInteger, total_items: nonNegativeInteger, total_pages: positiveInteger,
+    }),
+    can_manage_users: boolean,
+    can_manage_user_projects: boolean,
   });
 }
 function systemWebPath(value) {

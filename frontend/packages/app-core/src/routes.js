@@ -104,6 +104,16 @@ export function buildSystemPath(owner = 'web') {
   return owner === 'app' ? '/web/app/system' : '/web/system';
 }
 
+export function buildSystemUsersPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/users' : '/web/system/users';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
 export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -298,6 +308,18 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       pathname,
       search,
       title: '系统管理',
+    };
+  }
+
+  if (pathname === '/web/system/users' || pathname === '/web/app/system/users') {
+    return {
+      id: 'system-users',
+      owner,
+      pathname,
+      search,
+      page,
+      perPage,
+      title: '用户管理',
     };
   }
 

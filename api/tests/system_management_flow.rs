@@ -74,6 +74,192 @@ async fn api_system_dashboard_returns_only_fixed_authorized_links() {
 }
 
 #[tokio::test]
+async fn api_system_users_view_returns_atomic_pagination_permissions_and_project_constraints() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let member_user_id = create_user_with_role(
+        &pool,
+        "atomic_member",
+        "原子读取成员",
+        "MemberPass2026!",
+        "member",
+    )
+    .await;
+    for index in 1..=10 {
+        create_user_with_role(
+            &pool,
+            &format!("atomic_page_{index:02}"),
+            &format!("分页成员 {index:02}"),
+            "MemberPass2026!",
+            "member",
+        )
+        .await;
+    }
+
+    let owned_project = projects::create_project(
+        &pool,
+        member_user_id,
+        projects::CreateProjectInput {
+            name: "成员负责项目".to_string(),
+            description: "负责人关系不可移除".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("owned project should create");
+    let blocked_project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "活跃工作项项目".to_string(),
+            description: "活跃工作项阻止移除".to_string(),
+            status: "in_progress".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("blocked project should create");
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        &blocked_project.project_key,
+        "atomic_member",
+        "maintainer",
+    )
+    .await
+    .expect("member should join blocked project");
+    projects::create_work_item(
+        &pool,
+        initialized.user_id,
+        projects::CreateWorkItemInput {
+            project_key: blocked_project.project_key.clone(),
+            item_type: "task".to_string(),
+            title: "阻止移除的活跃任务".to_string(),
+            description: String::new(),
+            priority: "P2".to_string(),
+            assignee_username: "atomic_member".to_string(),
+            due_date: String::new(),
+            parent_item_key: String::new(),
+            actor_display_name_snapshot: String::new(),
+        },
+    )
+    .await
+    .expect("blocking work item should create");
+    let paused_project = projects::create_project(
+        &pool,
+        initialized.user_id,
+        projects::CreateProjectInput {
+            name: "暂停候选项目".to_string(),
+            description: "暂停项目不得作为分配候选".to_string(),
+            status: "on_hold".to_string(),
+            start_date: String::new(),
+            due_date: String::new(),
+        },
+    )
+    .await
+    .expect("paused project should create");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let default_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/users-view")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(default_response.status(), StatusCode::OK);
+    let default_payload: Value = serde_json::from_str(&response_body(default_response).await)
+        .expect("users view response should be JSON");
+    assert_eq!(
+        default_payload["data"]["items"].as_array().map(Vec::len),
+        Some(10)
+    );
+    assert_eq!(default_payload["data"]["pagination"]["page"], 1);
+    assert_eq!(default_payload["data"]["pagination"]["per_page"], 10);
+    assert_eq!(default_payload["data"]["pagination"]["total_items"], 12);
+    assert_eq!(default_payload["data"]["pagination"]["total_pages"], 2);
+    assert_eq!(default_payload["data"]["can_manage_users"], true);
+    assert_eq!(default_payload["data"]["can_manage_user_projects"], true);
+    assert!(
+        default_payload["data"]["roles"]
+            .as_array()
+            .is_some_and(|roles| !roles.is_empty())
+    );
+    let project_options = default_payload["data"]["project_options"]
+        .as_array()
+        .expect("project options should be an array");
+    assert!(
+        project_options
+            .iter()
+            .any(|project| project["key"] == owned_project.project_key)
+    );
+    assert!(
+        !project_options
+            .iter()
+            .any(|project| project["key"] == paused_project.project_key)
+    );
+
+    let member_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/users-view?page=2&per_page=20")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(member_response.status(), StatusCode::OK);
+    let member_payload: Value = serde_json::from_str(&response_body(member_response).await)
+        .expect("users view response should be JSON");
+    assert_eq!(member_payload["data"]["pagination"]["page"], 1);
+    assert_eq!(member_payload["data"]["pagination"]["per_page"], 20);
+    let member = member_payload["data"]["items"]
+        .as_array()
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|item| item["username"] == "atomic_member")
+        })
+        .expect("atomic member should be present");
+    let assignments = member["assigned_projects"]
+        .as_array()
+        .expect("assigned projects should be an array");
+    let owned = assignments
+        .iter()
+        .find(|project| project["key"] == owned_project.project_key)
+        .expect("owned project should be present");
+    assert_eq!(owned["role_code"], "owner");
+    assert_eq!(owned["can_update_role"], false);
+    assert_eq!(owned["can_remove"], false);
+    assert!(
+        owned["remove_block_reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("负责人"))
+    );
+    let blocked = assignments
+        .iter()
+        .find(|project| project["key"] == blocked_project.project_key)
+        .expect("blocked project should be present");
+    assert_eq!(blocked["role_code"], "maintainer");
+    assert_eq!(blocked["active_assigned_count"], 1);
+    assert_eq!(blocked["can_update_role"], true);
+    assert_eq!(blocked["can_remove"], false);
+    assert!(
+        blocked["remove_block_reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("1 个"))
+    );
+}
+
+#[tokio::test]
 async fn system_users_page_renders_accounts_and_roles_for_admin() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

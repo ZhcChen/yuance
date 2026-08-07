@@ -837,12 +837,15 @@ GET /api/v1/test-storage/download?object_key=...
 用户：
 
 ```text
+GET   /api/v1/system/users-view
 GET   /api/v1/system/users
 POST  /api/v1/system/users
 PATCH /api/v1/system/users/{username}/status
 PATCH /api/v1/system/users/{username}/role
 POST  /api/v1/system/users/{username}/password
 ```
+
+`users-view` 是 Web 与 Desktop 共享用户管理页的原子读取入口，返回用户分页、全局角色候选、可分配项目、当前项目关系及服务端计算的管理与移除能力；默认每页 10 条。
 
 角色与权限：
 

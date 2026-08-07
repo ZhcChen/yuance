@@ -2154,6 +2154,40 @@ test('shared system dashboard renders the permission-filtered management entry s
   await expect(dashboard.locator('a')).toHaveCount(7);
 });
 
+test('shared system users view renders atomic rows and preserves pagination in the app owner', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/users-view*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.search);
+    const currentPage = Number(url.searchParams.get('page') || 1);
+    const perPage = Number(url.searchParams.get('per_page') || 10);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      items: [{
+        id: currentPage, username: `shared_user_${currentPage}`, display_name: `共享用户 ${currentPage}`,
+        email: 'shared@example.test', mobile: '', status: 'active', is_super_admin: false,
+        role_code: 'member', role_names: '项目成员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z',
+        assigned_projects: [{ key: 'YCE', name: '元策', status: 'in_progress', role_code: 'member', active_assigned_count: 0, can_remove: true, can_update_role: true, remove_block_reason: '' }],
+      }],
+      roles: [], project_options: [], can_manage_users: true, can_manage_user_projects: true,
+      pagination: { page: currentPage, per_page: perPage, total_items: 21, total_pages: Math.ceil(21 / perPage) },
+    } }) });
+  });
+
+  await login(page, '/web/app/system/users');
+  await expect(page).toHaveTitle('用户管理 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '用户管理' })).toBeVisible();
+  const table = page.getByRole('table', { name: '系统用户列表' });
+  await expect(table).toContainText('共享用户 1');
+  await expect(table).toContainText('1 个项目');
+
+  await page.getByRole('button', { name: '下一页' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/system\/users\?page=2$/);
+  await expect(table).toContainText('共享用户 2');
+  await page.getByLabel('每页').selectOption('20');
+  await expect(page).toHaveURL(/\/web\/app\/system\/users\?per_page=20$/);
+  await expect.poll(() => requests).toContain('?per_page=20');
+});
+
 test('project list can switch current project inside the app shell', async ({ page }) => {
   await login(page, '/web/app/projects');
 

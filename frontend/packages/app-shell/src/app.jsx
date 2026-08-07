@@ -15,6 +15,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   createWorkItemComment as createWorkItemCommentUseCase,
@@ -40,6 +41,7 @@ import {
   Field,
   GlobalNavigation,
   Modal,
+  Pagination,
   RichTextContent,
   RichTextEditor,
   WorkItemAttachments,
@@ -574,6 +576,8 @@ function routeDescription(route) {
       return '工作项详情已在浏览器壳中接入只读信息、评论浏览、核心字段编辑和推进并指派。';
     case 'system-dashboard':
       return '系统入口严格按当前主体的服务端权限返回，Browser 与 Desktop 共用同一管理导航事实。';
+    case 'system-users':
+      return '用户、角色候选、项目关系和分页由服务端原子读取，两个宿主不拼接管理事实。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -602,6 +606,7 @@ function routeEyebrow(route) {
     case 'work-item-detail':
       return 'Work Items';
     case 'system-dashboard':
+    case 'system-users':
       return 'System';
     default:
       return 'Web App';
@@ -764,6 +769,7 @@ export function SharedApp({ services }) {
   const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
+  const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemCreateOpen, setWorkItemCreateOpen] = useState(false);
   const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
@@ -1120,7 +1126,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1229,6 +1235,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-dashboard'
           ? api.getSystemDashboard()
           : Promise.resolve(null),
+        targetRoute.id === 'system-users'
+          ? api.getSystemUsersView({ page: targetRoute.page, perPage: targetRoute.perPage })
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1277,6 +1286,9 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'system-dashboard') {
         setSystemDashboard(nextSystemDashboard);
+      }
+      if (targetRoute.id === 'system-users') {
+        setSystemUsersView(nextSystemUsersView);
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -2210,6 +2222,8 @@ export function SharedApp({ services }) {
       ? '消息中心 - 元策'
       : route.id === 'system-dashboard'
         ? '系统管理 - 元策'
+      : route.id === 'system-users'
+        ? '用户管理 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
         : route.id === 'profile'
@@ -3863,8 +3877,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -3892,7 +3906,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -3956,7 +3970,31 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'system-dashboard' ? (
+          {route.id === 'system-users' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-users-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-users-title">用户列表</h2><p className="shell-muted">按创建时间倒序排列。</p></div>
+              </div>
+              <DataTable
+                caption="系统用户列表"
+                rows={systemUsersView?.items || []}
+                rowKey={(item) => item.username}
+                emptyText="暂无用户。"
+                columns={[
+                  { key: 'user', label: '用户', render: (item) => <><strong>{item.display_name}</strong><br /><span className="shell-muted">@{item.username}{item.is_super_admin ? ' · 超级管理员' : ''}</span></> },
+                  { key: 'contact', label: '联系方式', render: (item) => item.email || item.mobile || '未填写' },
+                  { key: 'projects', label: '项目', render: (item) => item.is_super_admin ? '全项目访问' : `${item.assigned_projects.length} 个项目` },
+                  { key: 'roles', label: '角色', render: (item) => item.role_names || '未分配' },
+                  { key: 'status', label: '状态', render: (item) => item.status },
+                  { key: 'updated', label: '更新', render: (item) => formatTimestamp(item.updated_at) },
+                ]}
+              />
+              {systemUsersView ? <div className="shell-panel-header">
+                <Pagination page={systemUsersView.pagination.page} totalPages={systemUsersView.pagination.total_pages} totalItems={systemUsersView.pagination.total_items} onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)} />
+                <label className="shell-page-size">每页<select value={systemUsersView.pagination.per_page} onChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+              </div> : null}
+            </section>
+          ) : route.id === 'system-dashboard' ? (
             <section className="shell-panel-wide" aria-labelledby="system-dashboard-title">
               <div className="shell-panel-header">
                 <div>

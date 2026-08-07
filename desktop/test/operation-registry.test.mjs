@@ -36,6 +36,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["identity.profile", {}, "/api/v1/me/profile"],
     ["shell.topbar", {}, "/api/v1/topbar/status"],
     ["system.dashboard", {}, "/api/v1/system/dashboard"],
+    ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
     ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
     ["project.list", { status: "in_progress", page: 2, perPage: 25 }, "/api/v1/projects?status=in_progress&page=2&per_page=25"],

@@ -12,3 +12,15 @@ test('system dashboard uses one fixed read contract', async () => {
   assert.deepEqual(await client.getSystemDashboard(), { links: [] });
   assert.deepEqual(calls, ['/api/v1/system/dashboard']);
 });
+
+test('system users view preserves compact pagination query', async () => {
+  const calls = [];
+  const client = createSystemClient({ request: async (url) => {
+    calls.push(url);
+    return { items: [] };
+  } });
+
+  await client.getSystemUsersView();
+  await client.getSystemUsersView({ page: 3, perPage: 20 });
+  assert.deepEqual(calls, ['/api/v1/system/users-view', '/api/v1/system/users-view?page=3&per_page=20']);
+});

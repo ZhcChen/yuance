@@ -655,6 +655,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_system_users).post(web::api::create_system_user),
         )
         .route(
+            "/api/v1/system/users-view",
+            get(web::api::get_system_users_view),
+        )
+        .route(
             "/api/v1/system/users/{username}/status",
             patch(web::api::update_system_user_status),
         )

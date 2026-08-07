@@ -22,6 +22,7 @@ export {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,

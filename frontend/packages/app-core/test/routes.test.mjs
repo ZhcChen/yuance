@@ -12,6 +12,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,
@@ -23,6 +24,15 @@ test('system dashboard preserves Browser and Desktop owners', () => {
   assert.equal(buildSystemPath('app'), '/web/app/system');
   assert.equal(parseAppRoute('/web/system').id, 'system-dashboard');
   assert.equal(parseAppRoute('/web/app/system').owner, 'app');
+});
+
+test('system users route preserves owner and pagination', () => {
+  assert.equal(buildSystemUsersPath({ owner: 'web' }), '/web/system/users');
+  assert.equal(buildSystemUsersPath({ owner: 'app', page: 2, perPage: 20 }), '/web/app/system/users?page=2&per_page=20');
+  assert.deepEqual(parseAppRoute('/web/system/users', '?page=2&per_page=20'), {
+    id: 'system-users', owner: 'web', pathname: '/web/system/users', search: '?page=2&per_page=20',
+    page: 2, perPage: 20, title: '用户管理',
+  });
 });
 
 test('parseAppRoute recognizes browser shell home owners', () => {

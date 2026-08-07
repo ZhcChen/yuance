@@ -10,7 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::convert::Infallible;
+use std::{collections::HashMap, convert::Infallible};
 
 use crate::{
     domains::{
@@ -1089,6 +1089,49 @@ pub struct SystemUserPayload {
     pub role_names: String,
     pub created_at: String,
     pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SystemUsersViewQuery {
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemUserProjectPayload {
+    pub key: String,
+    pub name: String,
+    pub status: String,
+    pub role_code: String,
+    pub active_assigned_count: i64,
+    pub can_remove: bool,
+    pub can_update_role: bool,
+    pub remove_block_reason: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemUserViewPayload {
+    #[serde(flatten)]
+    pub user: SystemUserPayload,
+    pub assigned_projects: Vec<SystemUserProjectPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemProjectAssignmentOptionPayload {
+    pub key: String,
+    pub name: String,
+    pub owner: String,
+    pub status: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemUsersViewPayload {
+    pub items: Vec<SystemUserViewPayload>,
+    pub roles: Vec<SystemRolePayload>,
+    pub project_options: Vec<SystemProjectAssignmentOptionPayload>,
+    pub pagination: PaginationPayload,
+    pub can_manage_users: bool,
+    pub can_manage_user_projects: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -5541,6 +5584,108 @@ pub async fn list_system_users(
         .collect();
 
     Ok(json(payload))
+}
+
+pub async fn get_system_users_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemUsersViewQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemUsersViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, actor.id, "system.users.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let total_items = users::count_users(pool).await?;
+    let total_pages = ((total_items + pagination.per_page - 1) / pagination.per_page).max(1);
+    let page = pagination.page.min(total_pages);
+    let summaries = users::list_users_page(pool, page, pagination.per_page).await?;
+    let can_manage_users = rbac::user_has_permission(pool, actor.id, "system.users.manage").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, &actor).await?;
+    let can_manage_user_projects = can_manage_users
+        && can_access_all_projects
+        && rbac::user_has_permission(pool, actor.id, "project.manage").await?;
+
+    let mut items = Vec::with_capacity(summaries.len());
+    for summary in summaries {
+        let assigned_projects = if summary.is_super_admin {
+            Vec::new()
+        } else {
+            let active_counts =
+                projects::count_pending_assigned_work_items_by_project(pool, summary.id, false)
+                    .await?
+                    .into_iter()
+                    .map(|entry| (entry.project_key, entry.total))
+                    .collect::<HashMap<_, _>>();
+            projects::list_user_project_memberships(pool, summary.id)
+                .await?
+                .into_iter()
+                .map(|project| {
+                    let active_assigned_count =
+                        active_counts.get(&project.project_key).copied().unwrap_or(0);
+                    let can_update_role = project.member_role != "owner";
+                    let can_remove = can_update_role && active_assigned_count <= 0;
+                    let remove_block_reason = if !can_update_role {
+                        "该成员当前是项目负责人，请先在项目详情中转移负责人".to_string()
+                    } else if can_remove {
+                        String::new()
+                    } else {
+                        format!(
+                            "该成员在此项目仍有 {active_assigned_count} 个待处理 / 进行中 / 待确认工作项，需先转交处理人"
+                        )
+                    };
+                    SystemUserProjectPayload {
+                        key: project.project_key,
+                        name: project.project_name,
+                        status: project.project_status,
+                        role_code: project.member_role,
+                        active_assigned_count,
+                        can_remove,
+                        can_update_role,
+                        remove_block_reason,
+                    }
+                })
+                .collect()
+        };
+        items.push(SystemUserViewPayload {
+            user: system_user_payload(summary),
+            assigned_projects,
+        });
+    }
+
+    let roles = rbac::list_roles(pool)
+        .await?
+        .into_iter()
+        .map(system_role_payload)
+        .collect();
+    let project_options = if can_manage_user_projects {
+        projects::list_project_summaries(pool)
+            .await?
+            .into_iter()
+            .filter(|project| projects::ensure_project_accepts_writes(&project.status).is_ok())
+            .map(|project| SystemProjectAssignmentOptionPayload {
+                key: project.project_key,
+                name: project.name,
+                owner: project.owner_display_name,
+                status: project.status,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    Ok(json(SystemUsersViewPayload {
+        items,
+        roles,
+        project_options,
+        pagination: PaginationPayload {
+            page,
+            per_page: pagination.per_page,
+            total_items,
+            total_pages,
+        },
+        can_manage_users,
+        can_manage_user_projects,
+    }))
 }
 
 pub async fn get_system_dashboard(
