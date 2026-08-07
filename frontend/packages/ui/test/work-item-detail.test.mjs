@@ -28,6 +28,7 @@ const item = {
 function renderDetail(overrides = {}) {
   return renderToStaticMarkup(createElement(WorkItemDetail, {
     item,
+    primaryPost: null,
     editForm: { title: item.title, description: item.description, status: item.status, priority: item.priority, assigneeUsername: 'alice', dueDate: item.due_date, parentItemKey: item.parent_item_key },
     handoffForm: { status: 'pending_confirmation', assigneeUsername: 'bob', body: '请确认' },
     statusOptions: [{ value: 'in_progress', label: '处理中' }, { value: 'pending_confirmation', label: '待确认' }],
@@ -52,6 +53,7 @@ function renderDetail(overrides = {}) {
     parentHref: '/web/app/work-items/YCE-REQ-1',
     onOpenParent: () => {},
     onChangeEdit: () => {},
+    onChangeDescription: () => {},
     onChangeHandoff: () => {},
     onSubmitEdit: () => {},
     onSubmitHandoff: () => {},
@@ -73,6 +75,23 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /上一项 · 前一任务/);
   assert.match(html, /状态：待处理 → 进行中/);
   assert.match(html, /关闭工作项/);
+  assert.match(html, /yc-rich-text-content/);
+  assert.match(html, /aria-label="主内容"/);
+});
+
+test('work item detail prefers the canonical HTML primary post over the legacy summary', () => {
+  const html = renderDetail({ primaryPost: { id: 91, body: '<h2>共享主帖</h2><p>富文本正文</p>', body_format: 'html' } });
+
+  assert.match(html, /yc-rich-text-content/);
+  assert.doesNotMatch(html, />提取共享 UI</);
+});
+
+test('work item detail keeps handoff available while hiding author-only primary post editing', () => {
+  const html = renderDetail({ canEditPrimaryPost: false });
+
+  assert.doesNotMatch(html, /编辑工作项/);
+  assert.match(html, /推进并指派/);
+  assert.doesNotMatch(html, /aria-label="主内容"/);
 });
 
 test('work item detail hides mutations for read-only users', () => {
@@ -105,4 +124,5 @@ test('work item detail renders busy and error states', () => {
   assert.match(html, /保存中…/);
   assert.match(html, /role="alert"/);
   assert.match(html, /disabled=""/);
+  assert.match(html, /aria-disabled="true"/);
 });

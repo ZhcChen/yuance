@@ -454,6 +454,7 @@ pub struct WorkItemFlowHistoryPayload {
 #[derive(Debug, Serialize)]
 pub struct WorkItemDetailViewPayload {
     pub item: WorkItemDetailPayload,
+    pub primary_post: Option<CommentPayload>,
     pub cycle: Option<WorkItemDetailViewOptionPayload>,
     pub assignees: Vec<WorkItemDetailViewOptionPayload>,
     pub parent_options: Vec<WorkItemParentOptionPayload>,
@@ -1453,6 +1454,17 @@ pub struct UpdateWorkItemRequest {
     due_date: Option<String>,
     #[serde(default)]
     parent_item_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateWorkItemPrimaryPostRequest {
+    body: String,
+    #[serde(default = "default_html_body_format")]
+    body_format: String,
+}
+
+fn default_html_body_format() -> String {
+    "html".to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -3326,9 +3338,19 @@ pub async fn get_work_item_detail_view(
     .await?;
     let flow_total_pages = flow_page.total_pages();
     let current_status = projects::normalize_work_item_status(&item.status)?;
+    let comments = projects::list_work_item_comments(pool, item.id).await?;
+    let primary_post = projects::work_item_primary_post(
+        &comments,
+        item.primary_post_comment_id,
+        &item.reporter_username,
+        &item.description,
+    )
+    .cloned()
+    .map(comment_payload);
 
     Ok(json(WorkItemDetailViewPayload {
         item: work_item_detail_payload(item.clone()),
+        primary_post,
         cycle: item
             .cycle_id
             .map(|cycle_id| WorkItemDetailViewOptionPayload {
@@ -3430,6 +3452,68 @@ pub async fn update_work_item(
     .await?;
 
     Ok(json(work_item_detail_payload(updated)))
+}
+
+pub async fn update_work_item_primary_post(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(item_key): Path<String>,
+    Json(payload): Json<UpdateWorkItemPrimaryPostRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    let item = projects::get_work_item_detail(pool, &item_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    let project = projects::get_project_detail(pool, &item.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    if !projects::user_can_edit_work_item_post(item.reporter_user_id, user.id) {
+        return Err(AppError::Forbidden(
+            "只有报告人可以编辑工作项主内容".to_string(),
+        ));
+    }
+    if payload.body_format != "html" {
+        return Err(AppError::BadRequest(
+            "工作项主内容格式只能是 html".to_string(),
+        ));
+    }
+    let comments = projects::list_work_item_comments(pool, item.id).await?;
+    let existing = projects::work_item_primary_post(
+        &comments,
+        item.primary_post_comment_id,
+        &item.reporter_username,
+        &item.description,
+    )
+    .map(|comment| comment.id);
+    let comment = projects::upsert_work_item_primary_post(
+        pool,
+        user.id,
+        &item_key,
+        existing,
+        &payload.body,
+        &principal.actor_display_name_snapshot(),
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.primary_post.update",
+        "work_item",
+        &item_key,
+        &principal.audit_details(),
+    )
+    .await?;
+
+    Ok(json(comment_payload(comment)))
 }
 
 pub async fn handoff_work_item(

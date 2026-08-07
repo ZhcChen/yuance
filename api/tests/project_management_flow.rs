@@ -1552,6 +1552,252 @@ async fn api_v1_pat_resource_write_scope_required_for_resource_mutations() {
 }
 
 #[tokio::test]
+async fn api_v1_work_item_primary_post_sanitizes_html_and_updates_atomic_detail() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let ordinary_html_comment = projects::add_work_item_comment_reply_with_format(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        "<p>更早的普通 HTML 讨论</p>",
+        "html",
+        None,
+    )
+    .await
+    .expect("ordinary html comment should create");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<h2>共享主帖</h2><p>保留 <strong>正文</strong></p><script>alert(1)</script><a href=\"javascript:alert(1)\">坏链接</a>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(update.status(), StatusCode::OK);
+    let updated: serde_json::Value = serde_json::from_str(&response_body(update).await)
+        .expect("primary post response should be json");
+    assert_eq!(updated["data"]["body_format"], "html");
+    let sanitized = updated["data"]["body"]
+        .as_str()
+        .expect("primary post body should be a string");
+    assert!(sanitized.contains("<h2>共享主帖</h2>"));
+    assert!(!sanitized.contains("<script"));
+    assert!(!sanitized.contains("javascript:"));
+
+    let second_update = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<h2>共享主帖</h2><p>第二次更新</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let second_status = second_update.status();
+    let second_body = response_body(second_update).await;
+    assert_eq!(second_status, StatusCode::OK, "{second_body}");
+    let second_updated: serde_json::Value =
+        serde_json::from_str(&second_body).expect("second primary post response should be json");
+    assert_eq!(second_updated["data"]["id"], updated["data"]["id"]);
+    assert_ne!(second_updated["data"]["id"], ordinary_html_comment.id);
+    let persisted = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(
+        persisted.primary_post_comment_id,
+        second_updated["data"]["id"].as_i64()
+    );
+    assert!(persisted.description.contains("第二次更新"));
+    let foreign_comment = projects::add_work_item_comment_reply_with_format(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-1",
+        "<p>其他工作项正文</p>",
+        "html",
+        None,
+    )
+    .await
+    .expect("foreign comment should create");
+    assert!(
+        projects::bind_work_item_primary_post(&pool, "YCE-TASK-2", foreign_comment.id, "错误摘要",)
+            .await
+            .is_err()
+    );
+    let still_bound = projects::get_work_item_detail(&pool, "YCE-TASK-2")
+        .await
+        .expect("work item should reload")
+        .expect("work item should exist");
+    assert_eq!(
+        still_bound.primary_post_comment_id,
+        second_updated["data"]["id"].as_i64()
+    );
+    sqlx::query(
+        "UPDATE work_items SET description = '见首条图文说明' WHERE item_key = 'YCE-TASK-2'",
+    )
+    .execute(&pool)
+    .await
+    .expect("legacy placeholder should apply");
+
+    let detail = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-detail-view/YCE-TASK-2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(detail.status(), StatusCode::OK);
+    let detail: serde_json::Value =
+        serde_json::from_str(&response_body(detail).await).expect("detail response should be json");
+    assert_eq!(detail["data"]["primary_post"]["id"], updated["data"]["id"]);
+    assert_eq!(
+        detail["data"]["primary_post"]["body"],
+        second_updated["data"]["body"]
+    );
+    assert_eq!(detail["data"]["item"]["description"], "见首条图文说明");
+}
+
+#[tokio::test]
+async fn api_v1_work_item_primary_post_requires_html_and_the_reporter() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let member = create_regular_user(&pool, "primary_post_peer", "主帖协作者").await;
+    projects::add_project_member(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        "primary_post_peer",
+        "member",
+    )
+    .await
+    .expect("member should join project");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let invalid_format = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, initialized.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"body":"纯文本","body_format":"plain"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_format.status(), StatusCode::BAD_REQUEST);
+
+    let non_reporter = app
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-2/primary-post")
+                .header(header::COOKIE, member.cookie)
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"body":"<p>不允许修改</p>","body_format":"html"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(non_reporter.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn api_v1_concurrent_primary_post_creation_reuses_one_comment() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let item_before = projects::get_work_item_detail(&pool, "YCE-TASK-1")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    let comment_count_before = projects::list_work_item_comments(&pool, item_before.id)
+        .await
+        .expect("comments should load")
+        .len();
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let request = |body: &'static str| {
+        app.clone().oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri("/api/v1/work-items/YCE-TASK-1/primary-post")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(body))
+                .expect("request should build"),
+        )
+    };
+
+    let (first, second) = tokio::join!(
+        request(r#"{"body":"<p>并发主帖 A</p>","body_format":"html"}"#),
+        request(r#"{"body":"<p>并发主帖 B</p>","body_format":"html"}"#),
+    );
+    let first = first.expect("first request should respond");
+    let second = second.expect("second request should respond");
+    let first_status = first.status();
+    let second_status = second.status();
+    let first_body = response_body(first).await;
+    let second_body = response_body(second).await;
+    assert_eq!(first_status, StatusCode::OK, "{first_body}");
+    assert_eq!(second_status, StatusCode::OK, "{second_body}");
+    let first: serde_json::Value =
+        serde_json::from_str(&first_body).expect("first response should be json");
+    let second: serde_json::Value =
+        serde_json::from_str(&second_body).expect("second response should be json");
+    assert_eq!(first["data"]["id"], second["data"]["id"]);
+    let item = projects::get_work_item_detail(&pool, "YCE-TASK-1")
+        .await
+        .expect("work item should load")
+        .expect("work item should exist");
+    assert_eq!(item.primary_post_comment_id, first["data"]["id"].as_i64());
+    let comments = projects::list_work_item_comments(&pool, item.id)
+        .await
+        .expect("comments should load");
+    assert_eq!(comments.len(), comment_count_before + 1);
+    assert_eq!(
+        comments
+            .iter()
+            .filter(|comment| comment.id == item.primary_post_comment_id.unwrap())
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn rich_text_comments_reject_uncontrolled_media_sources() {
     let pool = test_pool().await;
     let admin = bootstrap_admin_session(&pool).await;

@@ -959,6 +959,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::api::restore_work_item),
         )
         .route(
+            "/api/v1/work-items/{item_key}/primary-post",
+            axum::routing::patch(web::api::update_work_item_primary_post),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/handoff",
             post(web::api::handoff_work_item),
         )

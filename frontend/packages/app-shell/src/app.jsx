@@ -22,7 +22,6 @@ import {
   handoffWorkItem as handoffWorkItemUseCase,
   notificationTargetPath,
   routePathForOwner,
-  saveWorkItem,
   updateWorkItemComment as updateWorkItemCommentUseCase,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
@@ -468,11 +467,11 @@ function workItemStatusLabel(status) {
 
 const WORK_ITEM_PRIORITY_OPTIONS = ['P0', 'P1', 'P2', 'P3'];
 
-/** @param {AppWorkItemDetail} item */
-function workItemEditFormFromDetail(item) {
+/** @param {AppWorkItemDetail} item @param {AppWorkItemComment | null} [primaryPost] */
+function workItemEditFormFromDetail(item, primaryPost = null) {
   return {
     title: item.title || '',
-    description: item.description || '',
+    description: primaryPost?.body || plainTextToRichHtml(item.description || ''),
     status: item.status || 'open',
     priority: item.priority || 'P2',
     assigneeUsername: item.assignee_username || '',
@@ -670,6 +669,7 @@ export function SharedApp({ services }) {
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
+  const workItemPrimaryPostRetryRef = useRef(/** @type {{ itemKey: string, fields: string } | null} */ (null));
   const workItemAttachmentActionRef = useRef(0);
   const workItemAttachmentMutationRef = useRef(false);
   const workItemBatchMutationRef = useRef(false);
@@ -1120,7 +1120,12 @@ export function SharedApp({ services }) {
               commentsPromise,
               commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
             ]);
-            return { detailView, item: detailView.item, comments, attachmentBundle };
+            return {
+              detailView,
+              item: detailView.item,
+              comments: comments.filter((comment) => comment.id !== detailView.primary_post?.id),
+              attachmentBundle,
+            };
           })()
           : Promise.resolve(null),
         targetRoute.id === 'profile'
@@ -2137,7 +2142,7 @@ export function SharedApp({ services }) {
     if (!activeWorkItemDetail || workItemFormKey === activeWorkItemDetail.key) {
       return;
     }
-    setWorkItemEditForm(workItemEditFormFromDetail(activeWorkItemDetail));
+    setWorkItemEditForm(workItemEditFormFromDetail(activeWorkItemDetail, activeWorkItemDetailView?.primary_post || null));
     setWorkItemHandoffForm(workItemHandoffFormFromDetail(activeWorkItemDetail));
     setWorkItemActionError('');
     setWorkItemNewCommentBody('');
@@ -2145,7 +2150,7 @@ export function SharedApp({ services }) {
     setWorkItemEditCommentBody('');
     setWorkItemCommentActionError('');
     setWorkItemFormKey(activeWorkItemDetail.key);
-  }, [activeWorkItemDetail, workItemFormKey]);
+  }, [activeWorkItemDetail, activeWorkItemDetailView?.primary_post, workItemFormKey]);
 
   useEffect(() => {
     return router.subscribe(() => {
@@ -2332,7 +2337,7 @@ export function SharedApp({ services }) {
     }
     requestRef.current += 1;
     setWorkItemDetail(updated);
-    setWorkItemEditForm(workItemEditFormFromDetail(updated));
+    setWorkItemEditForm(workItemEditFormFromDetail(updated, workItemDetailView?.primary_post || null));
     setWorkItemHandoffForm(workItemHandoffFormFromDetail(updated));
     setWorkItemFormKey(updated.key);
     setStatusMessage(successMessage);
@@ -2358,8 +2363,9 @@ export function SharedApp({ services }) {
    * @param {string} actionLabel
    * @param {number} actionId
    * @param {AppWorkItemDetail | null} [committedItem]
+   * @param {number | null} [primaryPostId]
    */
-  async function refreshWorkItemCompanionState(itemKey, actionLabel, actionId, committedItem = null) {
+  async function refreshWorkItemCompanionState(itemKey, actionLabel, actionId, committedItem = null, primaryPostId = null) {
     const [detailViewResult, commentsResult, topbarResult] = await Promise.allSettled([
       api.getWorkItemDetailView(itemKey),
       api.getWorkItemComments(itemKey),
@@ -2368,6 +2374,9 @@ export function SharedApp({ services }) {
     if (!isCurrentWorkItemDetailRoute(itemKey, actionId)) {
       return;
     }
+    const refreshedPrimaryPostId = detailViewResult.status === 'fulfilled'
+      ? detailViewResult.value.primary_post?.id
+      : primaryPostId || workItemDetailView?.primary_post?.id || null;
     let failed = false;
     if (detailViewResult.status === 'fulfilled') {
       setWorkItemDetailView(committedItem
@@ -2377,7 +2386,7 @@ export function SharedApp({ services }) {
       failed = true;
     }
     if (commentsResult.status === 'fulfilled') {
-      setWorkItemComments(commentsResult.value);
+      setWorkItemComments(commentsResult.value.filter((comment) => comment.id !== refreshedPrimaryPostId));
     } else {
       failed = true;
     }
@@ -2408,43 +2417,52 @@ export function SharedApp({ services }) {
     }
 
     const itemKey = activeWorkItemDetail.key;
+    const fields = {
+      title,
+      status: workItemEditForm.status,
+      priority: workItemEditForm.priority,
+      assigneeUsername: workItemEditForm.assigneeUsername.trim(),
+      dueDate: workItemEditForm.dueDate,
+      parentItemKey: workItemEditForm.parentItemKey.trim(),
+    };
+    const serializedFields = JSON.stringify(fields);
     const actionId = workItemActionRef.current + 1;
     workItemActionRef.current = actionId;
     workItemMutationRef.current = true;
     workItemMutationActionRef.current = actionId;
     setWorkItemEditSubmitting(true);
     setWorkItemActionError('');
+    /** @type {AppWorkItemDetail | null} */
+    let updated = null;
     try {
-      await saveWorkItem({
-        api,
-        itemKey,
-        payload: {
-          title,
-          description: workItemEditForm.description,
-          status: workItemEditForm.status,
-          priority: workItemEditForm.priority,
-          assigneeUsername: workItemEditForm.assigneeUsername.trim(),
-          dueDate: workItemEditForm.dueDate,
-          parentItemKey: workItemEditForm.parentItemKey.trim(),
-        },
-        lifecycle: {
-          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
-          onCommitted: (updated) => applyWorkItemMutationResult(
-            updated,
-            `${updated.key} 已保存。`,
-            actionId,
-          ),
-          refreshCompanion: (updated) => refreshWorkItemCompanionState(
-            updated.key,
-            '工作项已保存',
-            actionId,
-            updated,
-          ),
-        },
-      });
+      const retry = workItemPrimaryPostRetryRef.current;
+      const committed = retry?.itemKey === itemKey && retry.fields === serializedFields
+        ? activeWorkItemDetail
+        : await api.updateWorkItem(itemKey, fields);
+      updated = committed;
+      const primaryPost = await api.updateWorkItemPrimaryPost(itemKey, workItemEditForm.description);
+      workItemPrimaryPostRetryRef.current = null;
+      if (applyWorkItemMutationResult(committed, `${committed.key} 已保存。`, actionId)) {
+        setWorkItemDetailView((current) => current ? { ...current, item: committed, primary_post: primaryPost } : current);
+        setWorkItemEditForm(workItemEditFormFromDetail(committed, primaryPost));
+        setWorkItemComments((comments) => comments.filter((comment) => comment.id !== primaryPost.id));
+        await refreshWorkItemCompanionState(committed.key, '工作项已保存', actionId, committed, primaryPost.id);
+      }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
-        setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('保存工作项失败。')));
+        if (updated) {
+          const committed = updated;
+          workItemPrimaryPostRetryRef.current = { itemKey, fields: serializedFields };
+          requestRef.current += 1;
+          setWorkItemDetail(committed);
+          setWorkItemDetailView((current) => current ? { ...current, item: committed } : current);
+          setWorkItemHandoffForm(workItemHandoffFormFromDetail(committed));
+          setWorkItemFormKey(committed.key);
+          setStatusMessage(`${committed.key} 字段已保存，主内容需要重试。`);
+          setWorkItemActionError(`工作项字段已保存，但主内容保存失败：${errorMessage(caught instanceof Error ? caught : new Error('保存主内容失败。'))}`);
+        } else {
+          setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('保存工作项失败。')));
+        }
       }
     } finally {
       clearWorkItemMutation(actionId, setWorkItemEditSubmitting);
@@ -4339,6 +4357,7 @@ export function SharedApp({ services }) {
                 <>
                   <WorkItemDetail
                     item={activeWorkItemDetail}
+                    primaryPost={activeWorkItemDetailView?.primary_post || null}
                     editForm={workItemEditForm}
                     handoffForm={workItemHandoffForm}
                     statusOptions={activeWorkItemDetailView?.status_options || []}
@@ -4363,6 +4382,7 @@ export function SharedApp({ services }) {
                     parentHref={buildWorkItemDetailPath({ owner: workItemOwner, itemKey: activeWorkItemDetail.parent_item_key })}
                     onOpenParent={(event) => handleNavigate(event, buildWorkItemDetailPath({ owner: workItemOwner, itemKey: activeWorkItemDetail.parent_item_key }), `已打开 ${activeWorkItemDetail.parent_item_key}。`)}
                     onChangeEdit={changeWorkItemEditField}
+                    onChangeDescription={(description) => setWorkItemEditForm((current) => ({ ...current, description }))}
                     onChangeHandoff={changeWorkItemHandoffField}
                     onSubmitEdit={submitWorkItemEdit}
                     onSubmitHandoff={submitWorkItemHandoff}

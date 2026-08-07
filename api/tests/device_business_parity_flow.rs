@@ -85,6 +85,27 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         json_body(response).await["data"]["title"],
         "Device parity mutation"
     );
+    let response = request(
+        &app,
+        "PATCH",
+        "/api/v1/work-items/YCE-TASK-2/primary-post",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "body": "<p>Device <strong>primary post</strong><script>alert(1)</script></p>",
+            "body_format": "html"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["data"]["body_format"], "html");
+    assert!(
+        body["data"]["body"]
+            .as_str()
+            .unwrap()
+            .contains("<strong>primary post</strong>")
+    );
+    assert!(!body["data"]["body"].as_str().unwrap().contains("<script"));
     projects::archive_work_item(&pool, admin_id, "YCE-TASK-2")
         .await
         .expect("fixture work item should archive");

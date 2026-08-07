@@ -86,6 +86,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.detail", workItemDetailOperation],
     ["workitem.detailview", workItemDetailViewOperation],
     ["workitem.update", workItemUpdateOperation],
+    ["workitem.primarypostupdate", workItemPrimaryPostUpdateOperation],
     ["workitem.restore", workItemRestoreOperation],
     ["workitem.handoff", workItemHandoffOperation],
     ["workitem.comments", workItemCommentsOperation],
@@ -546,6 +547,15 @@ function workItemRestoreOperation(input) {
   return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/restore`, parseWorkItemDetail, false);
 }
 
+function workItemPrimaryPostUpdateOperation(input) {
+  exactKeys(input, ["itemKey", "payload"]);
+  const payload = plainPayload(input.payload, "payload");
+  exactKeys(payload, ["body", "bodyFormat"]);
+  const body = boundedRequiredText(payload.body, "body", 20_000);
+  if (payload.bodyFormat !== "html") throw new TypeError("bodyFormat is invalid");
+  return descriptor("PATCH", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/primary-post`, parseComment, false, "object", jsonBody({ body, body_format: "html" }));
+}
+
 function workItemHandoffOperation(input) {
   exactKeys(input, ["itemKey", "payload"]);
   const payload = plainPayload(input.payload, "payload");
@@ -731,6 +741,7 @@ function parseWorkItemDetail(value) { return freezeDto(value, {
 function parseWorkItemDetailView(value) {
   return freezeExactDto(value, {
     item: parseWorkItemDetail,
+    primary_post: nullableComment,
     cycle: nullableDetailOption,
     assignees: (items) => boundedArray(items, parseDetailOption, 500, "work item detail assignees"),
     parent_options: (items) => boundedArray(items, (item) => freezeExactDto(item, { key: shortString, title: textString }), 2_000, "work item detail parents"),
@@ -763,6 +774,7 @@ function parseComment(value) { return freezeDto(value, {
   body_format: shortString, author: shortString, created_at: shortString, updated_at: shortString,
   is_flow: boolean, is_draft: boolean,
 }); }
+function nullableComment(value) { return value === null ? null : parseComment(value); }
 function parseAttachments(data) { return boundedArray(data, parseAttachment, 500, "attachments"); }
 function parseAttachmentPreview(value) { return freezeDto(value, {
   attachment: parseAttachment,

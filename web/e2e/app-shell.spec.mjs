@@ -441,6 +441,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
 
   const editRequests = [];
+  const primaryPostRequests = [];
   const handoffRequests = [];
   let topbarRefreshCount = 0;
   let commentRefreshCount = 0;
@@ -454,11 +455,13 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
     updated_at: '2026-07-30T12:00:00Z',
   });
   let refreshedDetail = editedDetail;
+  let refreshedPrimaryPost = null;
 
   await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
     const response = await route.fetch();
     const payload = await response.json();
     payload.data.item = refreshedDetail;
+    payload.data.primary_post = refreshedPrimaryPost;
     await route.fulfill({ response, json: payload });
   });
 
@@ -521,10 +524,26 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
       body: JSON.stringify({ data: editedDetail }),
     });
   });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/primary-post', async (route) => {
+    primaryPostRequests.push({
+      headers: route.request().headers(),
+      payload: route.request().postDataJSON(),
+    });
+    refreshedPrimaryPost = workItemCommentFixture({
+      id: 902,
+      body: route.request().postDataJSON().body,
+      body_format: 'html',
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: refreshedPrimaryPost }),
+    });
+  });
 
   const editForm = page.locator('.work-item-action-form', { hasText: '保存修改' });
   await editForm.getByLabel('标题').fill(editedDetail.title);
-  await editForm.getByLabel('描述').fill(editedDetail.description);
+  await editForm.getByLabel('主内容').fill(editedDetail.description);
   await editForm.getByLabel('状态').selectOption('in_progress');
   await editForm.getByLabel('优先级').selectOption('P1');
   await editForm.getByLabel('处理人').selectOption('yuance_admin');
@@ -537,15 +556,21 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   expect(editRequests[0].headers['content-type']).toContain('application/json');
   expect(editRequests[0].payload).toMatchObject({
     title: editedDetail.title,
-    description: editedDetail.description,
     status: 'in_progress',
     priority: 'P1',
     assignee_username: 'yuance_admin',
     due_date: '2026-08-15',
     parent_item_key: '',
   });
+  expect(editRequests[0].payload).not.toHaveProperty('description');
+  await expect.poll(() => primaryPostRequests.length).toBe(1);
+  expect(primaryPostRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
+  expect(primaryPostRequests[0].payload).toMatchObject({
+    body: `<p>${editedDetail.description}</p>`,
+    body_format: 'html',
+  });
   await expect(page.getByRole('heading', { level: 2, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
-  await expect(page.locator('.work-item-detail-description')).toHaveText('通过 Web app shell 保存的描述。');
+  await expect(page.locator('.work-item-detail-panel', { hasText: '描述' }).locator('.yc-rich-text-content')).toHaveText('通过 Web app shell 保存的描述。');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
   await expect(page.getByText('Web 保存后刷新评论')).toBeVisible();
   await expect(page.locator('.shell-stats')).toContainText(/任务\s*7/);
@@ -621,6 +646,19 @@ test('work item edit success survives comments or topbar refresh failures', asyn
     priority: 'P2',
     updated_at: '2026-07-30T13:00:00Z',
   });
+  const editedPrimaryPost = workItemCommentFixture({
+    id: 903,
+    body: `<div>${editedDetail.description}</div>`,
+    body_format: 'html',
+  });
+
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.item = editedDetail;
+    payload.data.primary_post = editedPrimaryPost;
+    await route.fulfill({ response, json: payload });
+  });
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
     await route.fulfill({
@@ -645,16 +683,121 @@ test('work item edit success survives comments or topbar refresh failures', asyn
       body: JSON.stringify({ data: editedDetail }),
     });
   });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/primary-post', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: editedPrimaryPost }),
+    });
+  });
 
   const editForm = page.locator('.work-item-action-form', { hasText: '保存修改' });
   await editForm.getByLabel('标题').fill(editedDetail.title);
-  await editForm.getByLabel('描述').fill(editedDetail.description);
+  await editForm.getByLabel('主内容').fill(editedDetail.description);
   await editForm.getByRole('button', { name: '保存修改' }).click();
 
   await expect(page.getByRole('heading', { level: 2, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
-  await expect(page.locator('.work-item-detail-description')).toHaveText(editedDetail.description);
+  await expect(page.locator('.work-item-detail-panel', { hasText: '描述' }).locator('.yc-rich-text-content')).toHaveText(editedDetail.description);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
   await expect(page.locator('.shell-stats')).toContainText(/任务\s*9/);
+  await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
+});
+
+test('work item edit preserves committed fields and retryable primary post after partial failure', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
+
+  const editedDetail = workItemDetailFixture({
+    title: '字段保存成功但主帖失败',
+    updated_at: '2026-08-08T15:00:00Z',
+  });
+  let fieldPatchCount = 0;
+  let primaryPostPatchCount = 0;
+  const savedPrimaryPost = workItemCommentFixture({
+    id: 905,
+    body: '<p>保留这段正文用于重试。</p>',
+    body_format: 'html',
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    fieldPatchCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: editedDetail }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/primary-post', async (route) => {
+    primaryPostPatchCount += 1;
+    await route.fulfill(primaryPostPatchCount === 1 ? {
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'internal_error', message: '主帖暂时无法保存。' } }),
+    } : {
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: savedPrimaryPost }),
+    });
+  });
+
+  const editForm = page.locator('.work-item-action-form', { hasText: '保存修改' });
+  await editForm.getByLabel('标题').fill(editedDetail.title);
+  await editForm.getByLabel('主内容').fill('保留这段正文用于重试。');
+  await editForm.getByRole('button', { name: '保存修改' }).click();
+
+  await expect.poll(() => fieldPatchCount).toBe(1);
+  await expect.poll(() => primaryPostPatchCount).toBe(1);
+  await expect(page.getByRole('heading', { level: 2, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
+  await expect(editForm.getByLabel('主内容')).toHaveText('保留这段正文用于重试。');
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 字段已保存，主内容需要重试。');
+  await expect(page.getByRole('alert')).toHaveText('工作项字段已保存，但主内容保存失败：主帖暂时无法保存。');
+  await expect(editForm.getByRole('button', { name: '保存修改' })).toBeEnabled();
+
+  await editForm.getByRole('button', { name: '保存修改' }).click();
+  await expect.poll(() => primaryPostPatchCount).toBe(2);
+  expect(fieldPatchCount).toBe(1);
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
+});
+
+test('work item refresh keeps the primary post out of comments when detail refresh fails', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
+  const editedDetail = workItemDetailFixture({ title: '详情刷新失败仍保持主帖去重' });
+  const primaryPost = workItemCommentFixture({
+    id: 906,
+    body: '<p>只应显示一次的主帖正文</p>',
+    body_format: 'html',
+  });
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', (route) => route.fulfill({
+    status: 500,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 'internal_error', message: '详情刷新失败。' } }),
+  }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: [primaryPost, workItemCommentFixture({ id: 907, body: '普通讨论' })] }),
+  }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'PATCH') return route.continue();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: editedDetail }) });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/primary-post', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ data: primaryPost }),
+  }));
+
+  const editForm = page.locator('.work-item-action-form', { hasText: '保存修改' });
+  await editForm.getByLabel('标题').fill(editedDetail.title);
+  await editForm.getByLabel('主内容').fill('只应显示一次的主帖正文');
+  await editForm.getByRole('button', { name: '保存修改' }).click();
+
+  await expect(page.getByText('只应显示一次的主帖正文', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('普通讨论', { exact: true })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
@@ -876,6 +1019,11 @@ test('work item mutation result is not rolled back by an older refresh response'
     description: 'PATCH 成功结果应保留在页面上。',
     updated_at: '2026-07-30T14:00:00Z',
   });
+  const savedPrimaryPost = workItemCommentFixture({
+    id: 904,
+    body: `<div>${savedDetail.description}</div>`,
+    body_format: 'html',
+  });
 
   await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
     delayedRefreshCount += 1;
@@ -899,20 +1047,27 @@ test('work item mutation result is not rolled back by an older refresh response'
       body: JSON.stringify({ data: savedDetail }),
     });
   });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/primary-post', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: savedPrimaryPost }),
+    });
+  });
 
   await page.getByRole('button', { name: '刷新' }).click();
   await expect.poll(() => delayedRefreshCount).toBe(1);
 
   const editForm = page.locator('.work-item-action-form', { hasText: '保存修改' });
   await editForm.getByLabel('标题').fill(savedDetail.title);
-  await editForm.getByLabel('描述').fill(savedDetail.description);
+  await editForm.getByLabel('主内容').fill(savedDetail.description);
   await editForm.getByRole('button', { name: '保存修改' }).click();
   await expect(page.getByRole('heading', { level: 2, name: `YCE-TASK-2 · ${savedDetail.title}` })).toBeVisible();
 
   releaseRefresh();
 
   await expect(page.getByRole('heading', { level: 2, name: `YCE-TASK-2 · ${savedDetail.title}` })).toBeVisible();
-  await expect(page.locator('.work-item-detail-description')).toHaveText(savedDetail.description);
+  await expect(page.locator('.work-item-detail-panel', { hasText: '描述' }).locator('.yc-rich-text-content')).toHaveText(savedDetail.description);
   await expect(page.getByText(oldRefreshDetail.title)).toHaveCount(0);
 });
 
@@ -949,13 +1104,13 @@ test('work item edit form keeps input on validation and server errors', async ({
   await expect(titleInput).toHaveValue('   ');
 
   await titleInput.fill('不会成功的标题');
-  await editForm.getByLabel('描述').fill('失败后仍保留的描述');
+  await editForm.getByLabel('主内容').fill('失败后仍保留的描述');
   await editForm.getByRole('button', { name: '保存修改' }).click();
 
   await expect.poll(() => patchCount).toBe(1);
   await expect(page.getByRole('alert')).toHaveText('服务端拒绝保存。');
   await expect(titleInput).toHaveValue('不会成功的标题');
-  await expect(editForm.getByLabel('描述')).toHaveValue('失败后仍保留的描述');
+  await expect(editForm.getByLabel('主内容')).toHaveText('失败后仍保留的描述');
   await expect(editForm.getByRole('button', { name: '保存修改' })).toBeEnabled();
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/handoff', async (route) => {

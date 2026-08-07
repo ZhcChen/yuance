@@ -5504,7 +5504,7 @@ pub async fn work_item_update(
         )
         .await?;
         if !form.body.trim().is_empty() {
-            save_work_item_primary_post(
+            let comment = save_work_item_primary_post(
                 pool,
                 context.user_id,
                 &item_key,
@@ -5514,6 +5514,9 @@ pub async fn work_item_update(
                 &context.current_user,
             )
             .await?;
+            let summary =
+                projects::work_item_primary_post_summary(&comment.body, &comment.body_format);
+            projects::bind_work_item_primary_post(pool, &item_key, comment.id, &summary).await?;
         }
         audit::record(
             pool,
@@ -10455,7 +10458,7 @@ fn work_item_detail_from_domain(item: projects::WorkItemDetail) -> WorkItemDetai
         description: item.description,
         description_html: description_html.clone(),
         editor_body_html: description_html,
-        primary_post_comment_id: None,
+        primary_post_comment_id: item.primary_post_comment_id,
         project_key: item.project_key,
         project_name: item.project_name,
         parent_item_key: item.parent_item_key.clone(),
@@ -12617,18 +12620,21 @@ fn promote_primary_post_to_description(
     item: &mut WorkItemDetailView,
     comments: &mut Vec<WorkItemComment>,
 ) {
-    let Some(index) = comments.iter().position(|comment| {
-        !comment.is_flow
-            && comment.parent_comment_id.is_none()
-            && comment.body_format == "html"
-            && comment.author_username == item.reporter_username
-    }) else {
+    let index = item
+        .primary_post_comment_id
+        .and_then(|comment_id| comments.iter().position(|comment| comment.id == comment_id))
+        .or_else(|| {
+            comments.iter().position(|comment| {
+                !comment.is_flow
+                    && comment.parent_comment_id.is_none()
+                    && comment.body_format == "html"
+                    && comment.author_username == item.reporter_username
+                    && work_item_description_matches_comment_summary(&item.description, comment)
+            })
+        });
+    let Some(index) = index else {
         return;
     };
-
-    if !work_item_description_matches_comment_summary(&item.description, &comments[index]) {
-        return;
-    }
 
     let comment = comments.remove(index);
     item.description_html = comment.body_html.clone();

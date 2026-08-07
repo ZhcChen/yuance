@@ -86,6 +86,7 @@
     "POST /api/v1/work-items/batch",
     "GET /api/v1/work-items/{item_key}",
     "PATCH /api/v1/work-items/{item_key}",
+    "PATCH /api/v1/work-items/{item_key}/primary-post",
     "POST /api/v1/work-items/{item_key}/restore",
     "POST /api/v1/work-items/{item_key}/handoff",
     "GET /api/v1/work-items/{item_key}/events",
@@ -1460,6 +1461,21 @@
           "200": {
             "description": "流转成功"
           }
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/primary-post": {
+      "patch": {
+        "tags": ["work-items"],
+        "summary": "更新工作项富文本主帖",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/UpdateWorkItemPrimaryPostRequest"}}}},
+        "responses": {
+          "200": {"description": "主帖已更新", "content": {"application/json": {"schema": {"type": "object", "required": ["data"], "properties": {"data": {"$ref": "#/components/schemas/Comment"}}}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -3546,9 +3562,10 @@
           "data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["item", "cycle", "assignees", "parent_options", "status_options", "permissions", "navigation", "flow_history"],
+            "required": ["item", "primary_post", "cycle", "assignees", "parent_options", "status_options", "permissions", "navigation", "flow_history"],
             "properties": {
               "item": {"$ref": "#/components/schemas/WorkItemDetail"},
+              "primary_post": {"oneOf": [{"$ref": "#/components/schemas/Comment"}, {"type": "null"}]},
               "cycle": {"oneOf": [{"$ref": "#/components/schemas/WorkItemDetailOption"}, {"type": "null"}]},
               "assignees": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemDetailOption"}},
               "parent_options": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["key", "title"], "properties": {"key": {"type": "string"}, "title": {"type": "string"}}}},
@@ -3770,6 +3787,15 @@
           "parent_comment_id": {
             "type": "integer"
           }
+        }
+      },
+      "UpdateWorkItemPrimaryPostRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["body", "body_format"],
+        "properties": {
+          "body": {"type": "string", "minLength": 1, "maxLength": 20000},
+          "body_format": {"type": "string", "enum": ["html"]}
         }
       },
       "TopbarStatusEnvelope": {

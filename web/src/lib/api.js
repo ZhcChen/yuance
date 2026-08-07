@@ -112,6 +112,7 @@ export const deleteWorkItemSavedView = apiClient.deleteWorkItemSavedView;
 export const getWorkItem = /** @type {(itemKey: string) => Promise<WorkItemDetail>} */ (apiClient.getWorkItem);
 export const getWorkItemDetailView = apiClient.getWorkItemDetailView;
 export const restoreWorkItem = apiClient.restoreWorkItem;
+export const updateWorkItemPrimaryPost = apiClient.updateWorkItemPrimaryPost;
 
 export const getWorkItemComments = /** @type {(itemKey: string) => Promise<WorkItemComment[]>} */ (apiClient.getWorkItemComments);
 
@@ -208,6 +209,7 @@ export const webApi = {
   getWorkItem,
   getWorkItemDetailView,
   restoreWorkItem,
+  updateWorkItemPrimaryPost,
   getWorkItemAttachmentDownloadUrl,
   getWorkItemAttachmentUploadUrl,
   getWorkItemAttachments,

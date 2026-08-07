@@ -274,6 +274,10 @@ function resolveMutationOperation(parsed, method, options) {
     rejectBody(options);
     return { operation: "workitem.restore", input: { itemKey: decodeSegment(restore[1]) } };
   }
+  const primaryPost = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/primary-post$/u);
+  if (method === "PATCH" && primaryPost) {
+    return { operation: "workitem.primarypostupdate", input: { itemKey: decodeSegment(primaryPost[1]), payload: commentPayload(options) } };
+  }
   const comments = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments$/u);
   if (method === "POST" && comments) {
     return { operation: "workitem.commentcreate", input: { itemKey: decodeSegment(comments[1]), payload: commentPayload(options) } };

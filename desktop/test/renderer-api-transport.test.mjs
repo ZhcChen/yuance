@@ -114,6 +114,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.setDefaultWorkItemSavedView(7);
   await client.deleteWorkItemSavedView(7);
   await client.updateWorkItem("DEMO-1", { title: "Updated", description: "Body", priority: "P1" });
+  await client.updateWorkItemPrimaryPost("DEMO-1", "<p>Updated</p>");
   await client.handoffWorkItem("DEMO-1", { status: "in_progress", assigneeUsername: "alice", body: "Please continue" });
   await client.restoreWorkItem("DEMO-1");
   await client.createWorkItemComment("DEMO-1", { body: "New comment" });
@@ -159,6 +160,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["workitem.savedviewdefault", { savedViewId: 7 }],
     ["workitem.savedviewdelete", { savedViewId: 7 }],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", priority: "P1" } }],
+    ["workitem.primarypostupdate", { itemKey: "DEMO-1", payload: { body: "<p>Updated</p>", bodyFormat: "html" } }],
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Please continue" } }],
     ["workitem.restore", { itemKey: "DEMO-1" }],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "New comment", bodyFormat: "plain" } }],

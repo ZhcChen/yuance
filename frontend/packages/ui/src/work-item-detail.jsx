@@ -1,6 +1,7 @@
 // @ts-check
 
 import React from 'react';
+import { RichTextContent, RichTextEditor } from './rich-text.jsx';
 
 /**
  * @typedef {object} WorkItemDetail
@@ -30,6 +31,7 @@ import React from 'react';
 /**
  * @param {{
  *   item: WorkItemDetail,
+ *   primaryPost: { id: number, body: string, body_format: string } | null,
  *   editForm: EditForm,
  *   handoffForm: HandoffForm,
  *   statusOptions: { value: string, label: string }[],
@@ -54,6 +56,7 @@ import React from 'react';
  *   parentHref: string,
  *   onOpenParent: (event: import('react').MouseEvent<HTMLAnchorElement>) => void,
  *   onChangeEdit: (event: FieldChangeEvent) => void,
+ *   onChangeDescription: (value: string) => void,
  *   onChangeHandoff: (event: FieldChangeEvent) => void,
  *   onSubmitEdit: (event: import('react').FormEvent<HTMLFormElement>) => void,
  *   onSubmitHandoff: (event: import('react').FormEvent<HTMLFormElement>) => void,
@@ -62,6 +65,7 @@ import React from 'react';
  */
 export function WorkItemDetail({
   item,
+  primaryPost,
   editForm,
   handoffForm,
   statusOptions,
@@ -86,6 +90,7 @@ export function WorkItemDetail({
   parentHref,
   onOpenParent,
   onChangeEdit,
+  onChangeDescription,
   onChangeHandoff,
   onSubmitEdit,
   onSubmitHandoff,
@@ -103,7 +108,7 @@ export function WorkItemDetail({
       <section className="work-item-detail-grid">
         <article className="work-item-detail-panel">
           <h3>描述</h3>
-          <p className="work-item-detail-description">{item.description || '暂无描述。'}</p>
+          <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" />
         </article>
         <article className="work-item-detail-panel">
           <h3>关键信息</h3>
@@ -130,7 +135,7 @@ export function WorkItemDetail({
           <h3>编辑工作项</h3>
           <form className="work-item-action-form" onSubmit={onSubmitEdit}>
             <label className="work-item-form-field work-item-form-field-wide"><span>标题</span><input name="title" value={editForm.title} onChange={onChangeEdit} required /></label>
-            <label className="work-item-form-field work-item-form-field-wide"><span>描述</span><textarea name="description" rows={4} value={editForm.description} onChange={onChangeEdit} /></label>
+            <div className="work-item-form-field work-item-form-field-wide"><span>主内容</span><RichTextEditor id="work-item-primary-post" value={editForm.description} disabled={mutationBusy} label="主内容" onChange={onChangeDescription} /></div>
             <label className="work-item-form-field"><span>状态</span><select name="status" value={editForm.status} onChange={onChangeEdit}>{statusOptions.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>
             <label className="work-item-form-field"><span>优先级</span><select name="priority" value={editForm.priority} onChange={onChangeEdit}>{priorityOptions.map((priority) => <option key={priority} value={priority}>{priority}</option>)}</select></label>
             <label className="work-item-form-field"><span>处理人</span><select name="assigneeUsername" value={editForm.assigneeUsername} onChange={onChangeEdit}><option value="">未分配</option>{assigneeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>

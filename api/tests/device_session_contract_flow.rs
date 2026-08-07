@@ -455,6 +455,7 @@ fn openapi_freezes_d2_device_business_allowlist() {
         "POST /api/v1/work-items/batch",
         "GET /api/v1/work-items/{item_key}",
         "PATCH /api/v1/work-items/{item_key}",
+        "PATCH /api/v1/work-items/{item_key}/primary-post",
         "POST /api/v1/work-items/{item_key}/restore",
         "POST /api/v1/work-items/{item_key}/handoff",
         "GET /api/v1/work-items/{item_key}/events",
