@@ -134,8 +134,8 @@ function sanitize(handler) {
 function parseAttachmentUpload(value, target) {
   const inputKeys = target === "comment" ? ["commentId", "fileCapability", "itemKey"] : target === "project" ? ["fileCapability", "projectKey"] : target === "resource" ? ["fileCapability", "projectKey", "resourceId"] : ["fileCapability", "itemKey"];
   const actualKeys = isPlainObject(value?.input) ? Object.keys(value.input) : [];
-  const validProjectKeys = ["project", "resource"].includes(target) && sameKeys(value.input, ["attachmentId", ...inputKeys]);
-  if (!isPlainObject(value) || !sameKeys(value, ["input", "operationId"]) || !OPERATION_ID.test(value.operationId) || !isPlainObject(value.input) || (!sameKeys(value.input, inputKeys) && !validProjectKeys) || typeof value.input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(value.input.fileCapability) || (actualKeys.includes("attachmentId") && (!Number.isSafeInteger(value.input.attachmentId) || value.input.attachmentId < 1))) throw new TypeError("attachment upload request is invalid");
+  const validRetryKeys = ["workitem", "project", "resource"].includes(target) && sameKeys(value.input, ["attachmentId", ...inputKeys]);
+  if (!isPlainObject(value) || !sameKeys(value, ["input", "operationId"]) || !OPERATION_ID.test(value.operationId) || !isPlainObject(value.input) || (!sameKeys(value.input, inputKeys) && !validRetryKeys) || typeof value.input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(value.input.fileCapability) || (actualKeys.includes("attachmentId") && (!Number.isSafeInteger(value.input.attachmentId) || value.input.attachmentId < 1))) throw new TypeError("attachment upload request is invalid");
   return Object.freeze({ operationId: value.operationId, fileCapability: value.input.fileCapability, reference: attachmentReference(value.input, target, actualKeys.includes("attachmentId")) });
 }
 function parseAttachmentDownload(value, target) {

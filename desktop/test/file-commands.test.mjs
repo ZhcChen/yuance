@@ -85,6 +85,13 @@ test("project attachment upload accepts a bounded retry attachment id", async ()
   assert.equal(value.calls.some(([name, input]) => name === "project-attachment-upload" && input.attachmentId === 9), true);
 });
 
+test("work item attachment upload accepts a bounded retry attachment id", async () => {
+  const value = fixture();
+  const operationId = "12345678-1234-4123-8123-123456789abc";
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.uploadWorkItemAttachment)(value.event, { operationId, input: { itemKey: "YCE-TASK-2", attachmentId: 9, fileCapability: `yfc_${"a".repeat(32)}` } }), { created: attachment("pending"), uploaded: attachment("uploaded") });
+  assert.equal(value.calls.some(([name, input]) => name === "attachment-upload" && input.attachmentId === 9), true);
+});
+
 test("reveal command binds the opaque capability to the current sender", async () => {
   const value = fixture();
   const capability = `yrd_${"b".repeat(32)}`;

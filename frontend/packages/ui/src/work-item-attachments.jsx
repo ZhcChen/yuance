@@ -59,26 +59,26 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
 }
 
 /**
- * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, downloadingId: number | null, revealableId?: number | null, onChooseUpload: () => void, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void }} props
+ * @param {{ attachments: Attachment[], status: string, warning: string, error: string, uploading: boolean, mutationBusy: boolean, canUpload: boolean, downloadingId: number | null, revealableId?: number | null, onChooseUpload: () => void, onRetryUpload: (attachment: Attachment) => void, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void }} props
  */
-export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, downloadingId, revealableId = null, onChooseUpload, onDownload, onReveal }) {
+export function WorkItemAttachments({ attachments, status, warning, error, uploading, mutationBusy, canUpload, downloadingId, revealableId = null, onChooseUpload, onRetryUpload, onDownload, onReveal }) {
   return (
     <section className="work-item-attachments-panel" aria-labelledby="work-item-attachments-title">
       <div className="yuance-ui-panel-header">
         <h3 id="work-item-attachments-title">工作项附件</h3>
         <span className="yuance-ui-meta">共 {attachments.length} 个</span>
       </div>
-      <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
+      {canUpload ? <form className="work-item-attachment-upload" onSubmit={(event) => event.preventDefault()}>
         <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onChooseUpload} disabled={uploading || mutationBusy}>
           {uploading ? '处理中…' : '选择工作项附件'}
         </button>
         <p className="yuance-ui-muted">选择文件后会自动登记、直传对象存储并刷新附件列表。</p>
-      </form>
+      </form> : null}
       {status ? <p className="work-item-attachment-status" aria-live="polite">{status}</p> : null}
       {warning ? <p className="work-item-attachment-warning" aria-live="polite">{warning}</p> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {attachments.length ? (
-        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} revealableId={revealableId} onDownload={onDownload} onReveal={onReveal} showCreator />
+        <AttachmentList attachments={attachments} downloadLabel="附件" downloadingId={downloadingId} revealableId={revealableId} onDownload={onDownload} onReveal={onReveal} showCreator renderExtraAction={(attachment) => canUpload && ['pending', 'failed'].includes(attachment.status) ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onRetryUpload(attachment)} disabled={uploading || mutationBusy}>继续上传</button> : null} />
       ) : <p className="yuance-ui-empty">当前没有工作项附件。</p>}
     </section>
   );

@@ -1660,6 +1660,20 @@ test('work item attachments can list download and upload for item and comments',
   expect(downloadUrlRequests[1]).toContain('/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/download-url');
   await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[1] || '')).toContain('/signed-download/comment-901-811');
 
+  await chooseFile(page, attachmentPanel.getByRole('button', { name: '继续上传' }), {
+    name: 'pending-dump.zip',
+    mimeType: 'application/zip',
+    buffer: Buffer.alloc(4096, 1),
+  });
+  await expect.poll(() => workItemAttachments.find((attachment) => attachment.id === 802)?.status).toBe('uploaded');
+  expect(workItemCreateRequests).toHaveLength(0);
+  expect(uploadStages.filter((stage) => stage.includes('work-item:802') || stage === 'put:work-item-802')).toEqual([
+    'sign:work-item:802',
+    'put:work-item-802',
+    'mark:work-item:802',
+  ]);
+  await expect(attachmentPanel.getByRole('button', { name: '下载附件 pending-dump.zip' })).toBeVisible();
+
   await chooseFile(page, attachmentPanel.getByRole('button', { name: '选择工作项附件' }), {
     name: 'web-upload.txt',
     mimeType: 'text/plain',

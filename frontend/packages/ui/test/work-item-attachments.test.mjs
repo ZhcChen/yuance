@@ -29,8 +29,10 @@ test('work item attachments render content, status and callbacks as controls', (
     error: '刷新失败。',
     uploading: false,
     mutationBusy: false,
+    canUpload: true,
     downloadingId: null,
     onChooseUpload: () => {},
+    onRetryUpload: () => {},
     onDownload: () => {},
   }));
 
@@ -49,8 +51,10 @@ test('work item attachments render an explicit empty state', () => {
     error: '',
     uploading: false,
     mutationBusy: false,
+    canUpload: true,
     downloadingId: null,
     onChooseUpload: () => {},
+    onRetryUpload: () => {},
     onDownload: () => {},
   }));
 
@@ -59,8 +63,25 @@ test('work item attachments render an explicit empty state', () => {
 
 test('work item attachments expose reveal only for the capability-bound row', () => {
   const html = renderToStaticMarkup(createElement(WorkItemAttachments, {
-    attachments: [attachment], status: '下载完成。', warning: '', error: '', uploading: false, mutationBusy: false,
-    downloadingId: null, revealableId: attachment.id, onChooseUpload: () => {}, onDownload: () => {}, onReveal: () => {},
+    attachments: [attachment], status: '下载完成。', warning: '', error: '', uploading: false, mutationBusy: false, canUpload: true,
+    downloadingId: null, revealableId: attachment.id, onChooseUpload: () => {}, onRetryUpload: () => {}, onDownload: () => {}, onReveal: () => {},
   }));
   assert.match(html, /在文件夹中显示/);
+});
+
+test('work item attachments expose retries only to writers', () => {
+  const pending = { ...attachment, status: 'pending' };
+  const writable = renderToStaticMarkup(createElement(WorkItemAttachments, {
+    attachments: [pending], status: '', warning: '', error: '', uploading: false, mutationBusy: false, canUpload: true,
+    downloadingId: null, onChooseUpload: () => {}, onRetryUpload: () => {}, onDownload: () => {},
+  }));
+  assert.match(writable, /选择工作项附件/);
+  assert.match(writable, /继续上传/);
+
+  const readonly = renderToStaticMarkup(createElement(WorkItemAttachments, {
+    attachments: [pending], status: '', warning: '', error: '', uploading: false, mutationBusy: false, canUpload: false,
+    downloadingId: null, onChooseUpload: () => {}, onRetryUpload: () => {}, onDownload: () => {},
+  }));
+  assert.doesNotMatch(readonly, /选择工作项附件/);
+  assert.doesNotMatch(readonly, /继续上传/);
 });

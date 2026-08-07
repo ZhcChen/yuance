@@ -287,6 +287,30 @@ test('work item attachment upload follows register sign upload confirm refresh o
   assert.equal(result.uploaded, uploaded);
 });
 
+test('work item attachment retry skips registration and reuses the pending record', async () => {
+  const events = [];
+  const pending = { id: 9, status: 'pending' };
+  const uploaded = { id: 9, status: 'uploaded' };
+  await uploadWorkItemAttachment({
+    api: {
+      createWorkItemAttachment: async () => { throw new Error('retry must not register'); },
+      getWorkItemAttachmentUploadUrl: async (itemKey, attachmentId) => { events.push(['sign', itemKey, attachmentId]); return { request: {}, expires_in_seconds: 300 }; },
+      markWorkItemAttachmentUploaded: async (itemKey, attachmentId) => { events.push(['confirm', itemKey, attachmentId]); return uploaded; },
+    },
+    platform: attachmentPlatform(events), itemKey: 'YCE-TASK-2', existingAttachment: pending,
+    file: { capability: /** @type {FileCapability} */ ({}), filename: 'report.txt', contentType: 'text/plain', byteSize: 12 },
+    lifecycle: {
+      isCurrent: () => true,
+      onStage: (stage) => events.push(['stage', stage]),
+      onCreated: () => { throw new Error('retry must not create UI state'); },
+      onUploaded: (attachment) => events.push(['uploaded', attachment]),
+    },
+  });
+  assert.equal(events.some((event) => event[1] === 'registering'), false);
+  assert.deepEqual(events[0], ['stage', 'signing']);
+  assert.deepEqual(events.at(-1), ['uploaded', uploaded]);
+});
+
 test('project attachment retry skips registration and reuses the pending record', async () => {
   const events = [];
   const pending = { id: 9, status: 'pending' };

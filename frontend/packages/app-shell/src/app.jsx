@@ -2869,7 +2869,8 @@ export function SharedApp({ services }) {
     }
   }
 
-  async function uploadSelectedWorkItemAttachment() {
+  /** @param {AppAttachment | null} [existingAttachment] */
+  async function uploadSelectedWorkItemAttachment(existingAttachment = null) {
     if (!activeWorkItemDetail || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
       return;
     }
@@ -2906,6 +2907,18 @@ export function SharedApp({ services }) {
       return;
     }
 
+    if (existingAttachment && (
+      file.filename !== existingAttachment.filename
+      || file.contentType !== existingAttachment.content_type
+      || file.byteSize !== existingAttachment.byte_size
+    )) {
+      setWorkItemAttachmentActionError('重试文件必须与原附件的名称、类型和大小一致。');
+      setWorkItemAttachmentStatus(`${file.filename || '附件'} 未上传。`);
+      workItemAttachmentMutationRef.current = false;
+      setWorkItemAttachmentUploading(false);
+      return;
+    }
+
     const filename = file.filename || 'attachment.bin';
     let createdAttachment = /** @type {AppAttachment | null} */ (null);
     let uploadStage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ ('registering');
@@ -2917,6 +2930,7 @@ export function SharedApp({ services }) {
         platform: files,
         itemKey,
         file,
+        existingAttachment,
         lifecycle: {
           isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
           onStage: (stage) => {
@@ -4460,9 +4474,11 @@ export function SharedApp({ services }) {
                     error={workItemAttachmentActionError}
                     uploading={workItemAttachmentUploading}
                     mutationBusy={workItemMutationSubmitting}
+                    canUpload={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
                     downloadingId={workItemAttachmentDownloadingId}
                     revealableId={workItemAttachmentReveal?.attachmentId || null}
                     onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
+                    onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
                     onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
                     onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
                   />

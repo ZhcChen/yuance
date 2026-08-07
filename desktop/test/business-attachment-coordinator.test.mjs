@@ -59,6 +59,15 @@ test("retries a project attachment without creating a duplicate record", async (
   assert.equal(calls.some(([name, input]) => name === "attachment.projectuploadsign" && input.attachmentId === 9), true);
 });
 
+test("retries a work item attachment without creating a duplicate record", async () => {
+  const calls = [];
+  const stages = [];
+  await fixture({ calls }).uploadWorkItemAttachment({ itemKey: "YCE-TASK-2", attachmentId: 9, fileCapability: capability, binding, onStage: (stage) => stages.push(stage), signal: undefined });
+  assert.deepEqual(stages, ["signing", "uploading", "confirming"]);
+  assert.equal(calls.some(([name]) => name === "attachment.workitemcreate"), false);
+  assert.equal(calls.some(([name, input]) => name === "attachment.workitemuploadsign" && input.attachmentId === 9), true);
+});
+
 test("fails closed on signed metadata drift before issuing a grant", async () => {
   const calls = [];
   const coordinator = fixture({ calls, signedAttachment: { ...attachment("pending"), byte_size: 13 } });

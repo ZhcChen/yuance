@@ -194,16 +194,18 @@ async function uploadAttachment({ create, sign, confirm, platform, file, existin
  *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
  *   itemKey: string,
  *   file: SelectedFile,
+ *   existingAttachment?: T | null,
  *   lifecycle: AttachmentLifecycle<T>,
  * }} options
  */
-export function uploadWorkItemAttachment({ api, platform, itemKey, file, lifecycle }) {
+export function uploadWorkItemAttachment({ api, platform, itemKey, file, existingAttachment = null, lifecycle }) {
   const attachments = platform.attachments;
   if (typeof attachments?.uploadWorkItemAttachment === 'function') {
     return uploadDelegatedAttachment({
       execute: (onStage) => attachments.uploadWorkItemAttachment({
         itemKey,
         fileCapability: file.capability,
+        ...(existingAttachment ? { attachmentId: existingAttachment.id } : {}),
       }, onStage),
       lifecycle,
     });
@@ -214,6 +216,7 @@ export function uploadWorkItemAttachment({ api, platform, itemKey, file, lifecyc
     confirm: (attachment) => api.markWorkItemAttachmentUploaded(itemKey, attachment.id),
     platform,
     file,
+    existing: existingAttachment || undefined,
     lifecycle,
   });
 }

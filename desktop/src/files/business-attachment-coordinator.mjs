@@ -140,7 +140,7 @@ function parseUploadInput(target, input) {
     ? ["binding", "commentId", "fileCapability", "itemKey", "onStage", "signal"]
     : target === "project" ? ["binding", "fileCapability", "onStage", "projectKey", "signal"]
       : target === "resource" ? ["binding", "fileCapability", "onStage", "projectKey", "resourceId", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
-  const retryAllowed = ["project", "resource"].includes(target) && sameKeys(input, [...allowed, "attachmentId"]);
+  const retryAllowed = ["workitem", "project", "resource"].includes(target) && sameKeys(input, [...allowed, "attachmentId"]);
   if (!retryAllowed) exactInput(input, allowed);
   if (typeof input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(input.fileCapability) || typeof input.onStage !== "function" || (retryAllowed && (!Number.isSafeInteger(input.attachmentId) || input.attachmentId < 1))) throw new TypeError("Attachment upload input is invalid");
   validateBinding(input.binding);
