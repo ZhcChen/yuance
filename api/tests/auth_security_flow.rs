@@ -200,6 +200,32 @@ async fn web_app_project_owner_preserves_deep_link_query_for_unauthenticated_req
 }
 
 #[tokio::test]
+async fn web_app_work_item_list_owner_preserves_filter_query_for_unauthenticated_request() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/tasks?status=pending&priority=P0&page=2&per_page=20")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Ftasks%3Fstatus%3Dpending%26priority%3DP0%26page%3D2%26per_page%3D20"
+    );
+}
+
+#[tokio::test]
 async fn login_submit_rejects_missing_csrf() {
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;

@@ -295,6 +295,22 @@ test('app-owner task list can filter and open read-only work item detail', async
   await expect(page.getByRole('heading', { level: 3, name: '评论与流转' })).toBeVisible();
 });
 
+test('formal web task list keeps web route ownership while filtering', async ({ page }) => {
+  await login(page, '/web/tasks?q=%E6%A8%A1%E5%9E%8B');
+  await expect(page).toHaveURL(/\/web\/tasks\?q=/);
+  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
+
+  const filters = page.locator('.work-item-filter-bar');
+  await filters.locator('select[name="sort"]').selectOption('priority_desc');
+  await filters.getByRole('button', { name: '筛选' }).click();
+  await expect(page).toHaveURL(/\/web\/tasks\?.*sort=priority_desc/);
+  await expect(page).not.toHaveURL(/\/web\/app\/tasks/);
+
+  await filters.getByRole('button', { name: '重置' }).click();
+  await expect(page).toHaveURL('/web/tasks?clear_default=true');
+});
+
 test('shared work item saved views create restore rename and delete', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');

@@ -4882,8 +4882,20 @@ pub async fn work_items_create(
 pub async fn requirements_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<WorkItemListQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     work_item_list_page(
         state,
         &headers,
@@ -4897,8 +4909,20 @@ pub async fn requirements_page(
 pub async fn tasks_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<WorkItemListQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     work_item_list_page(
         state,
         &headers,
@@ -4912,8 +4936,20 @@ pub async fn tasks_page(
 pub async fn bugs_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<WorkItemListQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     work_item_list_page(
         state,
         &headers,

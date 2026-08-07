@@ -97,6 +97,17 @@ test('完成态清单不得留下空页面或动作基线', async () => {
   }
 });
 
+test('切换态清单必须登记开关和回滚测试证据', async () => {
+  const manifest = await readJson(manifestUrl);
+
+  for (const entry of [...manifest.pages, ...manifest.actions]) {
+    if (entry.status !== 'cutover') continue;
+    assert.ok(entry.evidence.cutoverFlag, `${entry.id} 缺少 cutoverFlag`);
+    assert.ok(entry.evidence.rollbackTest, `${entry.id} 缺少 rollbackTest`);
+    await access(new URL(`../../${entry.evidence.rollbackTest}`, import.meta.url));
+  }
+});
+
 test('所有旧 Web 交互标记均有受控分类', async () => {
   const [sourceInventory, classification] = await Promise.all([
     readJson(sourceInventoryUrl),

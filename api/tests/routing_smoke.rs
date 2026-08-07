@@ -529,7 +529,7 @@ async fn web_app_entry_serves_index_and_deep_links_without_cache() {
 }
 
 #[tokio::test]
-async fn web_shell_owner_serves_root_messages_and_project_routes_from_same_app_entry() {
+async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
     with_web_dist_dir(|dist_dir| async move {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
         fs::write(
@@ -566,15 +566,18 @@ async fn web_shell_owner_serves_root_messages_and_project_routes_from_same_app_e
             )
             .await
             .expect("router should respond");
-        let mut project_responses = Vec::new();
+        let mut migrated_route_responses = Vec::new();
         for uri in [
             "/web/projects?status=in_progress&page=2&per_page=20",
             "/web/projects/YCE?tab=library",
             "/web/projects/YCE/cycles/7",
             "/web/projects/YCE/resources/9?access=opaque-token",
             "/web/projects/YCE/my-analysis",
+            "/web/requirements?status=pending&page=2&per_page=20",
+            "/web/tasks?q=release&sort=priority_desc",
+            "/web/bugs?assignee_username=yuance_admin",
         ] {
-            project_responses.push(
+            migrated_route_responses.push(
                 app.clone()
                     .oneshot(
                         Request::builder()
@@ -596,14 +599,16 @@ async fn web_shell_owner_serves_root_messages_and_project_routes_from_same_app_e
 
         assert_eq!(root_response.status(), StatusCode::OK);
         assert_eq!(messages_response.status(), StatusCode::OK);
-        assert!(project_responses.iter().all(|response| response.status() == StatusCode::OK));
+        assert!(migrated_route_responses
+            .iter()
+            .all(|response| response.status() == StatusCode::OK));
         assert_eq!(
             root_response.headers().get(header::CACHE_CONTROL).unwrap(),
             "no-store, max-age=0, must-revalidate"
         );
         let root_body = response_body(root_response).await;
         assert_eq!(response_body(messages_response).await, root_body);
-        for response in project_responses {
+        for response in migrated_route_responses {
             assert_eq!(response_body(response).await, root_body);
         }
     })
