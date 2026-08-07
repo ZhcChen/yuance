@@ -430,6 +430,9 @@ fn openapi_freezes_d2_device_business_allowlist() {
     let expected = serde_json::json!([
         "GET /api/v1/auth/me",
         "GET /api/v1/projects",
+        "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview",
+        "GET /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
+        "HEAD /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
         "GET /api/v1/current-project",
         "PATCH /api/v1/current-project",
         "GET /api/v1/topbar/status",
@@ -468,6 +471,42 @@ fn openapi_freezes_d2_device_business_allowlist() {
     ] {
         assert!(!allowlist.iter().any(|entry| entry == forbidden));
     }
+}
+
+#[test]
+fn openapi_publishes_project_attachment_preview_metadata_and_range_content() {
+    let document: serde_json::Value =
+        serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
+            .expect("OpenAPI document should parse");
+    let preview =
+        &document["paths"]["/api/v1/projects/{project_key}/attachments/{attachment_id}/preview"];
+    assert_eq!(
+        preview["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ProjectAttachmentPreviewEnvelope"
+    );
+
+    let content = &document["paths"]["/api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content"];
+    assert_eq!(
+        content["get"]["parameters"][0]["$ref"],
+        "#/components/parameters/Range"
+    );
+    for method in ["get", "head"] {
+        for status in ["200", "206", "416"] {
+            assert!(
+                content[method]["responses"][status].is_object(),
+                "{method} {status}"
+            );
+        }
+        assert_eq!(
+            content[method]["responses"]["206"]["$ref"],
+            "#/components/responses/PreviewPartialContent"
+        );
+    }
+    assert_eq!(
+        document["components"]["responses"]["PreviewPartialContent"]["headers"]["Accept-Ranges"]["schema"]
+            ["const"],
+        "bytes"
+    );
 }
 
 async fn test_pool() -> SqlitePool {

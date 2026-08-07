@@ -86,12 +86,11 @@ fn is_memory_database(database_url: &str) -> bool {
     else {
         return false;
     };
-    serde_urlencoded::from_str::<Vec<(String, String)>>(query)
-        .is_ok_and(|pairs| {
-            pairs
-                .iter()
-                .any(|(key, value)| key == "mode" && value == "memory")
-        })
+    serde_urlencoded::from_str::<Vec<(String, String)>>(query).is_ok_and(|pairs| {
+        pairs
+            .iter()
+            .any(|(key, value)| key == "mode" && value == "memory")
+    })
 }
 
 impl From<sqlx::migrate::MigrateError> for AppError {
@@ -136,10 +135,8 @@ mod tests {
 
     #[test]
     fn named_memory_database_does_not_create_a_file_uri_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "yuance-db-memory-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("yuance-db-memory-test-{}", std::process::id()));
         let marker = root.join("file:device-session");
         ensure_sqlite_parent_dir(
             "sqlite:file:device-session?mode=memory&cache=shared",

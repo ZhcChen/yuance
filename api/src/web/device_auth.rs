@@ -3,7 +3,10 @@ use axum::{
     Form, Json,
     extract::{Extension, Query, State, rejection::JsonRejection},
     http::{HeaderMap, StatusCode, header},
-    response::{IntoResponse, Redirect, Response, sse::{Event, KeepAlive, Sse}},
+    response::{
+        IntoResponse, Redirect, Response,
+        sse::{Event, KeepAlive, Sse},
+    },
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -15,7 +18,7 @@ use crate::{
     web::{
         audit_context,
         response::{self, ApiEnvelope},
-        router::{app_release_version, AppState, DeviceAuthClientIp},
+        router::{AppState, DeviceAuthClientIp, app_release_version},
     },
 };
 
@@ -452,10 +455,11 @@ pub(crate) async fn device_session_control(
     let user_id = access.user_id;
     let release_version = app_release_version();
     let mut realtime = realtime::subscribe_user_realtime();
-    let (revalidation_interval, revalidation_timeout) = match state.settings.device_sessions.control_stream_timing() {
-        Ok(timing) => timing,
-        Err(error) => return no_store(error.into_response()),
-    };
+    let (revalidation_interval, revalidation_timeout) =
+        match state.settings.device_sessions.control_stream_timing() {
+            Ok(timing) => timing,
+            Err(error) => return no_store(error.into_response()),
+        };
     let mut shutdown = state.subscribe_device_stream_shutdown();
     let expires_in = (lease.access_expires_at - Utc::now())
         .to_std()
@@ -504,7 +508,11 @@ pub(crate) async fn device_session_control(
     };
     no_store(
         Sse::new(stream)
-            .keep_alive(KeepAlive::new().interval(Duration::from_secs(1)).text("keep-alive"))
+            .keep_alive(
+                KeepAlive::new()
+                    .interval(Duration::from_secs(1))
+                    .text("keep-alive"),
+            )
             .into_response(),
     )
 }

@@ -88,7 +88,10 @@ pub fn verify_test_storage_upload_grant(
     .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
     let grant: TestStorageUploadGrant = serde_json::from_str(&plaintext)
         .map_err(|_| AppError::Forbidden("测试对象存储上传授权无效或已过期".to_string()))?;
-    if grant.object_key != query.object_key || grant.user_id <= 0 || grant.expires_at <= Utc::now().timestamp() {
+    if grant.object_key != query.object_key
+        || grant.user_id <= 0
+        || grant.expires_at <= Utc::now().timestamp()
+    {
         return Err(AppError::Forbidden(
             "测试对象存储上传授权无效或已过期".to_string(),
         ));
@@ -144,7 +147,10 @@ pub fn verify_test_storage_download_grant(
     .map_err(|_| AppError::Forbidden("测试对象存储下载授权无效或已过期".to_string()))?;
     let grant: TestStorageDownloadGrant = serde_json::from_str(&plaintext)
         .map_err(|_| AppError::Forbidden("测试对象存储下载授权无效或已过期".to_string()))?;
-    if grant.object_key != query.object_key || grant.user_id <= 0 || grant.expires_at <= Utc::now().timestamp() {
+    if grant.object_key != query.object_key
+        || grant.user_id <= 0
+        || grant.expires_at <= Utc::now().timestamp()
+    {
         return Err(AppError::Forbidden(
             "测试对象存储下载授权无效或已过期".to_string(),
         ));

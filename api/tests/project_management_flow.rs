@@ -2604,10 +2604,11 @@ async fn api_v1_notification_target_and_read_endpoints_follow_semantic_contract(
         .await
         .expect("notifications should load")
         .remove(0);
-    let work_item_id = sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
-        .fetch_one(&pool)
-        .await
-        .expect("work item should exist");
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item should exist");
 
     sqlx::query(
         r#"
@@ -2646,7 +2647,10 @@ async fn api_v1_notification_target_and_read_endpoints_follow_semantic_contract(
         .expect("router should respond");
     assert_eq!(target_response.status(), StatusCode::OK);
     assert_eq!(
-        target_response.headers().get(header::CACHE_CONTROL).unwrap(),
+        target_response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .unwrap(),
         "private, no-store"
     );
     let target_body = response_body(target_response).await;
@@ -2691,7 +2695,10 @@ async fn api_v1_notification_target_and_read_endpoints_follow_semantic_contract(
         )
         .await
         .expect("router should respond");
-    assert_eq!(unauthorized_target_response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        unauthorized_target_response.status(),
+        StatusCode::UNAUTHORIZED
+    );
 
     let missing_csrf_response = app
         .clone()
@@ -4318,10 +4325,7 @@ async fn web_top_project_nav_points_to_current_project_detail() {
         .expect("router should respond");
     assert_eq!(current_project_response.status(), StatusCode::OK);
     let current_project_body = response_body(current_project_response).await;
-    assert!(
-        current_project_body
-            .contains(r#"data-topbar-project-link href="/web/projects/YCE""#)
-    );
+    assert!(current_project_body.contains(r#"data-topbar-project-link href="/web/projects/YCE""#));
 
     projects::clear_current_project(&pool, initialized.user_id)
         .await
@@ -6613,10 +6617,17 @@ async fn api_v1_search_returns_visible_paginated_results() {
     let data = &body["data"];
     assert_eq!(data["items"].as_array().map(Vec::len), Some(1));
     assert_eq!(data["pagination"]["per_page"], 1);
-    assert!(data["pagination"]["total_items"].as_i64().unwrap_or_default() > 0);
-    assert!(data["items"][0]["target"]
-        .as_str()
-        .is_some_and(|target| target.starts_with("/web/")));
+    assert!(
+        data["pagination"]["total_items"]
+            .as_i64()
+            .unwrap_or_default()
+            > 0
+    );
+    assert!(
+        data["items"][0]["target"]
+            .as_str()
+            .is_some_and(|target| target.starts_with("/web/"))
+    );
     assert!(data["items"][0].get("kind").is_some());
 
     let oversized = format!("/api/v1/search?q={}", "x".repeat(129));
@@ -12101,10 +12112,8 @@ async fn web_work_item_stable_spreadsheet_and_pptx_preview_stay_available() {
     .await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
 
-    for (attachment, preview_type) in [
-        (&xls_attachment, "spreadsheet"),
-        (&pptx_attachment, "pptx"),
-    ] {
+    for (attachment, preview_type) in [(&xls_attachment, "spreadsheet"), (&pptx_attachment, "pptx")]
+    {
         let response = app
             .clone()
             .oneshot(

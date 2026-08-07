@@ -820,6 +820,15 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::project_attachment_download_url),
         )
         .route(
+            "/api/v1/projects/{project_key}/attachments/{attachment_id}/preview",
+            get(web::api::project_attachment_preview),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content",
+            get(web::api::project_attachment_preview_content)
+                .head(web::api::project_attachment_preview_content),
+        )
+        .route(
             "/api/v1/projects/{project_key}/attachments/{attachment_id}",
             delete(web::api::project_attachment_delete),
         )

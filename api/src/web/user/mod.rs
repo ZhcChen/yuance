@@ -21,6 +21,10 @@ use crate::{
     platform::error::{AppError, AppResult},
     platform::{crypto, security::csrf},
     web::{
+        attachment_preview::{
+            AttachmentPreviewStrategy, file_type as attachment_preview_file_type,
+            strategy as attachment_preview_strategy,
+        },
         audit_context, response,
         router::{AppState, DeviceAuthClientIp},
         test_storage::bind_test_storage_download_grant,
@@ -1348,17 +1352,6 @@ struct DetailSequenceNavigation {
 struct DetailSequenceNavigationLink {
     title: String,
     url: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AttachmentPreviewStrategy {
-    Pdf,
-    Text,
-    Spreadsheet,
-    Docx,
-    Pptx,
-    LegacyDoc,
-    LegacyPpt,
 }
 
 #[derive(Template)]
@@ -11822,10 +11815,7 @@ fn document_preview_error_template(
 }
 
 fn is_experimental_preview_strategy(strategy: AttachmentPreviewStrategy) -> bool {
-    matches!(
-        strategy,
-        AttachmentPreviewStrategy::LegacyDoc | AttachmentPreviewStrategy::LegacyPpt
-    )
+    strategy.is_experimental()
 }
 
 fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy) -> String {
@@ -11850,27 +11840,11 @@ fn preview_hint_for_strategy(strategy: AttachmentPreviewStrategy) -> String {
 }
 
 fn document_preview_type_code(strategy: AttachmentPreviewStrategy) -> &'static str {
-    match strategy {
-        AttachmentPreviewStrategy::Pdf => "pdf",
-        AttachmentPreviewStrategy::Text => "text",
-        AttachmentPreviewStrategy::Spreadsheet => "spreadsheet",
-        AttachmentPreviewStrategy::Docx => "docx",
-        AttachmentPreviewStrategy::Pptx => "pptx",
-        AttachmentPreviewStrategy::LegacyDoc => "legacy-doc",
-        AttachmentPreviewStrategy::LegacyPpt => "legacy-ppt",
-    }
+    strategy.code()
 }
 
 fn document_preview_kind_label(strategy: AttachmentPreviewStrategy) -> &'static str {
-    match strategy {
-        AttachmentPreviewStrategy::Pdf => "PDF",
-        AttachmentPreviewStrategy::Text => "文本",
-        AttachmentPreviewStrategy::Spreadsheet => "表格",
-        AttachmentPreviewStrategy::Docx => "Word",
-        AttachmentPreviewStrategy::Pptx => "演示",
-        AttachmentPreviewStrategy::LegacyDoc => "Word",
-        AttachmentPreviewStrategy::LegacyPpt => "演示",
-    }
+    strategy.kind_label()
 }
 
 async fn attachment_document_preview_content_response(
@@ -14081,80 +14055,7 @@ fn is_document_preview_entry_enabled(
     strategy: AttachmentPreviewStrategy,
     legacy_preview_enabled: bool,
 ) -> bool {
-    !is_experimental_preview_strategy(strategy) || legacy_preview_enabled
-}
-
-fn attachment_preview_strategy(
-    filename: &str,
-    content_type: &str,
-) -> Option<AttachmentPreviewStrategy> {
-    let file_type = attachment_preview_file_type(filename, content_type)?;
-    match file_type {
-        "pdf" => Some(AttachmentPreviewStrategy::Pdf),
-        "csv" | "xls" | "xlsx" | "ods" => Some(AttachmentPreviewStrategy::Spreadsheet),
-        "txt" | "log" | "md" | "json" | "xml" | "yaml" | "yml" => {
-            Some(AttachmentPreviewStrategy::Text)
-        }
-        "docx" => Some(AttachmentPreviewStrategy::Docx),
-        "pptx" => Some(AttachmentPreviewStrategy::Pptx),
-        "doc" => Some(AttachmentPreviewStrategy::LegacyDoc),
-        "ppt" => Some(AttachmentPreviewStrategy::LegacyPpt),
-        _ => None,
-    }
-}
-
-fn attachment_preview_file_type(filename: &str, content_type: &str) -> Option<&'static str> {
-    match normalized_attachment_extension(filename).as_deref() {
-        Some("doc") => Some("doc"),
-        Some("docx") => Some("docx"),
-        Some("txt") => Some("txt"),
-        Some("log") => Some("log"),
-        Some("md") => Some("md"),
-        Some("json") => Some("json"),
-        Some("xml") => Some("xml"),
-        Some("yaml") => Some("yaml"),
-        Some("yml") => Some("yml"),
-        Some("xls") => Some("xls"),
-        Some("xlsx") => Some("xlsx"),
-        Some("csv") => Some("csv"),
-        Some("ods") => Some("ods"),
-        Some("ppt") => Some("ppt"),
-        Some("pptx") => Some("pptx"),
-        Some("pdf") => Some("pdf"),
-        _ => attachment_preview_file_type_from_content_type(content_type),
-    }
-}
-
-fn normalized_attachment_extension(filename: &str) -> Option<String> {
-    let (_, extension) = filename.trim().rsplit_once('.')?;
-    let extension = extension.trim().to_ascii_lowercase();
-    if extension.is_empty() {
-        None
-    } else {
-        Some(extension)
-    }
-}
-
-fn attachment_preview_file_type_from_content_type(content_type: &str) -> Option<&'static str> {
-    match content_type.trim().to_ascii_lowercase().as_str() {
-        "application/msword" => Some("doc"),
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => Some("docx"),
-        "application/vnd.ms-excel" => Some("xls"),
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => Some("xlsx"),
-        "application/vnd.oasis.opendocument.spreadsheet" => Some("ods"),
-        "application/vnd.ms-powerpoint"
-        | "application/powerpoint"
-        | "application/x-mspowerpoint" => Some("ppt"),
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => Some("pptx"),
-        "application/pdf" => Some("pdf"),
-        "text/plain" => Some("txt"),
-        "text/markdown" => Some("md"),
-        "text/csv" => Some("csv"),
-        "application/json" => Some("json"),
-        "application/xml" | "text/xml" => Some("xml"),
-        "application/yaml" | "application/x-yaml" | "text/yaml" | "text/x-yaml" => Some("yaml"),
-        _ => None,
-    }
+    strategy.is_enabled(legacy_preview_enabled)
 }
 
 fn user_contact(email: String, mobile: String) -> String {

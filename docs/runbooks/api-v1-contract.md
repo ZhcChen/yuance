@@ -84,6 +84,16 @@ GET  /api/v1/device-file-transfer/canary/download
 GET  /api/v1/me/tokens
 POST /api/v1/me/tokens
 DELETE /api/v1/me/tokens/{token_id}
+GET   /api/v1/me/profile
+PATCH /api/v1/me/profile
+PATCH /api/v1/me/password
+```
+
+已登录用户管理自己的设备会话：
+
+```text
+GET    /api/v1/me/device-sessions
+DELETE /api/v1/me/device-sessions/{family_id}
 ```
 
 初始化请求：
@@ -280,6 +290,7 @@ GET   /api/v1/topbar/events
 - 程序化调用方如果需要特定项目列表，应显式传 `project_key`。
 - `GET /api/v1/topbar/status` 返回顶部需求 / 任务 / Bug、当前项目和消息角标的当前快照。
 - `GET /api/v1/topbar/events` 返回 SSE 事件流，用于顶部角标、消息数和项目切换相关的实时推送。
+- `GET /api/v1/search` 按当前用户权限范围搜索项目与工作项。
 
 ## 项目
 
@@ -364,6 +375,16 @@ viewer
 - 添加、调整、移除成员：需要 `project.manage`，且当前用户具备项目成员管理权限。
 - `completed`、`on_hold`、`cancelled`、`archived` 项目会阻止成员新增、调整和移除。
 - 如果成员仍负责未关闭工作项，移除会返回 `400 bad_request`，需要先转交或关闭相关工作项。
+
+## 项目周期
+
+```text
+GET   /api/v1/projects/{project_key}/cycles
+POST  /api/v1/projects/{project_key}/cycles
+GET   /api/v1/projects/{project_key}/cycles/{cycle_id}
+PATCH /api/v1/projects/{project_key}/cycles/{cycle_id}
+POST  /api/v1/projects/{project_key}/cycles/{cycle_id}/close
+```
 
 ## 项目资料库
 
@@ -624,10 +645,15 @@ POST   /api/v1/projects/{project_key}/attachments
 GET    /api/v1/projects/{project_key}/attachments/{attachment_id}/upload-url
 POST   /api/v1/projects/{project_key}/attachments/{attachment_id}/uploaded
 GET    /api/v1/projects/{project_key}/attachments/{attachment_id}/download-url
+GET    /api/v1/projects/{project_key}/attachments/{attachment_id}/preview
+GET    /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content
+HEAD   /api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content
 DELETE /api/v1/projects/{project_key}/attachments/{attachment_id}
 ```
 
 `DELETE` 项目附件接口为兼容 HTTP 语义保留，业务效果是归档附件：记录保留、状态码仍为 `deleted`，页面和 API 不再生成下载签名。
+
+预览元数据返回图片、视频或文档分类、内容能力和同项目可预览附件前后项。内容接口支持单段 `Range`；完整内容返回 `200`，有效范围返回 `206`，不可满足范围返回 `416`。`HEAD` 只返回长度、类型和 Range 响应头，不读取对象内容。
 
 项目文件夹：
 
@@ -861,8 +887,12 @@ GET    /api/v1/system/releases
 POST   /api/v1/system/releases
 GET    /api/v1/system/releases/{release_id}
 PATCH  /api/v1/system/releases/{release_id}
+POST   /api/v1/system/releases/{release_id}/verify
+POST   /api/v1/system/releases/{release_id}/withdraw
+PATCH  /api/v1/system/releases/{release_id}/withdrawal
 POST   /api/v1/system/releases/{release_id}/assets
 GET    /api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url
+GET    /api/v1/system/releases/{release_id}/assets/{asset_id}/download-url
 POST   /api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded
 DELETE /api/v1/system/releases/{release_id}/assets/{asset_id}
 ```

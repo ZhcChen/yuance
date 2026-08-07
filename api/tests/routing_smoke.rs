@@ -596,8 +596,11 @@ async fn web_app_assets_use_immutable_cache_and_missing_assets_404() {
             "<!doctype html><html><body><div id=\"root\"></div></body></html>",
         )
         .expect("index should write");
-        fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
-            .expect("asset should write");
+        fs::write(
+            dist_dir.join("assets/index-abc123.js"),
+            "console.log('ok');",
+        )
+        .expect("asset should write");
 
         let app = build_router(AppState::for_tests());
         let response = app

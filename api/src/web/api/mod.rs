@@ -2,9 +2,9 @@ use axum::{
     Json,
     body::Bytes,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, Method, StatusCode, header},
     response::{
-        AppendHeaders, IntoResponse,
+        AppendHeaders, IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
 };
@@ -22,7 +22,7 @@ use crate::{
         security::csrf,
     },
     web::{
-        audit_context,
+        attachment_preview, audit_context,
         response::{ApiEnvelope, json},
         router::{AppState, app_release_version},
         test_storage::{
@@ -857,6 +857,41 @@ pub struct AttachmentSignedUrlPayload {
     pub expires_in_seconds: u64,
     pub expires_at: String,
     pub checksum_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectAttachmentPreviewPayload {
+    pub attachment: AttachmentPayload,
+    pub preview: AttachmentPreviewPayload,
+    pub navigation: AttachmentPreviewNavigationPayload,
+    pub content_url: String,
+    pub download_url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentPreviewPayload {
+    pub kind: Option<&'static str>,
+    pub strategy: Option<&'static str>,
+    pub file_type: Option<&'static str>,
+    pub kind_label: Option<&'static str>,
+    pub is_experimental: bool,
+    pub legacy_preview_enabled: bool,
+    pub content_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentPreviewNavigationPayload {
+    pub position: usize,
+    pub total: usize,
+    pub previous: Option<AttachmentPreviewNavigationLinkPayload>,
+    pub next: Option<AttachmentPreviewNavigationLinkPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AttachmentPreviewNavigationLinkPayload {
+    pub id: i64,
+    pub title: String,
+    pub url: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -2295,7 +2330,8 @@ pub async fn get_project_cycle(
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     let cycle = projects::get_project_cycle(pool, project.id, cycle_id).await?;
-    let work_items = projects::list_project_cycle_work_item_snapshots(pool, project.id, cycle_id).await?;
+    let work_items =
+        projects::list_project_cycle_work_item_snapshots(pool, project.id, cycle_id).await?;
     Ok(json(project_cycle_payload(cycle, work_items)))
 }
 
@@ -2315,7 +2351,9 @@ pub async fn create_project_cycle(
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, user, project.id).await?;
-    let cycle = projects::create_project_cycle(pool, user.id, &project_key, cycle_create_input(payload)).await?;
+    let cycle =
+        projects::create_project_cycle(pool, user.id, &project_key, cycle_create_input(payload))
+            .await?;
     audit::record(
         pool,
         Some(user.id),
@@ -2325,7 +2363,10 @@ pub async fn create_project_cycle(
         &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
     )
     .await?;
-    Ok((StatusCode::CREATED, json(project_cycle_payload(cycle, Vec::new()))))
+    Ok((
+        StatusCode::CREATED,
+        json(project_cycle_payload(cycle, Vec::new())),
+    ))
 }
 
 pub async fn update_project_cycle(
@@ -2345,7 +2386,8 @@ pub async fn update_project_cycle(
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, user, project.id).await?;
     let input = cycle_update_input(payload);
-    let cycle = projects::update_project_cycle(pool, user.id, &project_key, cycle_id, input).await?;
+    let cycle =
+        projects::update_project_cycle(pool, user.id, &project_key, cycle_id, input).await?;
     audit::record(
         pool,
         Some(user.id),
@@ -3302,6 +3344,154 @@ pub async fn project_attachment_download_url(
     .await?;
 
     Ok(json(payload))
+}
+
+pub async fn project_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let navigation = project_attachment_preview_navigation(
+        files::list_attachments(pool, "project", project.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        &project_key,
+    );
+    let content_url =
+        format!("/api/v1/projects/{project_key}/attachments/{attachment_id}/preview/content");
+    let download_url =
+        format!("/api/v1/projects/{project_key}/attachments/{attachment_id}/download-url");
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "project",
+        &project_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url,
+        download_url,
+    }))
+}
+
+pub async fn project_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((project_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "project", project.id).await?;
+    ensure_attachment_preview_content_enabled(
+        &attachment,
+        state.settings.experimental_legacy_preview_enabled(),
+    )?;
+    let (stored_content_type, total_u64) =
+        storage::stat_object(pool, &state.settings, &attachment.object_key).await?;
+    let total = usize::try_from(total_u64)
+        .map_err(|_| AppError::BadRequest("附件大小超出当前预览能力".to_string()))?;
+    let range = match headers.get(header::RANGE) {
+        Some(value) => match parse_single_byte_range(value.to_str().unwrap_or_default(), total) {
+            Some(range) => Some(range),
+            None => return Ok(range_not_satisfiable_response(total)?),
+        },
+        None => None,
+    };
+    let (status, start, end) = match range {
+        Some((start, end)) => (StatusCode::PARTIAL_CONTENT, start, end),
+        None => (StatusCode::OK, 0, total.saturating_sub(1)),
+    };
+    let selected_length = if total == 0 { 0 } else { end - start + 1 };
+    let body = if method == Method::HEAD || selected_length == 0 {
+        Bytes::new()
+    } else if status == StatusCode::PARTIAL_CONTENT {
+        Bytes::from(
+            storage::read_object_range(
+                pool,
+                &state.settings,
+                &attachment.object_key,
+                start as u64,
+                (end + 1) as u64,
+            )
+            .await?,
+        )
+    } else {
+        let (_, content) =
+            storage::read_object(pool, &state.settings, &attachment.object_key).await?;
+        Bytes::from(content)
+    };
+    let mut response = (status, body).into_response();
+    let response_headers = response.headers_mut();
+    response_headers.insert(header::CONTENT_TYPE, stored_content_type.parse()?);
+    response_headers.insert(header::CONTENT_LENGTH, selected_length.to_string().parse()?);
+    response_headers.insert(header::ACCEPT_RANGES, "bytes".parse()?);
+    response_headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    response_headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
+    response_headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'none'; sandbox".parse()?,
+    );
+    response_headers.insert(header::CONTENT_DISPOSITION, "inline".parse()?);
+    if status == StatusCode::PARTIAL_CONTENT {
+        response_headers.insert(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{total}").parse()?,
+        );
+    }
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview.content",
+        "project",
+        &project_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+    Ok(response)
 }
 
 pub async fn project_attachment_delete(
@@ -6289,6 +6479,126 @@ fn attachment_payload(attachment: files::FileAttachmentSummary) -> AttachmentPay
         created_by: attachment.created_by_display_name,
         created_at: attachment.created_at,
     }
+}
+
+fn project_attachment_preview_navigation(
+    attachments: Vec<files::FileAttachmentSummary>,
+    current_attachment_id: i64,
+    legacy_preview_enabled: bool,
+    project_key: &str,
+) -> AttachmentPreviewNavigationPayload {
+    let previewable = attachments
+        .into_iter()
+        .filter(|attachment| {
+            attachment.status == "uploaded"
+                && attachment_preview::kind(
+                    &attachment.original_filename,
+                    &attachment.content_type,
+                    legacy_preview_enabled,
+                )
+                .is_some()
+        })
+        .collect::<Vec<_>>();
+    let total = previewable.len();
+    let Some(current_index) = previewable
+        .iter()
+        .position(|attachment| attachment.id == current_attachment_id)
+    else {
+        return AttachmentPreviewNavigationPayload {
+            position: 0,
+            total,
+            previous: None,
+            next: None,
+        };
+    };
+    let link = |attachment: &files::FileAttachmentSummary| AttachmentPreviewNavigationLinkPayload {
+        id: attachment.id,
+        title: attachment.original_filename.clone(),
+        url: format!(
+            "/api/v1/projects/{project_key}/attachments/{}/preview",
+            attachment.id
+        ),
+    };
+
+    AttachmentPreviewNavigationPayload {
+        position: current_index + 1,
+        total,
+        previous: current_index
+            .checked_sub(1)
+            .and_then(|index| previewable.get(index))
+            .map(link),
+        next: previewable.get(current_index + 1).map(link),
+    }
+}
+
+fn ensure_attachment_preview_content_enabled(
+    attachment: &files::FileAttachmentSummary,
+    legacy_preview_enabled: bool,
+) -> AppResult<()> {
+    if attachment.status == "deleted" {
+        return Err(AppError::NotFound("附件已归档，不能预览".to_string()));
+    }
+    if attachment.status != "uploaded" {
+        return Err(AppError::BadRequest(
+            "附件尚未上传完成，请稍后再试".to_string(),
+        ));
+    }
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    if strategy.is_some_and(|value| !value.is_enabled(legacy_preview_enabled)) {
+        return Err(AppError::BadRequest(
+            "旧格式实验性预览当前未开启，请下载原文件查看".to_string(),
+        ));
+    }
+    if attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    )
+    .is_none()
+    {
+        return Err(AppError::BadRequest("当前文件类型暂不支持预览".to_string()));
+    }
+    Ok(())
+}
+
+fn parse_single_byte_range(value: &str, total: usize) -> Option<(usize, usize)> {
+    let range = value.strip_prefix("bytes=")?;
+    if total == 0 || range.contains(',') {
+        return None;
+    }
+    let (start, end) = range.split_once('-')?;
+    if start.is_empty() {
+        let suffix = end.parse::<usize>().ok()?;
+        if suffix == 0 {
+            return None;
+        }
+        return Some((total.saturating_sub(suffix), total - 1));
+    }
+    let start = start.parse::<usize>().ok()?;
+    if start >= total {
+        return None;
+    }
+    let end = if end.is_empty() {
+        total - 1
+    } else {
+        end.parse::<usize>().ok()?.min(total - 1)
+    };
+    (start <= end).then_some((start, end))
+}
+
+fn range_not_satisfiable_response(total: usize) -> AppResult<Response> {
+    let mut response = StatusCode::RANGE_NOT_SATISFIABLE.into_response();
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_RANGE, format!("bytes */{total}").parse()?);
+    headers.insert(header::ACCEPT_RANGES, "bytes".parse()?);
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, "nosniff".parse()?);
+    headers.insert(header::CACHE_CONTROL, "private, no-store".parse()?);
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        "default-src 'none'; sandbox".parse()?,
+    );
+    Ok(response)
 }
 
 fn audit_log_payload(log: audit::AuditLogSummary) -> AuditLogPayload {

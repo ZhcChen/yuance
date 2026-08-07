@@ -54,7 +54,10 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(json_body(response).await["data"]["title"], "Device parity mutation");
+    assert_eq!(
+        json_body(response).await["data"]["title"],
+        "Device parity mutation"
+    );
 
     let response = request(
         &app,
@@ -65,7 +68,10 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(json_body(response).await["data"]["description"], "Device project mutation");
+    assert_eq!(
+        json_body(response).await["data"]["description"],
+        "Device project mutation"
+    );
 
     let response = request(
         &app,
@@ -152,12 +158,11 @@ async fn device_principal_does_not_bypass_project_membership_or_viewer_role() {
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    let project_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM projects WHERE project_key = 'YCE'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     sqlx::query(
         "INSERT INTO project_members (project_id, user_id, member_role) VALUES (?1, ?2, 'viewer')",
     )
@@ -289,15 +294,9 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
     )
     .await
     .unwrap();
-    projects::add_project_member(
-        &pool,
-        manager_id,
-        "YCE",
-        "attachment_viewer",
-        "viewer",
-    )
-    .await
-    .unwrap();
+    projects::add_project_member(&pool, manager_id, "YCE", "attachment_viewer", "viewer")
+        .await
+        .unwrap();
     let outsider_id = users::create_user(
         &pool,
         users::CreateUserInput {
@@ -319,14 +318,7 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
     let app = test_app(pool.clone());
     let collection_path = "/api/v1/projects/YCE/attachments";
 
-    let response = request(
-        &app,
-        "GET",
-        collection_path,
-        &manager.access_token,
-        None,
-    )
-    .await;
+    let response = request(&app, "GET", collection_path, &manager.access_token, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"], serde_json::json!([]));
 
@@ -364,7 +356,11 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
             })
         });
         let response = request(&app, method, &path, &viewer.access_token, payload).await;
-        assert_eq!(response.status(), StatusCode::FORBIDDEN, "viewer path: {path}");
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "viewer path: {path}"
+        );
     }
 
     let response = request(
@@ -387,15 +383,9 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
     .fetch_one(&pool)
     .await
     .unwrap();
-    storage::write_test_memory_object(
-        &pool,
-        &test_settings(),
-        &object_key,
-        "text/plain",
-        content,
-    )
-    .await
-    .unwrap();
+    storage::write_test_memory_object(&pool, &test_settings(), &object_key, "text/plain", content)
+        .await
+        .unwrap();
 
     let response = request(
         &app,
@@ -427,9 +417,16 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
     assert_eq!(signed["data"]["request"]["method"], "GET");
     assert_eq!(signed["data"]["attachment"]["id"], attachment_id);
 
-    for path in [collection_path.to_string(), format!("{member_path}/download-url")] {
+    for path in [
+        collection_path.to_string(),
+        format!("{member_path}/download-url"),
+    ] {
         let response = request(&app, "GET", &path, &outsider.access_token, None).await;
-        assert_eq!(response.status(), StatusCode::FORBIDDEN, "outsider path: {path}");
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "outsider path: {path}"
+        );
     }
     let response = request(
         &app,
@@ -460,14 +457,7 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
     .await;
     assert_eq!(response.status(), StatusCode::OK);
 
-    let response = request(
-        &app,
-        "DELETE",
-        &member_path,
-        &manager.access_token,
-        None,
-    )
-    .await;
+    let response = request(&app, "DELETE", &member_path, &manager.access_token, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["status"], "deleted");
 
@@ -476,7 +466,11 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
         format!("{member_path}/download-url"),
     ] {
         let response = request(&app, "GET", &path, &manager.access_token, None).await;
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "archived path: {path}");
+        assert_eq!(
+            response.status(),
+            StatusCode::BAD_REQUEST,
+            "archived path: {path}"
+        );
     }
 
     let audit_rows = sqlx::query_as::<_, (String, Option<i64>)>(
@@ -515,6 +509,171 @@ async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_prin
         serde_json::from_str::<Value>(&archived_by.1).unwrap()["attachment_id"],
         attachment_id
     );
+}
+
+#[tokio::test]
+async fn device_project_attachment_preview_supports_metadata_navigation_and_byte_ranges() {
+    let pool = test_pool().await;
+    let admin_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    seed_memory_storage(&pool, admin_id).await;
+    let credentials = issue_device_credentials(&pool, admin_id, "project-attachment-preview").await;
+    let app = test_app(pool.clone());
+    let collection_path = "/api/v1/projects/YCE/attachments";
+
+    let mut attachment_ids = Vec::new();
+    for (filename, content_type, content) in [
+        (
+            "preview-first.md",
+            "text/markdown",
+            b"first preview".as_slice(),
+        ),
+        (
+            "preview-second.pdf",
+            "application/pdf",
+            b"0123456789".as_slice(),
+        ),
+        (
+            "preview-legacy.doc",
+            "application/msword",
+            b"legacy".as_slice(),
+        ),
+    ] {
+        let checksum_sha256 = format!("{:x}", Sha256::digest(content));
+        let response = request(
+            &app,
+            "POST",
+            collection_path,
+            &credentials.access_token,
+            Some(serde_json::json!({
+                "original_filename": filename,
+                "content_type": content_type,
+                "byte_size": content.len(),
+                "checksum_sha256": checksum_sha256
+            })),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let attachment_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+        attachment_ids.push(attachment_id);
+        let object_key = sqlx::query_scalar::<_, String>(
+            "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",
+        )
+        .bind(attachment_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        storage::write_test_memory_object(
+            &pool,
+            &test_settings(),
+            &object_key,
+            content_type,
+            content.to_vec(),
+        )
+        .await
+        .unwrap();
+        let response = request(
+            &app,
+            "POST",
+            &format!("{collection_path}/{attachment_id}/uploaded"),
+            &credentials.access_token,
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let preview_path = format!("{collection_path}/{}/preview", attachment_ids[1]);
+    let response = request(&app, "GET", &preview_path, &credentials.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let metadata = json_body(response).await;
+    assert_eq!(metadata["data"]["attachment"]["id"], attachment_ids[1]);
+    assert_eq!(metadata["data"]["preview"]["strategy"], "pdf");
+    assert_eq!(metadata["data"]["preview"]["file_type"], "pdf");
+    assert_eq!(metadata["data"]["preview"]["legacy_preview_enabled"], false);
+    assert_eq!(metadata["data"]["preview"]["content_enabled"], true);
+    assert_eq!(metadata["data"]["navigation"]["position"], 1);
+    assert_eq!(metadata["data"]["navigation"]["total"], 2);
+    assert!(metadata["data"]["navigation"]["previous"].is_null());
+    assert_eq!(
+        metadata["data"]["navigation"]["next"]["id"],
+        attachment_ids[0]
+    );
+
+    let legacy_response = request(
+        &app,
+        "GET",
+        &format!("{collection_path}/{}/preview", attachment_ids[2]),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(legacy_response.status(), StatusCode::OK);
+    let legacy = json_body(legacy_response).await;
+    assert_eq!(legacy["data"]["preview"]["strategy"], "legacy-doc");
+    assert_eq!(legacy["data"]["preview"]["content_enabled"], false);
+
+    let content_path = format!("{preview_path}/content");
+    let response = request_with_headers(
+        &app,
+        "GET",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=2-5")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
+    assert_eq!(response.headers()[header::CONTENT_LENGTH], "4");
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/pdf");
+    assert_eq!(
+        response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+        "nosniff"
+    );
+    assert_eq!(
+        response.headers()[header::CACHE_CONTROL],
+        "private, no-store"
+    );
+    assert_eq!(
+        response.headers()[header::CONTENT_SECURITY_POLICY],
+        "default-src 'none'; sandbox"
+    );
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(&body[..], b"2345");
+
+    let response = request_with_headers(
+        &app,
+        "HEAD",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=2-5")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert_eq!(response.headers()[header::CONTENT_LENGTH], "4");
+    assert!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .is_empty()
+    );
+
+    let response = request_with_headers(
+        &app,
+        "GET",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=20-30")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+    assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
 }
 
 async fn run_attachment_lifecycle(
@@ -579,24 +738,11 @@ async fn run_attachment_lifecycle(
     .fetch_one(pool)
     .await
     .unwrap();
-    storage::write_test_memory_object(
-        pool,
-        &test_settings(),
-        &object_key,
-        "text/plain",
-        content,
-    )
-    .await
-    .unwrap();
+    storage::write_test_memory_object(pool, &test_settings(), &object_key, "text/plain", content)
+        .await
+        .unwrap();
 
-    let response = request(
-        app,
-        "POST",
-        &format!("{member_path}/uploaded"),
-        token,
-        None,
-    )
-    .await;
+    let response = request(app, "POST", &format!("{member_path}/uploaded"), token, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["status"], "uploaded");
 
@@ -713,7 +859,30 @@ async fn request(
     } else {
         Body::empty()
     };
-    app.clone().oneshot(request.body(body).unwrap()).await.unwrap()
+    app.clone()
+        .oneshot(request.body(body).unwrap())
+        .await
+        .unwrap()
+}
+
+async fn request_with_headers(
+    app: &Router,
+    method: &str,
+    path: &str,
+    access_token: &str,
+    headers: &[(&str, &str)],
+) -> Response {
+    let mut request = Request::builder()
+        .method(method)
+        .uri(path)
+        .header(header::AUTHORIZATION, format!("Bearer {access_token}"));
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    app.clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap()
 }
 
 async fn json_body(response: Response) -> Value {

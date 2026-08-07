@@ -18,10 +18,11 @@ async fn notification_feed_supports_message_center_filters_and_pagination() {
         .await
         .expect("demo seed should apply");
 
-    let work_item_id = sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
-        .fetch_one(&pool)
-        .await
-        .expect("work item should exist");
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item should exist");
 
     sqlx::query(
         r#"
@@ -105,7 +106,10 @@ async fn notification_feed_supports_message_center_filters_and_pagination() {
         .expect("router should respond");
     assert_eq!(pending_response.status(), StatusCode::OK);
     assert_eq!(
-        pending_response.headers().get(header::CACHE_CONTROL).unwrap(),
+        pending_response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .unwrap(),
         "private, no-store"
     );
     let pending_body = response_body(pending_response).await;
@@ -114,20 +118,53 @@ async fn notification_feed_supports_message_center_filters_and_pagination() {
     let pending_data = pending_payload
         .get("data")
         .expect("pending payload should contain data");
-    assert_eq!(pending_data.get("filter").and_then(|value| value.as_str()), Some("pending"));
-    assert_eq!(pending_data.get("page").and_then(|value| value.as_i64()), Some(1));
-    assert_eq!(pending_data.get("per_page").and_then(|value| value.as_i64()), Some(1));
-    assert_eq!(pending_data.get("total_items").and_then(|value| value.as_i64()), Some(1));
-    assert_eq!(pending_data.get("total_pages").and_then(|value| value.as_i64()), Some(1));
-    assert_eq!(pending_data.get("unread_count").and_then(|value| value.as_i64()), Some(2));
-    assert_eq!(pending_data.get("pending_count").and_then(|value| value.as_i64()), Some(1));
+    assert_eq!(
+        pending_data.get("filter").and_then(|value| value.as_str()),
+        Some("pending")
+    );
+    assert_eq!(
+        pending_data.get("page").and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(
+        pending_data
+            .get("per_page")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(
+        pending_data
+            .get("total_items")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(
+        pending_data
+            .get("total_pages")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(
+        pending_data
+            .get("unread_count")
+            .and_then(|value| value.as_i64()),
+        Some(2)
+    );
+    assert_eq!(
+        pending_data
+            .get("pending_count")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
     let pending_items = pending_data
         .get("items")
         .and_then(|value| value.as_array())
         .expect("pending items should be array");
     assert_eq!(pending_items.len(), 1);
     assert_eq!(
-        pending_items[0].get("kind").and_then(|value| value.as_str()),
+        pending_items[0]
+            .get("kind")
+            .and_then(|value| value.as_str()),
         Some("comment_mentioned")
     );
 
@@ -149,8 +186,18 @@ async fn notification_feed_supports_message_center_filters_and_pagination() {
     let limited_data = limited_payload
         .get("data")
         .expect("limited payload should contain data");
-    assert_eq!(limited_data.get("per_page").and_then(|value| value.as_i64()), Some(2));
-    assert_eq!(limited_data.get("total_items").and_then(|value| value.as_i64()), Some(3));
+    assert_eq!(
+        limited_data
+            .get("per_page")
+            .and_then(|value| value.as_i64()),
+        Some(2)
+    );
+    assert_eq!(
+        limited_data
+            .get("total_items")
+            .and_then(|value| value.as_i64()),
+        Some(3)
+    );
     assert_eq!(
         limited_data
             .get("items")

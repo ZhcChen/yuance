@@ -529,7 +529,8 @@ pub async fn cleanup_expired_authorizations(
         ));
     }
     let now_value = timestamp(now);
-    let retention_cutoff = timestamp(now - Duration::seconds(EXPIRED_AUTHORIZATION_RETENTION_SECONDS));
+    let retention_cutoff =
+        timestamp(now - Duration::seconds(EXPIRED_AUTHORIZATION_RETENTION_SECONDS));
     let mut transaction = pool.begin().await?;
     let expired = sqlx::query(
         r#"
@@ -2412,7 +2413,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(cleanup_expired_authorizations(&pool, now, 100).await.unwrap(), 1);
+        assert_eq!(
+            cleanup_expired_authorizations(&pool, now, 100)
+                .await
+                .unwrap(),
+            1
+        );
         let status = sqlx::query_scalar::<_, String>(
             "SELECT authorization_status FROM device_authorizations WHERE id = ?1",
         )

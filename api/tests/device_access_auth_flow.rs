@@ -16,9 +16,7 @@ use sqlx::SqlitePool;
 use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
-    domains::{
-        api_tokens, auth, bootstrap, device_sessions, projects, system_api_tokens, users,
-    },
+    domains::{api_tokens, auth, bootstrap, device_sessions, projects, system_api_tokens, users},
     platform::{config::Settings, db, security::csrf::CSRF_COOKIE_NAME},
     web::router::{AppState, build_router},
 };
@@ -80,7 +78,10 @@ async fn device_access_manages_personal_tokens_and_device_sessions() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(json_body(response).await["data"]["name"], "Desktop Agent Updated");
+    assert_eq!(
+        json_body(response).await["data"]["name"],
+        "Desktop Agent Updated"
+    );
 
     let response = device_request(
         &app,
@@ -257,12 +258,11 @@ async fn device_business_routes_preserve_project_membership_and_viewer_write_den
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-    let project_id = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM projects WHERE project_key = 'YCE'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let project_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM projects WHERE project_key = 'YCE'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     sqlx::query(
         "INSERT INTO project_members (project_id, user_id, member_role) VALUES (?1, ?2, 'viewer')",
     )
@@ -328,9 +328,8 @@ async fn device_access_reads_and_updates_work_item_through_existing_business_rou
     .fetch_one(&pool)
     .await
     .unwrap();
-    let comment_attachments_path = format!(
-        "/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments"
-    );
+    let comment_attachments_path =
+        format!("/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments");
     let response = device_request(
         &app,
         "GET",

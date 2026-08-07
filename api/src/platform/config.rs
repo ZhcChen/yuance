@@ -113,13 +113,16 @@ impl Settings {
                 idempotency_ttl: env_string("YUANCE_DEVICE_IDEMPOTENCY_TTL", "24h"),
                 poll_interval: env_string("YUANCE_DEVICE_POLL_INTERVAL", "5s"),
                 control_revalidation_interval: env_string(
-                    "YUANCE_DEVICE_CONTROL_REVALIDATION_INTERVAL", "1s",
+                    "YUANCE_DEVICE_CONTROL_REVALIDATION_INTERVAL",
+                    "1s",
                 ),
                 control_revalidation_timeout: env_string(
-                    "YUANCE_DEVICE_CONTROL_REVALIDATION_TIMEOUT", "500ms",
+                    "YUANCE_DEVICE_CONTROL_REVALIDATION_TIMEOUT",
+                    "500ms",
                 ),
                 control_max_active_streams: env_string(
-                    "YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS", "1024",
+                    "YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS",
+                    "1024",
                 ),
             },
             experimental_legacy_preview_enabled: env_flag_enabled(
@@ -285,9 +288,15 @@ impl DeviceSessionSettings {
     }
 
     pub fn control_max_active_streams(&self) -> AppResult<usize> {
-        let value = self.control_max_active_streams.trim().parse::<usize>().map_err(|_| {
-            AppError::Config("YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS 必须是正整数".to_string())
-        })?;
+        let value = self
+            .control_max_active_streams
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| {
+                AppError::Config(
+                    "YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS 必须是正整数".to_string(),
+                )
+            })?;
         if !(16..=10_000).contains(&value) {
             return Err(AppError::Config(
                 "YUANCE_DEVICE_CONTROL_MAX_ACTIVE_STREAMS 必须介于 16 和 10000".to_string(),
@@ -375,12 +384,17 @@ fn parse_duration_seconds(name: &str, value: &str) -> AppResult<i64> {
 fn parse_duration_millis(name: &str, value: &str) -> AppResult<i64> {
     let value = value.trim();
     if let Some(number) = value.strip_suffix("ms") {
-        let amount = number.trim().parse::<i64>()
+        let amount = number
+            .trim()
+            .parse::<i64>()
             .map_err(|_| AppError::Config(format!("{name} 必须是正整数毫秒值")))?;
-        if amount <= 0 { return Err(AppError::Config(format!("{name} 必须大于 0"))); }
+        if amount <= 0 {
+            return Err(AppError::Config(format!("{name} 必须大于 0")));
+        }
         return Ok(amount);
     }
-    parse_duration_seconds(name, value)?.checked_mul(1_000)
+    parse_duration_seconds(name, value)?
+        .checked_mul(1_000)
         .ok_or_else(|| AppError::Config(format!("{name} 数值过大")))
 }
 
@@ -581,9 +595,15 @@ mod tests {
                 "refresh_sliding_ttl" => settings.refresh_sliding_ttl = value.to_string(),
                 "refresh_absolute_ttl" => settings.refresh_absolute_ttl = value.to_string(),
                 "idempotency_ttl" => settings.idempotency_ttl = value.to_string(),
-                "control_revalidation_interval" => settings.control_revalidation_interval = value.to_string(),
-                "control_revalidation_timeout" => settings.control_revalidation_timeout = value.to_string(),
-                "control_max_active_streams" => settings.control_max_active_streams = value.to_string(),
+                "control_revalidation_interval" => {
+                    settings.control_revalidation_interval = value.to_string()
+                }
+                "control_revalidation_timeout" => {
+                    settings.control_revalidation_timeout = value.to_string()
+                }
+                "control_max_active_streams" => {
+                    settings.control_max_active_streams = value.to_string()
+                }
                 _ => unreachable!(),
             }
             assert!(
