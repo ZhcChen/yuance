@@ -283,6 +283,7 @@ import { errorMessage } from './errors.js';
  * @property {string} body
  * @property {string} body_format
  * @property {string} author
+ * @property {string} author_username
  * @property {string} created_at
  * @property {string} updated_at
  * @property {boolean} is_flow
@@ -649,8 +650,6 @@ export function SharedApp({ services }) {
   const [route, setRoute] = useState(() => router.currentRoute());
   const routeRef = useRef(route);
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
-  const newCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
-  const editCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
   const accountSecurityActionRef = useRef(false);
@@ -796,6 +795,9 @@ export function SharedApp({ services }) {
   const [workItemEditingCommentId, setWorkItemEditingCommentId] = useState(/** @type {number | null} */ (null));
   const [workItemEditCommentBody, setWorkItemEditCommentBody] = useState('');
   const [workItemEditCommentSubmitting, setWorkItemEditCommentSubmitting] = useState(false);
+  const [workItemReplyingToCommentId, setWorkItemReplyingToCommentId] = useState(/** @type {number | null} */ (null));
+  const [workItemReplyCommentBody, setWorkItemReplyCommentBody] = useState('');
+  const [workItemReplySubmitting, setWorkItemReplySubmitting] = useState(false);
   const [workItemCommentActionError, setWorkItemCommentActionError] = useState('');
   const [workItemAttachmentActionError, setWorkItemAttachmentActionError] = useState('');
   const [workItemAttachmentLoadWarning, setWorkItemAttachmentLoadWarning] = useState('');
@@ -2148,6 +2150,8 @@ export function SharedApp({ services }) {
     setWorkItemNewCommentBody('');
     setWorkItemEditingCommentId(null);
     setWorkItemEditCommentBody('');
+    setWorkItemReplyingToCommentId(null);
+    setWorkItemReplyCommentBody('');
     setWorkItemCommentActionError('');
     setWorkItemFormKey(activeWorkItemDetail.key);
   }, [activeWorkItemDetail, activeWorkItemDetailView?.primary_post, workItemFormKey]);
@@ -2158,12 +2162,6 @@ export function SharedApp({ services }) {
       syncRouteFromLocation();
     });
   }, [router]);
-
-  useEffect(() => {
-    if (workItemEditingCommentId !== null) {
-      runtime.scheduleFrame(() => editCommentTextareaRef.current?.focus());
-    }
-  }, [workItemEditingCommentId]);
 
   useEffect(() => {
     const close = events.openTopbarEvents({
@@ -2266,21 +2264,34 @@ export function SharedApp({ services }) {
     setWorkItemHandoffForm((current) => ({ ...current, [name]: value }));
   }
 
-  /** @param {React.ChangeEvent<HTMLTextAreaElement>} event */
-  function changeWorkItemNewComment(event) {
-    setWorkItemNewCommentBody(event.currentTarget.value);
+  /** @param {string} value */
+  function changeWorkItemNewComment(value) {
+    setWorkItemNewCommentBody(value);
   }
 
-  /** @param {React.ChangeEvent<HTMLTextAreaElement>} event */
-  function changeWorkItemEditComment(event) {
-    setWorkItemEditCommentBody(event.currentTarget.value);
+  /** @param {string} value */
+  function changeWorkItemEditComment(value) {
+    setWorkItemEditCommentBody(value);
   }
 
   /** @param {AppWorkItemComment} comment */
   function startWorkItemCommentEdit(comment) {
+    setWorkItemReplyingToCommentId(null);
+    setWorkItemReplyCommentBody('');
     setWorkItemEditingCommentId(comment.id);
-    setWorkItemEditCommentBody(comment.body || '');
+    setWorkItemEditCommentBody(comment.body_format === 'html' ? comment.body : plainTextToRichHtml(comment.body || ''));
     setWorkItemCommentActionError('');
+    runtime.scheduleFrame(() => runtime.getElementById(`work-item-comment-edit-${comment.id}`)?.focus());
+  }
+
+  /** @param {AppWorkItemComment} comment */
+  function startWorkItemCommentReply(comment) {
+    setWorkItemEditingCommentId(null);
+    setWorkItemEditCommentBody('');
+    setWorkItemReplyingToCommentId(comment.id);
+    setWorkItemReplyCommentBody('');
+    setWorkItemCommentActionError('');
+    runtime.scheduleFrame(() => runtime.getElementById(`work-item-comment-reply-${comment.id}`)?.focus());
   }
 
   /** @param {number} commentId */
@@ -2302,6 +2313,17 @@ export function SharedApp({ services }) {
     if (commentId !== null) {
       focusWorkItemCommentEditButton(commentId);
     }
+  }
+
+  function cancelWorkItemCommentReply() {
+    const commentId = workItemReplyingToCommentId;
+    setWorkItemReplyingToCommentId(null);
+    setWorkItemReplyCommentBody('');
+    setWorkItemCommentActionError('');
+    if (commentId !== null) runtime.scheduleFrame(() => {
+      const button = /** @type {HTMLButtonElement | null | undefined} */ (runtime.getElementById(`comment-${commentId}`)?.querySelector('[data-comment-reply]'));
+      button?.focus();
+    });
   }
 
   /**
@@ -2555,10 +2577,10 @@ export function SharedApp({ services }) {
       return;
     }
 
-    const body = workItemNewCommentBody.trim();
-    if (!body) {
+    const body = workItemNewCommentBody;
+    if (!richTextHasContent(body)) {
       setWorkItemCommentActionError('评论内容不能为空。');
-      runtime.scheduleFrame(() => newCommentTextareaRef.current?.focus());
+      runtime.scheduleFrame(() => runtime.getElementById('work-item-new-comment')?.focus());
       return;
     }
 
@@ -2573,7 +2595,7 @@ export function SharedApp({ services }) {
       await createWorkItemCommentUseCase({
         api,
         itemKey,
-        payload: { body, bodyFormat: 'plain' },
+        payload: { body, bodyFormat: 'html' },
         lifecycle: {
           isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
           onCommitted: (created) => {
@@ -2600,6 +2622,49 @@ export function SharedApp({ services }) {
   }
 
   /** @param {React.FormEvent<HTMLFormElement>} event */
+  async function submitWorkItemCommentReply(event) {
+    event.preventDefault();
+    if (!activeWorkItemDetail || workItemReplyingToCommentId === null || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
+    const body = workItemReplyCommentBody;
+    if (!richTextHasContent(body)) {
+      setWorkItemCommentActionError('回复内容不能为空。');
+      runtime.scheduleFrame(() => runtime.getElementById(`work-item-comment-reply-${workItemReplyingToCommentId}`)?.focus());
+      return;
+    }
+    const itemKey = activeWorkItemDetail.key;
+    const parentCommentId = workItemReplyingToCommentId;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    setWorkItemReplySubmitting(true);
+    setWorkItemCommentActionError('');
+    try {
+      await createWorkItemCommentUseCase({
+        api,
+        itemKey,
+        payload: { body, bodyFormat: 'html', parentCommentId },
+        lifecycle: {
+          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
+          onCommitted: (created) => {
+            requestRef.current += 1;
+            setRefreshing(false);
+            setWorkItemComments((current) => [...current, created]);
+            setWorkItemReplyingToCommentId(null);
+            setWorkItemReplyCommentBody('');
+            setStatusMessage(`${itemKey} 回复已发布。`);
+          },
+          refreshCompanion: () => refreshWorkItemCompanionState(itemKey, '回复已发布', actionId),
+        },
+      });
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('发布回复失败。')));
+    } finally {
+      clearWorkItemMutation(actionId, setWorkItemReplySubmitting);
+    }
+  }
+
+  /** @param {React.FormEvent<HTMLFormElement>} event */
   async function submitWorkItemCommentEdit(event) {
     event.preventDefault();
     if (!activeWorkItemDetail || workItemEditingCommentId === null) {
@@ -2609,11 +2674,10 @@ export function SharedApp({ services }) {
       return;
     }
 
-    const body = workItemEditCommentBody.trim();
-    if (!body) {
+    const body = workItemEditCommentBody;
+    if (!richTextHasContent(body)) {
       setWorkItemCommentActionError('评论内容不能为空。');
-      const textarea = event.currentTarget.querySelector('textarea');
-      runtime.scheduleFrame(() => textarea?.focus());
+      runtime.scheduleFrame(() => runtime.getElementById(`work-item-comment-edit-${workItemEditingCommentId}`)?.focus());
       return;
     }
 
@@ -2630,7 +2694,7 @@ export function SharedApp({ services }) {
         api,
         itemKey,
         commentId,
-        payload: { body, bodyFormat: 'plain' },
+        payload: { body, bodyFormat: 'html' },
         lifecycle: {
           isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
           onCommitted: (updated) => {
@@ -4411,20 +4475,28 @@ export function SharedApp({ services }) {
                     downloadingKey={workItemCommentAttachmentDownloadingKey}
                     revealableKey={workItemCommentAttachmentReveal?.key || ''}
                     mutationBusy={workItemMutationSubmitting}
+                    canWriteComments={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
+                    currentUsername={user?.username || ''}
+                    mentionOptions={(activeWorkItemDetailView?.assignees || []).map((option) => ({ username: option.value, displayName: option.label }))}
                     editingCommentId={workItemEditingCommentId}
+                    replyingToCommentId={workItemReplyingToCommentId}
                     newCommentBody={workItemNewCommentBody}
                     editCommentBody={workItemEditCommentBody}
+                    replyCommentBody={workItemReplyCommentBody}
                     commentSubmitting={workItemCommentSubmitting}
                     editSubmitting={workItemEditCommentSubmitting}
+                    replySubmitting={workItemReplySubmitting}
                     error={workItemCommentActionError}
-                    newCommentTextareaRef={newCommentTextareaRef}
-                    editCommentTextareaRef={editCommentTextareaRef}
                     onSubmitNew={submitWorkItemComment}
                     onChangeNew={changeWorkItemNewComment}
                     onSubmitEdit={submitWorkItemCommentEdit}
                     onChangeEdit={changeWorkItemEditComment}
+                    onSubmitReply={submitWorkItemCommentReply}
+                    onChangeReply={setWorkItemReplyCommentBody}
                     onCancelEdit={cancelWorkItemCommentEdit}
+                    onCancelReply={cancelWorkItemCommentReply}
                     onStartEdit={startWorkItemCommentEdit}
+                    onStartReply={startWorkItemCommentReply}
                     onUploadAttachment={(commentId) => void uploadSelectedWorkItemCommentAttachment(commentId)}
                     onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
                     onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}

@@ -13340,6 +13340,7 @@ async fn api_v1_work_item_comments_render_flat_reply_timeline() {
     let parent_id = parent_payload["data"]["id"]
         .as_i64()
         .expect("parent id should exist");
+    assert_eq!(parent_payload["data"]["author_username"], "admin");
 
     let standalone_response = app
         .clone()
@@ -13377,6 +13378,7 @@ async fn api_v1_work_item_comments_render_flat_reply_timeline() {
     let reply_body = response_body(reply_response).await;
     assert!(reply_body.contains(&format!(r#""parent_comment_id":{parent_id}"#)));
     assert!(reply_body.contains(r#""parent_author":"系统管理员""#));
+    assert!(reply_body.contains(r#""author_username":"timeline_replier""#));
     let reply_payload: serde_json::Value =
         serde_json::from_str(&reply_body).expect("json should parse");
     let reply_id = reply_payload["data"]["id"]

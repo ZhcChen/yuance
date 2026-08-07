@@ -771,7 +771,7 @@ function nullableDetailNavigationLink(value) { return value === null ? null : fr
 function parseComments(data) { return boundedArray(data, parseComment, 500, "comments"); }
 function parseComment(value) { return freezeDto(value, {
   id: positiveInteger, parent_comment_id: nullablePositiveInteger, parent_author: shortString, body: longString,
-  body_format: shortString, author: shortString, created_at: shortString, updated_at: shortString,
+  body_format: shortString, author: shortString, author_username: shortString, created_at: shortString, updated_at: shortString,
   is_flow: boolean, is_draft: boolean,
 }); }
 function nullableComment(value) { return value === null ? null : parseComment(value); }

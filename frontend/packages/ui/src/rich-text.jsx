@@ -4,10 +4,10 @@ import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
 import React, { useEffect, useRef, useState } from 'react';
 
-const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
-const EDITOR_ATTRIBUTES = ['alt', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'href', 'loading', 'playsinline', 'preload', 'src', 'title'];
+const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
+const EDITOR_ATTRIBUTES = ['alt', 'contenteditable', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'data-yuance-mention-display-name', 'data-yuance-mention-username', 'href', 'loading', 'playsinline', 'preload', 'src', 'title'];
 const CONTENT_TAGS = EDITOR_TAGS;
-const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES;
+const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES.filter((attribute) => attribute !== 'contenteditable');
 
 /** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
 
@@ -101,11 +101,21 @@ export function richTextAttachmentHtml(attachment) {
 }
 
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
+/** @typedef {{ username: string, displayName: string }} RichTextMentionOption */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[] }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [] }) {
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[] }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [] }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
+  const [mentionQuery, setMentionQuery] = useState(/** @type {string | null} */ (null));
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const filteredMentions = mentionQuery === null ? [] : mentionOptions
+    .filter((option) => {
+      const query = mentionQuery.toLocaleLowerCase();
+      return option.username.toLocaleLowerCase().includes(query) || option.displayName.toLocaleLowerCase().includes(query);
+    })
+    .slice(0, 8);
 
   useEffect(() => {
     const input = inputRef.current;
@@ -165,6 +175,39 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     publish(input);
   }
 
+  function openMentionPicker() {
+    const input = inputRef.current;
+    if (!input || disabled || mentionOptions.length === 0) return;
+    input.focus();
+    mentionRangeRef.current = currentInsertionRange(input);
+    setMentionQuery('');
+    setMentionActiveIndex(0);
+  }
+
+  /** @param {RichTextMentionOption} option */
+  function insertMention(option) {
+    const input = inputRef.current;
+    const range = mentionRangeRef.current;
+    if (!input || !range || disabled) return;
+    const mention = input.ownerDocument.createElement('span');
+    mention.setAttribute('data-yuance-mention-username', option.username);
+    mention.setAttribute('data-yuance-mention-display-name', option.displayName);
+    mention.setAttribute('contenteditable', 'false');
+    mention.textContent = `@${option.displayName}`;
+    range.deleteContents();
+    range.insertNode(mention);
+    const spacer = input.ownerDocument.createTextNode(' ');
+    mention.after(spacer);
+    const selection = input.ownerDocument.getSelection();
+    range.setStartAfter(spacer);
+    range.collapse(true);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    mentionRangeRef.current = null;
+    setMentionQuery(null);
+    publish(input);
+  }
+
   /** @param {number} attachmentId */
   function removeAttachment(attachmentId) {
     const input = inputRef.current;
@@ -182,6 +225,7 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         <button type="button" aria-label="插入代码块" title="插入代码块" disabled={disabled} onClick={() => execute('formatBlock', 'pre')}>&lt;/&gt;</button>
         <button type="button" aria-label="插入链接" title="插入链接" disabled={disabled} onClick={createLink}>↗</button>
         <button type="button" aria-label="转换 Markdown" title="转换 Markdown" disabled={disabled} onClick={convertMarkdown}>MD</button>
+        <button type="button" aria-label="提及成员" title="提及成员" disabled={disabled || mentionOptions.length === 0} onClick={openMentionPicker}>@</button>
         <button type="button" aria-label="左对齐" title="左对齐" disabled={disabled} onClick={() => align('left')}>≡</button>
         <button type="button" aria-label="居中对齐" title="居中对齐" disabled={disabled} onClick={() => align('center')}>≡</button>
         <button type="button" aria-label="右对齐" title="右对齐" disabled={disabled} onClick={() => align('right')}>≡</button>
@@ -198,13 +242,53 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
         aria-disabled={disabled || undefined}
         data-placeholder="请输入内容..."
         suppressContentEditableWarning
-        onInput={(event) => publish(event.currentTarget)}
+        onInput={(event) => {
+          const context = mentionContext(event.currentTarget);
+          mentionRangeRef.current = context?.range || null;
+          setMentionQuery(context?.query ?? null);
+          setMentionActiveIndex(0);
+          publish(event.currentTarget);
+        }}
+        onKeyDown={(event) => {
+          if (mentionQuery === null) return;
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            setMentionQuery(null);
+          } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const direction = event.key === 'ArrowDown' ? 1 : -1;
+            setMentionActiveIndex((current) => filteredMentions.length ? (current + direction + filteredMentions.length) % filteredMentions.length : 0);
+          } else if (event.key === 'Enter' && filteredMentions.length) {
+            event.preventDefault();
+            insertMention(filteredMentions[Math.min(mentionActiveIndex, filteredMentions.length - 1)]);
+          }
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.parentElement?.contains(event.relatedTarget)) {
+            mentionRangeRef.current = null;
+            setMentionQuery(null);
+          }
+        }}
         onPaste={(event) => {
           event.preventDefault();
           event.currentTarget.ownerDocument.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
           publish(event.currentTarget);
         }}
       />
+      {mentionQuery !== null ? <div className="yc-rich-mention-panel" role="listbox" aria-label="提及候选">
+        {filteredMentions.length ? filteredMentions.map((option, index) => (
+          <button
+            key={option.username}
+            type="button"
+            role="option"
+            aria-selected={index === mentionActiveIndex}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => insertMention(option)}
+          >
+            <strong>{option.displayName}</strong><span>@{option.username}</span>
+          </button>
+        )) : <p>没有匹配成员</p>}
+      </div> : null}
       {attachments.length ? <div className="yc-rich-text-attachments" aria-label="资料正文附件">
         {attachments.map((attachment) => {
           const inserted = attachmentIds.includes(attachment.id);
@@ -220,6 +304,31 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     setAttachmentIds(richTextAttachmentIds(sanitized));
     onChange(sanitized);
   }
+}
+
+/** @param {HTMLDivElement} input */
+function currentInsertionRange(input) {
+  const selection = input.ownerDocument.getSelection();
+  if (selection?.rangeCount && selection.anchorNode && input.contains(selection.anchorNode)) return selection.getRangeAt(0).cloneRange();
+  const range = input.ownerDocument.createRange();
+  range.selectNodeContents(input);
+  range.collapse(false);
+  return range;
+}
+
+/** @param {HTMLDivElement} input */
+function mentionContext(input) {
+  const selection = input.ownerDocument.getSelection();
+  const anchor = selection?.anchorNode;
+  const view = input.ownerDocument.defaultView;
+  if (!view || !selection?.isCollapsed || !(anchor instanceof view.Text) || !input.contains(anchor)) return null;
+  const prefix = anchor.data.slice(0, selection.anchorOffset);
+  const match = prefix.match(/(?:^|\s)@([\w.-]{0,64})$/u);
+  if (!match) return null;
+  const range = input.ownerDocument.createRange();
+  range.setStart(anchor, selection.anchorOffset - match[1].length - 1);
+  range.setEnd(anchor, selection.anchorOffset);
+  return { query: match[1], range };
 }
 
 /** @param {Document} ownerDocument @param {RichTextAttachmentOption} attachment */

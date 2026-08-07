@@ -3746,6 +3746,9 @@
           "author": {
             "type": "string"
           },
+          "author_username": {
+            "type": "string"
+          },
           "created_at": {
             "type": "string"
           },

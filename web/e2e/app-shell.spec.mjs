@@ -66,6 +66,7 @@ function workItemCommentFixture(overrides = {}) {
     body: '初始可编辑评论',
     body_format: 'plain',
     author: '系统管理员',
+    author_username: 'yuance_admin',
     created_at: '2026-07-30T10:00:00Z',
     updated_at: '2026-07-30T10:00:00Z',
     is_flow: false,
@@ -500,6 +501,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
             body: commentRefreshCount === 1 ? 'Web 保存后刷新评论' : 'Web handoff 流转记录',
             body_format: 'plain',
             author: '系统管理员',
+            author_username: 'yuance_admin',
             created_at: '2026-07-30T12:00:00Z',
             updated_at: '2026-07-30T12:00:00Z',
             is_flow: commentRefreshCount > 1,
@@ -1135,7 +1137,7 @@ test('work item edit form keeps input on validation and server errors', async ({
   await expect(handoffForm.getByRole('button', { name: '确认推进' })).toBeEnabled();
 });
 
-test('work item comments can create and edit plain comments', async ({ page }) => {
+test('work item comments create rich mentions, reply, and edit through one shared composer', async ({ page }) => {
   const createRequests = [];
   const updateRequests = [];
   const comments = [
@@ -1181,8 +1183,11 @@ test('work item comments can create and edit plain comments', async ({ page }) =
         payload,
       });
       const created = workItemCommentFixture({
-        id: 903,
+        id: payload.parent_comment_id ? 904 : 903,
+        parent_comment_id: payload.parent_comment_id ?? null,
+        parent_author: payload.parent_comment_id ? '系统管理员' : '',
         body: payload.body,
+        body_format: payload.body_format,
         created_at: '2026-07-30T15:00:00Z',
         updated_at: '2026-07-30T15:00:00Z',
       });
@@ -1206,20 +1211,36 @@ test('work item comments can create and edit plain comments', async ({ page }) =
   await expect(page.locator('#comment-902').getByRole('button', { name: '编辑' })).toHaveCount(0);
 
   const newCommentInput = page.getByLabel('新增评论');
-  await newCommentInput.fill('新增 Web 评论');
+  await newCommentInput.fill('新增 Web 评论 @yuan');
+  const newCommentForm = page.locator('.work-item-comment-form');
+  await expect(newCommentForm.getByRole('option', { name: /@yuance_admin/ })).toBeVisible();
+  await newCommentInput.press('Enter');
   await page.getByRole('button', { name: '发布评论' }).click();
 
   await expect.poll(() => createRequests.length).toBe(1);
   expect(createRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
   expect(createRequests[0].payload).toMatchObject({
-    body: '新增 Web 评论',
-    body_format: 'plain',
+    body_format: 'html',
   });
+  expect(createRequests[0].payload.body).toContain('新增 Web 评论');
+  expect(createRequests[0].payload.body).toContain('data-yuance-mention-username="yuance_admin"');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论已发布。');
   await expect(page.getByText('新增 Web 评论')).toBeVisible();
-  await expect(newCommentInput).toHaveValue('');
+  await expect(newCommentInput).toHaveText('');
 
   const newCommentRow = page.locator('#comment-903');
+  await newCommentRow.getByRole('button', { name: '回复' }).click();
+  await newCommentRow.getByLabel('回复 系统管理员').fill('共享富文本回复');
+  await newCommentRow.getByRole('button', { name: '回复评论' }).click();
+  await expect.poll(() => createRequests.length).toBe(2);
+  expect(createRequests[1].payload).toMatchObject({
+    body_format: 'html',
+    parent_comment_id: 903,
+  });
+  expect(createRequests[1].payload.body).toContain('共享富文本回复');
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 回复已发布。');
+  await expect(page.locator('#comment-904')).toContainText('回复 系统管理员');
+
   await newCommentRow.getByRole('button', { name: '编辑' }).click();
   await expect(newCommentRow.getByLabel('编辑评论')).toBeFocused();
   await expect(page.locator('#comment-901').getByRole('button', { name: '编辑' })).toHaveCount(0);
@@ -1230,9 +1251,9 @@ test('work item comments can create and edit plain comments', async ({ page }) =
   expect(updateRequests[0].url).toContain('/api/v1/work-items/YCE-TASK-2/comments/903');
   expect(updateRequests[0].headers['x-yuance-csrf-token']).toBeTruthy();
   expect(updateRequests[0].payload).toMatchObject({
-    body: '编辑后的 Web 评论',
-    body_format: 'plain',
+    body_format: 'html',
   });
+  expect(updateRequests[0].payload.body).toContain('编辑后的 Web 评论');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论已更新。');
   await expect(page.getByText('编辑后的 Web 评论')).toBeVisible();
   await expect(page.getByText('新增 Web 评论')).toHaveCount(0);
@@ -1337,7 +1358,7 @@ test('work item comment form keeps input on validation and edit errors', async (
   await expect(page.getByRole('alert')).toHaveText('评论内容不能为空。');
   await expect.poll(() => postCount).toBe(0);
   await expect(newCommentInput).toBeFocused();
-  await expect(newCommentInput).toHaveValue('   ');
+  await expect(newCommentInput).toHaveText('   ');
 
   const commentRow = page.locator('#comment-901');
   await commentRow.getByRole('button', { name: '编辑' }).click();
@@ -1346,8 +1367,8 @@ test('work item comment form keeps input on validation and edit errors', async (
   await commentRow.getByRole('button', { name: '保存评论' }).click();
 
   await expect(page.getByRole('alert')).toHaveText('不能编辑这条评论。');
-  await expect(commentRow.getByLabel('编辑评论')).toHaveValue('服务端会拒绝的评论');
-  await expect(page.locator('.work-item-comment-body', { hasText: '初始可编辑评论' })).toBeVisible();
+  await expect(commentRow.getByLabel('编辑评论')).toHaveText('服务端会拒绝的评论');
+  await expect(commentRow.locator('.yc-rich-text-plain', { hasText: '初始可编辑评论' })).toBeVisible();
   await expect(commentRow.getByRole('button', { name: '保存评论' })).toBeEnabled();
 });
 

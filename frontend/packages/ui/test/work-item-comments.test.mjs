@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createElement, createRef } from 'react';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { WorkItemComments } from '@yuance/frontend-ui';
@@ -12,6 +12,7 @@ const comment = {
   body: '开始处理',
   body_format: 'plain',
   author: 'alice',
+  author_username: 'alice',
   created_at: '2026-08-01',
   updated_at: '2026-08-01',
   is_flow: false,
@@ -37,20 +38,28 @@ function renderComments(overrides = {}) {
     downloadingKey: '',
     revealableKey: '',
     mutationBusy: false,
+    canWriteComments: true,
+    currentUsername: 'alice',
+    mentionOptions: [{ username: 'bob', displayName: 'Bob' }],
     editingCommentId: null,
+    replyingToCommentId: null,
     newCommentBody: '',
     editCommentBody: '',
+    replyCommentBody: '',
     commentSubmitting: false,
     editSubmitting: false,
+    replySubmitting: false,
     error: '',
-    newCommentTextareaRef: createRef(),
-    editCommentTextareaRef: createRef(),
     onSubmitNew: () => {},
     onChangeNew: () => {},
     onSubmitEdit: () => {},
     onChangeEdit: () => {},
+    onSubmitReply: () => {},
+    onChangeReply: () => {},
     onCancelEdit: () => {},
+    onCancelReply: () => {},
     onStartEdit: () => {},
+    onStartReply: () => {},
     onUploadAttachment: () => {},
     onDownloadAttachment: () => {},
     onRevealAttachment: () => {},
@@ -69,11 +78,33 @@ test('work item comments render comments, attachment controls and upload state',
 });
 
 test('work item comments render edit and error states', () => {
-  const html = renderComments({ editingCommentId: 9, editCommentBody: '更新内容', error: '保存失败。' });
+  const html = renderComments({ editingCommentId: 9, editCommentBody: '<p>更新内容</p>', error: '保存失败。' });
 
   assert.match(html, /编辑评论/);
-  assert.match(html, /更新内容/);
+  assert.match(html, /work-item-comment-edit-9/);
   assert.match(html, /role="alert"/);
+});
+
+test('work item comments render reply composer and hide edit from non-authors', () => {
+  const reply = renderComments({ replyingToCommentId: 9, replyCommentBody: '<p>回复内容</p>' });
+  assert.match(reply, /回复 alice/);
+  assert.match(reply, /回复评论/);
+
+  const foreign = renderComments({ currentUsername: 'bob' });
+  assert.doesNotMatch(foreign, /data-comment-edit/);
+  assert.match(foreign, /data-comment-reply/);
+});
+
+test('work item comments keep browsing available without exposing write controls', () => {
+  const html = renderComments({ canWriteComments: false });
+
+  assert.match(html, /评论与流转/);
+  assert.match(html, /开始处理/);
+  assert.match(html, /comment\.txt/);
+  assert.doesNotMatch(html, /新增评论/);
+  assert.doesNotMatch(html, /data-comment-reply/);
+  assert.doesNotMatch(html, /data-comment-edit/);
+  assert.doesNotMatch(html, /选择评论附件/);
 });
 
 test('work item comments render an explicit empty state', () => {

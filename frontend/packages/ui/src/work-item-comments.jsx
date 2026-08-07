@@ -3,6 +3,7 @@
 import React from 'react';
 
 import { AttachmentList } from './work-item-attachments.jsx';
+import { RichTextContent, RichTextEditor } from './rich-text.jsx';
 
 /** @typedef {import('./work-item-attachments.jsx').Attachment} Attachment */
 
@@ -10,6 +11,7 @@ import { AttachmentList } from './work-item-attachments.jsx';
  * @typedef {object} Comment
  * @property {number} id
  * @property {string} author
+ * @property {string} author_username
  * @property {string} body
  * @property {string} body_format
  * @property {boolean} is_flow
@@ -29,20 +31,28 @@ import { AttachmentList } from './work-item-attachments.jsx';
  *   downloadingKey: string,
  *   revealableKey: string,
  *   mutationBusy: boolean,
+ *   canWriteComments: boolean,
+ *   currentUsername: string,
+ *   mentionOptions: Array<{ username: string, displayName: string }>,
  *   editingCommentId: number | null,
+ *   replyingToCommentId: number | null,
  *   newCommentBody: string,
  *   editCommentBody: string,
+ *   replyCommentBody: string,
  *   commentSubmitting: boolean,
  *   editSubmitting: boolean,
+ *   replySubmitting: boolean,
  *   error: string,
- *   newCommentTextareaRef: import('react').RefObject<HTMLTextAreaElement | null>,
- *   editCommentTextareaRef: import('react').RefObject<HTMLTextAreaElement | null>,
  *   onSubmitNew: (event: import('react').FormEvent<HTMLFormElement>) => void,
- *   onChangeNew: (event: import('react').ChangeEvent<HTMLTextAreaElement>) => void,
+ *   onChangeNew: (value: string) => void,
  *   onSubmitEdit: (event: import('react').FormEvent<HTMLFormElement>) => void,
- *   onChangeEdit: (event: import('react').ChangeEvent<HTMLTextAreaElement>) => void,
+ *   onChangeEdit: (value: string) => void,
+ *   onSubmitReply: (event: import('react').FormEvent<HTMLFormElement>) => void,
+ *   onChangeReply: (value: string) => void,
  *   onCancelEdit: () => void,
+ *   onCancelReply: () => void,
  *   onStartEdit: (comment: Comment) => void,
+ *   onStartReply: (comment: Comment) => void,
  *   onUploadAttachment: (commentId: number) => void,
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
@@ -57,20 +67,28 @@ export function WorkItemComments(props) {
     downloadingKey,
     revealableKey,
     mutationBusy,
+    canWriteComments,
+    currentUsername,
+    mentionOptions,
     editingCommentId,
+    replyingToCommentId,
     newCommentBody,
     editCommentBody,
+    replyCommentBody,
     commentSubmitting,
     editSubmitting,
+    replySubmitting,
     error,
-    newCommentTextareaRef,
-    editCommentTextareaRef,
     onSubmitNew,
     onChangeNew,
     onSubmitEdit,
     onChangeEdit,
+    onSubmitReply,
+    onChangeReply,
     onCancelEdit,
+    onCancelReply,
     onStartEdit,
+    onStartReply,
     onUploadAttachment,
     onDownloadAttachment,
     onRevealAttachment,
@@ -82,15 +100,12 @@ export function WorkItemComments(props) {
         <h3 id="work-item-comments-title">评论与流转</h3>
         <span className="yuance-ui-meta">共 {comments.length} 条</span>
       </div>
-      <form className="work-item-comment-form" onSubmit={onSubmitNew}>
-        <label className="work-item-form-field">
-          <span>新增评论</span>
-          <textarea ref={newCommentTextareaRef} rows={4} value={newCommentBody} onChange={onChangeNew} placeholder="输入一条普通评论" />
-        </label>
+      {canWriteComments ? <form className="work-item-comment-form" onSubmit={onSubmitNew}>
+        <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} />
         <div className="work-item-form-actions">
           <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{commentSubmitting ? '发布中…' : '发布评论'}</button>
         </div>
-      </form>
+      </form> : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
       {comments.length ? (
         <ul className="work-item-comment-list">
@@ -108,19 +123,16 @@ export function WorkItemComments(props) {
                 </div>
                 {editingCommentId === comment.id ? (
                   <>
-                    <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>
+                    <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" />
                     <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
-                      <label className="work-item-form-field">
-                        <span>编辑评论</span>
-                        <textarea ref={editCommentTextareaRef} rows={4} value={editCommentBody} onChange={onChangeEdit} />
-                      </label>
+                      <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} />
                       <div className="work-item-form-actions work-item-comment-actions">
                         <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelEdit} disabled={mutationBusy}>取消</button>
                         <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{editSubmitting ? '保存中…' : '保存评论'}</button>
                       </div>
                     </form>
                   </>
-                ) : <p className="work-item-comment-body">{comment.body || '暂无内容。'}</p>}
+                ) : <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" />}
                 {attachments.length ? (
                   <AttachmentList
                     attachments={attachments}
@@ -133,7 +145,7 @@ export function WorkItemComments(props) {
                     className="work-item-comment-attachment-list"
                   />
                 ) : null}
-                {!comment.is_flow && !comment.is_draft ? (
+                {canWriteComments && !comment.is_flow && !comment.is_draft ? (
                   <form className="work-item-comment-attachment-upload" onSubmit={(event) => event.preventDefault()}>
                     <button
                       className="yuance-ui-button yuance-ui-button-secondary"
@@ -149,9 +161,18 @@ export function WorkItemComments(props) {
                 <p className="yuance-ui-muted">创建于 {comment.created_at || '未知'}，更新于 {comment.updated_at || '未知'}</p>
                 {!comment.is_flow && !comment.is_draft && editingCommentId === null ? (
                   <div className="work-item-comment-actions">
-                    <button data-comment-edit className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button>
+                    {canWriteComments ? <button data-comment-reply className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartReply(comment)} disabled={mutationBusy}>回复</button> : null}
+                    {canWriteComments && comment.author_username === currentUsername ? <button data-comment-edit className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={() => onStartEdit(comment)} disabled={mutationBusy}>编辑</button> : null}
                   </div>
                 ) : null}
+                {replyingToCommentId === comment.id ? <form className="work-item-comment-reply-form" onSubmit={onSubmitReply}>
+                  <p className="yuance-ui-meta">回复 {comment.author}</p>
+                  <RichTextEditor id={`work-item-comment-reply-${comment.id}`} value={replyCommentBody} onChange={onChangeReply} label={`回复 ${comment.author}`} mentionOptions={mentionOptions} />
+                  <div className="work-item-form-actions work-item-comment-actions">
+                    <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelReply} disabled={mutationBusy}>取消</button>
+                    <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{replySubmitting ? '回复中…' : '回复评论'}</button>
+                  </div>
+                </form> : null}
               </li>
             );
           })}
