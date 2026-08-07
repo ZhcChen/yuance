@@ -124,8 +124,8 @@
       "states": ["loading", "all", "unread", "pending", "read", "empty", "submitting", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U6",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "cutover",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/notification-actions.test.mjs", "frontend/packages/app-core/test/notification-events.test.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs", "api/tests/routing_smoke.rs", "api/tests/auth_security_flow.rs"], "desktopTests": ["desktop/test/renderer-composition.test.mjs", "desktop/test/renderer-events.test.mjs", "desktop/test/notification-controller.test.mjs", "desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-08-013-web-desktop-u6-notification-event-state-review.md", "docs/reviews/2026-08-08-014-web-desktop-u6-message-actions-review.md", "docs/reviews/2026-08-08-015-web-desktop-u6-notification-focus-review.md", "docs/reviews/2026-08-08-016-web-desktop-u6-formal-message-cutover-review.md"], "fixture": "web/e2e/app-shell.spec.mjs", "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1", "rollbackTest": "api/tests/project_management_flow.rs" }
     },
     {
       "id": "page.message-search.search",

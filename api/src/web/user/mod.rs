@@ -2843,33 +2843,22 @@ pub async fn search_page(
 pub async fn messages_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Query(query): Query<MessagesQuery>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let requested_pagination = normalize_web_pagination(query.page, query.per_page)?;
     let filter = MessageFilter::from_query(&query.filter, query.unread);
-    let return_to = message_page_url(
-        filter,
-        requested_pagination.page,
-        requested_pagination.per_page,
-    );
-    let web_app_owner_enabled = state.settings.web_app_shell_v1_enabled();
-    let csrf_token = csrf::ensure_token(&headers);
-
-    if web_app_owner_enabled {
-        if let Some(pool) = state.pool.as_ref() {
-            if bootstrap::bootstrap_required(pool).await? {
-                return bootstrap_redirect(&headers);
-            }
-            if auth::user_from_headers(pool, &headers).await?.is_none() {
-                return login_redirect_to(&headers, &return_to);
-            }
-        }
-        return with_csrf_cookie(
-            &state,
-            &csrf_token,
-            crate::web::router::web_app_entry_response(&state),
-        );
-    }
 
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
