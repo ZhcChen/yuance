@@ -8,6 +8,7 @@
 
 - 项目列表、项目详情、周期详情、资料详情和个人分析
 - 需求、任务和 Bug 列表
+- 工作项详情
 
 ## 启用
 
@@ -35,6 +36,8 @@ unset YUANCE_WEB_APP_SHELL_V1
 cargo test --manifest-path api/Cargo.toml --test routing_smoke web_shell_owner_serves_migrated_routes_from_same_app_entry -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_work_item_list_owner_preserves_filter_query_for_unauthenticated_request -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test project_management_flow web_work_item_list_pages_filter_by_type -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_work_item_detail_owner_preserves_deep_link_query_for_unauthenticated_request -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test project_management_flow web_work_item_detail_page_renders_full_shell -- --test-threads=1
 ```
 
-前两项验证开关启用后的共享入口和认证回跳；最后一项在默认关闭状态验证旧 SSR 列表仍可工作。
+共享入口测试同时覆盖正式工作项详情；认证测试验证列表筛选与详情深链接回跳；两个 `project_management_flow` 测试在默认关闭状态验证旧 SSR 列表与详情仍可工作。

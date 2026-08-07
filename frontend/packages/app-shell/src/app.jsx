@@ -893,9 +893,6 @@ export function SharedApp({ services }) {
       perPage: workItemListRoute.perPage,
     })
     : '';
-  const legacyWorkItemDetailPath = workItemDetailRoute
-    ? buildWorkItemDetailPath({ owner: 'web', itemKey: workItemDetailRoute.itemKey })
-    : '';
   const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
     ? workItemDetail
     : null;
@@ -4660,7 +4657,6 @@ export function SharedApp({ services }) {
                   <a className="shell-link" href={detailBackPath} onClick={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}>
                     返回列表
                   </a>
-                  {route.owner === 'app' ? <a className="shell-link" href={legacyWorkItemDetailPath}>打开旧版详情</a> : null}
                 </div>
               </div>
 

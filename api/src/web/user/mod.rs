@@ -5126,8 +5126,20 @@ pub async fn work_item_batch_update(
 pub async fn work_item_detail_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
     Path(item_key): Path<String>,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_web_app_response(
+        &state,
+        &headers,
+        original_uri
+            .path_and_query()
+            .map_or(original_uri.path(), |value| value.as_str()),
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let context = match web_context_or_redirect(&state, &headers).await? {
         Ok(context) => context,
         Err(response) => return Ok(response),

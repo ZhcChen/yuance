@@ -292,8 +292,16 @@ test('app-owner task list can filter and open read-only work item detail', async
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-2' }).getByRole('link', { name: '打开详情' }).click();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2/);
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
-  await expect(page.getByRole('link', { name: '打开旧版详情' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '打开旧版详情' })).toHaveCount(0);
   await expect(page.getByRole('heading', { level: 3, name: '评论与流转' })).toBeVisible();
+});
+
+test('formal web work item detail keeps web route ownership', async ({ page }) => {
+  await login(page, '/web/work-items/YCE-TASK-2');
+  await expect(page).toHaveURL('/web/work-items/YCE-TASK-2');
+  await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 3, name: '评论与流转' })).toBeVisible();
+  await expect(page.getByRole('link', { name: '打开旧版详情' })).toHaveCount(0);
 });
 
 test('formal web task list keeps web route ownership while filtering', async ({ page }) => {
