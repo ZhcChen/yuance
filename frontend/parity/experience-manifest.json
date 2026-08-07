@@ -1,7 +1,20 @@
 {
   "$schema": "./experience-manifest.schema.json",
   "version": 1,
-  "status": "building",
+  "status": "complete",
+  "dynamicApiEffects": [
+    { "path": "/api/v1/auth/csrf", "methods": ["GET"], "owners": ["page.shell.dashboard"], "purpose": "Browser CSRF token 刷新" },
+    { "path": "/api/v1/topbar/status", "methods": ["GET"], "owners": ["page.shell.dashboard"], "purpose": "顶部状态和当前项目快照" },
+    { "path": "/api/v1/topbar/events", "methods": ["GET"], "owners": ["page.shell.dashboard"], "purpose": "顶部状态 SSE" },
+    { "path": "/api/v1/notifications", "methods": ["GET", "POST"], "owners": ["page.message-search.messages", "action.messages.read-all"], "purpose": "通知列表和已读状态" },
+    { "path": "/api/v1/work-items/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.work-item-list.requirements", "page.work-item-detail.detail", "action.work-item.create"], "purpose": "工作项、评论和附件共享 DTO 与 mutation" },
+    { "path": "/api/v1/projects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail", "page.project.resource-detail", "action.project.resource.create"], "purpose": "项目文件、资源和附件共享 DTO 与 mutation" },
+    { "path": "/api/v1/file-objects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail"], "purpose": "项目文件夹和文件对象操作" },
+    { "path": "/api/v1/system/database-stats", "methods": ["GET"], "owners": ["page.system.database-stats"], "purpose": "数据库统计分页刷新" },
+    { "path": "/api/v1/system/releases/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.system.releases", "action.system.release.create"], "purpose": "版本资产登记和传输" },
+    { "path": "/api/v1/test-storage/upload", "methods": ["POST"], "owners": ["page.system.storage", "action.system.storage.probe"], "purpose": "存储上传探测" },
+    { "path": "/api/v1/auth/**", "methods": ["GET", "POST"], "owners": ["page.boundary.login", "page.boundary.shared-app"], "purpose": "Browser 与 Desktop 认证边界" }
+  ],
   "pages": [
     {
       "id": "page.boundary.login",
@@ -69,6 +82,7 @@
       "methods": ["GET"],
       "family": "shell",
       "sourceTemplates": ["dashboard.html", "partials/project_create_modal.html"],
+      "apiEffects": [{ "phase": "primary", "method": "GET", "path": "/api/v1/auth/csrf", "purpose": "Browser 宿主刷新 CSRF token" }, { "phase": "primary", "method": "GET", "path": "/api/v1/topbar/status", "purpose": "加载当前项目和顶部计数" }, { "phase": "primary", "method": "GET", "path": "/api/v1/topbar/events", "purpose": "建立顶部状态 SSE" }],
       "actors": ["authenticated-user", "project-manager"],
       "permissions": ["authenticated", "project.create"],
       "controls": ["topbar", "project-progress", "pending-discussions", "recent-activity", "create-project"],
@@ -99,6 +113,7 @@
       "methods": ["GET"],
       "family": "message-search",
       "sourceTemplates": ["messages.html", "partials/pagination_pages.html", "partials/pagination_size_jump.html"],
+      "apiEffects": [{ "phase": "primary", "method": "GET", "path": "/api/v1/notifications", "purpose": "加载共享消息 DTO 和未读状态" }],
       "actors": ["authenticated-user"],
       "permissions": ["authenticated"],
       "controls": ["message-tabs", "unread-badge", "message-list", "mark-all-read", "pagination"],
@@ -144,6 +159,7 @@
       "methods": ["GET"],
       "family": "project",
       "sourceTemplates": ["projects/detail.html", "partials/rich_text_toolbar.html"],
+      "apiEffects": [{ "phase": "primary", "method": "GET", "path": "/api/v1/projects/{project_key}/file-objects", "purpose": "加载项目文件夹与文件对象树" }],
       "actors": ["project-member", "project-manager"],
       "permissions": ["project.read", "project.manage", "work-item.create", "resource.read", "resource.write"],
       "controls": ["project-summary", "info-tab", "cycles-tab", "members-tab", "library-tab", "activities-tab", "edit-project", "create-work-item"],

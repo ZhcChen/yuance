@@ -55,6 +55,7 @@ test('体验清单 ID 和引用保持唯一且闭合', async () => {
   ]);
   const pageIds = manifest.pages.map(({ id }) => id);
   const actionIds = manifest.actions.map(({ id }) => id);
+  const contractIds = new Set([...pageIds, ...actionIds]);
   const routeMethods = new Map(sourceInventory.routes.map(({ route, methods }) => [route, methods]));
   const templates = new Set(sourceInventory.templates);
 
@@ -73,6 +74,9 @@ test('体验清单 ID 和引用保持唯一且闭合', async () => {
   for (const action of manifest.actions) {
     assert.ok(pageIds.includes(action.pageId), `${action.id} 引用了不存在的页面 ${action.pageId}`);
     assert.ok(routeMethods.get(action.request.path)?.includes(action.request.method), `${action.id} 引用了不存在的正式 Web 请求 ${action.request.method} ${action.request.path}`);
+  }
+  for (const effect of manifest.dynamicApiEffects) {
+    assert.ok(effect.owners.every((owner) => contractIds.has(owner)), `${effect.path} 存在无效 owner`);
   }
 });
 
@@ -112,6 +116,9 @@ test('页面只拥有读取入口且每个 route method 只有一个 contract ow
   for (const page of manifest.pages) {
     assert.deepEqual(page.methods, ['GET'], `${page.id} 的写操作必须拆成 action`);
     register(`GET ${page.route}`, page.id);
+    for (const effect of page.apiEffects ?? []) {
+      assert.ok(effect.path.startsWith('/api/') && effect.purpose.length > 0, `${page.id} 的动态 API effect 无效`);
+    }
   }
   for (const action of manifest.actions) {
     register(`${action.request.method} ${action.request.path}`, action.id);
