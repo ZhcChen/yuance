@@ -41,6 +41,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["identity.devicesessions", noInputOperation("GET", "/api/v1/me/device-sessions", parseDeviceSessions, true, "array")],
     ["identity.devicesessionrevoke", deviceSessionRevokeOperation],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
+    ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
     ["project.create", projectCreateOperation],
@@ -705,6 +706,17 @@ function parseTopbar(data) {
     requirements_count: nonNegativeInteger, tasks_count: nonNegativeInteger, bugs_count: nonNegativeInteger,
     notifications_count: nonNegativeInteger, project_badges: projectBadges, current_project: nullableTopbarProject,
   });
+  return value;
+}
+function parseSystemDashboard(data) {
+  return freezeExactDto(data, {
+    links: (links) => boundedArray(links, (link) => freezeExactDto(link, {
+      id: shortString, title: textString, description: longString, path: systemWebPath,
+    }), 16, "system dashboard links"),
+  });
+}
+function systemWebPath(value) {
+  if (typeof value !== "string" || !/^\/web\/system(?:\/[a-z-]+)?$/u.test(value) || value.length > 128) throw new TypeError("system web path is invalid");
   return value;
 }
 function parseProjectPage(data) { return parsePage(data, parseProject); }

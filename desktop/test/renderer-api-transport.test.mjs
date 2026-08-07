@@ -18,6 +18,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/auth/me", "identity.current", {}],
     ["/api/v1/me/profile", "identity.profile", {}],
     ["/api/v1/topbar/status", "shell.topbar", {}],
+    ["/api/v1/system/dashboard", "system.dashboard", {}],
     ["/api/v1/current-project", "project.current", {}],
     ["/api/v1/projects?status=in_progress&page=2&per_page=25", "project.list", { status: "in_progress", page: 2, perPage: 25 }],
     ["/api/v1/projects/DEMO", "project.detail", { projectKey: "DEMO" }],

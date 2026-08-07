@@ -11,11 +11,19 @@ import {
   buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
+  buildSystemPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,
   routePathForOwner,
 } from '@yuance/frontend-app-core';
+
+test('system dashboard preserves Browser and Desktop owners', () => {
+  assert.equal(buildSystemPath('web'), '/web/system');
+  assert.equal(buildSystemPath('app'), '/web/app/system');
+  assert.equal(parseAppRoute('/web/system').id, 'system-dashboard');
+  assert.equal(parseAppRoute('/web/app/system').owner, 'app');
+});
 
 test('parseAppRoute recognizes browser shell home owners', () => {
   assert.deepEqual(parseAppRoute('/web', ''), {

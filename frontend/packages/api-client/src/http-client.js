@@ -4,6 +4,7 @@ import { createNotificationClient } from './notifications.js';
 import { createAccountSecurityClient } from './account-security.js';
 import { createProfileClient } from './profile.js';
 import { createSearchClient } from './search.js';
+import { createSystemClient } from './system.js';
 import { createTopbarClient } from './topbar.js';
 import { createWorkItemClient } from './work-items.js';
 import { createProjectClient } from './projects.js';
@@ -21,7 +22,8 @@ import { createResourceClient } from './resources.js';
 /** @typedef {import('./account-security.js').AccountSecurityClient} AccountSecurityClient */
 /** @typedef {import('./projects.js').ProjectClient} ProjectClient */
 /** @typedef {import('./resources.js').ResourceClient} ResourceClient */
-/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
+/** @typedef {import('./system.js').SystemClient} SystemClient */
+/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & ProjectClient & ResourceClient & SystemClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, createProject(payload: { name: string, description?: string, status: string, startDate?: string, dueDate?: string }): Promise<any>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**
  * @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies
@@ -36,6 +38,7 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
   const profile = createProfileClient({ request, prepareWrite });
   const search = createSearchClient({ request });
   const topbar = createTopbarClient({ request });
+  const system = createSystemClient({ request });
 
   return {
     /** @returns {Promise<AuthUser>} */
@@ -97,5 +100,6 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
     ...notifications,
     ...profile,
     ...search,
+    ...system,
   };
 }

@@ -14,6 +14,42 @@ use yuance_api::{
 const CSRF_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[tokio::test]
+async fn api_system_dashboard_returns_only_fixed_authorized_links() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/dashboard")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_str(&response_body(response).await)
+        .expect("dashboard response should be JSON");
+    let links = payload["data"]["links"]
+        .as_array()
+        .expect("dashboard links should be an array");
+    assert_eq!(links.len(), 7);
+    assert!(links.iter().all(|link| {
+        link["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("/web/system/"))
+    }));
+    assert!(
+        links
+            .iter()
+            .all(|link| link.as_object().is_some_and(|value| value.len() == 4))
+    );
+}
+
+#[tokio::test]
 async fn system_users_page_renders_accounts_and_roles_for_admin() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

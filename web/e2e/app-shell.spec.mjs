@@ -2143,6 +2143,17 @@ test('app-owner message center opens semantic target inside app shell', async ({
   await expect(page.locator('.work-item-detail-center').getByRole('heading', { level: 2 })).toBeVisible();
 });
 
+test('shared system dashboard renders the permission-filtered management entry set', async ({ page }) => {
+  await login(page, '/web/app/system');
+
+  await expect(page.getByRole('heading', { level: 1, name: '系统管理' })).toBeVisible();
+  const dashboard = page.getByRole('region', { name: '管理入口' });
+  for (const label of ['用户管理', '角色权限', '对象存储', '系统 OpenAPI', '版本管理', '数据库统计', '审计日志']) {
+    await expect(dashboard.getByRole('link', { name: new RegExp(label) })).toBeVisible();
+  }
+  await expect(dashboard.locator('a')).toHaveCount(7);
+});
+
 test('project list can switch current project inside the app shell', async ({ page }) => {
   await login(page, '/web/app/projects');
 

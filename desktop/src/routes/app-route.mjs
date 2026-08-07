@@ -1,4 +1,4 @@
-const ROUTE_PREFIXES = Object.freeze(["/auth", "/messages", "/projects", "/requirements", "/tasks", "/bugs", "/work-items"]);
+const ROUTE_PREFIXES = Object.freeze(["/auth", "/messages", "/projects", "/requirements", "/tasks", "/bugs", "/work-items", "/system"]);
 
 /** @param {string} pathname */
 export function isCanonicalAppPathname(pathname) {

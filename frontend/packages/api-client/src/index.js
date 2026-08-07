@@ -13,6 +13,7 @@ export { createProfileClient } from './profile.js';
 export { createProjectClient, projectApiPath, projectAttachmentApiPath, projectAttachmentPreviewApiPath, projectAttachmentPreviewFromPayload, projectCycleApiPath, projectCycleBody, projectMemberApiPath, projectPersonalAnalysisApiPath, projectUpdateBody } from './projects.js';
 export { createResourceClient, projectResourceApiPath, projectResourceFromPayload, projectResourceMutationBody, projectResourcesFromPayload } from './resources.js';
 export { createSearchClient } from './search.js';
+export { createSystemClient } from './system.js';
 export {
   attachmentCreateRequestBody,
   attachmentFromPayload,

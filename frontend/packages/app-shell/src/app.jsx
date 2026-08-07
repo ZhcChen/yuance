@@ -14,6 +14,7 @@ import {
   buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
+  buildSystemPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   createWorkItemComment as createWorkItemCommentUseCase,
@@ -571,6 +572,8 @@ function routeDescription(route) {
       return '工作项列表已在浏览器壳中验证筛选、分页和详情跳转，旧版 SSR 页面仍可作为兼容回退。';
     case 'work-item-detail':
       return '工作项详情已在浏览器壳中接入只读信息、评论浏览、核心字段编辑和推进并指派。';
+    case 'system-dashboard':
+      return '系统入口严格按当前主体的服务端权限返回，Browser 与 Desktop 共用同一管理导航事实。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -598,6 +601,8 @@ function routeEyebrow(route) {
     case 'bugs':
     case 'work-item-detail':
       return 'Work Items';
+    case 'system-dashboard':
+      return 'System';
     default:
       return 'Web App';
   }
@@ -758,6 +763,7 @@ export function SharedApp({ services }) {
   const [createdRawToken, setCreatedRawToken] = useState('');
   const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
+  const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemCreateOpen, setWorkItemCreateOpen] = useState(false);
   const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
@@ -829,6 +835,7 @@ export function SharedApp({ services }) {
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
   const profilePath = buildProfilePath(route.owner);
+  const systemPath = buildSystemPath(route.owner);
   const projectsPath = route.id === 'projects'
     ? buildProjectsPath({ owner: route.owner, status: route.status, page: route.page, perPage: route.perPage })
     : buildProjectsPath({ owner: 'app' });
@@ -1113,7 +1120,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1219,6 +1226,9 @@ export function SharedApp({ services }) {
             api.getProjectPersonalAnalysis(targetRoute.projectKey),
           ])
           : Promise.resolve(null),
+        targetRoute.id === 'system-dashboard'
+          ? api.getSystemDashboard()
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1264,6 +1274,9 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'search') {
         setSearchPage(nextSearch);
+      }
+      if (targetRoute.id === 'system-dashboard') {
+        setSystemDashboard(nextSystemDashboard);
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -2195,6 +2208,8 @@ export function SharedApp({ services }) {
   useEffect(() => {
     const title = route.id === 'messages'
       ? '消息中心 - 元策'
+      : route.id === 'system-dashboard'
+        ? '系统管理 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
         : route.id === 'profile'
@@ -3848,6 +3863,9 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
+          ...((user?.is_super_admin || route.id === 'system-dashboard')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' }]
+            : []),
         ]}
         currentProject={currentProject}
         projectsHref={projectsPath}
@@ -3874,7 +3892,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -3938,7 +3956,31 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'messages' ? (
+          {route.id === 'system-dashboard' ? (
+            <section className="shell-panel-wide" aria-labelledby="system-dashboard-title">
+              <div className="shell-panel-header">
+                <div>
+                  <h2 id="system-dashboard-title">管理入口</h2>
+                  <p className="shell-muted">仅显示当前账户已获授权的系统能力。</p>
+                </div>
+              </div>
+              {systemDashboard?.links.length ? (
+                <div className="shell-grid system-dashboard-grid">
+                  {systemDashboard.links.map((link) => {
+                    const path = routePathForOwner(link.path, route.owner);
+                    return (
+                      <a key={link.id} className="shell-card system-dashboard-link" href={path} onClick={(event) => handleNavigate(event, path, `正在打开${link.title}。`)}>
+                        <h3>{link.title}</h3>
+                        <p className="shell-muted">{link.description}</p>
+                      </a>
+                    );
+                  })}
+                </div>
+              ) : (
+                <Feedback tone="info" title="暂无可用管理入口">当前角色没有其他系统管理权限。</Feedback>
+              )}
+            </section>
+          ) : route.id === 'messages' ? (
             <section className="shell-card shell-panel-wide message-center" aria-labelledby="message-center-title">
               <div className="shell-panel-header message-center-header">
                 <div>

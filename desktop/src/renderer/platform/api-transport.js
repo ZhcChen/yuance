@@ -9,6 +9,7 @@ const STATIC_ROUTES = new Map([
   ["/api/v1/me/device-sessions", ["identity.devicesessions", []]],
   ["/api/v1/topbar/status", ["shell.topbar", []]],
   ["/api/v1/current-project", ["project.current", []]],
+  ["/api/v1/system/dashboard", ["system.dashboard", []]],
 ]);
 
 /**

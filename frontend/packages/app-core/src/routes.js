@@ -100,6 +100,10 @@ export function buildProfilePath(owner = 'web') {
   return owner === 'app' ? '/web/app/me' : '/web/me';
 }
 
+export function buildSystemPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system' : '/web/system';
+}
+
 export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -284,6 +288,16 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       pathname,
       search,
       title: '个人中心',
+    };
+  }
+
+  if (pathname === '/web/system' || pathname === '/web/app/system') {
+    return {
+      id: 'system-dashboard',
+      owner,
+      pathname,
+      search,
+      title: '系统管理',
     };
   }
 

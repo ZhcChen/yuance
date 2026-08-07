@@ -35,6 +35,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["identity.current", {}, "/api/v1/auth/me"],
     ["identity.profile", {}, "/api/v1/me/profile"],
     ["shell.topbar", {}, "/api/v1/topbar/status"],
+    ["system.dashboard", {}, "/api/v1/system/dashboard"],
     ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
     ["project.list", { status: "in_progress", page: 2, perPage: 25 }, "/api/v1/projects?status=in_progress&page=2&per_page=25"],
@@ -75,6 +76,16 @@ test("builds fixed read-only business paths from validated domain input", () => 
   assert.equal(registry.resolve("project.members", { projectKey: "DEMO" }).dataKind, "array");
   assert.equal(registry.resolve("workitem.attachments", { itemKey: "DEMO-1" }).dataKind, "array");
   assert.equal(registry.resolve("project.current", {}).dataKind, "nullable-object");
+});
+
+test("system dashboard response is bounded to fixed web navigation fields", () => {
+  const parse = createOperationRegistry().resolve("system.dashboard", {}).parse;
+  const result = parse({ links: [{
+    id: "users", title: "用户管理", description: "账号管理。", path: "/web/system/users",
+  }] });
+  assert.deepEqual(result, { links: [{ id: "users", title: "用户管理", description: "账号管理。", path: "/web/system/users" }] });
+  assert.throws(() => parse({ links: [{ id: "users", title: "用户管理", description: "账号管理。", path: "https://evil.example" }] }), /path/i);
+  assert.throws(() => parse({ links: [], token: "secret" }), /response|fields/i);
 });
 
 test("rejects invalid business identifiers, filters and pagination", () => {

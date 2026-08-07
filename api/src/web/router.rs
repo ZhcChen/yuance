@@ -647,6 +647,10 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(web::api::bootstrap_init),
         )
         .route(
+            "/api/v1/system/dashboard",
+            get(web::api::get_system_dashboard),
+        )
+        .route(
             "/api/v1/system/users",
             get(web::api::list_system_users).post(web::api::create_system_user),
         )

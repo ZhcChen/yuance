@@ -55,6 +55,19 @@ pub struct BootstrapStatusPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SystemDashboardLinkPayload {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub description: &'static str,
+    pub path: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemDashboardPayload {
+    pub links: Vec<SystemDashboardLinkPayload>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct AuthUserPayload {
     pub id: i64,
     pub username: String,
@@ -5528,6 +5541,80 @@ pub async fn list_system_users(
         .collect();
 
     Ok(json(payload))
+}
+
+pub async fn get_system_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<SystemDashboardPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.dashboard.view").await?;
+
+    let candidates = [
+        (
+            "users",
+            "用户管理",
+            "账号、状态、角色绑定、重置密码。",
+            "/web/system/users",
+            "system.users.view",
+        ),
+        (
+            "roles",
+            "角色权限",
+            "系统角色、权限点、角色授权。",
+            "/web/system/roles",
+            "system.roles.view",
+        ),
+        (
+            "storage",
+            "对象存储",
+            "对象存储配置、探测、初始化和版本回滚。",
+            "/web/system/storage",
+            "system.storage.view",
+        ),
+        (
+            "openapi",
+            "系统 OpenAPI",
+            "系统接口文档与 system token 管理。",
+            "/web/system/openapi",
+            "system.api_tokens.view",
+        ),
+        (
+            "releases",
+            "版本管理",
+            "维护桌面端、移动端版本与多平台安装包。",
+            "/web/system/releases",
+            "system.releases.view",
+        ),
+        (
+            "database-stats",
+            "数据库统计",
+            "按需查看表设计、表备注和数据量。",
+            "/web/system/database-stats",
+            "system.database_stats.view",
+        ),
+        (
+            "audit",
+            "审计日志",
+            "登录、授权、配置变更和高风险操作。",
+            "/web/system/audit",
+            "system.audit.view",
+        ),
+    ];
+    let mut links = Vec::new();
+    for (id, title, description, path, permission) in candidates {
+        if rbac::user_has_permission(pool, user.id, permission).await? {
+            links.push(SystemDashboardLinkPayload {
+                id,
+                title,
+                description,
+                path,
+            });
+        }
+    }
+
+    Ok(json(SystemDashboardPayload { links }))
 }
 
 pub async fn create_system_user(
