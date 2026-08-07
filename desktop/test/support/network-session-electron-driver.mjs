@@ -500,6 +500,9 @@ async function runRealBusinessApi({ origin, mode, network }) {
     accessPasswordAction: "set", accessPassword: "DesktopWrite2026!", tags: ["desktop-write", "updated"],
     relatedWorkItemKey: "YCE-TASK-2", relatedCycleId: null,
   });
+  const resetProjectResource = await rest.execute("project.resourcepasswordreset", {
+    projectKey: "YCE", resourceId: createdProjectResource.id, accessPasswordAction: "clear", accessPassword: "",
+  });
   const archivedProjectResource = await rest.execute("project.resourcearchive", {
     projectKey: "YCE", resourceId: createdProjectResource.id,
   });
@@ -574,6 +577,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "project.resourceunlock",
     "project.resourcecreate",
     "project.resourceupdate",
+    "project.resourcepasswordreset",
     "project.resourcearchive",
     "identity.profileupdate",
     "workitem.update",
@@ -626,6 +630,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
       && updatedProjectResource.id === createdProjectResource.id
       && updatedProjectResource.title === "Desktop writable resource updated"
       && updatedProjectResource.is_protected
+      && !resetProjectResource.is_protected
       && archivedProjectResource.id === createdProjectResource.id
       && archivedProjectResource.status === "archived",
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"

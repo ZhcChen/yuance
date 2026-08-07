@@ -21,6 +21,7 @@ import {
   markWorkItemCommentAttachmentUploaded,
   publishWorkItemCommentDraft,
   archiveProjectResource,
+  resetProjectResourcePassword,
   updateWorkItem,
   updateWorkItemComment,
   updateProjectResource,
@@ -124,17 +125,21 @@ test('project resource mutations share Browser JSON contracts', async () => {
     jsonResponse(resource),
     jsonResponse({ csrf_token: 'resource-archive' }, { csrfToken: 'resource-archive' }),
     jsonResponse({ ...resource, status: 'archived' }),
+    jsonResponse({ csrf_token: 'resource-password-reset' }, { csrfToken: 'resource-password-reset' }),
+    jsonResponse({ ...resource, is_protected: true }),
   ], async (calls) => {
     const payload = { title: '部署参数', category: 'integration', body: 'client_id=test', bodyFormat: 'plain', accessPassword: '', tags: ['联调'], relatedWorkItemKey: '', relatedCycleId: null };
     await createProjectResource('YCE', payload);
     await updateProjectResource('YCE', 9, { ...payload, accessPasswordAction: 'keep' });
     await archiveProjectResource('YCE', 9);
+    await resetProjectResourcePassword('YCE', 9, { accessPasswordAction: 'set', accessPassword: 'new-pass' });
     assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ url, options }) => [url, options.method, options.body ? JSON.parse(String(options.body)) : undefined]), [
       ['/api/v1/projects/YCE/resources', 'POST', { title: '部署参数', category: 'integration', body: 'client_id=test', body_format: 'plain', access_password: '', tags: ['联调'], related_work_item_key: '', related_cycle_id: null }],
       ['/api/v1/projects/YCE/resources/9', 'PATCH', { title: '部署参数', category: 'integration', body: 'client_id=test', body_format: 'plain', access_password_action: 'keep', access_password: '', tags: ['联调'], related_work_item_key: '', related_cycle_id: null }],
       ['/api/v1/projects/YCE/resources/9', 'DELETE', undefined],
+      ['/api/v1/projects/YCE/resources/9/password/reset', 'POST', { access_password_action: 'set', access_password: 'new-pass' }],
     ]);
-    assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), ['resource-write', 'resource-update', 'resource-archive']);
+    assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), ['resource-write', 'resource-update', 'resource-archive', 'resource-password-reset']);
   });
 });
 

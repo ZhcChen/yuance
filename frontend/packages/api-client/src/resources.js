@@ -40,6 +40,13 @@ export function createResourceClient({ request, prepareWrite }) {
       await prepareWrite();
       return projectResourceFromPayload(await request(projectResourceApiPath(projectKey, resourceId), { method: 'DELETE' }));
     },
+    async resetProjectResourcePassword(projectKey, resourceId, payload) {
+      await prepareWrite();
+      return projectResourceFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/password/reset`, jsonRequest('POST', {
+        access_password_action: payload.accessPasswordAction,
+        access_password: payload.accessPassword || '',
+      })));
+    },
   };
 }
 

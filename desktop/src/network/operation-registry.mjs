@@ -13,6 +13,7 @@ const PROJECT_MEMBER_ROLES = new Set(["maintainer", "member", "viewer"]);
 const PROJECT_RESOURCE_CATEGORIES = new Set(["integration", "customer", "meeting", "implementation", "other"]);
 const PROJECT_RESOURCE_BODY_FORMATS = new Set(["plain", "html"]);
 const PROJECT_RESOURCE_PASSWORD_ACTIONS = new Set(["keep", "set", "clear"]);
+const PROJECT_RESOURCE_PASSWORD_RESET_ACTIONS = new Set(["set", "clear"]);
 const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
@@ -59,6 +60,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.resourcecreate", projectResourceCreateOperation],
     ["project.resourceupdate", projectResourceUpdateOperation],
     ["project.resourcearchive", projectResourceArchiveOperation],
+    ["project.resourcepasswordreset", projectResourcePasswordResetOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -246,6 +248,17 @@ function projectResourceUpdateOperation(input) {
 function projectResourceArchiveOperation(input) {
   exactKeys(input, ["projectKey", "resourceId"]);
   return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}`, parseProjectResource, false);
+}
+
+function projectResourcePasswordResetOperation(input) {
+  exactKeys(input, ["accessPassword", "accessPasswordAction", "projectKey", "resourceId"]);
+  const action = requiredEnum(input.accessPasswordAction, PROJECT_RESOURCE_PASSWORD_RESET_ACTIONS, "accessPasswordAction", false);
+  const accessPassword = boundedText(input.accessPassword, "accessPassword", 128);
+  if ((action === "set" && accessPassword.length < 4) || (action === "clear" && accessPassword !== "")) throw new TypeError("accessPassword is invalid");
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/password/reset`, parseProjectResource, false, "object", jsonBody({
+    access_password_action: action,
+    access_password: accessPassword,
+  }));
 }
 
 function projectResourceBody(input, update) {

@@ -14,7 +14,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
     domains::{bootstrap, device_sessions, projects, storage, users},
-    platform::{config::Settings, db},
+    platform::{config::Settings, db, realtime},
     web::router::{AppState, build_router},
 };
 
@@ -137,6 +137,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         json_body(response).await["data"]["title"],
         "Device parity resource updated"
     );
+    let mut realtime_receiver = realtime::subscribe_user_realtime();
     let response = request(
         &app,
         "POST",
@@ -149,6 +150,20 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["is_protected"], true);
+    let realtime_event = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            let event = realtime_receiver
+                .recv()
+                .await
+                .expect("password reset realtime channel should remain available");
+            if event.kind == "topbar" && event.user_ids.contains(&admin_id) {
+                break event;
+            }
+        }
+    })
+    .await
+    .expect("password reset should publish a topbar refresh event");
+    assert!(realtime_event.user_ids.contains(&admin_id));
     let response = request(
         &app,
         "POST",

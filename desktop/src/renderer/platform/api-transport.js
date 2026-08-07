@@ -155,6 +155,14 @@ function resolveMutationOperation(parsed, method, options) {
     const body = parseJsonBody(options, ["access_password"]);
     return { operation: "project.resourceunlock", input: { projectKey: decodeSegment(projectResourceUnlock[1]), resourceId: positiveInteger(projectResourceUnlock[2]), accessPassword: body.access_password } };
   }
+  const projectResourcePasswordReset = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)\/password\/reset$/u);
+  if (method === "POST" && projectResourcePasswordReset) {
+    const body = parseJsonBody(options, ["access_password", "access_password_action"]);
+    return { operation: "project.resourcepasswordreset", input: {
+      projectKey: decodeSegment(projectResourcePasswordReset[1]), resourceId: positiveInteger(projectResourcePasswordReset[2]),
+      accessPasswordAction: body.access_password_action, accessPassword: body.access_password,
+    } };
+  }
   const projectResource = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)$/u);
   if (method === "PATCH" && projectResource) {
     const body = parseJsonBody(options, ["access_password", "access_password_action", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"]);

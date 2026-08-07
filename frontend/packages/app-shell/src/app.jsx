@@ -650,6 +650,8 @@ export function SharedApp({ services }) {
   const [projectResourceForm, setProjectResourceForm] = useState({ id: 0, title: '', category: 'other', body: '', bodyFormat: 'plain', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
   const [projectResourceArchiveTarget, setProjectResourceArchiveTarget] = useState(/** @type {AppProjectResource | null} */ (null));
   const [projectResourceStatus, setProjectResourceStatus] = useState('');
+  const [projectResourcePasswordResetOpen, setProjectResourcePasswordResetOpen] = useState(false);
+  const [projectResourcePasswordResetForm, setProjectResourcePasswordResetForm] = useState({ accessPasswordAction: 'set', accessPassword: '' });
   const [projectAttachmentUploading, setProjectAttachmentUploading] = useState(false);
   const [projectAttachmentArchiving, setProjectAttachmentArchiving] = useState(false);
   const [projectAttachmentDownloadingId, setProjectAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
@@ -860,6 +862,8 @@ export function SharedApp({ services }) {
         setProjectResourceModalOpen(false);
         setProjectResourceArchiveTarget(null);
         setProjectResourceStatus('');
+        setProjectResourcePasswordResetOpen(false);
+        setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' });
         setProjectAttachmentUploading(false);
         setProjectAttachmentArchiving(false);
         setProjectAttachmentDownloadingId(null);
@@ -882,6 +886,8 @@ export function SharedApp({ services }) {
         setProjectResourceModalOpen(false);
         setProjectResourceArchiveTarget(null);
         setProjectResourceStatus('');
+        setProjectResourcePasswordResetOpen(false);
+        setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' });
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectMutationSubmitting(projectMutationRef.current);
@@ -1599,6 +1605,40 @@ export function SharedApp({ services }) {
       navigate(buildProjectDetailPath({ owner: current.owner, projectKey, tab: 'resources' }), `资料“${target.title}”已归档。`);
     } catch (caught) {
       if (isCurrent()) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料归档失败。')));
+    } finally {
+      if (projectResourceMutationRef.current === actionId) {
+        projectResourceMutationRef.current = 0;
+        setProjectResourceSubmitting(false);
+      }
+    }
+  }
+
+  async function submitProjectResourcePasswordReset(event) {
+    event.preventDefault();
+    const current = routeRef.current;
+    if (!user?.is_super_admin || !projectResourceDetail || current.id !== 'project-resource-detail' || projectResourceMutationRef.current) return;
+    const projectKey = current.projectKey;
+    const resourceId = current.resourceId;
+    const actionId = projectResourceActionRef.current + 1;
+    projectResourceActionRef.current = actionId;
+    projectResourceMutationRef.current = actionId;
+    setProjectResourceSubmitting(true);
+    setProjectResourceError('');
+    const isCurrent = () => {
+      const active = routeRef.current;
+      return projectResourceActionRef.current === actionId && active.id === 'project-resource-detail' && active.projectKey === projectKey && active.resourceId === resourceId;
+    };
+    try {
+      const resource = await api.resetProjectResourcePassword(projectKey, resourceId, projectResourcePasswordResetForm);
+      if (!isCurrent()) return;
+      setProjectResourceDetail(resource);
+      setProjectResourceLocked(resource.is_protected);
+      setProjectResourcePassword('');
+      setProjectResourcePasswordResetOpen(false);
+      setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' });
+      setProjectResourceStatus(resource.is_protected ? '资料访问密码已重置。' : '资料访问密码已清除。');
+    } catch (caught) {
+      if (isCurrent()) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料访问密码重置失败。')));
     } finally {
       if (projectResourceMutationRef.current === actionId) {
         projectResourceMutationRef.current = 0;
@@ -3291,7 +3331,7 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'project-resource-detail' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-resource-detail-title">
-              <div className="shell-panel-header project-center-header"><div><h2 id="project-resource-detail-title">{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h2><p className="shell-muted">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</p></div><div className="shell-actions-inline">{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑</Button> : null}{canManageProject && projectResourceDetail?.status !== 'archived' ? <Button variant="danger" disabled={projectResourceSubmitting} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}<a className="shell-link" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a></div></div>
+              <div className="shell-panel-header project-center-header"><div><h2 id="project-resource-detail-title">{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h2><p className="shell-muted">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</p></div><div className="shell-actions-inline">{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑</Button> : null}{user?.is_super_admin && projectResourceDetail?.status !== 'archived' ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => { setProjectResourceError(''); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); setProjectResourcePasswordResetOpen(true); }}>重置访问密码</Button> : null}{canManageProject && projectResourceDetail?.status !== 'archived' ? <Button variant="danger" disabled={projectResourceSubmitting} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}<a className="shell-link" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a></div></div>
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
               {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
@@ -3610,6 +3650,13 @@ export function SharedApp({ services }) {
             </form>
           </Modal>
           <Modal open={Boolean(projectResourceArchiveTarget)} title="归档项目资料" onClose={() => { if (!projectResourceSubmitting) setProjectResourceArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => setProjectResourceArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectResourceSubmitting} onClick={() => void confirmProjectResourceArchive()}>确认归档</Button></>}><p>确认归档资料“{projectResourceArchiveTarget?.title}”？归档后不能继续编辑，但资料记录会保留。</p></Modal>
+          <Modal open={projectResourcePasswordResetOpen} title="重置资料访问密码" onClose={() => { if (!projectResourceSubmitting) { setProjectResourcePasswordResetOpen(false); setProjectResourcePasswordResetForm({ accessPasswordAction: 'set', accessPassword: '' }); } }} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => setProjectResourcePasswordResetOpen(false)}>取消</Button><Button variant="danger" loading={projectResourceSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-resource-password-reset-form'))?.requestSubmit()}>确认重置</Button></>}>
+            <form id="project-resource-password-reset-form" onSubmit={submitProjectResourcePasswordReset}>
+              <p>此操作仅限超级管理员。设置或清除密码会立即改变其他宿主后续访问此资料的方式，并记录安全审计。</p>
+              <Field id="project-resource-password-reset-action" label="重置方式" required><select value={projectResourcePasswordResetForm.accessPasswordAction} onChange={(event) => setProjectResourcePasswordResetForm({ accessPasswordAction: event.target.value, accessPassword: '' })}><option value="set">设置新密码</option><option value="clear">清除密码保护</option></select></Field>
+              {projectResourcePasswordResetForm.accessPasswordAction === 'set' ? <Field id="project-resource-password-reset-value" label="新访问密码" required><input type="password" autoComplete="new-password" minLength={4} maxLength={128} value={projectResourcePasswordResetForm.accessPassword} onChange={(event) => setProjectResourcePasswordResetForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
+            </form>
+          </Modal>
         </>
       )}
     </main>

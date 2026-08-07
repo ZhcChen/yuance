@@ -3814,6 +3814,17 @@ pub async fn reset_project_resource_password(
         })),
     )
     .await?;
+    let refresh_user_ids = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT user_id FROM project_members WHERE project_id = ?1
+        UNION
+        SELECT id FROM users WHERE is_super_admin = 1 AND status = 'active'
+        "#,
+    )
+    .bind(project.id)
+    .fetch_all(pool)
+    .await?;
+    realtime::publish_topbar_refresh_for_users(refresh_user_ids);
 
     Ok(json(project_resource_payload(updated)))
 }

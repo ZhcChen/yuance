@@ -1823,6 +1823,13 @@ test('shared project resources create edit password actions and archive', async 
     expect(route.request().postDataJSON()).toEqual({ access_password: 'safe-pass' });
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
   });
+  await page.route('**/api/v1/projects/YCE/resources/930/password/reset', async (route) => {
+    const payload = route.request().postDataJSON();
+    mutations.push(['reset', payload]);
+    resource = { ...resource, is_protected: payload.access_password_action === 'set' };
+    resources = [resource];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+  });
   await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
   await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
 
@@ -1841,9 +1848,20 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: 'release=v1', body_format: 'plain', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: 'YCE-TASK-2', related_cycle_id: 7 }]);
 
   await page.getByRole('link', { name: '部署手册' }).click();
-  await page.locator('#project-resource-password').fill('safe-pass');
-  await page.getByRole('button', { name: '解锁资料' }).click();
+  await page.getByRole('button', { name: '重置访问密码' }).click();
+  let resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
+  await resetDialog.getByLabel('新访问密码').fill('reset-pass');
+  await resetDialog.getByRole('button', { name: '确认重置' }).click();
+  await expect(resetDialog).not.toBeVisible();
+  await expect(page.getByText('资料访问密码已重置。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '解锁资料' })).toBeVisible();
+  expect(mutations[1]).toEqual(['reset', { access_password_action: 'set', access_password: 'reset-pass' }]);
+  await page.getByRole('button', { name: '重置访问密码' }).click();
+  resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
+  await resetDialog.getByLabel('重置方式').selectOption('clear');
+  await resetDialog.getByRole('button', { name: '确认重置' }).click();
   await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  expect(mutations[2]).toEqual(['reset', { access_password_action: 'clear', access_password: '' }]);
   await page.getByRole('button', { name: '编辑' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
   await editDialog.getByLabel('资料标题').fill('部署手册 2.0');
@@ -1851,19 +1869,19 @@ test('shared project resources create edit password actions and archive', async 
   await editDialog.getByLabel('新访问密码').fill('next-pass');
   await editDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByRole('heading', { level: 2, name: '部署手册 2.0' })).toBeVisible();
-  expect(mutations[1][1]).toMatchObject({ access_password_action: 'set', access_password: 'next-pass' });
+  expect(mutations[3][1]).toMatchObject({ access_password_action: 'set', access_password: 'next-pass' });
 
   await page.getByRole('button', { name: '编辑' }).click();
   const clearDialog = page.getByRole('dialog', { name: '编辑项目资料' });
   await clearDialog.getByLabel('密码处理方式').selectOption('clear');
   await clearDialog.getByRole('button', { name: '保存' }).click();
   await expect(clearDialog).not.toBeVisible();
-  expect(mutations[2][1]).toMatchObject({ access_password_action: 'clear', access_password: '' });
+  expect(mutations[4][1]).toMatchObject({ access_password_action: 'clear', access_password: '' });
   await page.getByRole('button', { name: '归档' }).click();
   await page.getByRole('dialog', { name: '归档项目资料' }).getByRole('button', { name: '确认归档' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\?tab=resources$/);
   await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('已归档');
-  expect(mutations[3]).toEqual(['archive', null]);
+  expect(mutations[5]).toEqual(['archive', null]);
 });
 
 test('shared project resources hide mutations from viewers', async ({ page }) => {
@@ -1880,6 +1898,7 @@ test('shared project resources hide mutations from viewers', async ({ page }) =>
   await page.getByRole('link', { name: '只读资料' }).click();
   await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '归档' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '重置访问密码' })).toHaveCount(0);
 });
 
 test('shared project resource mutation ignores a late response after navigation', async ({ page }) => {

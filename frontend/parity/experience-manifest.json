@@ -780,16 +780,19 @@
       "pageId": "page.project.resource-detail",
       "trigger": "super administrator resets resource password",
       "inputs": ["project-key", "resource-id", "access-password-action", "access-password", "csrf-token"],
-      "validation": "仅超级管理员，动作只允许 keep/set/clear，设置密码为 4 到 128 位。",
+      "validation": "仅超级管理员，动作只允许 set/clear，设置密码为 4 到 128 位。",
       "confirmation": "明确说明设置或清除后现有访问状态将失效。",
       "request": { "method": "POST", "path": "/web/projects/{project_key}/resources/{resource_id}/password/reset" },
+      "apiEffects": [
+        { "phase": "primary", "method": "POST", "path": "/api/v1/projects/{project_key}/resources/{resource_id}/password/reset", "purpose": "仅超级管理员设置或清除资料访问密码" }
+      ],
       "successEffect": "重置或清除密码、撤销旧访问 token 并记录高风险审计。",
       "errorEffects": ["普通用户统一 403", "密码格式错误", "资源不存在或已归档"],
       "realtimeEffect": "其他宿主的资源解锁状态失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-011-web-desktop-u3-project-resource-password-reset-review.md"] }
     },
     {
       "id": "action.project.resource.update",

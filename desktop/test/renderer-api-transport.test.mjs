@@ -75,7 +75,7 @@ test("api-client mutations map to fixed domain operations without request primit
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {
     calls.push([operation, input]);
-    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : operation === "project.resources" ? [resourceFixture] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive"].includes(operation) ? resourceFixture : {} };
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : operation === "project.resources" ? [resourceFixture] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : {} };
   } });
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
@@ -91,7 +91,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.getProjectAttachments("DEMO"); await client.archiveProjectAttachment("DEMO", 8);
   await client.getProjectResources("DEMO", { q: "release" }); await client.getProjectResource("DEMO", 9); await client.unlockProjectResource("DEMO", 9, "vault-pass");
   const resourcePayload = { title: "Runbook", category: "other", body: "Body", bodyFormat: "plain", accessPassword: "", tags: ["ops"], relatedWorkItemKey: "", relatedCycleId: null };
-  await client.createProjectResource("DEMO", resourcePayload); await client.updateProjectResource("DEMO", 9, { ...resourcePayload, accessPasswordAction: "keep" }); await client.archiveProjectResource("DEMO", 9);
+  await client.createProjectResource("DEMO", resourcePayload); await client.updateProjectResource("DEMO", 9, { ...resourcePayload, accessPasswordAction: "keep" }); await client.archiveProjectResource("DEMO", 9); await client.resetProjectResourcePassword("DEMO", 9, { accessPasswordAction: "clear", accessPassword: "" });
   await client.updateOwnPassword({ currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" });
   await client.createApiToken({ name: "Agent", scopes: ["project:read"], projectScope: "all" });
   await client.updateApiToken(7, { name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" });
@@ -126,6 +126,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["project.resourcecreate", { projectKey: "DEMO", ...resourcePayload }],
     ["project.resourceupdate", { projectKey: "DEMO", resourceId: 9, ...resourcePayload, accessPasswordAction: "keep" }],
     ["project.resourcearchive", { projectKey: "DEMO", resourceId: 9 }],
+    ["project.resourcepasswordreset", { projectKey: "DEMO", resourceId: 9, accessPasswordAction: "clear", accessPassword: "" }],
     ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }],
     ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }],
     ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" }],
