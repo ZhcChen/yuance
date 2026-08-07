@@ -620,6 +620,7 @@ export function SharedApp({ services }) {
   const projectAttachmentPreviewRequestRef = useRef(0);
   const projectAttachmentPreviewCapabilityRef = useRef('');
   const projectResourceActionRef = useRef(0);
+  const projectResourceMutationRef = useRef(0);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -644,6 +645,11 @@ export function SharedApp({ services }) {
   const [projectResourceUnlocking, setProjectResourceUnlocking] = useState(false);
   const [projectResourceError, setProjectResourceError] = useState('');
   const [projectResourceFilters, setProjectResourceFilters] = useState({ q: '', category: '', status: '', tag: '' });
+  const [projectResourceSubmitting, setProjectResourceSubmitting] = useState(false);
+  const [projectResourceModalOpen, setProjectResourceModalOpen] = useState(false);
+  const [projectResourceForm, setProjectResourceForm] = useState({ id: 0, title: '', category: 'other', body: '', bodyFormat: 'plain', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
+  const [projectResourceArchiveTarget, setProjectResourceArchiveTarget] = useState(/** @type {AppProjectResource | null} */ (null));
+  const [projectResourceStatus, setProjectResourceStatus] = useState('');
   const [projectAttachmentUploading, setProjectAttachmentUploading] = useState(false);
   const [projectAttachmentArchiving, setProjectAttachmentArchiving] = useState(false);
   const [projectAttachmentDownloadingId, setProjectAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
@@ -851,6 +857,9 @@ export function SharedApp({ services }) {
         setProjectResources([]);
         setProjectResourceFilters({ q: '', category: '', status: '', tag: '' });
         setProjectResourceError('');
+        setProjectResourceModalOpen(false);
+        setProjectResourceArchiveTarget(null);
+        setProjectResourceStatus('');
         setProjectAttachmentUploading(false);
         setProjectAttachmentArchiving(false);
         setProjectAttachmentDownloadingId(null);
@@ -870,6 +879,9 @@ export function SharedApp({ services }) {
         setProjectResourcePassword('');
         setProjectResourceUnlocking(false);
         setProjectResourceError('');
+        setProjectResourceModalOpen(false);
+        setProjectResourceArchiveTarget(null);
+        setProjectResourceStatus('');
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectMutationSubmitting(projectMutationRef.current);
@@ -1484,6 +1496,114 @@ export function SharedApp({ services }) {
       setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料解锁失败。')));
     } finally {
       if (isCurrentResource()) setProjectResourceUnlocking(false);
+    }
+  }
+
+  /** @param {AppProjectResource | null} [resource] */
+  function openProjectResourceForm(resource = null) {
+    if (resource?.is_protected && projectResourceLocked) return;
+    setProjectResourceError('');
+    setProjectResourceForm(resource ? {
+      id: resource.id,
+      title: resource.title,
+      category: resource.category || 'other',
+      body: resource.body,
+      bodyFormat: resource.body_format || 'plain',
+      accessPasswordAction: 'keep',
+      accessPassword: '',
+      tagsText: resource.tags.join('，'),
+      relatedWorkItemKey: resource.related_work_item?.key || '',
+      relatedCycleId: resource.related_cycle ? String(resource.related_cycle.id) : '',
+    } : { id: 0, title: '', category: 'other', body: '', bodyFormat: 'plain', accessPasswordAction: 'keep', accessPassword: '', tagsText: '', relatedWorkItemKey: '', relatedCycleId: '' });
+    setProjectResourceModalOpen(true);
+  }
+
+  function projectResourcePayload() {
+    return {
+      title: projectResourceForm.title,
+      category: projectResourceForm.category,
+      body: projectResourceForm.body,
+      bodyFormat: projectResourceForm.bodyFormat,
+      accessPasswordAction: projectResourceForm.accessPasswordAction,
+      accessPassword: projectResourceForm.accessPassword,
+      tags: projectResourceForm.tagsText.split(/[,，;；]/u).map((tag) => tag.trim()).filter(Boolean),
+      relatedWorkItemKey: projectResourceForm.relatedWorkItemKey.trim(),
+      relatedCycleId: projectResourceForm.relatedCycleId ? Number(projectResourceForm.relatedCycleId) : null,
+    };
+  }
+
+  async function submitProjectResource(event) {
+    event.preventDefault();
+    const current = routeRef.current;
+    const editing = projectResourceForm.id > 0;
+    if (projectResourceMutationRef.current || (editing && current.id !== 'project-resource-detail') || (!editing && (current.id !== 'project-detail' || current.tab !== 'resources'))) return;
+    const projectKey = current.projectKey;
+    const resourceId = editing ? projectResourceForm.id : 0;
+    const actionId = projectResourceActionRef.current + 1;
+    projectResourceActionRef.current = actionId;
+    projectResourceMutationRef.current = actionId;
+    setProjectResourceSubmitting(true);
+    setProjectResourceError('');
+    const isCurrent = () => {
+      const active = routeRef.current;
+      return projectResourceActionRef.current === actionId
+        && active.projectKey === projectKey
+        && (editing ? active.id === 'project-resource-detail' && active.resourceId === resourceId : active.id === 'project-detail' && active.tab === 'resources');
+    };
+    try {
+      const payload = projectResourcePayload();
+      const resource = editing
+        ? await api.updateProjectResource(projectKey, resourceId, payload)
+        : await api.createProjectResource(projectKey, payload);
+      if (!isCurrent()) return;
+      if (editing) {
+        setProjectResourceDetail(resource);
+        setProjectResourceLocked(false);
+        setProjectResourceModalOpen(false);
+        setProjectResourceStatus('资料已更新。');
+      } else {
+        const resources = await api.getProjectResources(projectKey, projectResourceFilters);
+        if (!isCurrent()) return;
+        setProjectResources(resources);
+        setProjectResourceModalOpen(false);
+        setProjectResourceStatus(`资料“${resource.title}”已创建。`);
+      }
+    } catch (caught) {
+      if (isCurrent()) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error(editing ? '资料更新失败。' : '资料创建失败。')));
+    } finally {
+      if (projectResourceMutationRef.current === actionId) {
+        projectResourceMutationRef.current = 0;
+        setProjectResourceSubmitting(false);
+      }
+    }
+  }
+
+  async function confirmProjectResourceArchive() {
+    const current = routeRef.current;
+    const target = projectResourceArchiveTarget;
+    if (!target || current.id !== 'project-resource-detail' || current.resourceId !== target.id || projectResourceMutationRef.current) return;
+    const projectKey = current.projectKey;
+    const actionId = projectResourceActionRef.current + 1;
+    projectResourceActionRef.current = actionId;
+    projectResourceMutationRef.current = actionId;
+    setProjectResourceSubmitting(true);
+    setProjectResourceError('');
+    const isCurrent = () => {
+      const active = routeRef.current;
+      return projectResourceActionRef.current === actionId && active.id === 'project-resource-detail' && active.projectKey === projectKey && active.resourceId === target.id;
+    };
+    try {
+      await api.archiveProjectResource(projectKey, target.id);
+      if (!isCurrent()) return;
+      setProjectResourceArchiveTarget(null);
+      navigate(buildProjectDetailPath({ owner: current.owner, projectKey, tab: 'resources' }), `资料“${target.title}”已归档。`);
+    } catch (caught) {
+      if (isCurrent()) setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料归档失败。')));
+    } finally {
+      if (projectResourceMutationRef.current === actionId) {
+        projectResourceMutationRef.current = 0;
+        setProjectResourceSubmitting(false);
+      }
     }
   }
 
@@ -3127,7 +3247,7 @@ export function SharedApp({ services }) {
 
               {activeProjectDetail && route.tab === 'resources' ? (
                 <section aria-labelledby="project-resources-title">
-                  <div className="shell-panel-header"><div><h3 id="project-resources-title">项目资料库</h3><p className="shell-muted">当前筛选共 {projectResources.length} 条资料</p></div></div>
+                  <div className="shell-panel-header"><div><h3 id="project-resources-title">项目资料库</h3><p className="shell-muted">当前筛选共 {projectResources.length} 条资料</p></div>{canManageProject ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
                   <form className="work-item-filter-bar" onSubmit={submitProjectResourceFilters}>
                     <label className="work-item-filter-field work-item-filter-keyword"><span>关键词</span><input value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></label>
                     <label className="work-item-filter-field"><span>分类</span><input value={projectResourceFilters.category} placeholder="例如 integration" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))} /></label>
@@ -3136,6 +3256,7 @@ export function SharedApp({ services }) {
                     <div className="work-item-filter-actions"><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></div>
                   </form>
                   {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
+                  {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
                   {projectResources.length ? <ul className="project-list" aria-label="项目资料列表">{projectResources.map((resource) => {
                     const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
                     return <li className="project-row" key={resource.id}><div className="project-main"><div className="project-heading"><a className="shell-link" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a><span className="project-status-pill">{resource.category || '未分类'}</span>{resource.is_protected ? <span className="project-status-pill">受保护</span> : null}{resource.status === 'archived' ? <span className="project-status-pill">已归档</span> : null}</div><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <p className="shell-muted">标签：{resource.tags.join('、')}</p> : null}<p className="shell-muted">{resource.related_work_item ? `关联 ${resource.related_work_item.key}` : resource.related_cycle ? `关联周期 ${resource.related_cycle.name}` : '未关联工作项或周期'} · {resource.updated_by} 更新于 {formatTimestamp(resource.updated_at)}</p></div></li>;
@@ -3170,8 +3291,9 @@ export function SharedApp({ services }) {
             </section>
           ) : route.id === 'project-resource-detail' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-resource-detail-title">
-              <div className="shell-panel-header project-center-header"><div><h2 id="project-resource-detail-title">{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h2><p className="shell-muted">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</p></div><a className="shell-link" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a></div>
+              <div className="shell-panel-header project-center-header"><div><h2 id="project-resource-detail-title">{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h2><p className="shell-muted">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</p></div><div className="shell-actions-inline">{canManageProject && projectResourceDetail?.status !== 'archived' && !projectResourceLocked ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm(projectResourceDetail)}>编辑</Button> : null}{canManageProject && projectResourceDetail?.status !== 'archived' ? <Button variant="danger" disabled={projectResourceSubmitting} onClick={() => { setProjectResourceError(''); setProjectResourceArchiveTarget(projectResourceDetail); }}>归档</Button> : null}<a className="shell-link" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a></div></div>
               {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
+              {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
               {projectResourceDetail ? <>
                 <div className="work-item-detail-grid"><article className="work-item-detail-panel"><h3>资料信息</h3><dl className="work-item-detail-meta"><div><dt>分类</dt><dd>{projectResourceDetail.category || '未分类'}</dd></div><div><dt>状态</dt><dd>{projectResourceDetail.status === 'archived' ? '已归档' : '生效中'}</dd></div><div><dt>保护</dt><dd>{projectResourceDetail.is_protected ? '密码保护' : '公开可读'}</dd></div><div><dt>格式</dt><dd>{projectResourceDetail.body_format || 'plain'}</dd></div><div><dt>更新人</dt><dd>{projectResourceDetail.updated_by}</dd></div><div><dt>更新时间</dt><dd>{formatTimestamp(projectResourceDetail.updated_at)}</dd></div></dl></article><article className="work-item-detail-panel"><h3>摘要与关联</h3><p>{projectResourceDetail.summary || '暂无摘要。'}</p><p className="shell-muted">{projectResourceDetail.tags.length ? `标签：${projectResourceDetail.tags.join('、')}` : '暂无标签'}</p><p className="shell-muted">{projectResourceDetail.related_work_item ? `关联工作项：${projectResourceDetail.related_work_item.key} · ${projectResourceDetail.related_work_item.title}` : projectResourceDetail.related_cycle ? `关联周期：${projectResourceDetail.related_cycle.name}` : '暂无关联对象'}</p></article></div>
                 {projectResourceLocked ? <article className="work-item-detail-panel project-resource-lock"><h3>此资料受密码保护</h3><p className="shell-muted">输入访问密码后可在当前页面读取完整正文。</p><form onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><input type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>解锁资料</Button></form></article> : <article className="work-item-detail-panel"><h3>资料正文</h3><pre className="project-resource-body">{projectResourceDetail.body || '暂无正文。'}</pre></article>}
@@ -3474,6 +3596,20 @@ export function SharedApp({ services }) {
               </article>
             </section>
           )}
+          <Modal open={projectResourceModalOpen} title={projectResourceForm.id ? '编辑项目资料' : '新建项目资料'} onClose={() => { if (!projectResourceSubmitting) { setProjectResourceModalOpen(false); setProjectResourceForm((current) => ({ ...current, accessPassword: '' })); } }} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => setProjectResourceModalOpen(false)}>取消</Button><Button loading={projectResourceSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-resource-form'))?.requestSubmit()}>保存</Button></>}>
+            <form id="project-resource-form" onSubmit={submitProjectResource}>
+              <Field id="project-resource-title" label="资料标题" required><input value={projectResourceForm.title} maxLength={120} onChange={(event) => setProjectResourceForm((current) => ({ ...current, title: event.target.value }))} /></Field>
+              <Field id="project-resource-category" label="分类" required><select value={projectResourceForm.category} onChange={(event) => setProjectResourceForm((current) => ({ ...current, category: event.target.value }))}><option value="integration">集成</option><option value="customer">客户</option><option value="meeting">会议</option><option value="implementation">实施</option><option value="other">其他</option></select></Field>
+              <Field id="project-resource-tags" label="标签"><input value={projectResourceForm.tagsText} placeholder="多个标签使用逗号分隔" onChange={(event) => setProjectResourceForm((current) => ({ ...current, tagsText: event.target.value }))} /></Field>
+              <Field id="project-resource-related-item" label="关联工作项 Key"><input value={projectResourceForm.relatedWorkItemKey} maxLength={64} onChange={(event) => setProjectResourceForm((current) => ({ ...current, relatedWorkItemKey: event.target.value }))} /></Field>
+              <Field id="project-resource-related-cycle" label="关联周期 ID"><input type="number" min="1" value={projectResourceForm.relatedCycleId} onChange={(event) => setProjectResourceForm((current) => ({ ...current, relatedCycleId: event.target.value }))} /></Field>
+              <Field id="project-resource-body-format" label="正文格式" required><select value={projectResourceForm.bodyFormat} onChange={(event) => setProjectResourceForm((current) => ({ ...current, bodyFormat: event.target.value }))}><option value="plain">纯文本</option><option value="html">HTML</option></select></Field>
+              <Field id="project-resource-body" label="资料正文"><textarea value={projectResourceForm.body} onChange={(event) => setProjectResourceForm((current) => ({ ...current, body: event.target.value }))} /></Field>
+              {projectResourceForm.id ? <Field id="project-resource-password-action" label="密码处理方式" required><select value={projectResourceForm.accessPasswordAction} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPasswordAction: event.target.value, accessPassword: '' }))}><option value="keep">保持不变</option><option value="set">设置密码</option><option value="clear">清除密码</option></select></Field> : null}
+              {(!projectResourceForm.id || projectResourceForm.accessPasswordAction === 'set') ? <Field id="project-resource-access-password" label={projectResourceForm.id ? '新访问密码' : '初始访问密码'}><input type="password" autoComplete="new-password" minLength={projectResourceForm.accessPassword ? 4 : undefined} maxLength={128} value={projectResourceForm.accessPassword} onChange={(event) => setProjectResourceForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
+            </form>
+          </Modal>
+          <Modal open={Boolean(projectResourceArchiveTarget)} title="归档项目资料" onClose={() => { if (!projectResourceSubmitting) setProjectResourceArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => setProjectResourceArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectResourceSubmitting} onClick={() => void confirmProjectResourceArchive()}>确认归档</Button></>}><p>确认归档资料“{projectResourceArchiveTarget?.title}”？归档后不能继续编辑，但资料记录会保留。</p></Modal>
         </>
       )}
     </main>

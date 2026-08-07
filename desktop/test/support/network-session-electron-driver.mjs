@@ -488,6 +488,21 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const unlockedProjectResource = await rest.execute("project.resourceunlock", {
     projectKey: "YCE", resourceId: protectedResource.id, accessPassword: "DesktopResource2026!",
   });
+  stage("project-resource-mutations");
+  const createdProjectResource = await rest.execute("project.resourcecreate", {
+    projectKey: "YCE", title: "Desktop writable resource integration", category: "implementation",
+    body: "desktop-resource-created", bodyFormat: "plain", accessPassword: "",
+    tags: ["desktop-write"], relatedWorkItemKey: "YCE-TASK-2", relatedCycleId: null,
+  });
+  const updatedProjectResource = await rest.execute("project.resourceupdate", {
+    projectKey: "YCE", resourceId: createdProjectResource.id, title: "Desktop writable resource updated",
+    category: "implementation", body: "desktop-resource-updated", bodyFormat: "plain",
+    accessPasswordAction: "set", accessPassword: "DesktopWrite2026!", tags: ["desktop-write", "updated"],
+    relatedWorkItemKey: "YCE-TASK-2", relatedCycleId: null,
+  });
+  const archivedProjectResource = await rest.execute("project.resourcearchive", {
+    projectKey: "YCE", resourceId: createdProjectResource.id,
+  });
   stage("update-profile");
   const updatedProfile = await rest.execute("identity.profileupdate", {
     displayName: "Desktop profile integration",
@@ -557,6 +572,9 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "project.cycleupdate",
     "project.cycleclose",
     "project.resourceunlock",
+    "project.resourcecreate",
+    "project.resourceupdate",
+    "project.resourcearchive",
     "identity.profileupdate",
     "workitem.update",
     "workitem.handoff",
@@ -604,6 +622,12 @@ async function runRealBusinessApi({ origin, mode, network }) {
       && protectedResource.body === ""
       && unlockedProjectResource.id === protectedResource.id
       && unlockedProjectResource.body === "desktop-protected-body",
+    projectResourcesManaged: createdProjectResource.id > 0
+      && updatedProjectResource.id === createdProjectResource.id
+      && updatedProjectResource.title === "Desktop writable resource updated"
+      && updatedProjectResource.is_protected
+      && archivedProjectResource.id === createdProjectResource.id
+      && archivedProjectResource.status === "archived",
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"
       && verifiedProfile.display_name === updatedProfile.display_name,
     accountSecurity: deviceSessions.some((session) => session.is_current)

@@ -756,8 +756,8 @@
       "realtimeEffect": "项目资源列表和活动流失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md"] }
     },
     {
       "id": "action.project.resource.unlock",
@@ -809,8 +809,8 @@
       "realtimeEffect": "资源详情和项目资源列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md"] }
     },
     {
       "id": "action.project.resource.archive",
@@ -825,8 +825,8 @@
       "realtimeEffect": "资源列表和打开的资源详情失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md"] }
     },
     {
       "id": "action.project.resource-attachment.download",

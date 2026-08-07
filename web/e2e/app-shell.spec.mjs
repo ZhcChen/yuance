@@ -1763,7 +1763,7 @@ test('shared project resources filter read and unlock protected details', async 
   await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
 
   await expect(page.getByRole('heading', { level: 3, name: '此资料受密码保护' })).toBeVisible();
-  await page.getByLabel('访问密码').fill('stale-pass');
+  await page.locator('#project-resource-password').fill('stale-pass');
   await page.getByRole('button', { name: '解锁资料' }).click();
   await delayedUnlockStarted;
   await page.getByRole('link', { name: '返回资料库' }).click();
@@ -1771,15 +1771,153 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(page.getByRole('list', { name: '项目资料列表' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
-  await page.getByLabel('访问密码').fill('wrong-pass');
+  await page.locator('#project-resource-password').fill('wrong-pass');
   await page.getByRole('button', { name: '解锁资料' }).click();
   await expect(page.getByRole('alert')).toContainText('访问密码不正确');
   await expect(page.getByRole('heading', { level: 3, name: '此资料受密码保护' })).toBeVisible();
-  await page.getByLabel('访问密码').fill('safe-pass');
+  await page.locator('#project-resource-password').fill('safe-pass');
   await page.getByRole('button', { name: '解锁资料' }).click();
   await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
   await expect(page.getByText('secret=desktop-browser-parity')).toBeVisible();
   expect(unlockPasswords).toEqual(['stale-pass', 'wrong-pass', 'safe-pass']);
+});
+
+test('shared project resources create edit password actions and archive', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  let resource = projectResourceFixture({ id: 930, title: '待创建资料', body: 'initial', tags: [], related_work_item: null });
+  let resources = [];
+  const mutations = [];
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === 'POST') {
+      const payload = request.postDataJSON();
+      mutations.push(['create', payload]);
+      resource = projectResourceFixture({ id: 930, title: payload.title, category: payload.category, body: payload.body, body_format: payload.body_format, summary: payload.body, is_protected: Boolean(payload.access_password), tags: payload.tags, related_work_item: payload.related_work_item_key ? { key: payload.related_work_item_key, item_type: 'task', title: '关联工作项', url: `/web/work-items/${payload.related_work_item_key}` } : null, related_cycle: payload.related_cycle_id ? { id: payload.related_cycle_id, name: '迭代一', start_date: '2026-08-01', end_date: '2026-08-15', url: `/web/projects/YCE/cycles/${payload.related_cycle_id}` } : null, url: '/web/projects/YCE/resources/930' });
+      resources = [resource];
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resources }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/930', async (route) => {
+    const request = route.request();
+    if (request.method() === 'PATCH') {
+      const payload = request.postDataJSON();
+      mutations.push(['update', payload]);
+      resource = { ...resource, title: payload.title, category: payload.category, body: payload.body, body_format: payload.body_format, summary: payload.body, is_protected: payload.access_password_action === 'set' ? true : payload.access_password_action === 'clear' ? false : resource.is_protected, tags: payload.tags, updated_at: '2026-08-07T09:00:00Z' };
+      resources = [resource];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+      return;
+    }
+    if (request.method() === 'DELETE') {
+      mutations.push(['archive', null]);
+      resource = { ...resource, status: 'archived' };
+      resources = [resource];
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/930/unlock', async (route) => {
+    expect(route.request().postDataJSON()).toEqual({ access_password: 'safe-pass' });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE?tab=resources');
+  await page.getByRole('button', { name: '新建资料' }).click();
+  const createDialog = page.getByRole('dialog', { name: '新建项目资料' });
+  await createDialog.getByLabel('资料标题').fill('部署手册');
+  await createDialog.getByLabel('分类').selectOption('implementation');
+  await createDialog.getByLabel('标签').fill('发布，运维');
+  await createDialog.getByLabel('关联工作项 Key').fill('YCE-TASK-2');
+  await createDialog.getByLabel('关联周期 ID').fill('7');
+  await createDialog.getByLabel('资料正文').fill('release=v1');
+  await createDialog.getByLabel('初始访问密码').fill('safe-pass');
+  await createDialog.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('部署手册');
+  expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: 'release=v1', body_format: 'plain', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: 'YCE-TASK-2', related_cycle_id: 7 }]);
+
+  await page.getByRole('link', { name: '部署手册' }).click();
+  await page.locator('#project-resource-password').fill('safe-pass');
+  await page.getByRole('button', { name: '解锁资料' }).click();
+  await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  await page.getByRole('button', { name: '编辑' }).click();
+  const editDialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await editDialog.getByLabel('资料标题').fill('部署手册 2.0');
+  await editDialog.getByLabel('密码处理方式').selectOption('set');
+  await editDialog.getByLabel('新访问密码').fill('next-pass');
+  await editDialog.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: '部署手册 2.0' })).toBeVisible();
+  expect(mutations[1][1]).toMatchObject({ access_password_action: 'set', access_password: 'next-pass' });
+
+  await page.getByRole('button', { name: '编辑' }).click();
+  const clearDialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await clearDialog.getByLabel('密码处理方式').selectOption('clear');
+  await clearDialog.getByRole('button', { name: '保存' }).click();
+  await expect(clearDialog).not.toBeVisible();
+  expect(mutations[2][1]).toMatchObject({ access_password_action: 'clear', access_password: '' });
+  await page.getByRole('button', { name: '归档' }).click();
+  await page.getByRole('dialog', { name: '归档项目资料' }).getByRole('button', { name: '确认归档' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\?tab=resources$/);
+  await expect(page.getByRole('list', { name: '项目资料列表' })).toContainText('已归档');
+  expect(mutations[3]).toEqual(['archive', null]);
+});
+
+test('shared project resources hide mutations from viewers', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const resource = projectResourceFixture({ id: 940, title: '只读资料', url: '/web/projects/YCE/resources/940' });
+  await login(page, '/web/app');
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: 2, username: 'resource_viewer', display_name: '资料只读成员', email: '', mobile: '', status: 'active', is_super_admin: false, roles: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' } }) }));
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
+  await page.route('**/api/v1/projects/YCE/resources/940', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ user_id: 2, display_name: '资料只读成员', username: 'resource_viewer', member_role: 'viewer', joined_at: '2026-08-01T00:00:00Z' }] }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+  await page.goto('/web/app/projects/YCE?tab=resources');
+  await expect(page.getByRole('button', { name: '新建资料' })).toHaveCount(0);
+  await page.getByRole('link', { name: '只读资料' }).click();
+  await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '归档' })).toHaveCount(0);
+});
+
+test('shared project resource mutation ignores a late response after navigation', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const resource = projectResourceFixture({ id: 950, title: '慢更新资料', url: '/web/projects/YCE/resources/950' });
+  let releaseUpdate;
+  const updateStarted = new Promise((resolve) => { releaseUpdate = resolve; });
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
+  await page.route('**/api/v1/projects/YCE/resources/950', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      releaseUpdate();
+      await new Promise((resolve) => { releaseUpdate = resolve; });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...resource, title: '不应污染新路由' } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+  await login(page, '/web/app/projects/YCE/resources/950');
+  await page.getByRole('button', { name: '编辑' }).click();
+  const dialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await dialog.getByLabel('资料标题').fill('迟到更新');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await updateStarted;
+  await page.evaluate(() => {
+    history.pushState({}, '', '/web/app/projects/YCE?tab=resources');
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\?tab=resources$/);
+  await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '新建资料' })).toBeDisabled();
+  releaseUpdate();
+  await expect(page.getByRole('button', { name: '新建资料' })).toBeEnabled();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByText('不应污染新路由')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('shared project file upload failure keeps registered file context', async ({ page }) => {
