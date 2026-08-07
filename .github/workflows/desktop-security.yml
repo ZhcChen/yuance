@@ -2,18 +2,6 @@ name: Desktop Security
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - "desktop/**"
-      - "api/**"
-      - "docs/openapi/**"
-      - "frontend/packages/app-core/**"
-      - "frontend/packages/app-shell/**"
-      - "frontend/packages/platform-contract/**"
-      - "frontend/packages/ui/**"
-      - "frontend/package-lock.json"
-      - ".github/workflows/desktop-security.yml"
-      - ".github/workflows/release-desktop.yml"
 
 permissions:
   contents: read
