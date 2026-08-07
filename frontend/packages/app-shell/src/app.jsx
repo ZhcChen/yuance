@@ -7,6 +7,7 @@ import {
   buildProfilePath,
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
+  buildProjectResourceDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -119,6 +120,27 @@ import { errorMessage } from './errors.js';
  * @property {number} work_item_count
  * @property {number} active_work_item_count
  * @property {string} updated_at
+ */
+
+/**
+ * @typedef AppProjectResource
+ * @property {number} id
+ * @property {string} project_key
+ * @property {string} title
+ * @property {string} category
+ * @property {string} body
+ * @property {string} body_format
+ * @property {string} summary
+ * @property {string} status
+ * @property {boolean} is_protected
+ * @property {readonly string[]} tags
+ * @property {{ key: string, item_type: string, title: string, url: string } | null} related_work_item
+ * @property {{ id: number, name: string, start_date: string, end_date: string, url: string } | null} related_cycle
+ * @property {string} created_by
+ * @property {string} updated_by
+ * @property {string} created_at
+ * @property {string} updated_at
+ * @property {string} url
  */
 
 /**
@@ -498,6 +520,8 @@ function routeDescription(route) {
       return '项目资料和成员管理由 Browser 与 Desktop 共用同一页面、表单和确认流程。';
     case 'project-cycle-detail':
       return '周期指标、状态看板和工作项入口由两个宿主共用同一派生视图。';
+    case 'project-resource-detail':
+      return '资料正文、关联信息和受保护内容解锁由两个宿主共用同一读取流程。';
     case 'requirements':
     case 'tasks':
     case 'bugs':
@@ -523,6 +547,7 @@ function routeEyebrow(route) {
     case 'projects':
     case 'project-detail':
     case 'project-cycle-detail':
+    case 'project-resource-detail':
       return 'Projects';
     case 'requirements':
     case 'tasks':
@@ -594,6 +619,7 @@ export function SharedApp({ services }) {
   const projectAttachmentMutationRef = useRef(false);
   const projectAttachmentPreviewRequestRef = useRef(0);
   const projectAttachmentPreviewCapabilityRef = useRef('');
+  const projectResourceActionRef = useRef(0);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -611,6 +637,13 @@ export function SharedApp({ services }) {
   const [projectMembers, setProjectMembers] = useState(/** @type {AppProjectMember[]} */ ([]));
   const [projectCycles, setProjectCycles] = useState(/** @type {AppProjectCycle[]} */ ([]));
   const [projectAttachments, setProjectAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
+  const [projectResources, setProjectResources] = useState(/** @type {readonly AppProjectResource[]} */ ([]));
+  const [projectResourceDetail, setProjectResourceDetail] = useState(/** @type {AppProjectResource | null} */ (null));
+  const [projectResourceLocked, setProjectResourceLocked] = useState(false);
+  const [projectResourcePassword, setProjectResourcePassword] = useState('');
+  const [projectResourceUnlocking, setProjectResourceUnlocking] = useState(false);
+  const [projectResourceError, setProjectResourceError] = useState('');
+  const [projectResourceFilters, setProjectResourceFilters] = useState({ q: '', category: '', status: '', tag: '' });
   const [projectAttachmentUploading, setProjectAttachmentUploading] = useState(false);
   const [projectAttachmentArchiving, setProjectAttachmentArchiving] = useState(false);
   const [projectAttachmentDownloadingId, setProjectAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
@@ -707,6 +740,7 @@ export function SharedApp({ services }) {
   const searchRoute = route.id === 'search' ? route : null;
   const projectRoute = route.id === 'projects' ? route : null;
   const projectDetailRoute = route.id === 'project-detail' ? route : null;
+  const projectResourceDetailRoute = route.id === 'project-resource-detail' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
   const workItemOwner = workItemOwnerForRoute(route);
@@ -763,7 +797,8 @@ export function SharedApp({ services }) {
   const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
     ? workItemDetail
     : null;
-  const activeProjectDetail = projectDetailRoute && projectDetail?.key === projectDetailRoute.projectKey ? projectDetail : null;
+  const projectScopeKey = projectDetailRoute?.projectKey || projectResourceDetailRoute?.projectKey || '';
+  const activeProjectDetail = projectScopeKey && projectDetail?.key === projectScopeKey ? projectDetail : null;
   const currentProjectMember = user ? projectMembers.find((member) => member.username === user.username) : null;
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
   const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
@@ -772,6 +807,7 @@ export function SharedApp({ services }) {
   const cycleBackPath = previousPath && previousPath !== router.currentPath()
     ? previousPath
     : cycleFallbackPath;
+  const resourceFallbackPath = buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey, tab: 'resources' });
   const detailBackPath = buildWorkItemListPath({
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
@@ -799,6 +835,7 @@ export function SharedApp({ services }) {
         setSearchPage(null);
       }
       if (targetRoute.id === 'project-detail') {
+        projectResourceActionRef.current += 1;
         projectAttachmentActionRef.current += 1;
         projectAttachmentMutationRef.current = false;
         setProjectDetail(null);
@@ -811,6 +848,9 @@ export function SharedApp({ services }) {
         setProjectMemberRemoveTarget(null);
         setProjectCycles([]);
         setProjectAttachments([]);
+        setProjectResources([]);
+        setProjectResourceFilters({ q: '', category: '', status: '', tag: '' });
+        setProjectResourceError('');
         setProjectAttachmentUploading(false);
         setProjectAttachmentArchiving(false);
         setProjectAttachmentDownloadingId(null);
@@ -820,6 +860,16 @@ export function SharedApp({ services }) {
         setProjectAttachmentReveal(null);
         setProjectCycleOpen(false);
         setProjectCycleCloseTarget(null);
+      }
+      if (targetRoute.id === 'project-resource-detail') {
+        projectResourceActionRef.current += 1;
+        setProjectDetail(null);
+        setProjectMembers([]);
+        setProjectResourceDetail(null);
+        setProjectResourceLocked(false);
+        setProjectResourcePassword('');
+        setProjectResourceUnlocking(false);
+        setProjectResourceError('');
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectMutationSubmitting(projectMutationRef.current);
@@ -863,11 +913,11 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
-        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
+        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? api.getNotifications({
@@ -923,10 +973,32 @@ export function SharedApp({ services }) {
               (value) => ({ value, error: null }),
               (error) => ({ value: [], error }),
             ),
+            targetRoute.tab === 'resources'
+              ? api.getProjectResources(targetRoute.projectKey, mode === 'load' ? {} : projectResourceFilters)
+              : Promise.resolve([]),
           ])
           : Promise.resolve(null),
         targetRoute.id === 'project-cycle-detail'
           ? Promise.all([api.getProjectCycle(targetRoute.projectKey, targetRoute.cycleId), api.getProjectMembers(targetRoute.projectKey)])
+          : Promise.resolve(null),
+        targetRoute.id === 'project-resource-detail'
+          ? (async () => {
+            const [project, members, resources] = await Promise.all([
+              api.getProject(targetRoute.projectKey),
+              api.getProjectMembers(targetRoute.projectKey),
+              api.getProjectResources(targetRoute.projectKey),
+            ]);
+            const summary = resources.find((resource) => resource.id === targetRoute.resourceId) || null;
+            if (!summary) {
+              return { project, members, resource: await api.getProjectResource(targetRoute.projectKey, targetRoute.resourceId), locked: false };
+            }
+            return {
+              project,
+              members,
+              resource: summary.is_protected ? summary : await api.getProjectResource(targetRoute.projectKey, targetRoute.resourceId),
+              locked: summary.is_protected,
+            };
+          })()
           : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
@@ -954,10 +1026,17 @@ export function SharedApp({ services }) {
         setProjectCycles(nextProjectBundle?.[2] || []);
         setProjectAttachments(nextProjectBundle?.[3]?.value || []);
         if (nextProjectBundle?.[3]?.error) setProjectAttachmentError('项目文件暂时无法加载，请刷新后重试。');
+        setProjectResources(nextProjectBundle?.[4] || []);
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectCycleDetail(nextCycleDetailBundle?.[0] || null);
         setProjectMembers(nextCycleDetailBundle?.[1] || []);
+      }
+      if (targetRoute.id === 'project-resource-detail') {
+        setProjectDetail(nextResourceDetailBundle?.project || null);
+        setProjectMembers(nextResourceDetailBundle?.members || []);
+        setProjectResourceDetail(nextResourceDetailBundle?.resource || null);
+        setProjectResourceLocked(Boolean(nextResourceDetailBundle?.locked));
       }
       if (targetRoute.id === 'search') {
         setSearchPage(nextSearch);
@@ -1347,6 +1426,67 @@ export function SharedApp({ services }) {
     } catch { return; }
   }
 
+  async function submitProjectResourceFilters(event) {
+    event.preventDefault();
+    if (!projectDetailRoute) return;
+    await loadFilteredProjectResources(projectResourceFilters);
+  }
+
+  async function resetProjectResourceFilters() {
+    const filters = { q: '', category: '', status: '', tag: '' };
+    setProjectResourceFilters(filters);
+    await loadFilteredProjectResources(filters);
+  }
+
+  async function loadFilteredProjectResources(filters) {
+    if (!projectDetailRoute) return;
+    const projectKey = projectDetailRoute.projectKey;
+    const actionId = projectResourceActionRef.current + 1;
+    projectResourceActionRef.current = actionId;
+    setProjectResourceError('');
+    try {
+      const resources = await api.getProjectResources(projectKey, filters);
+      const currentRoute = routeRef.current;
+      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'resources') return;
+      setProjectResources(resources);
+    } catch (caught) {
+      const currentRoute = routeRef.current;
+      if (projectResourceActionRef.current !== actionId || currentRoute.id !== 'project-detail' || currentRoute.projectKey !== projectKey || currentRoute.tab !== 'resources') return;
+      setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料列表加载失败。')));
+    }
+  }
+
+  async function submitProjectResourceUnlock(event) {
+    event.preventDefault();
+    if (!projectResourceDetailRoute || projectResourceUnlocking || !projectResourcePassword) return;
+    const projectKey = projectResourceDetailRoute.projectKey;
+    const resourceId = projectResourceDetailRoute.resourceId;
+    const actionId = projectResourceActionRef.current + 1;
+    projectResourceActionRef.current = actionId;
+    setProjectResourceUnlocking(true);
+    setProjectResourceError('');
+    const isCurrentResource = () => {
+      const currentRoute = routeRef.current;
+      return projectResourceActionRef.current === actionId
+        && currentRoute.id === 'project-resource-detail'
+        && currentRoute.projectKey === projectKey
+        && currentRoute.resourceId === resourceId;
+    };
+    try {
+      const resource = await api.unlockProjectResource(projectKey, resourceId, projectResourcePassword);
+      if (!isCurrentResource()) return;
+      setProjectResourceDetail(resource);
+      setProjectResourceLocked(false);
+      setProjectResourcePassword('');
+      setStatusMessage('资料已解锁。');
+    } catch (caught) {
+      if (!isCurrentResource()) return;
+      setProjectResourceError(errorMessage(caught instanceof Error ? caught : new Error('资料解锁失败。')));
+    } finally {
+      if (isCurrentResource()) setProjectResourceUnlocking(false);
+    }
+  }
+
   async function confirmAccountAction() {
     if (!accountConfirmation) return;
     try {
@@ -1371,8 +1511,12 @@ export function SharedApp({ services }) {
               ? '项目详情 - 元策'
           : route.id === 'project-cycle-detail' && projectCycleDetail
             ? `${projectCycleDetail.name} - 元策`
-            : route.id === 'project-cycle-detail'
+          : route.id === 'project-cycle-detail'
               ? '项目周期详情 - 元策'
+          : route.id === 'project-resource-detail' && projectResourceDetail
+            ? `${projectResourceDetail.title} - 元策`
+            : route.id === 'project-resource-detail'
+              ? '项目资料详情 - 元策'
           : route.id === 'requirements'
             ? '需求列表 - 元策'
             : route.id === 'tasks'
@@ -2489,7 +2633,7 @@ export function SharedApp({ services }) {
         links={[
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
-          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' },
+          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' },
         ]}
         currentProject={currentProject}
         projectsHref={projectsPath}
@@ -2520,7 +2664,7 @@ export function SharedApp({ services }) {
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
-          ) : route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' ? (
+          ) : route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -2918,7 +3062,7 @@ export function SharedApp({ services }) {
               </div>
 
               <nav className="message-tabs" aria-label="项目详情导航">
-                {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期'], ['files', '项目文件']].map(([tab, label]) => {
+                {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期'], ['files', '项目文件'], ['resources', '资料库']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <a key={tab} className={`message-tab ${route.tab === tab ? 'active' : ''}`} href={path} aria-current={route.tab === tab ? 'page' : undefined} onClick={(event) => handleNavigate(event, path, `已切换到${label}。`)}><span>{label}</span></a>;
                 })}
@@ -2981,6 +3125,24 @@ export function SharedApp({ services }) {
                 </section>
               ) : null}
 
+              {activeProjectDetail && route.tab === 'resources' ? (
+                <section aria-labelledby="project-resources-title">
+                  <div className="shell-panel-header"><div><h3 id="project-resources-title">项目资料库</h3><p className="shell-muted">当前筛选共 {projectResources.length} 条资料</p></div></div>
+                  <form className="work-item-filter-bar" onSubmit={submitProjectResourceFilters}>
+                    <label className="work-item-filter-field work-item-filter-keyword"><span>关键词</span><input value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></label>
+                    <label className="work-item-filter-field"><span>分类</span><input value={projectResourceFilters.category} placeholder="例如 integration" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))} /></label>
+                    <label className="work-item-filter-field"><span>状态</span><select value={projectResourceFilters.status} onChange={(event) => setProjectResourceFilters((current) => ({ ...current, status: event.target.value }))}><option value="">全部状态</option><option value="active">生效中</option><option value="archived">已归档</option></select></label>
+                    <label className="work-item-filter-field"><span>标签</span><input value={projectResourceFilters.tag} placeholder="标签" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, tag: event.target.value }))} /></label>
+                    <div className="work-item-filter-actions"><Button type="submit" variant="secondary">筛选</Button><Button type="button" variant="secondary" onClick={() => void resetProjectResourceFilters()}>重置</Button></div>
+                  </form>
+                  {projectResourceError ? <Feedback tone="danger" title="资料列表加载失败">{projectResourceError}</Feedback> : null}
+                  {projectResources.length ? <ul className="project-list" aria-label="项目资料列表">{projectResources.map((resource) => {
+                    const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
+                    return <li className="project-row" key={resource.id}><div className="project-main"><div className="project-heading"><a className="shell-link" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a><span className="project-status-pill">{resource.category || '未分类'}</span>{resource.is_protected ? <span className="project-status-pill">受保护</span> : null}{resource.status === 'archived' ? <span className="project-status-pill">已归档</span> : null}</div><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <p className="shell-muted">标签：{resource.tags.join('、')}</p> : null}<p className="shell-muted">{resource.related_work_item ? `关联 ${resource.related_work_item.key}` : resource.related_cycle ? `关联周期 ${resource.related_cycle.name}` : '未关联工作项或周期'} · {resource.updated_by} 更新于 {formatTimestamp(resource.updated_at)}</p></div></li>;
+                  })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
+                </section>
+              ) : null}
+
               <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
 
               <Modal open={projectEditOpen} title="编辑项目" onClose={() => { if (!projectMutationSubmitting) setProjectEditOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectEditOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-edit-form'))?.requestSubmit()}>保存</Button></>}>
@@ -3005,6 +3167,15 @@ export function SharedApp({ services }) {
               </Modal>
               <Modal open={Boolean(projectCycleCloseTarget)} title="关闭项目周期" onClose={() => { if (!projectMutationSubmitting) setProjectCycleCloseTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectCycleCloseTarget(null)}>取消</Button><Button variant="danger" loading={projectMutationSubmitting} onClick={() => void confirmProjectCycleClose()}>确认关闭</Button></>}><p>确认关闭周期“{projectCycleCloseTarget?.name}”？关闭后不能继续编辑。</p></Modal>
               <Modal open={Boolean(projectAttachmentArchiveTarget)} title="归档项目文件" onClose={() => { if (!projectAttachmentArchiving) setProjectAttachmentArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectAttachmentArchiving} onClick={() => setProjectAttachmentArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectAttachmentArchiving} onClick={() => void confirmProjectAttachmentArchive()}>确认归档</Button></>}><p>确认归档文件“{projectAttachmentArchiveTarget?.filename}”？归档后不能继续下载，但文件记录会保留。</p></Modal>
+            </section>
+          ) : route.id === 'project-resource-detail' ? (
+            <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-resource-detail-title">
+              <div className="shell-panel-header project-center-header"><div><h2 id="project-resource-detail-title">{projectResourceDetail?.title || `资料 #${route.resourceId}`}</h2><p className="shell-muted">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</p></div><a className="shell-link" href={resourceFallbackPath} onClick={(event) => handleNavigate(event, resourceFallbackPath, '已返回项目资料库。')}>返回资料库</a></div>
+              {projectResourceError ? <Feedback tone="danger" title="资料操作失败">{projectResourceError}</Feedback> : null}
+              {projectResourceDetail ? <>
+                <div className="work-item-detail-grid"><article className="work-item-detail-panel"><h3>资料信息</h3><dl className="work-item-detail-meta"><div><dt>分类</dt><dd>{projectResourceDetail.category || '未分类'}</dd></div><div><dt>状态</dt><dd>{projectResourceDetail.status === 'archived' ? '已归档' : '生效中'}</dd></div><div><dt>保护</dt><dd>{projectResourceDetail.is_protected ? '密码保护' : '公开可读'}</dd></div><div><dt>格式</dt><dd>{projectResourceDetail.body_format || 'plain'}</dd></div><div><dt>更新人</dt><dd>{projectResourceDetail.updated_by}</dd></div><div><dt>更新时间</dt><dd>{formatTimestamp(projectResourceDetail.updated_at)}</dd></div></dl></article><article className="work-item-detail-panel"><h3>摘要与关联</h3><p>{projectResourceDetail.summary || '暂无摘要。'}</p><p className="shell-muted">{projectResourceDetail.tags.length ? `标签：${projectResourceDetail.tags.join('、')}` : '暂无标签'}</p><p className="shell-muted">{projectResourceDetail.related_work_item ? `关联工作项：${projectResourceDetail.related_work_item.key} · ${projectResourceDetail.related_work_item.title}` : projectResourceDetail.related_cycle ? `关联周期：${projectResourceDetail.related_cycle.name}` : '暂无关联对象'}</p></article></div>
+                {projectResourceLocked ? <article className="work-item-detail-panel project-resource-lock"><h3>此资料受密码保护</h3><p className="shell-muted">输入访问密码后可在当前页面读取完整正文。</p><form onSubmit={submitProjectResourceUnlock}><Field id="project-resource-password" label="访问密码" required><input type="password" autoComplete="off" value={projectResourcePassword} onChange={(event) => setProjectResourcePassword(event.target.value)} /></Field><Button type="submit" loading={projectResourceUnlocking} disabled={!projectResourcePassword}>解锁资料</Button></form></article> : <article className="work-item-detail-panel"><h3>资料正文</h3><pre className="project-resource-body">{projectResourceDetail.body || '暂无正文。'}</pre></article>}
+              </> : null}
             </section>
           ) : route.id === 'project-cycle-detail' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-cycle-detail-title">

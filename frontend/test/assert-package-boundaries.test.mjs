@@ -170,6 +170,7 @@ test('analyzePackageBoundaries rejects host globals', async (t) => {
     { source: 'export const value = process.env.NODE_ENV;', expected: 'process' },
     { source: 'export const value = Buffer.from("ok");', expected: 'Buffer' },
     { source: 'export const value = global.process;', expected: 'global' },
+    { source: 'export const value = globalThis.location;', expected: 'globalThis' },
     { source: 'export const value = require("fs");', expected: 'require()' },
     { source: 'export const value = navigator.userAgent;', expected: 'navigator' },
     { source: 'export const value = window.yuanceDesktop;', expected: 'window.yuanceDesktop' },
@@ -186,6 +187,44 @@ test('analyzePackageBoundaries rejects host globals', async (t) => {
 
         const failures = await analyzePackageBoundaries(root);
 
+        assert.ok(failures.some((failure) => failure.includes(scenario.expected)));
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('analyzePackageBoundaries ignores forbidden words in comments and literals', async () => {
+  const root = await createWorkspace();
+  try {
+    await writeFile(
+      path.join(root, 'packages', 'ui', 'src', 'index.js'),
+      [
+        '// document and global are domain words here.',
+        "export const kind = 'document';",
+        "export const className = 'global-navigation';",
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(await analyzePackageBoundaries(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('analyzePackageBoundaries scans executable template interpolations', async (t) => {
+  const cases = [
+    { source: 'export const leaked = `${globalThis.location}`;', expected: 'globalThis' },
+    { source: 'export const host = tag`value: ${window.location}`;', expected: 'window' },
+  ];
+
+  for (const scenario of cases) {
+    await t.test(scenario.expected, async () => {
+      const root = await createWorkspace();
+      try {
+        await writeFile(path.join(root, 'packages', 'api-client', 'src', 'index.js'), `${scenario.source}\n`);
+        const failures = await analyzePackageBoundaries(root);
         assert.ok(failures.some((failure) => failure.includes(scenario.expected)));
       } finally {
         await rm(root, { recursive: true, force: true });

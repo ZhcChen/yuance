@@ -3540,7 +3540,7 @@ pub async fn list_project_resources(
     Path(project_key): Path<String>,
     Query(query): Query<ResourceQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectResourcePayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let user = require_d2_api_principal(&state, &headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
@@ -5628,7 +5628,7 @@ async fn require_api_project_resource_context(
     projects::ProjectDetail,
     project_resources::ProjectResourceDetail,
 )> {
-    let user = require_api_user(state, headers).await?;
+    let user = require_d2_api_principal(state, headers).await?.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, project_key)

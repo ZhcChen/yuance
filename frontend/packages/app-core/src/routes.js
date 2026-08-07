@@ -111,7 +111,9 @@ export function routePathForOwner(path, owner = 'web') {
   }
   let parsed;
   try {
-    parsed = new globalThis.URL(path, 'https://routes.invalid');
+    // URL is a host-neutral web standard available in both renderers.
+    // eslint-disable-next-line no-undef
+    parsed = new URL(path, 'https://routes.invalid');
   } catch {
     return buildHomePath(owner);
   }
@@ -170,7 +172,7 @@ export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = '
   const basePath = owner === 'app'
     ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
     : `/web/projects/${encodeURIComponent(normalizedKey)}`;
-  return ['members', 'cycles', 'files'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
+  return ['members', 'cycles', 'files', 'resources'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
 }
 
 export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
@@ -180,6 +182,13 @@ export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cy
     return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'cycles' });
   }
   return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/cycles/${normalizedId}`;
+}
+
+export function buildProjectResourceDetailPath({ owner = 'app', projectKey = '', resourceId = 0 } = {}) {
+  const normalizedKey = String(projectKey || '').trim();
+  const normalizedId = Number(resourceId);
+  if (!normalizedKey || !Number.isSafeInteger(normalizedId) || normalizedId < 1) return buildProjectDetailPath({ owner, projectKey: normalizedKey, tab: 'resources' });
+  return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/resources/${normalizedId}`;
 }
 
 export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
@@ -281,9 +290,14 @@ export function parseAppRoute(pathname = '/web', search = '') {
       pathname,
       search,
       projectKey: decodeURIComponent(projectDetailMatch[1]),
-      tab: ['members', 'cycles', 'files'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
+      tab: ['members', 'cycles', 'files', 'resources'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
       title: '项目详情',
     };
+  }
+
+  const projectResourceDetailMatch = pathname.match(/^\/web(?:\/app)?\/projects\/([^/]+)\/resources\/(\d+)$/);
+  if (projectResourceDetailMatch) {
+    return { id: 'project-resource-detail', owner, pathname, search, projectKey: decodeURIComponent(projectResourceDetailMatch[1]), resourceId: normalizePositiveInt(projectResourceDetailMatch[2], 0), title: '项目资料详情' };
   }
 
 

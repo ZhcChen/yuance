@@ -8,6 +8,8 @@ import {
   createWorkItemComment,
   getWorkItemAttachmentUploadUrl,
   getProjectAttachmentPreview,
+  getProjectResource,
+  getProjectResources,
   getWorkItemCommentAttachmentDownloadUrl,
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,
@@ -19,6 +21,7 @@ import {
   publishWorkItemCommentDraft,
   updateWorkItem,
   updateWorkItemComment,
+  unlockProjectResource,
 } from '../src/lib/api.js';
 
 function jsonResponse(data, init = {}) {
@@ -62,6 +65,52 @@ function signedUrlPayload(overrides = {}) {
     expires_in_seconds: 300,
   };
 }
+
+function resourcePayload(overrides = {}) {
+  return {
+    id: 9,
+    project_key: 'YCE',
+    title: '部署参数',
+    category: 'integration',
+    body: 'client_id=test',
+    body_format: 'plain',
+    summary: '联调所需参数',
+    status: 'active',
+    is_protected: false,
+    tags: ['联调'],
+    related_work_item: null,
+    related_cycle: null,
+    created_by: '系统管理员',
+    updated_by: '系统管理员',
+    created_at: '2026-08-07T08:00:00Z',
+    updated_at: '2026-08-07T08:00:00Z',
+    url: '/web/projects/YCE/resources/9',
+    ...overrides,
+  };
+}
+
+test('project resources are exposed through the bounded browser API adapter', async () => {
+  await withFetchQueue([
+    jsonResponse([resourcePayload({ body: '' })]),
+    jsonResponse(resourcePayload()),
+    jsonResponse({ csrf_token: 'csrf-resource-token' }, { csrfToken: 'csrf-resource-token' }),
+    jsonResponse(resourcePayload({ is_protected: true })),
+  ], async (calls) => {
+    const resources = await getProjectResources('YCE', { q: 'client', tag: '联调' });
+    const detail = await getProjectResource('YCE', 9);
+    const unlocked = await unlockProjectResource('YCE', 9, 'safe-pass');
+
+    assert.equal(resources[0].title, '部署参数');
+    assert.equal(detail.body, 'client_id=test');
+    assert.equal(unlocked.is_protected, true);
+    assert.equal(calls[0].url, '/api/v1/projects/YCE/resources?q=client&tag=%E8%81%94%E8%B0%83');
+    assert.equal(calls[1].url, '/api/v1/projects/YCE/resources/9');
+    assert.equal(calls[3].url, '/api/v1/projects/YCE/resources/9/unlock');
+    assert.equal(calls[3].options.method, 'POST');
+    assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-resource-token');
+    assert.deepEqual(JSON.parse(String(calls[3].options.body)), { access_password: 'safe-pass' });
+  });
+});
 
 test('project attachment preview is exposed through the bounded browser API adapter', async () => {
   await withFetchQueue([

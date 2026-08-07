@@ -447,6 +447,22 @@ h2 {
   align-items: flex-end;
 }
 
+.project-resource-lock {
+  max-width: 640px;
+}
+
+.project-resource-lock form {
+  display: grid;
+  gap: 12px;
+}
+
+.project-resource-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
 .priority-pill {
   display: inline-flex;
   align-items: center;

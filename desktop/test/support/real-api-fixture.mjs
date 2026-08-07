@@ -89,6 +89,25 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         const body = await response.json();
         return Object.freeze({ cookie: cookies.map(cookiePair).join("; "), csrfToken: response.headers.get("x-yuance-csrf-token") || body.data?.csrf_token });
       },
+      async prepareDemoProjectResources(adminSession) {
+        const headers = { cookie: adminSession.cookie, "content-type": "application/json", "x-yuance-csrf-token": adminSession.csrfToken };
+        const create = async (payload, label) => {
+          const response = await fetchImpl(`${origin}/api/v1/projects/YCE/resources`, {
+            method: "POST", redirect: "manual", headers, body: JSON.stringify(payload),
+          });
+          if (response.status !== 201) throw new Error(`${label} failed with ${response.status}`);
+          return (await response.json()).data;
+        };
+        const publicResource = await create({
+          title: "Desktop public resource integration", category: "integration", body: "desktop-public-body",
+          body_format: "plain", access_password: "", tags: ["desktop-integration"], related_work_item_key: "", related_cycle_id: null,
+        }, "desktop public resource creation");
+        const protectedResource = await create({
+          title: "Desktop protected resource integration", category: "integration", body: "desktop-protected-body",
+          body_format: "plain", access_password: "DesktopResource2026!", tags: ["desktop-integration"], related_work_item_key: "", related_cycle_id: null,
+        }, "desktop protected resource creation");
+        return Object.freeze({ publicResourceId: publicResource.id, protectedResourceId: protectedResource.id });
+      },
       async activateTestStorage(session) {
         const body = new URLSearchParams({
           _csrf: session.csrfToken,

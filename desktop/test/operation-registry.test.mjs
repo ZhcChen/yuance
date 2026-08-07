@@ -42,6 +42,8 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["project.members", { projectKey: "DEMO" }, "/api/v1/projects/DEMO/members"],
     ["project.cycles", { projectKey: "DEMO" }, "/api/v1/projects/DEMO/cycles"],
     ["project.cycledetail", { projectKey: "DEMO", cycleId: 7 }, "/api/v1/projects/DEMO/cycles/7"],
+    ["project.resources", { projectKey: "DEMO", q: "发布", category: "development", relatedCycleId: 7 }, "/api/v1/projects/DEMO/resources?q=%E5%8F%91%E5%B8%83&category=development&related_cycle_id=7"],
+    ["project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }, "/api/v1/projects/DEMO/resources/9"],
     ["project.current", {}, "/api/v1/current-project"],
     ["notification.list", {}, "/api/v1/notifications?filter=all"],
     ["notification.list", { filter: "unread", limit: 20, page: 2, perPage: 10 }, "/api/v1/notifications?limit=20&filter=unread&page=2&per_page=10"],
@@ -160,6 +162,21 @@ test("rejects malformed or oversized business responses", () => {
     items: Array.from({ length: 101 }, () => ({})), unread_count: 0, pending_count: 0,
     filter: "all", page: 1, per_page: 20, total_items: 101, total_pages: 6,
   }), /invalid/i);
+});
+
+test("project resources accept the complete unpaginated server response", () => {
+  const registry = createOperationRegistry();
+  const resource = {
+    id: 1, project_key: "DEMO", title: "Resource", category: "development", body: "", body_format: "markdown",
+    summary: "", status: "active", is_protected: false, tags: [], related_work_item: null, related_cycle: null,
+    created_by: "Alice", updated_by: "Alice", created_at: "2026-08-07T00:00:00Z", updated_at: "2026-08-07T00:00:00Z",
+    url: "/web/projects/DEMO/resources/1",
+  };
+  const payload = Array.from({ length: 501 }, (_, index) => ({ ...resource, id: index + 1, url: `/web/projects/DEMO/resources/${index + 1}` }));
+  const resources = registry.resolve("project.resources", { projectKey: "DEMO" }).parse(payload);
+  assert.equal(resources.length, 501);
+  assert.equal(resources[500].id, 501);
+  assert.equal(Object.isFrozen(resources), true);
 });
 
 test("builds non-idempotent mutation descriptors from bounded domain payloads", () => {

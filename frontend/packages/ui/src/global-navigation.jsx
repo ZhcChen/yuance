@@ -56,8 +56,8 @@ export function GlobalNavigation({
   /** @param {React.FormEvent<HTMLFormElement>} event */
   function submitSearch(event) {
     event.preventDefault();
-    const form = new globalThis.FormData(event.currentTarget);
-    onSearch(String(form.get('q') || '').trim());
+    const query = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q'));
+    onSearch(query?.value.trim() || '');
   }
 
   return (

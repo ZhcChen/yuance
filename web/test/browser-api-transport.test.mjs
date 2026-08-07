@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { ApiError } from '@yuance/frontend-api-client';
 import { createBrowserApiTransport } from '../src/platform/browser/api-transport.js';
 
 function jsonResponse(data, init = {}) {
@@ -51,6 +52,38 @@ test('browser API transport refreshes CSRF and retries one failed write', async 
   ]);
   assert.equal(new Headers(calls[1].options.headers).get('x-yuance-csrf-token'), 'initial');
   assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'retry');
+});
+
+test('browser API transport does not retry business forbidden writes', async () => {
+  const responses = [
+    jsonResponse({ csrf_token: 'initial' }, { csrfToken: 'initial' }),
+    jsonResponse(null, {
+      status: 403,
+      error: { code: 'forbidden', message: '访问密码不正确' },
+    }),
+  ];
+  const calls = [];
+  const transport = createBrowserApiTransport({
+    fetchImpl: async (url, options = {}) => {
+      calls.push({ url: String(url), options });
+      const response = responses.shift();
+      assert.ok(response);
+      return response;
+    },
+    location: { pathname: '/web/app/projects/YCE/resources/9', search: '', hash: '', assign() {} },
+    history: { replaceState() {} },
+    storage: new MapStorage(),
+  });
+
+  await transport.prepareWrite();
+  await assert.rejects(
+    transport.request('/api/v1/projects/YCE/resources/9/unlock', { method: 'POST', body: '{}' }),
+    (error) => error instanceof ApiError && error.status === 403 && error.message === '访问密码不正确',
+  );
+  assert.deepEqual(calls.map(({ url }) => url), [
+    '/api/v1/auth/csrf',
+    '/api/v1/projects/YCE/resources/9/unlock',
+  ]);
 });
 
 test('browser API transport preserves and restores an authenticated return hash', () => {

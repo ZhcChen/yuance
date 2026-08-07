@@ -21,12 +21,14 @@ async function ensureCurrentProject(page, projectKey) {
   await page.goto('/web/app/projects');
   await expect(page.getByRole('heading', { level: 1, name: '项目列表' })).toBeVisible();
   const row = page.locator('.project-row', { hasText: projectKey });
-  const currentButton = row.getByRole('button', { name: '当前项目' });
+  const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
   if (await currentButton.count()) {
+    await expect(page.getByLabel('顶部状态摘要').getByText(new RegExp(`${projectKey} ·`))).toBeVisible();
     return;
   }
   await row.getByRole('button', { name: '设为当前项目' }).click();
-  await expect(row.getByRole('button', { name: '当前项目' })).toBeVisible();
+  await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
+  await expect(page.getByLabel('顶部状态摘要').getByText(new RegExp(`${projectKey} ·`))).toBeVisible();
 }
 
 function workItemDetailFixture(overrides = {}) {
@@ -81,6 +83,29 @@ function attachmentFixture(overrides = {}) {
   };
 }
 
+function projectResourceFixture(overrides = {}) {
+  return {
+    id: 901,
+    project_key: 'YCE',
+    title: '客户端联调参数',
+    category: 'integration',
+    body: 'client_id=yuance-e2e',
+    body_format: 'plain',
+    summary: '客户端联调所需的公开参数',
+    status: 'active',
+    is_protected: false,
+    tags: ['联调', '客户端'],
+    related_work_item: { key: 'YCE-TASK-2', item_type: 'task', title: '接口联调', url: '/web/work-items/YCE-TASK-2' },
+    related_cycle: null,
+    created_by: '元策开发管理员',
+    updated_by: '元策开发管理员',
+    created_at: '2026-08-07T00:00:00Z',
+    updated_at: '2026-08-07T08:00:00Z',
+    url: '/web/projects/YCE/resources/901',
+    ...overrides,
+  };
+}
+
 test('browser shell restores login return_to for direct /web/app/messages entry', async ({ page }) => {
   await login(page, '/web/app/messages?filter=unread');
 
@@ -93,6 +118,9 @@ test('browser shell restores login return_to for direct /web/app/messages entry'
 
 test('browser shell preserves the shared deep link when the session expires', async ({ page }) => {
   await login(page, '/web/app');
+  await page.goto('/web/app/search?q=YCE-TASK-2');
+  await expect(page).toHaveURL(/\/web\/app\/search\?q=YCE-TASK-2/);
+  await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
   await page.route('**/api/v1/auth/me', async (route) => {
     await route.fulfill({
       status: 401,
@@ -101,7 +129,9 @@ test('browser shell preserves the shared deep link when the session expires', as
     });
   });
 
-  await page.goto('/web/app/search?q=YCE-TASK-2');
+  await page.reload().catch((error) => {
+    if (!String(error).includes('ERR_ABORTED')) throw error;
+  });
 
   await expect(page).toHaveURL(/\/web\/login\?return_to=%2Fweb%2Fapp%2Fsearch%3Fq%3DYCE-TASK-2/);
   await expect(page.getByRole('heading', { name: '登录' })).toBeVisible();
@@ -1680,6 +1710,78 @@ test('shared project files hide upload and archive actions from viewers', async 
   await expect(fileList.getByRole('button', { name: '下载附件 viewer-readable.txt' })).toBeVisible();
 });
 
+test('shared project resources filter read and unlock protected details', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const publicResource = projectResourceFixture();
+  const protectedSummary = projectResourceFixture({ id: 902, title: '正式环境密钥', body: '', summary: '仅授权成员可解锁', is_protected: true, tags: ['正式环境'], related_work_item: null, url: '/web/projects/YCE/resources/902' });
+  const resourceQueries = [];
+  const unlockPasswords = [];
+  let releaseDelayedUnlock;
+  const delayedUnlockStarted = new Promise((resolve) => {
+    releaseDelayedUnlock = resolve;
+  });
+
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/, async (route) => {
+    const url = new URL(route.request().url());
+    resourceQueries.push(url.search);
+    const filtered = url.searchParams.get('q') === '客户端' ? [publicResource] : [publicResource, protectedSummary];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: filtered }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/901', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: publicResource }) }));
+  await page.route('**/api/v1/projects/YCE/resources/902/unlock', async (route) => {
+    const password = route.request().postDataJSON().access_password;
+    unlockPasswords.push(password);
+    if (password === 'stale-pass') {
+      releaseDelayedUnlock();
+      await new Promise((resolve) => { releaseDelayedUnlock = resolve; });
+    }
+    if (password !== 'safe-pass') {
+      await route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: { code: 'forbidden', message: '访问密码不正确' } }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...protectedSummary, body: 'secret=desktop-browser-parity' } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE?tab=resources');
+  const list = page.getByRole('list', { name: '项目资料列表' });
+  await expect(list).toContainText('客户端联调参数');
+  await expect(list).toContainText('正式环境密钥');
+  await page.getByLabel('关键词').fill('客户端');
+  await page.getByRole('button', { name: '筛选' }).click();
+  await expect(list).toContainText('客户端联调参数');
+  await expect(list).not.toContainText('正式环境密钥');
+  expect(resourceQueries.at(-1)).toBe('?q=%E5%AE%A2%E6%88%B7%E7%AB%AF');
+
+  await list.getByRole('link', { name: '客户端联调参数' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources\/901$/);
+  await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  await expect(page.getByText('client_id=yuance-e2e')).toBeVisible();
+  await page.getByRole('link', { name: '返回资料库' }).click();
+  await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
+
+  await expect(page.getByRole('heading', { level: 3, name: '此资料受密码保护' })).toBeVisible();
+  await page.getByLabel('访问密码').fill('stale-pass');
+  await page.getByRole('button', { name: '解锁资料' }).click();
+  await delayedUnlockStarted;
+  await page.getByRole('link', { name: '返回资料库' }).click();
+  releaseDelayedUnlock();
+  await expect(page.getByRole('list', { name: '项目资料列表' })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
+  await page.getByLabel('访问密码').fill('wrong-pass');
+  await page.getByRole('button', { name: '解锁资料' }).click();
+  await expect(page.getByRole('alert')).toContainText('访问密码不正确');
+  await expect(page.getByRole('heading', { level: 3, name: '此资料受密码保护' })).toBeVisible();
+  await page.getByLabel('访问密码').fill('safe-pass');
+  await page.getByRole('button', { name: '解锁资料' }).click();
+  await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  await expect(page.getByText('secret=desktop-browser-parity')).toBeVisible();
+  expect(unlockPasswords).toEqual(['stale-pass', 'wrong-pass', 'safe-pass']);
+});
+
 test('shared project file upload failure keeps registered file context', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
@@ -1777,6 +1879,7 @@ test('shared project cycles keep viewer access read only', async ({ page }) => {
 
 test('project switch serializes repeated input and refreshes the current context', async ({ page }) => {
   await login(page, '/web/app/projects');
+  await ensureCurrentProject(page, 'YCE');
   let patchCount = 0;
   let switched = false;
   let releaseSwitch = () => {};

@@ -125,7 +125,7 @@ export function createBrowserApiTransport(dependencies = {}) {
         method !== 'GET'
         && method !== 'HEAD'
         && options.skipCsrfRetry !== true
-        && (error.message.includes('CSRF token') || error.code === 'forbidden')
+        && error.message.includes('CSRF token')
       ) {
         await refreshCsrfToken();
         return request(url, { ...options, skipCsrfRetry: true });

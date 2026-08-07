@@ -477,6 +477,17 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const cycleDetail = await rest.execute("project.cycledetail", { projectKey: createdProject.key, cycleId: createdCycle.id });
   const cycles = await rest.execute("project.cycles", { projectKey: createdProject.key });
   const closedCycle = await rest.execute("project.cycleclose", { projectKey: createdProject.key, cycleId: createdCycle.id });
+  stage("project-resources");
+  const projectResources = await rest.execute("project.resources", { projectKey: "YCE", tag: "desktop-integration" });
+  const publicResource = projectResources.find((resource) => resource.title === "Desktop public resource integration");
+  const protectedResource = projectResources.find((resource) => resource.title === "Desktop protected resource integration");
+  if (!publicResource || !protectedResource) throw new Error("desktop resource fixtures are unavailable");
+  stage("project-resource-detail");
+  const publicResourceDetail = await rest.execute("project.resourcedetail", { projectKey: "YCE", resourceId: publicResource.id });
+  stage("project-resource-unlock");
+  const unlockedProjectResource = await rest.execute("project.resourceunlock", {
+    projectKey: "YCE", resourceId: protectedResource.id, accessPassword: "DesktopResource2026!",
+  });
   stage("update-profile");
   const updatedProfile = await rest.execute("identity.profileupdate", {
     displayName: "Desktop profile integration",
@@ -545,6 +556,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "project.cyclecreate",
     "project.cycleupdate",
     "project.cycleclose",
+    "project.resourceunlock",
     "identity.profileupdate",
     "workitem.update",
     "workitem.handoff",
@@ -586,6 +598,12 @@ async function runRealBusinessApi({ origin, mode, network }) {
     projectCycleManaged: updatedCycle.name === "Desktop cycle integration updated"
       && cycleDetail.id === createdCycle.id && Array.isArray(cycleDetail.work_items)
       && cycles.some((cycle) => cycle.id === createdCycle.id) && closedCycle.is_closed,
+    projectResourcesReadAndUnlocked: projectResources.length === 2
+      && publicResourceDetail.id === publicResource.id
+      && publicResourceDetail.body === "desktop-public-body"
+      && protectedResource.body === ""
+      && unlockedProjectResource.id === protectedResource.id
+      && unlockedProjectResource.body === "desktop-protected-body",
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"
       && verifiedProfile.display_name === updatedProfile.display_name,
     accountSecurity: deviceSessions.some((session) => session.is_current)

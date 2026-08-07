@@ -17,6 +17,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   t.after(() => fixture.stop());
   const session = await fixture.loginDemoAdmin();
   await fixture.prepareDemoDesktopMember(session);
+  await fixture.prepareDemoProjectResources(session);
   const report = await runElectronBusinessApi(fixture.origin, (userCode) => approveDeviceAuthorization({ origin: fixture.origin, userCode, session }));
   assert.equal(report.kind, "yuance-business-api-result");
   assert.equal(report.user, true);
@@ -35,6 +36,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.equal(report.projectCreated, true);
   assert.equal(report.projectManaged, true);
   assert.equal(report.projectCycleManaged, true);
+  assert.equal(report.projectResourcesReadAndUnlocked, true);
   assert.equal(report.profileUpdated, true);
   assert.equal(report.accountSecurity, true);
   assert.equal(report.workItemUpdated, true);

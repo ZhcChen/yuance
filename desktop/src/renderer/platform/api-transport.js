@@ -60,6 +60,10 @@ function resolveReadOperation(url, options) {
   if (projectCycles) return projectCycles;
   const projectAttachments = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/attachments$/u, "project.attachments", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectAttachments) return projectAttachments;
+  const projectResource = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)$/u, "project.resourcedetail", ([projectKey, resourceId]) => ({ projectKey: decodeSegment(projectKey), resourceId: positiveInteger(resourceId) }));
+  if (projectResource) return projectResource;
+  const projectResources = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources$/u);
+  if (projectResources) return { operation: "project.resources", input: { projectKey: decodeSegment(projectResources[1]), ...parseQuery(parsed.searchParams, { q: "q", category: "category", status: "status", tag: "tag", related_work_item_key: "relatedWorkItemKey", related_cycle_id: "relatedCycleId" }) } };
   const projectDetail = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)$/u, "project.detail", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectDetail) return projectDetail;
   if (parsed.pathname === "/api/v1/search") return { operation: "search.list", input: parseQuery(parsed.searchParams, {
@@ -145,6 +149,11 @@ function resolveMutationOperation(parsed, method, options) {
   if (method === "DELETE" && projectAttachment) {
     rejectBody(options);
     return { operation: "project.attachmentarchive", input: { projectKey: decodeSegment(projectAttachment[1]), attachmentId: positiveInteger(projectAttachment[2]) } };
+  }
+  const projectResourceUnlock = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)\/unlock$/u);
+  if (method === "POST" && projectResourceUnlock) {
+    const body = parseJsonBody(options, ["access_password"]);
+    return { operation: "project.resourceunlock", input: { projectKey: decodeSegment(projectResourceUnlock[1]), resourceId: positiveInteger(projectResourceUnlock[2]), accessPassword: body.access_password } };
   }
   const projectAttachmentPreview = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/attachments\/(\d+)\/preview$/u);
   if (method === "GET" && projectAttachmentPreview) {

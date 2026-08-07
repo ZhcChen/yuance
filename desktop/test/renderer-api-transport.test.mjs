@@ -4,6 +4,8 @@ import test from "node:test";
 import { ApiError, createApiClient } from "@yuance/frontend-api-client";
 import { createDesktopApiTransport } from "../src/renderer/platform/api-transport.js";
 
+const resourceFixture = { id: 9, project_key: "DEMO", title: "Release", category: "development", body: "Body", body_format: "markdown", summary: "Summary", status: "active", is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: "Alice", updated_by: "Alice", created_at: "2026-08-07T00:00:00Z", updated_at: "2026-08-07T00:00:00Z", url: "/web/projects/DEMO/resources/9" };
+
 test("desktop API transport maps only known read routes to domain operations", async () => {
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {
@@ -22,6 +24,8 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/projects/DEMO/cycles", "project.cycles", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/cycles/7", "project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
     ["/api/v1/projects/DEMO/attachments", "project.attachments", { projectKey: "DEMO" }],
+    ["/api/v1/projects/DEMO/resources?q=release&category=development&related_cycle_id=7", "project.resources", { projectKey: "DEMO", q: "release", category: "development", relatedCycleId: "7" }],
+    ["/api/v1/projects/DEMO/resources/9", "project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }],
     ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
     ["/api/v1/notifications?filter=unread&limit=10", "notification.list", { filter: "unread", limit: 10 }],
     ["/api/v1/notifications/7/target", "notification.target", { notificationId: 7 }],
@@ -71,7 +75,7 @@ test("api-client mutations map to fixed domain operations without request primit
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {
     calls.push([operation, input]);
-    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : {} };
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : operation === "project.resources" ? [resourceFixture] : ["project.resourcedetail", "project.resourceunlock"].includes(operation) ? resourceFixture : {} };
   } });
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
@@ -85,6 +89,7 @@ test("api-client mutations map to fixed domain operations without request primit
   const cycle = { name: "Sprint", goal: "Ship", description: "Cycle", ownerUsername: "alice", startDate: "2026-08-01", endDate: "2026-08-31" };
   await client.getProjectCycles("DEMO"); await client.getProjectCycle("DEMO", 7); await client.createProjectCycle("DEMO", cycle); await client.updateProjectCycle("DEMO", 7, cycle); await client.closeProjectCycle("DEMO", 7);
   await client.getProjectAttachments("DEMO"); await client.archiveProjectAttachment("DEMO", 8);
+  await client.getProjectResources("DEMO", { q: "release" }); await client.getProjectResource("DEMO", 9); await client.unlockProjectResource("DEMO", 9, "vault-pass");
   await client.updateOwnPassword({ currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" });
   await client.createApiToken({ name: "Agent", scopes: ["project:read"], projectScope: "all" });
   await client.updateApiToken(7, { name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" });
@@ -113,6 +118,9 @@ test("api-client mutations map to fixed domain operations without request primit
     ["project.cycleclose", { projectKey: "DEMO", cycleId: 7 }],
     ["project.attachments", { projectKey: "DEMO" }],
     ["project.attachmentarchive", { projectKey: "DEMO", attachmentId: 8 }],
+    ["project.resources", { projectKey: "DEMO", q: "release" }],
+    ["project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }],
+    ["project.resourceunlock", { projectKey: "DEMO", resourceId: 9, accessPassword: "vault-pass" }],
     ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }],
     ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }],
     ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" }],

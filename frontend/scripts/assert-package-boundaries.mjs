@@ -2,6 +2,7 @@
 import { builtinModules } from 'node:module';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import ts from 'typescript';
 
 const PACKAGE_PREFIX = '@yuance/frontend-';
 const PACKAGE_RULES = {
@@ -48,6 +49,7 @@ const FORBIDDEN_GLOBALS = [
   { pattern: /\bprocess\b/, label: 'process' },
   { pattern: /\bBuffer\b/, label: 'Buffer' },
   { pattern: /\bglobal\b/, label: 'global' },
+  { pattern: /\bglobalThis\b/, label: 'globalThis' },
   { pattern: /\brequire\s*\(/, label: 'require()' },
   { pattern: /\bnavigator\b/, label: 'navigator' },
   { pattern: /\byuanceDesktop\b/, label: 'window.yuanceDesktop' },
@@ -122,6 +124,31 @@ function importSources(content) {
     sources.push(match[1] || match[2]);
   }
   return sources;
+}
+
+/**
+ * Remove comments and literal contents before scanning executable global references.
+ * @param {string} content
+ */
+function executableSource(content) {
+  const result = Array.from(content, (character) => character === '\n' || character === '\r' ? character : ' ');
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.JSX, content);
+  const hiddenTokens = new Set([
+    ts.SyntaxKind.StringLiteral,
+    ts.SyntaxKind.RegularExpressionLiteral,
+    ts.SyntaxKind.NoSubstitutionTemplateLiteral,
+    ts.SyntaxKind.TemplateHead,
+    ts.SyntaxKind.TemplateMiddle,
+    ts.SyntaxKind.TemplateTail,
+    ts.SyntaxKind.JsxText,
+  ]);
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    if (hiddenTokens.has(token)) continue;
+    const start = scanner.getTokenPos();
+    const end = scanner.getTextPos();
+    for (let index = start; index < end; index += 1) result[index] = content[index];
+  }
+  return result.join('');
 }
 
 /**
@@ -267,8 +294,9 @@ export async function analyzePackageBoundaries(workspaceRoot = process.cwd()) {
       for (const source of importSources(content)) {
         failures.push(...validateImport(packageKey, source, relativeFile, graph, file, workspaceRoot));
       }
+      const source = executableSource(content);
       for (const forbidden of FORBIDDEN_GLOBALS) {
-        if (forbidden.pattern.test(content)) {
+        if (forbidden.pattern.test(source)) {
           failures.push(`${relativeFile}: 共享包源码禁止直接使用 ${forbidden.label}`);
         }
       }

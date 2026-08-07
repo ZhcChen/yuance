@@ -196,8 +196,8 @@
       "states": ["loading", "locked", "unlocking", "ready", "editing", "uploading", "archived", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-009-web-desktop-u3-project-resource-read-unlock-review.md"] }
     },
     {
       "id": "page.project.personal-analysis",
@@ -767,13 +767,13 @@
       "validation": "资源属于项目、未归档且密码必填。",
       "confirmation": "none",
       "request": { "method": "POST", "path": "/web/projects/{project_key}/resources/{resource_id}/unlock" },
-      "successEffect": "签发短时资源访问 token 并显示受保护内容。",
+      "successEffect": "校验访问密码后返回完整资源 DTO 并显示受保护内容。",
       "errorEffects": ["密码错误保持锁定并审计失败", "资源已归档", "项目无权限"],
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-009-web-desktop-u3-project-resource-read-unlock-review.md"] }
     },
     {
       "id": "action.project.resource.password-reset",

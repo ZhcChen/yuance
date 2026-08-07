@@ -7,6 +7,7 @@ import {
   buildProfilePath,
   buildProjectDetailPath,
   buildProjectCycleDetailPath,
+  buildProjectResourceDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -65,11 +66,16 @@ test('parseAppRoute supports owner-aware project detail tabs', () => {
   assert.equal(buildProjectDetailPath({ owner: 'web', projectKey: 'YCE / 1', tab: 'members' }), '/web/projects/YCE%20%2F%201?tab=members');
   assert.equal(buildProjectDetailPath({ owner: 'app', projectKey: 'YCE', tab: 'cycles' }), '/web/app/projects/YCE?tab=cycles');
   assert.equal(buildProjectCycleDetailPath({ owner: 'web', projectKey: 'YCE', cycleId: 7 }), '/web/projects/YCE/cycles/7');
+  assert.equal(buildProjectDetailPath({ owner: 'app', projectKey: 'YCE', tab: 'resources' }), '/web/app/projects/YCE?tab=resources');
+  assert.equal(buildProjectResourceDetailPath({ owner: 'app', projectKey: 'YCE', resourceId: 9 }), '/web/app/projects/YCE/resources/9');
   assert.deepEqual(parseAppRoute('/web/app/projects/YCE/cycles/7', ''), {
     id: 'project-cycle-detail', owner: 'app', pathname: '/web/app/projects/YCE/cycles/7', search: '',
     projectKey: 'YCE', cycleId: 7, title: '项目周期详情',
   });
   assert.equal(buildProjectDetailPath({ owner: 'app' }), '/web/app/projects');
+  assert.deepEqual(parseAppRoute('/web/app/projects/YCE/resources/9', ''), {
+    id: 'project-resource-detail', owner: 'app', pathname: '/web/app/projects/YCE/resources/9', search: '', projectKey: 'YCE', resourceId: 9, title: '项目资料详情',
+  });
 });
 
 test('parseAppRoute supports projects route and owner-aware builders', () => {

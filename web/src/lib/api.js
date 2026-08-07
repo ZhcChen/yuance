@@ -69,6 +69,9 @@ export const getProjectAttachmentUploadUrl = apiClient.getProjectAttachmentUploa
 export const markProjectAttachmentUploaded = apiClient.markProjectAttachmentUploaded;
 export const getProjectAttachmentDownloadUrl = apiClient.getProjectAttachmentDownloadUrl;
 export const archiveProjectAttachment = apiClient.archiveProjectAttachment;
+export const getProjectResources = apiClient.getProjectResources;
+export const getProjectResource = apiClient.getProjectResource;
+export const unlockProjectResource = apiClient.unlockProjectResource;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -165,6 +168,8 @@ export const webApi = {
   getProjectCycle,
   getProjectCycles,
   getProjectMembers,
+  getProjectResource,
+  getProjectResources,
   getProjects,
   getTopbarStatus,
   getWorkItem,
@@ -195,6 +200,7 @@ export const webApi = {
   updateProject,
   updateProjectCycle,
   updateProjectMemberRole,
+  unlockProjectResource,
   updateWorkItem,
   updateWorkItemComment,
 };

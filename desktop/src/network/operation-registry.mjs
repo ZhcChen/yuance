@@ -50,6 +50,9 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.attachments", projectAttachmentsOperation],
     ["project.attachmentpreview", projectAttachmentPreviewOperation],
     ["project.attachmentarchive", projectAttachmentArchiveOperation],
+    ["project.resources", projectResourcesOperation],
+    ["project.resourcedetail", projectResourceDetailOperation],
+    ["project.resourceunlock", projectResourceUnlockOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -200,6 +203,28 @@ function projectAttachmentPreviewOperation(input) {
 function projectAttachmentArchiveOperation(input) {
   exactKeys(input, ["attachmentId", "projectKey"]);
   return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/attachments/${positiveInteger(input.attachmentId)}`, parseAttachment, false);
+}
+
+function projectResourcesOperation(input) {
+  exactKeys(input, ["category", "projectKey", "q", "relatedCycleId", "relatedWorkItemKey", "status", "tag"]);
+  const query = new URLSearchParams();
+  appendOptionalString(query, "q", optionalText(input.q, "q", 200));
+  appendOptionalString(query, "category", optionalText(input.category, "category", 64));
+  appendOptionalString(query, "status", optionalText(input.status, "status", 64));
+  appendOptionalString(query, "tag", optionalText(input.tag, "tag", 128));
+  appendOptionalString(query, "related_work_item_key", input.relatedWorkItemKey === undefined ? "" : optionalItemKey(input.relatedWorkItemKey));
+  appendOptionalString(query, "related_cycle_id", input.relatedCycleId === undefined || input.relatedCycleId === "" ? "" : String(positiveInteger(Number(input.relatedCycleId))));
+  return descriptor("GET", withQuery(`/api/v1/projects/${projectKey(input.projectKey)}/resources`, query), parseProjectResources, true, "array");
+}
+
+function projectResourceDetailOperation(input) {
+  exactKeys(input, ["projectKey", "resourceId"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}`, parseProjectResource);
+}
+
+function projectResourceUnlockOperation(input) {
+  exactKeys(input, ["accessPassword", "projectKey", "resourceId"]);
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/unlock`, parseProjectResource, false, "object", jsonBody({ access_password: boundedRequiredText(input.accessPassword, "accessPassword", 128) }));
 }
 
 function projectCycleBody(input) {
@@ -433,6 +458,19 @@ function parseProjectMember(value) { return freezeDto(value, {
   member_role: shortString, joined_at: shortString,
 }); }
 function parseProjectCycles(data) { return boundedArray(data, parseProjectCycle, 500, "project cycles"); }
+function parseProjectResources(data) {
+  if (!Array.isArray(data)) throw new TypeError("project resources are invalid");
+  return Object.freeze(data.map(parseProjectResource));
+}
+function parseProjectResource(value) { return freezeDto(value, {
+  id: positiveInteger, project_key: shortString, title: textString, category: shortString, body: longString, body_format: shortString,
+  summary: textString, status: shortString, is_protected: boolean, tags: resourceTags,
+  related_work_item: nullableResourceWorkItem, related_cycle: nullableResourceCycle,
+  created_by: shortString, updated_by: shortString, created_at: shortString, updated_at: shortString, url: webPath,
+}); }
+function resourceTags(value) { return boundedArray(value, shortString, 100, "resource tags"); }
+function nullableResourceWorkItem(value) { return value === null ? null : freezeDto(value, { key: shortString, item_type: shortString, title: textString, url: webPath }); }
+function nullableResourceCycle(value) { return value === null ? null : freezeDto(value, { id: positiveInteger, name: textString, start_date: shortString, end_date: shortString, url: webPath }); }
 function parseProjectCycle(value) { return freezeDto(value, {
   id: positiveInteger, name: textString, goal: textString, description: longString,
   owner_username: shortString, owner: textString, start_date: shortString, end_date: shortString,
@@ -522,6 +560,7 @@ function requiredString(value, name) { if (typeof value !== "string" || value.le
 function shortString(value) { if (typeof value !== "string" || value.length > 256) throw new TypeError("string field is invalid"); return value; }
 function textString(value) { if (typeof value !== "string" || value.length > 4096) throw new TypeError("text field is invalid"); return value; }
 function longString(value) { if (typeof value !== "string" || value.length > 128 * 1024) throw new TypeError("long text field is invalid"); return value; }
+function webPath(value) { if (typeof value !== "string" || !value.startsWith("/web/") || value.length > 4096) throw new TypeError("web path is invalid"); return value; }
 function boolean(value) { if (typeof value !== "boolean") throw new TypeError("boolean field is invalid"); return value; }
 function workItemKind(value) { if (value !== "work_item") throw new TypeError("notification target is invalid"); return value; }
 function positiveInteger(value) { return integer(value, 1, "integer"); }

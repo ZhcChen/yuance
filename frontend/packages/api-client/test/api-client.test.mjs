@@ -12,6 +12,7 @@ import {
   projectAttachmentPreviewApiPath,
   projectCycleApiPath,
   projectMemberApiPath,
+  projectResourceApiPath,
   workItemApiPath,
 } from '@yuance/frontend-api-client';
 
@@ -51,6 +52,33 @@ function createRecordedClient() {
 
 test('api-client exposes package root marker', () => {
   assert.equal(API_CLIENT_PACKAGE_NAME, '@yuance/frontend-api-client');
+});
+
+test('project resources normalize list detail and unlock responses', async () => {
+  const calls = [];
+  const writes = [];
+  const resource = { id: 9, project_key: 'YCE', title: '发布手册', category: 'development', body: '', body_format: 'markdown', summary: '受保护资料', status: 'active', is_protected: true, tags: ['release'], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', url: '/web/projects/YCE/resources/9', object_key: 'secret' };
+  const client = createApiClient({ request: async (url, options = {}) => { calls.push({ url, options }); return url.endsWith('/resources') || url.includes('/resources?') ? [resource] : { ...resource, body: url.endsWith('/unlock') ? '正文' : '' }; }, prepareWrite: async () => { writes.push('prepare'); } });
+  const listed = await client.getProjectResources('YCE', { q: '发布', category: 'development', relatedCycleId: 7 });
+  const detail = await client.getProjectResource('YCE', 9);
+  const unlocked = await client.unlockProjectResource('YCE', 9, 'vault-pass');
+  assert.equal(projectResourceApiPath('YCE', 9), '/api/v1/projects/YCE/resources/9');
+  assert.equal(listed[0].title, '发布手册'); assert.equal(detail.is_protected, true); assert.equal(unlocked.body, '正文');
+  assert.equal(Object.hasOwn(listed[0], 'object_key'), false);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET', options.body]), [
+    ['/api/v1/projects/YCE/resources?q=%E5%8F%91%E5%B8%83&category=development&related_cycle_id=7', 'GET', undefined],
+    ['/api/v1/projects/YCE/resources/9', 'GET', undefined],
+    ['/api/v1/projects/YCE/resources/9/unlock', 'POST', '{"access_password":"vault-pass"}'],
+  ]);
+  assert.deepEqual(writes, ['prepare']);
+});
+
+test('project resources accept the complete unpaginated server response', async () => {
+  const resource = { id: 1, project_key: 'YCE', title: '资料', category: 'development', body: '', body_format: 'markdown', summary: '', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', url: '/web/projects/YCE/resources/1' };
+  const client = createApiClient({ request: async () => Array.from({ length: 501 }, (_, index) => ({ ...resource, id: index + 1, url: `/web/projects/YCE/resources/${index + 1}` })), prepareWrite: async () => {} });
+  const resources = await client.getProjectResources('YCE');
+  assert.equal(resources.length, 501);
+  assert.equal(resources[500].id, 501);
 });
 
 test('project cycle methods share fixed paths and write payloads', async () => {
