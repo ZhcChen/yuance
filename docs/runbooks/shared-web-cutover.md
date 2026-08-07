@@ -10,6 +10,7 @@
 - 需求、任务和 Bug 列表
 - 工作项详情
 - 消息中心
+- 系统管理首页
 
 ## 启用
 
@@ -43,6 +44,8 @@ cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_work
 cargo test --manifest-path api/Cargo.toml --test project_management_flow web_work_item_detail_page_renders_full_shell -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test project_management_flow web_messages_page_paginates_notifications_with_shared_controls -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_system_owner_keeps_rust_permission_gate -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test system_management_flow system_dashboard_keeps_ssr_rollback_when_shared_shell_is_disabled -- --test-threads=1
 ```
 
-共享入口测试同时覆盖正式工作项详情和消息中心；认证测试验证列表筛选、详情深链接和消息 query 回跳；`project_management_flow` 测试在默认关闭状态验证旧 SSR 列表、详情与消息中心仍可工作。
+共享入口测试同时覆盖正式工作项详情、消息中心和系统管理首页；认证测试验证列表筛选、详情深链接、消息 query 回跳及系统权限门禁；`project_management_flow` 与 `system_management_flow` 测试在默认关闭状态验证旧 SSR 页面仍可工作。

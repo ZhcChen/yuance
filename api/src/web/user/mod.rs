@@ -6396,7 +6396,18 @@ pub async fn logout(
 pub async fn system_dashboard(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_system_web_app_response(
+        &state,
+        &headers,
+        original_uri.path(),
+        "system.dashboard.view",
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let context =
         match system_context_or_redirect(&state, &headers, "system.dashboard.view").await? {
             Ok(context) => context,
@@ -8878,6 +8889,33 @@ async fn shared_web_app_response(
         if auth::user_from_headers(pool, headers).await?.is_none() {
             return login_redirect_to(headers, return_to).map(Some);
         }
+    }
+    with_csrf_cookie(
+        state,
+        &csrf_token,
+        crate::web::router::web_app_entry_response(state),
+    )
+    .map(Some)
+}
+
+async fn shared_system_web_app_response(
+    state: &AppState,
+    headers: &HeaderMap,
+    return_to: &str,
+    permission: &str,
+) -> AppResult<Option<Response>> {
+    if !state.settings.web_app_shell_v1_enabled() {
+        return Ok(None);
+    }
+    let csrf_token = csrf::ensure_token(headers);
+    if let Some(pool) = state.pool.as_ref() {
+        if bootstrap::bootstrap_required(pool).await? {
+            return bootstrap_redirect(headers).map(Some);
+        }
+        let Some(user) = auth::user_from_headers(pool, headers).await? else {
+            return login_redirect_to(headers, return_to).map(Some);
+        };
+        ensure_view_permission(pool, headers, user.id, permission).await?;
     }
     with_csrf_cookie(
         state,
