@@ -73,6 +73,21 @@ test('project resources normalize list detail and unlock responses', async () =>
   assert.deepEqual(writes, ['prepare']);
 });
 
+test('project resource mutations use fixed JSON contracts', async () => {
+  const calls = [];
+  const resource = { id: 9, project_key: 'YCE', title: '资料', category: 'other', body: '正文', body_format: 'plain', summary: '正文', status: 'active', is_protected: false, tags: ['发布'], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', url: '/web/projects/YCE/resources/9' };
+  const client = createApiClient({ request: async (url, options = {}) => { calls.push({ url, options }); return resource; }, prepareWrite: async () => {} });
+  const payload = { title: '资料', category: 'other', body: '正文', bodyFormat: 'plain', accessPassword: '', tags: ['发布'], relatedWorkItemKey: '', relatedCycleId: null };
+  await client.createProjectResource('YCE', payload);
+  await client.updateProjectResource('YCE', 9, { ...payload, accessPasswordAction: 'keep' });
+  await client.archiveProjectResource('YCE', 9);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method, options.body ? JSON.parse(options.body) : undefined]), [
+    ['/api/v1/projects/YCE/resources', 'POST', { title: '资料', category: 'other', body: '正文', body_format: 'plain', access_password: '', tags: ['发布'], related_work_item_key: '', related_cycle_id: null }],
+    ['/api/v1/projects/YCE/resources/9', 'PATCH', { title: '资料', category: 'other', body: '正文', body_format: 'plain', access_password_action: 'keep', access_password: '', tags: ['发布'], related_work_item_key: '', related_cycle_id: null }],
+    ['/api/v1/projects/YCE/resources/9', 'DELETE', undefined],
+  ]);
+});
+
 test('project resources accept the complete unpaginated server response', async () => {
   const resource = { id: 1, project_key: 'YCE', title: '资料', category: 'development', body: '', body_format: 'markdown', summary: '', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', url: '/web/projects/YCE/resources/1' };
   const client = createApiClient({ request: async () => Array.from({ length: 501 }, (_, index) => ({ ...resource, id: index + 1, url: `/web/projects/YCE/resources/${index + 1}` })), prepareWrite: async () => {} });

@@ -28,6 +28,32 @@ export function createResourceClient({ request, prepareWrite }) {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ access_password: accessPassword }),
       }));
     },
+    async createProjectResource(projectKey, payload) {
+      await prepareWrite();
+      return projectResourceFromPayload(await request(projectResourceApiPath(projectKey), jsonRequest('POST', projectResourceMutationBody(payload, false))));
+    },
+    async updateProjectResource(projectKey, resourceId, payload) {
+      await prepareWrite();
+      return projectResourceFromPayload(await request(projectResourceApiPath(projectKey, resourceId), jsonRequest('PATCH', projectResourceMutationBody(payload, true))));
+    },
+    async archiveProjectResource(projectKey, resourceId) {
+      await prepareWrite();
+      return projectResourceFromPayload(await request(projectResourceApiPath(projectKey, resourceId), { method: 'DELETE' }));
+    },
+  };
+}
+
+export function projectResourceMutationBody(payload, update) {
+  return {
+    title: payload.title,
+    category: payload.category || 'other',
+    body: payload.body || '',
+    body_format: payload.bodyFormat || 'plain',
+    ...(update ? { access_password_action: payload.accessPasswordAction || 'keep' } : {}),
+    access_password: payload.accessPassword || '',
+    tags: payload.tags || [],
+    related_work_item_key: payload.relatedWorkItemKey || '',
+    related_cycle_id: payload.relatedCycleId || null,
   };
 }
 
@@ -57,3 +83,4 @@ function boolean(value, name) { if (typeof value !== 'boolean') throw new TypeEr
 function positiveInteger(value, name) { if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} is invalid`); return value; }
 function strings(value, count, length, name) { if (!Array.isArray(value) || value.length > count) throw new TypeError(`${name} is invalid`); return Object.freeze(value.map((item) => string(item, length, name))); }
 function internalPath(value, name) { const result = string(value, 4096, name); if (!result.startsWith('/web/')) throw new TypeError(`${name} is invalid`); return result; }
+function jsonRequest(method, body) { return { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }; }

@@ -72,6 +72,9 @@ export const archiveProjectAttachment = apiClient.archiveProjectAttachment;
 export const getProjectResources = apiClient.getProjectResources;
 export const getProjectResource = apiClient.getProjectResource;
 export const unlockProjectResource = apiClient.unlockProjectResource;
+export const createProjectResource = apiClient.createProjectResource;
+export const updateProjectResource = apiClient.updateProjectResource;
+export const archiveProjectResource = apiClient.archiveProjectResource;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -145,10 +148,12 @@ export function openTopbarEvents(callbacks) {
 export const webApi = {
   addProjectMember,
   archiveProjectAttachment,
+  archiveProjectResource,
   closeProjectCycle,
   createApiToken,
   createProject,
   createProjectCycle,
+  createProjectResource,
   createProjectAttachment,
   createWorkItemAttachment,
   createWorkItemComment,
@@ -200,6 +205,7 @@ export const webApi = {
   updateProject,
   updateProjectCycle,
   updateProjectMemberRole,
+  updateProjectResource,
   unlockProjectResource,
   updateWorkItem,
   updateWorkItemComment,

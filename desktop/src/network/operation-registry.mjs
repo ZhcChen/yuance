@@ -10,6 +10,9 @@ const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
 const PROJECT_STATUSES = new Set(["all", "not_started", "in_progress", "acceptance", "completed", "on_hold", "cancelled", "archived"]);
 const PROJECT_WRITE_STATUSES = new Set([...PROJECT_STATUSES].filter((status) => status !== "all"));
 const PROJECT_MEMBER_ROLES = new Set(["maintainer", "member", "viewer"]);
+const PROJECT_RESOURCE_CATEGORIES = new Set(["integration", "customer", "meeting", "implementation", "other"]);
+const PROJECT_RESOURCE_BODY_FORMATS = new Set(["plain", "html"]);
+const PROJECT_RESOURCE_PASSWORD_ACTIONS = new Set(["keep", "set", "clear"]);
 const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
@@ -53,6 +56,9 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.resources", projectResourcesOperation],
     ["project.resourcedetail", projectResourceDetailOperation],
     ["project.resourceunlock", projectResourceUnlockOperation],
+    ["project.resourcecreate", projectResourceCreateOperation],
+    ["project.resourceupdate", projectResourceUpdateOperation],
+    ["project.resourcearchive", projectResourceArchiveOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -225,6 +231,40 @@ function projectResourceDetailOperation(input) {
 function projectResourceUnlockOperation(input) {
   exactKeys(input, ["accessPassword", "projectKey", "resourceId"]);
   return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/unlock`, parseProjectResource, false, "object", jsonBody({ access_password: boundedRequiredText(input.accessPassword, "accessPassword", 128) }));
+}
+
+function projectResourceCreateOperation(input) {
+  exactKeys(input, ["accessPassword", "body", "bodyFormat", "category", "projectKey", "relatedCycleId", "relatedWorkItemKey", "tags", "title"]);
+  return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/resources`, parseProjectResource, false, "object", jsonBody(projectResourceBody(input, false)));
+}
+
+function projectResourceUpdateOperation(input) {
+  exactKeys(input, ["accessPassword", "accessPasswordAction", "body", "bodyFormat", "category", "projectKey", "relatedCycleId", "relatedWorkItemKey", "resourceId", "tags", "title"]);
+  return descriptor("PATCH", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}`, parseProjectResource, false, "object", jsonBody(projectResourceBody(input, true)));
+}
+
+function projectResourceArchiveOperation(input) {
+  exactKeys(input, ["projectKey", "resourceId"]);
+  return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}`, parseProjectResource, false);
+}
+
+function projectResourceBody(input, update) {
+  const passwordAction = update ? requiredEnum(input.accessPasswordAction, PROJECT_RESOURCE_PASSWORD_ACTIONS, "accessPasswordAction", false) : "set";
+  const accessPassword = boundedText(input.accessPassword, "accessPassword", 128);
+  if ((!update && accessPassword !== "" && accessPassword.length < 4)
+    || (update && passwordAction === "set" && accessPassword.length < 4)
+    || (update && passwordAction !== "set" && accessPassword !== "")) throw new TypeError("accessPassword is invalid");
+  return {
+    title: boundedRequiredText(input.title, "title", 120),
+    category: requiredEnum(input.category, PROJECT_RESOURCE_CATEGORIES, "category", false),
+    body: boundedText(input.body, "body", 120 * 1024),
+    body_format: requiredEnum(input.bodyFormat, PROJECT_RESOURCE_BODY_FORMATS, "bodyFormat", false),
+    ...(update ? { access_password_action: passwordAction } : {}),
+    access_password: accessPassword,
+    tags: boundedArray(input.tags, (tag) => boundedRequiredText(tag, "tag", 32), 20, "resource tags"),
+    related_work_item_key: optionalItemKey(input.relatedWorkItemKey),
+    related_cycle_id: input.relatedCycleId === null ? null : positiveInteger(input.relatedCycleId),
+  };
 }
 
 function projectCycleBody(input) {

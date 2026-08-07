@@ -155,6 +155,24 @@ function resolveMutationOperation(parsed, method, options) {
     const body = parseJsonBody(options, ["access_password"]);
     return { operation: "project.resourceunlock", input: { projectKey: decodeSegment(projectResourceUnlock[1]), resourceId: positiveInteger(projectResourceUnlock[2]), accessPassword: body.access_password } };
   }
+  const projectResource = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)$/u);
+  if (method === "PATCH" && projectResource) {
+    const body = parseJsonBody(options, ["access_password", "access_password_action", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"]);
+    return { operation: "project.resourceupdate", input: { projectKey: decodeSegment(projectResource[1]), resourceId: positiveInteger(projectResource[2]), ...renameBody(body, {
+      access_password: "accessPassword", access_password_action: "accessPasswordAction", body_format: "bodyFormat", related_cycle_id: "relatedCycleId", related_work_item_key: "relatedWorkItemKey",
+    }) } };
+  }
+  if (method === "DELETE" && projectResource) {
+    rejectBody(options);
+    return { operation: "project.resourcearchive", input: { projectKey: decodeSegment(projectResource[1]), resourceId: positiveInteger(projectResource[2]) } };
+  }
+  const projectResources = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources$/u);
+  if (method === "POST" && projectResources) {
+    const body = parseJsonBody(options, ["access_password", "body", "body_format", "category", "related_cycle_id", "related_work_item_key", "tags", "title"]);
+    return { operation: "project.resourcecreate", input: { projectKey: decodeSegment(projectResources[1]), ...renameBody(body, {
+      access_password: "accessPassword", body_format: "bodyFormat", related_cycle_id: "relatedCycleId", related_work_item_key: "relatedWorkItemKey",
+    }) } };
+  }
   const projectAttachmentPreview = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/attachments\/(\d+)\/preview$/u);
   if (method === "GET" && projectAttachmentPreview) {
     rejectBody(options);

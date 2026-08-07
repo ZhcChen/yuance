@@ -6,6 +6,7 @@ import {
   createWorkItemCommentAttachment,
   createWorkItemCommentDraft,
   createWorkItemComment,
+  createProjectResource,
   getWorkItemAttachmentUploadUrl,
   getProjectAttachmentPreview,
   getProjectResource,
@@ -19,8 +20,10 @@ import {
   markWorkItemAttachmentUploaded,
   markWorkItemCommentAttachmentUploaded,
   publishWorkItemCommentDraft,
+  archiveProjectResource,
   updateWorkItem,
   updateWorkItemComment,
+  updateProjectResource,
   unlockProjectResource,
 } from '../src/lib/api.js';
 
@@ -109,6 +112,29 @@ test('project resources are exposed through the bounded browser API adapter', as
     assert.equal(calls[3].options.method, 'POST');
     assert.equal(new Headers(calls[3].options.headers).get('x-yuance-csrf-token'), 'csrf-resource-token');
     assert.deepEqual(JSON.parse(String(calls[3].options.body)), { access_password: 'safe-pass' });
+  });
+});
+
+test('project resource mutations share Browser JSON contracts', async () => {
+  const resource = resourcePayload();
+  await withFetchQueue([
+    jsonResponse({ csrf_token: 'resource-write' }, { csrfToken: 'resource-write' }),
+    jsonResponse(resource, { status: 201 }),
+    jsonResponse({ csrf_token: 'resource-update' }, { csrfToken: 'resource-update' }),
+    jsonResponse(resource),
+    jsonResponse({ csrf_token: 'resource-archive' }, { csrfToken: 'resource-archive' }),
+    jsonResponse({ ...resource, status: 'archived' }),
+  ], async (calls) => {
+    const payload = { title: '部署参数', category: 'integration', body: 'client_id=test', bodyFormat: 'plain', accessPassword: '', tags: ['联调'], relatedWorkItemKey: '', relatedCycleId: null };
+    await createProjectResource('YCE', payload);
+    await updateProjectResource('YCE', 9, { ...payload, accessPasswordAction: 'keep' });
+    await archiveProjectResource('YCE', 9);
+    assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ url, options }) => [url, options.method, options.body ? JSON.parse(String(options.body)) : undefined]), [
+      ['/api/v1/projects/YCE/resources', 'POST', { title: '部署参数', category: 'integration', body: 'client_id=test', body_format: 'plain', access_password: '', tags: ['联调'], related_work_item_key: '', related_cycle_id: null }],
+      ['/api/v1/projects/YCE/resources/9', 'PATCH', { title: '部署参数', category: 'integration', body: 'client_id=test', body_format: 'plain', access_password_action: 'keep', access_password: '', tags: ['联调'], related_work_item_key: '', related_cycle_id: null }],
+      ['/api/v1/projects/YCE/resources/9', 'DELETE', undefined],
+    ]);
+    assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), ['resource-write', 'resource-update', 'resource-archive']);
   });
 });
 
