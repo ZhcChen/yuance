@@ -28,37 +28,6 @@ on:
       - "Makefile"
       - "package.json"
       - "frontend/package-lock.json"
-  push:
-    branches:
-      - main
-      - dev
-    paths:
-      - "web/**"
-      - "frontend/**"
-      - "desktop/package.json"
-      - "desktop/package-lock.json"
-      - "desktop/jsconfig.json"
-      - "desktop/eslint.config.js"
-      - "desktop/vite.config.js"
-      - "desktop/scripts/assert-renderer-source.mjs"
-      - "desktop/src/renderer/**"
-      - "desktop/test/renderer-*.test.mjs"
-      - "api/src/web/**"
-      - "api/templates/**"
-      - "api/static/**"
-      - "api/tests/**"
-      - "docs/openapi/yuance.openapi.json"
-      - "docs/runbooks/api-v1-contract.md"
-      - "api/Dockerfile"
-      - "scripts/build-api-image-amd64.sh"
-      - "scripts/smoke-web-app-image.sh"
-      - "scripts/start-web-e2e-server.sh"
-      - "scripts/deploy-production.sh"
-      - "deploy/easy-deploy/production/backend/compose.yaml.example"
-      - "Makefile"
-      - "package.json"
-      - "frontend/package-lock.json"
-
 permissions:
   contents: read
 
