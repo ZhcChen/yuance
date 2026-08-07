@@ -487,13 +487,14 @@
       "validation": "筛选和分页参数必须是受支持值。",
       "confirmation": "none",
       "request": { "method": "POST", "path": "/web/messages/read-all" },
+      "apiEffects": [{ "phase": "primary", "method": "POST", "path": "/api/v1/notifications/read-all", "purpose": "共享动作提交全部已读，成功后重新读取服务端最终消息事实" }],
       "successEffect": "将可见范围消息标记为已读并同步 badge、tab 计数和列表。",
       "errorEffects": ["提交失败保留原计数和列表", "session 失效进入统一认证恢复"],
       "realtimeEffect": "同账号其他宿主收到已读状态失效事实。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U6",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/notification-actions.test.mjs", "frontend/packages/api-client/test/api-client.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/desktop-business-api-integration.test.mjs", "api/tests/device_business_parity_flow.rs"], "reviews": ["docs/reviews/2026-08-08-014-web-desktop-u6-message-actions-review.md", "docs/reviews/2026-08-08-016-web-desktop-u6-formal-message-cutover-review.md", "docs/reviews/2026-08-08-017-web-desktop-u6-closure-review.md"], "fixture": "web/e2e/app-shell.spec.mjs" }
     },
     {
       "id": "action.messages.open-target",
@@ -503,13 +504,14 @@
       "validation": "消息属于当前用户，目标路径按统一 target model 解析。",
       "confirmation": "none",
       "request": { "method": "GET", "path": "/web/messages/{notification_id}/open" },
+      "apiEffects": [{ "phase": "primary", "method": "GET", "path": "/api/v1/notifications/{notification_id}/target", "purpose": "已读消息重新解析 canonical target 和当前权限" }, { "phase": "primary", "method": "POST", "path": "/api/v1/notifications/{notification_id}/read", "purpose": "未读消息原子标记已读并返回 canonical target" }, { "phase": "complete", "method": "POST", "path": "/api/v1/current-project", "purpose": "跨项目目标先切换当前项目，再执行 owner-aware 导航与焦点恢复" }],
       "successEffect": "标记消息已读并跳转、聚焦对应业务对象。",
       "errorEffects": ["目标已删除时显示统一不可用状态", "无权限时显示统一 403 状态"],
       "realtimeEffect": "同步 badge 和消息已读状态。",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U6",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/notification-actions.test.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/renderer-composition.test.mjs", "api/tests/device_business_parity_flow.rs"], "reviews": ["docs/reviews/2026-08-08-014-web-desktop-u6-message-actions-review.md", "docs/reviews/2026-08-08-015-web-desktop-u6-notification-focus-review.md", "docs/reviews/2026-08-08-017-web-desktop-u6-closure-review.md"], "fixture": "web/e2e/app-shell.spec.mjs" }
     },
     {
       "id": "action.project.create",
