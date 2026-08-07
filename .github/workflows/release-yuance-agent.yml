@@ -2,21 +2,8 @@ name: Release Yuance Agent
 
 on:
   push:
-    branches:
-      - "main"
     tags:
       - "yuance-agent-v*.*.*"
-  pull_request:
-    paths:
-      - ".github/workflows/release-yuance-agent.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "skills/yuance-agent/**"
-      - "tools/yuance-agent-cli/**"
-      - "scripts/install-codex-skill.*"
-      - "scripts/test-install-codex-skill.*"
-      - "scripts/validate-yuance-agent-release.sh"
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,20 +19,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Verify tag source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-list -n 1 "$GITHUB_REF_NAME")" = "$GITHUB_SHA"
 
       - name: Validate tag and versions
         shell: bash
-        env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          if [[ "$REF_TYPE" == "tag" ]]; then
-            tag="$REF_NAME"
-          else
-            version="$(sed -n 's/^version = "\([^"]*\)"$/\1/p' tools/yuance-agent-cli/Cargo.toml | head -1)"
-            tag="yuance-agent-v${version}"
-          fi
-          scripts/validate-yuance-agent-release.sh "$tag"
+        run: scripts/validate-yuance-agent-release.sh "$GITHUB_REF_NAME"
 
   quality:
     name: Rust and Bash quality
@@ -53,6 +39,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
 
       - name: Install Rust 1.94
         uses: dtolnay/rust-toolchain@1.94.0
@@ -80,6 +68,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
 
       - name: Install Rust 1.94
         uses: dtolnay/rust-toolchain@1.94.0
@@ -124,6 +114,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
 
       - name: Install Rust 1.94 target
         uses: dtolnay/rust-toolchain@1.94.0
@@ -230,6 +222,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }}
 
       - name: Download release assets
         uses: actions/download-artifact@v8
