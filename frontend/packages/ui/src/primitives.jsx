@@ -1,6 +1,6 @@
 // @ts-check
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef } from 'react';
 
 /** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
 export function Button({ children, variant = 'primary', loading = false, disabled = false, type = 'button', onClick, ariaLabel }) {
@@ -28,6 +28,7 @@ export function Feedback({ tone = 'info', title, children, action }) {
 /** @param {{ open: boolean, title: string, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void }} props */
 export function Modal({ open, title, children, footer, onClose }) {
   const ref = useRef(/** @type {HTMLDialogElement | null} */ (null));
+  const titleId = useId();
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
@@ -35,8 +36,8 @@ export function Modal({ open, title, children, footer, onClose }) {
     if (!open && dialog.open) dialog.close();
   }, [open]);
   return (
-    <dialog ref={ref} className="yc-modal" aria-labelledby="yc-modal-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}>
-      <div className="yc-modal-header"><h2 id="yc-modal-title">{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
+    <dialog ref={ref} className="yc-modal" aria-labelledby={titleId} onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}>
+      <div className="yc-modal-header"><h2 id={titleId}>{title}</h2><button type="button" aria-label="关闭" onClick={onClose}>×</button></div>
       <div className="yc-modal-body">{children}</div>
       {footer ? <div className="yc-modal-footer">{footer}</div> : null}
     </dialog>

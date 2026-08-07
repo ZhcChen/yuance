@@ -24,7 +24,9 @@ test('feedback and modal expose bounded semantic states', () => {
   const modal = renderToStaticMarkup(createElement(Modal, { open: false, title: '确认删除', onClose() {} }, '不可撤销'));
   assert.match(modal, /<dialog/u);
   assert.match(modal, /aria-label="关闭"/u);
-  assert.match(modal, /aria-labelledby="yc-modal-title"/u);
+  const labelledBy = modal.match(/aria-labelledby="([^"]+)"/u)?.[1];
+  assert.ok(labelledBy);
+  assert.match(modal, new RegExp(`<h2 id="${labelledBy}">确认删除</h2>`, 'u'));
 });
 
 test('table, pagination and skeleton cover empty and boundary states', () => {

@@ -182,6 +182,57 @@ test('shared profile page updates account identity through the common modal', as
   await expect(page.getByRole('button', { name: '打开 统一体验管理员 的账户菜单' })).toBeVisible();
 });
 
+test('shared account security manages password tokens and device sessions once', async ({ page }) => {
+  await login(page, '/web/app');
+  const mutations = [];
+  const tokenFixture = { id: 7, name: 'E2E Agent', scopes: ['project:read', 'work_item:read'], project_scope: 'all', token_suffix: 'abcd', expires_at: '', revoked_at: '', last_used_at: '', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const deviceFixture = { family_id: 'family-e2e', device_id: 'device-e2e', device_name: 'E2E Desktop', platform: 'darwin', client_version: '0.1.0', status: 'active', generation: 1, last_seen_at: '2026-08-07T00:00:00Z', created_at: '2026-08-07T00:00:00Z', is_current: false };
+  await page.route('**/api/v1/me/tokens**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) });
+    mutations.push({ method: request.method(), url: request.url(), headers: request.headers(), payload: request.postDataJSON() });
+    return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: { token: tokenFixture, raw_token: 'yuance_pat_e2e-once' } }) });
+  });
+  await page.route('**/api/v1/me/device-sessions**', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [deviceFixture] }) });
+    mutations.push({ method: request.method(), url: request.url(), headers: request.headers() });
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...deviceFixture, status: 'revoked' } }) });
+  });
+  await page.route('**/api/v1/me/password', async (route) => {
+    const request = route.request();
+    mutations.push({ method: request.method(), url: request.url(), headers: request.headers(), payload: request.postDataJSON() });
+    return route.fulfill({ status: 204 });
+  });
+
+  await page.getByRole('button', { name: /打开 .* 的账户菜单/ }).click();
+  await page.getByRole('link', { name: '我的账号' }).click();
+  await page.getByRole('button', { name: '修改密码' }).click();
+  const password = page.getByRole('dialog', { name: '修改密码' });
+  await password.getByLabel('当前密码').fill('OldPass2026!');
+  await password.getByLabel(/^新密码/).fill('NewPass2026!');
+  await password.getByLabel('确认新密码').fill('NewPass2026!');
+  await password.getByRole('button', { name: '保存' }).click();
+  await expect(password).not.toBeVisible();
+
+  await page.getByRole('button', { name: '新建 Token' }).click();
+  const tokenDialog = page.getByRole('dialog', { name: '新建访问 Token' });
+  await tokenDialog.getByLabel('名称').fill('E2E Agent');
+  await tokenDialog.getByLabel('读取工作项').check();
+  await tokenDialog.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByText('yuance_pat_e2e-once')).toBeVisible();
+
+  await page.locator('.account-security-row', { hasText: 'E2E Desktop' }).getByRole('button', { name: '撤销' }).click();
+  const confirmation = page.getByRole('dialog', { name: '撤销设备会话' });
+  await confirmation.getByRole('button', { name: '确认' }).click();
+  await expect(confirmation).not.toBeVisible();
+
+  expect(mutations).toHaveLength(3);
+  expect(mutations.map(({ method }) => method)).toEqual(['PATCH', 'POST', 'DELETE']);
+  expect(mutations.every(({ headers }) => Boolean(headers['x-yuance-csrf-token']))).toBe(true);
+  expect(mutations[1].payload.scopes).toEqual(['project:read', 'work_item:read']);
+});
+
 test('app-owner task list can filter and open read-only work item detail', async ({ page }) => {
   await login(page, '/web/app/projects');
   await ensureCurrentProject(page, 'YCE');

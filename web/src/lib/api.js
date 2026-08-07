@@ -55,6 +55,13 @@ export const search = /** @type {(query?: { q?: string, page?: number, perPage?:
 
 export const getOwnProfile = apiClient.getOwnProfile;
 export const updateOwnProfile = apiClient.updateOwnProfile;
+export const updateOwnPassword = apiClient.updateOwnPassword;
+export const getApiTokens = apiClient.getApiTokens;
+export const createApiToken = apiClient.createApiToken;
+export const updateApiToken = apiClient.updateApiToken;
+export const deleteApiToken = apiClient.deleteApiToken;
+export const getDeviceSessions = apiClient.getDeviceSessions;
+export const revokeDeviceSession = apiClient.revokeDeviceSession;
 
 export const updateCurrentProject = /** @type {(projectKey: string) => Promise<{ key: string, name: string }>} */ (apiClient.updateCurrentProject);
 
@@ -114,10 +121,14 @@ export function openTopbarEvents(callbacks) {
 }
 
 export const webApi = {
+  createApiToken,
   createWorkItemAttachment,
   createWorkItemComment,
   createWorkItemCommentAttachment,
+  deleteApiToken,
+  getApiTokens,
   getCurrentUser,
+  getDeviceSessions,
   getNotificationTarget,
   getNotifications,
   getOwnProfile,
@@ -140,9 +151,12 @@ export const webApi = {
   markWorkItemCommentAttachmentUploaded,
   refreshCsrfToken,
   restorePendingReturnToHash,
+  revokeDeviceSession,
   search,
+  updateApiToken,
   updateCurrentProject,
   updateOwnProfile,
+  updateOwnPassword,
   updateWorkItem,
   updateWorkItemComment,
 };
