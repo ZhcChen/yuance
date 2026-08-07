@@ -15,6 +15,15 @@ const NETWORK_LABELS = Object.freeze({
   idle: "等待连接", connecting: "正在连接", online: "服务在线", offline: "连接中断",
   suspended: "系统已挂起", reauthorization_required: "授权已失效", fatal: "网络不可用",
 });
+const STATE_DESCRIPTIONS = Object.freeze({
+  starting: "正在检查本机配置并恢复已有设备会话。",
+  unauthenticated: "授权将在系统浏览器中完成，确认后此窗口会自动进入工作台。",
+  authorizing: "授权请求已发出，请在浏览器中确认当前设备。",
+  authenticated: "设备身份已经确认，正在建立业务数据连接。",
+  locked: "本机设备凭证暂时不可用，请重试恢复连接。",
+  reauthorization_required: "当前设备会话已经失效，需要重新确认设备身份。",
+  fatal: "安全运行环境未能完成初始化，请重新启动应用。",
+});
 
 export default function DesktopApp({ services }) {
   const [authState, setAuthState] = useState(() => services.auth.getSnapshot());
@@ -45,6 +54,7 @@ export default function DesktopApp({ services }) {
   }
 
   return <HostStatusShell productName="元策" hostLabel="Desktop" status={authState.status} title={title} detail={detail}
+    description={STATE_DESCRIPTIONS[authState.status] ?? STATE_DESCRIPTIONS.fatal}
     context={authState.status === "authenticated" ? NETWORK_LABELS[networkState.status] : undefined}
     primaryAction={primaryAction} secondaryAction={secondaryAction} actionsDisabled={commandPending} />;
 }

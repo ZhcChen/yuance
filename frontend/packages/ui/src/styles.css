@@ -1,15 +1,17 @@
 .host-status-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-rows: 64px 1fr;
+  grid-template-rows: 72px 1fr;
+  background: #edf2f1;
+  color: #17211f;
 }
 
 .host-status-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 0 24px;
-  border-bottom: 1px solid #d9e0de;
+  padding: 0 28px;
+  border-bottom: 1px solid #d5dedb;
   background: #ffffff;
 }
 
@@ -34,17 +36,127 @@
 .host-status-brand-copy span,
 .host-status-label { color: #66736f; font-size: 12px; }
 
-.host-status-panel {
-  width: min(560px, calc(100% - 48px));
+.host-status-workspace {
+  width: min(1040px, calc(100% - 64px));
+  min-height: 520px;
+  display: grid;
+  grid-template-columns: minmax(320px, .82fr) minmax(420px, 1.18fr);
   margin: auto;
-  padding: 32px 0;
+  overflow: hidden;
+  border: 1px solid #cfd9d6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 60px rgb(42 61 56 / 12%);
+}
+
+.host-status-guide {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 36px;
+  padding: 48px 44px 34px;
+  background: #12231f;
+  color: #f5f8f7;
+}
+
+.host-status-kicker {
+  margin: 0 0 16px;
+  color: #67bda3;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.host-status-guide h2 {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.host-status-guide-copy {
+  max-width: 30ch;
+  margin: 14px 0 0;
+  color: #aebfba;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.host-status-steps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.host-status-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 70px;
+  color: #82918d;
+}
+
+.host-status-steps li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 30px;
+  bottom: 4px;
+  left: 14px;
+  width: 1px;
+  background: #31443f;
+}
+
+.host-status-steps li > span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid #43544f;
+  border-radius: 50%;
+  background: #12231f;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.host-status-steps li div {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding-top: 4px;
+}
+
+.host-status-steps strong { color: inherit; font-size: 14px; }
+.host-status-steps small { color: #71827d; font-size: 12px; }
+.host-status-steps .is-active { color: #ffffff; }
+.host-status-steps .is-active > span { border-color: #67bda3; background: #176a56; }
+.host-status-steps .is-complete { color: #a7b7b2; }
+.host-status-steps .is-complete > span { border-color: #4d7367; color: #67bda3; }
+
+.host-status-guide-foot {
+  margin: 0;
+  color: #71827d;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.host-status-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 64px 68px;
 }
 
 .host-status-indicator {
   display: block;
-  width: 36px;
-  height: 4px;
-  margin-bottom: 20px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
   background: #8a9692;
 }
 
@@ -52,13 +164,49 @@
 .host-status-locked,
 .host-status-reauthorization_required,
 .host-status-fatal { background: #b53d3d; }
-.host-status-label { margin: 0 0 8px; font-weight: 600; }
-.host-status-panel h1 { margin: 0; font-size: 28px; line-height: 1.25; letter-spacing: 0; }
-.host-status-context { margin: 12px 0 0; color: #42524d; font-size: 14px; }
-.host-status-actions { display: flex; gap: 10px; margin-top: 24px; }
-.host-status-actions button { min-height: 38px; border: 1px solid #176a56; border-radius: 6px; padding: 0 16px; background: #176a56; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+.host-status-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  color: #557069;
+  font-size: 12px;
+  font-weight: 800;
+}
+.host-status-panel h1 { max-width: 16ch; margin: 0; font-size: 34px; line-height: 1.25; letter-spacing: 0; }
+.host-status-description { max-width: 42ch; margin: 16px 0 0; color: #66736f; font-size: 14px; line-height: 1.75; }
+.host-status-context { width: fit-content; margin: 18px 0 0; padding: 8px 10px; border-left: 3px solid #176a56; background: #edf5f2; color: #42524d; font-size: 13px; }
+.host-status-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 32px; }
+.host-status-actions button { min-width: 132px; min-height: 44px; border: 1px solid #176a56; border-radius: 6px; padding: 0 18px; background: #176a56; color: #fff; font: inherit; font-weight: 700; cursor: pointer; transition: background 150ms ease, border-color 150ms ease, transform 150ms ease; }
+.host-status-actions button:hover:not(:disabled) { border-color: #125743; background: #125743; transform: translateY(-1px); }
+.host-status-actions button:focus-visible { outline: 3px solid rgb(23 106 86 / 22%); outline-offset: 3px; }
 .host-status-actions button:disabled { cursor: wait; opacity: .6; }
 .host-status-actions .host-status-secondary { border-color: #aebbb7; background: transparent; color: #34443f; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .host-status-authorizing { animation: host-status-pulse 1.6s ease-in-out infinite; }
+}
+
+@keyframes host-status-pulse {
+  50% { box-shadow: 0 0 0 6px rgb(138 150 146 / 14%); }
+}
+
+@media (max-width: 760px) {
+  .host-status-shell { grid-template-rows: 64px 1fr; }
+  .host-status-header { padding: 0 20px; }
+  .host-status-workspace { width: calc(100% - 32px); min-height: 0; grid-template-columns: 1fr; align-self: start; margin: 16px auto; }
+  .host-status-guide { justify-content: flex-start; gap: 24px; padding: 30px 28px 24px; }
+  .host-status-guide-copy, .host-status-steps small, .host-status-guide-foot { display: none; }
+  .host-status-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .host-status-steps li { min-height: 0; grid-template-columns: 1fr; justify-items: center; gap: 7px; text-align: center; }
+  .host-status-steps li:not(:last-child)::after { display: none; }
+  .host-status-steps li div { padding-top: 0; }
+  .host-status-steps strong { font-size: 12px; white-space: nowrap; }
+  .host-status-panel { padding: 42px 28px 48px; }
+  .host-status-panel h1 { font-size: 28px; }
+  .host-status-actions { margin-top: 26px; }
+  .host-status-actions button { flex: 1 1 132px; }
+}
 
 .yuance-ui-muted,
 .yuance-ui-meta,
