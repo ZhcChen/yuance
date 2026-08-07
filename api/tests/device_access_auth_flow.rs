@@ -30,6 +30,110 @@ const CODE_VERIFIER: &str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO
 const CSRF_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[tokio::test]
+async fn device_access_manages_personal_tokens_and_device_sessions() {
+    let pool = test_pool().await;
+    let (user_id, _) = bootstrap_admin_session(&pool).await;
+    let credentials = issue_device_credentials(&pool, user_id, "Account Security Desktop").await;
+    let app = test_app(pool.clone());
+
+    let response = device_json_request(
+        &app,
+        "POST",
+        "/api/v1/me/tokens",
+        &credentials.access_token,
+        serde_json::json!({
+            "name": "Desktop Agent",
+            "scopes": ["project:read"],
+            "project_scope": "all"
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created = json_body(response).await;
+    let token_id = created["data"]["token"]["id"].as_i64().unwrap();
+    let raw_token = created["data"]["raw_token"].as_str().unwrap().to_string();
+    assert!(raw_token.starts_with("yuance_pat_"));
+
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/me/tokens",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let listed = json_body(response).await;
+    assert_eq!(listed["data"][0]["name"], "Desktop Agent");
+    assert!(!listed.to_string().contains(&raw_token));
+
+    let response = device_json_request(
+        &app,
+        "PATCH",
+        &format!("/api/v1/me/tokens/{token_id}"),
+        &credentials.access_token,
+        serde_json::json!({
+            "name": "Desktop Agent Updated",
+            "scopes": ["project:read", "work_item:read"],
+            "project_scope": "all"
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["name"], "Desktop Agent Updated");
+
+    let response = device_request(
+        &app,
+        "DELETE",
+        &format!("/api/v1/me/tokens/{token_id}"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = device_request(
+        &app,
+        "GET",
+        "/api/v1/me/device-sessions",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let sessions = json_body(response).await;
+    assert_eq!(sessions["data"][0]["family_id"], credentials.family_id);
+    assert_eq!(sessions["data"][0]["is_current"], true);
+
+    let pat = api_tokens::create_token(
+        &pool,
+        &test_settings().security_master_key,
+        user_id,
+        api_tokens::CreateApiTokenInput {
+            name: "Forbidden manager".to_string(),
+            scopes: vec![api_tokens::SCOPE_PROJECT_READ.to_string()],
+            project_scope: "all".to_string(),
+            expires_at: String::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let response = device_request(&app, "GET", "/api/v1/me/tokens", &pat.raw_token, None).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = device_request(
+        &app,
+        "DELETE",
+        &format!("/api/v1/me/device-sessions/{}", credentials.family_id),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "revoked");
+}
+
+#[tokio::test]
 async fn device_business_routes_preserve_project_membership_and_viewer_write_denial() {
     let pool = test_pool().await;
     let (admin_id, _) = bootstrap_admin_session(&pool).await;

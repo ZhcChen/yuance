@@ -632,7 +632,15 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/me/tokens/{token_id}",
-            delete(web::api::delete_api_token),
+            patch(web::api::update_api_token).delete(web::api::delete_api_token),
+        )
+        .route(
+            "/api/v1/me/device-sessions",
+            get(web::api::list_device_sessions),
+        )
+        .route(
+            "/api/v1/me/device-sessions/{family_id}",
+            delete(web::api::revoke_device_session),
         )
         .route(
             "/api/v1/bootstrap/init",

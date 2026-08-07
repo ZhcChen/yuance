@@ -400,6 +400,29 @@ pub struct CreateApiTokenRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateApiTokenRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    project_scope: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceSessionPayload {
+    pub family_id: String,
+    pub device_id: String,
+    pub device_name: String,
+    pub platform: String,
+    pub client_version: String,
+    pub status: String,
+    pub generation: i64,
+    pub last_seen_at: String,
+    pub created_at: String,
+    pub is_current: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct NotificationQuery {
     #[serde(default)]
     limit: Option<i64>,
@@ -4679,10 +4702,10 @@ pub async fn list_api_tokens(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<ApiTokenPayload>>>> {
-    ensure_cookie_api_auth(&headers)?;
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
     let pool = state.pool()?;
-    let tokens = api_tokens::list_tokens(pool, user.id)
+    let tokens = api_tokens::list_tokens(pool, principal.user.id)
         .await?
         .into_iter()
         .map(api_token_payload)
@@ -4696,14 +4719,14 @@ pub async fn create_api_token(
     headers: HeaderMap,
     Json(payload): Json<CreateApiTokenRequest>,
 ) -> AppResult<impl IntoResponse> {
-    ensure_cookie_api_auth(&headers)?;
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     let created = api_tokens::create_token(
         pool,
         &state.settings.security_master_key,
-        user.id,
+        principal.user.id,
         api_tokens::CreateApiTokenInput {
             name: payload.name,
             scopes: payload.scopes,
@@ -4714,7 +4737,7 @@ pub async fn create_api_token(
     .await?;
     audit::record(
         pool,
-        Some(user.id),
+        Some(principal.user.id),
         "api_token.create",
         "api_token",
         &created.token.id.to_string(),
@@ -4731,19 +4754,53 @@ pub async fn create_api_token(
     ))
 }
 
+pub async fn update_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    Json(payload): Json<UpdateApiTokenRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ApiTokenPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    let token = api_tokens::update_token(
+        pool,
+        principal.user.id,
+        token_id,
+        api_tokens::UpdateApiTokenInput {
+            name: payload.name,
+            scopes: payload.scopes,
+            project_scope: payload.project_scope,
+        },
+    )
+    .await?;
+    audit::record_with_context(
+        pool,
+        Some(principal.user.id),
+        "api_token.update",
+        "api_token",
+        &token.id.to_string(),
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(json(api_token_payload(token)))
+}
+
 pub async fn delete_api_token(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(token_id): Path<i64>,
 ) -> AppResult<axum::Json<ApiEnvelope<ApiTokenPayload>>> {
-    ensure_cookie_api_auth(&headers)?;
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
-    let token = api_tokens::delete_token(pool, user.id, token_id).await?;
+    let token = api_tokens::delete_token(pool, principal.user.id, token_id).await?;
     audit::record(
         pool,
-        Some(user.id),
+        Some(principal.user.id),
         "api_token.delete",
         "api_token",
         &token.id.to_string(),
@@ -4754,13 +4811,103 @@ pub async fn delete_api_token(
     Ok(json(api_token_payload(token)))
 }
 
-fn ensure_cookie_api_auth(headers: &HeaderMap) -> AppResult<()> {
-    if api_tokens::bearer_token(headers).is_some() {
-        return Err(AppError::Forbidden(
-            "访问 Token 不能管理其它访问 Token，请使用浏览器登录会话".to_string(),
-        ));
+pub async fn list_device_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<DeviceSessionPayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    let current_family_id = match &principal.kind {
+        ApiPrincipalKind::Device(device) => Some(device.family_id.as_str()),
+        _ => None,
+    };
+    let sessions = device_sessions::list_device_families_for_user(
+        state.pool()?,
+        principal.user.id,
+        &state.settings.device_sessions.server_instance_id,
+    )
+    .await
+    .map_err(device_session_api_error)?
+    .into_iter()
+    .map(|session| DeviceSessionPayload {
+        is_current: current_family_id == Some(session.family_id.as_str()),
+        family_id: session.family_id,
+        device_id: session.device_id,
+        device_name: session.device_name,
+        platform: session.platform,
+        client_version: session.client_version,
+        status: session.family_status,
+        generation: session.generation,
+        last_seen_at: session.last_seen_at.to_rfc3339(),
+        created_at: session.created_at.to_rfc3339(),
+    })
+    .collect();
+    Ok(json(sessions))
+}
+
+pub async fn revoke_device_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(family_id): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<DeviceSessionPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_account_principal(&principal)?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    let session = device_sessions::list_device_families_for_user(
+        pool,
+        principal.user.id,
+        &state.settings.device_sessions.server_instance_id,
+    )
+    .await
+    .map_err(device_session_api_error)?
+    .into_iter()
+    .find(|session| session.family_id == family_id)
+    .ok_or_else(|| AppError::NotFound("设备会话不存在".to_string()))?;
+    device_sessions::revoke_family_for_user(
+        pool,
+        principal.user.id,
+        &family_id,
+        chrono::Utc::now(),
+        "user_revoke",
+    )
+    .await
+    .map_err(device_session_api_error)?;
+    audit::record_with_context(
+        pool,
+        Some(principal.user.id),
+        "device_session.revoke",
+        "device_credential_family",
+        &family_id,
+        &principal.audit_details(),
+        &audit_context::from_headers(&headers),
+    )
+    .await?;
+    Ok(json(DeviceSessionPayload {
+        is_current: matches!(&principal.kind, ApiPrincipalKind::Device(device) if device.family_id == family_id),
+        family_id: session.family_id,
+        device_id: session.device_id,
+        device_name: session.device_name,
+        platform: session.platform,
+        client_version: session.client_version,
+        status: "revoked".to_string(),
+        generation: session.generation,
+        last_seen_at: session.last_seen_at.to_rfc3339(),
+        created_at: session.created_at.to_rfc3339(),
+    }))
+}
+
+fn device_session_api_error(error: device_sessions::DeviceSessionError) -> AppError {
+    match error {
+        device_sessions::DeviceSessionError::StorageFailure(error) => AppError::Database(error),
+        device_sessions::DeviceSessionError::InvalidRequest(message) => {
+            AppError::BadRequest(message)
+        }
+        device_sessions::DeviceSessionError::FamilyRevoked => {
+            AppError::Conflict("设备会话已撤销".to_string())
+        }
+        error => AppError::Conflict(error.to_string()),
     }
-    Ok(())
 }
 
 fn ensure_account_principal(principal: &ApiPrincipal) -> AppResult<()> {
