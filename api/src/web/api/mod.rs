@@ -240,6 +240,7 @@ pub struct ProjectResourcePayload {
     pub created_at: String,
     pub updated_at: String,
     pub url: String,
+    pub access_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1406,6 +1407,8 @@ pub struct FolderContentPayload {
 pub struct SignedUrlQuery {
     #[serde(default)]
     expires_in_seconds: Option<u64>,
+    #[serde(default)]
+    access: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3747,9 +3750,15 @@ pub async fn unlock_project_resource(
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_UNLOCK).await?;
-    let verified =
-        project_resources::verify_resource_password(pool, resource.id, &payload.access_password)
-            .await?;
+    let (verified, access_token) =
+        project_resources::verify_resource_password_and_issue_access_token(
+            pool,
+            &state.settings.security_master_key,
+            user.id,
+            resource.id,
+            &payload.access_password,
+        )
+        .await?;
     let audit_action = if verified {
         "project_resource.unlock.success"
     } else {
@@ -3768,7 +3777,10 @@ pub async fn unlock_project_resource(
         return Err(AppError::Forbidden("访问密码不正确".to_string()));
     }
 
-    Ok(json(project_resource_unlocked_payload(resource)))
+    Ok(json(project_resource_unlocked_payload(
+        resource,
+        access_token,
+    )))
 }
 
 pub async fn reset_project_resource_password(
@@ -3835,7 +3847,7 @@ pub async fn create_project_resource_attachment(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -3884,6 +3896,38 @@ pub async fn create_project_resource_attachment(
     .await?;
 
     Ok((StatusCode::CREATED, json(attachment_payload(attachment))))
+}
+
+pub async fn list_project_resource_attachments(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, resource_id)): Path<(String, i64)>,
+    Query(query): Query<SignedUrlQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<AttachmentPayload>>>> {
+    let (user, _project, resource) =
+        require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
+    if resource.is_protected
+        && !project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
+            &query.access,
+            user.id,
+            resource.id,
+        )
+        .await?
+    {
+        return Err(AppError::Forbidden(
+            "受保护资料附件需要先验证访问密码".to_string(),
+        ));
+    }
+    let attachments = files::list_attachments(pool, "project_resource", resource.id)
+        .await?
+        .into_iter()
+        .map(attachment_payload)
+        .collect();
+    Ok(json(attachments))
 }
 
 pub async fn project_resource_attachment_upload_url(
@@ -3975,12 +4019,21 @@ pub async fn project_resource_attachment_download_url(
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
-    if resource.is_protected {
+    let pool = state.pool()?;
+    if resource.is_protected
+        && !project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
+            &query.access,
+            user.id,
+            resource.id,
+        )
+        .await?
+    {
         return Err(AppError::Forbidden(
             "受保护资料附件需要先验证访问密码".to_string(),
         ));
     }
-    let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_RESOURCE_READ).await?;
     let attachment =
         files::get_attachment_for_target(pool, attachment_id, "project_resource", resource.id)
@@ -4015,7 +4068,7 @@ pub async fn project_resource_attachment_delete(
     headers: HeaderMap,
     Path((project_key, resource_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -6353,6 +6406,7 @@ fn project_resource_summary_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+        access_token: None,
     }
 }
 
@@ -6394,11 +6448,13 @@ fn project_resource_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+        access_token: None,
     }
 }
 
 fn project_resource_unlocked_payload(
     resource: project_resources::ProjectResourceDetail,
+    access_token: Option<String>,
 ) -> ProjectResourcePayload {
     let project_key = resource.project_key.clone();
     ProjectResourcePayload {
@@ -6426,6 +6482,7 @@ fn project_resource_unlocked_payload(
             "/web/projects/{}/resources/{}",
             resource.project_key, resource.id
         ),
+        access_token,
     }
 }
 

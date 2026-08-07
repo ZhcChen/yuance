@@ -194,6 +194,10 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const comments = await rest.execute("workitem.comments", { itemKey });
   const commentId = comments.find((comment) => !comment.is_flow && !comment.is_draft)?.id;
   if (!commentId) throw new Error("seeded comment is unavailable");
+  const resource = await rest.execute("project.resourcecreate", {
+    projectKey: "YCE", title: "Desktop file resource", category: "other", body: "resource attachment fixture", bodyFormat: "plain",
+    accessPassword: "", tags: ["desktop-file"], relatedWorkItemKey: "", relatedCycleId: null,
+  });
 
   const windowsGuard = loadWindowsFileGuard();
   const spoolRoot = path.join(userDataPath, "business-file-spool");
@@ -208,17 +212,19 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const itemContent = Buffer.from("yuance-business-item-attachment-v1");
   const commentContent = Buffer.from("yuance-business-comment-attachment-v1");
   const projectContent = Buffer.from("yuance-business-project-attachment-v1");
-  const sourcePaths = [path.join(userDataPath, "item-source.txt"), path.join(userDataPath, "comment-source.txt"), path.join(userDataPath, "project-source.txt")];
-  await Promise.all([fs.writeFile(sourcePaths[0], itemContent), fs.writeFile(sourcePaths[1], commentContent), fs.writeFile(sourcePaths[2], projectContent)]);
+  const resourceContent = Buffer.from("yuance-business-resource-attachment-v1");
+  const sourcePaths = [path.join(userDataPath, "item-source.txt"), path.join(userDataPath, "comment-source.txt"), path.join(userDataPath, "project-source.txt"), path.join(userDataPath, "resource-source.txt")];
+  await Promise.all([fs.writeFile(sourcePaths[0], itemContent), fs.writeFile(sourcePaths[1], commentContent), fs.writeFile(sourcePaths[2], projectContent), fs.writeFile(sourcePaths[3], resourceContent)]);
   let sourceIndex = 0;
   const fileDialog = createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sourcePaths[sourceIndex++]] }) }, spool, vault: fileVault });
   const itemFile = await fileDialog.choose({ binding: binding("upload") });
   const commentFile = await fileDialog.choose({ binding: binding("upload") });
   const projectFile = await fileDialog.choose({ binding: binding("upload") });
-  if (!itemFile || !commentFile || !projectFile) throw new Error("business file selection was cancelled");
+  const resourceFile = await fileDialog.choose({ binding: binding("upload") });
+  if (!itemFile || !commentFile || !projectFile || !resourceFile) throw new Error("business file selection was cancelled");
   stage("selected");
 
-  const downloadPaths = [path.join(userDataPath, "item-download.txt"), path.join(userDataPath, "comment-download.txt"), path.join(userDataPath, "project-download.txt")];
+  const downloadPaths = [path.join(userDataPath, "item-download.txt"), path.join(userDataPath, "comment-download.txt"), path.join(userDataPath, "project-download.txt"), path.join(userDataPath, "resource-download.txt")];
   let downloadIndex = 0;
   const targetManager = createDownloadTargetManager({
     dialog: { showSaveDialog: async () => downloadIndex < downloadPaths.length ? { canceled: false, filePath: downloadPaths[downloadIndex++] } : { canceled: true } },
@@ -251,28 +257,35 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const projectListInitial = await rest.execute("project.attachments", { projectKey: "YCE" });
   stage("project-upload");
   const projectUpload = await coordinator.uploadProjectAttachment({ projectKey: "YCE", fileCapability: projectFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("project") });
+  stage("resource-upload");
+  const resourceUpload = await coordinator.uploadProjectResourceAttachment({ projectKey: "YCE", resourceId: resource.id, fileCapability: resourceFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("resource") });
   stage("uploaded");
   stage("lists");
-  const [itemList, commentList, projectList] = await Promise.all([
+  const [itemList, commentList, projectList, resourceList] = await Promise.all([
     rest.execute("workitem.attachments", { itemKey }),
     rest.execute("workitem.commentattachments", { itemKey, commentId }),
     rest.execute("project.attachments", { projectKey: "YCE" }),
+    rest.execute("project.resourceattachments", { projectKey: "YCE", resourceId: resource.id, accessToken: "" }),
   ]);
   stage("downloads");
   const itemDownload = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const commentDownload = await coordinator.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const projectDownload = await coordinator.downloadProjectAttachment({ projectKey: "YCE", attachmentId: projectUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const resourceDownload = await coordinator.downloadProjectResourceAttachment({ projectKey: "YCE", resourceId: resource.id, attachmentId: resourceUpload.uploaded.id, accessToken: "", binding: baseBinding, signal: undefined, window: undefined });
   const cancelled = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const revealed = [];
   const revealController = createRevealDownloadController({ vault: revealVault, shell: { showItemInFolder: () => revealed.push(true) } });
   await revealController.reveal(itemDownload.revealCapability, binding("reveal-download"));
   await revealController.reveal(commentDownload.revealCapability, binding("reveal-download"));
   await revealController.reveal(projectDownload.revealCapability, binding("reveal-download"));
+  await revealController.reveal(resourceDownload.revealCapability, binding("reveal-download"));
   const downloaded = await Promise.all(downloadPaths.map((value) => fs.readFile(value)));
   const hash = (value) => createHash("sha256").update(value).digest("hex");
   stage("project-archive");
   const projectArchived = await rest.execute("project.attachmentarchive", { projectKey: "YCE", attachmentId: projectUpload.uploaded.id });
   const projectListArchived = await rest.execute("project.attachments", { projectKey: "YCE" });
+  const resourceDeleted = await rest.execute("project.resourceattachmentdelete", { projectKey: "YCE", resourceId: resource.id, attachmentId: resourceUpload.uploaded.id });
+  const resourceListDeleted = await rest.execute("project.resourceattachments", { projectKey: "YCE", resourceId: resource.id, accessToken: "" });
   await runtime.logout();
   runtime.dispose();
   process.stdout.write(`${JSON.stringify({
@@ -280,11 +293,14 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     itemUploaded: itemUpload.uploaded.status === "uploaded",
     commentUploaded: commentUpload.uploaded.status === "uploaded",
     projectUploaded: projectUpload.uploaded.status === "uploaded",
+    resourceUploaded: resourceUpload.uploaded.status === "uploaded",
     itemListed: itemList.some((value) => value.id === itemUpload.uploaded.id),
     commentListed: commentList.some((value) => value.id === commentUpload.uploaded.id),
     projectListAdded: !projectListInitial.some((value) => value.id === projectUpload.uploaded.id) && projectList.some((value) => value.id === projectUpload.uploaded.id && value.status === "uploaded"),
+    resourceListed: resourceList.some((value) => value.id === resourceUpload.uploaded.id && value.status === "uploaded"),
     projectArchived: projectArchived.id === projectUpload.uploaded.id && projectArchived.status === "deleted" && projectListArchived.some((value) => value.id === projectUpload.uploaded.id && value.status === "deleted"),
-    hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent) && hash(downloaded[2]) === hash(projectContent),
+    resourceDeleted: resourceDeleted.id === resourceUpload.uploaded.id && resourceDeleted.status === "deleted" && resourceListDeleted.some((value) => value.id === resourceUpload.uploaded.id && value.status === "deleted"),
+    hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent) && hash(downloaded[2]) === hash(projectContent) && hash(downloaded[3]) === hash(resourceContent),
     revealCount: revealed.length,
     cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability,
     stages,

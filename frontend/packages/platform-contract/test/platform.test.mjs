@@ -59,19 +59,23 @@ test('host-delegated attachment capabilities require the complete business matri
     downloadWorkItemAttachment: async () => ({ status: 'completed' }),
     downloadWorkItemCommentAttachment: async () => ({ status: 'cancelled' }),
     uploadProjectAttachment: async () => ({ created: {}, uploaded: {} }),
+    uploadProjectResourceAttachment: async () => ({ created: {}, uploaded: {} }),
     downloadProjectAttachment: async () => ({ status: 'completed' }),
+    downloadProjectResourceAttachment: async () => ({ status: 'completed' }),
     openProjectAttachmentPreview: async () => ({ capability: 'ypv', source: 'app://yuance/.preview/ypv', contentType: 'text/plain', byteSize: 1, attachment: {}, preview: {}, navigation: {} }),
     releaseProjectAttachmentPreview: async () => ({ status: 'released' }),
     revealDownload: async () => ({ status: 'revealed' }),
   });
   assert.deepEqual(Object.keys(capabilities).sort(), [
     'downloadProjectAttachment',
+    'downloadProjectResourceAttachment',
     'downloadWorkItemAttachment',
     'downloadWorkItemCommentAttachment',
     'openProjectAttachmentPreview',
     'releaseProjectAttachmentPreview',
     'revealDownload',
     'uploadProjectAttachment',
+    'uploadProjectResourceAttachment',
     'uploadWorkItemAttachment',
     'uploadWorkItemCommentAttachment',
   ]);

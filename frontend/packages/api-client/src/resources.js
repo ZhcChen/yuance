@@ -1,5 +1,7 @@
 // @ts-check
 
+import { attachmentCreateRequestBody, attachmentFromPayload, attachmentSignedUrlFromPayload, attachmentsFromPayload } from './work-items.js';
+
 /** @typedef {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite: () => Promise<void> }} ResourceClientDependencies */
 /** @typedef {ReturnType<typeof createResourceClient>} ResourceClient */
 
@@ -47,6 +49,27 @@ export function createResourceClient({ request, prepareWrite }) {
         access_password: payload.accessPassword || '',
       })));
     },
+    async getProjectResourceAttachments(projectKey, resourceId, accessToken = '') {
+      return attachmentsFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments${resourceAccessSuffix(accessToken)}`));
+    },
+    async createProjectResourceAttachment(projectKey, resourceId, payload) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments`, jsonRequest('POST', attachmentCreateRequestBody(payload))));
+    },
+    async getProjectResourceAttachmentUploadUrl(projectKey, resourceId, attachmentId) {
+      return attachmentSignedUrlFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/upload-url`));
+    },
+    async markProjectResourceAttachmentUploaded(projectKey, resourceId, attachmentId) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/uploaded`, { method: 'POST' }));
+    },
+    async getProjectResourceAttachmentDownloadUrl(projectKey, resourceId, attachmentId, accessToken = '') {
+      return attachmentSignedUrlFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}/download-url${resourceAccessSuffix(accessToken)}`));
+    },
+    async deleteProjectResourceAttachment(projectKey, resourceId, attachmentId) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(`${projectResourceApiPath(projectKey, resourceId)}/attachments/${encodeURIComponent(String(attachmentId))}`, { method: 'DELETE' }));
+    },
   };
 }
 
@@ -78,6 +101,7 @@ export function projectResourceFromPayload(payload) {
     tags: strings(value.tags, 100, 128, 'resource tags'), related_work_item: nullableRelation(value.related_work_item, workItemRelation), related_cycle: nullableRelation(value.related_cycle, cycleRelation),
     created_by: string(value.created_by, 256, 'resource creator'), updated_by: string(value.updated_by, 256, 'resource updater'),
     created_at: string(value.created_at, 128, 'resource created time'), updated_at: string(value.updated_at, 128, 'resource updated time'), url: internalPath(value.url, 'resource URL'),
+    access_token: optionalString(value.access_token, 4096, 'resource access token'),
   });
 }
 
@@ -86,8 +110,10 @@ function cycleRelation(value) { const cycle = object(value, 'related cycle'); re
 function nullableRelation(value, parser) { return value === null ? null : parser(value); }
 function object(value, name) { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${name} is invalid`); return value; }
 function string(value, maximum, name) { if (typeof value !== 'string' || value.length > maximum) throw new TypeError(`${name} is invalid`); return value; }
+function optionalString(value, maximum, name) { return value === undefined || value === null ? '' : string(value, maximum, name); }
 function boolean(value, name) { if (typeof value !== 'boolean') throw new TypeError(`${name} is invalid`); return value; }
 function positiveInteger(value, name) { if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`${name} is invalid`); return value; }
 function strings(value, count, length, name) { if (!Array.isArray(value) || value.length > count) throw new TypeError(`${name} is invalid`); return Object.freeze(value.map((item) => string(item, length, name))); }
 function internalPath(value, name) { const result = string(value, 4096, name); if (!result.startsWith('/web/')) throw new TypeError(`${name} is invalid`); return result; }
 function jsonRequest(method, body) { return { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }; }
+function resourceAccessSuffix(accessToken) { const params = new URLSearchParams(); if (accessToken) params.set('access', accessToken); return params.size ? `?${params}` : ''; }

@@ -76,6 +76,12 @@ export const createProjectResource = apiClient.createProjectResource;
 export const updateProjectResource = apiClient.updateProjectResource;
 export const archiveProjectResource = apiClient.archiveProjectResource;
 export const resetProjectResourcePassword = apiClient.resetProjectResourcePassword;
+export const getProjectResourceAttachments = apiClient.getProjectResourceAttachments;
+export const createProjectResourceAttachment = apiClient.createProjectResourceAttachment;
+export const getProjectResourceAttachmentUploadUrl = apiClient.getProjectResourceAttachmentUploadUrl;
+export const markProjectResourceAttachmentUploaded = apiClient.markProjectResourceAttachmentUploaded;
+export const getProjectResourceAttachmentDownloadUrl = apiClient.getProjectResourceAttachmentDownloadUrl;
+export const deleteProjectResourceAttachment = apiClient.deleteProjectResourceAttachment;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -151,6 +157,12 @@ export const webApi = {
   archiveProjectAttachment,
   archiveProjectResource,
   resetProjectResourcePassword,
+  getProjectResourceAttachments,
+  createProjectResourceAttachment,
+  getProjectResourceAttachmentUploadUrl,
+  markProjectResourceAttachmentUploaded,
+  getProjectResourceAttachmentDownloadUrl,
+  deleteProjectResourceAttachment,
   closeProjectCycle,
   createApiToken,
   createProject,

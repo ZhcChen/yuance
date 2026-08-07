@@ -3032,6 +3032,13 @@
           "is_protected": {
             "type": "boolean"
           },
+          "access_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "仅密码解锁成功时返回的短时、用户与资料绑定访问凭证。"
+          },
           "created_by": {
             "type": "string"
           },

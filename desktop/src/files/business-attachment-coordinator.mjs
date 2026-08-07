@@ -32,6 +32,10 @@ export function createBusinessAttachmentCoordinator({
     return uploadAttachment("project", input);
   }
 
+  async function uploadProjectResourceAttachment(input) {
+    return uploadAttachment("resource", input);
+  }
+
   async function uploadAttachment(target, input) {
     const { reference, fileCapability, binding, signal, onStage } = parseUploadInput(target, input);
     const uploadBinding = Object.freeze({ ...binding, purpose: "upload" });
@@ -83,6 +87,10 @@ export function createBusinessAttachmentCoordinator({
     return downloadAttachment("project", input);
   }
 
+  async function downloadProjectResourceAttachment(input) {
+    return downloadAttachment("resource", input);
+  }
+
   async function downloadAttachment(target, input) {
     const { reference, binding, signal, window } = parseDownloadInput(target, input);
     const signed = await restTransport.execute(`attachment.${target}downloadsign`, reference);
@@ -119,17 +127,20 @@ export function createBusinessAttachmentCoordinator({
     uploadWorkItemAttachment,
     uploadWorkItemCommentAttachment,
     uploadProjectAttachment,
+    uploadProjectResourceAttachment,
     downloadWorkItemAttachment,
     downloadWorkItemCommentAttachment,
     downloadProjectAttachment,
+    downloadProjectResourceAttachment,
   });
 }
 
 function parseUploadInput(target, input) {
   const allowed = target === "comment"
     ? ["binding", "commentId", "fileCapability", "itemKey", "onStage", "signal"]
-    : target === "project" ? ["binding", "fileCapability", "onStage", "projectKey", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
-  const retryAllowed = target === "project" && sameKeys(input, [...allowed, "attachmentId"]);
+    : target === "project" ? ["binding", "fileCapability", "onStage", "projectKey", "signal"]
+      : target === "resource" ? ["binding", "fileCapability", "onStage", "projectKey", "resourceId", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
+  const retryAllowed = ["project", "resource"].includes(target) && sameKeys(input, [...allowed, "attachmentId"]);
   if (!retryAllowed) exactInput(input, allowed);
   if (typeof input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(input.fileCapability) || typeof input.onStage !== "function" || (retryAllowed && (!Number.isSafeInteger(input.attachmentId) || input.attachmentId < 1))) throw new TypeError("Attachment upload input is invalid");
   validateBinding(input.binding);
@@ -146,7 +157,8 @@ function parseUploadInput(target, input) {
 function parseDownloadInput(target, input) {
   const allowed = target === "comment"
     ? ["attachmentId", "binding", "commentId", "itemKey", "signal", "window"]
-    : target === "project" ? ["attachmentId", "binding", "projectKey", "signal", "window"] : ["attachmentId", "binding", "itemKey", "signal", "window"];
+    : target === "project" ? ["attachmentId", "binding", "projectKey", "signal", "window"]
+      : target === "resource" ? ["accessToken", "attachmentId", "binding", "projectKey", "resourceId", "signal", "window"] : ["attachmentId", "binding", "itemKey", "signal", "window"];
   exactInput(input, allowed);
   validateBinding(input.binding);
   validateSignal(input.signal);
@@ -155,7 +167,8 @@ function parseDownloadInput(target, input) {
 
 function attachmentReference(target, input, includeAttachment) {
   return Object.freeze({
-    ...(target === "project" ? { projectKey: input.projectKey } : { itemKey: input.itemKey }),
+    ...(["project", "resource"].includes(target) ? { projectKey: input.projectKey } : { itemKey: input.itemKey }),
+    ...(target === "resource" ? { resourceId: input.resourceId, ...(input.accessToken === undefined ? {} : { accessToken: input.accessToken }) } : {}),
     ...(target === "comment" ? { commentId: input.commentId } : {}),
     ...(includeAttachment ? { attachmentId: input.attachmentId } : {}),
   });

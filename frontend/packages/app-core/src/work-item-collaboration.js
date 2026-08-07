@@ -240,6 +240,26 @@ export function uploadProjectAttachment({ api, platform, projectKey, file, exist
 
 /**
  * @template {{ id: number }} T
+ * @param {{ api: any, platform: any, projectKey: string, resourceId: number, file: SelectedFile, existingAttachment?: T | null, lifecycle: AttachmentLifecycle<T> }} options
+ */
+export function uploadProjectResourceAttachment({ api, platform, projectKey, resourceId, file, existingAttachment = null, lifecycle }) {
+  const attachments = platform.attachments;
+  if (typeof attachments?.uploadProjectResourceAttachment === 'function') {
+    return uploadDelegatedAttachment({
+      execute: (onStage) => attachments.uploadProjectResourceAttachment({ projectKey, resourceId, fileCapability: file.capability, ...(existingAttachment ? { attachmentId: existingAttachment.id } : {}) }, onStage),
+      lifecycle,
+    });
+  }
+  return uploadAttachment({
+    create: (payload) => api.createProjectResourceAttachment(projectKey, resourceId, { ...payload, ...(file.checksumSha256 ? { checksumSha256: file.checksumSha256 } : {}) }),
+    sign: (attachment) => api.getProjectResourceAttachmentUploadUrl(projectKey, resourceId, attachment.id),
+    confirm: (attachment) => api.markProjectResourceAttachmentUploaded(projectKey, resourceId, attachment.id),
+    platform, file, existing: existingAttachment || undefined, expectedChecksumSha256: file.checksumSha256, lifecycle,
+  });
+}
+
+/**
+ * @template {{ id: number }} T
  * @param {{
  *   api: {
  *     createWorkItemCommentAttachment(itemKey: string, commentId: number, payload: AttachmentCreatePayload): Promise<T>,
@@ -329,6 +349,18 @@ export function downloadProjectAttachment({ api, platform, projectKey, attachmen
   }
   return downloadAttachment({
     getSignedRequest: () => api.getProjectAttachmentDownloadUrl(projectKey, attachmentId),
+    platform, suggestedFilename, isCurrent,
+  });
+}
+
+export function downloadProjectResourceAttachment({ api, platform, projectKey, resourceId, attachmentId, accessToken, suggestedFilename, isCurrent }) {
+  if (typeof platform.attachments?.downloadProjectResourceAttachment === 'function') {
+    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
+    return platform.attachments.downloadProjectResourceAttachment({ projectKey, resourceId, attachmentId, accessToken, suggestedFilename })
+      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
+  }
+  return downloadAttachment({
+    getSignedRequest: () => api.getProjectResourceAttachmentDownloadUrl(projectKey, resourceId, attachmentId, accessToken),
     platform, suggestedFilename, isCurrent,
   });
 }

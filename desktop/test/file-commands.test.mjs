@@ -21,9 +21,11 @@ function fixture() {
       uploadWorkItemAttachment: async (input) => { calls.push(["attachment-upload", input]); input.onStage("registering"); input.onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       uploadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-upload", input]); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       uploadProjectAttachment: async (input) => { calls.push(["project-attachment-upload", input]); input.onStage("registering"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
+      uploadProjectResourceAttachment: async (input) => { calls.push(["resource-attachment-upload", input]); input.onStage("registering"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       downloadWorkItemAttachment: async (input) => { calls.push(["attachment-download", input]); return { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }; },
       downloadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-download", input]); return { status: "cancelled" }; },
       downloadProjectAttachment: async (input) => { calls.push(["project-attachment-download", input]); return { status: "completed", filename: "project.txt", byteSize: 12 }; },
+      downloadProjectResourceAttachment: async (input) => { calls.push(["resource-attachment-download", input]); return { status: "completed", filename: "resource.txt", byteSize: 12 }; },
     },
     previewCoordinator: {
       openProjectAttachmentPreview: async (input) => { calls.push(["preview-open", input]); return { capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "application/pdf", byteSize: 12, attachment: attachment("uploaded"), preview: { kind: "document", strategy: "pdf", file_type: "pdf", kind_label: "PDF", is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }; },

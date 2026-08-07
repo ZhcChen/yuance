@@ -52,8 +52,10 @@ const REQUIRED_PRELOAD_FILE_MARKERS = Object.freeze([
   "yuance:file-choose",
   "yuance:file-upload-work-item-attachment",
   "yuance:file-upload-work-item-comment-attachment",
+  "yuance:file-upload-project-resource-attachment",
   "yuance:file-download-work-item-attachment",
   "yuance:file-download-work-item-comment-attachment",
+  "yuance:file-download-project-resource-attachment",
   "yuance:file-reveal-download",
 ]);
 const REQUIRED_BUSINESS_RENDERER_MARKERS = Object.freeze([

@@ -60,6 +60,11 @@ function resolveReadOperation(url, options) {
   if (projectCycles) return projectCycles;
   const projectAttachments = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/attachments$/u, "project.attachments", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectAttachments) return projectAttachments;
+  const projectResourceAttachments = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)\/attachments$/u);
+  if (projectResourceAttachments) return { operation: "project.resourceattachments", input: {
+    projectKey: decodeSegment(projectResourceAttachments[1]), resourceId: positiveInteger(projectResourceAttachments[2]),
+    accessToken: parseQuery(parsed.searchParams, { access: "accessToken" }).accessToken || "",
+  } };
   const projectResource = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)$/u, "project.resourcedetail", ([projectKey, resourceId]) => ({ projectKey: decodeSegment(projectKey), resourceId: positiveInteger(resourceId) }));
   if (projectResource) return projectResource;
   const projectResources = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources$/u);
@@ -161,6 +166,13 @@ function resolveMutationOperation(parsed, method, options) {
     return { operation: "project.resourcepasswordreset", input: {
       projectKey: decodeSegment(projectResourcePasswordReset[1]), resourceId: positiveInteger(projectResourcePasswordReset[2]),
       accessPasswordAction: body.access_password_action, accessPassword: body.access_password,
+    } };
+  }
+  const projectResourceAttachment = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)\/attachments\/(\d+)$/u);
+  if (method === "DELETE" && projectResourceAttachment) {
+    rejectBody(options);
+    return { operation: "project.resourceattachmentdelete", input: {
+      projectKey: decodeSegment(projectResourceAttachment[1]), resourceId: positiveInteger(projectResourceAttachment[2]), attachmentId: positiveInteger(projectResourceAttachment[3]),
     } };
   }
   const projectResource = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/resources\/(\d+)$/u);

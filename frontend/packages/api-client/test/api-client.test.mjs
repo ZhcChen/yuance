@@ -88,6 +88,29 @@ test('project resource mutations use fixed JSON contracts', async () => {
   ]);
 });
 
+test('project resource attachments use scoped fixed paths and access grants', async () => {
+  const calls = [];
+  const writes = [];
+  const attachment = { id: 11, filename: 'notes.txt', content_type: 'text/plain', byte_size: 12, status: 'uploaded', created_by: 'Alice', created_at: '2026-08-07T00:00:00Z' };
+  const signed = { attachment, request: { method: 'GET', url: '/signed', headers: [] }, expires_in_seconds: 60 };
+  const client = createApiClient({ request: async (url, options = {}) => { calls.push({ url, options }); return options.method === undefined && /\/attachments(?:\?|$)/u.test(url) ? [attachment] : url.includes('-url') ? signed : attachment; }, prepareWrite: async () => { writes.push('prepare'); } });
+  await client.getProjectResourceAttachments('YCE', 9, 'grant token');
+  await client.createProjectResourceAttachment('YCE', 9, { originalFilename: 'notes.txt', contentType: 'text/plain', byteSize: 12, checksumSha256: 'a'.repeat(64) });
+  await client.getProjectResourceAttachmentUploadUrl('YCE', 9, 11);
+  await client.markProjectResourceAttachmentUploaded('YCE', 9, 11);
+  await client.getProjectResourceAttachmentDownloadUrl('YCE', 9, 11, 'grant token');
+  await client.deleteProjectResourceAttachment('YCE', 9, 11);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET']), [
+    ['/api/v1/projects/YCE/resources/9/attachments?access=grant+token', 'GET'],
+    ['/api/v1/projects/YCE/resources/9/attachments', 'POST'],
+    ['/api/v1/projects/YCE/resources/9/attachments/11/upload-url', 'GET'],
+    ['/api/v1/projects/YCE/resources/9/attachments/11/uploaded', 'POST'],
+    ['/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token', 'GET'],
+    ['/api/v1/projects/YCE/resources/9/attachments/11', 'DELETE'],
+  ]);
+  assert.deepEqual(writes, ['prepare', 'prepare', 'prepare']);
+});
+
 test('project resources accept the complete unpaginated server response', async () => {
   const resource = { id: 1, project_key: 'YCE', title: '资料', category: 'development', body: '', body_format: 'markdown', summary: '', status: 'active', is_protected: false, tags: [], related_work_item: null, related_cycle: null, created_by: 'Alice', updated_by: 'Alice', created_at: '2026-08-07T00:00:00Z', updated_at: '2026-08-07T00:00:00Z', url: '/web/projects/YCE/resources/1' };
   const client = createApiClient({ request: async () => Array.from({ length: 501 }, (_, index) => ({ ...resource, id: index + 1, url: `/web/projects/YCE/resources/${index + 1}` })), prepareWrite: async () => {} });

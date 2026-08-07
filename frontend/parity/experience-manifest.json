@@ -844,8 +844,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/desktop-business-file-integration.test.mjs", "desktop/test/attachment-operation-registry.test.mjs", "desktop/test/business-attachment-coordinator.test.mjs", "desktop/test/file-commands.test.mjs", "desktop/test/preload-contract.test.mjs"], "reviews": ["docs/reviews/2026-08-07-012-web-desktop-u3-project-resource-attachment-lifecycle-review.md"] }
     },
     {
       "id": "action.project.resource-attachment.preview",

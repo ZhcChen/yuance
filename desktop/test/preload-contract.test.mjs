@@ -42,7 +42,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 9);
+  assert.equal(bridge.schemaVersion, 10);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -82,7 +82,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();

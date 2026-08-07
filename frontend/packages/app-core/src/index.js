@@ -22,10 +22,12 @@ export {
   downloadWorkItemAttachment,
   downloadWorkItemCommentAttachment,
   downloadProjectAttachment,
+  downloadProjectResourceAttachment,
   handoffWorkItem,
   saveWorkItem,
   updateWorkItemComment,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
   uploadProjectAttachment,
+  uploadProjectResourceAttachment,
 } from './work-item-collaboration.js';

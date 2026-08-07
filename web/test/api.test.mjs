@@ -7,9 +7,14 @@ import {
   createWorkItemCommentDraft,
   createWorkItemComment,
   createProjectResource,
+  createProjectResourceAttachment,
+  deleteProjectResourceAttachment,
   getWorkItemAttachmentUploadUrl,
   getProjectAttachmentPreview,
   getProjectResource,
+  getProjectResourceAttachmentDownloadUrl,
+  getProjectResourceAttachmentUploadUrl,
+  getProjectResourceAttachments,
   getProjectResources,
   getWorkItemCommentAttachmentDownloadUrl,
   getWorkItemCommentAttachmentUploadUrl,
@@ -19,6 +24,7 @@ import {
   handoffWorkItem,
   markWorkItemAttachmentUploaded,
   markWorkItemCommentAttachmentUploaded,
+  markProjectResourceAttachmentUploaded,
   publishWorkItemCommentDraft,
   archiveProjectResource,
   resetProjectResourcePassword,
@@ -140,6 +146,43 @@ test('project resource mutations share Browser JSON contracts', async () => {
       ['/api/v1/projects/YCE/resources/9/password/reset', 'POST', { access_password_action: 'set', access_password: 'new-pass' }],
     ]);
     assert.deepEqual(calls.filter(({ url }) => url.includes('/resources')).map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), ['resource-write', 'resource-update', 'resource-archive', 'resource-password-reset']);
+  });
+});
+
+test('project resource attachments use fixed Browser paths and access grants', async () => {
+  const attachment = attachmentPayload({ id: 11, filename: 'notes.txt' });
+  await withFetchQueue([
+    jsonResponse([attachment]),
+    jsonResponse({ csrf_token: 'resource-attachment-create' }, { csrfToken: 'resource-attachment-create' }),
+    jsonResponse(attachment, { status: 201 }),
+    jsonResponse(signedUrlPayload({ attachment })),
+    jsonResponse({ csrf_token: 'resource-attachment-confirm' }, { csrfToken: 'resource-attachment-confirm' }),
+    jsonResponse(attachment),
+    jsonResponse(signedUrlPayload({ attachment })),
+    jsonResponse({ csrf_token: 'resource-attachment-delete' }, { csrfToken: 'resource-attachment-delete' }),
+    jsonResponse({ ...attachment, status: 'deleted' }),
+  ], async (calls) => {
+    await getProjectResourceAttachments('YCE', 9, 'grant token');
+    await createProjectResourceAttachment('YCE', 9, { originalFilename: 'notes.txt', contentType: 'text/plain', byteSize: 12, checksumSha256: 'a'.repeat(64) });
+    await getProjectResourceAttachmentUploadUrl('YCE', 9, 11);
+    await markProjectResourceAttachmentUploaded('YCE', 9, 11);
+    await getProjectResourceAttachmentDownloadUrl('YCE', 9, 11, 'grant token');
+    await deleteProjectResourceAttachment('YCE', 9, 11);
+
+    const businessCalls = calls.filter(({ url }) => url !== '/api/v1/auth/csrf');
+    assert.deepEqual(businessCalls.map(({ url, options }) => [url, options.method]), [
+      ['/api/v1/projects/YCE/resources/9/attachments?access=grant+token', undefined],
+      ['/api/v1/projects/YCE/resources/9/attachments', 'POST'],
+      ['/api/v1/projects/YCE/resources/9/attachments/11/upload-url', undefined],
+      ['/api/v1/projects/YCE/resources/9/attachments/11/uploaded', 'POST'],
+      ['/api/v1/projects/YCE/resources/9/attachments/11/download-url?access=grant+token', undefined],
+      ['/api/v1/projects/YCE/resources/9/attachments/11', 'DELETE'],
+    ]);
+    assert.deepEqual(businessCalls.filter(({ options }) => options.method && options.method !== 'GET').map(({ options }) => new Headers(options.headers).get('x-yuance-csrf-token')), [
+      'resource-attachment-create',
+      'resource-attachment-confirm',
+      'resource-attachment-delete',
+    ]);
   });
 });
 

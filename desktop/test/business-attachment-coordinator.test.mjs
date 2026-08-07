@@ -38,6 +38,18 @@ test("coordinates project attachment upload and download with project references
   assert.deepEqual(calls[0], ["attachment.projectdownloadsign", { projectKey: "YCE", attachmentId: 9 }]);
 });
 
+test("coordinates resource attachments with scoped resource references", async () => {
+  const calls = [];
+  const coordinator = fixture({ calls, signedAttachment: attachment("uploaded") });
+  await coordinator.uploadProjectResourceAttachment({ projectKey: "YCE", resourceId: 8, fileCapability: capability, binding, onStage: () => {}, signal: undefined });
+  assert.deepEqual(calls[1], ["attachment.resourcecreate", { projectKey: "YCE", resourceId: 8, metadata }]);
+  assert.deepEqual(calls[2], ["attachment.resourceuploadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9 }]);
+  assert.deepEqual(calls[5], ["attachment.resourceconfirm", { projectKey: "YCE", resourceId: 8, attachmentId: 9 }]);
+  calls.length = 0;
+  await coordinator.downloadProjectResourceAttachment({ projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant-token", binding, signal: undefined, window: Object.freeze({ id: 1 }) });
+  assert.deepEqual(calls[0], ["attachment.resourcedownloadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant-token" }]);
+});
+
 test("retries a project attachment without creating a duplicate record", async () => {
   const calls = [];
   const stages = [];

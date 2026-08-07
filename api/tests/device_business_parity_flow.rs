@@ -25,6 +25,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     let pool = test_pool().await;
     let admin_id = bootstrap_admin(&pool).await;
     projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    seed_memory_storage(&pool, admin_id).await;
     let credentials = issue_device_credentials(&pool, admin_id, "business-parity").await;
     let app = test_app(pool.clone());
 
@@ -164,6 +165,121 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .await
     .expect("password reset should publish a topbar refresh event");
     assert!(realtime_event.user_ids.contains(&admin_id));
+
+    let attachment_content = b"protected resource attachment".to_vec();
+    let attachment_checksum = format!("{:x}", Sha256::digest(&attachment_content));
+    let attachment_collection = format!("/api/v1/projects/YCE/resources/{resource_id}/attachments");
+    let response = request(
+        &app,
+        "POST",
+        &attachment_collection,
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "original_filename": "protected-resource.txt",
+            "content_type": "text/plain",
+            "byte_size": attachment_content.len(),
+            "checksum_sha256": attachment_checksum
+        })),
+    )
+    .await;
+    let status = response.status();
+    let body = json_body(response).await;
+    assert_eq!(status, StatusCode::CREATED, "body: {body}");
+    let attachment_id = body["data"]["id"].as_i64().unwrap();
+    let attachment_member = format!("{attachment_collection}/{attachment_id}");
+    let object_key = sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",
+    )
+    .bind(attachment_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &object_key,
+        "text/plain",
+        attachment_content,
+    )
+    .await
+    .unwrap();
+    let response = request(
+        &app,
+        "POST",
+        &format!("{attachment_member}/uploaded"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = request(
+        &app,
+        "GET",
+        &attachment_collection,
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = request(
+        &app,
+        "POST",
+        &format!("/api/v1/projects/YCE/resources/{resource_id}/unlock"),
+        &credentials.access_token,
+        Some(serde_json::json!({"access_password": "DeviceReset2026!"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let access_token = json_body(response).await["data"]["access_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let access_query = serde_urlencoded::to_string([("access", access_token.as_str())]).unwrap();
+    let response = request(
+        &app,
+        "GET",
+        &format!("{attachment_collection}?{access_query}"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"][0]["id"], attachment_id);
+    let response = request(
+        &app,
+        "GET",
+        &format!("{attachment_member}/download-url?{access_query}"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        json_body(response).await["data"]["request"]["method"],
+        "GET"
+    );
+
+    let response = request(
+        &app,
+        "POST",
+        &format!("/api/v1/projects/YCE/resources/{resource_id}/password/reset"),
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "access_password_action": "set", "access_password": "RotatedDeviceReset2026!"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = request(
+        &app,
+        "GET",
+        &format!("{attachment_collection}?{access_query}"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response = request(
         &app,
         "POST",

@@ -26,6 +26,9 @@ test("builds fixed main-only work item and comment attachment descriptors", () =
   assert.equal(registry.resolve("attachment.projectcreate", { projectKey: "YCE", metadata }).path, "/api/v1/projects/YCE/attachments");
   assert.equal(registry.resolve("attachment.projectuploadsign", { projectKey: "YCE", attachmentId: 9 }).path, "/api/v1/projects/YCE/attachments/9/upload-url?expires_in_seconds=60");
   assert.equal(registry.resolve("attachment.projectdownloadsign", { projectKey: "YCE", attachmentId: 9 }).path, "/api/v1/projects/YCE/attachments/9/download-url?expires_in_seconds=60");
+  assert.equal(registry.resolve("attachment.resourcecreate", { projectKey: "YCE", resourceId: 8, metadata }).path, "/api/v1/projects/YCE/resources/8/attachments");
+  assert.equal(registry.resolve("attachment.resourceuploadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9 }).path, "/api/v1/projects/YCE/resources/8/attachments/9/upload-url?expires_in_seconds=60");
+  assert.equal(registry.resolve("attachment.resourcedownloadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant-token" }).path, "/api/v1/projects/YCE/resources/8/attachments/9/download-url?expires_in_seconds=60&access=grant-token");
   assert.equal(createOperationRegistry().resolve("project.attachments", { projectKey: "YCE" }).path, "/api/v1/projects/YCE/attachments");
   const preview = createOperationRegistry().resolve("project.attachmentpreview", { projectKey: "YCE", attachmentId: 9 });
   assert.equal(preview.path, "/api/v1/projects/YCE/attachments/9/preview");
@@ -58,6 +61,7 @@ test("rejects request primitive injection and keeps attachment operations out of
     { itemKey: "YCE-TASK-2", metadata: { ...metadata, sha256: "A".repeat(64) } },
     { itemKey: "YCE-TASK-2", metadata: { ...metadata, path: "/secret" } },
   ]) assert.throws(() => registry.resolve("attachment.workitemcreate", input));
+  assert.throws(() => registry.resolve("attachment.resourcedownloadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "ok", url: "https://attacker.invalid" }));
   assert.throws(() => createOperationRegistry().resolve("attachment.workitemcreate", { itemKey: "YCE-TASK-2", metadata }), /unknown operation/);
 });
 

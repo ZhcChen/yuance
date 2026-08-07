@@ -19,7 +19,7 @@ use crate::{
         system_api_tokens, system_releases, users,
     },
     platform::error::{AppError, AppResult},
-    platform::{crypto, security::csrf},
+    platform::security::csrf,
     web::{
         attachment_preview::{
             AttachmentPreviewStrategy, file_type as attachment_preview_file_type,
@@ -355,16 +355,6 @@ struct ProjectResourceDetailView {
     edit_url: String,
     archive_url: String,
 }
-
-#[derive(Debug, Deserialize, Serialize)]
-struct ProjectResourceAccessGrant {
-    resource_id: i64,
-    user_id: i64,
-    expires_at: i64,
-}
-
-const PROJECT_RESOURCE_ACCESS_AAD: &[u8] = b"yuance:project-resource-access:v1";
-const PROJECT_RESOURCE_ACCESS_TTL_SECONDS: i64 = 15 * 60;
 
 #[derive(Debug, Clone)]
 struct AttachmentView {
@@ -4313,12 +4303,15 @@ pub async fn project_resource_detail_page(
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
     let access_token = if resource.is_protected
-        && verify_project_resource_access_token(
-            &state,
+        && project_resources::verify_resource_access_token(
+            pool,
+            &state.settings.security_master_key,
             &query.access,
             context.user_id,
             resource.id,
-        )? {
+        )
+        .await?
+    {
         Some(query.access)
     } else {
         None
@@ -4367,8 +4360,15 @@ pub async fn project_resource_unlock(
     ));
     refresh_context_system_nav(pool, &mut context).await?;
     let resource = project_resources::get_project_resource(pool, project.id, resource_id).await?;
-    let verified =
-        project_resources::verify_resource_password(pool, resource.id, &form.password).await?;
+    let (verified, access_token) =
+        project_resources::verify_resource_password_and_issue_access_token(
+            pool,
+            &state.settings.security_master_key,
+            context.user_id,
+            resource.id,
+            &form.password,
+        )
+        .await?;
     let audit_action = if verified {
         "project_resource.unlock.success"
     } else {
@@ -4383,15 +4383,6 @@ pub async fn project_resource_unlock(
         &format!(r#"{{"project":"{}"}}"#, project.project_key),
     )
     .await?;
-    let access_token = if verified && resource.is_protected {
-        Some(issue_project_resource_access_token(
-            &state,
-            context.user_id,
-            resource.id,
-        )?)
-    } else {
-        None
-    };
     if verified {
         let redirect_url = access_token
             .as_deref()
@@ -4604,12 +4595,14 @@ pub async fn project_resource_attachment_download(
         let resource =
             project_resources::get_project_resource(pool, project.id, resource_id).await?;
         if resource.is_protected
-            && !verify_project_resource_access_token(
-                &state,
+            && !project_resources::verify_resource_access_token(
+                pool,
+                &state.settings.security_master_key,
                 &query.access,
                 context.user_id,
                 resource.id,
-            )?
+            )
+            .await?
         {
             return Err(AppError::Forbidden("请先验证资料访问密码".to_string()));
         }
@@ -4654,12 +4647,14 @@ pub async fn project_resource_attachment_preview(
         let resource =
             project_resources::get_project_resource(pool, project.id, resource_id).await?;
         if resource.is_protected
-            && !verify_project_resource_access_token(
-                &state,
+            && !project_resources::verify_resource_access_token(
+                pool,
+                &state.settings.security_master_key,
                 &query.access,
                 context.user_id,
                 resource.id,
-            )?
+            )
+            .await?
         {
             return Err(AppError::Forbidden("请先验证资料访问密码".to_string()));
         }
@@ -4743,12 +4738,14 @@ pub async fn project_resource_attachment_preview_content(
         let resource =
             project_resources::get_project_resource(pool, project.id, resource_id).await?;
         if resource.is_protected
-            && !verify_project_resource_access_token(
-                &state,
+            && !project_resources::verify_resource_access_token(
+                pool,
+                &state.settings.security_master_key,
                 &query.access,
                 context.user_id,
                 resource.id,
-            )?
+            )
+            .await?
         {
             return Err(AppError::Forbidden("请先验证资料访问密码".to_string()));
         }
@@ -9110,51 +9107,6 @@ fn with_csrf_cookie(
         csrf::cookie_header(csrf_token, state.settings.env == "production").parse()?,
     );
     Ok(response)
-}
-
-fn issue_project_resource_access_token(
-    state: &AppState,
-    user_id: i64,
-    resource_id: i64,
-) -> AppResult<String> {
-    let grant = ProjectResourceAccessGrant {
-        resource_id,
-        user_id,
-        expires_at: Utc::now().timestamp() + PROJECT_RESOURCE_ACCESS_TTL_SECONDS,
-    };
-    let plaintext = serde_json::to_string(&grant)
-        .map_err(|error| AppError::Crypto(format!("资料访问凭证序列化失败：{error}")))?;
-    crypto::encrypt_secret(
-        &state.settings.security_master_key,
-        &plaintext,
-        PROJECT_RESOURCE_ACCESS_AAD,
-    )
-}
-
-fn verify_project_resource_access_token(
-    state: &AppState,
-    token: &str,
-    user_id: i64,
-    resource_id: i64,
-) -> AppResult<bool> {
-    if token.trim().is_empty() {
-        return Ok(false);
-    }
-    let plaintext = match crypto::decrypt_secret(
-        &state.settings.security_master_key,
-        token,
-        PROJECT_RESOURCE_ACCESS_AAD,
-    ) {
-        Ok(value) => value,
-        Err(_) => return Ok(false),
-    };
-    let grant = match serde_json::from_str::<ProjectResourceAccessGrant>(&plaintext) {
-        Ok(value) => value,
-        Err(_) => return Ok(false),
-    };
-    Ok(grant.user_id == user_id
-        && grant.resource_id == resource_id
-        && grant.expires_at >= Utc::now().timestamp())
 }
 
 fn append_resource_access_token_to_body(body_html: &str, access_token: &str) -> String {

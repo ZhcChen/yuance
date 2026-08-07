@@ -11,7 +11,7 @@ import electron from "electron";
 import { approveDeviceAuthorization } from "./support/browser-approval-driver.mjs";
 import { buildRealApi, startRealApiFixture } from "./support/real-api-fixture.mjs";
 
-test("real API and Electron complete project, work item, and comment attachment flows", { timeout: 120_000 }, async (t) => {
+test("real API and Electron complete project, resource, work item, and comment attachment flows", { timeout: 120_000 }, async (t) => {
   await buildRealApi();
   const fixture = await startRealApiFixture({ seedDemo: true });
   t.after(() => fixture.stop());
@@ -23,17 +23,21 @@ test("real API and Electron complete project, work item, and comment attachment 
     itemUploaded: true,
     commentUploaded: true,
     projectUploaded: true,
+    resourceUploaded: true,
     itemListed: true,
     commentListed: true,
     projectListAdded: true,
+    resourceListed: true,
     projectArchived: true,
+    resourceDeleted: true,
     hashesMatch: true,
-    revealCount: 3,
+    revealCount: 4,
     cancelled: true,
     stages: [
       "item:registering", "item:signing", "item:uploading", "item:confirming",
       "comment:registering", "comment:signing", "comment:uploading", "comment:confirming",
       "project:registering", "project:signing", "project:uploading", "project:confirming",
+      "resource:registering", "resource:signing", "resource:uploading", "resource:confirming",
     ],
     activeOperations: 0,
   });

@@ -61,6 +61,8 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.resourceupdate", projectResourceUpdateOperation],
     ["project.resourcearchive", projectResourceArchiveOperation],
     ["project.resourcepasswordreset", projectResourcePasswordResetOperation],
+    ["project.resourceattachments", projectResourceAttachmentsOperation],
+    ["project.resourceattachmentdelete", projectResourceAttachmentDeleteOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -259,6 +261,18 @@ function projectResourcePasswordResetOperation(input) {
     access_password_action: action,
     access_password: accessPassword,
   }));
+}
+
+function projectResourceAttachmentsOperation(input) {
+  exactKeys(input, ["accessToken", "projectKey", "resourceId"]);
+  const query = new URLSearchParams();
+  appendOptionalString(query, "access", optionalAccessToken(input.accessToken));
+  return descriptor("GET", withQuery(`/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/attachments`, query), parseAttachments, true, "array");
+}
+
+function projectResourceAttachmentDeleteOperation(input) {
+  exactKeys(input, ["attachmentId", "projectKey", "resourceId"]);
+  return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/resources/${positiveInteger(input.resourceId)}/attachments/${positiveInteger(input.attachmentId)}`, parseAttachment, false);
 }
 
 function projectResourceBody(input, update) {
@@ -520,6 +534,7 @@ function parseProjectResource(value) { return freezeDto(value, {
   summary: textString, status: shortString, is_protected: boolean, tags: resourceTags,
   related_work_item: nullableResourceWorkItem, related_cycle: nullableResourceCycle,
   created_by: shortString, updated_by: shortString, created_at: shortString, updated_at: shortString, url: webPath,
+  access_token: optionalAccessToken,
 }); }
 function resourceTags(value) { return boundedArray(value, shortString, 100, "resource tags"); }
 function nullableResourceWorkItem(value) { return value === null ? null : freezeDto(value, { key: shortString, item_type: shortString, title: textString, url: webPath }); }
@@ -631,6 +646,7 @@ function optionalUsername(value) { return value === "" ? "" : username(value); }
 function itemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
 function optionalItemKey(value) { return value === "" ? "" : itemKey(value); }
 function boundedText(value, name, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError(`${name} is invalid`); return value; }
+function optionalAccessToken(value) { if (value === undefined || value === null || value === "") return ""; return boundedText(value, "accessToken", 4096); }
 function boundedRequiredText(value, name, maximum) { const text = boundedText(value, name, maximum).trim(); if (!text) throw new TypeError(`${name} is invalid`); return text; }
 function dateText(value) { if (value === "") return ""; if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00Z`))) throw new TypeError("dueDate is invalid"); return value; }
 function plainPayload(value, name) { if (!isPlainObject(value)) throw new TypeError(`${name} is invalid`); return value; }

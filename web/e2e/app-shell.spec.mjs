@@ -6,6 +6,10 @@ async function chooseFile(page, button, file) {
   await (await chooser).setFiles(file);
 }
 
+async function routeEmptyProjectResourceAttachments(page) {
+  await page.route(/\/api\/v1\/projects\/[^/]+\/resources\/\d+\/attachments(?:\?.*)?$/u, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+}
+
 async function login(page, entryPath) {
   await page.goto(entryPath);
   await expect(page).toHaveURL(/\/web\/login/);
@@ -102,6 +106,7 @@ function projectResourceFixture(overrides = {}) {
     created_at: '2026-08-07T00:00:00Z',
     updated_at: '2026-08-07T08:00:00Z',
     url: '/web/projects/YCE/resources/901',
+    access_token: '',
     ...overrides,
   };
 }
@@ -1711,6 +1716,7 @@ test('shared project files hide upload and archive actions from viewers', async 
 });
 
 test('shared project resources filter read and unlock protected details', async ({ page }) => {
+  await routeEmptyProjectResourceAttachments(page);
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
   const publicResource = projectResourceFixture();
@@ -1783,6 +1789,7 @@ test('shared project resources filter read and unlock protected details', async 
 });
 
 test('shared project resources create edit password actions and archive', async ({ page }) => {
+  await routeEmptyProjectResourceAttachments(page);
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
   let resource = projectResourceFixture({ id: 930, title: '待创建资料', body: 'initial', tags: [], related_work_item: null });
@@ -1884,13 +1891,72 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[5]).toEqual(['archive', null]);
 });
 
+test('shared project resource attachments upload download and delete', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const resource = projectResourceFixture({ id: 960, title: '附件资料', url: '/web/projects/YCE/resources/960' });
+  const stages = [];
+  let checksum = '';
+  let attachments = [];
+  let downloadRequests = 0;
+
+  await page.route('**/api/v1/test-storage/upload**', async (route) => { stages.push('put'); await route.fulfill({ status: 200, body: '' }); });
+  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/upload-url', async (route) => {
+    stages.push('sign');
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: attachments[0], request: { method: 'PUT', url: '/api/v1/test-storage/upload?target=resource-961', headers: [['content-type', 'text/plain']] }, expires_in_seconds: 600, checksum_sha256: checksum } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/uploaded', async (route) => {
+    stages.push('confirm'); attachments = [{ ...attachments[0], status: 'uploaded' }];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961/download-url**', async (route) => {
+    downloadRequests += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: attachments[0], request: { method: 'GET', url: '/signed-download/resource-961?token=e2e', headers: [] }, expires_in_seconds: 600 } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/960/attachments/961', async (route) => {
+    expect(route.request().method()).toBe('DELETE'); attachments = [{ ...attachments[0], status: 'deleted' }];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+  });
+  await page.route(/\/api\/v1\/projects\/YCE\/resources\/960\/attachments(?:\?.*)?$/u, async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON(); checksum = payload.checksum_sha256; stages.push('create');
+      attachments = [attachmentFixture({ id: 961, filename: payload.original_filename, content_type: payload.content_type, byte_size: payload.byte_size, status: 'pending' })];
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) }); return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/960', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) }));
+  await page.route('**/api/v1/projects/YCE/resources', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE/resources/960');
+  await page.evaluate(() => { window.__yuanceDownloadClicks = []; HTMLAnchorElement.prototype.click = function click() { window.__yuanceDownloadClicks.push(this.href); }; });
+  await expect(page.getByText('当前资料暂无附件。')).toBeVisible();
+  await chooseFile(page, page.getByRole('button', { name: '选择附件上传' }), { name: 'resource-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('resource file') });
+  await expect.poll(() => stages).toEqual(['create', 'sign', 'put', 'confirm']);
+  const list = page.getByRole('list', { name: '资料附件列表' });
+  await expect(list).toContainText('resource-notes.txt');
+  await list.getByRole('button', { name: '下载附件 resource-notes.txt' }).click();
+  await expect.poll(() => downloadRequests).toBe(1);
+  await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/resource-961?token=e2e');
+  await list.getByRole('button', { name: '删除' }).click();
+  const dialog = page.getByRole('dialog', { name: '删除资料附件' });
+  await expect(dialog).toContainText('对象存储中的文件也会一并删除');
+  await dialog.getByRole('button', { name: '确认删除' }).click();
+  await expect(list).toContainText('已归档');
+  await expect(list.getByRole('button', { name: '下载附件 resource-notes.txt' })).toHaveCount(0);
+});
+
 test('shared project resources hide mutations from viewers', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const resource = projectResourceFixture({ id: 940, title: '只读资料', url: '/web/projects/YCE/resources/940' });
+  const attachment = attachmentFixture({ id: 941, filename: 'viewer-readable.txt', content_type: 'text/plain' });
   await login(page, '/web/app');
   await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: 2, username: 'resource_viewer', display_name: '资料只读成员', email: '', mobile: '', status: 'active', is_super_admin: false, roles: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' } }) }));
   await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
   await page.route('**/api/v1/projects/YCE/resources/940', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) }));
+  await page.route('**/api/v1/projects/YCE/resources/940/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [attachment] }) }));
   await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ user_id: 2, display_name: '资料只读成员', username: 'resource_viewer', member_role: 'viewer', joined_at: '2026-08-01T00:00:00Z' }] }) }));
   await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
   await page.goto('/web/app/projects/YCE?tab=resources');
@@ -1899,9 +1965,14 @@ test('shared project resources hide mutations from viewers', async ({ page }) =>
   await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '归档' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '重置访问密码' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '选择附件上传' })).toHaveCount(0);
+  const attachmentList = page.getByRole('list', { name: '资料附件列表' });
+  await expect(attachmentList.getByRole('button', { name: '下载附件 viewer-readable.txt' })).toBeVisible();
+  await expect(attachmentList.getByRole('button', { name: '删除' })).toHaveCount(0);
 });
 
 test('shared project resource mutation ignores a late response after navigation', async ({ page }) => {
+  await routeEmptyProjectResourceAttachments(page);
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
   const resource = projectResourceFixture({ id: 950, title: '慢更新资料', url: '/web/projects/YCE/resources/950' });

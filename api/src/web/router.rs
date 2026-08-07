@@ -856,7 +856,8 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}/attachments",
-            post(web::api::create_project_resource_attachment),
+            get(web::api::list_project_resource_attachments)
+                .post(web::api::create_project_resource_attachment),
         )
         .route(
             "/api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url",
