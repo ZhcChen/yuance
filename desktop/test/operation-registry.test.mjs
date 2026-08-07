@@ -140,6 +140,7 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
     filters: { item_type: "bug", q: "", status: "", priority: "", project_key: "DEMO", assignee_username: "", cycle_id: "", sort: "updated_desc", token: "leak" },
     assignees: [{ username: "alice", display_name: "Alice", email: "private@example.com" }],
     cycles: [{ id: 7, name: "Sprint 1", is_closed: false, internal_note: "leak" }],
+    parent_options: [{ key: "DEMO-REQ-1", title: "Requirement", project_id: 9 }],
     saved_views: [{ id: 3, name: "Active", filters: { item_type: "bug", q: "", status: "open", priority: "", project_key: "DEMO", assignee_username: "", cycle_id: "7", sort: "updated_desc" }, per_page: 20, is_default: true, owner_id: 9 }],
     can_manage_work_items: true,
     internal_path: "/tmp/private",
@@ -148,6 +149,7 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   assert.equal(Object.isFrozen(listView.saved_views[0].filters), true);
   assert.equal("email" in listView.assignees[0], false);
   assert.equal("internal_note" in listView.cycles[0], false);
+  assert.equal("project_id" in listView.parent_options[0], false);
   assert.equal("owner_id" in listView.saved_views[0], false);
   assert.equal("internal_path" in listView, false);
 
@@ -268,6 +270,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["project.select", { projectKey: "DEMO" }, "PATCH", "/api/v1/current-project", { project_key: "DEMO" }],
     ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
     ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
+    ["workitem.create", { projectKey: "DEMO", itemType: "task", title: "Implement", description: "Body", priority: "P1", assigneeUsername: "alice", cycleId: 7, dueDate: "2026-08-31", parentItemKey: "DEMO-REQ-1" }, "POST", "/api/v1/work-items", { project_key: "DEMO", item_type: "task", title: "Implement", description: "Body", priority: "P1", assignee_username: "alice", cycle_id: 7, due_date: "2026-08-31", parent_item_key: "DEMO-REQ-1" }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: "Focus", q: "", status: "open", priority: "P1", assigneeUsername: "alice", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true }, "POST", "/api/v1/work-item-saved-views", { project_key: "DEMO", item_type: "task", name: "Focus", q: "", status: "open", priority: "P1", assignee_username: "alice", cycle_id: "7", sort: "updated_desc", per_page: 20, is_default: true }],
     ["workitem.savedviewrename", { savedViewId: 7, name: "Focus 2" }, "PATCH", "/api/v1/work-item-saved-views/7", { name: "Focus 2" }],
     ["workitem.savedviewdefault", { savedViewId: 7 }, "POST", "/api/v1/work-item-saved-views/7/default", undefined],
@@ -308,6 +311,9 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
     ["project.resourcepasswordreset", { projectKey: "DEMO", resourceId: 9, accessPasswordAction: "clear", accessPassword: "leak" }],
     ["identity.profileupdate", { displayName: " ", email: "", mobile: "" }],
     ["notification.read", { notificationId: 0 }],
+    ["workitem.create", { projectKey: "demo", itemType: "task", title: "Implement", description: "", priority: "P2", assigneeUsername: "", cycleId: null, dueDate: "", parentItemKey: "" }],
+    ["workitem.create", { projectKey: "DEMO", itemType: "incident", title: "Implement", description: "", priority: "P2", assigneeUsername: "", cycleId: null, dueDate: "", parentItemKey: "" }],
+    ["workitem.create", { projectKey: "DEMO", itemType: "task", title: " ", description: "", priority: "P2", assigneeUsername: "", cycleId: null, dueDate: "", parentItemKey: "" }],
     ["workitem.savedviewcreate", { projectKey: "demo", itemType: "task", name: "Focus", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "incident", name: "Focus", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: " ", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],

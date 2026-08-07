@@ -225,6 +225,13 @@ function resolveMutationOperation(parsed, method, options) {
     rejectBody(options);
     return { operation: "notification.read", input: { notificationId: positiveInteger(notificationRead[1]) } };
   }
+  if (method === "POST" && parsed.pathname === "/api/v1/work-items") {
+    const body = parseJsonBody(options, ["assignee_username", "cycle_id", "description", "due_date", "item_type", "parent_item_key", "priority", "project_key", "title"]);
+    return { operation: "workitem.create", input: renameBody(body, {
+      assignee_username: "assigneeUsername", cycle_id: "cycleId", due_date: "dueDate",
+      item_type: "itemType", parent_item_key: "parentItemKey", project_key: "projectKey",
+    }) };
+  }
   if (method === "POST" && parsed.pathname === "/api/v1/work-item-saved-views") {
     const body = parseJsonBody(options, ["assignee_username", "cycle_id", "is_default", "item_type", "name", "per_page", "priority", "project_key", "q", "sort", "status"]);
     return { operation: "workitem.savedviewcreate", input: renameBody(body, {

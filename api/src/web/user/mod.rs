@@ -4842,7 +4842,7 @@ pub async fn work_items_create(
         ensure_project_access(pool, &context, project.id).await?;
         ensure_project_content_write_access(pool, &context, project.id).await?;
         let cycle_id = parse_optional_positive_i64(&form.cycle_id, "周期")?;
-        let item = projects::create_work_item(
+        let item = projects::create_work_item_with_cycle(
             pool,
             context.user_id,
             projects::CreateWorkItemInput {
@@ -4856,14 +4856,7 @@ pub async fn work_items_create(
                 parent_item_key: form.parent_item_key,
                 actor_display_name_snapshot: context.current_user.clone(),
             },
-        )
-        .await?;
-        let item = projects::set_work_item_cycle(
-            pool,
-            context.user_id,
-            &item.item_key,
             cycle_id,
-            &context.current_user,
         )
         .await?;
         audit::record(

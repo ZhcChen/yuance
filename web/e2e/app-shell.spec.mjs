@@ -323,6 +323,56 @@ test('shared work item saved views create restore rename and delete', async ({ p
   await expect(page.locator('.work-item-filter-bar select[name="priority"]')).toHaveValue('');
 });
 
+test('shared work item creation covers requirement task and bug contracts', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  await ensureCurrentProject(page, 'YCE');
+
+  await page.goto('/web/app/tasks');
+  await page.getByRole('button', { name: '新建任务' }).click();
+  const taskDialog = page.getByRole('dialog', { name: '新建任务' });
+  await taskDialog.locator('#work-item-create-priority').selectOption('P1');
+  await expect(taskDialog.locator('#work-item-create-cycle')).toHaveValue('');
+  await taskDialog.locator('#work-item-create-assignee').selectOption({ index: 1 });
+  await taskDialog.locator('#work-item-create-parent').selectOption('YCE-REQ-1');
+  await taskDialog.locator('#work-item-create-due-date').fill('2026-08-31');
+  await taskDialog.locator('#work-item-create-title').fill('共享任务创建验收');
+  await taskDialog.getByRole('textbox', { name: '说明内容' }).fill('共享任务说明');
+  await taskDialog.getByRole('button', { name: '创建' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-\d+/u);
+  await expect(page.getByRole('heading', { level: 2, name: /共享任务创建验收/u })).toBeVisible();
+
+  await page.goto('/web/app/requirements');
+  await page.getByRole('button', { name: '新建需求' }).click();
+  const requirementDialog = page.getByRole('dialog', { name: '新建需求' });
+  await expect(requirementDialog.locator('#work-item-create-parent')).toHaveCount(0);
+  await requirementDialog.locator('#work-item-create-title').fill('共享需求创建验收');
+  await requirementDialog.getByRole('button', { name: '创建' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-REQ-\d+/u);
+  await expect(page.getByRole('heading', { level: 2, name: /共享需求创建验收/u })).toBeVisible();
+
+  await page.goto('/web/app/bugs');
+  await page.getByRole('button', { name: '新建 Bug' }).click();
+  const bugDialog = page.getByRole('dialog', { name: '新建 Bug' });
+  await bugDialog.locator('#work-item-create-title').fill('共享缺陷创建验收');
+  await bugDialog.getByRole('button', { name: '创建' }).click();
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-BUG-\d+/u);
+  await expect(page.getByRole('heading', { level: 2, name: /共享缺陷创建验收/u })).toBeVisible();
+});
+
+test('shared work item lists hide creation when the atomic contract is read only', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  await ensureCurrentProject(page, 'YCE');
+  await page.route('**/api/v1/work-item-list-view**', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.can_manage_work_items = false;
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto('/web/app/tasks');
+  await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '新建任务' })).toHaveCount(0);
+});
+
 test('work item detail can edit and handoff through app shell forms', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();

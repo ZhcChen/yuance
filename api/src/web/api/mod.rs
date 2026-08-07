@@ -362,6 +362,12 @@ pub struct WorkItemListCyclePayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkItemParentOptionPayload {
+    pub key: String,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct WorkItemSavedViewPayload {
     pub id: i64,
     pub name: String,
@@ -378,6 +384,7 @@ pub struct WorkItemListViewPayload {
     pub filters: WorkItemListFilterPayload,
     pub assignees: Vec<WorkItemListAssigneePayload>,
     pub cycles: Vec<WorkItemListCyclePayload>,
+    pub parent_options: Vec<WorkItemParentOptionPayload>,
     pub saved_views: Vec<WorkItemSavedViewPayload>,
     pub can_manage_work_items: bool,
 }
@@ -1373,6 +1380,8 @@ pub struct CreateWorkItemRequest {
     parent_item_key: String,
     #[serde(default)]
     assignee_username: String,
+    #[serde(default)]
+    cycle_id: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2763,6 +2772,27 @@ pub async fn get_work_item_list_view(
         projects::list_project_members(pool, project.id),
         projects::list_project_cycles(pool, project.id),
     )?;
+    let parent_options = if item_type == "task" {
+        projects::list_work_item_summaries_filtered_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            projects::WorkItemListFilter {
+                item_type: Some("requirement".to_string()),
+                project_key: project.project_key.clone(),
+                ..projects::WorkItemListFilter::default()
+            },
+        )
+        .await?
+        .into_iter()
+        .map(|item| WorkItemParentOptionPayload {
+            key: item.item_key,
+            title: item.title,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
     let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
         && ((can_access_all_projects
             && rbac::user_has_permission(pool, user.id, "work_item.manage").await?)
@@ -2804,6 +2834,7 @@ pub async fn get_work_item_list_view(
                 is_closed: !cycle.closed_at.is_empty(),
             })
             .collect(),
+        parent_options,
         saved_views: saved_views
             .into_iter()
             .map(|view| WorkItemSavedViewPayload {
@@ -2931,7 +2962,7 @@ pub async fn create_work_item(
     headers: HeaderMap,
     Json(payload): Json<CreateWorkItemRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -2942,7 +2973,7 @@ pub async fn create_work_item(
         .ok_or_else(|| AppError::BadRequest("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
     ensure_api_project_content_write_access(pool, &user, project.id).await?;
-    let item = projects::create_work_item(
+    let item = projects::create_work_item_with_cycle(
         pool,
         user.id,
         projects::CreateWorkItemInput {
@@ -2956,6 +2987,7 @@ pub async fn create_work_item(
             parent_item_key: payload.parent_item_key,
             actor_display_name_snapshot: principal.actor_display_name_snapshot(),
         },
+        payload.cycle_id,
     )
     .await?;
     audit::record(

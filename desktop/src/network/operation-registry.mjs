@@ -75,6 +75,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["notification.readall", noInputOperation("POST", "/api/v1/notifications/read-all", parseAffected, false)],
     ["workitem.list", workItemListOperation],
     ["workitem.listview", workItemListViewOperation],
+    ["workitem.create", workItemCreateOperation],
     ["workitem.savedviewcreate", workItemSavedViewCreateOperation],
     ["workitem.savedviewrename", workItemSavedViewRenameOperation],
     ["workitem.savedviewdefault", workItemSavedViewDefaultOperation],
@@ -432,6 +433,22 @@ function workItemListViewOperation(input) {
   return descriptor("GET", operation.path.replace("/api/v1/work-items", "/api/v1/work-item-list-view"), parseWorkItemListView);
 }
 
+function workItemCreateOperation(input) {
+  exactKeys(input, ["assigneeUsername", "cycleId", "description", "dueDate", "itemType", "parentItemKey", "priority", "projectKey", "title"]);
+  const body = {
+    project_key: projectKey(input.projectKey),
+    item_type: requiredEnum(input.itemType, ITEM_TYPES, "itemType", false),
+    title: boundedRequiredText(input.title, "title", 160),
+    description: boundedText(input.description, "description", 5_000),
+    priority: requiredEnum(input.priority, ITEM_PRIORITIES, "priority", false),
+    assignee_username: boundedText(input.assigneeUsername, "assigneeUsername", 64),
+    cycle_id: nullablePositiveInteger(input.cycleId),
+    due_date: dateText(input.dueDate),
+    parent_item_key: optionalItemKey(input.parentItemKey),
+  };
+  return descriptor("POST", "/api/v1/work-items", parseWorkItemDetail, false, "object", jsonBody(body));
+}
+
 function workItemSavedViewCreateOperation(input) {
   exactKeys(input, ["assigneeUsername", "cycleId", "isDefault", "itemType", "name", "perPage", "priority", "projectKey", "q", "sort", "status"]);
   const cycleId = optionalText(input.cycleId, "cycleId", 20);
@@ -639,6 +656,7 @@ function parseWorkItemListView(data) {
     filters: parseWorkItemListFilter(data.filters),
     assignees: boundedArray(data.assignees, (value) => freezeDto(value, { username: shortString, display_name: shortString }), 500, "work item assignees"),
     cycles: boundedArray(data.cycles, (value) => freezeDto(value, { id: positiveInteger, name: textString, is_closed: boolean }), 500, "work item cycles"),
+    parent_options: boundedArray(data.parent_options, (value) => freezeDto(value, { key: shortString, title: textString }), 2_000, "work item parent options"),
     saved_views: boundedArray(data.saved_views, (value) => freezeDto(value, {
       id: positiveInteger, name: textString, filters: parseWorkItemListFilter, per_page: positiveInteger, is_default: boolean,
     }), 100, "work item saved views"),

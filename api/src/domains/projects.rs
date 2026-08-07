@@ -3307,6 +3307,15 @@ pub async fn create_work_item(
     actor_user_id: i64,
     input: CreateWorkItemInput,
 ) -> AppResult<WorkItemDetail> {
+    create_work_item_with_cycle(pool, actor_user_id, input, None).await
+}
+
+pub async fn create_work_item_with_cycle(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    input: CreateWorkItemInput,
+    cycle_id: Option<i64>,
+) -> AppResult<WorkItemDetail> {
     let project_key = validate_project_key(&input.project_key)?;
     let item_type = validate_work_item_type(&input.item_type)?;
     let title = validate_name(&input.title, "工作项标题", 160)?;
@@ -3329,6 +3338,8 @@ pub async fn create_work_item(
     ensure_project_accepts_writes(&project_status)?;
     let parent_work_item_id =
         resolve_parent_work_item_id(pool, project_id, item_type, parent_item_key).await?;
+    let cycle = resolve_project_cycle(pool, project_id, cycle_id).await?;
+    let cycle_id = cycle.as_ref().map(|(id, _)| *id);
     let assignee_user_id = if assignee_username.is_empty() {
         actor_user_id
     } else {
@@ -3368,9 +3379,10 @@ pub async fn create_work_item(
             reporter_user_id,
             reporter_display_name_snapshot,
             parent_work_item_id,
+            cycle_id,
             due_date
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, ?10, NULLIF(?11, ''))
+        VALUES (?1, ?2, ?3, ?4, ?5, 'open', ?6, ?7, ?8, ?9, ?10, ?11, NULLIF(?12, ''))
         RETURNING id
         "#,
     )
@@ -3384,6 +3396,7 @@ pub async fn create_work_item(
     .bind(actor_user_id)
     .bind(&actor_display_name_snapshot)
     .bind(parent_work_item_id)
+    .bind(cycle_id)
     .bind(&due_date)
     .fetch_one(&mut *tx)
     .await?;
@@ -3424,6 +3437,30 @@ pub async fn create_work_item(
     .bind(format!("创建工作项 {item_key}"))
     .execute(&mut *tx)
     .await?;
+
+    if let Some((_, cycle_name)) = cycle {
+        sqlx::query(
+            r#"
+            INSERT INTO project_activities (
+                project_id,
+                actor_user_id,
+                actor_display_name_snapshot,
+                action,
+                target_type,
+                target_id,
+                summary
+            )
+            VALUES (?1, ?2, ?3, 'work_item.cycle.linked', 'work_item', ?4, ?5)
+            "#,
+        )
+        .bind(project_id)
+        .bind(actor_user_id)
+        .bind(&actor_display_name_snapshot)
+        .bind(&item_key)
+        .bind(format!("将工作项 {item_key} 关联到周期 {cycle_name}"))
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
     realtime::publish_topbar_refresh_for_user(assignee_user_id);

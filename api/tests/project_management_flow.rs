@@ -6955,6 +6955,11 @@ async fn api_v1_work_item_list_view_returns_atomic_shared_page_contract() {
             .is_some_and(|items| !items.is_empty())
     );
     assert!(data["cycles"].is_array());
+    assert!(data["parent_options"].as_array().is_some_and(|items| {
+        items.iter().any(|item| {
+            item["key"] == "YCE-REQ-1" && !item["title"].as_str().unwrap_or("").is_empty()
+        })
+    }));
     assert_eq!(data["saved_views"][0]["name"], "高优先级任务");
     assert_eq!(data["saved_views"][0]["filters"]["priority"], "P0");
     assert_eq!(data["saved_views"][0]["per_page"], 10);
@@ -12610,6 +12615,22 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
     projects::seed_demo_data(&pool, initialized.user_id)
         .await
         .expect("demo seed should apply");
+    let cycle = projects::create_project_cycle(
+        &pool,
+        initialized.user_id,
+        "YCE",
+        projects::CreateProjectCycleInput {
+            name: "API 创建周期".to_string(),
+            goal: String::new(),
+            description: String::new(),
+            owner_username: String::new(),
+            start_date: "2026-08-01".to_string(),
+            end_date: "2026-08-31".to_string(),
+        },
+    )
+    .await
+    .expect("cycle should create");
+    let cycle_id = cycle.id;
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let create_response = app
@@ -12621,9 +12642,9 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
                 .header(header::COOKIE, initialized.cookie.clone())
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from(
-                    r#"{"project_key":"YCE","item_type":"task","title":"API 创建任务","description":"通过 API 写入","priority":"P0","due_date":"2026-07-10","parent_item_key":"YCE-REQ-1"}"#,
-                ))
+                .body(Body::from(format!(
+                    r#"{{"project_key":"YCE","item_type":"task","title":"API 创建任务","description":"通过 API 写入","priority":"P0","due_date":"2026-07-10","parent_item_key":"YCE-REQ-1","cycle_id":{cycle_id}}}"#,
+                )))
                 .expect("request should build"),
         )
         .await
@@ -12688,6 +12709,15 @@ async fn api_v1_can_create_and_update_work_item_for_authenticated_member() {
     assert_eq!(item.priority, "P1");
     assert_eq!(item.assignee_username, "admin");
     assert_eq!(item.due_date, "2026-07-20");
+    assert_eq!(item.cycle_id, Some(cycle_id));
+    let linked_activity_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM project_activities WHERE action = 'work_item.cycle.linked' AND target_id = ?1",
+    )
+    .bind(&item_key)
+    .fetch_one(&pool)
+    .await
+    .expect("cycle activity should load");
+    assert_eq!(linked_activity_count, 1);
     assert_eq!(item.parent_item_key, "YCE-REQ-1");
     assert!(comments.iter().any(|comment| comment.body == "API 评论"));
 }

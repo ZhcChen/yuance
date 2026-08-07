@@ -895,8 +895,8 @@
       "realtimeEffect": "列表指标、当前项目计数和相关详情失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["api/tests/device_business_parity_flow.rs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-023-web-desktop-u4-work-item-create-review.md"] }
     },
     {
       "id": "action.work-item.batch.update",

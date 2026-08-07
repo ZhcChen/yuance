@@ -39,6 +39,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         "/api/v1/current-project",
         "/api/v1/topbar/status",
         "/api/v1/notifications",
+        "/api/v1/work-item-list-view?item_type=task&project_key=YCE",
         "/api/v1/work-items?project_key=YCE",
         "/api/v1/work-items/YCE-TASK-2",
         "/api/v1/work-items/YCE-TASK-2/comments",
@@ -111,6 +112,29 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .await;
     assert_eq!(response.status(), StatusCode::CREATED);
     let cycle_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/work-items",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "project_key": "YCE", "item_type": "task", "title": "Device parity creation",
+            "description": "Created through the fixed Desktop operation", "priority": "P1",
+            "assignee_username": "admin", "cycle_id": cycle_id, "parent_item_key": "YCE-REQ-1"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let created_item_key = json_body(response).await["data"]["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let created_item = projects::get_work_item_detail(&pool, &created_item_key)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(created_item.cycle_id, Some(cycle_id));
+    assert_eq!(created_item.parent_item_key, "YCE-REQ-1");
     let response = request(
         &app,
         "GET",

@@ -250,6 +250,7 @@ import { errorMessage } from './errors.js';
  * @property {{ item_type: string, q: string, status: string, priority: string, project_key: string, assignee_username: string, cycle_id: string, sort: string }} filters
  * @property {{ username: string, display_name: string }[]} assignees
  * @property {{ id: number, name: string, is_closed: boolean }[]} cycles
+ * @property {{ key: string, title: string }[]} parent_options
  * @property {{ id: number, name: string, filters: AppWorkItemPage['filters'], per_page: number, is_default: boolean }[]} saved_views
  * @property {boolean} can_manage_work_items
  */
@@ -436,6 +437,10 @@ function workItemTypeLabel(itemType) {
     default:
       return '任务';
   }
+}
+
+function workItemCreateLabel(itemType) {
+  return itemType === 'bug' ? '新建 Bug' : `新建${workItemTypeLabel(itemType)}`;
 }
 
 function workItemStatusLabel(status) {
@@ -758,6 +763,10 @@ export function SharedApp({ services }) {
   const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
+  const [workItemCreateOpen, setWorkItemCreateOpen] = useState(false);
+  const [workItemCreateSubmitting, setWorkItemCreateSubmitting] = useState(false);
+  const [workItemCreateError, setWorkItemCreateError] = useState('');
+  const [workItemCreateForm, setWorkItemCreateForm] = useState({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
   const [workItemSavedViewForm, setWorkItemSavedViewForm] = useState(/** @type {{ id: number, name: string, isDefault: boolean } | null} */ (null));
   const [workItemSavedViewDeleteTarget, setWorkItemSavedViewDeleteTarget] = useState(/** @type {AppWorkItemPage['saved_views'][number] | null} */ (null));
   const [workItemSavedViewSubmitting, setWorkItemSavedViewSubmitting] = useState(false);
@@ -3133,6 +3142,50 @@ export function SharedApp({ services }) {
     );
   }
 
+  function openWorkItemCreate() {
+    setWorkItemCreateError('');
+    setWorkItemCreateForm({ title: '', description: '', priority: 'P2', assigneeUsername: '', cycleId: '', dueDate: '', parentItemKey: '' });
+    setWorkItemCreateOpen(true);
+  }
+
+  /** @param {React.FormEvent<HTMLFormElement>} event */
+  async function submitWorkItemCreate(event) {
+    event.preventDefault();
+    if (!workItemListRoute || !currentProject || workItemCreateSubmitting) return;
+    const title = workItemCreateForm.title.trim();
+    const itemType = workItemListRoute.itemType;
+    if (!title) {
+      setWorkItemCreateError('请输入工作项标题。');
+      return;
+    }
+    if (!itemType) {
+      setWorkItemCreateError('工作项类型无效。');
+      return;
+    }
+    setWorkItemCreateSubmitting(true);
+    setWorkItemCreateError('');
+    try {
+      const item = await api.createWorkItem({
+        projectKey: currentProject.key,
+        itemType,
+        title,
+        description: richTextHasContent(workItemCreateForm.description) ? workItemCreateForm.description : '',
+        priority: workItemCreateForm.priority,
+        assigneeUsername: workItemCreateForm.assigneeUsername,
+        cycleId: Number.parseInt(workItemCreateForm.cycleId, 10) || null,
+        dueDate: workItemCreateForm.dueDate,
+        parentItemKey: itemType === 'task' ? workItemCreateForm.parentItemKey : '',
+      });
+      setWorkItemCreateOpen(false);
+      setStatusMessage(`${item.key} 已创建。`);
+      navigate(buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key }), `${item.key} 已创建。`);
+    } catch (caught) {
+      setWorkItemCreateError(errorMessage(/** @type {ApiError | Error} */ (caught)));
+    } finally {
+      setWorkItemCreateSubmitting(false);
+    }
+  }
+
   /** @param {AppWorkItemPage['saved_views'][number]} savedView */
   function applyWorkItemSavedView(savedView) {
     navigate(
@@ -3918,6 +3971,7 @@ export function SharedApp({ services }) {
                   <p className="shell-muted">当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
                 </div>
                 <div className="shell-actions-inline">
+                  {workItemPage?.can_manage_work_items ? <Button disabled={workItemCreateSubmitting} onClick={openWorkItemCreate}>{workItemCreateLabel(route.itemType)}</Button> : null}
                   {route.owner === 'app' ? <a className="shell-link" href={legacyWorkItemListPath}>打开旧版列表</a> : null}
                 </div>
               </div>
@@ -4090,6 +4144,20 @@ export function SharedApp({ services }) {
                 </form>
               </Modal>
               <Modal open={Boolean(workItemSavedViewDeleteTarget)} title="删除保存视图" onClose={() => { if (!workItemSavedViewSubmitting) setWorkItemSavedViewDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemSavedViewSubmitting} onClick={() => void confirmWorkItemSavedViewDelete()}>确认删除</Button></>}><p>确认删除视图“{workItemSavedViewDeleteTarget?.name}”？</p></Modal>
+              <Modal open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={() => { if (!workItemCreateSubmitting) setWorkItemCreateOpen(false); }} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting} onClick={() => setWorkItemCreateOpen(false)}>取消</Button><Button loading={workItemCreateSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
+                <form id="work-item-create-form" onSubmit={submitWorkItemCreate}>
+                  <div className="field-grid">
+                    <Field id="work-item-create-priority" label="优先级" required><select id="work-item-create-priority" value={workItemCreateForm.priority} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, priority: event.target.value }))}><option value="P0">紧急</option><option value="P1">高</option><option value="P2">中</option><option value="P3">低</option></select></Field>
+                    <Field id="work-item-create-cycle" label="周期"><select id="work-item-create-cycle" value={workItemCreateForm.cycleId} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, cycleId: event.target.value }))}><option value="">不关联</option>{(workItemPage?.cycles || []).map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}</select></Field>
+                    <Field id="work-item-create-due-date" label="截止日期"><input id="work-item-create-due-date" type="date" value={workItemCreateForm.dueDate} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, dueDate: event.target.value }))} /></Field>
+                    <Field id="work-item-create-assignee" label="处理人"><select id="work-item-create-assignee" value={workItemCreateForm.assigneeUsername} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, assigneeUsername: event.target.value }))}><option value="">默认指派给我</option>{(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</select></Field>
+                    {route.itemType === 'task' ? <Field id="work-item-create-parent" label="父级需求"><select id="work-item-create-parent" value={workItemCreateForm.parentItemKey} disabled={workItemCreateSubmitting} onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, parentItemKey: event.target.value }))}><option value="">不关联</option>{(workItemPage?.parent_options || []).map((item) => <option key={item.key} value={item.key}>{item.key} · {item.title}</option>)}</select></Field> : null}
+                    <Field id="work-item-create-title" label="标题" required><input id="work-item-create-title" maxLength={160} value={workItemCreateForm.title} disabled={workItemCreateSubmitting} autoFocus onChange={(event) => setWorkItemCreateForm((current) => ({ ...current, title: event.target.value }))} /></Field>
+                  </div>
+                  <div className="yc-field"><label htmlFor="work-item-create-description">说明内容</label><RichTextEditor id="work-item-create-description" value={workItemCreateForm.description} disabled={workItemCreateSubmitting} label="说明内容" onChange={(description) => setWorkItemCreateForm((current) => ({ ...current, description }))} /></div>
+                  {workItemCreateError ? <Feedback tone="danger" title="创建失败">{workItemCreateError}</Feedback> : null}
+                </form>
+              </Modal>
             </section>
           ) : route.id === 'work-item-detail' ? (
             <section className="shell-card shell-panel-wide work-item-detail-center" aria-labelledby="work-item-detail-title">

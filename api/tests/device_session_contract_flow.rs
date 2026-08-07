@@ -444,7 +444,13 @@ fn openapi_freezes_d2_device_business_allowlist() {
         "GET /api/v1/notifications/{notification_id}/target",
         "POST /api/v1/notifications/{notification_id}/read",
         "POST /api/v1/notifications/read-all",
+        "GET /api/v1/work-item-list-view",
+        "POST /api/v1/work-item-saved-views",
+        "PATCH /api/v1/work-item-saved-views/{saved_view_id}",
+        "DELETE /api/v1/work-item-saved-views/{saved_view_id}",
+        "POST /api/v1/work-item-saved-views/{saved_view_id}/default",
         "GET /api/v1/work-items",
+        "POST /api/v1/work-items",
         "GET /api/v1/work-items/{item_key}",
         "PATCH /api/v1/work-items/{item_key}",
         "POST /api/v1/work-items/{item_key}/handoff",
@@ -468,7 +474,6 @@ fn openapi_freezes_d2_device_business_allowlist() {
     assert_eq!(allowlist, expected.as_array().unwrap());
     for forbidden in [
         "GET /api/v1/projects/{project_key}",
-        "POST /api/v1/work-items",
         "POST /api/v1/work-items/{item_key}/restore",
         "DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
     ] {
