@@ -161,6 +161,11 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
   const registry = createOperationRegistry();
   const cases = [
     ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }, "PATCH", "/api/v1/me/profile", { display_name: "Alice", email: "alice@example.com", mobile: "13800000000" }],
+    ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }, "PATCH", "/api/v1/me/password", { current_password: "OldPass2026!", new_password: "NewPass2026!", new_password_confirm: "NewPass2026!" }],
+    ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }, "POST", "/api/v1/me/tokens", { name: "Agent", scopes: ["project:read"], project_scope: "all", expires_at: "" }],
+    ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "projects:DEMO" }, "PATCH", "/api/v1/me/tokens/7", { name: "Agent 2", scopes: ["work_item:read"], project_scope: "projects:DEMO" }],
+    ["identity.tokendelete", { tokenId: 7 }, "DELETE", "/api/v1/me/tokens/7", undefined],
+    ["identity.devicesessionrevoke", { familyId: "family-1" }, "DELETE", "/api/v1/me/device-sessions/family-1", undefined],
     ["project.select", { projectKey: "DEMO" }, "PATCH", "/api/v1/current-project", { project_key: "DEMO" }],
     ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
     ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
@@ -221,6 +226,24 @@ test("normalizes a probe response without credentials", () => {
     generation: 2, authorization_version: 3, access_expires_at: "2026-08-02T12:00:00Z",
     server_instance_id: "server-1", access_token: "yuance_dat_leak",
   }, { serverInstanceId: "server-1" }), /identity/i);
+});
+
+test("normalizes account security DTOs without accepting private fields", () => {
+  const registry = createOperationRegistry();
+  const tokens = registry.resolve("identity.tokens", {}).parse([{
+    id: 7, name: "Agent", scopes: ["project:read"], project_scope: "all", token_suffix: "abcd",
+    expires_at: "", revoked_at: "", last_used_at: "", created_at: "2026-08-07T00:00:00Z", updated_at: "2026-08-07T00:00:00Z",
+  }]);
+  assert.equal(tokens[0].name, "Agent");
+  assert.equal(Object.hasOwn(tokens[0], "raw_token"), false);
+  const stripped = registry.resolve("identity.tokens", {}).parse([{ ...tokens[0], raw_token: "secret" }]);
+  assert.equal(Object.hasOwn(stripped[0], "raw_token"), false);
+  const sessions = registry.resolve("identity.devicesessions", {}).parse([{
+    family_id: "family-1", device_id: "device-1", device_name: "Desktop", platform: "darwin",
+    client_version: "0.1.0", status: "active", generation: 1, last_seen_at: "2026-08-07T00:00:00Z",
+    created_at: "2026-08-07T00:00:00Z", is_current: true,
+  }]);
+  assert.equal(sessions[0].is_current, true);
 });
 
 test("tracks only fixed file operations with a bounded abort lifecycle", () => {

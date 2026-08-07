@@ -5,6 +5,8 @@ import { ApiError } from "@yuance/frontend-api-client";
 const STATIC_ROUTES = new Map([
   ["/api/v1/auth/me", ["identity.current", []]],
   ["/api/v1/me/profile", ["identity.profile", []]],
+  ["/api/v1/me/tokens", ["identity.tokens", []]],
+  ["/api/v1/me/device-sessions", ["identity.devicesessions", []]],
   ["/api/v1/topbar/status", ["shell.topbar", []]],
   ["/api/v1/current-project", ["project.current", []]],
 ]);
@@ -37,7 +39,7 @@ function resolveReadOperation(url, options) {
   if (typeof url !== "string" || !url.startsWith("/api/v1/") || url.includes("#")) throw apiError("invalid_request", 400);
   if (options !== undefined && !isPlainObject(options)) throw apiError("invalid_request", 400);
   const method = options?.method ?? "GET";
-  if (!["GET", "POST", "PATCH"].includes(method)) throw apiError("operation_not_allowed", 405);
+  if (!["DELETE", "GET", "POST", "PATCH"].includes(method)) throw apiError("operation_not_allowed", 405);
   const parsed = new URL(url, "https://desktop.invalid");
   if (parsed.origin !== "https://desktop.invalid" || `${parsed.pathname}${parsed.search}` !== url) throw apiError("invalid_request", 400);
   if (method !== "GET") return resolveMutationOperation(parsed, method, options);
@@ -83,6 +85,22 @@ function resolveMutationOperation(parsed, method, options) {
     const body = parseJsonBody(options, ["display_name", "email", "mobile"]);
     return { operation: "identity.profileupdate", input: renameBody(body, { display_name: "displayName" }) };
   }
+  if (method === "PATCH" && parsed.pathname === "/api/v1/me/password") {
+    const body = parseJsonBody(options, ["current_password", "new_password", "new_password_confirm"]);
+    return { operation: "identity.passwordupdate", input: renameBody(body, { current_password: "currentPassword", new_password: "newPassword", new_password_confirm: "newPasswordConfirm" }) };
+  }
+  if (method === "POST" && parsed.pathname === "/api/v1/me/tokens") {
+    const body = parseJsonBody(options, ["expires_at", "name", "project_scope", "scopes"]);
+    return { operation: "identity.tokencreate", input: renameBody(body, { expires_at: "expiresAt", project_scope: "projectScope" }) };
+  }
+  const token = parsed.pathname.match(/^\/api\/v1\/me\/tokens\/(\d+)$/u);
+  if (method === "PATCH" && token) {
+    const body = parseJsonBody(options, ["name", "project_scope", "scopes"]);
+    return { operation: "identity.tokenupdate", input: { tokenId: positiveInteger(token[1]), ...renameBody(body, { project_scope: "projectScope" }) } };
+  }
+  if (method === "DELETE" && token) { rejectBody(options); return { operation: "identity.tokendelete", input: { tokenId: positiveInteger(token[1]) } }; }
+  const deviceSession = parsed.pathname.match(/^\/api\/v1\/me\/device-sessions\/([^/]+)$/u);
+  if (method === "DELETE" && deviceSession) { rejectBody(options); return { operation: "identity.devicesessionrevoke", input: { familyId: decodeSegment(deviceSession[1]) } }; }
   if (method === "PATCH" && parsed.pathname === "/api/v1/current-project") {
     const body = parseJsonBody(options, ["project_key"]);
     return { operation: "project.select", input: { projectKey: body.project_key } };

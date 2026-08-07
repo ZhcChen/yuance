@@ -70,6 +70,11 @@ test("api-client mutations map to fixed domain operations without request primit
   } });
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
+  await client.updateOwnPassword({ currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" });
+  await client.createApiToken({ name: "Agent", scopes: ["project:read"], projectScope: "all" });
+  await client.updateApiToken(7, { name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" });
+  await client.deleteApiToken(7);
+  await client.revokeDeviceSession("family-1");
   await client.updateCurrentProject("DEMO");
   await client.markNotificationRead(7);
   await client.markAllNotificationsRead();
@@ -79,6 +84,11 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
   assert.deepEqual(calls, [
     ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
+    ["identity.passwordupdate", { currentPassword: "OldPass2026!", newPassword: "NewPass2026!", newPasswordConfirm: "NewPass2026!" }],
+    ["identity.tokencreate", { name: "Agent", scopes: ["project:read"], projectScope: "all", expiresAt: "" }],
+    ["identity.tokenupdate", { tokenId: 7, name: "Agent 2", scopes: ["work_item:read"], projectScope: "all" }],
+    ["identity.tokendelete", { tokenId: 7 }],
+    ["identity.devicesessionrevoke", { familyId: "family-1" }],
     ["project.select", { projectKey: "DEMO" }],
     ["notification.read", { notificationId: 7 }],
     ["notification.readall", {}],

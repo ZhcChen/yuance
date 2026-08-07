@@ -119,6 +119,20 @@ test('profile client reads and updates through the shared write preparation', as
   });
 });
 
+test('account security client uses fixed JSON and destructive routes', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.updateOwnPassword({ currentPassword: 'OldPass2026!', newPassword: 'NewPass2026!', newPasswordConfirm: 'NewPass2026!' });
+  await client.createApiToken({ name: 'Agent', scopes: ['project:read'], projectScope: 'all' });
+  await client.updateApiToken(7, { name: 'Agent 2', scopes: ['work_item:read'], projectScope: 'all' });
+  await client.deleteApiToken(7);
+  await client.revokeDeviceSession('family-1');
+  assert.equal(writes.length, 5);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method]), [
+    ['/api/v1/me/password', 'PATCH'], ['/api/v1/me/tokens', 'POST'], ['/api/v1/me/tokens/7', 'PATCH'],
+    ['/api/v1/me/tokens/7', 'DELETE'], ['/api/v1/me/device-sessions/family-1', 'DELETE'],
+  ]);
+});
+
 test('apiErrorFromPayload preserves server error code and message', () => {
   const error = apiErrorFromPayload({
     error: {

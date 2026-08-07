@@ -1,6 +1,7 @@
 // @ts-check
 
 import { createNotificationClient } from './notifications.js';
+import { createAccountSecurityClient } from './account-security.js';
 import { createProfileClient } from './profile.js';
 import { createSearchClient } from './search.js';
 import { createTopbarClient } from './topbar.js';
@@ -15,7 +16,8 @@ import { createWorkItemClient } from './work-items.js';
 /** @typedef {import('./profile.js').ProfileClient} ProfileClient */
 /** @typedef {import('./search.js').SearchClient} SearchClient */
 /** @typedef {import('./topbar.js').TopbarClient} TopbarClient */
-/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
+/** @typedef {import('./account-security.js').AccountSecurityClient} AccountSecurityClient */
+/** @typedef {WorkItemClient & NotificationClient & ProfileClient & SearchClient & TopbarClient & AccountSecurityClient & { getCurrentUser(): Promise<AuthUser>, getProjects(query?: { status?: string, page?: number, perPage?: number }): Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, updateCurrentProject(projectKey: string): Promise<{ key: string, name: string }>, logout(): Promise<{ revoked: boolean }> }} ApiClient */
 
 /**
  * @param {{ request: ApiRequest, prepareWrite?: PrepareWrite }} dependencies
@@ -23,6 +25,7 @@ import { createWorkItemClient } from './work-items.js';
  */
 export function createApiClient({ request, prepareWrite = async () => {} }) {
   const workItems = createWorkItemClient({ request, prepareWrite });
+  const accountSecurity = createAccountSecurityClient({ request, prepareWrite });
   const notifications = createNotificationClient({ request, prepareWrite });
   const profile = createProfileClient({ request, prepareWrite });
   const search = createSearchClient({ request });
@@ -72,6 +75,7 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
     },
 
     ...topbar,
+    ...accountSecurity,
     ...workItems,
     ...notifications,
     ...profile,

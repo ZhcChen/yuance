@@ -12,6 +12,7 @@ const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
 const WORK_ITEM_STATUSES = new Set(["open", "in_progress", "pending_confirmation", "done", "verified", "resolved", "closed", "cancelled"]);
+const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
   if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
@@ -22,6 +23,13 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["identity.current", noInputOperation("GET", "/api/v1/auth/me", parseUser)],
     ["identity.profile", noInputOperation("GET", "/api/v1/me/profile", parseProfile)],
     ["identity.profileupdate", profileUpdateOperation],
+    ["identity.passwordupdate", passwordUpdateOperation],
+    ["identity.tokens", noInputOperation("GET", "/api/v1/me/tokens", parseApiTokens, true, "array")],
+    ["identity.tokencreate", apiTokenCreateOperation],
+    ["identity.tokenupdate", apiTokenUpdateOperation],
+    ["identity.tokendelete", apiTokenDeleteOperation],
+    ["identity.devicesessions", noInputOperation("GET", "/api/v1/me/device-sessions", parseDeviceSessions, true, "array")],
+    ["identity.devicesessionrevoke", deviceSessionRevokeOperation],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["search.list", searchListOperation],
     ["project.list", projectListOperation],
@@ -98,6 +106,47 @@ function profileUpdateOperation(input) {
     mobile: boundedText(input.mobile, "mobile", 32),
   };
   return descriptor("PATCH", "/api/v1/me/profile", parseProfile, false, "object", jsonBody(body));
+}
+
+function passwordUpdateOperation(input) {
+  exactKeys(input, ["currentPassword", "newPassword", "newPasswordConfirm"]);
+  const body = {
+    current_password: boundedRequiredText(input.currentPassword, "currentPassword", 256),
+    new_password: boundedRequiredText(input.newPassword, "newPassword", 256),
+    new_password_confirm: boundedRequiredText(input.newPasswordConfirm, "newPasswordConfirm", 256),
+  };
+  return descriptor("PATCH", "/api/v1/me/password", parseNoContent, false, "nullable-object", jsonBody(body));
+}
+
+function apiTokenCreateOperation(input) {
+  exactKeys(input, ["expiresAt", "name", "projectScope", "scopes"]);
+  return descriptor("POST", "/api/v1/me/tokens", parseCreatedApiToken, false, "object", jsonBody(apiTokenBody(input, true)));
+}
+
+function apiTokenUpdateOperation(input) {
+  exactKeys(input, ["name", "projectScope", "scopes", "tokenId"]);
+  return descriptor("PATCH", `/api/v1/me/tokens/${positiveInteger(input.tokenId)}`, parseApiToken, false, "object", jsonBody(apiTokenBody(input, false)));
+}
+
+function apiTokenDeleteOperation(input) {
+  exactKeys(input, ["tokenId"]);
+  return descriptor("DELETE", `/api/v1/me/tokens/${positiveInteger(input.tokenId)}`, parseApiToken, false);
+}
+
+function deviceSessionRevokeOperation(input) {
+  exactKeys(input, ["familyId"]);
+  const familyId = boundedRequiredText(input.familyId, "familyId", 128);
+  if (!/^[A-Za-z0-9-]+$/u.test(familyId)) throw new TypeError("familyId is invalid");
+  return descriptor("DELETE", `/api/v1/me/device-sessions/${familyId}`, parseDeviceSession, false);
+}
+
+function apiTokenBody(input, includeExpiration) {
+  if (!Array.isArray(input.scopes) || input.scopes.length < 1 || input.scopes.length > API_TOKEN_SCOPES.size || input.scopes.some((scope) => !API_TOKEN_SCOPES.has(scope))) throw new TypeError("scopes is invalid");
+  const projectScope = boundedRequiredText(input.projectScope, "projectScope", 4096);
+  return {
+    name: boundedRequiredText(input.name, "name", 64), scopes: [...new Set(input.scopes)], project_scope: projectScope,
+    ...(includeExpiration ? { expires_at: boundedText(input.expiresAt, "expiresAt", 64) } : {}),
+  };
 }
 
 function notificationListOperation(input) {
@@ -216,6 +265,20 @@ function parseUser(data) { return freezeDto(data, { id: positiveInteger, usernam
 function parseProfile(data) { return freezeDto(data, {
   id: positiveInteger, username: shortString, display_name: shortString, email: shortString, mobile: shortString,
   status: shortString, is_super_admin: boolean, roles: shortString, created_at: shortString, updated_at: shortString,
+}); }
+function parseNoContent(data) { if (data !== null) throw new TypeError("empty response is invalid"); return null; }
+function parseApiTokens(data) { return boundedArray(data, parseApiToken, 100, "api tokens"); }
+function parseApiToken(value) { return freezeDto(value, {
+  id: positiveInteger, name: shortString, scopes: apiTokenScopes, project_scope: longString, token_suffix: shortString,
+  expires_at: shortString, revoked_at: shortString, last_used_at: shortString, created_at: shortString, updated_at: shortString,
+}); }
+function parseCreatedApiToken(value) { return freezeDto(value, { token: parseApiToken, raw_token: textString }); }
+function apiTokenScopes(value) { return boundedArray(value, (scope) => requiredEnum(scope, API_TOKEN_SCOPES, "scope", false), API_TOKEN_SCOPES.size, "api token scopes"); }
+function parseDeviceSessions(data) { return boundedArray(data, parseDeviceSession, 100, "device sessions"); }
+function parseDeviceSession(value) { return freezeDto(value, {
+  family_id: shortString, device_id: shortString, device_name: shortString, platform: shortString,
+  client_version: shortString, status: shortString, generation: nonNegativeInteger,
+  last_seen_at: shortString, created_at: shortString, is_current: boolean,
 }); }
 function parseCurrentProject(data) {
   if (data === null) return null;
