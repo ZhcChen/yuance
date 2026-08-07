@@ -5250,6 +5250,80 @@ async fn web_work_item_batch_update_rejects_status_not_supported_for_type() {
 }
 
 #[tokio::test]
+async fn api_v1_work_item_batch_update_reports_partial_failures() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/batch")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"task","item_keys":["YCE-TASK-1","OPS-TASK-1"],"action":"priority","priority":"P1"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&response_body(response).await)
+        .expect("batch response should be json");
+    assert_eq!(body["data"]["updated_count"], 1);
+    assert_eq!(
+        body["data"]["updated_item_keys"],
+        serde_json::json!(["YCE-TASK-1"])
+    );
+    assert_eq!(body["data"]["failed_count"], 1);
+    assert_eq!(body["data"]["failed_items"][0]["item_key"], "OPS-TASK-1");
+    assert_eq!(body["data"]["failed_items"][0]["code"], "bad_request");
+
+    let priorities = sqlx::query_as::<_, (String, String)>(
+        "SELECT item_key, priority FROM work_items WHERE item_key IN ('YCE-TASK-1', 'OPS-TASK-1') ORDER BY item_key",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("priorities should load");
+    assert_eq!(
+        priorities,
+        vec![
+            ("OPS-TASK-1".to_string(), "P2".to_string()),
+            ("YCE-TASK-1".to_string(), "P1".to_string())
+        ]
+    );
+
+    let duplicate = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-items/batch")
+                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"task","item_keys":["YCE-TASK-1","yce-task-1"],"action":"priority","priority":"P2"}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(duplicate.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        response_body(duplicate)
+            .await
+            .contains("工作项编号不能重复")
+    );
+}
+
+#[tokio::test]
 async fn web_current_project_rejects_projects_outside_member_scope() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

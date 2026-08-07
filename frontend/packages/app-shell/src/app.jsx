@@ -683,6 +683,7 @@ export function SharedApp({ services }) {
   const workItemMutationActionRef = useRef(0);
   const workItemAttachmentActionRef = useRef(0);
   const workItemAttachmentMutationRef = useRef(false);
+  const workItemBatchMutationRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [releaseVersion, setReleaseVersion] = useState('');
@@ -771,6 +772,11 @@ export function SharedApp({ services }) {
   const [workItemSavedViewDeleteTarget, setWorkItemSavedViewDeleteTarget] = useState(/** @type {AppWorkItemPage['saved_views'][number] | null} */ (null));
   const [workItemSavedViewSubmitting, setWorkItemSavedViewSubmitting] = useState(false);
   const [workItemSavedViewError, setWorkItemSavedViewError] = useState('');
+  const [workItemSelection, setWorkItemSelection] = useState(/** @type {Set<string>} */ (new Set()));
+  const [workItemBatchForm, setWorkItemBatchForm] = useState({ action: 'priority', value: 'P2' });
+  const [workItemBatchConfirmOpen, setWorkItemBatchConfirmOpen] = useState(false);
+  const [workItemBatchSubmitting, setWorkItemBatchSubmitting] = useState(false);
+  const [workItemBatchError, setWorkItemBatchError] = useState('');
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
   const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
@@ -827,6 +833,9 @@ export function SharedApp({ services }) {
   const projectResourceDetailRoute = route.id === 'project-resource-detail' ? route : null;
   const projectPersonalAnalysisRoute = route.id === 'project-personal-analysis' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
+  const workItemSelectionScope = workItemListRoute
+    ? [workItemListRoute.itemType, workItemListRoute.projectKey || currentProject?.key || '', workItemListRoute.q, workItemListRoute.status, workItemListRoute.priority, workItemListRoute.assigneeUsername, workItemListRoute.cycleId, workItemListRoute.sort, workItemListRoute.perPage].join('|')
+    : '';
   const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
   const workItemOwner = workItemOwnerForRoute(route);
   const workItemNavQuery = workItemListRoute
@@ -868,6 +877,8 @@ export function SharedApp({ services }) {
   const workItemRangeEnd = workItemPage && workItemPage.pagination.total_items > 0
     ? Math.min(workItemPage.pagination.page * workItemPage.pagination.per_page, workItemPage.pagination.total_items)
     : 0;
+  const currentWorkItemKeys = workItemPage?.items.map((item) => item.key) || [];
+  const currentWorkItemPageSelected = currentWorkItemKeys.length > 0 && currentWorkItemKeys.every((key) => workItemSelection.has(key));
   const legacyWorkItemListPath = workItemListRoute
     ? buildWorkItemListPath({
       owner: 'web',
@@ -2107,6 +2118,16 @@ export function SharedApp({ services }) {
     void loadRouteState(route, 'load');
   }, [route]);
 
+  useEffect(() => {
+    setWorkItemSelection(new Set());
+    setWorkItemBatchConfirmOpen(false);
+    setWorkItemBatchError('');
+  }, [workItemSelectionScope]);
+
+  useEffect(() => {
+    if (workItemPage && !workItemPage.can_manage_work_items) setWorkItemSelection(new Set());
+  }, [workItemPage?.can_manage_work_items]);
+
   useEffect(() => () => {
     const capability = projectAttachmentPreviewCapabilityRef.current;
     projectAttachmentPreviewCapabilityRef.current = '';
@@ -3326,6 +3347,77 @@ export function SharedApp({ services }) {
     );
   }
 
+  /** @param {string} itemKey @param {boolean} selected */
+  function toggleWorkItemSelection(itemKey, selected) {
+    if (selected && !workItemSelection.has(itemKey) && workItemSelection.size >= 100) {
+      setWorkItemBatchError('单次最多只能选择 100 个工作项。');
+      return;
+    }
+    setWorkItemSelection((current) => {
+      const next = new Set(current);
+      if (selected) next.add(itemKey); else next.delete(itemKey);
+      return next;
+    });
+  }
+
+  /** @param {boolean} selected */
+  function toggleCurrentWorkItemPage(selected) {
+    const newItemKeys = currentWorkItemKeys.filter((itemKey) => !workItemSelection.has(itemKey));
+    if (selected && workItemSelection.size + newItemKeys.length > 100) {
+      setWorkItemBatchError('单次最多只能选择 100 个工作项。');
+      return;
+    }
+    setWorkItemSelection((current) => {
+      const next = new Set(current);
+      for (const itemKey of currentWorkItemKeys) {
+        if (selected) next.add(itemKey); else next.delete(itemKey);
+      }
+      return next;
+    });
+  }
+
+  /** @param {React.ChangeEvent<HTMLSelectElement>} event */
+  function changeWorkItemBatchAction(event) {
+    const action = event.target.value;
+    const defaults = { assignee: '', status: 'in_progress', priority: 'P2', cycle: '' };
+    setWorkItemBatchForm({ action, value: defaults[action] ?? '' });
+    setWorkItemBatchError('');
+  }
+
+  async function confirmWorkItemBatchUpdate() {
+    if (!workItemListRoute || !workItemPage?.can_manage_work_items || workItemBatchMutationRef.current || workItemSelection.size === 0) return;
+    workItemBatchMutationRef.current = true;
+    setWorkItemBatchSubmitting(true);
+    setWorkItemBatchError('');
+    try {
+      const action = /** @type {'assignee' | 'status' | 'priority' | 'cycle'} */ (workItemBatchForm.action);
+      const result = await api.batchUpdateWorkItems({
+        projectKey: workItemPage.filters.project_key,
+        itemType: workItemPage.filters.item_type,
+        itemKeys: [...workItemSelection],
+        action,
+        status: action === 'status' ? workItemBatchForm.value : '',
+        assigneeUsername: action === 'assignee' ? workItemBatchForm.value : '',
+        priority: action === 'priority' ? workItemBatchForm.value : '',
+        cycleId: action === 'cycle' ? (Number.parseInt(workItemBatchForm.value, 10) || null) : null,
+      });
+      setWorkItemSelection(new Set(result.failed_items.map((item) => item.item_key)));
+      setWorkItemBatchConfirmOpen(false);
+      if (result.failed_count) {
+        setWorkItemBatchError(result.failed_items.map((item) => `${item.item_key}：${item.message}`).join('；'));
+        setStatusMessage(`已更新 ${result.updated_count} 项，${result.failed_count} 项未更新。`);
+      } else {
+        setStatusMessage(`已批量更新 ${result.updated_count} 个工作项。`);
+      }
+      await loadRouteState(routeRef.current, 'refresh');
+    } catch (caught) {
+      setWorkItemBatchError(errorMessage(caught instanceof Error ? caught : new Error('批量更新失败。')));
+    } finally {
+      workItemBatchMutationRef.current = false;
+      setWorkItemBatchSubmitting(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="app-shell" aria-busy="true">
@@ -4075,11 +4167,26 @@ export function SharedApp({ services }) {
 
               {workItemPage?.items?.length ? (
                 <>
+                  {workItemPage.can_manage_work_items ? <div className="work-item-batch-bar" aria-label="批量操作">
+                    <label className="work-item-batch-select-all"><input type="checkbox" checked={currentWorkItemPageSelected} onChange={(event) => toggleCurrentWorkItemPage(event.target.checked)} /> 选择当前页</label>
+                    <strong>已选择 {workItemSelection.size} 项</strong>
+                    <select aria-label="批量操作类型" value={workItemBatchForm.action} disabled={workItemBatchSubmitting} onChange={changeWorkItemBatchAction}>
+                      <option value="priority">修改优先级</option><option value="status">修改状态</option><option value="assignee">修改处理人</option><option value="cycle">修改周期</option>
+                    </select>
+                    {workItemBatchForm.action === 'priority' ? <select aria-label="目标优先级" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select> : null}
+                    {workItemBatchForm.action === 'status' ? <select aria-label="目标状态" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="open">待处理</option><option value="in_progress">进行中</option><option value="pending_confirmation">待确认</option>{route.itemType === 'bug' ? <><option value="resolved">已解决</option><option value="verified">已验证</option></> : <option value="done">已完成</option>}<option value="closed">已关闭</option></select> : null}
+                    {workItemBatchForm.action === 'assignee' ? <select aria-label="目标处理人" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">请选择处理人</option>{workItemPage.assignees.map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</select> : null}
+                    {workItemBatchForm.action === 'cycle' ? <select aria-label="目标周期" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">取消周期关联</option>{workItemPage.cycles.map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}</select> : null}
+                    <Button disabled={workItemSelection.size === 0 || workItemBatchSubmitting || (workItemBatchForm.action === 'assignee' && !workItemBatchForm.value)} onClick={() => setWorkItemBatchConfirmOpen(true)}>应用</Button>
+                    {workItemSelection.size ? <Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemSelection(new Set())}>清空选择</Button> : null}
+                  </div> : null}
+                  {workItemBatchError ? <Feedback tone="danger" title="部分工作项未更新">{workItemBatchError}</Feedback> : null}
                   <ul className="work-item-list" aria-label={route.title}>
                     {workItemPage.items.map((item) => {
                       const detailPath = buildWorkItemDetailPath({ owner: workItemOwner, itemKey: item.key });
                       return (
                         <li key={item.key} className="work-item-row">
+                          {workItemPage.can_manage_work_items ? <input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /> : null}
                           <div className="work-item-main">
                             <div className="work-item-heading">
                               <span className="message-kind">{workItemTypeLabel(item.item_type)}</span>
@@ -4144,6 +4251,7 @@ export function SharedApp({ services }) {
                 </form>
               </Modal>
               <Modal open={Boolean(workItemSavedViewDeleteTarget)} title="删除保存视图" onClose={() => { if (!workItemSavedViewSubmitting) setWorkItemSavedViewDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemSavedViewSubmitting} onClick={() => void confirmWorkItemSavedViewDelete()}>确认删除</Button></>}><p>确认删除视图“{workItemSavedViewDeleteTarget?.name}”？</p></Modal>
+              <Modal open={workItemBatchConfirmOpen} title="确认批量更新" onClose={() => { if (!workItemBatchSubmitting) setWorkItemBatchConfirmOpen(false); }} footer={<><Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemBatchConfirmOpen(false)}>取消</Button><Button loading={workItemBatchSubmitting} onClick={() => void confirmWorkItemBatchUpdate()}>确认更新</Button></>}><p>将对已选择的 {workItemSelection.size} 个工作项执行批量更新。每个工作项独立提交，未成功的项目会保留选择。</p></Modal>
               <Modal open={workItemCreateOpen} title={workItemCreateLabel(route.itemType)} onClose={() => { if (!workItemCreateSubmitting) setWorkItemCreateOpen(false); }} footer={<><Button variant="secondary" disabled={workItemCreateSubmitting} onClick={() => setWorkItemCreateOpen(false)}>取消</Button><Button loading={workItemCreateSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('work-item-create-form'))?.requestSubmit()}>创建</Button></>}>
                 <form id="work-item-create-form" onSubmit={submitWorkItemCreate}>
                   <div className="field-grid">

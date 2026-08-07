@@ -137,6 +137,29 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     assert_eq!(created_item.parent_item_key, "YCE-REQ-1");
     let response = request(
         &app,
+        "POST",
+        "/api/v1/work-items/batch",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "project_key": "YCE", "item_type": "task", "item_keys": [created_item_key.clone()],
+            "action": "priority", "priority": "P2"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let batch_result = json_body(response).await;
+    assert_eq!(batch_result["data"]["updated_count"], 1);
+    assert_eq!(batch_result["data"]["failed_count"], 0);
+    assert_eq!(
+        projects::get_work_item_detail(&pool, &created_item_key)
+            .await
+            .unwrap()
+            .unwrap()
+            .priority,
+        "P2"
+    );
+    let response = request(
+        &app,
         "GET",
         &format!("/api/v1/projects/YCE/cycles/{cycle_id}"),
         &credentials.access_token,

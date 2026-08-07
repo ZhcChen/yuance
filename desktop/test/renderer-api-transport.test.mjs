@@ -107,6 +107,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.markNotificationRead(7);
   await client.markAllNotificationsRead();
   await client.createWorkItem({ projectKey: "DEMO", itemType: "task", title: "Implement", description: "Body", priority: "P1", assigneeUsername: "alice", cycleId: 7, dueDate: "2026-08-31", parentItemKey: "DEMO-REQ-1" });
+  await client.batchUpdateWorkItems({ projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-2"], action: "priority", priority: "P1" });
   await client.createWorkItemSavedView({ projectKey: "DEMO", itemType: "task", name: "Focus", status: "open", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true });
   await client.renameWorkItemSavedView(7, "Focus 2");
   await client.setDefaultWorkItemSavedView(7);
@@ -150,6 +151,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["notification.read", { notificationId: 7 }],
     ["notification.readall", {}],
     ["workitem.create", { projectKey: "DEMO", itemType: "task", title: "Implement", description: "Body", priority: "P1", assigneeUsername: "alice", cycleId: 7, dueDate: "2026-08-31", parentItemKey: "DEMO-REQ-1" }],
+    ["workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-2"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: "Focus", q: "", status: "open", priority: "", assigneeUsername: "", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true }],
     ["workitem.savedviewrename", { savedViewId: 7, name: "Focus 2" }],
     ["workitem.savedviewdefault", { savedViewId: 7 }],

@@ -232,6 +232,13 @@ function resolveMutationOperation(parsed, method, options) {
       item_type: "itemType", parent_item_key: "parentItemKey", project_key: "projectKey",
     }) };
   }
+  if (method === "POST" && parsed.pathname === "/api/v1/work-items/batch") {
+    const body = parseJsonBody(options, ["action", "assignee_username", "cycle_id", "item_keys", "item_type", "priority", "project_key", "status"]);
+    return { operation: "workitem.batchupdate", input: renameBody(body, {
+      assignee_username: "assigneeUsername", cycle_id: "cycleId", item_keys: "itemKeys",
+      item_type: "itemType", project_key: "projectKey",
+    }) };
+  }
   if (method === "POST" && parsed.pathname === "/api/v1/work-item-saved-views") {
     const body = parseJsonBody(options, ["assignee_username", "cycle_id", "is_default", "item_type", "name", "per_page", "priority", "project_key", "q", "sort", "status"]);
     return { operation: "workitem.savedviewcreate", input: renameBody(body, {

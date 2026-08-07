@@ -152,6 +152,15 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   assert.equal("project_id" in listView.parent_options[0], false);
   assert.equal("owner_id" in listView.saved_views[0], false);
   assert.equal("internal_path" in listView, false);
+  const batchResult = registry.resolve("workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-2"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }).parse({
+    updated_count: 1, updated_item_keys: ["DEMO-1"], failed_count: 1,
+    failed_items: [{ item_key: "DEMO-2", code: "conflict", message: "State changed", private_trace: "leak" }],
+    internal_request: "leak",
+  });
+  assert.equal(Object.isFrozen(batchResult), true);
+  assert.equal(Object.isFrozen(batchResult.failed_items[0]), true);
+  assert.equal("private_trace" in batchResult.failed_items[0], false);
+  assert.equal("internal_request" in batchResult, false);
 
   const search = registry.resolve("search.list", { q: "crash" }).parse({
     items: [{ kind: "bug", key: "DEMO-1", title: "Crash", context: "Details", target: "/web/work-items/DEMO-1", updated_at: "2026-08-07T00:00:00Z", signed_url: "https://evil.example" }],
@@ -209,6 +218,7 @@ test("rejects malformed or oversized business responses", () => {
   }), /invalid/i);
   assert.throws(() => registry.resolve("workitem.detail", { itemKey: "DEMO-1" }).parse({}), /invalid/i);
   assert.throws(() => registry.resolve("workitem.comments", { itemKey: "DEMO-1" }).parse("not-an-array"), /invalid/i);
+  assert.throws(() => registry.resolve("workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }).parse({ updated_count: 2, updated_item_keys: ["DEMO-1"], failed_count: 0, failed_items: [] }), /invalid/i);
   assert.throws(() => registry.resolve("notification.list", {}).parse({
     items: Array.from({ length: 101 }, () => ({})), unread_count: 0, pending_count: 0,
     filter: "all", page: 1, per_page: 20, total_items: 101, total_pages: 6,
@@ -271,6 +281,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
     ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
     ["workitem.create", { projectKey: "DEMO", itemType: "task", title: "Implement", description: "Body", priority: "P1", assigneeUsername: "alice", cycleId: 7, dueDate: "2026-08-31", parentItemKey: "DEMO-REQ-1" }, "POST", "/api/v1/work-items", { project_key: "DEMO", item_type: "task", title: "Implement", description: "Body", priority: "P1", assignee_username: "alice", cycle_id: 7, due_date: "2026-08-31", parent_item_key: "DEMO-REQ-1" }],
+    ["workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-2"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }, "POST", "/api/v1/work-items/batch", { project_key: "DEMO", item_type: "task", item_keys: ["DEMO-1", "DEMO-2"], action: "priority", status: "", assignee_username: "", priority: "P1", cycle_id: null }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: "Focus", q: "", status: "open", priority: "P1", assigneeUsername: "alice", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true }, "POST", "/api/v1/work-item-saved-views", { project_key: "DEMO", item_type: "task", name: "Focus", q: "", status: "open", priority: "P1", assignee_username: "alice", cycle_id: "7", sort: "updated_desc", per_page: 20, is_default: true }],
     ["workitem.savedviewrename", { savedViewId: 7, name: "Focus 2" }, "PATCH", "/api/v1/work-item-saved-views/7", { name: "Focus 2" }],
     ["workitem.savedviewdefault", { savedViewId: 7 }, "POST", "/api/v1/work-item-saved-views/7/default", undefined],
@@ -314,6 +325,9 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
     ["workitem.create", { projectKey: "demo", itemType: "task", title: "Implement", description: "", priority: "P2", assigneeUsername: "", cycleId: null, dueDate: "", parentItemKey: "" }],
     ["workitem.create", { projectKey: "DEMO", itemType: "incident", title: "Implement", description: "", priority: "P2", assigneeUsername: "", cycleId: null, dueDate: "", parentItemKey: "" }],
     ["workitem.create", { projectKey: "DEMO", itemType: "task", title: " ", description: "", priority: "P2", assigneeUsername: "", cycleId: null, dueDate: "", parentItemKey: "" }],
+    ["workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: [], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }],
+    ["workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1", "DEMO-1"], action: "priority", status: "", assigneeUsername: "", priority: "P1", cycleId: null }],
+    ["workitem.batchupdate", { projectKey: "DEMO", itemType: "task", itemKeys: ["DEMO-1"], action: "priority", status: "open", assigneeUsername: "", priority: "P1", cycleId: null }],
     ["workitem.savedviewcreate", { projectKey: "demo", itemType: "task", name: "Focus", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "incident", name: "Focus", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
     ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: " ", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],

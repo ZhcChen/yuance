@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  batchUpdateWorkItems,
   createWorkItemAttachment,
   createWorkItemCommentAttachment,
   createWorkItemCommentDraft,
@@ -34,6 +35,25 @@ import {
   updateProjectResource,
   unlockProjectResource,
 } from '../src/lib/api.js';
+
+test('batch work item updates are exposed through the bounded browser API adapter', async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url === '/api/v1/auth/csrf') return jsonResponse({ refreshed: true });
+    return jsonResponse({ updated_count: 1, updated_item_keys: ['YCE-TASK-1'], failed_count: 0, failed_items: [] });
+  };
+  try {
+    const result = await batchUpdateWorkItems({ projectKey: 'YCE', itemType: 'task', itemKeys: ['YCE-TASK-1'], action: 'priority', priority: 'P1' });
+    assert.equal(result.updated_count, 1);
+    assert.equal(calls.at(-1).url, '/api/v1/work-items/batch');
+    assert.equal(calls.at(-1).options.method, 'POST');
+    assert.equal(new Headers(calls.at(-1).options.headers).get('content-type'), 'application/json');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 function jsonResponse(data, init = {}) {
   const body = init.error

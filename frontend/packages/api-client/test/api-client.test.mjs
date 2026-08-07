@@ -219,6 +219,18 @@ test('createWorkItem uses the complete shared creation contract', async () => {
   });
 });
 
+test('batchUpdateWorkItems uses the fixed partial-result contract', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.batchUpdateWorkItems({ projectKey: 'YCE', itemType: 'task', itemKeys: ['YCE-1', 'YCE-2'], action: 'priority', priority: 'P1' });
+  assert.deepEqual(writes, ['prepare']);
+  assert.equal(calls[0].url, '/api/v1/work-items/batch');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    project_key: 'YCE', item_type: 'task', item_keys: ['YCE-1', 'YCE-2'], action: 'priority',
+    status: '', assignee_username: '', priority: 'P1', cycle_id: null,
+  });
+});
+
 test('work item saved views use fixed JSON mutation contracts', async () => {
   const { client, calls, writes } = createRecordedClient();
   await client.createWorkItemSavedView({ projectKey: 'YCE', itemType: 'task', name: '重点任务', status: 'open', cycleId: '7', sort: 'updated_desc', perPage: 20, isDefault: true });

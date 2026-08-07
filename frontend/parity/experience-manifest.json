@@ -10,6 +10,7 @@
     { "path": "/api/v1/work-items/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.work-item-list.requirements", "page.work-item-detail.detail", "action.work-item.create"], "purpose": "工作项、评论和附件共享 DTO 与 mutation" },
     { "path": "/api/v1/work-item-list-view", "methods": ["GET"], "owners": ["page.work-item-list.requirements", "page.work-item-list.tasks", "page.work-item-list.bugs"], "purpose": "Web 与 Desktop 原子读取工作项列表视图" },
     { "path": "/api/v1/work-item-saved-views/**", "methods": ["POST", "PATCH", "DELETE"], "owners": ["action.work-item.saved-view.create", "action.work-item.saved-view.rename", "action.work-item.saved-view.default", "action.work-item.saved-view.delete"], "purpose": "Web 与 Desktop 共享保存视图生命周期" },
+    { "path": "/api/v1/work-items/batch", "methods": ["POST"], "owners": ["action.work-item.batch.update"], "purpose": "Web 与 Desktop 共享逐项批量更新与部分失败结果" },
     { "path": "/api/v1/projects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail", "page.project.resource-detail", "action.project.resource.create"], "purpose": "项目文件、资源和附件共享 DTO 与 mutation" },
     { "path": "/api/v1/file-objects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail"], "purpose": "项目文件夹和文件对象操作" },
     { "path": "/api/v1/system/database-stats", "methods": ["GET"], "owners": ["page.system.database-stats"], "purpose": "数据库统计分页刷新" },
@@ -906,13 +907,14 @@
       "validation": "至少选择一项，动作及参数受控，所有项目和字段权限逐项校验。",
       "confirmation": "关闭、恢复或跨多项变更显示动作及选中数量。",
       "request": { "method": "POST", "path": "/web/work-items/batch" },
+      "apiEffects": [{ "phase": "primary", "method": "POST", "path": "/api/v1/work-items/batch", "purpose": "逐项事务更新并返回成功项与稳定失败原因" }],
       "successEffect": "逐项执行并报告成功与失败，清除已成功和已离开当前结果集的选择。",
       "errorEffects": ["部分失败保留失败项选择和逐项原因", "权限变化", "项目状态冲突", "全部失败保持原列表"],
       "realtimeEffect": "受影响列表、指标、详情和项目计数定向失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["api/tests/device_business_parity_flow.rs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-024-web-desktop-u4-work-item-batch-review.md"] }
     },
     {
       "id": "action.work-item.saved-view.create",

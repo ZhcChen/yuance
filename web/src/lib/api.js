@@ -103,6 +103,7 @@ export const getWorkItems = /** @type {(query?: { itemType?: string, q?: string,
 
 export const getWorkItemListView = apiClient.getWorkItemListView;
 export const createWorkItem = apiClient.createWorkItem;
+export const batchUpdateWorkItems = apiClient.batchUpdateWorkItems;
 export const createWorkItemSavedView = apiClient.createWorkItemSavedView;
 export const renameWorkItemSavedView = apiClient.renameWorkItemSavedView;
 export const setDefaultWorkItemSavedView = apiClient.setDefaultWorkItemSavedView;
@@ -213,6 +214,7 @@ export const webApi = {
   getWorkItemListView,
   getWorkItems,
   createWorkItem,
+  batchUpdateWorkItems,
   createWorkItemSavedView,
   renameWorkItemSavedView,
   setDefaultWorkItemSavedView,

@@ -82,6 +82,7 @@
     "POST /api/v1/work-item-saved-views/{saved_view_id}/default",
     "GET /api/v1/work-items",
     "POST /api/v1/work-items",
+    "POST /api/v1/work-items/batch",
     "GET /api/v1/work-items/{item_key}",
     "PATCH /api/v1/work-items/{item_key}",
     "POST /api/v1/work-items/{item_key}/handoff",
@@ -1324,6 +1325,19 @@
             "description": "共享工作项列表完整视图",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemListViewEnvelope"}}}
           },
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/batch": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "批量更新工作项",
+        "description": "最多接收 100 个唯一工作项编号。每个工作项独立提交，响应分别返回成功项和失败项，供共享页面仅保留失败项选择。",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BatchUpdateWorkItemsRequest"}}}},
+        "responses": {
+          "200": {"description": "批量处理结果", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/BatchUpdateWorkItemsEnvelope"}}}},
           "400": {"$ref": "#/components/responses/Error"},
           "403": {"$ref": "#/components/responses/Error"}
         }
@@ -3414,6 +3428,48 @@
           "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
           "per_page": {"type": "integer"},
           "is_default": {"type": "boolean"}
+        }
+      },
+      "BatchUpdateWorkItemsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["project_key", "item_type", "item_keys", "action"],
+        "properties": {
+          "project_key": {"type": "string"},
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "item_keys": {"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": {"type": "string"}},
+          "action": {"type": "string", "enum": ["assignee", "status", "priority", "cycle"]},
+          "status": {"type": "string"},
+          "assignee_username": {"type": "string"},
+          "priority": {"type": "string", "enum": ["", "P0", "P1", "P2", "P3"]},
+          "cycle_id": {"type": ["integer", "null"], "minimum": 1}
+        }
+      },
+      "BatchUpdateWorkItemsEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["updated_count", "updated_item_keys", "failed_count", "failed_items"],
+            "properties": {
+              "updated_count": {"type": "integer", "minimum": 0, "maximum": 100},
+              "updated_item_keys": {"type": "array", "maxItems": 100, "items": {"type": "string"}},
+              "failed_count": {"type": "integer", "minimum": 0, "maximum": 100},
+              "failed_items": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["item_key", "code", "message"],
+                  "properties": {"item_key": {"type": "string"}, "code": {"type": "string"}, "message": {"type": "string"}}
+                }
+              }
+            }
+          }
         }
       },
       "WorkItemSavedViewEnvelope": {

@@ -1442,6 +1442,38 @@ pub struct RenameWorkItemSavedViewRequest {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchUpdateWorkItemsRequest {
+    project_key: String,
+    item_type: String,
+    item_keys: Vec<String>,
+    action: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    cycle_id: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchUpdateWorkItemFailurePayload {
+    pub item_key: String,
+    pub code: &'static str,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchUpdateWorkItemsPayload {
+    pub updated_count: usize,
+    pub updated_item_keys: Vec<String>,
+    pub failed_count: usize,
+    pub failed_items: Vec<BatchUpdateWorkItemFailurePayload>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateCommentRequest {
     body: String,
     #[serde(default)]
@@ -3001,6 +3033,137 @@ pub async fn create_work_item(
     .await?;
 
     Ok((StatusCode::CREATED, json(work_item_detail_payload(item))))
+}
+
+pub async fn batch_update_work_items(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<BatchUpdateWorkItemsRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<BatchUpdateWorkItemsPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    let project = projects::get_project_detail(pool, &payload.project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+
+    let action_target_is_valid = match payload.action.trim() {
+        "assignee" => {
+            !payload.assignee_username.trim().is_empty()
+                && payload.status.trim().is_empty()
+                && payload.priority.trim().is_empty()
+                && payload.cycle_id.is_none()
+        }
+        "status" => {
+            !payload.status.trim().is_empty()
+                && payload.assignee_username.trim().is_empty()
+                && payload.priority.trim().is_empty()
+                && payload.cycle_id.is_none()
+        }
+        "priority" => {
+            !payload.priority.trim().is_empty()
+                && payload.status.trim().is_empty()
+                && payload.assignee_username.trim().is_empty()
+                && payload.cycle_id.is_none()
+        }
+        "cycle" => {
+            payload.status.trim().is_empty()
+                && payload.assignee_username.trim().is_empty()
+                && payload.priority.trim().is_empty()
+        }
+        _ => false,
+    };
+    if !action_target_is_valid {
+        return Err(AppError::BadRequest(
+            "批量操作动作与目标参数不匹配".to_string(),
+        ));
+    }
+
+    if payload.item_keys.len() > 100 {
+        return Err(AppError::BadRequest(
+            "单次最多只能批量操作 100 个工作项".to_string(),
+        ));
+    }
+    let mut item_keys = Vec::new();
+    for item_key in payload.item_keys {
+        let item_key = item_key.trim().to_ascii_uppercase();
+        if item_keys.contains(&item_key) {
+            return Err(AppError::BadRequest("工作项编号不能重复".to_string()));
+        }
+        item_keys.push(item_key);
+    }
+    if item_keys.is_empty() {
+        return Err(AppError::BadRequest("请至少选择一个工作项".to_string()));
+    }
+
+    let mut updated_item_keys = Vec::new();
+    let mut failed_items = Vec::new();
+    for item_key in item_keys {
+        let result = projects::batch_update_work_items(
+            pool,
+            user.id,
+            projects::BatchUpdateWorkItemsInput {
+                project_key: payload.project_key.clone(),
+                item_type: payload.item_type.clone(),
+                item_keys: vec![item_key.clone()],
+                action: payload.action.clone(),
+                status: payload.status.clone(),
+                assignee_username: payload.assignee_username.clone(),
+                priority: payload.priority.clone(),
+                cycle_id: payload.cycle_id,
+                actor_display_name_snapshot: principal.actor_display_name_snapshot(),
+            },
+        )
+        .await;
+        match result {
+            Ok(_) => updated_item_keys.push(item_key),
+            Err(error @ (AppError::Database(_) | AppError::Io(_))) => return Err(error),
+            Err(error) => {
+                let code = match &error {
+                    AppError::BadRequest(_) => "bad_request",
+                    AppError::Conflict(_) => "conflict",
+                    AppError::Forbidden(_) => "forbidden",
+                    AppError::NotFound(_) => "not_found",
+                    _ => "operation_failed",
+                };
+                failed_items.push(BatchUpdateWorkItemFailurePayload {
+                    item_key,
+                    code,
+                    message: error.to_string(),
+                });
+            }
+        }
+    }
+
+    let response = BatchUpdateWorkItemsPayload {
+        updated_count: updated_item_keys.len(),
+        updated_item_keys,
+        failed_count: failed_items.len(),
+        failed_items,
+    };
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.batch.update",
+        "project",
+        &project.project_key,
+        &serde_json::json!({
+            "action": payload.action,
+            "updated_count": response.updated_count,
+            "failed_count": response.failed_count,
+            "updated_item_keys": response.updated_item_keys,
+            "failed_item_keys": response.failed_items.iter().map(|item| &item.item_key).collect::<Vec<_>>(),
+        })
+        .to_string(),
+    )
+    .await?;
+
+    Ok(json(response))
 }
 
 pub async fn get_work_item(

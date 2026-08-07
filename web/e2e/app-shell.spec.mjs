@@ -359,6 +359,51 @@ test('shared work item creation covers requirement task and bug contracts', asyn
   await expect(page.getByRole('heading', { level: 2, name: /共享缺陷创建验收/u })).toBeVisible();
 });
 
+test('shared batch selection spans pages and retains only partial failures', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  const batchRequests = [];
+  await page.route('**/api/v1/work-item-list-view**', async (route) => {
+    const pageNumber = Number(new URL(route.request().url()).searchParams.get('page') || 1);
+    const item = pageNumber === 1
+      ? { key: 'YCE-TASK-1', item_type: 'task', title: '第一页任务', status: 'open', priority: 'P0', project_key: 'YCE', project_name: '元策研发', assignee: '系统管理员', updated_at: '2026-08-07T00:00:00Z' }
+      : { key: 'YCE-TASK-2', item_type: 'task', title: '第二页任务', status: 'in_progress', priority: 'P0', project_key: 'YCE', project_name: '元策研发', assignee: '系统管理员', updated_at: '2026-08-07T00:00:00Z' };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      items: [item], pagination: { page: pageNumber, per_page: 1, total_items: 2, total_pages: 2 },
+      summary: { total_items: 2, active_items: 2, high_priority_items: 2 },
+      filters: { item_type: 'task', q: '', status: '', priority: '', project_key: 'YCE', assignee_username: '', cycle_id: '', sort: 'updated_desc' },
+      assignees: [{ username: 'yuance_admin', display_name: '系统管理员' }], cycles: [], parent_options: [], saved_views: [], can_manage_work_items: true,
+    } }) });
+  });
+  await page.route('**/api/v1/work-items/batch', async (route) => {
+    batchRequests.push(route.request().postDataJSON());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      updated_count: 1, updated_item_keys: ['YCE-TASK-1'], failed_count: 1,
+      failed_items: [{ item_key: 'YCE-TASK-2', code: 'conflict', message: '数据冲突：状态已变化' }],
+    } }) });
+  });
+
+  await page.goto('/web/app/tasks?per_page=1');
+  await page.getByLabel('选择 YCE-TASK-1').check();
+  await expect(page.getByText('已选择 1 项')).toBeVisible();
+  await page.getByRole('button', { name: '下一页' }).click();
+  await page.getByLabel('选择 YCE-TASK-2').check();
+  await expect(page.getByText('已选择 2 项')).toBeVisible();
+  await page.getByLabel('目标优先级').selectOption('P1');
+  await page.getByRole('button', { name: '应用' }).click();
+  const confirmation = page.getByRole('dialog', { name: '确认批量更新' });
+  await expect(confirmation).toContainText('已选择的 2 个工作项');
+  await confirmation.getByRole('button', { name: '确认更新' }).evaluate((button) => { button.click(); button.click(); });
+
+  await expect.poll(() => batchRequests.length).toBe(1);
+  expect(batchRequests[0].item_keys).toEqual(['YCE-TASK-1', 'YCE-TASK-2']);
+  await expect(page.getByText('已选择 1 项')).toBeVisible();
+  await expect(page.getByLabel('选择 YCE-TASK-2')).toBeChecked();
+  await expect(page.getByRole('alert')).toContainText('YCE-TASK-2');
+  await page.locator('.work-item-filter-bar input[name="q"]').fill('新筛选');
+  await page.locator('.work-item-filter-bar').getByRole('button', { name: '筛选' }).click();
+  await expect(page.getByText('已选择 0 项')).toBeVisible();
+});
+
 test('shared work item lists hide creation when the atomic contract is read only', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
@@ -371,6 +416,8 @@ test('shared work item lists hide creation when the atomic contract is read only
   await page.goto('/web/app/tasks');
   await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
   await expect(page.getByRole('button', { name: '新建任务' })).toHaveCount(0);
+  await expect(page.getByLabel('批量操作')).toHaveCount(0);
+  await expect(page.getByLabel(/选择 YCE-TASK/u)).toHaveCount(0);
 });
 
 test('work item detail can edit and handoff through app shell forms', async ({ page }) => {

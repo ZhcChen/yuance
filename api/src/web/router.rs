@@ -913,6 +913,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_work_items).post(web::api::create_work_item),
         )
         .route(
+            "/api/v1/work-items/batch",
+            post(web::api::batch_update_work_items),
+        )
+        .route(
             "/api/v1/work-item-list-view",
             get(web::api::get_work_item_list_view),
         )

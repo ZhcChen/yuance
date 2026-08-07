@@ -18,8 +18,10 @@ const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
 const WORK_ITEM_STATUSES = new Set(["open", "in_progress", "pending_confirmation", "done", "verified", "resolved", "closed", "cancelled"]);
+const WORK_ITEM_BATCH_STATUSES = new Set(["", ...WORK_ITEM_STATUSES]);
 const WORK_ITEM_SAVED_VIEW_STATUSES = new Set(["", "pending", ...WORK_ITEM_STATUSES]);
 const WORK_ITEM_SORTS = new Set(["", "updated_desc", "created_desc", "priority_desc", "due_date_asc"]);
+const WORK_ITEM_BATCH_ACTIONS = new Set(["assignee", "status", "priority", "cycle"]);
 const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
@@ -76,6 +78,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.list", workItemListOperation],
     ["workitem.listview", workItemListViewOperation],
     ["workitem.create", workItemCreateOperation],
+    ["workitem.batchupdate", workItemBatchUpdateOperation],
     ["workitem.savedviewcreate", workItemSavedViewCreateOperation],
     ["workitem.savedviewrename", workItemSavedViewRenameOperation],
     ["workitem.savedviewdefault", workItemSavedViewDefaultOperation],
@@ -449,6 +452,29 @@ function workItemCreateOperation(input) {
   return descriptor("POST", "/api/v1/work-items", parseWorkItemDetail, false, "object", jsonBody(body));
 }
 
+function workItemBatchUpdateOperation(input) {
+  exactKeys(input, ["action", "assigneeUsername", "cycleId", "itemKeys", "itemType", "priority", "projectKey", "status"]);
+  const action = requiredEnum(input.action, WORK_ITEM_BATCH_ACTIONS, "action", false);
+  const itemKeys = boundedArray(input.itemKeys, itemKey, 100, "itemKeys");
+  if (itemKeys.length === 0 || new Set(itemKeys).size !== itemKeys.length) throw new TypeError("itemKeys is invalid");
+  const body = {
+    project_key: projectKey(input.projectKey),
+    item_type: requiredEnum(input.itemType, ITEM_TYPES, "itemType", false),
+    item_keys: itemKeys,
+    action,
+    status: optionalEnum(input.status, WORK_ITEM_BATCH_STATUSES, "status", ""),
+    assignee_username: input.assigneeUsername === undefined ? "" : optionalUsername(input.assigneeUsername),
+    priority: optionalEnum(input.priority, ITEM_PRIORITIES, "priority", ""),
+    cycle_id: input.cycleId === undefined ? null : nullablePositiveInteger(input.cycleId),
+  };
+  const validTarget = (action === "assignee" && body.assignee_username && !body.status && !body.priority && body.cycle_id === null)
+    || (action === "status" && body.status && !body.assignee_username && !body.priority && body.cycle_id === null)
+    || (action === "priority" && body.priority && !body.assignee_username && !body.status && body.cycle_id === null)
+    || (action === "cycle" && !body.assignee_username && !body.status && !body.priority);
+  if (!validTarget) throw new TypeError("batch action target is invalid");
+  return descriptor("POST", "/api/v1/work-items/batch", parseWorkItemBatchResult, false, "object", jsonBody(body));
+}
+
 function workItemSavedViewCreateOperation(input) {
   exactKeys(input, ["assigneeUsername", "cycleId", "isDefault", "itemType", "name", "perPage", "priority", "projectKey", "q", "sort", "status"]);
   const cycleId = optionalText(input.cycleId, "cycleId", 20);
@@ -670,6 +696,16 @@ function parseWorkItemListFilter(value) { return freezeDto(value, {
 function parseWorkItemSavedView(value) { return freezeDto(value, {
   id: positiveInteger, name: textString, filters: parseWorkItemListFilter, per_page: positiveInteger, is_default: boolean,
 }); }
+function parseWorkItemBatchResult(value) {
+  const result = freezeDto(value, {
+    updated_count: nonNegativeInteger,
+    updated_item_keys: (items) => boundedArray(items, shortString, 100, "updated item keys"),
+    failed_count: nonNegativeInteger,
+    failed_items: (items) => boundedArray(items, (item) => freezeDto(item, { item_key: shortString, code: shortString, message: textString }), 100, "failed items"),
+  });
+  if (result.updated_count !== result.updated_item_keys.length || result.failed_count !== result.failed_items.length || result.updated_count + result.failed_count > 100) throw new TypeError("work item batch result is invalid");
+  return result;
+}
 function parseWorkItemSummary(value) { return freezeDto(value, {
   key: shortString, item_type: shortString, title: textString, status: shortString, priority: shortString,
   project_key: shortString, project_name: shortString, assignee: shortString, updated_at: shortString,

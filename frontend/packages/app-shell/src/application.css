@@ -541,6 +541,31 @@ h2 {
   margin: 0;
 }
 
+.work-item-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--yc-line);
+  background: var(--yc-panel-soft);
+}
+
+.work-item-batch-bar select {
+  min-height: 2.25rem;
+  max-width: 14rem;
+}
+
+.work-item-batch-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-item-selection-checkbox {
+  flex: 0 0 auto;
+}
+
 .work-item-row {
   display: flex;
   justify-content: space-between;
