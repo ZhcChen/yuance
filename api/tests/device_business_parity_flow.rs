@@ -33,6 +33,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         "/api/v1/projects",
         "/api/v1/projects/YCE",
         "/api/v1/projects/YCE/members",
+        "/api/v1/projects/YCE/resources",
         "/api/v1/current-project",
         "/api/v1/topbar/status",
         "/api/v1/notifications",
@@ -106,6 +107,46 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["is_closed"], true);
+
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/projects/YCE/resources",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "title": "Device parity resource", "category": "integration",
+            "body": "device-resource-body", "body_format": "plain",
+            "tags": ["device-parity"]
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let resource_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    let response = request(
+        &app,
+        "PATCH",
+        &format!("/api/v1/projects/YCE/resources/{resource_id}"),
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "title": "Device parity resource updated", "body": "updated-device-resource-body"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        json_body(response).await["data"]["title"],
+        "Device parity resource updated"
+    );
+    let response = request(
+        &app,
+        "DELETE",
+        &format!("/api/v1/projects/YCE/resources/{resource_id}"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "archived");
 
     device_sessions::revoke_family_for_user(
         &pool,
@@ -235,6 +276,18 @@ async fn device_principal_does_not_bypass_project_membership_or_viewer_role() {
         "/api/v1/projects/YCE",
         &credentials.access_token,
         Some(serde_json::json!({"description": "forbidden viewer project mutation"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/projects/YCE/resources",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "title": "forbidden viewer resource", "category": "other", "body": "no"
+        })),
     )
     .await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);

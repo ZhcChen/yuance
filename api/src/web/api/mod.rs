@@ -3574,7 +3574,7 @@ pub async fn create_project_resource(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateProjectResourceRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3642,7 +3642,7 @@ pub async fn update_project_resource(
     Path((project_key, resource_id)): Path<(String, i64)>,
     Json(payload): Json<UpdateProjectResourceRequest>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
@@ -3699,7 +3699,7 @@ pub async fn archive_project_resource(
     headers: HeaderMap,
     Path((project_key, resource_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<ProjectResourcePayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let (user, project, resource) =
         require_api_project_resource_context(&state, &headers, &project_key, resource_id).await?;
     ensure_api_csrf(&headers)?;
