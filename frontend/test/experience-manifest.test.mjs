@@ -97,5 +97,9 @@ test('页面只拥有读取入口且每个 route method 只有一个 contract ow
   }
   for (const action of manifest.actions) {
     register(`${action.request.method} ${action.request.path}`, action.id);
+    for (const effect of action.apiEffects ?? []) {
+      assert.ok(effect.path.startsWith('/api/'), `${action.id} 的动态 API effect 必须使用 /api 路径`);
+      assert.ok(effect.purpose.length > 0, `${action.id} 的动态 API effect 必须说明业务目的`);
+    }
   }
 });
