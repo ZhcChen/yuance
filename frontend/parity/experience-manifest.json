@@ -718,8 +718,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/renderer-composition.test.mjs", "desktop/test/file-commands.test.mjs", "desktop/test/project-attachment-preview-coordinator.test.mjs"], "reviews": ["docs/reviews/2026-08-07-008-web-desktop-u3-project-attachment-preview-ui-review.md"] }
     },
     {
       "id": "action.project.attachment.preview-content",
@@ -734,8 +734,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/preview-content-loader.test.mjs", "desktop/test/preview-capability-vault.test.mjs", "desktop/test/preview-protocol.test.mjs", "desktop/test/preview-spool.test.mjs"], "reviews": ["docs/reviews/2026-08-07-007-web-desktop-u3-project-attachment-preview-api-review.md", "docs/reviews/2026-08-07-008-web-desktop-u3-project-attachment-preview-ui-review.md"] }
     },
     {
       "id": "action.project.resource.create",

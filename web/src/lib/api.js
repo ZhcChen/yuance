@@ -63,6 +63,7 @@ export const createProjectCycle = apiClient.createProjectCycle;
 export const updateProjectCycle = apiClient.updateProjectCycle;
 export const closeProjectCycle = apiClient.closeProjectCycle;
 export const getProjectAttachments = apiClient.getProjectAttachments;
+export const getProjectAttachmentPreview = apiClient.getProjectAttachmentPreview;
 export const createProjectAttachment = apiClient.createProjectAttachment;
 export const getProjectAttachmentUploadUrl = apiClient.getProjectAttachmentUploadUrl;
 export const markProjectAttachmentUploaded = apiClient.markProjectAttachmentUploaded;
@@ -158,6 +159,7 @@ export const webApi = {
   getOwnProfile,
   getProject,
   getProjectAttachmentDownloadUrl,
+  getProjectAttachmentPreview,
   getProjectAttachmentUploadUrl,
   getProjectAttachments,
   getProjectCycle,

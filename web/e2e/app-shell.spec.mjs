@@ -1609,6 +1609,60 @@ test('shared project files cover empty upload download and archive lifecycle', a
   await expect(fileList.getByRole('button', { name: '归档' })).toHaveCount(0);
 });
 
+test('shared project files preview images and navigate to bounded fallbacks', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const attachments = [
+    attachmentFixture({ id: 711, filename: 'overview.png', content_type: 'image/png', byte_size: 68 }),
+    attachmentFixture({ id: 712, filename: 'release-plan.pdf', content_type: 'application/pdf' }),
+    attachmentFixture({ id: 713, filename: 'archive.bin', content_type: 'application/octet-stream' }),
+  ];
+  const previewRequests = [];
+  const previewPayload = (index, kind, fileType) => ({
+    attachment: attachments[index],
+    preview: { kind, strategy: kind === 'image' ? 'image' : kind ? 'pdf' : null, file_type: fileType, kind_label: fileType?.toUpperCase() || null, is_experimental: false, legacy_preview_enabled: false, content_enabled: Boolean(kind) },
+    navigation: {
+      position: index + 1,
+      total: attachments.length,
+      previous: index > 0 ? { id: attachments[index - 1].id, title: attachments[index - 1].filename, url: `/api/v1/projects/YCE/attachments/${attachments[index - 1].id}/preview` } : null,
+      next: index < attachments.length - 1 ? { id: attachments[index + 1].id, title: attachments[index + 1].filename, url: `/api/v1/projects/YCE/attachments/${attachments[index + 1].id}/preview` } : null,
+    },
+    content_url: `/api/v1/projects/YCE/attachments/${attachments[index].id}/preview/content`,
+    download_url: `/api/v1/projects/YCE/attachments/${attachments[index].id}/download`,
+  });
+
+  await page.route('**/api/v1/projects/YCE/attachments/*/preview', async (route) => {
+    const attachmentId = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+    previewRequests.push(attachmentId);
+    const index = attachments.findIndex((attachment) => attachment.id === attachmentId);
+    const payload = index === 0 ? previewPayload(index, 'image', 'png') : index === 1 ? previewPayload(index, 'document', 'pdf') : previewPayload(index, null, null);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: payload }) });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments/711/preview/content', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: '' }));
+  await page.route('**/api/v1/projects/YCE/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE?tab=files');
+  const fileList = page.getByRole('list', { name: '项目文件列表' });
+  await fileList.getByRole('button', { name: '预览附件 overview.png' }).click();
+  const preview = page.getByRole('dialog', { name: 'overview.png' });
+  await expect(preview).toBeVisible();
+  await expect(preview.getByRole('img', { name: 'overview.png' })).toHaveAttribute('src', '/api/v1/projects/YCE/attachments/711/preview/content');
+  await expect(preview).toContainText('1 / 3');
+
+  await preview.getByRole('button', { name: '下一个' }).click();
+  await expect(page.getByRole('dialog', { name: 'release-plan.pdf' })).toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
+  await expect(page.getByRole('dialog', { name: 'release-plan.pdf' })).toContainText('2 / 3');
+  await page.getByRole('dialog', { name: 'release-plan.pdf' }).getByRole('button', { name: '下一个' }).click();
+  const unsupportedPreview = page.getByRole('dialog', { name: 'archive.bin' });
+  await expect(unsupportedPreview).toContainText('此文件类型不支持预览。');
+  await expect(unsupportedPreview.getByRole('button', { name: '下载' })).toBeVisible();
+  await unsupportedPreview.getByRole('button', { name: '关闭附件预览' }).click();
+  await expect(unsupportedPreview).not.toBeVisible();
+  expect(previewRequests).toEqual([711, 712, 713]);
+});
+
 test('shared project files hide upload and archive actions from viewers', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const attachment = attachmentFixture({ id: 702, filename: 'viewer-readable.txt', content_type: 'text/plain' });

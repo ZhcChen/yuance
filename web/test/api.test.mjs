@@ -7,6 +7,7 @@ import {
   createWorkItemCommentDraft,
   createWorkItemComment,
   getWorkItemAttachmentUploadUrl,
+  getProjectAttachmentPreview,
   getWorkItemCommentAttachmentDownloadUrl,
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,
@@ -61,6 +62,23 @@ function signedUrlPayload(overrides = {}) {
     expires_in_seconds: 300,
   };
 }
+
+test('project attachment preview is exposed through the bounded browser API adapter', async () => {
+  await withFetchQueue([
+    jsonResponse({
+      attachment: attachmentPayload(),
+      preview: { kind: 'document', strategy: 'pdf', file_type: 'pdf', kind_label: 'PDF', is_experimental: false, legacy_preview_enabled: false, content_enabled: true },
+      navigation: { position: 1, total: 1, previous: null, next: null },
+      content_url: '/api/v1/projects/YCE/attachments/7/preview/content',
+      download_url: '/api/v1/projects/YCE/attachments/7/download-url',
+    }),
+  ], async (calls) => {
+    const result = await getProjectAttachmentPreview('YCE', 7);
+    assert.equal(result.preview.kind, 'document');
+    assert.equal(calls[0].url, '/api/v1/projects/YCE/attachments/7/preview');
+    assert.equal(calls[0].options.method, undefined);
+  });
+});
 
 async function withFetchQueue(responses, callback) {
   const originalFetch = globalThis.fetch;

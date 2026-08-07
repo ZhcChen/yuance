@@ -122,6 +122,8 @@ test("desktop app file adapter delegates business attachments and rejects signed
     downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
     downloadProjectAttachment: async () => ({ status: "cancelled" }),
+    openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
+    releaseProjectAttachmentPreview: async (capability) => { calls.push(capability); return { status: "released", privatePath: "/secret" }; },
     revealDownload: async (capability) => { calls.push(capability); return { status: "revealed", path: "/secret" }; },
   };
   const platform = createDesktopAppFiles(bridge);
@@ -135,9 +137,32 @@ test("desktop app file adapter delegates business attachments and rejects signed
   assert.equal(typeof downloaded.revealCapability, "string");
   assert.ok(downloaded.revealCapability);
   assert.deepEqual(await platform.attachments.revealDownload(downloaded.revealCapability), { status: "revealed" });
+  const preview = await platform.attachments.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 9 });
+  assert.equal(preview.source, `app://yuance/.preview/${preview.capability}`);
+  assert.equal(preview.preview.kind, "image");
+  assert.equal(JSON.stringify(preview).includes("secret"), false);
+  assert.deepEqual(await platform.attachments.releaseProjectAttachmentPreview(preview.capability), { status: "released" });
   assert.throws(() => platform.transfers.authorizeSignedRequest(), /unavailable/);
   assert.equal(JSON.stringify(result).includes("secret"), false);
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
+});
+
+test("desktop preview adapter rejects a content source that is not bound to its capability", async () => {
+  const bridge = {
+    choose: async () => null,
+    uploadCanary: async () => ({ status: "cancelled" }),
+    downloadCanary: async () => ({ status: "cancelled" }),
+    uploadWorkItemAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadProjectAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    downloadWorkItemAttachment: async () => ({ status: "cancelled" }),
+    downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
+    downloadProjectAttachment: async () => ({ status: "cancelled" }),
+    openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: "https://example.test/private", contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
+    releaseProjectAttachmentPreview: async () => ({ status: "released" }),
+    revealDownload: async () => ({ status: "revealed" }),
+  };
+  await assert.rejects(createDesktopAppFiles(bridge).attachments.openProjectAttachmentPreview({ projectKey: "YCE", attachmentId: 9 }), /preview result is invalid/);
 });
 
 function attachment(status) {

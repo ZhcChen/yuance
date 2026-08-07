@@ -26,6 +26,7 @@ import {
 } from '@yuance/frontend-app-core';
 import {
   AttachmentList,
+  AttachmentPreview,
   Button,
   DataTable,
   Feedback,
@@ -40,6 +41,7 @@ import {
 import { errorMessage } from './errors.js';
 
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
+/** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
 
 /** @typedef {Omit<ReturnType<typeof import('@yuance/frontend-api-client').createApiClient>, 'createWorkItemCommentDraft' | 'publishWorkItemCommentDraft'> & { restorePendingReturnToHash(): void }} AppApiService */
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities }} AppFileService */
@@ -590,6 +592,8 @@ export function SharedApp({ services }) {
   const projectMutationRef = useRef(false);
   const projectAttachmentActionRef = useRef(0);
   const projectAttachmentMutationRef = useRef(false);
+  const projectAttachmentPreviewRequestRef = useRef(0);
+  const projectAttachmentPreviewCapabilityRef = useRef('');
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -614,6 +618,7 @@ export function SharedApp({ services }) {
   const [projectAttachmentStatus, setProjectAttachmentStatus] = useState('');
   const [projectAttachmentError, setProjectAttachmentError] = useState('');
   const [projectAttachmentReveal, setProjectAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
+  const [projectAttachmentPreview, setProjectAttachmentPreview] = useState(/** @type {{ open: boolean, loading: boolean, error: string, attachment: AppAttachment | null, source: string, kind: AppPreviewKind, fileType: string | null, position: number, total: number, previousId: number | null, nextId: number | null } | null} */ (null));
   const [projectCycleDetail, setProjectCycleDetail] = useState(/** @type {AppProjectCycle | null} */ (null));
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
   const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
@@ -788,6 +793,7 @@ export function SharedApp({ services }) {
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     if (mode === 'load') {
+      void releaseProjectAttachmentPreview();
       setLoading(true);
       if (targetRoute.id === 'search') {
         setSearchPage(null);
@@ -1251,6 +1257,51 @@ export function SharedApp({ services }) {
     finally { setProjectAttachmentDownloadingId(null); }
   }
 
+  async function releaseProjectAttachmentPreview() {
+    projectAttachmentPreviewRequestRef.current += 1;
+    const capability = projectAttachmentPreviewCapabilityRef.current;
+    projectAttachmentPreviewCapabilityRef.current = '';
+    setProjectAttachmentPreview(null);
+    if (capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') {
+      try { await files.attachments.releaseProjectAttachmentPreview(capability); } catch { /* Capability cleanup is best-effort after host invalidation. */ }
+    }
+  }
+
+  async function openProjectAttachmentPreview(attachment) {
+    if (!activeProjectDetail || !attachmentIsUploaded(attachment)) return;
+    const projectKey = activeProjectDetail.key;
+    const requestId = projectAttachmentPreviewRequestRef.current + 1;
+    projectAttachmentPreviewRequestRef.current = requestId;
+    const previousCapability = projectAttachmentPreviewCapabilityRef.current;
+    projectAttachmentPreviewCapabilityRef.current = '';
+    if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
+    setProjectAttachmentPreview({ open: true, loading: true, error: '', attachment, source: '', kind: null, fileType: null, position: 0, total: 0, previousId: null, nextId: null });
+    try {
+      /** @type {{ capability: string, source: string, attachment: AppAttachment, preview: any, navigation: any }} */
+      let result;
+      if (typeof files.attachments?.openProjectAttachmentPreview === 'function') {
+        const hostResult = await files.attachments.openProjectAttachmentPreview({ projectKey, attachmentId: attachment.id });
+        result = { capability: hostResult.capability, source: hostResult.source, attachment: hostResult.attachment, preview: hostResult.preview, navigation: hostResult.navigation };
+      } else {
+        const browserResult = await api.getProjectAttachmentPreview(projectKey, attachment.id);
+        result = { capability: '', source: browserResult.content_url, attachment: browserResult.attachment, preview: browserResult.preview, navigation: browserResult.navigation };
+      }
+      if (projectAttachmentPreviewRequestRef.current !== requestId || !isCurrentProjectAttachmentRoute(projectKey)) {
+        if (result.capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(result.capability).catch(() => {});
+        return;
+      }
+      projectAttachmentPreviewCapabilityRef.current = result.capability || '';
+      setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: result.attachment, source: result.source, kind: result.preview.kind, fileType: result.preview.file_type, position: result.navigation.position, total: result.navigation.total, previousId: result.navigation.previous?.id || null, nextId: result.navigation.next?.id || null });
+    } catch (caught) {
+      if (projectAttachmentPreviewRequestRef.current === requestId && isCurrentProjectAttachmentRoute(projectKey)) setProjectAttachmentPreview((current) => current ? { ...current, loading: false, error: errorMessage(caught instanceof Error ? caught : new Error('预览加载失败。')) } : current);
+    }
+  }
+
+  function navigateProjectAttachmentPreview(attachmentId) {
+    const attachment = projectAttachments.find((value) => value.id === attachmentId);
+    if (attachment) void openProjectAttachmentPreview(attachment);
+  }
+
   async function confirmProjectAttachmentArchive() {
     if (!activeProjectDetail || !projectAttachmentArchiveTarget || projectAttachmentMutationRef.current) return;
     const projectKey = activeProjectDetail.key; const target = projectAttachmentArchiveTarget;
@@ -1341,6 +1392,12 @@ export function SharedApp({ services }) {
   useEffect(() => {
     void loadRouteState(route, 'load');
   }, [route]);
+
+  useEffect(() => () => {
+    const capability = projectAttachmentPreviewCapabilityRef.current;
+    projectAttachmentPreviewCapabilityRef.current = '';
+    if (capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(capability).catch(() => {});
+  }, [files]);
 
   useEffect(() => {
     if (!activeWorkItemDetail || workItemFormKey === activeWorkItemDetail.key) {
@@ -2920,9 +2977,11 @@ export function SharedApp({ services }) {
                   <p className="shell-muted">文件将直接上传到对象存储，页面只保留受控附件信息。</p>
                   {projectAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectAttachmentStatus}</p> : null}
                   {projectAttachmentError ? <Feedback tone="danger" title="项目文件操作失败">{projectAttachmentError}</Feedback> : null}
-                  {projectAttachments.length ? <AttachmentList attachments={projectAttachments} ariaLabel="项目文件列表" downloadLabel="附件" downloadingId={projectAttachmentDownloadingId} revealableId={projectAttachmentReveal?.attachmentId || null} onDownload={(attachment) => void downloadProjectAttachment(attachment)} onReveal={(attachment) => void revealProjectAttachment(attachment)} showCreator renderExtraAction={(attachment) => canManageProject && attachment.status !== 'deleted' ? <><Button variant="danger" disabled={projectAttachmentUploading || projectAttachmentArchiving} onClick={() => { setProjectAttachmentError(''); setProjectAttachmentArchiveTarget(attachment); }}>归档</Button>{['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" disabled={projectAttachmentUploading || projectAttachmentArchiving} onClick={() => void uploadSelectedProjectAttachment(attachment)}>继续上传</Button> : null}</> : null} /> : <p className="shell-empty">当前项目暂无文件。</p>}
+                  {projectAttachments.length ? <AttachmentList attachments={projectAttachments} ariaLabel="项目文件列表" downloadLabel="附件" downloadingId={projectAttachmentDownloadingId} revealableId={projectAttachmentReveal?.attachmentId || null} onPreview={(attachment) => void openProjectAttachmentPreview(attachment)} onDownload={(attachment) => void downloadProjectAttachment(attachment)} onReveal={(attachment) => void revealProjectAttachment(attachment)} showCreator renderExtraAction={(attachment) => canManageProject && attachment.status !== 'deleted' ? <><Button variant="danger" disabled={projectAttachmentUploading || projectAttachmentArchiving} onClick={() => { setProjectAttachmentError(''); setProjectAttachmentArchiveTarget(attachment); }}>归档</Button>{['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" disabled={projectAttachmentUploading || projectAttachmentArchiving} onClick={() => void uploadSelectedProjectAttachment(attachment)}>继续上传</Button> : null}</> : null} /> : <p className="shell-empty">当前项目暂无文件。</p>}
                 </section>
               ) : null}
+
+              <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
 
               <Modal open={projectEditOpen} title="编辑项目" onClose={() => { if (!projectMutationSubmitting) setProjectEditOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectEditOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-edit-form'))?.requestSubmit()}>保存</Button></>}>
                 <form id="project-edit-form" onSubmit={submitProjectEdit}>
