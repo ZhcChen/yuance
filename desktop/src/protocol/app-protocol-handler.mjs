@@ -42,10 +42,12 @@ export async function loadResourceManifest({ fs, manifestPath }) {
   return validateResourceManifest(JSON.parse(contents));
 }
 
-export function createAppProtocolHandler({ fs, rendererRoot, manifest }) {
+export function createAppProtocolHandler({ fs, rendererRoot, manifest, previewHandler }) {
   const validatedManifest = validateResourceManifest(manifest);
+  if (previewHandler !== undefined && typeof previewHandler !== "function") throw new TypeError("previewHandler must be a function");
 
   return async (request) => {
+    if (previewHandler && isPreviewRequest(request)) return previewHandler(request);
     const resolution = resolveAppProtocolRequest(request, validatedManifest);
     if (!resolution.ok) return errorResponse(resolution.status);
 
@@ -62,8 +64,13 @@ export function createAppProtocolHandler({ fs, rendererRoot, manifest }) {
   };
 }
 
-export async function registerAppProtocol({ protocol, fs, rendererRoot, manifestPath }) {
+export async function registerAppProtocol({ protocol, fs, rendererRoot, manifestPath, previewHandler }) {
   const manifest = await loadResourceManifest({ fs, manifestPath });
   await verifyManifestResources({ fs, rendererRoot, manifest });
-  await protocol.handle("app", createAppProtocolHandler({ fs, rendererRoot, manifest }));
+  await protocol.handle("app", createAppProtocolHandler({ fs, rendererRoot, manifest, previewHandler }));
+}
+
+function isPreviewRequest(request) {
+  try { return new URL(String(request?.url || "")).pathname.startsWith("/.preview/"); }
+  catch { return false; }
 }

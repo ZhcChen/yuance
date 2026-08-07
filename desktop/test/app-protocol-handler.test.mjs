@@ -62,6 +62,17 @@ test("fails closed when a resource is missing or changed", async () => {
   });
 });
 
+test("delegates only the reserved dynamic preview path", async () => {
+  await withFixture(async ({ root, manifest }) => {
+    const calls = [];
+    const handler = createAppProtocolHandler({ fs, rendererRoot: root, manifest, previewHandler: async (request) => { calls.push(request.url); return new Response("preview"); } });
+    const capability = `ypv_${"a".repeat(32)}`;
+    assert.equal(await (await handler({ method: "GET", url: `app://yuance/.preview/${capability}` })).text(), "preview");
+    assert.equal((await handler({ method: "GET", url: "app://yuance/.preview-not-reserved" })).status, 404);
+    assert.deepEqual(calls, [`app://yuance/.preview/${capability}`]);
+  });
+});
+
 test("rejects runtime symbolic links even when bytes match the manifest", async (context) => {
   if (process.platform === "win32") {
     context.skip("Windows CI does not grant symlink creation privileges.");
