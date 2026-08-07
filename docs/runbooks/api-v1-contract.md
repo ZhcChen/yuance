@@ -300,6 +300,7 @@ GET   /api/v1/projects
 POST  /api/v1/projects
 GET   /api/v1/projects/{project_key}
 PATCH /api/v1/projects/{project_key}
+GET   /api/v1/projects/{project_key}/my-analysis
 ```
 
 项目列表参数：
@@ -342,6 +343,7 @@ archived    -> completed / cancelled / in_progress
 
 - 查看项目：需要 `project.view`，并处于项目成员范围内；系统管理员拥有全局查看。
 - 创建/修改项目：需要 `project.manage`，同时受项目成员管理权限约束。
+- 个人项目分析：需要 `project.view` 且只能读取当前登录用户在目标项目中的处理、待办与协作统计，不接受目标用户名参数。
 
 ## 项目成员
 
@@ -400,7 +402,10 @@ PATCH  /api/v1/projects/{project_key}/resources/{resource_id}
 DELETE /api/v1/projects/{project_key}/resources/{resource_id}
 POST   /api/v1/projects/{project_key}/resources/{resource_id}/archive
 POST   /api/v1/projects/{project_key}/resources/{resource_id}/unlock
+POST   /api/v1/projects/{project_key}/resources/{resource_id}/password/reset
 ```
+
+访问密码重置仅允许超级管理员执行，动作只接受 `set` 或 `clear`，并记录高风险审计。
 
 列表参数：
 
@@ -463,8 +468,16 @@ status=active|archived|all
 ```text
 GET    /api/v1/work-items
 POST   /api/v1/work-items
+POST   /api/v1/work-items/batch
+GET    /api/v1/work-item-list-view
+POST   /api/v1/work-item-saved-views
+PATCH  /api/v1/work-item-saved-views/{saved_view_id}
+DELETE /api/v1/work-item-saved-views/{saved_view_id}
+POST   /api/v1/work-item-saved-views/{saved_view_id}/default
 GET    /api/v1/work-items/{item_key}
 PATCH  /api/v1/work-items/{item_key}
+GET    /api/v1/work-item-detail-view/{item_key}
+PATCH  /api/v1/work-items/{item_key}/primary-post
 GET    /api/v1/work-items/{item_key}/events
 GET    /api/v1/work-items/{item_key}/typing
 POST   /api/v1/work-items/{item_key}/restore
@@ -483,6 +496,8 @@ assignee_username=zhangsan
 page=1
 per_page=20
 ```
+
+`work-item-list-view` 原子返回列表结果、筛选候选、保存视图和当前默认视图；`work-item-detail-view` 原子返回详情、流转、评论、附件和服务端计算的可执行能力。批量接口只接受受控动作和当前选择范围，保存视图接口负责创建、重命名、删除及设置默认视图。
 
 创建请求：
 
@@ -734,6 +749,9 @@ POST   /api/v1/work-items/{item_key}/attachments
 GET    /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url
 POST   /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded
 GET    /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url
+GET    /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview
+GET    /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content
+HEAD   /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content
 ```
 
 权限：
@@ -749,8 +767,13 @@ POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url
 POST   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/uploaded
 GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download-url
+GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview
+GET    /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content
+HEAD   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content
 DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}
 ```
+
+工作项和评论附件预览元数据返回内容分类及同归属附件导航；内容接口支持 `GET`、`HEAD` 与单段 `Range`，并使用 `no-store`、`nosniff` 和 sandbox 响应边界。
 
 权限：
 
@@ -765,6 +788,9 @@ POST /api/v1/projects/{project_key}/resources/{resource_id}/attachments
 GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/upload-url
 POST /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/uploaded
 GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download-url
+GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview
+GET  /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content
+HEAD /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content
 DELETE /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}
 ```
 
@@ -773,6 +799,7 @@ DELETE /api/v1/projects/{project_key}/resources/{resource_id}/attachments/{attac
 - 登记、上传签名和上传完成：需要 `project.view`，并且当前用户具备项目内容写入权限。
 - 删除：用于资料正文编辑阶段移除未保留的附件，同时会尝试删除对象存储中的对应对象。
 - 下载签名：未设置访问密码的资料需要项目成员范围；已设置访问密码的资料不通过 API 生成下载签名，必须先在 Web 详情页验证访问密码，再使用短期受控下载入口。
+- 预览元数据返回内容分类和同资料附件导航；内容接口支持 `GET`、`HEAD` 与单段 `Range`，并使用 `no-store`、`nosniff` 和 sandbox 响应边界。
 
 附件登记请求：
 
@@ -834,6 +861,14 @@ GET /api/v1/test-storage/download?object_key=...
 
 ## 系统管理
 
+系统首页：
+
+```text
+GET /api/v1/system/dashboard
+```
+
+该接口仅返回当前主体实际获授权的固定系统管理入口，不接受客户端声明权限或任意目标 URL。
+
 用户：
 
 ```text
@@ -843,9 +878,15 @@ POST  /api/v1/system/users
 PATCH /api/v1/system/users/{username}/status
 PATCH /api/v1/system/users/{username}/role
 POST  /api/v1/system/users/{username}/password
+POST  /api/v1/system/users/{username}/projects
+DELETE /api/v1/system/users/{username}/projects
+DELETE /api/v1/system/users/{username}/projects/{project_key}
+PATCH /api/v1/system/users/{username}/projects/{project_key}/role
 ```
 
 `users-view` 是 Web 与 Desktop 共享用户管理页的原子读取入口，返回用户分页、全局角色候选、可分配项目、当前项目关系及服务端计算的管理与移除能力；默认每页 10 条。
+
+用户项目关系写操作同时要求 `system.users.manage`、`project.manage` 和全项目数据范围。批量移除会在写入前完整校验负责人和活跃工作项约束；单项移除与项目角色调整继续由服务端执行相同保护。
 
 角色与权限：
 
