@@ -2233,7 +2233,7 @@ async fn role_status_controls_assigned_permissions() {
 }
 
 #[tokio::test]
-async fn system_database_stats_page_renders_cache_shell_for_admin() {
+async fn system_database_stats_keeps_ssr_cache_shell_when_shared_shell_is_disabled() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -2256,6 +2256,7 @@ async fn system_database_stats_page_renders_cache_shell_for_admin() {
     assert!(body.contains(r#"data-api-url="/api/v1/system/database-stats""#));
     assert!(body.contains("浏览器暂无缓存"));
     assert!(body.contains(r#"href="/web/system/database-stats""#));
+    assert!(!body.contains("/web/app/assets/"));
 }
 
 #[tokio::test]

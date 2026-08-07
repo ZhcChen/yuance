@@ -6936,7 +6936,18 @@ pub async fn system_users_page(
 pub async fn system_database_stats_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
 ) -> AppResult<Response> {
+    let return_to = original_uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| original_uri.path());
+    if let Some(response) =
+        shared_system_web_app_response(&state, &headers, return_to, "system.database_stats.view")
+            .await?
+    {
+        return Ok(response);
+    }
     let context =
         match system_context_or_redirect(&state, &headers, "system.database_stats.view").await? {
             Ok(context) => context,

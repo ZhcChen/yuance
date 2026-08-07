@@ -2195,7 +2195,7 @@ test('shared database stats load cache first and preserve it across refresh fail
       : { status: 200, contentType: 'application/json', body: JSON.stringify({ data: fresh }) });
   });
 
-  await login(page, '/web/app/system/database-stats');
+  await login(page, '/web/system/database-stats');
   await expect(page).toHaveTitle('数据库统计 - 元策');
   await expect(page.getByRole('table', { name: '数据库统计大表' })).toContainText('cached_users');
   expect(requestCount).toBe(0);
