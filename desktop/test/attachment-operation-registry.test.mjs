@@ -27,6 +27,9 @@ test("builds fixed main-only work item and comment attachment descriptors", () =
   assert.equal(registry.resolve("attachment.projectuploadsign", { projectKey: "YCE", attachmentId: 9 }).path, "/api/v1/projects/YCE/attachments/9/upload-url?expires_in_seconds=60");
   assert.equal(registry.resolve("attachment.projectdownloadsign", { projectKey: "YCE", attachmentId: 9 }).path, "/api/v1/projects/YCE/attachments/9/download-url?expires_in_seconds=60");
   assert.equal(createOperationRegistry().resolve("project.attachments", { projectKey: "YCE" }).path, "/api/v1/projects/YCE/attachments");
+  const preview = createOperationRegistry().resolve("project.attachmentpreview", { projectKey: "YCE", attachmentId: 9 });
+  assert.equal(preview.path, "/api/v1/projects/YCE/attachments/9/preview");
+  assert.equal(preview.method, "GET");
   assert.equal(createOperationRegistry().resolve("project.attachmentarchive", { projectKey: "YCE", attachmentId: 9 }).method, "DELETE");
 });
 

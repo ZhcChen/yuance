@@ -146,6 +146,11 @@ function resolveMutationOperation(parsed, method, options) {
     rejectBody(options);
     return { operation: "project.attachmentarchive", input: { projectKey: decodeSegment(projectAttachment[1]), attachmentId: positiveInteger(projectAttachment[2]) } };
   }
+  const projectAttachmentPreview = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/attachments\/(\d+)\/preview$/u);
+  if (method === "GET" && projectAttachmentPreview) {
+    rejectBody(options);
+    return { operation: "project.attachmentpreview", input: { projectKey: decodeSegment(projectAttachmentPreview[1]), attachmentId: positiveInteger(projectAttachmentPreview[2]) } };
+  }
   const token = parsed.pathname.match(/^\/api\/v1\/me\/tokens\/(\d+)$/u);
   if (method === "PATCH" && token) {
     const body = parseJsonBody(options, ["name", "project_scope", "scopes"]);

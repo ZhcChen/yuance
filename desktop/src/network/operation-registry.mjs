@@ -48,6 +48,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.cycleupdate", projectCycleUpdateOperation],
     ["project.cycleclose", projectCycleCloseOperation],
     ["project.attachments", projectAttachmentsOperation],
+    ["project.attachmentpreview", projectAttachmentPreviewOperation],
     ["project.attachmentarchive", projectAttachmentArchiveOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
@@ -189,6 +190,11 @@ function projectCycleCloseOperation(input) {
 function projectAttachmentsOperation(input) {
   exactKeys(input, ["projectKey"]);
   return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/attachments`, parseAttachments, true, "array");
+}
+
+function projectAttachmentPreviewOperation(input) {
+  exactKeys(input, ["attachmentId", "projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/attachments/${positiveInteger(input.attachmentId)}/preview`, parseAttachmentPreview);
 }
 
 function projectAttachmentArchiveOperation(input) {
@@ -457,6 +463,23 @@ function parseComment(value) { return freezeDto(value, {
   is_flow: boolean, is_draft: boolean,
 }); }
 function parseAttachments(data) { return boundedArray(data, parseAttachment, 500, "attachments"); }
+function parseAttachmentPreview(value) { return freezeDto(value, {
+  attachment: parseAttachment,
+  preview: (entry) => freezeDto(entry, {
+    kind: nullablePreviewKind, strategy: nullableShortString, file_type: nullableShortString,
+    kind_label: nullableShortString, is_experimental: boolean,
+    legacy_preview_enabled: boolean, content_enabled: boolean,
+  }),
+  navigation: (entry) => freezeDto(entry, {
+    position: nonNegativeInteger, total: nonNegativeInteger,
+    previous: nullablePreviewNavigationLink, next: nullablePreviewNavigationLink,
+  }),
+  content_url: apiPath, download_url: apiPath,
+}); }
+function nullablePreviewNavigationLink(value) { return value === null ? null : freezeDto(value, { id: positiveInteger, title: textString, url: apiPath }); }
+function nullablePreviewKind(value) { if (value === null || ["image", "video", "document"].includes(value)) return value; throw new TypeError("preview kind is invalid"); }
+function nullableShortString(value) { return value === null ? null : shortString(value); }
+function apiPath(value) { if (typeof value !== "string" || !value.startsWith("/api/v1/") || value.length > 2048) throw new TypeError("API path is invalid"); return value; }
 function parseAttachment(value) { return freezeDto(value, {
   id: positiveInteger, filename: textString, content_type: shortString, byte_size: nonNegativeInteger,
   status: shortString, created_by: shortString, created_at: shortString,

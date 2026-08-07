@@ -9,6 +9,7 @@ import {
   createApiClient,
   projectApiPath,
   projectAttachmentApiPath,
+  projectAttachmentPreviewApiPath,
   projectCycleApiPath,
   projectMemberApiPath,
   workItemApiPath,
@@ -87,6 +88,27 @@ test('project attachment methods use fixed paths and filter private fields', asy
     ['/api/v1/projects/YCE%2F1/attachments/7/download-url', 'GET'],
     ['/api/v1/projects/YCE%2F1/attachments/7', 'DELETE'],
   ]);
+});
+
+test('project attachment preview normalizes capability and navigation without private fields', async () => {
+  const calls = [];
+  const client = createApiClient({ request: async (url) => {
+    calls.push(url);
+    return {
+      attachment: { id: 7, filename: 'design.pdf', content_type: 'application/pdf', byte_size: 2048, status: 'uploaded', created_by: 'Alice', created_at: '2026-08-07T00:00:00Z', object_key: 'private/key' },
+      preview: { kind: 'document', strategy: 'pdf', file_type: 'pdf', kind_label: 'PDF', is_experimental: false, legacy_preview_enabled: false, content_enabled: true },
+      navigation: { position: 1, total: 2, previous: null, next: { id: 8, title: 'next.png', url: '/api/v1/projects/YCE/attachments/8/preview' } },
+      content_url: '/api/v1/projects/YCE/attachments/7/preview/content',
+      download_url: '/api/v1/projects/YCE/attachments/7/download-url',
+    };
+  } });
+  const result = await client.getProjectAttachmentPreview('YCE', 7);
+  assert.equal(projectAttachmentPreviewApiPath('YCE', 7), '/api/v1/projects/YCE/attachments/7/preview');
+  assert.deepEqual(calls, ['/api/v1/projects/YCE/attachments/7/preview']);
+  assert.equal(result.preview.kind, 'document');
+  assert.ok(result.navigation.next);
+  assert.equal(result.navigation.next.id, 8);
+  assert.equal(Object.hasOwn(result.attachment, 'object_key'), false);
 });
 
 test('work item paths encode item keys', () => {
