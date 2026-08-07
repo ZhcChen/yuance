@@ -52,6 +52,10 @@ export const getSystemDashboard = apiClient.getSystemDashboard;
 export const getSystemUsersView = apiClient.getSystemUsersView;
 export const getSystemRolesView = apiClient.getSystemRolesView;
 export const getSystemStorageView = apiClient.getSystemStorageView;
+export const getSystemOpenApiView = apiClient.getSystemOpenApiView;
+export const createSystemApiToken = apiClient.createSystemApiToken;
+export const updateSystemApiToken = apiClient.updateSystemApiToken;
+export const deleteSystemApiToken = apiClient.deleteSystemApiToken;
 export const getSystemReleasesView = apiClient.getSystemReleasesView;
 export const updateSystemReleaseSettings = apiClient.updateSystemReleaseSettings;
 export const createSystemRelease = apiClient.createSystemRelease;
@@ -250,6 +254,10 @@ export const webApi = {
   getSystemUsersView,
   getSystemRolesView,
   getSystemStorageView,
+  getSystemOpenApiView,
+  createSystemApiToken,
+  updateSystemApiToken,
+  deleteSystemApiToken,
   getSystemReleasesView,
   updateSystemReleaseSettings,
   createSystemRelease,

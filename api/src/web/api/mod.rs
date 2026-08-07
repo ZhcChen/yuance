@@ -1243,6 +1243,47 @@ pub struct SystemStorageViewPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct SystemApiTokenPayload {
+    pub id: i64,
+    pub name: String,
+    pub scopes: Vec<String>,
+    pub token_suffix: String,
+    pub created_by: String,
+    pub updated_by: String,
+    pub last_used_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemOpenApiViewPayload {
+    pub items: Vec<SystemApiTokenPayload>,
+    pub active_count: i64,
+    pub token_limit: i64,
+    pub can_manage_tokens: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CreatedSystemApiTokenPayload {
+    pub token: SystemApiTokenPayload,
+    pub raw_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateSystemApiTokenRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateSystemApiTokenRequest {
+    name: String,
+    #[serde(default)]
+    scopes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SystemReleaseSettingsPayload {
     pub retention_count: i64,
     pub updated_by: String,
@@ -6304,6 +6345,123 @@ pub async fn list_system_audit_logs(
     }))
 }
 
+pub async fn get_system_openapi_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.view").await?;
+    let items = system_api_tokens::list_tokens(pool)
+        .await?
+        .into_iter()
+        .map(system_api_token_payload)
+        .collect::<Vec<_>>();
+    let can_manage_tokens =
+        rbac::user_has_permission(pool, user.id, "system.api_tokens.manage").await?;
+
+    Ok(no_store_json(SystemOpenApiViewPayload {
+        active_count: items.len() as i64,
+        token_limit: system_api_tokens::MAX_ACTIVE_SYSTEM_TOKENS,
+        items,
+        can_manage_tokens,
+    }))
+}
+
+pub async fn create_system_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateSystemApiTokenRequest>,
+) -> AppResult<Response> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.manage").await?;
+    let created = system_api_tokens::create_token(
+        pool,
+        &state.settings.security_master_key,
+        user.id,
+        system_api_tokens::CreateSystemApiTokenInput {
+            name: payload.name,
+            scopes: payload.scopes,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "system.api_token.create",
+        "system_api_token",
+        &created.token.id.to_string(),
+        r#"{"source":"api"}"#,
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        AppendHeaders([(header::CACHE_CONTROL, "private, no-store")]),
+        json(CreatedSystemApiTokenPayload {
+            token: system_api_token_payload(created.token),
+            raw_token: created.raw_token,
+        }),
+    )
+        .into_response())
+}
+
+pub async fn update_system_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+    Json(payload): Json<UpdateSystemApiTokenRequest>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.manage").await?;
+    let updated = system_api_tokens::update_token(
+        pool,
+        user.id,
+        token_id,
+        system_api_tokens::UpdateSystemApiTokenInput {
+            name: payload.name,
+            scopes: payload.scopes,
+        },
+    )
+    .await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "system.api_token.update",
+        "system_api_token",
+        &updated.id.to_string(),
+        r#"{"source":"api"}"#,
+    )
+    .await?;
+    Ok(no_store_json(system_api_token_payload(updated)))
+}
+
+pub async fn delete_system_api_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(token_id): Path<i64>,
+) -> AppResult<impl IntoResponse> {
+    let user = require_api_user(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.api_tokens.manage").await?;
+    let deleted = system_api_tokens::delete_token(pool, token_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "system.api_token.delete",
+        "system_api_token",
+        &deleted.id.to_string(),
+        r#"{"source":"api"}"#,
+    )
+    .await?;
+    Ok(no_store_json(system_api_token_payload(deleted)))
+}
+
 pub async fn get_system_release_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -9029,6 +9187,22 @@ fn system_release_settings_payload(
         retention_count: settings.retention_count,
         updated_by: settings.updated_by_display_name,
         updated_at: settings.updated_at,
+    }
+}
+
+fn system_api_token_payload(
+    token: system_api_tokens::SystemApiTokenSummary,
+) -> SystemApiTokenPayload {
+    SystemApiTokenPayload {
+        id: token.id,
+        name: token.name,
+        scopes: token.scopes,
+        token_suffix: token.token_suffix,
+        created_by: token.created_by_display_name,
+        updated_by: token.updated_by_display_name,
+        last_used_at: token.last_used_at,
+        created_at: token.created_at,
+        updated_at: token.updated_at,
     }
 }
 

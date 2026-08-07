@@ -46,6 +46,24 @@ test('system storage view preserves compact version pagination query', async () 
   assert.deepEqual(calls, ['/api/v1/system/storage-view', '/api/v1/system/storage-view?page=3&per_page=20']);
 });
 
+test('system OpenAPI token lifecycle uses fixed contracts and prepares every write', async () => {
+  const calls = [];
+  const client = createSystemClient({
+    prepareWrite: async () => { calls.push(['prepare']); },
+    request: async (url, options) => { calls.push([url, options]); return {}; },
+  });
+  await client.getSystemOpenApiView();
+  await client.createSystemApiToken('Release robot', ['system_release:read', 'system_release:write']);
+  await client.updateSystemApiToken(7, 'Release reader', ['system_release:read']);
+  await client.deleteSystemApiToken(7);
+  assert.deepEqual(calls, [
+    ['/api/v1/system/openapi-view', undefined],
+    ['prepare'], ['/api/v1/system/api-tokens', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"name":"Release robot","scopes":["system_release:read","system_release:write"]}' }],
+    ['prepare'], ['/api/v1/system/api-tokens/7', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"name":"Release reader","scopes":["system_release:read"]}' }],
+    ['prepare'], ['/api/v1/system/api-tokens/7', { method: 'DELETE' }],
+  ]);
+});
+
 test('system releases view preserves compact version pagination query', async () => {
   const calls = [];
   const client = createSystemClient({ request: async (url) => { calls.push(url); return { items: [] }; } });

@@ -23,6 +23,7 @@ const WORK_ITEM_SAVED_VIEW_STATUSES = new Set(["", "pending", ...WORK_ITEM_STATU
 const WORK_ITEM_SORTS = new Set(["", "updated_desc", "created_desc", "priority_desc", "due_date_asc"]);
 const WORK_ITEM_BATCH_ACTIONS = new Set(["assignee", "status", "priority", "cycle"]);
 const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
+const SYSTEM_API_TOKEN_SCOPES = new Set(["system_release:read", "system_release:write"]);
 const SYSTEM_USER_STATUSES = new Set(["active", "disabled", "locked"]);
 const SYSTEM_ROLE_STATUSES = new Set(["active", "disabled"]);
 const SYSTEM_ROLE_DATA_SCOPES = new Set(["self", "all"]);
@@ -49,6 +50,10 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
+    ["system.openapiview", noInputOperation("GET", "/api/v1/system/openapi-view", parseSystemOpenApiView)],
+    ["system.apitokencreate", systemApiTokenCreateOperation],
+    ["system.apitokenupdate", systemApiTokenUpdateOperation],
+    ["system.apitokendelete", systemApiTokenDeleteOperation],
     ["system.releasesview", systemReleasesViewOperation],
     ["system.releasesettingsupdate", systemReleaseSettingsUpdateOperation],
     ["system.releasecreate", systemReleaseCreateOperation],
@@ -464,6 +469,26 @@ function systemReleasesViewOperation(input) {
   const query = new URLSearchParams();
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/releases-view", query), parseSystemReleasesView);
+}
+
+function systemApiTokenBody(input, includeId) {
+  exactKeys(input, includeId ? ["name", "scopes", "tokenId"] : ["name", "scopes"]);
+  if (!Array.isArray(input.scopes) || input.scopes.length < 1 || input.scopes.length > SYSTEM_API_TOKEN_SCOPES.size || input.scopes.some((scope) => !SYSTEM_API_TOKEN_SCOPES.has(scope))) throw new TypeError("scopes is invalid");
+  return { name: boundedRequiredText(input.name, "name", 80), scopes: [...new Set(input.scopes)] };
+}
+
+function systemApiTokenCreateOperation(input) {
+  return descriptor("POST", "/api/v1/system/api-tokens", parseCreatedSystemApiToken, false, "object", jsonBody(systemApiTokenBody(input, false)));
+}
+
+function systemApiTokenUpdateOperation(input) {
+  const body = systemApiTokenBody(input, true);
+  return descriptor("PATCH", `/api/v1/system/api-tokens/${positiveInteger(input.tokenId)}`, parseSystemApiToken, false, "object", jsonBody(body));
+}
+
+function systemApiTokenDeleteOperation(input) {
+  exactKeys(input, ["tokenId"]);
+  return descriptor("DELETE", `/api/v1/system/api-tokens/${positiveInteger(input.tokenId)}`, parseSystemApiToken, false);
 }
 
 function systemReleaseSettingsUpdateOperation(input) {
@@ -983,6 +1008,19 @@ function parseSystemStorageView(data) { return freezeExactDto(data, {
   }),
   inspection: (inspection) => inspection === null ? null : parseStorageInspection(inspection),
   inspection_error: textString, can_manage_storage: boolean,
+}); }
+function systemApiTokenScopes(value) { return boundedArray(value, (scope) => requiredEnum(scope, SYSTEM_API_TOKEN_SCOPES, "scope", false), SYSTEM_API_TOKEN_SCOPES.size, "system api token scopes"); }
+function parseSystemApiToken(data) { return freezeExactDto(data, {
+  id: positiveInteger, name: textString, scopes: systemApiTokenScopes, token_suffix: shortString,
+  created_by: textString, updated_by: textString, last_used_at: shortString,
+  created_at: shortString, updated_at: shortString,
+}); }
+function parseSystemOpenApiView(data) { return freezeExactDto(data, {
+  items: (items) => boundedArray(items, parseSystemApiToken, 100, "system api tokens"),
+  active_count: nonNegativeInteger, token_limit: positiveInteger, can_manage_tokens: boolean,
+}); }
+function parseCreatedSystemApiToken(data) { return freezeExactDto(data, {
+  token: parseSystemApiToken, raw_token: textString,
 }); }
 function parseSystemRelease(data) { return freezeExactDto(data, {
   id: positiveInteger, version_name: shortString, title: textString, notes: longString,

@@ -89,6 +89,7 @@ function resolveReadOperation(url, options) {
   if (parsed.pathname === "/api/v1/system/storage-view") return { operation: "system.storageview", input: parseQuery(parsed.searchParams, {
     page: "page", per_page: "perPage",
   }) };
+  if (parsed.pathname === "/api/v1/system/openapi-view") return { operation: "system.openapiview", input: {} };
   if (parsed.pathname === "/api/v1/system/releases-view") return { operation: "system.releasesview", input: parseQuery(parsed.searchParams, {
     page: "page", per_page: "perPage",
   }) };
@@ -121,6 +122,19 @@ function resolveReadOperation(url, options) {
 
 function resolveMutationOperation(parsed, method, options) {
   rejectQuery(parsed.searchParams, []);
+  if (method === "POST" && parsed.pathname === "/api/v1/system/api-tokens") {
+    const body = parseJsonBody(options, ["name", "scopes"]);
+    return { operation: "system.apitokencreate", input: body };
+  }
+  const systemApiToken = parsed.pathname.match(/^\/api\/v1\/system\/api-tokens\/(\d+)$/u);
+  if (systemApiToken && method === "PATCH") {
+    const body = parseJsonBody(options, ["name", "scopes"]);
+    return { operation: "system.apitokenupdate", input: { tokenId: positiveInteger(systemApiToken[1]), ...body } };
+  }
+  if (systemApiToken && method === "DELETE") {
+    rejectBody(options);
+    return { operation: "system.apitokendelete", input: { tokenId: positiveInteger(systemApiToken[1]) } };
+  }
   if (method === "POST" && parsed.pathname === "/api/v1/storage/config") {
     const body = parseJsonBody(options, ["access_key_id", "access_key_secret", "activate", "bucket", "endpoint", "region"]);
     return { operation: "system.storagesave", input: renameBody(body, { access_key_id: "accessKeyId", access_key_secret: "accessKeySecret" }) };

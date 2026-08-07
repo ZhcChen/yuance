@@ -2652,6 +2652,175 @@ async fn system_openapi_page_renders_and_supports_token_crud() {
 }
 
 #[tokio::test]
+async fn api_system_openapi_view_enforces_permissions_and_plaintext_once() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let write_cookie = with_csrf_cookie(&initialized.cookie);
+
+    let empty = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/openapi-view")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(empty.status(), StatusCode::OK);
+    assert_eq!(
+        empty.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let empty_payload = response_json(empty).await;
+    assert_eq!(empty_payload["data"]["items"], serde_json::json!([]));
+    assert_eq!(empty_payload["data"]["active_count"], 0);
+    assert_eq!(empty_payload["data"]["token_limit"], 100);
+    assert_eq!(empty_payload["data"]["can_manage_tokens"], true);
+
+    let created = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/system/api-tokens")
+                .header(header::COOKIE, write_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "Shared release automation",
+                        "scopes": ["system_release:read", "system_release:write"]
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(
+        created.headers().get(header::CACHE_CONTROL).unwrap(),
+        "private, no-store"
+    );
+    let created_payload = response_json(created).await;
+    let token_id = created_payload["data"]["token"]["id"]
+        .as_i64()
+        .expect("created token id should exist");
+    let raw_token = created_payload["data"]["raw_token"]
+        .as_str()
+        .expect("created token plaintext should be returned once");
+    assert!(raw_token.starts_with("yuance_sys_pat_"));
+    assert_eq!(
+        created_payload["data"]["token"]["name"],
+        "Shared release automation"
+    );
+
+    let view = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/openapi-view")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let view_payload = response_json(view).await;
+    assert_eq!(view_payload["data"]["active_count"], 1);
+    assert_eq!(view_payload["data"]["items"][0]["id"], token_id);
+    assert_eq!(
+        view_payload["data"]["items"][0]["raw_token"],
+        serde_json::Value::Null
+    );
+    assert!(!view_payload.to_string().contains(raw_token));
+
+    let updated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/system/api-tokens/{token_id}"))
+                .header(header::COOKIE, write_cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "name": "Release reader",
+                        "scopes": ["system_release:read"]
+                    })
+                    .to_string(),
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated_payload = response_json(updated).await;
+    assert_eq!(updated_payload["data"]["name"], "Release reader");
+    assert_eq!(
+        updated_payload["data"]["raw_token"],
+        serde_json::Value::Null
+    );
+
+    let member_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "openapi_view_denied".to_string(),
+            display_name: "系统 Token 拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let denied = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/openapi-view")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+
+    let deleted = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/system/api-tokens/{token_id}"))
+                .header(header::COOKIE, write_cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(deleted.status(), StatusCode::OK);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM system_api_tokens")
+            .fetch_one(&pool)
+            .await
+            .expect("token count should load"),
+        0
+    );
+}
+
+#[tokio::test]
 async fn system_token_can_manage_release_api_without_csrf() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

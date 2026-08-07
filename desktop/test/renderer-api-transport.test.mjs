@@ -254,6 +254,22 @@ test("system storage mutations map to fixed Desktop operations", async () => {
   ]);
 });
 
+test("system OpenAPI token lifecycle maps to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemOpenApiView();
+  await api.createSystemApiToken("Release robot", ["system_release:read", "system_release:write"]);
+  await api.updateSystemApiToken(7, "Release reader", ["system_release:read"]);
+  await api.deleteSystemApiToken(7);
+  assert.deepEqual(calls, [
+    ["system.openapiview", {}],
+    ["system.apitokencreate", { name: "Release robot", scopes: ["system_release:read", "system_release:write"] }],
+    ["system.apitokenupdate", { tokenId: 7, name: "Release reader", scopes: ["system_release:read"] }],
+    ["system.apitokendelete", { tokenId: 7 }],
+  ]);
+});
+
 test("system release mutations map to fixed Desktop operations", async () => {
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });

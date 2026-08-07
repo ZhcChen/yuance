@@ -10,9 +10,11 @@ import {
   createWorkItemCommentDraft,
   createWorkItemComment,
   cancelWorkItemCommentDraft,
+  createSystemApiToken,
   createProjectResource,
   createProjectResourceAttachment,
   deleteProjectResourceAttachment,
+  deleteSystemApiToken,
   getWorkItemAttachmentUploadUrl,
   getProjectAttachmentPreview,
   getProjectResource,
@@ -21,6 +23,7 @@ import {
   getProjectResourceAttachmentPreview,
   getProjectResourceAttachments,
   getProjectResources,
+  getSystemOpenApiView,
   getWorkItemCommentAttachmentDownloadUrl,
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,
@@ -36,8 +39,36 @@ import {
   updateWorkItem,
   updateWorkItemComment,
   updateProjectResource,
+  updateSystemApiToken,
   unlockProjectResource,
 } from '../src/lib/api.js';
+
+test('system OpenAPI token lifecycle is exposed through the bounded browser API adapter', async () => {
+  await withFetchQueue([
+    jsonResponse({ items: [], active_count: 0, token_limit: 100, can_manage_tokens: true }),
+    jsonResponse({ csrf_token: 'csrf-openapi-create' }, { csrfToken: 'csrf-openapi-create' }),
+    jsonResponse({ item: { id: 8 }, raw_token: 'yuance_sys_pat_once_only' }),
+    jsonResponse({ csrf_token: 'csrf-openapi-update' }, { csrfToken: 'csrf-openapi-update' }),
+    jsonResponse({ item: { id: 8 } }),
+    jsonResponse({ csrf_token: 'csrf-openapi-delete' }, { csrfToken: 'csrf-openapi-delete' }),
+    jsonResponse({ deleted: true }),
+  ], async (calls) => {
+    await getSystemOpenApiView();
+    await createSystemApiToken('Release robot', ['system_release:read']);
+    await updateSystemApiToken(8, 'Release reader', ['system_release:read']);
+    await deleteSystemApiToken(8);
+
+    assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET']), [
+      ['/api/v1/system/openapi-view', 'GET'],
+      ['/api/v1/auth/csrf', 'GET'],
+      ['/api/v1/system/api-tokens', 'POST'],
+      ['/api/v1/auth/csrf', 'GET'],
+      ['/api/v1/system/api-tokens/8', 'PATCH'],
+      ['/api/v1/auth/csrf', 'GET'],
+      ['/api/v1/system/api-tokens/8', 'DELETE'],
+    ]);
+  });
+});
 
 test('batch work item updates are exposed through the bounded browser API adapter', async () => {
   const originalFetch = globalThis.fetch;

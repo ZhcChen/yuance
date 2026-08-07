@@ -135,6 +135,10 @@ export function buildSystemStoragePath({ owner = 'web', page = DEFAULT_PAGE, per
   return params.size ? `${base}?${params.toString()}` : base;
 }
 
+export function buildSystemOpenApiPath(owner = 'web') {
+  return owner === 'app' ? '/web/app/system/openapi' : '/web/system/openapi';
+}
+
 export function buildSystemReleasesPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -371,6 +375,12 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
   if (pathname === '/web/system/storage' || pathname === '/web/app/system/storage') {
     return {
       id: 'system-storage', owner, pathname, search, page, perPage, title: '对象存储',
+    };
+  }
+
+  if (pathname === '/web/system/openapi' || pathname === '/web/app/system/openapi') {
+    return {
+      id: 'system-openapi', owner, pathname, search, title: '系统 OpenAPI',
     };
   }
 

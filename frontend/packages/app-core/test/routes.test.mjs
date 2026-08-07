@@ -12,6 +12,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemOpenApiPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemStoragePath,
@@ -59,6 +60,15 @@ test('system storage route preserves owner and version pagination', () => {
     id: 'system-storage', owner: 'web', pathname: '/web/system/storage', search: '?page=2&per_page=20',
     page: 2, perPage: 20, title: '对象存储',
   });
+});
+
+test('system OpenAPI route preserves Browser and Desktop owners', () => {
+  assert.equal(buildSystemOpenApiPath('web'), '/web/system/openapi');
+  assert.equal(buildSystemOpenApiPath('app'), '/web/app/system/openapi');
+  assert.deepEqual(parseAppRoute('/web/system/openapi'), {
+    id: 'system-openapi', owner: 'web', pathname: '/web/system/openapi', search: '', title: '系统 OpenAPI',
+  });
+  assert.equal(parseAppRoute('/web/app/system/openapi').owner, 'app');
 });
 
 test('system releases route preserves owner and version pagination', () => {

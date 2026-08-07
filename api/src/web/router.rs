@@ -717,6 +717,19 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_system_audit_logs),
         )
         .route(
+            "/api/v1/system/openapi-view",
+            get(web::api::get_system_openapi_view),
+        )
+        .route(
+            "/api/v1/system/api-tokens",
+            post(web::api::create_system_api_token),
+        )
+        .route(
+            "/api/v1/system/api-tokens/{token_id}",
+            axum::routing::patch(web::api::update_system_api_token)
+                .delete(web::api::delete_system_api_token),
+        )
+        .route(
             "/api/v1/system/releases/settings",
             get(web::api::get_system_release_settings)
                 .patch(web::api::update_system_release_settings),

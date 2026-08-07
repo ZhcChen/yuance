@@ -587,6 +587,8 @@ function routeDescription(route) {
       return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
+    case 'system-openapi':
+      return '系统 Token 的创建、scope 和生命周期由两个宿主共用，明文只在创建成功后展示一次。';
     case 'system-releases':
       return '保留策略、版本状态和平台资产由服务端原子读取，两个宿主共用同一发布工作台。';
     case 'unsupported':
@@ -620,6 +622,7 @@ function routeEyebrow(route) {
     case 'system-users':
     case 'system-roles':
     case 'system-storage':
+    case 'system-openapi':
     case 'system-releases':
       return 'System';
     default:
@@ -786,6 +789,14 @@ export function SharedApp({ services }) {
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
+  const [systemOpenApiView, setSystemOpenApiView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemOpenApiView']>> | null} */ (null));
+  const [systemApiTokenEditor, setSystemApiTokenEditor] = useState(/** @type {{ mode: 'create' | 'edit', tokenId?: number } | null} */ (null));
+  const [systemApiTokenForm, setSystemApiTokenForm] = useState({ name: '', scopes: ['system_release:read'] });
+  const [systemApiTokenDeleteTarget, setSystemApiTokenDeleteTarget] = useState(/** @type {any | null} */ (null));
+  const [systemApiTokenSubmitting, setSystemApiTokenSubmitting] = useState(false);
+  const [systemApiTokenError, setSystemApiTokenError] = useState('');
+  const [createdSystemApiToken, setCreatedSystemApiToken] = useState('');
+  const systemApiTokenMutationRef = useRef(false);
   const [systemReleasesView, setSystemReleasesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemReleasesView']>> | null} */ (null));
   const [systemReleaseSettingsCount, setSystemReleaseSettingsCount] = useState(5);
   const [systemReleaseEditor, setSystemReleaseEditor] = useState(/** @type {{ mode: 'create' | 'edit', releaseId?: number } | null} */ (null));
@@ -1197,7 +1208,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemReleasesView] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1315,6 +1326,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-storage'
           ? api.getSystemStorageView({ page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
+        targetRoute.id === 'system-openapi'
+          ? api.getSystemOpenApiView()
+          : Promise.resolve(null),
         targetRoute.id === 'system-releases'
           ? api.getSystemReleasesView({ page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
@@ -1376,6 +1390,10 @@ export function SharedApp({ services }) {
         setSystemRoleError('');
       }
       if (targetRoute.id === 'system-storage') setSystemStorageView(nextSystemStorageView);
+      if (targetRoute.id === 'system-openapi') {
+        setSystemOpenApiView(nextSystemOpenApiView);
+        if (mode === 'load') setCreatedSystemApiToken('');
+      }
       if (targetRoute.id === 'system-releases') {
         setSystemReleasesView(nextSystemReleasesView);
         setSystemReleaseSettingsCount(nextSystemReleasesView?.settings.retention_count || 5);
@@ -2005,6 +2023,75 @@ export function SharedApp({ services }) {
     const view = await api.getSystemStorageView({ page: current.page, perPage: current.perPage });
     if (routeRef.current.id === 'system-storage' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) setSystemStorageView(view);
     return view;
+  }
+
+  async function refreshSystemOpenApiAfterMutation() {
+    const current = routeRef.current;
+    if (current.id !== 'system-openapi') return null;
+    const view = await api.getSystemOpenApiView();
+    if (routeRef.current.id === 'system-openapi' && routeRef.current.pathname === current.pathname) setSystemOpenApiView(view);
+    return view;
+  }
+
+  async function runSystemApiTokenMutation(action, successMessage) {
+    if (systemApiTokenMutationRef.current) return null;
+    systemApiTokenMutationRef.current = true;
+    setSystemApiTokenSubmitting(true);
+    setSystemApiTokenError('');
+    try {
+      const result = await action();
+      setStatusMessage(successMessage);
+      try { await refreshSystemOpenApiAfterMutation(); }
+      catch (caught) { setSystemApiTokenError(`操作已成功，但 Token 列表刷新失败：${errorMessage(caught instanceof Error ? caught : new Error('刷新失败。'))}`); }
+      return result;
+    } catch (caught) {
+      let detail = errorMessage(caught instanceof Error ? caught : new Error('系统 Token 操作失败。'));
+      try { await refreshSystemOpenApiAfterMutation(); }
+      catch (refreshError) { detail = `${detail}；最终状态刷新失败：${errorMessage(refreshError instanceof Error ? refreshError : new Error('刷新失败。'))}`; }
+      setSystemApiTokenError(detail);
+      return null;
+    } finally {
+      systemApiTokenMutationRef.current = false;
+      setSystemApiTokenSubmitting(false);
+    }
+  }
+
+  function openSystemApiTokenCreate() {
+    setSystemApiTokenError('');
+    setCreatedSystemApiToken('');
+    setSystemApiTokenForm({ name: '', scopes: ['system_release:read'] });
+    setSystemApiTokenEditor({ mode: 'create' });
+  }
+
+  function openSystemApiTokenEdit(token) {
+    setSystemApiTokenError('');
+    setCreatedSystemApiToken('');
+    setSystemApiTokenForm({ name: token.name, scopes: [...token.scopes] });
+    setSystemApiTokenEditor({ mode: 'edit', tokenId: token.id });
+  }
+
+  function toggleSystemApiTokenScope(scope, checked) {
+    setSystemApiTokenForm((current) => ({
+      ...current,
+      scopes: checked ? [...new Set([...current.scopes, scope])] : current.scopes.filter((value) => value !== scope),
+    }));
+  }
+
+  async function submitSystemApiToken(event) {
+    event.preventDefault();
+    if (!systemApiTokenEditor || !systemApiTokenForm.name.trim() || systemApiTokenForm.scopes.length === 0) return;
+    const result = systemApiTokenEditor.mode === 'create'
+      ? await runSystemApiTokenMutation(() => api.createSystemApiToken(systemApiTokenForm.name.trim(), systemApiTokenForm.scopes), '系统 Token 已创建。')
+      : await runSystemApiTokenMutation(() => api.updateSystemApiToken(Number(systemApiTokenEditor.tokenId), systemApiTokenForm.name.trim(), systemApiTokenForm.scopes), '系统 Token 已更新。');
+    if (!result) return;
+    if (systemApiTokenEditor.mode === 'create') setCreatedSystemApiToken(result.raw_token || '');
+    setSystemApiTokenEditor(null);
+  }
+
+  async function confirmSystemApiTokenDelete() {
+    if (!systemApiTokenDeleteTarget) return;
+    const deleted = await runSystemApiTokenMutation(() => api.deleteSystemApiToken(systemApiTokenDeleteTarget.id), '系统 Token 已删除。');
+    if (deleted) setSystemApiTokenDeleteTarget(null);
   }
 
   async function refreshSystemReleasesAfterMutation() {
@@ -2759,6 +2846,8 @@ export function SharedApp({ services }) {
         ? '角色权限 - 元策'
       : route.id === 'system-storage'
         ? '对象存储 - 元策'
+      : route.id === 'system-openapi'
+        ? '系统 OpenAPI - 元策'
       : route.id === 'system-releases'
         ? '版本管理 - 元策'
       : route.id === 'search'
@@ -4414,8 +4503,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-releases')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-releases' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4443,7 +4532,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-releases' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4507,7 +4596,39 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'system-releases' ? (
+          {route.id === 'system-openapi' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-openapi-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-openapi-title">系统 OpenAPI Token</h2><p className="shell-muted">已创建 {systemOpenApiView?.active_count || 0}/{systemOpenApiView?.token_limit || 100} 个</p></div>
+                <div className="shell-actions-inline">
+                  <a className="shell-link" href="/api/system/openapi.json" target="_blank" rel="noreferrer">OpenAPI JSON</a>
+                  {route.owner === 'web' ? <a className="shell-link" href="/web/system/api-docs">API 文档</a> : null}
+                  {systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建 Token</Button> : null}
+                </div>
+              </div>
+              {createdSystemApiToken ? <Feedback tone="success" title="系统 Token 已创建"><Field id="system-api-token-created" label="Token 明文" hint="关闭或刷新后不再显示。"><input readOnly value={createdSystemApiToken} onFocus={(event) => event.currentTarget.select()} /></Field></Feedback> : null}
+              {systemApiTokenError && !systemApiTokenEditor && !systemApiTokenDeleteTarget ? <Feedback tone="danger" title="系统 Token 操作失败">{systemApiTokenError}</Feedback> : null}
+              <DataTable caption="系统 OpenAPI Token 列表" rows={systemOpenApiView?.items || []} rowKey={(item) => item.id} emptyText="暂无系统 Token。" columns={[
+                { key: 'name', label: '名称', render: (item) => <><strong>{item.name}</strong><br /><code>****{item.token_suffix}</code></> },
+                { key: 'scopes', label: 'Scope', render: (item) => item.scopes.map((scope) => scope === 'system_release:read' ? '版本读取' : '版本写入 / 发布 / 资产上传').join('、') },
+                { key: 'creator', label: '创建 / 更新', render: (item) => <>{item.created_by || '系统'}<br /><span className="shell-muted">{item.updated_by || '系统'}</span></> },
+                { key: 'activity', label: '最近使用', render: (item) => item.last_used_at ? formatTimestamp(item.last_used_at) : '从未使用' },
+                { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) },
+                { key: 'actions', label: '操作', render: (item) => systemOpenApiView?.can_manage_tokens ? <div className="shell-actions-inline"><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => openSystemApiTokenEdit(item)}>编辑</Button><Button variant="danger" disabled={systemApiTokenSubmitting} onClick={() => { setSystemApiTokenError(''); setCreatedSystemApiToken(''); setSystemApiTokenDeleteTarget(item); }}>删除</Button></div> : '只读' },
+              ]} />
+              <Modal open={Boolean(systemApiTokenEditor)} title={systemApiTokenEditor?.mode === 'create' ? '创建系统 Token' : '编辑系统 Token'} onClose={() => { if (!systemApiTokenSubmitting) { setSystemApiTokenEditor(null); setSystemApiTokenError(''); } }} footer={<><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => setSystemApiTokenEditor(null)}>取消</Button><Button loading={systemApiTokenSubmitting} disabled={!systemApiTokenForm.name.trim() || systemApiTokenForm.scopes.length === 0} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-api-token-form'))?.requestSubmit()}>{systemApiTokenEditor?.mode === 'create' ? '创建' : '保存'}</Button></>}>
+                <form id="system-api-token-form" onSubmit={submitSystemApiToken}>
+                  <Field id="system-api-token-name" label="名称" required><input maxLength={80} value={systemApiTokenForm.name} onChange={(event) => setSystemApiTokenForm((current) => ({ ...current, name: event.target.value }))} /></Field>
+                  <fieldset disabled={systemApiTokenSubmitting}><legend>Scope</legend>
+                    <label><input type="checkbox" checked={systemApiTokenForm.scopes.includes('system_release:read')} onChange={(event) => toggleSystemApiTokenScope('system_release:read', event.target.checked)} /> 版本读取</label>
+                    <label><input type="checkbox" checked={systemApiTokenForm.scopes.includes('system_release:write')} onChange={(event) => toggleSystemApiTokenScope('system_release:write', event.target.checked)} /> 版本写入 / 发布 / 资产上传</label>
+                  </fieldset>
+                  {systemApiTokenError ? <Feedback tone="danger" title="保存失败">{systemApiTokenError}</Feedback> : null}
+                </form>
+              </Modal>
+              <Modal open={Boolean(systemApiTokenDeleteTarget)} title="删除系统 Token" onClose={() => { if (!systemApiTokenSubmitting) { setSystemApiTokenDeleteTarget(null); setSystemApiTokenError(''); } }} footer={<><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => setSystemApiTokenDeleteTarget(null)}>取消</Button><Button variant="danger" loading={systemApiTokenSubmitting} onClick={() => void confirmSystemApiTokenDelete()}>确认删除</Button></>}><p>确认删除 {systemApiTokenDeleteTarget?.name || ''}？使用该 Token 的自动化会立即失去访问权限。</p>{systemApiTokenError ? <Feedback tone="danger" title="删除失败">{systemApiTokenError}</Feedback> : null}</Modal>
+            </section>
+          ) : route.id === 'system-releases' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-releases-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-releases-title">发布工作台</h2><p className="shell-muted">保留策略、版本状态与平台资产</p></div>

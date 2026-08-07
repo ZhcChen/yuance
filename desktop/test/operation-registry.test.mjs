@@ -122,6 +122,28 @@ test("system storage view response excludes raw storage credentials", () => {
   assert.throws(() => parse({ ...payload, config: { ...payload.config, access_key_id: "raw" } }), /fields are invalid/i);
 });
 
+test("system OpenAPI token operations bound fields and plaintext to creation", () => {
+  const registry = createOperationRegistry();
+  const token = {
+    id: 7, name: "Release robot", scopes: ["system_release:read", "system_release:write"], token_suffix: "12345678",
+    created_by: "管理员", updated_by: "管理员", last_used_at: "", created_at: "2026-08-08", updated_at: "2026-08-08",
+  };
+  const view = registry.resolve("system.openapiview", {}).parse({ items: [token], active_count: 1, token_limit: 100, can_manage_tokens: true });
+  assert.equal(view.items[0].token_suffix, "12345678");
+  assert.throws(() => registry.resolve("system.openapiview", {}).parse({ items: [{ ...token, raw_token: "secret" }], active_count: 1, token_limit: 100, can_manage_tokens: true }), /fields/i);
+  const create = registry.resolve("system.apitokencreate", { name: "Release robot", scopes: ["system_release:read", "system_release:write"] });
+  assert.deepEqual({ method: create.method, path: create.path, body: create.body, idempotent: create.idempotent }, {
+    method: "POST", path: "/api/v1/system/api-tokens", body: '{"name":"Release robot","scopes":["system_release:read","system_release:write"]}', idempotent: false,
+  });
+  assert.equal(create.parse({ token, raw_token: "yuance_sys_pat_once" }).raw_token, "yuance_sys_pat_once");
+  const update = registry.resolve("system.apitokenupdate", { tokenId: 7, name: "Release reader", scopes: ["system_release:read"] });
+  assert.equal(update.path, "/api/v1/system/api-tokens/7");
+  assert.equal(update.body, '{"name":"Release reader","scopes":["system_release:read"]}');
+  assert.equal(registry.resolve("system.apitokendelete", { tokenId: 7 }).path, "/api/v1/system/api-tokens/7");
+  assert.throws(() => registry.resolve("system.apitokencreate", { name: "Robot", scopes: ["project:read"] }), /scopes/i);
+  assert.throws(() => registry.resolve("system.apitokenupdate", { tokenId: 7, name: "Robot", scopes: ["system_release:read"], rawToken: "forged" }), /fields/i);
+});
+
 test("system releases view response excludes internal object storage fields", () => {
   const parse = createOperationRegistry().resolve("system.releasesview", {}).parse;
   const release = {

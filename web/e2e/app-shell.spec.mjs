@@ -2301,6 +2301,75 @@ test('formal web system storage owner keeps its route while rendering the shared
   expect(page.url()).not.toContain('/web/app/system/storage');
 });
 
+test('shared system OpenAPI tokens preserve one-time plaintext and confirmed lifecycle', async ({ page }) => {
+  const mutations = [];
+  const viewRequests = [];
+  let nextId = 8;
+  let tokens = [{
+    id: 7, name: 'Release robot', scopes: ['system_release:read', 'system_release:write'], token_suffix: '12345678',
+    created_by: '系统管理员', updated_by: '系统管理员', last_used_at: '', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T00:00:00Z',
+  }];
+  const view = () => ({ items: tokens, active_count: tokens.length, token_limit: 100, can_manage_tokens: true });
+  await page.route('**/api/v1/system/openapi-view*', (route) => {
+    viewRequests.push(route.request().url());
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) });
+  });
+  await page.route('**/api/v1/system/api-tokens', async (route) => {
+    const body = route.request().postDataJSON();
+    mutations.push(['create', body]);
+    const token = { id: nextId++, name: body.name, scopes: body.scopes, token_suffix: '87654321', created_by: '系统管理员', updated_by: '系统管理员', last_used_at: '', created_at: '2026-08-08T01:00:00Z', updated_at: '2026-08-08T01:00:00Z' };
+    tokens = [token, ...tokens];
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: { token, raw_token: 'yuance_sys_pat_once_only' } }) });
+  });
+  await page.route(/\/api\/v1\/system\/api-tokens\/(\d+)$/u, async (route) => {
+    const id = Number(new URL(route.request().url()).pathname.split('/').pop());
+    if (route.request().method() === 'PATCH') {
+      const body = route.request().postDataJSON();
+      mutations.push(['update', id, body]);
+      tokens = tokens.map((token) => token.id === id ? { ...token, name: body.name, scopes: body.scopes, updated_at: '2026-08-08T02:00:00Z' } : token);
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: tokens.find((token) => token.id === id) }) });
+    }
+    mutations.push(['delete', id]);
+    const [deleted] = tokens.filter((token) => token.id === id);
+    tokens = tokens.filter((token) => token.id !== id);
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: deleted }) });
+  });
+
+  await login(page, '/web/app/system/openapi');
+  await expect(page).toHaveTitle('系统 OpenAPI - 元策');
+  await expect.poll(() => viewRequests.length).toBeGreaterThan(0);
+  await expect(page.getByRole('table', { name: '系统 OpenAPI Token 列表' })).toContainText('Release robot');
+  await expect(page.locator('body')).not.toContainText('yuance_sys_pat_');
+
+  await page.getByRole('button', { name: '创建 Token' }).click();
+  const creator = page.getByRole('dialog', { name: '创建系统 Token' });
+  await creator.getByLabel('名称').fill('Desktop release');
+  await creator.getByLabel('版本写入 / 发布 / 资产上传').check();
+  await creator.getByRole('button', { name: '创建', exact: true }).click();
+  await expect(page.getByLabel('Token 明文')).toHaveValue('yuance_sys_pat_once_only');
+  await expect(page.getByRole('table', { name: '系统 OpenAPI Token 列表' })).toContainText('Desktop release');
+
+  const row = page.getByRole('row', { name: /Desktop release/ });
+  await row.getByRole('button', { name: '编辑' }).click();
+  const editor = page.getByRole('dialog', { name: '编辑系统 Token' });
+  await editor.getByLabel('名称').fill('Desktop release reader');
+  await editor.getByLabel('版本写入 / 发布 / 资产上传').uncheck();
+  await editor.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByLabel('Token 明文')).toHaveCount(0);
+  await expect(page.getByRole('table', { name: '系统 OpenAPI Token 列表' })).toContainText('Desktop release reader');
+
+  await page.getByRole('row', { name: /Desktop release reader/ }).getByRole('button', { name: '删除' }).click();
+  const deletion = page.getByRole('dialog', { name: '删除系统 Token' });
+  await expect(deletion).toContainText('自动化会立即失去访问权限');
+  await deletion.getByRole('button', { name: '确认删除' }).click();
+  await expect(page.getByRole('table', { name: '系统 OpenAPI Token 列表' })).not.toContainText('Desktop release reader');
+  expect(mutations).toEqual([
+    ['create', { name: 'Desktop release', scopes: ['system_release:read', 'system_release:write'] }],
+    ['update', 8, { name: 'Desktop release reader', scopes: ['system_release:read'] }],
+    ['delete', 8],
+  ]);
+});
+
 test('shared system releases view renders one atomic policy version and asset snapshot', async ({ page }) => {
   const requests = [];
   await page.route('**/api/v1/system/releases-view*', async (route) => {
