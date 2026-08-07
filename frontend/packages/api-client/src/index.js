@@ -10,7 +10,7 @@ export { ApiError, apiErrorFromPayload } from './errors.js';
 export { createApiClient } from './http-client.js';
 export { createAccountSecurityClient } from './account-security.js';
 export { createProfileClient } from './profile.js';
-export { createProjectClient, projectApiPath, projectAttachmentApiPath, projectAttachmentPreviewApiPath, projectAttachmentPreviewFromPayload, projectCycleApiPath, projectCycleBody, projectMemberApiPath, projectUpdateBody } from './projects.js';
+export { createProjectClient, projectApiPath, projectAttachmentApiPath, projectAttachmentPreviewApiPath, projectAttachmentPreviewFromPayload, projectCycleApiPath, projectCycleBody, projectMemberApiPath, projectPersonalAnalysisApiPath, projectUpdateBody } from './projects.js';
 export { createResourceClient, projectResourceApiPath, projectResourceFromPayload, projectResourceMutationBody, projectResourcesFromPayload } from './resources.js';
 export { createSearchClient } from './search.js';
 export {

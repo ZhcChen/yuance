@@ -51,6 +51,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.cyclecreate", projectCycleCreateOperation],
     ["project.cycleupdate", projectCycleUpdateOperation],
     ["project.cycleclose", projectCycleCloseOperation],
+    ["project.personalanalysis", projectPersonalAnalysisOperation],
     ["project.attachments", projectAttachmentsOperation],
     ["project.attachmentpreview", projectAttachmentPreviewOperation],
     ["project.attachmentarchive", projectAttachmentArchiveOperation],
@@ -199,6 +200,11 @@ function projectCycleUpdateOperation(input) {
 function projectCycleCloseOperation(input) {
   exactKeys(input, ["cycleId", "projectKey"]);
   return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/cycles/${positiveInteger(input.cycleId)}/close`, parseProjectCycle, false);
+}
+
+function projectPersonalAnalysisOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/my-analysis`, parseProjectPersonalAnalysis);
 }
 
 function projectAttachmentsOperation(input) {
@@ -533,6 +539,17 @@ function parseProjectMember(value) { return freezeDto(value, {
   member_role: shortString, joined_at: shortString,
 }); }
 function parseProjectCycles(data) { return boundedArray(data, parseProjectCycle, 500, "project cycles"); }
+function parseProjectPersonalAnalysis(value) { return freezeDto(value, {
+  username: shortString, display_name: textString, joined_at: shortString,
+  completed_total: nonNegativeInteger, completed_requirements: nonNegativeInteger,
+  completed_tasks: nonNegativeInteger, completed_bugs: nonNegativeInteger,
+  completed_last_30_days: nonNegativeInteger,
+  pending: (pending) => freezeDto(pending, { requirements: nonNegativeInteger, tasks: nonNegativeInteger, bugs: nonNegativeInteger }),
+  daily_average: nonNegativeNumber, daily_peak: nonNegativeInteger, daily_peak_date: shortString,
+  monthly_average: nonNegativeNumber, monthly_peak: nonNegativeInteger, monthly_peak_month: shortString,
+  active_days: nonNegativeInteger, comment_count: nonNegativeInteger, handoff_count: nonNegativeInteger,
+  recent_completions: (items) => boundedArray(items, (item) => freezeDto(item, { key: shortString, item_type: shortString, title: textString, completed_at: shortString }), 8, "personal completions"),
+}); }
 function parseProjectResources(data) {
   if (!Array.isArray(data)) throw new TypeError("project resources are invalid");
   return Object.freeze(data.map(parseProjectResource));
@@ -649,6 +666,7 @@ function workItemKind(value) { if (value !== "work_item") throw new TypeError("n
 function positiveInteger(value) { return integer(value, 1, "integer"); }
 function nullablePositiveInteger(value) { return value === null ? null : positiveInteger(value); }
 function nonNegativeInteger(value) { return integer(value, 0, "integer"); }
+function nonNegativeNumber(value) { if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new TypeError("number is invalid"); return value; }
 function integer(value, minimum, name, maximum = Number.MAX_SAFE_INTEGER) { if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new TypeError(`${name} is invalid`); return value; }
 function timestamp(value, name) { const parsed = Date.parse(value); if (typeof value !== "string" || !Number.isFinite(parsed)) throw new TypeError(`${name} is invalid`); return new Date(parsed).toISOString(); }
 function exactKeys(value, allowed) { const keys = Object.keys(value); if (keys.some((key) => !allowed.includes(key))) throw new TypeError("operation input contains unknown fields"); }

@@ -223,6 +223,44 @@ pub struct ProjectCycleWorkItemPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ProjectPersonalAnalysisPayload {
+    pub username: String,
+    pub display_name: String,
+    pub joined_at: String,
+    pub completed_total: i64,
+    pub completed_requirements: i64,
+    pub completed_tasks: i64,
+    pub completed_bugs: i64,
+    pub completed_last_30_days: i64,
+    pub pending: ProjectPersonalAnalysisPendingPayload,
+    pub daily_average: f64,
+    pub daily_peak: i64,
+    pub daily_peak_date: String,
+    pub monthly_average: f64,
+    pub monthly_peak: i64,
+    pub monthly_peak_month: String,
+    pub active_days: i64,
+    pub comment_count: i64,
+    pub handoff_count: i64,
+    pub recent_completions: Vec<ProjectPersonalCompletionPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectPersonalAnalysisPendingPayload {
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectPersonalCompletionPayload {
+    pub key: String,
+    pub item_type: String,
+    pub title: String,
+    pub completed_at: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ProjectResourcePayload {
     pub id: i64,
     pub project_key: String,
@@ -2344,6 +2382,23 @@ pub async fn get_project_cycle(
     let work_items =
         projects::list_project_cycle_work_item_snapshots(pool, project.id, cycle_id).await?;
     Ok(json(project_cycle_payload(cycle, work_items)))
+}
+
+pub async fn get_project_personal_analysis(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectPersonalAnalysisPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let analysis = projects::personal_project_analysis(pool, project.id, user.id).await?;
+    Ok(json(project_personal_analysis_payload(user, analysis)))
 }
 
 pub async fn create_project_cycle(
@@ -6474,6 +6529,46 @@ fn project_cycle_payload(
                 assignee: item.assignee_display_name,
                 due_date: item.due_date,
                 updated_at: item.updated_at,
+            })
+            .collect(),
+    }
+}
+
+fn project_personal_analysis_payload(
+    user: &auth::AuthUser,
+    analysis: projects::PersonalProjectAnalysis,
+) -> ProjectPersonalAnalysisPayload {
+    ProjectPersonalAnalysisPayload {
+        username: user.username.clone(),
+        display_name: user.display_name.clone(),
+        joined_at: analysis.joined_at,
+        completed_total: analysis.completed_total,
+        completed_requirements: analysis.completed_requirements,
+        completed_tasks: analysis.completed_tasks,
+        completed_bugs: analysis.completed_bugs,
+        completed_last_30_days: analysis.completed_last_30_days,
+        pending: ProjectPersonalAnalysisPendingPayload {
+            requirements: analysis.pending.requirements,
+            tasks: analysis.pending.tasks,
+            bugs: analysis.pending.bugs,
+        },
+        daily_average: analysis.daily_average,
+        daily_peak: analysis.daily_peak,
+        daily_peak_date: analysis.daily_peak_date,
+        monthly_average: analysis.monthly_average,
+        monthly_peak: analysis.monthly_peak,
+        monthly_peak_month: analysis.monthly_peak_month,
+        active_days: analysis.active_days,
+        comment_count: analysis.comment_count,
+        handoff_count: analysis.handoff_count,
+        recent_completions: analysis
+            .recent_completions
+            .into_iter()
+            .map(|item| ProjectPersonalCompletionPayload {
+                key: item.item_key,
+                item_type: item.item_type,
+                title: item.title,
+                completed_at: item.completed_at,
             })
             .collect(),
     }

@@ -12,6 +12,7 @@ import {
   projectAttachmentPreviewApiPath,
   projectCycleApiPath,
   projectMemberApiPath,
+  projectPersonalAnalysisApiPath,
   projectResourceApiPath,
   workItemApiPath,
 } from '@yuance/frontend-api-client';
@@ -135,6 +136,16 @@ test('project cycle methods share fixed paths and write payloads', async () => {
     ['/api/v1/projects/YCE/cycles/7', 'PATCH', { name: 'Sprint 1', goal: 'Ship', description: 'Cycle', owner_username: 'alice', start_date: '2026-08-01', end_date: '2026-08-31' }],
     ['/api/v1/projects/YCE/cycles/7/close', 'POST', undefined],
   ]);
+});
+
+test('project personal analysis uses its fixed read path', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.getProjectPersonalAnalysis('YCE');
+  assert.equal(projectPersonalAnalysisApiPath('YCE'), '/api/v1/projects/YCE/my-analysis');
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET']), [
+    ['/api/v1/projects/YCE/my-analysis', 'GET'],
+  ]);
+  assert.deepEqual(writes, []);
 });
 
 test('project attachment methods use fixed paths and filter private fields', async () => {

@@ -34,6 +34,7 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         "/api/v1/projects",
         "/api/v1/projects/YCE",
         "/api/v1/projects/YCE/members",
+        "/api/v1/projects/YCE/my-analysis",
         "/api/v1/projects/YCE/resources",
         "/api/v1/current-project",
         "/api/v1/topbar/status",
@@ -46,6 +47,28 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         let response = request(&app, "GET", path, &credentials.access_token, None).await;
         assert_eq!(response.status(), StatusCode::OK, "path: {path}");
     }
+
+    let response = request(
+        &app,
+        "GET",
+        "/api/v1/projects/YCE/my-analysis",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let analysis = json_body(response).await;
+    let data = &analysis["data"];
+    assert_eq!(data["username"], "admin");
+    assert!(data["display_name"].is_string());
+    assert!(data["joined_at"].is_string());
+    for field in ["requirements", "tasks", "bugs"] {
+        assert!(data["pending"][field].is_i64(), "pending field: {field}");
+    }
+    for field in ["daily_average", "monthly_average"] {
+        assert!(data[field].is_number(), "average field: {field}");
+    }
+    assert!(data["recent_completions"].is_array());
 
     let response = request(
         &app,

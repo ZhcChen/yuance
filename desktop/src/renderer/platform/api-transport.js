@@ -54,6 +54,8 @@ function resolveReadOperation(url, options) {
   }) };
   const projectMembers = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/members$/u, "project.members", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectMembers) return projectMembers;
+  const projectPersonalAnalysis = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/my-analysis$/u, "project.personalanalysis", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
+  if (projectPersonalAnalysis) return projectPersonalAnalysis;
   const projectCycle = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/cycles\/(\d+)$/u, "project.cycledetail", ([projectKey, cycleId]) => ({ projectKey: decodeSegment(projectKey), cycleId: positiveInteger(cycleId) }));
   if (projectCycle) return projectCycle;
   const projectCycles = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/cycles$/u, "project.cycles", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));

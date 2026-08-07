@@ -42,6 +42,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["project.members", { projectKey: "DEMO" }, "/api/v1/projects/DEMO/members"],
     ["project.cycles", { projectKey: "DEMO" }, "/api/v1/projects/DEMO/cycles"],
     ["project.cycledetail", { projectKey: "DEMO", cycleId: 7 }, "/api/v1/projects/DEMO/cycles/7"],
+    ["project.personalanalysis", { projectKey: "DEMO" }, "/api/v1/projects/DEMO/my-analysis"],
     ["project.resources", { projectKey: "DEMO", q: "发布", category: "development", relatedCycleId: 7 }, "/api/v1/projects/DEMO/resources?q=%E5%8F%91%E5%B8%83&category=development&related_cycle_id=7"],
     ["project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }, "/api/v1/projects/DEMO/resources/9"],
     ["project.resourceattachments", { projectKey: "DEMO", resourceId: 9, accessToken: "grant-token" }, "/api/v1/projects/DEMO/resources/9/attachments?access=grant-token"],
@@ -134,6 +135,21 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   });
   assert.deepEqual(search.items[0], { kind: "bug", key: "DEMO-1", title: "Crash", context: "Details", target: "/web/work-items/DEMO-1", updated_at: "2026-08-07T00:00:00Z" });
 
+  const analysis = registry.resolve("project.personalanalysis", { projectKey: "DEMO" }).parse({
+    username: "alice", display_name: "Alice", joined_at: "2026-08-01T00:00:00Z",
+    completed_total: 4, completed_requirements: 1, completed_tasks: 2, completed_bugs: 1,
+    completed_last_30_days: 3, pending: { requirements: 2, tasks: 3, bugs: 1 },
+    daily_average: 0.5, daily_peak: 2, daily_peak_date: "2026-08-06",
+    monthly_average: 2, monthly_peak: 4, monthly_peak_month: "2026-08",
+    active_days: 5, comment_count: 8, handoff_count: 2,
+    recent_completions: [{ key: "DEMO-4", item_type: "task", title: "Ship", completed_at: "2026-08-07T00:00:00Z" }],
+    access_token: "leak",
+  });
+  assert.equal(Object.isFrozen(analysis), true);
+  assert.equal(Object.isFrozen(analysis.pending), true);
+  assert.equal(Object.isFrozen(analysis.recent_completions), true);
+  assert.equal("access_token" in analysis, false);
+
   const attachments = registry.resolve("workitem.attachments", { itemKey: "DEMO-1" }).parse([{
     id: 3, filename: "report.txt", content_type: "text/plain", byte_size: 12,
     status: "uploaded", created_by: "Alice", created_at: "2026-08-03T00:00:00Z",
@@ -173,6 +189,21 @@ test("rejects malformed or oversized business responses", () => {
     items: Array.from({ length: 101 }, () => ({})), unread_count: 0, pending_count: 0,
     filter: "all", page: 1, per_page: 20, total_items: 101, total_pages: 6,
   }), /invalid/i);
+  const validAnalysis = {
+    username: "alice", display_name: "Alice", joined_at: "2026-08-01T00:00:00Z",
+    completed_total: 0, completed_requirements: 0, completed_tasks: 0, completed_bugs: 0,
+    completed_last_30_days: 0, pending: { requirements: 0, tasks: 0, bugs: 0 },
+    daily_average: 0, daily_peak: 0, daily_peak_date: "",
+    monthly_average: 0, monthly_peak: 0, monthly_peak_month: "",
+    active_days: 0, comment_count: 0, handoff_count: 0, recent_completions: [],
+  };
+  const analysisParser = registry.resolve("project.personalanalysis", { projectKey: "DEMO" }).parse;
+  for (const payload of [
+    { ...validAnalysis, daily_average: Number.NaN },
+    { ...validAnalysis, daily_average: -1 },
+    { ...validAnalysis, pending: { requirements: 0, tasks: 0 } },
+    { ...validAnalysis, recent_completions: Array.from({ length: 9 }, () => ({ key: "DEMO-1", item_type: "task", title: "Done", completed_at: "2026-08-07T00:00:00Z" })) },
+  ]) assert.throws(() => analysisParser(payload), /invalid/i);
 });
 
 test("project resources accept the complete unpaginated server response", () => {

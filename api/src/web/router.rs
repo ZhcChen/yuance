@@ -796,6 +796,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_project_cycles).post(web::api::create_project_cycle),
         )
         .route(
+            "/api/v1/projects/{project_key}/my-analysis",
+            get(web::api::get_project_personal_analysis),
+        )
+        .route(
             "/api/v1/projects/{project_key}/cycles/{cycle_id}",
             get(web::api::get_project_cycle).patch(web::api::update_project_cycle),
         )

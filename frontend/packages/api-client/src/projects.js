@@ -19,6 +19,10 @@ export function projectCycleApiPath(projectKey, cycleId) {
   return cycleId === undefined ? base : `${base}/${encodeURIComponent(String(cycleId))}`;
 }
 
+export function projectPersonalAnalysisApiPath(projectKey) {
+  return `${projectApiPath(projectKey)}/my-analysis`;
+}
+
 export function projectAttachmentApiPath(projectKey, attachmentId) {
   const base = `${projectApiPath(projectKey)}/attachments`;
   return attachmentId === undefined ? base : `${base}/${encodeURIComponent(String(attachmentId))}`;
@@ -38,6 +42,7 @@ export function createProjectClient({ request, prepareWrite }) {
     },
     getProjectCycles(projectKey) { return request(projectCycleApiPath(projectKey)); },
     getProjectCycle(projectKey, cycleId) { return request(projectCycleApiPath(projectKey, cycleId)); },
+    getProjectPersonalAnalysis(projectKey) { return request(projectPersonalAnalysisApiPath(projectKey)); },
     async getProjectAttachments(projectKey) { return attachmentsFromPayload(await request(projectAttachmentApiPath(projectKey))); },
     async getProjectAttachmentPreview(projectKey, attachmentId) {
       return projectAttachmentPreviewFromPayload(await request(projectAttachmentPreviewApiPath(projectKey, attachmentId)));

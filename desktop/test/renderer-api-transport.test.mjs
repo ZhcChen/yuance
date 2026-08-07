@@ -24,6 +24,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/projects/DEMO/members", "project.members", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/cycles", "project.cycles", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/cycles/7", "project.cycledetail", { projectKey: "DEMO", cycleId: 7 }],
+    ["/api/v1/projects/DEMO/my-analysis", "project.personalanalysis", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/attachments", "project.attachments", { projectKey: "DEMO" }],
     ["/api/v1/projects/DEMO/resources?q=release&category=development&related_cycle_id=7", "project.resources", { projectKey: "DEMO", q: "release", category: "development", relatedCycleId: "7" }],
     ["/api/v1/projects/DEMO/resources/9", "project.resourcedetail", { projectKey: "DEMO", resourceId: 9 }],
@@ -90,6 +91,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.removeProjectMember("DEMO", "bob");
   const cycle = { name: "Sprint", goal: "Ship", description: "Cycle", ownerUsername: "alice", startDate: "2026-08-01", endDate: "2026-08-31" };
   await client.getProjectCycles("DEMO"); await client.getProjectCycle("DEMO", 7); await client.createProjectCycle("DEMO", cycle); await client.updateProjectCycle("DEMO", 7, cycle); await client.closeProjectCycle("DEMO", 7);
+  await client.getProjectPersonalAnalysis("DEMO");
   await client.getProjectAttachments("DEMO"); await client.archiveProjectAttachment("DEMO", 8);
   await client.getProjectResources("DEMO", { q: "release" }); await client.getProjectResource("DEMO", 9); await client.unlockProjectResource("DEMO", 9, "vault-pass");
   const resourcePayload = { title: "Runbook", category: "other", body: "Body", bodyFormat: "plain", accessPassword: "", tags: ["ops"], relatedWorkItemKey: "", relatedCycleId: null };
@@ -121,6 +123,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["project.cyclecreate", { projectKey: "DEMO", ...cycle }],
     ["project.cycleupdate", { projectKey: "DEMO", cycleId: 7, ...cycle }],
     ["project.cycleclose", { projectKey: "DEMO", cycleId: 7 }],
+    ["project.personalanalysis", { projectKey: "DEMO" }],
     ["project.attachments", { projectKey: "DEMO" }],
     ["project.attachmentarchive", { projectKey: "DEMO", attachmentId: 8 }],
     ["project.resources", { projectKey: "DEMO", q: "release" }],
