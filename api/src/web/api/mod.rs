@@ -330,6 +330,59 @@ where
 }
 
 #[derive(Debug, Serialize)]
+pub struct WorkItemListSummaryPayload {
+    pub total_items: i64,
+    pub active_items: i64,
+    pub high_priority_items: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListFilterPayload {
+    pub item_type: String,
+    pub q: String,
+    pub status: String,
+    pub priority: String,
+    pub project_key: String,
+    pub assignee_username: String,
+    pub cycle_id: String,
+    pub sort: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListAssigneePayload {
+    pub username: String,
+    pub display_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListCyclePayload {
+    pub id: i64,
+    pub name: String,
+    pub is_closed: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemSavedViewPayload {
+    pub id: i64,
+    pub name: String,
+    pub filters: WorkItemListFilterPayload,
+    pub per_page: i64,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct WorkItemListViewPayload {
+    pub items: Vec<WorkItemPayload>,
+    pub pagination: PaginationPayload,
+    pub summary: WorkItemListSummaryPayload,
+    pub filters: WorkItemListFilterPayload,
+    pub assignees: Vec<WorkItemListAssigneePayload>,
+    pub cycles: Vec<WorkItemListCyclePayload>,
+    pub saved_views: Vec<WorkItemSavedViewPayload>,
+    pub can_manage_work_items: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct WorkItemDetailPayload {
     pub key: String,
     pub item_type: String,
@@ -2591,6 +2644,118 @@ pub async fn list_work_items(
             total_items: page.total_items,
             total_pages,
         },
+    }))
+}
+
+pub async fn get_work_item_list_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<WorkItemQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemListViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let item_type = api_work_item_type(query.item_type.as_deref())?
+        .ok_or_else(|| AppError::BadRequest("工作项类型不能为空".to_string()))?;
+    let project_key =
+        default_api_project_key(pool, user, can_access_all_projects, query.project_key).await?;
+    if project_key.is_empty() {
+        return Err(AppError::BadRequest("请先选择当前项目".to_string()));
+    }
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+
+    let filter = projects::WorkItemListFilter {
+        item_type: Some(item_type.to_string()),
+        keyword: query.q,
+        status: query.status,
+        priority: query.priority,
+        project_key: project.project_key.clone(),
+        assignee_username: query.assignee_username,
+        cycle_id: query.cycle_id,
+        sort_by: query.sort,
+    };
+    let pagination = normalize_api_pagination(query.page, query.per_page)?;
+    let (page, stats, members, cycles, saved_views) = tokio::try_join!(
+        projects::list_work_item_summaries_filtered_for_user_paginated(
+            pool,
+            user.id,
+            can_access_all_projects,
+            filter.clone(),
+            pagination,
+        ),
+        projects::work_item_list_stats_filtered_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            filter.clone(),
+        ),
+        projects::list_project_members(pool, project.id),
+        projects::list_project_cycles(pool, project.id),
+        projects::list_work_item_saved_views_for_user(
+            pool,
+            user.id,
+            can_access_all_projects,
+            &project.project_key,
+            item_type,
+        ),
+    )?;
+    let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
+        && ((can_access_all_projects
+            && rbac::user_has_permission(pool, user.id, "work_item.manage").await?)
+            || projects::user_can_write_project_content(
+                pool,
+                project.id,
+                user.id,
+                user.is_super_admin,
+            )
+            .await?);
+    let total_pages = page.total_pages();
+
+    Ok(json(WorkItemListViewPayload {
+        items: page.items.into_iter().map(work_item_payload).collect(),
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+        summary: WorkItemListSummaryPayload {
+            total_items: stats.total_items,
+            active_items: stats.active_items,
+            high_priority_items: stats.high_priority_items,
+        },
+        filters: work_item_list_filter_payload(item_type, filter),
+        assignees: members
+            .into_iter()
+            .map(|member| WorkItemListAssigneePayload {
+                username: member.username,
+                display_name: member.display_name,
+            })
+            .collect(),
+        cycles: cycles
+            .into_iter()
+            .map(|cycle| WorkItemListCyclePayload {
+                id: cycle.id,
+                name: cycle.name,
+                is_closed: !cycle.closed_at.is_empty(),
+            })
+            .collect(),
+        saved_views: saved_views
+            .into_iter()
+            .map(|view| WorkItemSavedViewPayload {
+                id: view.id,
+                name: view.name,
+                filters: work_item_list_filter_payload(item_type, view.filter),
+                per_page: view.per_page,
+                is_default: view.is_default,
+            })
+            .collect(),
+        can_manage_work_items,
     }))
 }
 
@@ -6453,6 +6618,26 @@ fn work_item_payload(item: projects::WorkItemSummary) -> WorkItemPayload {
         project_name: item.project_name,
         assignee: item.assignee_display_name,
         updated_at: item.updated_at,
+    }
+}
+
+fn work_item_list_filter_payload(
+    item_type: &str,
+    filter: projects::WorkItemListFilter,
+) -> WorkItemListFilterPayload {
+    WorkItemListFilterPayload {
+        item_type: item_type.to_string(),
+        q: filter.keyword,
+        status: filter.status,
+        priority: filter.priority,
+        project_key: filter.project_key,
+        assignee_username: filter.assignee_username,
+        cycle_id: filter.cycle_id,
+        sort: if filter.sort_by.trim().is_empty() {
+            "updated_desc".to_string()
+        } else {
+            filter.sort_by
+        },
     }
 }
 

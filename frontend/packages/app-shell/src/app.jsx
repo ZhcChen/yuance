@@ -246,6 +246,12 @@ import { errorMessage } from './errors.js';
  * @typedef AppWorkItemPage
  * @property {AppWorkItem[]} items
  * @property {{ page: number, per_page: number, total_items: number, total_pages: number }} pagination
+ * @property {{ total_items: number, active_items: number, high_priority_items: number }} summary
+ * @property {{ item_type: string, q: string, status: string, priority: string, project_key: string, assignee_username: string, cycle_id: string, sort: string }} filters
+ * @property {{ username: string, display_name: string }[]} assignees
+ * @property {{ id: number, name: string, is_closed: boolean }[]} cycles
+ * @property {{ id: number, name: string, filters: AppWorkItemPage['filters'], per_page: number, is_default: boolean }[]} saved_views
+ * @property {boolean} can_manage_work_items
  */
 
 /**
@@ -1066,7 +1072,7 @@ export function SharedApp({ services }) {
           ? api.search({ q: targetRoute.q, page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
         isWorkItemListRouteId(targetRoute.id)
-          ? api.getWorkItems({
+          ? api.getWorkItemListView({
             itemType: targetRoute.itemType,
             q: targetRoute.q,
             status: targetRoute.status,
@@ -3120,6 +3126,26 @@ export function SharedApp({ services }) {
     );
   }
 
+  /** @param {AppWorkItemPage['saved_views'][number]} savedView */
+  function applyWorkItemSavedView(savedView) {
+    navigate(
+      buildWorkItemListPath({
+        owner: workItemOwner,
+        itemType: savedView.filters.item_type,
+        q: savedView.filters.q,
+        status: savedView.filters.status,
+        priority: savedView.filters.priority,
+        assigneeUsername: savedView.filters.assignee_username,
+        projectKey: savedView.filters.project_key,
+        cycleId: Number.parseInt(savedView.filters.cycle_id, 10) || 0,
+        sort: savedView.filters.sort,
+        page: 1,
+        perPage: savedView.per_page,
+      }),
+      `已应用视图 ${savedView.name}。`,
+    );
+  }
+
   /** @param {number} nextPage */
   function changeWorkItemPage(nextPage) {
     if (!workItemListRoute) {
@@ -3834,14 +3860,25 @@ export function SharedApp({ services }) {
                 ))}
               </nav>
 
-              <form className="work-item-filter-bar" onSubmit={submitWorkItemFilters}>
+              {workItemPage ? <>
+                <div className="work-item-detail-grid" aria-label="工作项指标">
+                  <article className="work-item-detail-panel"><h3>筛选结果</h3><strong>{workItemPage.summary.total_items}</strong></article>
+                  <article className="work-item-detail-panel"><h3>活跃工作项</h3><strong>{workItemPage.summary.active_items}</strong></article>
+                  <article className="work-item-detail-panel"><h3>高优先级</h3><strong>{workItemPage.summary.high_priority_items}</strong></article>
+                </div>
+                {workItemPage.saved_views.length ? <div className="shell-actions-inline" aria-label="保存的视图">
+                  {workItemPage.saved_views.map((savedView) => <button className="shell-button shell-button-secondary" type="button" key={savedView.id} onClick={() => applyWorkItemSavedView(savedView)}>{savedView.name}{savedView.is_default ? ' · 默认' : ''}</button>)}
+                </div> : null}
+              </> : null}
+
+              <form key={workItemPage ? JSON.stringify(workItemPage.filters) : route.id} className="work-item-filter-bar" onSubmit={submitWorkItemFilters}>
                 <label className="work-item-filter-field work-item-filter-keyword">
                   <span>关键词</span>
-                  <input name="q" defaultValue={route.q} placeholder="标题或编号" />
+                  <input name="q" defaultValue={workItemPage?.filters.q ?? route.q} placeholder="标题或编号" />
                 </label>
                 <label className="work-item-filter-field">
                   <span>状态</span>
-                  <select name="status" defaultValue={route.status}>
+                  <select name="status" defaultValue={workItemPage?.filters.status ?? route.status}>
                     <option value="">全部状态</option>
                     <option value="open">待处理</option>
                     <option value="in_progress">进行中</option>
@@ -3855,7 +3892,7 @@ export function SharedApp({ services }) {
                 </label>
                 <label className="work-item-filter-field">
                   <span>优先级</span>
-                  <select name="priority" defaultValue={route.priority}>
+                  <select name="priority" defaultValue={workItemPage?.filters.priority ?? route.priority}>
                     <option value="">全部优先级</option>
                     <option value="P0">P0</option>
                     <option value="P1">P1</option>
@@ -3865,15 +3902,21 @@ export function SharedApp({ services }) {
                 </label>
                 <label className="work-item-filter-field">
                   <span>处理人</span>
-                  <input name="assignee_username" defaultValue={route.assigneeUsername} placeholder="用户名" />
+                  <select name="assignee_username" defaultValue={workItemPage?.filters.assignee_username ?? route.assigneeUsername}>
+                    <option value="">全部处理人</option>
+                    {(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}
+                  </select>
                 </label>
                 <label className="work-item-filter-field">
-                  <span>周期 ID</span>
-                  <input name="cycle_id" type="number" min="1" defaultValue={route.cycleId || ''} placeholder="全部周期" />
+                  <span>周期</span>
+                  <select name="cycle_id" defaultValue={workItemPage?.filters.cycle_id || route.cycleId || ''}>
+                    <option value="">全部周期</option>
+                    {(workItemPage?.cycles || []).map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}
+                  </select>
                 </label>
                 <label className="work-item-filter-field">
                   <span>排序</span>
-                  <select name="sort" defaultValue={route.sort}>
+                  <select name="sort" defaultValue={workItemPage?.filters.sort ?? route.sort}>
                     <option value="">最近更新</option>
                     <option value="updated_desc">最近更新</option>
                     <option value="created_desc">最近创建</option>

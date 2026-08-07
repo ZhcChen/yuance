@@ -912,6 +912,10 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/work-items",
             get(web::api::list_work_items).post(web::api::create_work_item),
         )
+        .route(
+            "/api/v1/work-item-list-view",
+            get(web::api::get_work_item_list_view),
+        )
         .route("/api/v1/notifications", get(web::api::list_notifications))
         .route(
             "/api/v1/notifications/read-all",

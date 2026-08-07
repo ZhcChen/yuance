@@ -201,6 +201,12 @@ test('work item list preserves cycle and allowlisted sort query', async () => {
   assert.equal(calls[0].url, '/api/v1/work-items?item_type=task&project_key=YCE&cycle_id=7&sort=due_date_asc&page=2&per_page=20');
 });
 
+test('work item list view uses the atomic shared page endpoint', async () => {
+  const { client, calls } = createRecordedClient();
+  await client.getWorkItemListView({ itemType: 'bug', projectKey: 'yce', cycleId: 7, sort: 'updated_desc', page: 1, perPage: 10 });
+  assert.equal(calls[0].url, '/api/v1/work-item-list-view?item_type=bug&project_key=YCE&cycle_id=7&sort=updated_desc&page=1&per_page=10');
+});
+
 test('updateWorkItem uses injected transport and JSON payload without CSRF logic', async () => {
   const { client, calls, writes } = createRecordedClient();
 

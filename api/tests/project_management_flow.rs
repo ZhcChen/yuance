@@ -6884,6 +6884,97 @@ async fn api_v1_filters_and_sorts_work_items_with_the_shared_cycle_contract() {
 }
 
 #[tokio::test]
+async fn api_v1_work_item_list_view_returns_atomic_shared_page_contract() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    projects::create_work_item_saved_view(
+        &pool,
+        initialized.user_id,
+        true,
+        "YCE",
+        "task",
+        projects::CreateWorkItemSavedViewInput {
+            name: "高优先级任务".to_string(),
+            filter: projects::WorkItemListFilter {
+                item_type: Some("task".to_string()),
+                priority: "P0".to_string(),
+                project_key: "YCE".to_string(),
+                sort_by: "priority_desc".to_string(),
+                ..projects::WorkItemListFilter::default()
+            },
+            per_page: 10,
+            is_default: true,
+        },
+    )
+    .await
+    .expect("saved view should persist");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-list-view?item_type=task&project_key=YCE&priority=P0&sort=priority_desc&page=1&per_page=10")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&response_body(response).await)
+        .expect("list view response should be json");
+    let data = &body["data"];
+
+    assert_eq!(data["filters"]["item_type"], "task");
+    assert_eq!(data["filters"]["project_key"], "YCE");
+    assert_eq!(data["filters"]["priority"], "P0");
+    assert_eq!(data["filters"]["sort"], "priority_desc");
+    assert_eq!(data["pagination"]["page"], 1);
+    assert_eq!(data["pagination"]["per_page"], 10);
+    assert_eq!(
+        data["summary"]["total_items"],
+        data["pagination"]["total_items"]
+    );
+    assert_eq!(
+        data["summary"]["high_priority_items"],
+        data["summary"]["total_items"]
+    );
+    assert!(data["items"].as_array().is_some_and(|items| {
+        !items.is_empty()
+            && items
+                .iter()
+                .all(|item| item["item_type"] == "task" && item["priority"] == "P0")
+    }));
+    assert!(
+        data["assignees"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
+    assert!(data["cycles"].is_array());
+    assert_eq!(data["saved_views"][0]["name"], "高优先级任务");
+    assert_eq!(data["saved_views"][0]["filters"]["priority"], "P0");
+    assert_eq!(data["saved_views"][0]["per_page"], 10);
+    assert_eq!(data["saved_views"][0]["is_default"], true);
+    assert_eq!(data["can_manage_work_items"], true);
+
+    let missing_type = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-list-view?project_key=YCE")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(missing_type.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn api_v1_work_items_returns_pagination_metadata() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

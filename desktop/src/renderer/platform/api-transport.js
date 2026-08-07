@@ -79,6 +79,10 @@ function resolveReadOperation(url, options) {
   if (parsed.pathname === "/api/v1/notifications") return { operation: "notification.list", input: parseQuery(parsed.searchParams, {
     limit: "limit", filter: "filter", page: "page", per_page: "perPage",
   }) };
+  if (parsed.pathname === "/api/v1/work-item-list-view") return { operation: "workitem.listview", input: parseQuery(parsed.searchParams, {
+    item_type: "itemType", q: "q", status: "status", priority: "priority", assignee_username: "assigneeUsername",
+    project_key: "projectKey", cycle_id: "cycleId", sort: "sort", page: "page", per_page: "perPage",
+  }) };
   if (parsed.pathname === "/api/v1/work-items") return { operation: "workitem.list", input: parseQuery(parsed.searchParams, {
     item_type: "itemType", q: "q", status: "status", priority: "priority", assignee_username: "assigneeUsername",
     project_key: "projectKey", cycle_id: "cycleId", sort: "sort", page: "page", per_page: "perPage",

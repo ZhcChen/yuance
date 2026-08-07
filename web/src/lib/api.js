@@ -101,6 +101,8 @@ export const updateCurrentProject = /** @type {(projectKey: string) => Promise<{
 
 export const getWorkItems = /** @type {(query?: { itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, page?: number, perPage?: number }) => Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getWorkItems);
 
+export const getWorkItemListView = apiClient.getWorkItemListView;
+
 export const getWorkItem = /** @type {(itemKey: string) => Promise<WorkItemDetail>} */ (apiClient.getWorkItem);
 
 export const getWorkItemComments = /** @type {(itemKey: string) => Promise<WorkItemComment[]>} */ (apiClient.getWorkItemComments);
@@ -203,6 +205,7 @@ export const webApi = {
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,
   getWorkItemComments,
+  getWorkItemListView,
   getWorkItems,
   handoffWorkItem,
   logout,

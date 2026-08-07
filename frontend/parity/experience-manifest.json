@@ -8,6 +8,7 @@
     { "path": "/api/v1/topbar/events", "methods": ["GET"], "owners": ["page.shell.dashboard"], "purpose": "顶部状态 SSE" },
     { "path": "/api/v1/notifications", "methods": ["GET", "POST"], "owners": ["page.message-search.messages", "action.messages.read-all"], "purpose": "通知列表和已读状态" },
     { "path": "/api/v1/work-items/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.work-item-list.requirements", "page.work-item-detail.detail", "action.work-item.create"], "purpose": "工作项、评论和附件共享 DTO 与 mutation" },
+    { "path": "/api/v1/work-item-list-view", "methods": ["GET"], "owners": ["page.work-item-list.requirements", "page.work-item-list.tasks", "page.work-item-list.bugs"], "purpose": "Web 与 Desktop 原子读取工作项列表视图" },
     { "path": "/api/v1/projects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail", "page.project.resource-detail", "action.project.resource.create"], "purpose": "项目文件、资源和附件共享 DTO 与 mutation" },
     { "path": "/api/v1/file-objects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail"], "purpose": "项目文件夹和文件对象操作" },
     { "path": "/api/v1/system/database-stats", "methods": ["GET"], "owners": ["page.system.database-stats"], "purpose": "数据库统计分页刷新" },
@@ -227,7 +228,7 @@
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U4",
       "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md"] }
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md", "docs/reviews/2026-08-07-021-web-desktop-u4-work-item-list-view-review.md"] }
     },
     {
       "id": "page.work-item-list.tasks",
@@ -242,7 +243,7 @@
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U4",
       "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md"] }
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md", "docs/reviews/2026-08-07-021-web-desktop-u4-work-item-list-view-review.md"] }
     },
     {
       "id": "page.work-item-list.bugs",
@@ -257,7 +258,7 @@
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U4",
       "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md"] }
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md", "docs/reviews/2026-08-07-021-web-desktop-u4-work-item-list-view-review.md"] }
     },
     {
       "id": "page.work-item-detail.detail",

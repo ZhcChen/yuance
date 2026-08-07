@@ -1295,6 +1295,33 @@
         }
       }
     },
+    "/api/v1/work-item-list-view": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取共享工作项列表完整视图",
+        "description": "供 Web 与 Desktop 共享页面原子读取列表、指标、已解析筛选、候选项、保存视图和管理权限。",
+        "parameters": [
+          {"name": "item_type", "in": "query", "required": true, "schema": {"type": "string", "enum": ["requirement", "task", "bug"]}},
+          {"name": "project_key", "in": "query", "schema": {"type": "string"}},
+          {"name": "q", "in": "query", "schema": {"type": "string"}},
+          {"name": "status", "in": "query", "schema": {"type": "string"}},
+          {"name": "priority", "in": "query", "schema": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}},
+          {"name": "assignee_username", "in": "query", "schema": {"type": "string"}},
+          {"name": "cycle_id", "in": "query", "schema": {"type": "integer", "minimum": 1}},
+          {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["updated_desc", "created_desc", "priority_desc", "due_date_asc"]}},
+          {"$ref": "#/components/parameters/Page"},
+          {"$ref": "#/components/parameters/PerPage"}
+        ],
+        "responses": {
+          "200": {
+            "description": "共享工作项列表完整视图",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemListViewEnvelope"}}}
+          },
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
     "/api/v1/work-items/{item_key}": {
       "get": {
         "tags": [
@@ -3255,6 +3282,82 @@
               "pagination": {
                 "$ref": "#/components/schemas/Pagination"
               }
+            }
+          }
+        }
+      },
+      "WorkItemListFilter": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_type", "q", "status", "priority", "project_key", "assignee_username", "cycle_id", "sort"],
+        "properties": {
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "q": {"type": "string"},
+          "status": {"type": "string"},
+          "priority": {"type": "string"},
+          "project_key": {"type": "string"},
+          "assignee_username": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "sort": {"type": "string", "enum": ["updated_desc", "created_desc", "priority_desc", "due_date_asc"]}
+        }
+      },
+      "WorkItemListViewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["items", "pagination", "summary", "filters", "assignees", "cycles", "saved_views", "can_manage_work_items"],
+            "properties": {
+              "items": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItem"}},
+              "pagination": {"$ref": "#/components/schemas/Pagination"},
+              "summary": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["total_items", "active_items", "high_priority_items"],
+                "properties": {
+                  "total_items": {"type": "integer"},
+                  "active_items": {"type": "integer"},
+                  "high_priority_items": {"type": "integer"}
+                }
+              },
+              "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
+              "assignees": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["username", "display_name"],
+                  "properties": {"username": {"type": "string"}, "display_name": {"type": "string"}}
+                }
+              },
+              "cycles": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "name", "is_closed"],
+                  "properties": {"id": {"type": "integer"}, "name": {"type": "string"}, "is_closed": {"type": "boolean"}}
+                }
+              },
+              "saved_views": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "name", "filters", "per_page", "is_default"],
+                  "properties": {
+                    "id": {"type": "integer"},
+                    "name": {"type": "string"},
+                    "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
+                    "per_page": {"type": "integer"},
+                    "is_default": {"type": "boolean"}
+                  }
+                }
+              },
+              "can_manage_work_items": {"type": "boolean"}
             }
           }
         }

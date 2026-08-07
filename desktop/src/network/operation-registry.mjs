@@ -73,6 +73,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["notification.read", notificationReadOperation],
     ["notification.readall", noInputOperation("POST", "/api/v1/notifications/read-all", parseAffected, false)],
     ["workitem.list", workItemListOperation],
+    ["workitem.listview", workItemListViewOperation],
     ["workitem.detail", workItemDetailOperation],
     ["workitem.update", workItemUpdateOperation],
     ["workitem.handoff", workItemHandoffOperation],
@@ -417,6 +418,11 @@ function workItemListOperation(input) {
   return descriptor("GET", withQuery("/api/v1/work-items", query), parseWorkItemPage);
 }
 
+function workItemListViewOperation(input) {
+  const operation = workItemListOperation(input);
+  return descriptor("GET", operation.path.replace("/api/v1/work-items", "/api/v1/work-item-list-view"), parseWorkItemListView);
+}
+
 function workItemDetailOperation(input) {
   exactKeys(input, ["itemKey"]);
   return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetail);
@@ -580,6 +586,25 @@ function projectCycleWorkItems(value) { return boundedArray(value, (item) => fre
   assignee_username: shortString, assignee: textString, due_date: shortString, updated_at: shortString,
 }), 2_000, "cycle work items"); }
 function parseWorkItemPage(data) { return parsePage(data, parseWorkItemSummary); }
+function parseWorkItemListView(data) {
+  if (!isPlainObject(data)) throw new TypeError("work item list view is invalid");
+  const page = parseWorkItemPage(data);
+  return Object.freeze({
+    ...page,
+    summary: freezeDto(data.summary, { total_items: nonNegativeInteger, active_items: nonNegativeInteger, high_priority_items: nonNegativeInteger }),
+    filters: parseWorkItemListFilter(data.filters),
+    assignees: boundedArray(data.assignees, (value) => freezeDto(value, { username: shortString, display_name: shortString }), 500, "work item assignees"),
+    cycles: boundedArray(data.cycles, (value) => freezeDto(value, { id: positiveInteger, name: textString, is_closed: boolean }), 500, "work item cycles"),
+    saved_views: boundedArray(data.saved_views, (value) => freezeDto(value, {
+      id: positiveInteger, name: textString, filters: parseWorkItemListFilter, per_page: positiveInteger, is_default: boolean,
+    }), 100, "work item saved views"),
+    can_manage_work_items: boolean(data.can_manage_work_items),
+  });
+}
+function parseWorkItemListFilter(value) { return freezeDto(value, {
+  item_type: shortString, q: textString, status: shortString, priority: shortString,
+  project_key: shortString, assignee_username: shortString, cycle_id: shortString, sort: shortString,
+}); }
 function parseWorkItemSummary(value) { return freezeDto(value, {
   key: shortString, item_type: shortString, title: textString, status: shortString, priority: shortString,
   project_key: shortString, project_name: shortString, assignee: shortString, updated_at: shortString,

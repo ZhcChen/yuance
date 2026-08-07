@@ -14,7 +14,11 @@
 /** @typedef {{ body: string, bodyFormat?: string, parentCommentId?: number | null }} CommentRequestPayload */
 /** @typedef {{ originalFilename: string, contentType: string, byteSize: number, checksumSha256?: string }} AttachmentCreatePayload */
 /** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
-/** @typedef {{ getWorkItems(query?: { itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, page?: number, perPage?: number }): Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, getWorkItem(itemKey: string): Promise<WorkItemDetail>, getWorkItemComments(itemKey: string): Promise<WorkItemComment[]>, updateWorkItem(itemKey: string, payload: WorkItemUpdatePayload): Promise<WorkItemDetail>, handoffWorkItem(itemKey: string, payload: WorkItemHandoffPayload): Promise<WorkItemDetail>, createWorkItemComment(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, createWorkItemCommentDraft(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, updateWorkItemComment(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, publishWorkItemCommentDraft(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, getWorkItemAttachments(itemKey: string): Promise<Attachment[]>, createWorkItemAttachment(itemKey: string, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemAttachmentUploadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemAttachmentUploaded(itemKey: string, attachmentId: number): Promise<Attachment>, getWorkItemAttachmentDownloadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, getWorkItemCommentAttachments(itemKey: string, commentId: number): Promise<Attachment[]>, createWorkItemCommentAttachment(itemKey: string, commentId: number, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemCommentAttachmentUploadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemCommentAttachmentUploaded(itemKey: string, commentId: number, attachmentId: number): Promise<Attachment>, getWorkItemCommentAttachmentDownloadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl> }} WorkItemClient */
+/** @typedef {{ getWorkItems(query?: WorkItemListQuery): Promise<{ items: WorkItemSummary[], pagination: Pagination }>, getWorkItemListView(query?: WorkItemListQuery): Promise<WorkItemListView>, getWorkItem(itemKey: string): Promise<WorkItemDetail>, getWorkItemComments(itemKey: string): Promise<WorkItemComment[]>, updateWorkItem(itemKey: string, payload: WorkItemUpdatePayload): Promise<WorkItemDetail>, handoffWorkItem(itemKey: string, payload: WorkItemHandoffPayload): Promise<WorkItemDetail>, createWorkItemComment(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, createWorkItemCommentDraft(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, updateWorkItemComment(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, publishWorkItemCommentDraft(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, getWorkItemAttachments(itemKey: string): Promise<Attachment[]>, createWorkItemAttachment(itemKey: string, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemAttachmentUploadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemAttachmentUploaded(itemKey: string, attachmentId: number): Promise<Attachment>, getWorkItemAttachmentDownloadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, getWorkItemCommentAttachments(itemKey: string, commentId: number): Promise<Attachment[]>, createWorkItemCommentAttachment(itemKey: string, commentId: number, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemCommentAttachmentUploadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemCommentAttachmentUploaded(itemKey: string, commentId: number, attachmentId: number): Promise<Attachment>, getWorkItemCommentAttachmentDownloadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl> }} WorkItemClient */
+/** @typedef {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, page?: number, perPage?: number }} WorkItemListQuery */
+/** @typedef {{ page: number, per_page: number, total_items: number, total_pages: number }} Pagination */
+/** @typedef {{ item_type: string, q: string, status: string, priority: string, project_key: string, assignee_username: string, cycle_id: string, sort: string }} WorkItemListFilter */
+/** @typedef {{ items: WorkItemSummary[], pagination: Pagination, summary: { total_items: number, active_items: number, high_priority_items: number }, filters: WorkItemListFilter, assignees: { username: string, display_name: string }[], cycles: { id: number, name: string, is_closed: boolean }[], saved_views: { id: number, name: string, filters: WorkItemListFilter, per_page: number, is_default: boolean }[], can_manage_work_items: boolean }} WorkItemListView */
 
 /** @param {string} itemKey */
 export function workItemApiPath(itemKey) {
@@ -130,6 +134,22 @@ export function attachmentSignedUrlFromPayload(raw) {
   };
 }
 
+/** @param {WorkItemListQuery} query */
+function workItemListSearchParams(query) {
+  const params = new URLSearchParams();
+  if (typeof query.itemType === 'string' && query.itemType.trim()) params.set('item_type', query.itemType.trim());
+  if (typeof query.q === 'string' && query.q.trim()) params.set('q', query.q.trim());
+  if (typeof query.status === 'string' && query.status.trim()) params.set('status', query.status.trim());
+  if (typeof query.priority === 'string' && query.priority.trim()) params.set('priority', query.priority.trim().toUpperCase());
+  if (typeof query.assigneeUsername === 'string' && query.assigneeUsername.trim()) params.set('assignee_username', query.assigneeUsername.trim());
+  if (typeof query.projectKey === 'string' && query.projectKey.trim()) params.set('project_key', query.projectKey.trim().toUpperCase());
+  if (typeof query.cycleId === 'number' && Number.isInteger(query.cycleId) && query.cycleId > 0) params.set('cycle_id', String(query.cycleId));
+  if (typeof query.sort === 'string' && query.sort.trim()) params.set('sort', query.sort.trim());
+  if (typeof query.page === 'number' && Number.isInteger(query.page) && query.page > 0) params.set('page', String(query.page));
+  if (typeof query.perPage === 'number' && Number.isInteger(query.perPage) && query.perPage > 0) params.set('per_page', String(query.perPage));
+  return params;
+}
+
 /**
  * @param {{ request: ApiRequest, prepareWrite: PrepareWrite }} dependencies
  * @returns {WorkItemClient}
@@ -173,6 +193,13 @@ export function createWorkItemClient({ request, prepareWrite }) {
       }
       const suffix = params.size > 0 ? `?${params.toString()}` : '';
       return request(`/api/v1/work-items${suffix}`);
+    },
+
+    /** @param {WorkItemListQuery} [query] */
+    getWorkItemListView(query = {}) {
+      const params = workItemListSearchParams(query);
+      const suffix = params.size > 0 ? `?${params.toString()}` : '';
+      return request(`/api/v1/work-item-list-view${suffix}`);
     },
 
     /** @param {string} itemKey */

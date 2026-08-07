@@ -52,6 +52,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["notification.list", { filter: "unread", limit: 20, page: 2, perPage: 10 }, "/api/v1/notifications?limit=20&filter=unread&page=2&per_page=10"],
     ["notification.target", { notificationId: 9 }, "/api/v1/notifications/9/target"],
     ["workitem.list", {}, "/api/v1/work-items"],
+    ["workitem.listview", {}, "/api/v1/work-item-list-view"],
     ["workitem.list", {
       assigneeUsername: " alice ", itemType: "bug", page: 3, perPage: 50,
       priority: "P1", projectKey: "DEMO", q: " crash ", status: "in_progress", cycleId: 7, sort: "priority_desc",
@@ -91,6 +92,7 @@ test("rejects invalid business identifiers, filters and pagination", () => {
     ["workitem.list", { assigneeUsername: "x".repeat(65) }],
     ["workitem.list", { cycleId: 0 }],
     ["workitem.list", { sort: "random" }],
+    ["workitem.listview", { sort: "random" }],
     ["workitem.detail", { itemKey: "bad/key" }],
     ["workitem.comments", { itemKey: "A" }],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: -1 }],
@@ -130,6 +132,24 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   assert.equal("local_path" in page.items[0], false);
   assert.equal("next_url" in page.pagination, false);
   assert.equal("response_headers" in page, false);
+
+  const listView = registry.resolve("workitem.listview", { itemType: "bug" }).parse({
+    items: page.items,
+    pagination: page.pagination,
+    summary: { total_items: 1, active_items: 1, high_priority_items: 1, private_count: 99 },
+    filters: { item_type: "bug", q: "", status: "", priority: "", project_key: "DEMO", assignee_username: "", cycle_id: "", sort: "updated_desc", token: "leak" },
+    assignees: [{ username: "alice", display_name: "Alice", email: "private@example.com" }],
+    cycles: [{ id: 7, name: "Sprint 1", is_closed: false, internal_note: "leak" }],
+    saved_views: [{ id: 3, name: "Active", filters: { item_type: "bug", q: "", status: "open", priority: "", project_key: "DEMO", assignee_username: "", cycle_id: "7", sort: "updated_desc" }, per_page: 20, is_default: true, owner_id: 9 }],
+    can_manage_work_items: true,
+    internal_path: "/tmp/private",
+  });
+  assert.equal(Object.isFrozen(listView.saved_views), true);
+  assert.equal(Object.isFrozen(listView.saved_views[0].filters), true);
+  assert.equal("email" in listView.assignees[0], false);
+  assert.equal("internal_note" in listView.cycles[0], false);
+  assert.equal("owner_id" in listView.saved_views[0], false);
+  assert.equal("internal_path" in listView, false);
 
   const search = registry.resolve("search.list", { q: "crash" }).parse({
     items: [{ kind: "bug", key: "DEMO-1", title: "Crash", context: "Details", target: "/web/work-items/DEMO-1", updated_at: "2026-08-07T00:00:00Z", signed_url: "https://evil.example" }],
