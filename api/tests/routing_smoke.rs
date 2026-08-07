@@ -318,6 +318,7 @@ async fn static_app_css_is_bundled() {
     assert!(body.contains("modal"));
     assert!(body.contains("project-switcher"));
     assert!(body.contains(".auth-form input"));
+    assert!(body.contains(".auth-form .device-authorization-actions .btn-primary"));
     assert!(body.contains("letter-spacing: 0"));
     assert!(body.contains("word-spacing: normal"));
     assert!(body.contains(".rich-text-editor:focus-within"));

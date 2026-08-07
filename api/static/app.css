@@ -8371,6 +8371,14 @@ code {
   display: contents;
 }
 
+.device-authorization-actions .btn {
+  min-height: 52px;
+}
+
+.auth-form .device-authorization-actions .btn-primary {
+  margin-top: 0;
+}
+
 .form-head h1 {
   margin: 0;
   font-size: 30px;
