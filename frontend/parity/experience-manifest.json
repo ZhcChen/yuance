@@ -89,8 +89,8 @@
       "states": ["loading", "ready", "no-projects", "empty-activity", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/renderer-composition.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "page.personal.profile",
@@ -104,8 +104,8 @@
       "states": ["ready", "editing", "submitting", "token-limit", "empty-devices", "empty-tokens", "validation-error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "page.message-search.messages",
@@ -135,8 +135,8 @@
       "states": ["idle", "loading", "results", "empty-query", "no-results", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "page.project.list",
@@ -392,8 +392,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.personal.password.update",
@@ -408,8 +408,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["api/tests/device_access_auth_flow.rs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.personal.api-token.create",
@@ -424,8 +424,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.personal.api-token.update",
@@ -440,8 +440,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.personal.api-token.delete",
@@ -456,8 +456,8 @@
       "realtimeEffect": "依赖该 Token 的后续 API 请求被拒绝。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.personal.device-session.revoke",
@@ -472,8 +472,8 @@
       "realtimeEffect": "目标 Desktop 的后续请求和实时连接失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["api/tests/device_access_auth_flow.rs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.messages.read-all",
@@ -536,8 +536,8 @@
       "realtimeEffect": "取消旧项目请求和 SSE，失效项目范围缓存并刷新顶部计数。",
       "repeatSubmitPolicy": "latest-wins",
       "migrationUnit": "U2",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.project.update",
@@ -1094,7 +1094,7 @@
       "id": "action.boundary.download.asset", "pageId": "page.boundary.downloads", "trigger": "visitor downloads published desktop asset", "inputs": ["release-id", "asset-id"], "validation": "版本已发布、资产属于版本且平台文件可公开下载。", "confirmation": "none", "request": { "method": "GET", "path": "/web/downloads/{release_id}/assets/{asset_id}" }, "successEffect": "跳转短时签名下载 URL，不暴露存储凭证。", "errorEffects": ["版本未发布", "资产不存在", "对象存储不可用"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U8", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     },
     {
-      "id": "action.boundary.logout", "pageId": "page.shell.dashboard", "trigger": "submit logout", "inputs": ["csrf-token"], "validation": "请求来自当前 Browser session。", "confirmation": "none", "request": { "method": "POST", "path": "/web/logout" }, "successEffect": "撤销 Browser session、清理认证 cookie 并返回登录页。", "errorEffects": ["重复登出按已登出处理", "CSRF 错误拒绝"], "realtimeEffect": "关闭当前宿主 SSE；不撤销独立 Desktop device session。", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U2", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "id": "action.boundary.logout", "pageId": "page.shell.dashboard", "trigger": "submit logout", "inputs": ["csrf-token"], "validation": "请求来自当前宿主的已认证 principal。", "confirmation": "none", "request": { "method": "POST", "path": "/web/logout" }, "successEffect": "Browser 撤销 cookie session 并返回登录页；Desktop 撤销当前 device family 并清理本地凭证。", "errorEffects": ["重复登出按已登出处理", "Browser CSRF 错误拒绝", "Desktop 远端失败进入可恢复的待撤销状态"], "realtimeEffect": "关闭当前宿主 SSE，不影响另一宿主的独立会话。", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U2", "status": "shared", "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/credential-coordinator.test.mjs"], "reviews": ["docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"] }
     },
     {
       "id": "action.internal.work-items.partial", "pageId": "page.work-item-list.requirements", "trigger": "legacy page requests filtered work item partial", "inputs": ["route-query", "hx-target"], "validation": "query 使用与完整列表相同 schema 和权限。", "confirmation": "none", "request": { "method": "GET", "path": "/web/partials/work-items" }, "successEffect": "返回列表、指标和分页的增量 HTML 载荷。", "errorEffects": ["query 无效", "项目无权限", "目标失效时完整页面恢复"], "realtimeEffect": "none", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U4", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
