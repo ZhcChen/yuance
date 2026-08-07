@@ -58,6 +58,8 @@ function resolveReadOperation(url, options) {
   if (projectCycle) return projectCycle;
   const projectCycles = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/cycles$/u, "project.cycles", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectCycles) return projectCycles;
+  const projectAttachments = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)\/attachments$/u, "project.attachments", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
+  if (projectAttachments) return projectAttachments;
   const projectDetail = matchPath(parsed, /^\/api\/v1\/projects\/([^/]+)$/u, "project.detail", ([projectKey]) => ({ projectKey: decodeSegment(projectKey) }));
   if (projectDetail) return projectDetail;
   if (parsed.pathname === "/api/v1/search") return { operation: "search.list", input: parseQuery(parsed.searchParams, {
@@ -138,6 +140,11 @@ function resolveMutationOperation(parsed, method, options) {
   const cycles = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/cycles$/u);
   if (method === "POST" && cycles) {
     return { operation: "project.cyclecreate", input: { projectKey: decodeSegment(cycles[1]), ...cyclePayload(options) } };
+  }
+  const projectAttachment = parsed.pathname.match(/^\/api\/v1\/projects\/([^/]+)\/attachments\/(\d+)$/u);
+  if (method === "DELETE" && projectAttachment) {
+    rejectBody(options);
+    return { operation: "project.attachmentarchive", input: { projectKey: decodeSegment(projectAttachment[1]), attachmentId: positiveInteger(projectAttachment[2]) } };
   }
   const token = parsed.pathname.match(/^\/api\/v1\/me\/tokens\/(\d+)$/u);
   if (method === "PATCH" && token) {

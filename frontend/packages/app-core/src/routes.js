@@ -170,7 +170,7 @@ export function buildProjectDetailPath({ owner = 'app', projectKey = '', tab = '
   const basePath = owner === 'app'
     ? `/web/app/projects/${encodeURIComponent(normalizedKey)}`
     : `/web/projects/${encodeURIComponent(normalizedKey)}`;
-  return ['members', 'cycles'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
+  return ['members', 'cycles', 'files'].includes(tab) ? `${basePath}?tab=${tab}` : basePath;
 }
 
 export function buildProjectCycleDetailPath({ owner = 'app', projectKey = '', cycleId = 0 } = {}) {
@@ -281,7 +281,7 @@ export function parseAppRoute(pathname = '/web', search = '') {
       pathname,
       search,
       projectKey: decodeURIComponent(projectDetailMatch[1]),
-      tab: ['members', 'cycles'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
+      tab: ['members', 'cycles', 'files'].includes(query.get('tab') || '') ? query.get('tab') : 'info',
       title: '项目详情',
     };
   }

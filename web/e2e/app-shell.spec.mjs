@@ -1526,6 +1526,157 @@ test('shared project detail manages project information and member lifecycle', a
   expect(mutations.map(([kind]) => kind)).toEqual(['update', 'add', 'role', 'remove']);
 });
 
+test('shared project files cover empty upload download and archive lifecycle', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const uploadStages = [];
+  const createRequests = [];
+  const downloadUrlRequests = [];
+  let attachments = [];
+
+  await page.route('**/api/v1/test-storage/upload**', async (route) => {
+    uploadStages.push(`put:${new URL(route.request().url()).searchParams.get('target')}`);
+    await route.fulfill({ status: 200, body: '' });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments/701/upload-url', async (route) => {
+    uploadStages.push('sign:701');
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      attachment: attachments[0],
+      request: { method: 'PUT', url: '/api/v1/test-storage/upload?target=project-701', headers: [['content-type', 'text/plain']] },
+      expires_in_seconds: 600,
+      checksum_sha256: '70195378e26400f321a170529a641bb13d5560b94c4d1a11be937870225461a0',
+    } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments/701/uploaded', async (route) => {
+    uploadStages.push('mark:701');
+    attachments = [{ ...attachments[0], status: 'uploaded' }];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments/701/download-url', async (route) => {
+    downloadUrlRequests.push(route.request().url());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      attachment: attachments[0],
+      request: { method: 'GET', url: '/signed-download/project-701?token=browser-e2e', headers: [] },
+      expires_in_seconds: 600,
+    } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments/701', async (route) => {
+    expect(route.request().method()).toBe('DELETE');
+    attachments = [{ ...attachments[0], status: 'deleted' }];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      createRequests.push(payload);
+      attachments = [attachmentFixture({ id: 701, filename: payload.original_filename, content_type: payload.content_type, byte_size: payload.byte_size, status: 'pending' })];
+      uploadStages.push('create:701');
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE?tab=files');
+  await page.evaluate(() => {
+    window.__yuanceDownloadClicks = [];
+    HTMLAnchorElement.prototype.click = function click() { window.__yuanceDownloadClicks.push(this.href); };
+  });
+
+  await expect(page.getByText('当前项目暂无文件。')).toBeVisible();
+  await chooseFile(page, page.getByRole('button', { name: '选择文件上传' }), {
+    name: 'project-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('project file'),
+  });
+  await expect.poll(() => uploadStages).toEqual(['create:701', 'sign:701', 'put:project-701', 'mark:701']);
+  expect(createRequests).toEqual([{ original_filename: 'project-notes.txt', content_type: 'text/plain', byte_size: 12, checksum_sha256: '70195378e26400f321a170529a641bb13d5560b94c4d1a11be937870225461a0' }]);
+
+  const fileList = page.getByRole('list', { name: '项目文件列表' });
+  await expect(fileList).toContainText('project-notes.txt');
+  await expect(fileList).toContainText('已上传');
+  await fileList.getByRole('button', { name: '下载附件 project-notes.txt' }).click();
+  await expect.poll(() => downloadUrlRequests.length).toBe(1);
+  expect(downloadUrlRequests[0]).toContain('/api/v1/projects/YCE/attachments/701/download-url');
+  await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/project-701?token=browser-e2e');
+
+  await fileList.getByRole('button', { name: '归档' }).click();
+  const archiveDialog = page.getByRole('dialog', { name: '归档项目文件' });
+  await expect(archiveDialog).toContainText('确认归档文件“project-notes.txt”？');
+  await archiveDialog.getByRole('button', { name: '确认归档' }).click();
+  await expect(fileList).toContainText('已归档');
+  await expect(fileList.getByRole('button', { name: '下载附件 project-notes.txt' })).toHaveCount(0);
+  await expect(fileList.getByRole('button', { name: '归档' })).toHaveCount(0);
+});
+
+test('shared project files hide upload and archive actions from viewers', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const attachment = attachmentFixture({ id: 702, filename: 'viewer-readable.txt', content_type: 'text/plain' });
+  await login(page, '/web/app');
+  await page.route('**/api/v1/auth/me', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { id: 2, username: 'file_viewer', display_name: '文件只读成员', email: '', mobile: '', status: 'active', is_super_admin: false, roles: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' } }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ user_id: 2, display_name: '文件只读成员', username: 'file_viewer', member_role: 'viewer', joined_at: '2026-08-01T00:00:00Z' }] }) }));
+  await page.route('**/api/v1/projects/YCE/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [attachment] }) }));
+
+  await page.goto('/web/app/projects/YCE?tab=files');
+  const fileList = page.getByRole('list', { name: '项目文件列表' });
+  await expect(fileList).toContainText('viewer-readable.txt');
+  await expect(page.getByRole('button', { name: '选择文件上传' })).toHaveCount(0);
+  await expect(fileList.getByRole('button', { name: '归档' })).toHaveCount(0);
+  await expect(fileList.getByRole('button', { name: '下载附件 viewer-readable.txt' })).toBeVisible();
+});
+
+test('shared project file upload failure keeps registered file context', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  let attachments = [];
+  let createCount = 0;
+  let uploadCount = 0;
+  await page.route('**/api/v1/test-storage/upload**', (route) => {
+    uploadCount += 1;
+    return uploadCount === 1
+      ? route.fulfill({ status: 503, contentType: 'text/plain', body: 'storage unavailable' })
+      : route.fulfill({ status: 200, body: '' });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments/703/upload-url', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+    attachment: attachments[0], request: { method: 'PUT', url: '/api/v1/test-storage/upload?target=project-703', headers: [['content-type', 'text/plain']] }, expires_in_seconds: 600,
+    checksum_sha256: 'f165ee2c07068cf64844ac64730421e4d38013a1fe048f157c8272547fc82c1c',
+  } }) }));
+  await page.route('**/api/v1/projects/YCE/attachments/703/uploaded', (route) => {
+    attachments = [{ ...attachments[0], status: 'uploaded' }];
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+  });
+  await page.route('**/api/v1/projects/YCE/attachments', async (route) => {
+    if (route.request().method() === 'POST') {
+      createCount += 1;
+      const payload = route.request().postDataJSON();
+      attachments = [attachmentFixture({ id: 703, filename: payload.original_filename, content_type: payload.content_type, byte_size: payload.byte_size, status: 'pending' })];
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE?tab=files');
+  await chooseFile(page, page.getByRole('button', { name: '选择文件上传' }), {
+    name: 'failed-project-upload.txt', mimeType: 'text/plain', buffer: Buffer.from('failed upload'),
+  });
+
+  const fileList = page.getByRole('list', { name: '项目文件列表' });
+  await expect(page.getByRole('alert')).toContainText('对象存储上传失败：503');
+  await expect(fileList).toContainText('failed-project-upload.txt');
+  await expect(fileList).toContainText('上传失败');
+  await expect(page.getByRole('button', { name: '选择文件上传' })).toBeEnabled();
+  await chooseFile(page, fileList.getByRole('button', { name: '继续上传' }), {
+    name: 'failed-project-upload.txt', mimeType: 'text/plain', buffer: Buffer.from('failed upload'),
+  });
+  await expect(fileList).toContainText('已上传');
+  expect(createCount).toBe(1);
+  expect(uploadCount).toBe(2);
+});
+
 test('shared project cycle creates updates closes and opens the status board', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];

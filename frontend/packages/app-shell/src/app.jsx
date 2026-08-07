@@ -12,6 +12,7 @@ import {
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   createWorkItemComment as createWorkItemCommentUseCase,
+  downloadProjectAttachment as downloadProjectAttachmentUseCase,
   downloadWorkItemAttachment as downloadWorkItemAttachmentUseCase,
   downloadWorkItemCommentAttachment as downloadWorkItemCommentAttachmentUseCase,
   handoffWorkItem as handoffWorkItemUseCase,
@@ -21,8 +22,10 @@ import {
   updateWorkItemComment as updateWorkItemCommentUseCase,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
+  uploadProjectAttachment,
 } from '@yuance/frontend-app-core';
 import {
+  AttachmentList,
   Button,
   DataTable,
   Feedback,
@@ -585,6 +588,8 @@ export function SharedApp({ services }) {
   const accountSecurityActionRef = useRef(false);
   const projectSwitchRef = useRef(false);
   const projectMutationRef = useRef(false);
+  const projectAttachmentActionRef = useRef(0);
+  const projectAttachmentMutationRef = useRef(false);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -601,6 +606,14 @@ export function SharedApp({ services }) {
   const [projectDetail, setProjectDetail] = useState(/** @type {AppProjectDetail | null} */ (null));
   const [projectMembers, setProjectMembers] = useState(/** @type {AppProjectMember[]} */ ([]));
   const [projectCycles, setProjectCycles] = useState(/** @type {AppProjectCycle[]} */ ([]));
+  const [projectAttachments, setProjectAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
+  const [projectAttachmentUploading, setProjectAttachmentUploading] = useState(false);
+  const [projectAttachmentArchiving, setProjectAttachmentArchiving] = useState(false);
+  const [projectAttachmentDownloadingId, setProjectAttachmentDownloadingId] = useState(/** @type {number | null} */ (null));
+  const [projectAttachmentArchiveTarget, setProjectAttachmentArchiveTarget] = useState(/** @type {AppAttachment | null} */ (null));
+  const [projectAttachmentStatus, setProjectAttachmentStatus] = useState('');
+  const [projectAttachmentError, setProjectAttachmentError] = useState('');
+  const [projectAttachmentReveal, setProjectAttachmentReveal] = useState(/** @type {{ attachmentId: number, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [projectCycleDetail, setProjectCycleDetail] = useState(/** @type {AppProjectCycle | null} */ (null));
   const [projectCycleOpen, setProjectCycleOpen] = useState(false);
   const [projectCycleForm, setProjectCycleForm] = useState({ id: 0, name: '', goal: '', description: '', ownerUsername: '', startDate: '', endDate: '' });
@@ -780,6 +793,8 @@ export function SharedApp({ services }) {
         setSearchPage(null);
       }
       if (targetRoute.id === 'project-detail') {
+        projectAttachmentActionRef.current += 1;
+        projectAttachmentMutationRef.current = false;
         setProjectDetail(null);
         setProjectMembers([]);
         setProjectMutationSubmitting(projectMutationRef.current);
@@ -789,6 +804,14 @@ export function SharedApp({ services }) {
         setProjectMemberTarget(null);
         setProjectMemberRemoveTarget(null);
         setProjectCycles([]);
+        setProjectAttachments([]);
+        setProjectAttachmentUploading(false);
+        setProjectAttachmentArchiving(false);
+        setProjectAttachmentDownloadingId(null);
+        setProjectAttachmentError('');
+        setProjectAttachmentStatus('');
+        setProjectAttachmentArchiveTarget(null);
+        setProjectAttachmentReveal(null);
         setProjectCycleOpen(false);
         setProjectCycleCloseTarget(null);
       }
@@ -886,7 +909,15 @@ export function SharedApp({ services }) {
           ? Promise.all([api.getApiTokens(), api.getDeviceSessions()])
           : Promise.resolve(null),
         targetRoute.id === 'project-detail'
-          ? Promise.all([api.getProject(targetRoute.projectKey), api.getProjectMembers(targetRoute.projectKey), api.getProjectCycles(targetRoute.projectKey)])
+          ? Promise.all([
+            api.getProject(targetRoute.projectKey),
+            api.getProjectMembers(targetRoute.projectKey),
+            api.getProjectCycles(targetRoute.projectKey),
+            api.getProjectAttachments(targetRoute.projectKey).then(
+              (value) => ({ value, error: null }),
+              (error) => ({ value: [], error }),
+            ),
+          ])
           : Promise.resolve(null),
         targetRoute.id === 'project-cycle-detail'
           ? Promise.all([api.getProjectCycle(targetRoute.projectKey, targetRoute.cycleId), api.getProjectMembers(targetRoute.projectKey)])
@@ -915,6 +946,8 @@ export function SharedApp({ services }) {
         setProjectDetail(nextProjectBundle?.[0] || null);
         setProjectMembers(nextProjectBundle?.[1] || []);
         setProjectCycles(nextProjectBundle?.[2] || []);
+        setProjectAttachments(nextProjectBundle?.[3]?.value || []);
+        if (nextProjectBundle?.[3]?.error) setProjectAttachmentError('项目文件暂时无法加载，请刷新后重试。');
       }
       if (targetRoute.id === 'project-cycle-detail') {
         setProjectCycleDetail(nextCycleDetailBundle?.[0] || null);
@@ -1133,6 +1166,98 @@ export function SharedApp({ services }) {
     try {
       if (await runCycleMutation(() => api.closeProjectCycle(projectKey, projectCycleCloseTarget.id), '项目周期已关闭。')) setProjectCycleCloseTarget(null);
     } catch { return; }
+  }
+
+  function isCurrentProjectAttachmentRoute(projectKey, actionId = projectAttachmentActionRef.current) {
+    return routeRef.current.id === 'project-detail' && routeRef.current.projectKey === projectKey && projectAttachmentActionRef.current === actionId;
+  }
+
+  async function refreshProjectAttachments(projectKey, actionId) {
+    const attachments = await api.getProjectAttachments(projectKey);
+    if (isCurrentProjectAttachmentRoute(projectKey, actionId)) setProjectAttachments(attachments);
+    return attachments;
+  }
+
+  function clearProjectAttachmentUpload(actionId) {
+    if (projectAttachmentActionRef.current !== actionId) return;
+    projectAttachmentMutationRef.current = false;
+    setProjectAttachmentUploading(false);
+  }
+
+  /** @param {AppAttachment | null} [existingAttachment] */
+  async function uploadSelectedProjectAttachment(existingAttachment = null) {
+    if (!activeProjectDetail || projectAttachmentMutationRef.current || projectMutationRef.current) return;
+    const projectKey = activeProjectDetail.key;
+    const actionId = projectAttachmentActionRef.current + 1;
+    projectAttachmentActionRef.current = actionId; projectAttachmentMutationRef.current = true;
+    setProjectAttachmentUploading(true); setProjectAttachmentError(''); setProjectAttachmentStatus('正在选择项目文件。');
+    let file;
+    try { file = await files.files.chooseFile(); }
+    catch (caught) {
+      if (isCurrentProjectAttachmentRoute(projectKey, actionId)) setProjectAttachmentError(errorMessage(caught instanceof Error ? caught : new Error('选择文件失败。')));
+      clearProjectAttachmentUpload(actionId); return;
+    }
+    if (!isCurrentProjectAttachmentRoute(projectKey, actionId) || !file) {
+      if (isCurrentProjectAttachmentRoute(projectKey, actionId)) setProjectAttachmentStatus('已取消选择文件。');
+      clearProjectAttachmentUpload(actionId); return;
+    }
+    if (!file.byteSize || file.byteSize <= 0) {
+      setProjectAttachmentError('请选择非空文件。'); setProjectAttachmentStatus(`${file.filename || '文件'} 未上传。`);
+      clearProjectAttachmentUpload(actionId); return;
+    }
+    const filename = file.filename || 'attachment.bin';
+    if (existingAttachment && (filename !== existingAttachment.filename || file.contentType !== existingAttachment.content_type || file.byteSize !== existingAttachment.byte_size)) {
+      setProjectAttachmentError(`请选择与 ${existingAttachment.filename} 名称、类型和大小一致的原文件。`);
+      setProjectAttachmentStatus(`${existingAttachment.filename} 未继续上传。`);
+      clearProjectAttachmentUpload(actionId); return;
+    }
+    let createdAttachment = /** @type {AppAttachment | null} */ (null);
+    let stage = /** @type {'registering' | 'signing' | 'uploading' | 'confirming'} */ (existingAttachment ? 'signing' : 'registering');
+    try {
+      const result = await uploadProjectAttachment({ api, platform: files, projectKey, file, existingAttachment, lifecycle: {
+        isCurrent: () => isCurrentProjectAttachmentRoute(projectKey, actionId),
+        onStage: (nextStage) => { stage = nextStage; setProjectAttachmentStatus({ registering: `${filename} 正在登记。`, signing: `${filename} 正在获取上传签名。`, uploading: `${filename} 正在上传。`, confirming: `${filename} 正在确认上传结果。` }[nextStage]); },
+        onCreated: (created) => { createdAttachment = created; setProjectAttachments((current) => upsertAttachment(current, created)); },
+        onUploaded: (uploaded) => setProjectAttachments((current) => upsertAttachment(current, uploaded)),
+        refresh: async () => { await refreshProjectAttachments(projectKey, actionId); },
+      } });
+      if (result.completed) { setProjectAttachmentStatus(`${filename} 上传完成。`); setStatusMessage(`${projectKey} 项目文件已上传。`); if (result.refreshError) setProjectAttachmentError('文件已上传，但列表刷新失败，请手动刷新。'); }
+    } catch (caught) {
+      if (isCurrentProjectAttachmentRoute(projectKey, actionId)) {
+        if (stage === 'confirming') setProjectAttachmentError(`${filename} 已上传，但确认失败，请刷新后检查。`);
+        else { if (createdAttachment) setProjectAttachments((current) => upsertAttachment(current, /** @type {AppAttachment} */ ({ ...createdAttachment, status: 'failed' }))); setProjectAttachmentError(errorMessage(caught instanceof Error ? caught : new Error('上传项目文件失败。'))); }
+      }
+    } finally {
+      clearProjectAttachmentUpload(actionId);
+    }
+  }
+
+  async function downloadProjectAttachment(attachment) {
+    if (!activeProjectDetail || !attachmentIsUploaded(attachment)) return;
+    const projectKey = activeProjectDetail.key; setProjectAttachmentDownloadingId(attachment.id); setProjectAttachmentReveal(null); setProjectAttachmentError('');
+    try {
+      const result = await downloadProjectAttachmentUseCase({ api, platform: files, projectKey, attachmentId: attachment.id, suggestedFilename: attachment.filename, isCurrent: () => isCurrentProjectAttachmentRoute(projectKey) });
+      if (result.completed) { setProjectAttachmentReveal(result.revealCapability ? { attachmentId: attachment.id, capability: result.revealCapability } : null); setProjectAttachmentStatus(`${attachment.filename} 下载完成。`); }
+    } catch (caught) { if (isCurrentProjectAttachmentRoute(projectKey)) setProjectAttachmentError(errorMessage(caught instanceof Error ? caught : new Error('下载项目文件失败。'))); }
+    finally { setProjectAttachmentDownloadingId((current) => current === attachment.id ? null : current); }
+  }
+
+  async function revealProjectAttachment(attachment) {
+    const reveal = projectAttachmentReveal;
+    if (!reveal || reveal.attachmentId !== attachment.id || typeof files.attachments?.revealDownload !== 'function') return;
+    setProjectAttachmentReveal(null); setProjectAttachmentDownloadingId(attachment.id);
+    try { await files.attachments.revealDownload(reveal.capability); setProjectAttachmentStatus(`${attachment.filename} 已在文件夹中定位。`); }
+    catch (caught) { setProjectAttachmentError(errorMessage(caught instanceof Error ? caught : new Error('定位项目文件失败。'))); }
+    finally { setProjectAttachmentDownloadingId(null); }
+  }
+
+  async function confirmProjectAttachmentArchive() {
+    if (!activeProjectDetail || !projectAttachmentArchiveTarget || projectAttachmentMutationRef.current) return;
+    const projectKey = activeProjectDetail.key; const target = projectAttachmentArchiveTarget;
+    const actionId = projectAttachmentActionRef.current + 1; projectAttachmentActionRef.current = actionId; projectAttachmentMutationRef.current = true; setProjectAttachmentArchiving(true); setProjectAttachmentError('');
+    try { await api.archiveProjectAttachment(projectKey, target.id); await refreshProjectAttachments(projectKey, actionId); if (isCurrentProjectAttachmentRoute(projectKey, actionId)) { setProjectAttachmentArchiveTarget(null); setProjectAttachmentStatus(`${target.filename} 已归档。`); } }
+    catch (caught) { if (isCurrentProjectAttachmentRoute(projectKey, actionId)) setProjectAttachmentError(errorMessage(caught instanceof Error ? caught : new Error('归档项目文件失败。'))); }
+    finally { if (projectAttachmentActionRef.current === actionId) { projectAttachmentMutationRef.current = false; setProjectAttachmentArchiving(false); } }
   }
 
   /** @param {() => Promise<any>} action @param {string} successMessage */
@@ -2736,7 +2861,7 @@ export function SharedApp({ services }) {
               </div>
 
               <nav className="message-tabs" aria-label="项目详情导航">
-                {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期']].map(([tab, label]) => {
+                {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期'], ['files', '项目文件']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <a key={tab} className={`message-tab ${route.tab === tab ? 'active' : ''}`} href={path} aria-current={route.tab === tab ? 'page' : undefined} onClick={(event) => handleNavigate(event, path, `已切换到${label}。`)}><span>{label}</span></a>;
                 })}
@@ -2789,6 +2914,16 @@ export function SharedApp({ services }) {
                 </section>
               ) : null}
 
+              {activeProjectDetail && route.tab === 'files' ? (
+                <section aria-labelledby="project-files-title">
+                  <div className="shell-panel-header"><div><h3 id="project-files-title">项目文件</h3><p className="shell-muted">共 {projectAttachments.length} 个文件</p></div>{canManageProject ? <Button variant="secondary" disabled={projectAttachmentUploading || projectMutationSubmitting} onClick={() => void uploadSelectedProjectAttachment()}>{projectAttachmentUploading ? '处理中…' : '选择文件上传'}</Button> : null}</div>
+                  <p className="shell-muted">文件将直接上传到对象存储，页面只保留受控附件信息。</p>
+                  {projectAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectAttachmentStatus}</p> : null}
+                  {projectAttachmentError ? <Feedback tone="danger" title="项目文件操作失败">{projectAttachmentError}</Feedback> : null}
+                  {projectAttachments.length ? <AttachmentList attachments={projectAttachments} ariaLabel="项目文件列表" downloadLabel="附件" downloadingId={projectAttachmentDownloadingId} revealableId={projectAttachmentReveal?.attachmentId || null} onDownload={(attachment) => void downloadProjectAttachment(attachment)} onReveal={(attachment) => void revealProjectAttachment(attachment)} showCreator renderExtraAction={(attachment) => canManageProject && attachment.status !== 'deleted' ? <><Button variant="danger" disabled={projectAttachmentUploading || projectAttachmentArchiving} onClick={() => { setProjectAttachmentError(''); setProjectAttachmentArchiveTarget(attachment); }}>归档</Button>{['pending', 'failed'].includes(attachment.status) ? <Button variant="secondary" disabled={projectAttachmentUploading || projectAttachmentArchiving} onClick={() => void uploadSelectedProjectAttachment(attachment)}>继续上传</Button> : null}</> : null} /> : <p className="shell-empty">当前项目暂无文件。</p>}
+                </section>
+              ) : null}
+
               <Modal open={projectEditOpen} title="编辑项目" onClose={() => { if (!projectMutationSubmitting) setProjectEditOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectEditOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-edit-form'))?.requestSubmit()}>保存</Button></>}>
                 <form id="project-edit-form" onSubmit={submitProjectEdit}>
                   <Field id="project-edit-name" label="项目名称" required><input value={projectEditForm.name} maxLength={120} onChange={(event) => setProjectEditForm((current) => ({ ...current, name: event.target.value }))} /></Field>
@@ -2810,6 +2945,7 @@ export function SharedApp({ services }) {
                 <form id="project-cycle-form" onSubmit={submitProjectCycle}><Field id="project-cycle-name" label="周期名称" required><input value={projectCycleForm.name} maxLength={120} onChange={(event) => setProjectCycleForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field id="project-cycle-goal" label="周期目标"><input value={projectCycleForm.goal} maxLength={240} onChange={(event) => setProjectCycleForm((current) => ({ ...current, goal: event.target.value }))} /></Field><Field id="project-cycle-owner" label="负责人用户名"><input value={projectCycleForm.ownerUsername} maxLength={64} onChange={(event) => setProjectCycleForm((current) => ({ ...current, ownerUsername: event.target.value }))} /></Field><Field id="project-cycle-start" label="开始日期" required><input type="date" value={projectCycleForm.startDate} onChange={(event) => setProjectCycleForm((current) => ({ ...current, startDate: event.target.value }))} /></Field><Field id="project-cycle-end" label="结束日期" required><input type="date" min={projectCycleForm.startDate || undefined} value={projectCycleForm.endDate} onChange={(event) => setProjectCycleForm((current) => ({ ...current, endDate: event.target.value }))} /></Field><Field id="project-cycle-description" label="周期说明"><textarea value={projectCycleForm.description} maxLength={5000} onChange={(event) => setProjectCycleForm((current) => ({ ...current, description: event.target.value }))} /></Field></form>
               </Modal>
               <Modal open={Boolean(projectCycleCloseTarget)} title="关闭项目周期" onClose={() => { if (!projectMutationSubmitting) setProjectCycleCloseTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectCycleCloseTarget(null)}>取消</Button><Button variant="danger" loading={projectMutationSubmitting} onClick={() => void confirmProjectCycleClose()}>确认关闭</Button></>}><p>确认关闭周期“{projectCycleCloseTarget?.name}”？关闭后不能继续编辑。</p></Modal>
+              <Modal open={Boolean(projectAttachmentArchiveTarget)} title="归档项目文件" onClose={() => { if (!projectAttachmentArchiving) setProjectAttachmentArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectAttachmentArchiving} onClick={() => setProjectAttachmentArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectAttachmentArchiving} onClick={() => void confirmProjectAttachmentArchive()}>确认归档</Button></>}><p>确认归档文件“{projectAttachmentArchiveTarget?.filename}”？归档后不能继续下载，但文件记录会保留。</p></Modal>
             </section>
           ) : route.id === 'project-cycle-detail' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-cycle-detail-title">

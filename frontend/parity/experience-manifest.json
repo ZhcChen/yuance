@@ -162,12 +162,12 @@
       "apiEffects": [{ "phase": "primary", "method": "GET", "path": "/api/v1/projects/{project_key}/file-objects", "purpose": "加载项目文件夹与文件对象树" }],
       "actors": ["project-member", "project-manager"],
       "permissions": ["project.read", "project.manage", "work-item.create", "resource.read", "resource.write"],
-      "controls": ["project-summary", "info-tab", "cycles-tab", "members-tab", "library-tab", "activities-tab", "edit-project", "create-work-item"],
+      "controls": ["project-summary", "info-tab", "cycles-tab", "members-tab", "files-tab", "library-tab", "activities-tab", "edit-project", "create-work-item"],
       "states": ["loading", "ready", "tab-synced", "empty-section", "editing", "submitting", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
       "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md", "docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md", "docs/reviews/2026-08-07-006-web-desktop-u3-project-attachments-review.md"] }
     },
     {
       "id": "page.project.cycle-detail",
@@ -669,8 +669,8 @@
       "realtimeEffect": "项目文件列表和活动流失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-006-web-desktop-u3-project-attachments-review.md"] }
     },
     {
       "id": "action.project.attachment.archive",
@@ -685,8 +685,8 @@
       "realtimeEffect": "项目文件列表失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-006-web-desktop-u3-project-attachments-review.md"] }
     },
     {
       "id": "action.project.attachment.download",
@@ -701,8 +701,8 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-006-web-desktop-u3-project-attachments-review.md"] }
     },
     {
       "id": "action.project.attachment.preview",

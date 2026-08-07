@@ -120,32 +120,40 @@ export function updateWorkItemComment({ api, itemKey, commentId, payload, lifecy
  * @template {{ id: number }} T
  * @param {{
  *   create: (payload: AttachmentCreatePayload) => Promise<T>,
- *   sign: (attachment: T) => Promise<{ request: unknown, expires_in_seconds: number }>,
+ *   sign: (attachment: T) => Promise<{ request: unknown, expires_in_seconds: number, checksum_sha256?: string }>,
  *   confirm: (attachment: T) => Promise<T>,
  *   platform: Pick<PlatformCapabilities, 'files' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities },
  *   file: SelectedFile,
+ *   existing?: T,
+ *   expectedChecksumSha256?: string,
  *   lifecycle: AttachmentLifecycle<T>,
  * }} options
  */
-async function uploadAttachment({ create, sign, confirm, platform, file, lifecycle }) {
+async function uploadAttachment({ create, sign, confirm, platform, file, existing, expectedChecksumSha256, lifecycle }) {
   if (!lifecycle.isCurrent()) {
     return { completed: false, created: null, uploaded: null, refreshError: null };
   }
-  lifecycle.onStage('registering');
-  const created = await create({
-    originalFilename: file.filename,
-    contentType: file.contentType,
-    byteSize: file.byteSize,
-  });
+  let created = existing;
+  if (!created) {
+    lifecycle.onStage('registering');
+    created = await create({
+      originalFilename: file.filename,
+      contentType: file.contentType,
+      byteSize: file.byteSize,
+    });
+  }
   if (!lifecycle.isCurrent()) {
     return { completed: false, created, uploaded: null, refreshError: null };
   }
-  lifecycle.onCreated(created);
+  if (!existing) lifecycle.onCreated(created);
 
   lifecycle.onStage('signing');
   const signed = await sign(created);
   if (!lifecycle.isCurrent()) {
     return { completed: false, created, uploaded: null, refreshError: null };
+  }
+  if (expectedChecksumSha256 && signed.checksum_sha256 !== expectedChecksumSha256) {
+    throw new Error('选择的文件内容与已登记附件不一致。');
   }
 
   const transfer = platform.transfers.authorizeSignedRequest({
@@ -210,19 +218,23 @@ export function uploadWorkItemAttachment({ api, platform, itemKey, file, lifecyc
   });
 }
 
-export function uploadProjectAttachment({ api, platform, projectKey, file, lifecycle }) {
+/**
+ * @template {{ id: number }} T
+ * @param {{ api: any, platform: any, projectKey: string, file: SelectedFile, existingAttachment?: T | null, lifecycle: AttachmentLifecycle<T> }} options
+ */
+export function uploadProjectAttachment({ api, platform, projectKey, file, existingAttachment = null, lifecycle }) {
   const attachments = platform.attachments;
   if (typeof attachments?.uploadProjectAttachment === 'function') {
     return uploadDelegatedAttachment({
-      execute: (onStage) => attachments.uploadProjectAttachment({ projectKey, fileCapability: file.capability }, onStage),
+      execute: (onStage) => attachments.uploadProjectAttachment({ projectKey, fileCapability: file.capability, ...(existingAttachment ? { attachmentId: existingAttachment.id } : {}) }, onStage),
       lifecycle,
     });
   }
   return uploadAttachment({
-    create: (payload) => api.createProjectAttachment(projectKey, payload),
+    create: (payload) => api.createProjectAttachment(projectKey, { ...payload, ...(file.checksumSha256 ? { checksumSha256: file.checksumSha256 } : {}) }),
     sign: (attachment) => api.getProjectAttachmentUploadUrl(projectKey, attachment.id),
     confirm: (attachment) => api.markProjectAttachmentUploaded(projectKey, attachment.id),
-    platform, file, lifecycle,
+    platform, file, existing: existingAttachment || undefined, expectedChecksumSha256: file.checksumSha256, lifecycle,
   });
 }
 
@@ -357,13 +369,19 @@ async function uploadDelegatedAttachment({ execute, lifecycle }) {
   if (!lifecycle.isCurrent()) {
     return { completed: false, created: null, uploaded: null, refreshError: null };
   }
-  const result = await execute((stage) => {
-    if (lifecycle.isCurrent()) lifecycle.onStage(stage);
+  let createdPublished = false;
+  const result = await execute((stage, created) => {
+    if (!lifecycle.isCurrent()) return;
+    lifecycle.onStage(stage);
+    if (created && !createdPublished) {
+      createdPublished = true;
+      lifecycle.onCreated(created);
+    }
   });
   if (!lifecycle.isCurrent()) {
     return { completed: false, created: result.created, uploaded: result.uploaded, refreshError: null };
   }
-  lifecycle.onCreated(result.created);
+  if (!createdPublished) lifecycle.onCreated(result.created);
   lifecycle.onUploaded(result.uploaded);
   let refreshError = null;
   try {

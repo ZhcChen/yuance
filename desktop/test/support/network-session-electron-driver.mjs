@@ -207,16 +207,18 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const binding = (purpose) => Object.freeze({ ...baseBinding, purpose });
   const itemContent = Buffer.from("yuance-business-item-attachment-v1");
   const commentContent = Buffer.from("yuance-business-comment-attachment-v1");
-  const sourcePaths = [path.join(userDataPath, "item-source.txt"), path.join(userDataPath, "comment-source.txt")];
-  await Promise.all([fs.writeFile(sourcePaths[0], itemContent), fs.writeFile(sourcePaths[1], commentContent)]);
+  const projectContent = Buffer.from("yuance-business-project-attachment-v1");
+  const sourcePaths = [path.join(userDataPath, "item-source.txt"), path.join(userDataPath, "comment-source.txt"), path.join(userDataPath, "project-source.txt")];
+  await Promise.all([fs.writeFile(sourcePaths[0], itemContent), fs.writeFile(sourcePaths[1], commentContent), fs.writeFile(sourcePaths[2], projectContent)]);
   let sourceIndex = 0;
   const fileDialog = createFileDialog({ dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [sourcePaths[sourceIndex++]] }) }, spool, vault: fileVault });
   const itemFile = await fileDialog.choose({ binding: binding("upload") });
   const commentFile = await fileDialog.choose({ binding: binding("upload") });
-  if (!itemFile || !commentFile) throw new Error("business file selection was cancelled");
+  const projectFile = await fileDialog.choose({ binding: binding("upload") });
+  if (!itemFile || !commentFile || !projectFile) throw new Error("business file selection was cancelled");
   stage("selected");
 
-  const downloadPaths = [path.join(userDataPath, "item-download.txt"), path.join(userDataPath, "comment-download.txt")];
+  const downloadPaths = [path.join(userDataPath, "item-download.txt"), path.join(userDataPath, "comment-download.txt"), path.join(userDataPath, "project-download.txt")];
   let downloadIndex = 0;
   const targetManager = createDownloadTargetManager({
     dialog: { showSaveDialog: async () => downloadIndex < downloadPaths.length ? { canceled: false, filePath: downloadPaths[downloadIndex++] } : { canceled: true } },
@@ -245,31 +247,44 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const itemUpload = await coordinator.uploadWorkItemAttachment({ itemKey, fileCapability: itemFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("item") });
   stage("comment-upload");
   const commentUpload = await coordinator.uploadWorkItemCommentAttachment({ itemKey, commentId, fileCapability: commentFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("comment") });
+  stage("project-list-initial");
+  const projectListInitial = await rest.execute("project.attachments", { projectKey: "YCE" });
+  stage("project-upload");
+  const projectUpload = await coordinator.uploadProjectAttachment({ projectKey: "YCE", fileCapability: projectFile.capability, binding: baseBinding, signal: undefined, onStage: recordStage("project") });
   stage("uploaded");
   stage("lists");
-  const [itemList, commentList] = await Promise.all([
+  const [itemList, commentList, projectList] = await Promise.all([
     rest.execute("workitem.attachments", { itemKey }),
     rest.execute("workitem.commentattachments", { itemKey, commentId }),
+    rest.execute("project.attachments", { projectKey: "YCE" }),
   ]);
   stage("downloads");
   const itemDownload = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const commentDownload = await coordinator.downloadWorkItemCommentAttachment({ itemKey, commentId, attachmentId: commentUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
+  const projectDownload = await coordinator.downloadProjectAttachment({ projectKey: "YCE", attachmentId: projectUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const cancelled = await coordinator.downloadWorkItemAttachment({ itemKey, attachmentId: itemUpload.uploaded.id, binding: baseBinding, signal: undefined, window: undefined });
   const revealed = [];
   const revealController = createRevealDownloadController({ vault: revealVault, shell: { showItemInFolder: () => revealed.push(true) } });
   await revealController.reveal(itemDownload.revealCapability, binding("reveal-download"));
   await revealController.reveal(commentDownload.revealCapability, binding("reveal-download"));
+  await revealController.reveal(projectDownload.revealCapability, binding("reveal-download"));
   const downloaded = await Promise.all(downloadPaths.map((value) => fs.readFile(value)));
   const hash = (value) => createHash("sha256").update(value).digest("hex");
+  stage("project-archive");
+  const projectArchived = await rest.execute("project.attachmentarchive", { projectKey: "YCE", attachmentId: projectUpload.uploaded.id });
+  const projectListArchived = await rest.execute("project.attachments", { projectKey: "YCE" });
   await runtime.logout();
   runtime.dispose();
   process.stdout.write(`${JSON.stringify({
     kind: "yuance-business-file-result",
     itemUploaded: itemUpload.uploaded.status === "uploaded",
     commentUploaded: commentUpload.uploaded.status === "uploaded",
+    projectUploaded: projectUpload.uploaded.status === "uploaded",
     itemListed: itemList.some((value) => value.id === itemUpload.uploaded.id),
     commentListed: commentList.some((value) => value.id === commentUpload.uploaded.id),
-    hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent),
+    projectListAdded: !projectListInitial.some((value) => value.id === projectUpload.uploaded.id) && projectList.some((value) => value.id === projectUpload.uploaded.id && value.status === "uploaded"),
+    projectArchived: projectArchived.id === projectUpload.uploaded.id && projectArchived.status === "deleted" && projectListArchived.some((value) => value.id === projectUpload.uploaded.id && value.status === "deleted"),
+    hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent) && hash(downloaded[2]) === hash(projectContent),
     revealCount: revealed.length,
     cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability,
     stages,

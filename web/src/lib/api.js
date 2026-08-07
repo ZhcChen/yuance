@@ -62,6 +62,12 @@ export const getProjectCycle = apiClient.getProjectCycle;
 export const createProjectCycle = apiClient.createProjectCycle;
 export const updateProjectCycle = apiClient.updateProjectCycle;
 export const closeProjectCycle = apiClient.closeProjectCycle;
+export const getProjectAttachments = apiClient.getProjectAttachments;
+export const createProjectAttachment = apiClient.createProjectAttachment;
+export const getProjectAttachmentUploadUrl = apiClient.getProjectAttachmentUploadUrl;
+export const markProjectAttachmentUploaded = apiClient.markProjectAttachmentUploaded;
+export const getProjectAttachmentDownloadUrl = apiClient.getProjectAttachmentDownloadUrl;
+export const archiveProjectAttachment = apiClient.archiveProjectAttachment;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -134,10 +140,12 @@ export function openTopbarEvents(callbacks) {
 
 export const webApi = {
   addProjectMember,
+  archiveProjectAttachment,
   closeProjectCycle,
   createApiToken,
   createProject,
   createProjectCycle,
+  createProjectAttachment,
   createWorkItemAttachment,
   createWorkItemComment,
   createWorkItemCommentAttachment,
@@ -149,6 +157,9 @@ export const webApi = {
   getNotifications,
   getOwnProfile,
   getProject,
+  getProjectAttachmentDownloadUrl,
+  getProjectAttachmentUploadUrl,
+  getProjectAttachments,
   getProjectCycle,
   getProjectCycles,
   getProjectMembers,
@@ -167,6 +178,7 @@ export const webApi = {
   logout,
   markAllNotificationsRead,
   markNotificationRead,
+  markProjectAttachmentUploaded,
   markWorkItemAttachmentUploaded,
   markWorkItemCommentAttachmentUploaded,
   refreshCsrfToken,

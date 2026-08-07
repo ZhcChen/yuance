@@ -11,7 +11,7 @@ import electron from "electron";
 import { approveDeviceAuthorization } from "./support/browser-approval-driver.mjs";
 import { buildRealApi, startRealApiFixture } from "./support/real-api-fixture.mjs";
 
-test("real API and Electron complete work item and comment attachment flows", { timeout: 120_000 }, async (t) => {
+test("real API and Electron complete project, work item, and comment attachment flows", { timeout: 120_000 }, async (t) => {
   await buildRealApi();
   const fixture = await startRealApiFixture({ seedDemo: true });
   t.after(() => fixture.stop());
@@ -22,14 +22,18 @@ test("real API and Electron complete work item and comment attachment flows", { 
     kind: "yuance-business-file-result",
     itemUploaded: true,
     commentUploaded: true,
+    projectUploaded: true,
     itemListed: true,
     commentListed: true,
+    projectListAdded: true,
+    projectArchived: true,
     hashesMatch: true,
-    revealCount: 2,
+    revealCount: 3,
     cancelled: true,
     stages: [
       "item:registering", "item:signing", "item:uploading", "item:confirming",
       "comment:registering", "comment:signing", "comment:uploading", "comment:confirming",
+      "project:registering", "project:signing", "project:uploading", "project:confirming",
     ],
     activeOperations: 0,
   });

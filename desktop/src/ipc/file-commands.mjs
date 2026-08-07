@@ -68,7 +68,7 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
           fileCapability: parsed.fileCapability,
           binding,
           signal: controller.signal,
-          onStage: (stage) => publishProgress(event, parsed.operationId, stage),
+          onStage: (stage, created) => publishProgress(event, parsed.operationId, stage, created),
         });
         return normalizeAttachmentUploadResult(result);
       } finally {
@@ -101,8 +101,10 @@ function sanitize(handler) {
 }
 function parseAttachmentUpload(value, target) {
   const inputKeys = target === "comment" ? ["commentId", "fileCapability", "itemKey"] : target === "project" ? ["fileCapability", "projectKey"] : ["fileCapability", "itemKey"];
-  if (!isPlainObject(value) || !sameKeys(value, ["input", "operationId"]) || !OPERATION_ID.test(value.operationId) || !isPlainObject(value.input) || !sameKeys(value.input, inputKeys) || typeof value.input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(value.input.fileCapability)) throw new TypeError("attachment upload request is invalid");
-  return Object.freeze({ operationId: value.operationId, fileCapability: value.input.fileCapability, reference: attachmentReference(value.input, target, false) });
+  const actualKeys = isPlainObject(value?.input) ? Object.keys(value.input) : [];
+  const validProjectKeys = target === "project" && sameKeys(value.input, ["attachmentId", ...inputKeys]);
+  if (!isPlainObject(value) || !sameKeys(value, ["input", "operationId"]) || !OPERATION_ID.test(value.operationId) || !isPlainObject(value.input) || (!sameKeys(value.input, inputKeys) && !validProjectKeys) || typeof value.input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(value.input.fileCapability) || (actualKeys.includes("attachmentId") && (!Number.isSafeInteger(value.input.attachmentId) || value.input.attachmentId < 1))) throw new TypeError("attachment upload request is invalid");
+  return Object.freeze({ operationId: value.operationId, fileCapability: value.input.fileCapability, reference: attachmentReference(value.input, target, actualKeys.includes("attachmentId")) });
 }
 function parseAttachmentDownload(value, target) {
   const keys = target === "comment" ? ["attachmentId", "commentId", "itemKey", "suggestedFilename"] : target === "project" ? ["attachmentId", "projectKey", "suggestedFilename"] : ["attachmentId", "itemKey", "suggestedFilename"];
@@ -112,9 +114,9 @@ function parseAttachmentDownload(value, target) {
 function attachmentReference(value, target, attachment) {
   return Object.freeze({ ...(target === "project" ? { projectKey: value.projectKey } : { itemKey: value.itemKey }), ...(target === "comment" ? { commentId: value.commentId } : {}), ...(attachment ? { attachmentId: value.attachmentId } : {}) });
 }
-function publishProgress(event, operationId, stage) {
+function publishProgress(event, operationId, stage, created) {
   if (!STAGES.has(stage) || event.sender.isDestroyed?.()) return;
-  event.sender.send(FILE_CHANNELS.attachmentProgress, Object.freeze({ operationId, stage }));
+  event.sender.send(FILE_CHANNELS.attachmentProgress, Object.freeze({ operationId, stage, ...(created ? { created: normalizeAttachment(created) } : {}) }));
 }
 function stripPurpose(binding) {
   const { purpose: _purpose, ...value } = binding;

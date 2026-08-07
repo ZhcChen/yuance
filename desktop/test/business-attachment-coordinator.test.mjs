@@ -38,6 +38,15 @@ test("coordinates project attachment upload and download with project references
   assert.deepEqual(calls[0], ["attachment.projectdownloadsign", { projectKey: "YCE", attachmentId: 9 }]);
 });
 
+test("retries a project attachment without creating a duplicate record", async () => {
+  const calls = [];
+  const stages = [];
+  await fixture({ calls }).uploadProjectAttachment({ projectKey: "YCE", attachmentId: 9, fileCapability: capability, binding, onStage: (stage) => stages.push(stage), signal: undefined });
+  assert.deepEqual(stages, ["signing", "uploading", "confirming"]);
+  assert.equal(calls.some(([name]) => name === "attachment.projectcreate"), false);
+  assert.equal(calls.some(([name, input]) => name === "attachment.projectuploadsign" && input.attachmentId === 9), true);
+});
+
 test("fails closed on signed metadata drift before issuing a grant", async () => {
   const calls = [];
   const coordinator = fixture({ calls, signedAttachment: { ...attachment("pending"), byte_size: 13 } });

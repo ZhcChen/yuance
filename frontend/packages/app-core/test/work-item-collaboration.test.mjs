@@ -9,6 +9,7 @@ import {
   updateWorkItemComment,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
+  uploadProjectAttachment,
 } from '@yuance/frontend-app-core';
 
 /** @typedef {import('@yuance/frontend-platform-contract').FileCapability} FileCapability */
@@ -284,6 +285,54 @@ test('work item attachment upload follows register sign upload confirm refresh o
   ]);
   assert.equal(result.completed, true);
   assert.equal(result.uploaded, uploaded);
+});
+
+test('project attachment retry skips registration and reuses the pending record', async () => {
+  const events = [];
+  const pending = { id: 9, status: 'pending' };
+  const uploaded = { id: 9, status: 'uploaded' };
+  const fileCapability = /** @type {FileCapability} */ ({});
+  await uploadProjectAttachment({
+    api: {
+      createProjectAttachment: async () => { throw new Error('retry must not register'); },
+      getProjectAttachmentUploadUrl: async (projectKey, attachmentId) => { events.push(['sign', projectKey, attachmentId]); return { request: {}, expires_in_seconds: 300, checksum_sha256: 'a'.repeat(64) }; },
+      markProjectAttachmentUploaded: async (projectKey, attachmentId) => { events.push(['confirm', projectKey, attachmentId]); return uploaded; },
+    },
+    platform: attachmentPlatform(events), projectKey: 'YCE', existingAttachment: pending,
+    file: { capability: fileCapability, filename: 'report.txt', contentType: 'text/plain', byteSize: 12, checksumSha256: 'a'.repeat(64) },
+    lifecycle: {
+      isCurrent: () => true,
+      onStage: (stage) => events.push(['stage', stage]),
+      onCreated: () => { throw new Error('retry must not create UI state'); },
+      onUploaded: (attachment) => events.push(['uploaded', attachment]),
+    },
+  });
+  assert.equal(events.some((event) => event[1] === 'registering'), false);
+  assert.deepEqual(events[0], ['stage', 'signing']);
+  assert.deepEqual(events.at(-1), ['uploaded', uploaded]);
+});
+
+test('desktop delegated project upload publishes registration before a partial failure', async () => {
+  const events = [];
+  const created = { id: 9, status: 'pending' };
+  await assert.rejects(uploadProjectAttachment({
+    api: {}, projectKey: 'YCE',
+    platform: {
+      ...attachmentPlatform(events),
+      attachments: {
+        uploadProjectAttachment: async (_input, onStage) => { onStage('registering'); onStage('signing', created); throw new Error('transfer failed'); },
+      },
+    },
+    file: { capability: /** @type {FileCapability} */ ({}), filename: 'report.txt', contentType: 'text/plain', byteSize: 12 },
+    lifecycle: {
+      isCurrent: () => true,
+      onStage: (stage) => events.push(['stage', stage]),
+      onCreated: (attachment) => events.push(['created', attachment]),
+      onUploaded: () => {},
+    },
+  }), /transfer failed/);
+  assert.equal(events.filter(([kind]) => kind === 'created').length, 1);
+  assert.deepEqual(events.at(-1), ['created', created]);
 });
 
 test('desktop delegated attachment upload preserves stages without exposing signed requests', async () => {

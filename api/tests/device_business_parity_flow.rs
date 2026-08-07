@@ -269,6 +269,254 @@ async fn device_principal_completes_work_item_and_comment_attachment_signing_lif
     .await;
 }
 
+#[tokio::test]
+async fn device_project_attachment_lifecycle_enforces_permissions_and_audit_principals() {
+    let pool = test_pool().await;
+    let manager_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, manager_id).await.unwrap();
+    seed_memory_storage(&pool, manager_id).await;
+
+    let viewer_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "attachment_viewer".to_string(),
+            display_name: "Attachment Viewer".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "ViewerPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    projects::add_project_member(
+        &pool,
+        manager_id,
+        "YCE",
+        "attachment_viewer",
+        "viewer",
+    )
+    .await
+    .unwrap();
+    let outsider_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "attachment_outsider".to_string(),
+            display_name: "Attachment Outsider".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "OutsiderPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+
+    let manager = issue_device_credentials(&pool, manager_id, "project-attachment-manager").await;
+    let viewer = issue_device_credentials(&pool, viewer_id, "project-attachment-viewer").await;
+    let outsider =
+        issue_device_credentials(&pool, outsider_id, "project-attachment-outsider").await;
+    let app = test_app(pool.clone());
+    let collection_path = "/api/v1/projects/YCE/attachments";
+
+    let response = request(
+        &app,
+        "GET",
+        collection_path,
+        &manager.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"], serde_json::json!([]));
+
+    let content = b"device project attachment parity".to_vec();
+    let checksum_sha256 = format!("{:x}", Sha256::digest(&content));
+    let response = request(
+        &app,
+        "POST",
+        collection_path,
+        &manager.access_token,
+        Some(serde_json::json!({
+            "original_filename": "device-project.txt",
+            "content_type": "text/plain",
+            "byte_size": content.len(),
+            "checksum_sha256": checksum_sha256
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let attachment = json_body(response).await;
+    let attachment_id = attachment["data"]["id"].as_i64().unwrap();
+    let member_path = format!("{collection_path}/{attachment_id}");
+
+    for (method, path) in [
+        ("POST", collection_path.to_string()),
+        ("GET", format!("{member_path}/upload-url")),
+        ("POST", format!("{member_path}/uploaded")),
+        ("DELETE", member_path.clone()),
+    ] {
+        let payload = (method == "POST" && path == collection_path).then(|| {
+            serde_json::json!({
+                "original_filename": "viewer-forbidden.txt",
+                "content_type": "text/plain",
+                "byte_size": 1
+            })
+        });
+        let response = request(&app, method, &path, &viewer.access_token, payload).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "viewer path: {path}");
+    }
+
+    let response = request(
+        &app,
+        "GET",
+        &format!("{member_path}/upload-url"),
+        &manager.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let signed = json_body(response).await;
+    assert_eq!(signed["data"]["request"]["method"], "PUT");
+    assert_eq!(signed["data"]["checksum_sha256"], checksum_sha256);
+
+    let object_key = sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",
+    )
+    .bind(attachment_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    storage::write_test_memory_object(
+        &pool,
+        &test_settings(),
+        &object_key,
+        "text/plain",
+        content,
+    )
+    .await
+    .unwrap();
+
+    let response = request(
+        &app,
+        "POST",
+        &format!("{member_path}/uploaded"),
+        &manager.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "uploaded");
+
+    let response = request(&app, "GET", collection_path, &viewer.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let listed = json_body(response).await;
+    assert_eq!(listed["data"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["data"][0]["id"], attachment_id);
+
+    let response = request(
+        &app,
+        "GET",
+        &format!("{member_path}/download-url"),
+        &viewer.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let signed = json_body(response).await;
+    assert_eq!(signed["data"]["request"]["method"], "GET");
+    assert_eq!(signed["data"]["attachment"]["id"], attachment_id);
+
+    for path in [collection_path.to_string(), format!("{member_path}/download-url")] {
+        let response = request(&app, "GET", &path, &outsider.access_token, None).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "outsider path: {path}");
+    }
+    let response = request(
+        &app,
+        "GET",
+        "/api/v1/projects/OPS/attachments",
+        &viewer.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let response = request(
+        &app,
+        "GET",
+        &format!("/api/v1/projects/OPS/attachments/{attachment_id}/download-url"),
+        &manager.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let response = request(
+        &app,
+        "GET",
+        &format!("{member_path}/download-url"),
+        &manager.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let response = request(
+        &app,
+        "DELETE",
+        &member_path,
+        &manager.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "deleted");
+
+    for path in [
+        format!("{member_path}/upload-url"),
+        format!("{member_path}/download-url"),
+    ] {
+        let response = request(&app, "GET", &path, &manager.access_token, None).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "archived path: {path}");
+    }
+
+    let audit_rows = sqlx::query_as::<_, (String, Option<i64>)>(
+        r#"
+        SELECT action, actor_user_id
+        FROM audit_logs
+        WHERE target_type = 'project'
+          AND target_id = 'YCE'
+          AND action IN ('file.attach.project', 'file.upload.completed', 'file.download.url', 'file.archive')
+        ORDER BY id
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert!(audit_rows.contains(&("file.attach.project".to_string(), Some(manager_id))));
+    assert!(audit_rows.contains(&("file.upload.completed".to_string(), Some(manager_id))));
+    assert!(audit_rows.contains(&("file.download.url".to_string(), Some(viewer_id))));
+    assert!(audit_rows.contains(&("file.download.url".to_string(), Some(manager_id))));
+    assert!(audit_rows.contains(&("file.archive".to_string(), Some(manager_id))));
+
+    let archived_by = sqlx::query_as::<_, (Option<i64>, String)>(
+        r#"
+        SELECT actor_user_id, metadata
+        FROM project_activities
+        WHERE action = 'file.archived'
+        ORDER BY id DESC
+        LIMIT 1
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(archived_by.0, Some(manager_id));
+    assert_eq!(
+        serde_json::from_str::<Value>(&archived_by.1).unwrap()["attachment_id"],
+        attachment_id
+    );
+}
+
 async fn run_attachment_lifecycle(
     app: &Router,
     pool: &SqlitePool,

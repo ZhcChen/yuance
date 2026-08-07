@@ -142,7 +142,7 @@ function isInternalNotificationPath(value) {
 function invokeAttachmentUpload(channel, input, onStage) {
   const operationId = globalThis.crypto.randomUUID();
   const listener = (_event, value) => {
-    if (value && value.operationId === operationId && ATTACHMENT_STAGES.has(value.stage) && typeof onStage === "function") onStage(value.stage);
+    if (value && value.operationId === operationId && ATTACHMENT_STAGES.has(value.stage) && typeof onStage === "function") onStage(value.stage, value.created);
   };
   ipcRenderer.on(ATTACHMENT_PROGRESS_CHANNEL, listener);
   return ipcRenderer.invoke(channel, { operationId, input }).finally(() => ipcRenderer.removeListener(ATTACHMENT_PROGRESS_CHANNEL, listener));

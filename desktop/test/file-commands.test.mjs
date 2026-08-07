@@ -71,6 +71,13 @@ test("business attachment commands publish bounded progress and public results",
   assert.equal(JSON.stringify(result).includes("/secret"), false);
 });
 
+test("project attachment upload accepts a bounded retry attachment id", async () => {
+  const value = fixture();
+  const operationId = "12345678-1234-4123-8123-123456789abc";
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.uploadProjectAttachment)(value.event, { operationId, input: { projectKey: "YCE", attachmentId: 9, fileCapability: `yfc_${"a".repeat(32)}` } }), { created: attachment("pending"), uploaded: attachment("uploaded") });
+  assert.equal(value.calls.some(([name, input]) => name === "project-attachment-upload" && input.attachmentId === 9), true);
+});
+
 test("reveal command binds the opaque capability to the current sender", async () => {
   const value = fixture();
   const capability = `yrd_${"b".repeat(32)}`;

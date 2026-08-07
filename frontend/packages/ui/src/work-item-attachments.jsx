@@ -16,9 +16,9 @@ import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './f
  */
 
 /**
- * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, revealableId?: number | null, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void, showCreator?: boolean, className?: string }} props
+ * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, revealableId?: number | null, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void, renderExtraAction?: (attachment: Attachment) => React.ReactNode, showCreator?: boolean, className?: string }} props
  */
-export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, revealableId = null, onDownload, onReveal, showCreator = false, className = '' }) {
+export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, revealableId = null, onDownload, onReveal, renderExtraAction, showCreator = false, className = '' }) {
   return (
     <ul className={`work-item-attachment-list ${className}`.trim()} aria-label={ariaLabel}>
       {attachments.map((attachment) => (
@@ -49,6 +49,7 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
                 ) : null}
               </>
             ) : <span className="attachment-action-hint">上传完成后可下载</span>}
+            {renderExtraAction?.(attachment)}
           </div>
         </li>
       ))}

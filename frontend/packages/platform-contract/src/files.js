@@ -30,6 +30,7 @@ void REVEAL_DOWNLOAD_CAPABILITY;
  * @property {string} filename
  * @property {string} contentType
  * @property {number} byteSize
+ * @property {string} [checksumSha256]
  */
 
 /**
@@ -108,7 +109,7 @@ export function defineHostDelegatedFileCapabilities(capabilities) {
  * @property {(input: { itemKey: string, commentId: number, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: any, uploaded: any }>} uploadWorkItemCommentAttachment
  * @property {(input: { itemKey: string, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadWorkItemAttachment
  * @property {(input: { itemKey: string, commentId: number, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadWorkItemCommentAttachment
- * @property {(input: { projectKey: string, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming') => void) => Promise<{ created: any, uploaded: any }>} uploadProjectAttachment
+ * @property {(input: { projectKey: string, fileCapability: FileCapability, attachmentId?: number }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming', created?: any) => void) => Promise<{ created: any, uploaded: any }>} uploadProjectAttachment
  * @property {(input: { projectKey: string, attachmentId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadProjectAttachment
  * @property {(capability: RevealDownloadCapability) => Promise<{ status: 'revealed' }>} revealDownload
  */

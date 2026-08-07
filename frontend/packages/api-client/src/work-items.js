@@ -8,11 +8,11 @@
 /** @typedef {{ id: number, parent_comment_id: number | null, parent_author: string, body: string, body_format: string, author: string, created_at: string, updated_at: string, is_flow: boolean, is_draft: boolean }} WorkItemComment */
 /** @typedef {{ id: number, filename: string, content_type: string, byte_size: number, status: string, created_by: string, created_at: string }} Attachment */
 /** @typedef {{ method: string, url: string, headers: Array<[string, string]> }} SignedObjectRequest */
-/** @typedef {{ attachment: Attachment, request: SignedObjectRequest, expires_in_seconds: number }} AttachmentSignedUrl */
+/** @typedef {{ attachment: Attachment, request: SignedObjectRequest, expires_in_seconds: number, checksum_sha256?: string }} AttachmentSignedUrl */
 /** @typedef {{ title?: string, description?: string, status?: string, priority?: string, assigneeUsername?: string, dueDate?: string, parentItemKey?: string }} WorkItemUpdatePayload */
 /** @typedef {{ status: string, assigneeUsername: string, body: string, sourceCommentId?: number | null }} WorkItemHandoffPayload */
 /** @typedef {{ body: string, bodyFormat?: string, parentCommentId?: number | null }} CommentRequestPayload */
-/** @typedef {{ originalFilename: string, contentType: string, byteSize: number }} AttachmentCreatePayload */
+/** @typedef {{ originalFilename: string, contentType: string, byteSize: number, checksumSha256?: string }} AttachmentCreatePayload */
 /** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
 /** @typedef {{ getWorkItems(query?: { itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, page?: number, perPage?: number }): Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>, getWorkItem(itemKey: string): Promise<WorkItemDetail>, getWorkItemComments(itemKey: string): Promise<WorkItemComment[]>, updateWorkItem(itemKey: string, payload: WorkItemUpdatePayload): Promise<WorkItemDetail>, handoffWorkItem(itemKey: string, payload: WorkItemHandoffPayload): Promise<WorkItemDetail>, createWorkItemComment(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, createWorkItemCommentDraft(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, updateWorkItemComment(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, publishWorkItemCommentDraft(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, getWorkItemAttachments(itemKey: string): Promise<Attachment[]>, createWorkItemAttachment(itemKey: string, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemAttachmentUploadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemAttachmentUploaded(itemKey: string, attachmentId: number): Promise<Attachment>, getWorkItemAttachmentDownloadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, getWorkItemCommentAttachments(itemKey: string, commentId: number): Promise<Attachment[]>, createWorkItemCommentAttachment(itemKey: string, commentId: number, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemCommentAttachmentUploadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemCommentAttachmentUploaded(itemKey: string, commentId: number, attachmentId: number): Promise<Attachment>, getWorkItemCommentAttachmentDownloadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl> }} WorkItemClient */
 
@@ -75,6 +75,7 @@ export function attachmentCreateRequestBody(payload) {
     original_filename: payload.originalFilename,
     content_type: payload.contentType,
     byte_size: payload.byteSize,
+    ...(payload.checksumSha256 ? { checksum_sha256: payload.checksumSha256 } : {}),
   };
 }
 
@@ -125,6 +126,7 @@ export function attachmentSignedUrlFromPayload(raw) {
     attachment: attachmentFromPayload(payload.attachment),
     request: payload.request,
     expires_in_seconds: payload.expires_in_seconds,
+    ...(payload.checksum_sha256 ? { checksum_sha256: payload.checksum_sha256 } : {}),
   };
 }
 

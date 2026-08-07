@@ -42,8 +42,8 @@ export function createBrowserFilePlatform({
   const filesByCapability = new WeakMap();
   const requestsByCapability = new WeakMap();
 
-  /** @param {File} file @returns {SelectedFile} */
-  function selectFile(file) {
+  /** @param {File} file @param {string} [checksumSha256] @returns {SelectedFile} */
+  function selectFile(file, checksumSha256) {
     const capability = /** @type {FileCapability} */ ({});
     filesByCapability.set(capability, file);
     return {
@@ -51,6 +51,7 @@ export function createBrowserFilePlatform({
       filename: file.name || 'attachment.bin',
       contentType: file.type || 'application/octet-stream',
       byteSize: file.size,
+      ...(checksumSha256 ? { checksumSha256 } : {}),
     };
   }
 
@@ -71,7 +72,9 @@ export function createBrowserFilePlatform({
   const files = defineFileCapabilities({
     async chooseFile() {
       const file = await chooseFile();
-      return file ? selectFile(file) : null;
+      if (!file) return null;
+      const checksumSha256 = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', await file.arrayBuffer())), (byte) => byte.toString(16).padStart(2, '0')).join('');
+      return selectFile(file, checksumSha256);
     },
     async uploadSignedRequest(transferCapability, fileCapability) {
       const authorization = consumeTransferCapability(requestsByCapability, transferCapability, 'upload', now());

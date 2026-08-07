@@ -36,17 +36,20 @@ export function createBusinessAttachmentCoordinator({
     const { reference, fileCapability, binding, signal, onStage } = parseUploadInput(target, input);
     const uploadBinding = Object.freeze({ ...binding, purpose: "upload" });
     const metadata = fileVault.describe(fileCapability, uploadBinding);
-    onStage("registering");
     let created;
-    try {
-      created = await restTransport.execute(`attachment.${target}create`, { ...reference, metadata });
-    } catch (error) {
-      if (error?.code === "mutation_result_uncertain") throw publicError("attachment_create_uncertain");
-      throw error;
+    if (reference.attachmentId === undefined) {
+      onStage("registering");
+      try {
+        created = await restTransport.execute(`attachment.${target}create`, { ...reference, metadata });
+      } catch (error) {
+        if (error?.code === "mutation_result_uncertain") throw publicError("attachment_create_uncertain");
+        throw error;
+      }
     }
     try {
-      onStage("signing");
-      const signed = await restTransport.execute(`attachment.${target}uploadsign`, { ...reference, attachmentId: created.id });
+      onStage("signing", created);
+      const signed = await restTransport.execute(`attachment.${target}uploadsign`, { ...reference, ...(created ? { attachmentId: created.id } : {}) });
+      created ||= signed?.attachment;
       validateUploadPair(created, signed, metadata);
       const contract = parseBusinessContract(signed.transfer, "upload");
       const transferGrant = grantVault.issue(contract, uploadBinding).grant;
@@ -126,12 +129,13 @@ function parseUploadInput(target, input) {
   const allowed = target === "comment"
     ? ["binding", "commentId", "fileCapability", "itemKey", "onStage", "signal"]
     : target === "project" ? ["binding", "fileCapability", "onStage", "projectKey", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
-  exactInput(input, allowed);
-  if (typeof input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(input.fileCapability) || typeof input.onStage !== "function") throw new TypeError("Attachment upload input is invalid");
+  const retryAllowed = target === "project" && sameKeys(input, [...allowed, "attachmentId"]);
+  if (!retryAllowed) exactInput(input, allowed);
+  if (typeof input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(input.fileCapability) || typeof input.onStage !== "function" || (retryAllowed && (!Number.isSafeInteger(input.attachmentId) || input.attachmentId < 1))) throw new TypeError("Attachment upload input is invalid");
   validateBinding(input.binding);
   validateSignal(input.signal);
   return Object.freeze({
-    reference: attachmentReference(target, input, false),
+    reference: attachmentReference(target, input, retryAllowed),
     fileCapability: input.fileCapability,
     binding: input.binding,
     signal: input.signal,
