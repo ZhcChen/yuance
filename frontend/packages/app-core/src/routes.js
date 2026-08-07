@@ -135,6 +135,16 @@ export function buildSystemStoragePath({ owner = 'web', page = DEFAULT_PAGE, per
   return params.size ? `${base}?${params.toString()}` : base;
 }
 
+export function buildSystemReleasesPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/releases' : '/web/system/releases';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
 export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -361,6 +371,12 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
   if (pathname === '/web/system/storage' || pathname === '/web/app/system/storage') {
     return {
       id: 'system-storage', owner, pathname, search, page, perPage, title: '对象存储',
+    };
+  }
+
+  if (pathname === '/web/system/releases' || pathname === '/web/app/system/releases') {
+    return {
+      id: 'system-releases', owner, pathname, search, page, perPage, title: '版本管理',
     };
   }
 

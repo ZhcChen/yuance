@@ -1298,6 +1298,35 @@ pub struct SystemReleaseDetailPayload {
     pub assets: Vec<SystemReleaseAssetPayload>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseViewAssetPayload {
+    pub id: i64,
+    pub release_id: i64,
+    pub platform: String,
+    pub architecture: String,
+    pub artifact_kind: String,
+    pub filename: String,
+    pub content_type: String,
+    pub byte_size: i64,
+    pub status: String,
+    pub checksum_sha256: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleaseViewDetailPayload {
+    pub release: SystemReleasePayload,
+    pub assets: Vec<SystemReleaseViewAssetPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemReleasesViewPayload {
+    pub settings: SystemReleaseSettingsPayload,
+    pub items: Vec<SystemReleaseViewDetailPayload>,
+    pub pagination: PaginationPayload,
+    pub can_manage_releases: bool,
+}
+
 #[derive(Debug, Clone)]
 struct ApiTokenActor {
     display_name: String,
@@ -6338,6 +6367,45 @@ pub async fn list_system_releases(
     }))
 }
 
+pub async fn get_system_releases_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemReleaseListQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemReleasesViewPayload>>> {
+    let user = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "system.releases.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let page = system_releases::list_releases_page(pool, pagination).await?;
+    let total_pages = page.total_pages();
+    let mut items = Vec::with_capacity(page.items.len());
+    for release in page.items {
+        let assets = system_releases::list_release_assets(pool, release.id).await?;
+        items.push(SystemReleaseViewDetailPayload {
+            release: system_release_payload(release),
+            assets: assets
+                .into_iter()
+                .map(system_release_view_asset_payload)
+                .collect(),
+        });
+    }
+    let settings = system_release_settings_payload(system_releases::get_settings(pool).await?);
+    let can_manage_releases =
+        rbac::user_has_permission(pool, user.id, "system.releases.manage").await?;
+
+    Ok(json(SystemReleasesViewPayload {
+        settings,
+        items,
+        pagination: PaginationPayload {
+            page: page.page,
+            per_page: page.per_page,
+            total_items: page.total_items,
+            total_pages,
+        },
+        can_manage_releases,
+    }))
+}
+
 pub async fn create_system_release(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -8975,6 +9043,24 @@ fn system_release_asset_payload(
         architecture: asset.architecture,
         artifact_kind: asset.artifact_kind,
         object_key: asset.object_key,
+        filename: asset.original_filename,
+        content_type: asset.content_type,
+        byte_size: asset.byte_size,
+        status: asset.status,
+        checksum_sha256: asset.checksum_sha256,
+        created_at: asset.created_at,
+    }
+}
+
+fn system_release_view_asset_payload(
+    asset: system_releases::SystemReleaseAssetSummary,
+) -> SystemReleaseViewAssetPayload {
+    SystemReleaseViewAssetPayload {
+        id: asset.id,
+        release_id: asset.release_id,
+        platform: asset.platform,
+        architecture: asset.architecture,
+        artifact_kind: asset.artifact_kind,
         filename: asset.original_filename,
         content_type: asset.content_type,
         byte_size: asset.byte_size,

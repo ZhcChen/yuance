@@ -6,7 +6,9 @@ use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{auth, bootstrap, projects, rbac, storage, system_api_tokens, system_releases},
+    domains::{
+        auth, bootstrap, projects, rbac, storage, system_api_tokens, system_releases, users,
+    },
     platform::{config::Settings, db},
     web::router::{AppState, build_router},
 };
@@ -2456,6 +2458,77 @@ async fn system_releases_page_renders_for_admin() {
     assert!(body.contains(r#"action="/web/system/releases/settings""#));
     assert!(body.contains(r#"href="/web/downloads" target="_blank""#));
     assert!(body.contains("暂无版本记录"));
+}
+
+#[tokio::test]
+async fn api_system_releases_view_returns_one_atomic_paginated_snapshot() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let write_cookie = with_csrf_cookie(&initialized.cookie);
+    create_system_release_api(
+        &app,
+        &write_cookie,
+        "v2.0.0",
+        "共享发布视图",
+        "原子读取设置、版本和资产。",
+    )
+    .await;
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/releases-view?page=1&per_page=20")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response_json(response).await;
+    assert_eq!(payload["data"]["settings"]["retention_count"], 5);
+    assert_eq!(
+        payload["data"]["items"][0]["release"]["version_name"],
+        "v2.0.0"
+    );
+    assert_eq!(payload["data"]["items"][0]["assets"], serde_json::json!([]));
+    assert_eq!(payload["data"]["pagination"]["per_page"], 20);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 1);
+    assert_eq!(payload["data"]["can_manage_releases"], true);
+
+    let member_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "release_view_denied".to_string(),
+            display_name: "发布读取拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/releases-view")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
 }
 
 #[tokio::test]

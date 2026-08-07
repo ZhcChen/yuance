@@ -15,6 +15,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemStoragePath,
   buildSystemUsersPath,
@@ -584,6 +585,8 @@ function routeDescription(route) {
       return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
+    case 'system-releases':
+      return '保留策略、版本状态和平台资产由服务端原子读取，两个宿主共用同一发布工作台。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -615,6 +618,7 @@ function routeEyebrow(route) {
     case 'system-users':
     case 'system-roles':
     case 'system-storage':
+    case 'system-releases':
       return 'System';
     default:
       return 'Web App';
@@ -780,6 +784,7 @@ export function SharedApp({ services }) {
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
+  const [systemReleasesView, setSystemReleasesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemReleasesView']>> | null} */ (null));
   const [systemStorageEditOpen, setSystemStorageEditOpen] = useState(false);
   const [systemStorageForm, setSystemStorageForm] = useState({ endpoint: '', region: '', bucket: '', accessKeyId: '', accessKeySecret: '' });
   const [systemStorageConfirmation, setSystemStorageConfirmation] = useState(/** @type {{ kind: 'save', payload: any } | { kind: 'initialize' } | { kind: 'rollback', version: number, bucket: string } | null} */ (null));
@@ -1178,7 +1183,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemReleasesView] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1296,6 +1301,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-storage'
           ? api.getSystemStorageView({ page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
+        targetRoute.id === 'system-releases'
+          ? api.getSystemReleasesView({ page: targetRoute.page, perPage: targetRoute.perPage })
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1354,6 +1362,7 @@ export function SharedApp({ services }) {
         setSystemRoleError('');
       }
       if (targetRoute.id === 'system-storage') setSystemStorageView(nextSystemStorageView);
+      if (targetRoute.id === 'system-releases') setSystemReleasesView(nextSystemReleasesView);
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
       }
@@ -2588,6 +2597,8 @@ export function SharedApp({ services }) {
         ? '角色权限 - 元策'
       : route.id === 'system-storage'
         ? '对象存储 - 元策'
+      : route.id === 'system-releases'
+        ? '版本管理 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
         : route.id === 'profile'
@@ -4241,8 +4252,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-releases')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4270,7 +4281,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-releases' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4334,7 +4345,42 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'system-storage' ? (
+          {route.id === 'system-releases' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-releases-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-releases-title">发布工作台</h2><p className="shell-muted">保留策略、版本状态与平台资产</p></div>
+              </div>
+              {systemReleasesView ? <dl className="shell-detail-grid">
+                <div><dt>已发布版本保留数</dt><dd>{systemReleasesView.settings.retention_count}</dd></div>
+                <div><dt>策略更新人</dt><dd>{systemReleasesView.settings.updated_by || '系统'}</dd></div>
+                <div><dt>策略更新时间</dt><dd>{formatTimestamp(systemReleasesView.settings.updated_at)}</dd></div>
+                <div><dt>版本总数</dt><dd>{systemReleasesView.pagination.total_items}</dd></div>
+              </dl> : null}
+              <section aria-labelledby="system-release-list-title">
+                <div className="shell-panel-header"><div><h3 id="system-release-list-title">版本列表</h3><p className="shell-muted">已发布版本优先，其余按更新时间倒序。</p></div></div>
+                <DataTable caption="系统版本列表" rows={systemReleasesView?.items || []} rowKey={(item) => item.release.id} emptyText="暂无版本记录。" columns={[
+                  { key: 'version', label: '版本', render: (item) => <><strong>{item.release.version_name}</strong><br /><span className="shell-muted">{item.release.channel}</span></> },
+                  { key: 'title', label: '标题 / 说明', render: (item) => <><strong>{item.release.title || '未填写标题'}</strong><br /><span className="shell-muted">{item.release.notes || '暂无版本说明'}</span></> },
+                  { key: 'status', label: '状态', render: (item) => <>{item.release.status}<br /><span className="shell-muted">{item.release.verification_status || '未校验'}</span></> },
+                  { key: 'assets', label: '平台 / 资产', render: (item) => <>{item.release.platform_count} 个平台 · {item.release.asset_count} 个文件<br /><span className="shell-muted">{item.assets.map((asset) => `${asset.platform} ${asset.architecture}`).join('，') || '暂无安装包'}</span></> },
+                  { key: 'updated', label: '更新', render: (item) => <>{item.release.updated_by || '系统'}<br /><span className="shell-muted">{formatTimestamp(item.release.updated_at)}</span></> },
+                ]} />
+              </section>
+              <section aria-labelledby="system-release-assets-title">
+                <div className="shell-panel-header"><div><h3 id="system-release-assets-title">版本资产</h3></div></div>
+                <DataTable caption="系统版本资产" rows={(systemReleasesView?.items || []).flatMap((item) => item.assets.map((asset) => ({ ...asset, version_name: item.release.version_name })))} rowKey={(item) => item.id} emptyText="当前页版本暂无资产。" columns={[
+                  { key: 'version', label: '版本', render: (item) => item.version_name },
+                  { key: 'platform', label: '平台', render: (item) => `${item.platform} · ${item.architecture}` },
+                  { key: 'filename', label: '文件', render: (item) => <><strong>{item.filename}</strong><br /><span className="shell-muted">{item.content_type}</span></> },
+                  { key: 'kind', label: '类型', render: (item) => item.artifact_kind },
+                  { key: 'size', label: '字节数', render: (item) => item.byte_size.toLocaleString() },
+                  { key: 'status', label: '状态', render: (item) => item.status },
+                  { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) },
+                ]} />
+              </section>
+              {systemReleasesView ? <div className="shell-panel-header"><Pagination page={systemReleasesView.pagination.page} totalPages={systemReleasesView.pagination.total_pages} totalItems={systemReleasesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemReleasesPath({ owner: route.owner, page, perPage: systemReleasesView.pagination.per_page }), `正在加载第 ${page} 页版本。`)} /><label className="shell-page-size">每页<select value={systemReleasesView.pagination.per_page} onChange={(event) => navigate(buildSystemReleasesPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
+            </section>
+          ) : route.id === 'system-storage' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-storage-title">
               <div className="shell-panel-header"><div><h2 id="system-storage-title">存储工作台</h2><p className="shell-muted">当前配置与版本记录</p></div>{systemStorageView?.can_manage_storage ? <div className="shell-actions-inline">{systemStorageView.config ? <Button variant="secondary" disabled={systemStorageSubmitting} onClick={() => void probeSystemStorage()}>测试连接</Button> : null}<Button disabled={systemStorageSubmitting} onClick={openSystemStorageEdit}>编辑配置</Button></div> : null}</div>
               {systemStorageError ? <Feedback tone="danger" title="存储操作需要处理">{systemStorageError}</Feedback> : null}

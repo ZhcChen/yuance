@@ -2301,6 +2301,44 @@ test('formal web system storage owner keeps its route while rendering the shared
   expect(page.url()).not.toContain('/web/app/system/storage');
 });
 
+test('shared system releases view renders one atomic policy version and asset snapshot', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/releases-view*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.pathname + url.search);
+    const currentPage = Number(url.searchParams.get('page') || 1);
+    const perPage = Number(url.searchParams.get('per_page') || 10);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      settings: { retention_count: 5, updated_by: '发布管理员', updated_at: '2026-08-08T01:00:00Z' },
+      items: [{
+        release: {
+          id: currentPage, version_name: `v2.0.${currentPage}`, title: '共享桌面版本', notes: '统一 Browser 与 Desktop 发布视图。',
+          status: 'draft', channel: 'internal', verification_status: 'pending', manifest_sha256: '', signing_key_id: '',
+          source_commit: '', source_tag: '', published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '',
+          github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员',
+          created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z', asset_count: 1, platform_count: 1,
+        },
+        assets: [{ id: currentPage, release_id: currentPage, platform: 'macos', architecture: 'arm64', artifact_kind: 'installer', filename: `yuance-${currentPage}.dmg`, content_type: 'application/x-apple-diskimage', byte_size: 4096, status: 'uploaded', checksum_sha256: 'abc123', created_at: '2026-08-08T00:30:00Z' }],
+      }],
+      pagination: { page: currentPage, per_page: perPage, total_items: 41, total_pages: Math.ceil(41 / perPage) },
+      can_manage_releases: true,
+    } }) });
+  });
+
+  await login(page, '/web/app/system/releases?page=2&per_page=20');
+  await expect(page).toHaveTitle('版本管理 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '版本管理' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '发布工作台' })).toContainText('发布管理员');
+  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.2');
+  await expect(page.getByRole('table', { name: '系统版本资产' })).toContainText('yuance-2.dmg');
+  await expect(page.locator('body')).not.toContainText('release/private/object-key');
+  await expect.poll(() => requests).toContain('/api/v1/system/releases-view?page=2&per_page=20');
+
+  await page.getByRole('button', { name: '下一页' }).click();
+  await expect(page).toHaveURL('/web/app/system/releases?page=3&per_page=20');
+  await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.3');
+});
+
 test('shared system storage mutations preserve confirmation lock and final refresh semantics', async ({ page }) => {
   const mutations = [];
   let version = 3;

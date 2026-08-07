@@ -39,6 +39,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
     ["system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }, "/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20"],
     ["system.storageview", { page: 2, perPage: 20 }, "/api/v1/system/storage-view?page=2&per_page=20"],
+    ["system.releasesview", { page: 2, perPage: 20 }, "/api/v1/system/releases-view?page=2&per_page=20"],
     ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
     ["project.list", { status: "in_progress", page: 2, perPage: 25 }, "/api/v1/projects?status=in_progress&page=2&per_page=25"],
@@ -119,6 +120,22 @@ test("system storage view response excludes raw storage credentials", () => {
   assert.deepEqual(parse(payload), payload);
   assert.throws(() => parse({ ...payload, access_key_secret: "secret" }), /fields are invalid/i);
   assert.throws(() => parse({ ...payload, config: { ...payload.config, access_key_id: "raw" } }), /fields are invalid/i);
+});
+
+test("system releases view response excludes internal object storage fields", () => {
+  const parse = createOperationRegistry().resolve("system.releasesview", {}).parse;
+  const release = {
+    id: 7, version_name: "v1.2.3", title: "稳定版本", notes: "说明", status: "draft", channel: "legacy",
+    verification_status: "not_required", manifest_sha256: "", signing_key_id: "", source_commit: "", source_tag: "",
+    published_at: "", verified_at: "", withdrawn_at: "", withdrawal_reason: "", github_withdrawal_status: "",
+    created_by: "管理员", updated_by: "管理员", created_at: "2026-08-08", updated_at: "2026-08-08",
+    asset_count: 1, platform_count: 1,
+  };
+  const asset = { id: 9, release_id: 7, platform: "macos", architecture: "arm64", artifact_kind: "installer", filename: "yuance.dmg", content_type: "application/x-apple-diskimage", byte_size: 1024, status: "uploaded", checksum_sha256: "abc", created_at: "2026-08-08" };
+  const payload = { settings: { retention_count: 3, updated_by: "管理员", updated_at: "2026-08-08" }, items: [{ release, assets: [asset] }], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, can_manage_releases: true };
+  assert.deepEqual(parse(payload), payload);
+  assert.throws(() => parse({ ...payload, items: [{ release, assets: [{ ...asset, object_key: "release/private" }] }] }), /fields are invalid/i);
+  assert.throws(() => parse({ ...payload, items: [{ release, assets: [{ ...asset, file_object_id: 12 }] }] }), /fields are invalid/i);
 });
 
 test("system storage mutations are fixed non-idempotent operations", () => {

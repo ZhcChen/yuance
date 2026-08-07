@@ -46,6 +46,15 @@ test('system storage view preserves compact version pagination query', async () 
   assert.deepEqual(calls, ['/api/v1/system/storage-view', '/api/v1/system/storage-view?page=3&per_page=20']);
 });
 
+test('system releases view preserves compact version pagination query', async () => {
+  const calls = [];
+  const client = createSystemClient({ request: async (url) => { calls.push(url); return { items: [] }; } });
+
+  await client.getSystemReleasesView();
+  await client.getSystemReleasesView({ page: 3, perPage: 20 });
+  assert.deepEqual(calls, ['/api/v1/system/releases-view', '/api/v1/system/releases-view?page=3&per_page=20']);
+});
+
 test('system storage mutations use fixed JSON contracts after write preparation', async () => {
   const calls = [];
   const client = createSystemClient({

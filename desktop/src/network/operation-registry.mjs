@@ -48,6 +48,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
+    ["system.releasesview", systemReleasesViewOperation],
     ["system.storagesave", systemStorageSaveOperation],
     ["system.storageprobe", noInputOperation("POST", "/api/v1/storage/config/probe", parseStorageProbe, false)],
     ["system.storageinitialize", noInputOperation("POST", "/api/v1/storage/config/initialize", parseStorageInitialize, false)],
@@ -449,6 +450,13 @@ function systemStorageViewOperation(input) {
   const query = new URLSearchParams();
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/storage-view", query), parseSystemStorageView);
+}
+
+function systemReleasesViewOperation(input) {
+  exactKeys(input, ["page", "perPage"]);
+  const query = new URLSearchParams();
+  appendPagination(query, input);
+  return descriptor("GET", withQuery("/api/v1/system/releases-view", query), parseSystemReleasesView);
 }
 
 function systemStorageSaveOperation(input) {
@@ -923,6 +931,33 @@ function parseSystemStorageView(data) { return freezeExactDto(data, {
   }),
   inspection: (inspection) => inspection === null ? null : parseStorageInspection(inspection),
   inspection_error: textString, can_manage_storage: boolean,
+}); }
+function parseSystemRelease(data) { return freezeExactDto(data, {
+  id: positiveInteger, version_name: shortString, title: textString, notes: longString,
+  status: shortString, channel: shortString, verification_status: shortString,
+  manifest_sha256: shortString, signing_key_id: shortString, source_commit: shortString,
+  source_tag: shortString, published_at: shortString, verified_at: shortString,
+  withdrawn_at: shortString, withdrawal_reason: longString, github_withdrawal_status: shortString,
+  created_by: textString, updated_by: textString, created_at: shortString, updated_at: shortString,
+  asset_count: nonNegativeInteger, platform_count: nonNegativeInteger,
+}); }
+function parseSystemReleaseViewAsset(data) { return freezeExactDto(data, {
+  id: positiveInteger, release_id: positiveInteger, platform: shortString, architecture: shortString,
+  artifact_kind: shortString, filename: textString, content_type: shortString,
+  byte_size: nonNegativeInteger, status: shortString, checksum_sha256: shortString, created_at: shortString,
+}); }
+function parseSystemReleasesView(data) { return freezeExactDto(data, {
+  settings: (settings) => freezeExactDto(settings, {
+    retention_count: positiveInteger, updated_by: textString, updated_at: shortString,
+  }),
+  items: (items) => boundedArray(items, (item) => freezeExactDto(item, {
+    release: parseSystemRelease,
+    assets: (assets) => boundedArray(assets, parseSystemReleaseViewAsset, 100, "system release assets"),
+  }), 100, "system releases"),
+  pagination: (pagination) => freezeExactDto(pagination, {
+    page: positiveInteger, per_page: positiveInteger, total_items: nonNegativeInteger, total_pages: positiveInteger,
+  }),
+  can_manage_releases: boolean,
 }); }
 function parseStorageProbe(data) { return freezeExactDto(data, {
   ok: boolean, provider: shortString, bucket: shortString, message: textString,

@@ -52,6 +52,7 @@ export const getSystemDashboard = apiClient.getSystemDashboard;
 export const getSystemUsersView = apiClient.getSystemUsersView;
 export const getSystemRolesView = apiClient.getSystemRolesView;
 export const getSystemStorageView = apiClient.getSystemStorageView;
+export const getSystemReleasesView = apiClient.getSystemReleasesView;
 export const saveStorageConfig = apiClient.saveStorageConfig;
 export const probeStorageConfig = apiClient.probeStorageConfig;
 export const initializeStorageConfig = apiClient.initializeStorageConfig;
@@ -239,6 +240,7 @@ export const webApi = {
   getSystemUsersView,
   getSystemRolesView,
   getSystemStorageView,
+  getSystemReleasesView,
   saveStorageConfig,
   probeStorageConfig,
   initializeStorageConfig,

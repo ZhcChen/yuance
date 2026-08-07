@@ -12,6 +12,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemStoragePath,
   buildSystemUsersPath,
@@ -57,6 +58,15 @@ test('system storage route preserves owner and version pagination', () => {
   assert.deepEqual(parseAppRoute('/web/system/storage', '?page=2&per_page=20'), {
     id: 'system-storage', owner: 'web', pathname: '/web/system/storage', search: '?page=2&per_page=20',
     page: 2, perPage: 20, title: '对象存储',
+  });
+});
+
+test('system releases route preserves owner and version pagination', () => {
+  assert.equal(buildSystemReleasesPath({ owner: 'web' }), '/web/system/releases');
+  assert.equal(buildSystemReleasesPath({ owner: 'app', page: 2, perPage: 20 }), '/web/app/system/releases?page=2&per_page=20');
+  assert.deepEqual(parseAppRoute('/web/system/releases', '?page=2&per_page=20'), {
+    id: 'system-releases', owner: 'web', pathname: '/web/system/releases', search: '?page=2&per_page=20',
+    page: 2, perPage: 20, title: '版本管理',
   });
 });
 

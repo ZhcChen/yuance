@@ -722,6 +722,10 @@ pub fn build_router(state: AppState) -> Router {
                 .patch(web::api::update_system_release_settings),
         )
         .route(
+            "/api/v1/system/releases-view",
+            get(web::api::get_system_releases_view),
+        )
+        .route(
             "/api/v1/system/releases",
             get(web::api::list_system_releases).post(web::api::create_system_release),
         )

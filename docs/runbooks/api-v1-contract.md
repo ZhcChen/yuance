@@ -932,6 +932,7 @@ per_page=20
 ```text
 GET    /api/v1/system/releases/settings
 PATCH  /api/v1/system/releases/settings
+GET    /api/v1/system/releases-view
 GET    /api/v1/system/releases
 POST   /api/v1/system/releases
 GET    /api/v1/system/releases/{release_id}
@@ -949,6 +950,7 @@ DELETE /api/v1/system/releases/{release_id}/assets/{asset_id}
 重要语义：
 
 - `GET/PATCH /api/v1/system/releases/settings` 仅供网页登录态管理员调整“保留最近 N 个已发布版本”的策略。
+- `GET /api/v1/system/releases-view` 为共享 Browser/Desktop 页面原子返回保留策略、分页版本、脱敏资产与管理能力，不暴露对象存储内部键。
 - `POST /api/v1/system/releases` 创建草稿版本；`PATCH /api/v1/system/releases/{release_id}` 可更新说明或通过 `publish=true` 发布版本。
 - 发布时会按当前保留策略自动清理超限旧版本，并同步删除关联 OSS 对象与数据库记录。
 - 版本资产上传采用三段式：`POST /assets` 创建占位、`GET /upload-url` 获取签名、`POST /uploaded` 确认对象已上传。
