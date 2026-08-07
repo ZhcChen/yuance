@@ -2181,6 +2181,40 @@ test('shared system permissions preserve formal owner search and fixed catalog',
   expect(requests.every((method) => method === 'GET')).toBe(true);
 });
 
+test('shared database stats load cache first and preserve it across refresh failures', async ({ page }) => {
+  const cache = { refreshed_at: '2026-08-07T10:00:00Z', tables: [{ table_name: 'cached_users', remark: '缓存用户表', row_count: 2, column_count: 1, columns: [{ name: 'id', data_type: 'INTEGER', required: true, primary_key: true, default_value: null }] }] };
+  const fresh = { refreshed_at: '2026-08-08T10:00:00Z', tables: [{ table_name: 'users', remark: '用户账号', row_count: 5, column_count: 2, columns: [] }] };
+  await page.addInitScript((snapshot) => localStorage.setItem('yuance:database-stats:v1:yuance_admin', JSON.stringify(snapshot)), cache);
+  let requestCount = 0;
+  let fail = false;
+  await page.route('**/api/v1/system/database-stats', async (route) => {
+    requestCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await route.fulfill(fail
+      ? { status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'database_stats_failed', message: '统计暂时不可用' } }) }
+      : { status: 200, contentType: 'application/json', body: JSON.stringify({ data: fresh }) });
+  });
+
+  await login(page, '/web/app/system/database-stats');
+  await expect(page).toHaveTitle('数据库统计 - 元策');
+  await expect(page.getByRole('table', { name: '数据库统计大表' })).toContainText('cached_users');
+  expect(requestCount).toBe(0);
+
+  const refresh = page.getByRole('button', { name: '刷新', exact: true });
+  await page.evaluate(() => {
+    const button = [...document.querySelectorAll('button')].find((element) => element.textContent?.trim() === '刷新');
+    button?.click(); button?.click();
+  });
+  await expect(page.getByRole('table', { name: '数据库统计大表' })).toContainText('用户账号');
+  expect(requestCount).toBe(1);
+
+  fail = true;
+  await refresh.click();
+  await expect(page.getByRole('alert')).toContainText('统计暂时不可用');
+  await expect(page.getByRole('table', { name: '数据库统计大表' })).toContainText('用户账号');
+  expect(requestCount).toBe(2);
+});
+
 test('shared system users view renders atomic rows and preserves pagination in the app owner', async ({ page }) => {
   const requests = [];
   await page.route('**/api/v1/system/users-view*', async (route) => {

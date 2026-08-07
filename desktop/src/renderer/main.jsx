@@ -47,6 +47,8 @@ const services = Object.freeze({
         document.documentElement.dataset.theme = theme;
         void bridge?.appearance?.setTheme(theme).catch(() => {});
       },
+      readDatabaseStatsCache: (username) => bridge?.databaseStatsCache?.read(username).catch(() => null) ?? Promise.resolve(null),
+      writeDatabaseStatsCache: (username, snapshot) => bridge?.databaseStatsCache?.write(username, snapshot).then(() => {}).catch(() => {}) ?? Promise.resolve(),
     }),
   }),
 });

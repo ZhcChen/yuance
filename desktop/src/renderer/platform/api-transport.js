@@ -84,6 +84,7 @@ function resolveReadOperation(url, options) {
     page: "page", per_page: "perPage",
   }) };
   if (parsed.pathname === "/api/v1/system/permissions") return { operation: "system.permissions", input: {} };
+  if (parsed.pathname === "/api/v1/system/database-stats") return { operation: "system.databasestats", input: {} };
   if (parsed.pathname === "/api/v1/system/roles-view") return { operation: "system.rolesview", input: parseQuery(parsed.searchParams, {
     role: "role", page: "page", per_page: "perPage",
   }) };

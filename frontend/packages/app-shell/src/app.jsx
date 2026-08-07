@@ -588,6 +588,8 @@ function routeDescription(route) {
       return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
     case 'system-permissions':
       return '权限点由服务端固定目录提供，两个宿主共用同一搜索和只读展示。';
+    case 'system-database-stats':
+      return '进入页面只读取当前宿主缓存；手动刷新后才读取最新表清单、备注和数据量。';
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
     case 'system-openapi':
@@ -625,6 +627,7 @@ function routeEyebrow(route) {
     case 'system-users':
     case 'system-roles':
     case 'system-permissions':
+    case 'system-database-stats':
     case 'system-storage':
     case 'system-openapi':
     case 'system-releases':
@@ -662,6 +665,21 @@ function notificationKindLabel(kind) {
   }
 }
 
+function normalizeDatabaseStatsSnapshot(value) {
+  if (!value || typeof value !== 'object' || typeof value.refreshed_at !== 'string' || !Array.isArray(value.tables) || value.tables.length > 500) return null;
+  const tables = [];
+  for (const table of value.tables) {
+    if (!table || typeof table !== 'object' || typeof table.table_name !== 'string' || typeof table.remark !== 'string' || !Number.isSafeInteger(table.row_count) || table.row_count < 0 || !Number.isSafeInteger(table.column_count) || table.column_count < 0 || !Array.isArray(table.columns) || table.columns.length > 500) return null;
+    const columns = [];
+    for (const column of table.columns) {
+      if (!column || typeof column !== 'object' || typeof column.name !== 'string' || typeof column.data_type !== 'string' || typeof column.required !== 'boolean' || typeof column.primary_key !== 'boolean' || !(column.default_value === null || typeof column.default_value === 'string')) return null;
+      columns.push({ name: column.name, data_type: column.data_type, required: column.required, primary_key: column.primary_key, default_value: column.default_value });
+    }
+    tables.push({ table_name: table.table_name, remark: table.remark, row_count: table.row_count, column_count: table.column_count, columns });
+  }
+  return { refreshed_at: value.refreshed_at, tables };
+}
+
 /**
  * @param {{ services: {
  *   api: AppApiService,
@@ -674,6 +692,8 @@ function notificationKindLabel(kind) {
  *     readFormValue(form: HTMLFormElement, name: string): string,
  *     readTheme?(): 'light' | 'dark',
  *     writeTheme?(theme: 'light' | 'dark'): void,
+ *     readDatabaseStatsCache?(username: string): Promise<any | null>,
+ *     writeDatabaseStatsCache?(username: string, snapshot: any): Promise<void>,
  *   },
  * } }} props
  * @returns {React.ReactElement}
@@ -791,6 +811,10 @@ export function SharedApp({ services }) {
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [systemPermissions, setSystemPermissions] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemPermissions']>>} */ ([]));
+  const [systemDatabaseStats, setSystemDatabaseStats] = useState(/** @type {{ snapshot: any, source: 'cache' | 'fresh' } | null} */ (null));
+  const [systemDatabaseStatsRefreshing, setSystemDatabaseStatsRefreshing] = useState(false);
+  const [systemDatabaseStatsError, setSystemDatabaseStatsError] = useState('');
+  const systemDatabaseStatsRefreshRef = useRef(false);
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
@@ -913,6 +937,8 @@ export function SharedApp({ services }) {
   const messagesPath = buildMessagesPath({ owner: route.owner });
   const profilePath = buildProfilePath(route.owner);
   const systemPath = buildSystemPath(route.owner);
+  const systemDatabaseTables = systemDatabaseStats?.snapshot?.tables || [];
+  const systemDatabaseTotalRows = systemDatabaseTables.reduce((sum, table) => sum + Number(table.row_count || 0), 0);
   const projectsPath = route.id === 'projects'
     ? buildProjectsPath({ owner: route.owner, status: route.status, page: route.page, perPage: route.perPage })
     : buildProjectsPath({ owner: 'app' });
@@ -1390,6 +1416,12 @@ export function SharedApp({ services }) {
         setSystemDashboard(nextSystemDashboard);
       }
       if (targetRoute.id === 'system-permissions') setSystemPermissions(nextSystemPermissions || []);
+      if (targetRoute.id === 'system-database-stats') {
+        const cached = normalizeDatabaseStatsSnapshot(nextUser && runtime.readDatabaseStatsCache ? await runtime.readDatabaseStatsCache(nextUser.username) : null);
+        if (requestRef.current !== requestId) return;
+        setSystemDatabaseStats(cached ? { snapshot: cached, source: 'cache' } : null);
+        setSystemDatabaseStatsError('');
+      }
       if (targetRoute.id === 'system-users') {
         setSystemUsersView(nextSystemUsersView);
       }
@@ -2040,6 +2072,31 @@ export function SharedApp({ services }) {
     const view = await api.getSystemOpenApiView();
     if (routeRef.current.id === 'system-openapi' && routeRef.current.pathname === current.pathname) setSystemOpenApiView(view);
     return view;
+  }
+
+  async function refreshSystemDatabaseStats() {
+    const target = routeRef.current;
+    if (target.id !== 'system-database-stats' || !user || systemDatabaseStatsRefreshRef.current) return;
+    const requestId = requestRef.current;
+    const username = user.username;
+    systemDatabaseStatsRefreshRef.current = true;
+    setSystemDatabaseStatsRefreshing(true);
+    setSystemDatabaseStatsError('');
+    try {
+      const snapshot = normalizeDatabaseStatsSnapshot(await api.getSystemDatabaseStats());
+      if (!snapshot) throw new Error('数据库统计响应格式无效。');
+      await runtime.writeDatabaseStatsCache?.(username, snapshot);
+      if (requestRef.current !== requestId || routeRef.current.pathname !== target.pathname || routeRef.current.search !== target.search) return;
+      setSystemDatabaseStats({ snapshot, source: 'fresh' });
+      setStatusMessage('数据库统计已刷新。');
+    } catch (caught) {
+      if (requestRef.current === requestId && routeRef.current.pathname === target.pathname && routeRef.current.search === target.search) {
+        setSystemDatabaseStatsError(errorMessage(caught instanceof Error ? caught : new Error('数据库统计刷新失败。')));
+      }
+    } finally {
+      systemDatabaseStatsRefreshRef.current = false;
+      setSystemDatabaseStatsRefreshing(false);
+    }
   }
 
   async function runSystemApiTokenMutation(action, successMessage) {
@@ -2855,6 +2912,8 @@ export function SharedApp({ services }) {
         ? '角色权限 - 元策'
       : route.id === 'system-permissions'
         ? '权限目录 - 元策'
+      : route.id === 'system-database-stats'
+        ? '数据库统计 - 元策'
       : route.id === 'system-storage'
         ? '对象存储 - 元策'
       : route.id === 'system-openapi'
@@ -4514,8 +4573,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4543,7 +4602,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4560,9 +4619,9 @@ export function SharedApp({ services }) {
               打开消息中心
             </a>
           )}
-          <button className="shell-button shell-button-secondary" type="button" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
+          {route.id !== 'system-database-stats' ? <button className="shell-button shell-button-secondary" type="button" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
             {refreshing ? '刷新中…' : '刷新'}
-          </button>
+          </button> : null}
         </div>
       </section>
 
@@ -4622,6 +4681,34 @@ export function SharedApp({ services }) {
                 { key: 'resource', label: '资源', render: (permission) => permission.resource_key },
                 { key: 'type', label: '类型', render: (permission) => permission.resource_type === 'page' ? '页面' : '操作' },
               ]} />
+            </section>
+          ) : route.id === 'system-database-stats' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-database-stats-title" aria-busy={systemDatabaseStatsRefreshing}>
+              <div className="shell-panel-header">
+                <div>
+                  <h2 id="system-database-stats-title">数据库统计</h2>
+                  <p className="shell-muted">进入页面只展示当前宿主缓存，手动刷新后才读取最新快照。</p>
+                </div>
+                <Button loading={systemDatabaseStatsRefreshing} onClick={() => void refreshSystemDatabaseStats()}>刷新</Button>
+              </div>
+              {systemDatabaseStatsError ? <Feedback tone="danger" title="刷新失败">{systemDatabaseStatsError}{systemDatabaseStats ? ' 当前继续展示上一次缓存。' : ''}</Feedback> : null}
+              {systemDatabaseStats ? (
+                <>
+                  <div className="shell-summary-line">
+                    <strong>共 {systemDatabaseTables.length.toLocaleString('zh-CN')} 张表，合计 {systemDatabaseTotalRows.toLocaleString('zh-CN')} 行数据</strong>
+                    <span className="shell-muted">{systemDatabaseStats.source === 'cache' ? '当前展示宿主缓存' : '已读取最新数据库快照'} · 上次刷新 {formatTimestamp(systemDatabaseStats.snapshot.refreshed_at)}</span>
+                  </div>
+                  <DataTable caption="数据库统计大表" rows={systemDatabaseTables} rowKey={(table) => table.table_name} emptyText="数据库中暂未发现可展示的业务表。" columns={[
+                    { key: 'name', label: '表名', render: (table) => <strong>{table.table_name}</strong> },
+                    { key: 'remark', label: '备注', render: (table) => table.remark || '业务表（备注待补充）' },
+                    { key: 'count', label: '数据量', render: (table) => <><strong>{Number(table.row_count || 0).toLocaleString('zh-CN')}</strong><br /><span className="shell-muted">{Number(table.column_count || 0).toLocaleString('zh-CN')} 个字段</span></> },
+                  ]} />
+                </>
+              ) : (
+                <Feedback tone={systemDatabaseStatsError ? 'danger' : 'info'} title={systemDatabaseStatsError ? '刷新失败' : '当前宿主暂无缓存'}>
+                  {systemDatabaseStatsError || '点击“刷新”后，系统会读取最新的表清单、表备注和数据量。'}
+                </Feedback>
+              )}
             </section>
           ) : route.id === 'system-openapi' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-openapi-title">

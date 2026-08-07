@@ -36,6 +36,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["identity.profile", {}, "/api/v1/me/profile"],
     ["shell.topbar", {}, "/api/v1/topbar/status"],
     ["system.dashboard", {}, "/api/v1/system/dashboard"],
+    ["system.databasestats", {}, "/api/v1/system/database-stats"],
     ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
     ["system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }, "/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20"],
     ["system.storageview", { page: 2, perPage: 20 }, "/api/v1/system/storage-view?page=2&per_page=20"],
@@ -113,6 +114,17 @@ test("system permissions response is a bounded fixed catalog", () => {
   const permission = { permission_key: "system.roles.view", permission_name: "查看角色", resource_type: "page", resource_key: "system.roles", granted: false };
   assert.deepEqual(registry.resolve("system.permissions", {}).parse([permission]), [permission]);
   assert.throws(() => registry.resolve("system.permissions", {}).parse([{ ...permission, secret: "no" }]), /fields/i);
+});
+
+test("system database stats response is deeply bounded", () => {
+  const parse = createOperationRegistry().resolve("system.databasestats", {}).parse;
+  const payload = { refreshed_at: "2026-08-08T00:00:00Z", tables: [{
+    table_name: "users", remark: "用户账号", row_count: 3, column_count: 1,
+    columns: [{ name: "id", data_type: "INTEGER", required: true, primary_key: true, default_value: null }],
+  }] };
+  assert.deepEqual(parse(payload), payload);
+  assert.throws(() => parse({ ...payload, secret: "no" }), /fields/i);
+  assert.throws(() => parse({ ...payload, tables: [{ ...payload.tables[0], columns: [{ ...payload.tables[0].columns[0], secret: "no" }] }] }), /fields/i);
 });
 
 test("system storage view response excludes raw storage credentials", () => {

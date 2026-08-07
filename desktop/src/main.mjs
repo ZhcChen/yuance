@@ -39,6 +39,8 @@ import { registerFileCommandHandlers } from "./ipc/file-commands.mjs";
 import { registerBusinessCommandHandlers } from "./ipc/business-commands.mjs";
 import { registerAppearanceCommandHandlers } from "./ipc/appearance-commands.mjs";
 import { createAppearanceStore } from "./preferences/appearance-store.mjs";
+import { registerDatabaseStatsCacheCommandHandlers } from "./ipc/database-stats-cache-commands.mjs";
+import { createDatabaseStatsCacheStore } from "./preferences/database-stats-cache-store.mjs";
 import { createFileStateController } from "./ipc/file-state.mjs";
 import {
   createIpcSenderPolicy,
@@ -145,6 +147,7 @@ let disposeFileCommands = () => {};
 let disposeFilePowerLifecycle = () => {};
 let disposeBusinessCommands = () => {};
 let disposeAppearanceCommands = () => {};
+let disposeDatabaseStatsCacheCommands = () => {};
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
@@ -1469,6 +1472,15 @@ if (singleInstanceProbe) {
       platform: process.platform,
     }),
   });
+  disposeDatabaseStatsCacheCommands = registerDatabaseStatsCacheCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    store: createDatabaseStatsCacheStore({
+      fs,
+      filePath: path.join(app.getPath("userData"), "Preferences", "database-stats.json"),
+      platform: process.platform,
+    }),
+  });
   disposeBusinessCommands = registerBusinessCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
@@ -1584,6 +1596,8 @@ app.on("before-quit", (event) => {
   disposeBusinessCommands = () => {};
   disposeAppearanceCommands();
   disposeAppearanceCommands = () => {};
+  disposeDatabaseStatsCacheCommands();
+  disposeDatabaseStatsCacheCommands = () => {};
   disposeNetworkPowerLifecycle();
   disposeNetworkPowerLifecycle = () => {};
   networkCoordinator?.stop();

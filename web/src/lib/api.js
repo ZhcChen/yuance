@@ -50,6 +50,7 @@ export const getCurrentUser = /** @type {() => Promise<AuthUser>} */ (apiClient.
 export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiClient.getTopbarStatus);
 export const getSystemDashboard = apiClient.getSystemDashboard;
 export const getSystemPermissions = apiClient.getSystemPermissions;
+export const getSystemDatabaseStats = apiClient.getSystemDatabaseStats;
 export const getSystemUsersView = apiClient.getSystemUsersView;
 export const getSystemRolesView = apiClient.getSystemRolesView;
 export const getSystemStorageView = apiClient.getSystemStorageView;
@@ -253,6 +254,7 @@ export const webApi = {
   getTopbarStatus,
   getSystemDashboard,
   getSystemPermissions,
+  getSystemDatabaseStats,
   getSystemUsersView,
   getSystemRolesView,
   getSystemStorageView,

@@ -20,6 +20,14 @@ test('system permissions use one fixed read contract', async () => {
   assert.deepEqual(calls, ['/api/v1/system/permissions']);
 });
 
+test('system database stats use one fixed read contract', async () => {
+  const calls = [];
+  const snapshot = { refreshed_at: '2026-08-08T00:00:00Z', tables: [] };
+  const client = createSystemClient({ request: async (url) => { calls.push(url); return snapshot; } });
+  assert.deepEqual(await client.getSystemDatabaseStats(), snapshot);
+  assert.deepEqual(calls, ['/api/v1/system/database-stats']);
+});
+
 test('system users view preserves compact pagination query', async () => {
   const calls = [];
   const client = createSystemClient({ request: async (url) => {

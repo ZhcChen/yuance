@@ -13,6 +13,7 @@ import {
   buildSearchPath,
   buildSystemPath,
   buildSystemOpenApiPath,
+  buildSystemDatabaseStatsPath,
   buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
@@ -70,6 +71,15 @@ test('system OpenAPI route preserves Browser and Desktop owners', () => {
     id: 'system-openapi', owner: 'web', pathname: '/web/system/openapi', search: '', title: '系统 OpenAPI',
   });
   assert.equal(parseAppRoute('/web/app/system/openapi').owner, 'app');
+});
+
+test('system database stats route preserves Browser and Desktop owners', () => {
+  assert.equal(buildSystemDatabaseStatsPath('web'), '/web/system/database-stats');
+  assert.equal(buildSystemDatabaseStatsPath('app'), '/web/app/system/database-stats');
+  assert.deepEqual(parseAppRoute('/web/system/database-stats'), {
+    id: 'system-database-stats', owner: 'web', pathname: '/web/system/database-stats', search: '', title: '数据库统计',
+  });
+  assert.equal(parseAppRoute('/web/app/system/database-stats').owner, 'app');
 });
 
 test('system permissions route preserves owner and compact search', () => {

@@ -8,6 +8,7 @@ import { createBrowserRouter } from './platform/browser/router.js';
 import './app.css';
 
 const rootElement = document.getElementById('root');
+const DATABASE_STATS_CACHE_PREFIX = 'yuance:database-stats:v1:';
 
 if (!rootElement) {
   throw new Error('缺少 #root 挂载点');
@@ -26,6 +27,19 @@ const services = {
     writeTheme: (theme) => {
       document.documentElement.dataset.theme = theme;
       localStorage.setItem('yuance-theme', theme);
+    },
+    readDatabaseStatsCache: async (username) => {
+      try {
+        const value = JSON.parse(localStorage.getItem(`${DATABASE_STATS_CACHE_PREFIX}${username}`) || 'null');
+        return value && typeof value === 'object' && Array.isArray(value.tables) ? value : null;
+      } catch (_error) {
+        return null;
+      }
+    },
+    writeDatabaseStatsCache: async (username, snapshot) => {
+      try { localStorage.setItem(`${DATABASE_STATS_CACHE_PREFIX}${username}`, JSON.stringify(snapshot)); } catch (_error) {
+        // Cache persistence is best-effort; a fresh snapshot remains usable in memory.
+      }
     },
   },
 };

@@ -48,6 +48,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["system.permissions", noInputOperation("GET", "/api/v1/system/permissions", parseSystemPermissions, true, "array")],
+    ["system.databasestats", noInputOperation("GET", "/api/v1/system/database-stats", parseSystemDatabaseStats)],
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
@@ -972,6 +973,18 @@ function parseSystemPermission(data) { return freezeExactDto(data, {
   resource_key: shortString, granted: boolean,
 }); }
 function parseSystemPermissions(data) { return boundedArray(data, parseSystemPermission, 500, "system permissions"); }
+function parseSystemDatabaseStatsColumn(data) { return freezeExactDto(data, {
+  name: shortString, data_type: shortString, required: boolean, primary_key: boolean,
+  default_value: (value) => value === null ? null : textString(value),
+}); }
+function parseSystemDatabaseStatsTable(data) { return freezeExactDto(data, {
+  table_name: shortString, remark: textString, row_count: nonNegativeInteger, column_count: nonNegativeInteger,
+  columns: (columns) => boundedArray(columns, parseSystemDatabaseStatsColumn, 500, "database columns"),
+}); }
+function parseSystemDatabaseStats(data) { return freezeExactDto(data, {
+  refreshed_at: shortString,
+  tables: (tables) => boundedArray(tables, parseSystemDatabaseStatsTable, 500, "database tables"),
+}); }
 function parseSystemRolesView(data) {
   return freezeExactDto(data, {
     items: (items) => boundedArray(items, parseSystemRole, 100, "system roles"),

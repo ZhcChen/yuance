@@ -57,10 +57,14 @@ ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 11,
+  schemaVersion: 12,
   appearance: Object.freeze({
     getTheme() { return ipcRenderer.invoke("yuance:appearance-get-theme"); },
     setTheme(theme) { return ipcRenderer.invoke("yuance:appearance-set-theme", theme); },
+  }),
+  databaseStatsCache: Object.freeze({
+    read(username) { return ipcRenderer.invoke("yuance:database-stats-cache-read", username); },
+    write(username, snapshot) { return ipcRenderer.invoke("yuance:database-stats-cache-write", { username, snapshot }); },
   }),
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },

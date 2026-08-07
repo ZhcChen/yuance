@@ -23,6 +23,7 @@ export {
   buildSearchPath,
   buildSystemPath,
   buildSystemOpenApiPath,
+  buildSystemDatabaseStatsPath,
   buildSystemPermissionsPath,
   buildSystemRolesPath,
   buildSystemReleasesPath,

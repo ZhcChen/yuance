@@ -42,7 +42,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 11);
+  assert.equal(bridge.schemaVersion, 12);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -51,12 +51,25 @@ test("preload exposes a frozen versioned bridge without generic IPC", async () =
   assert.equal(Object.isFrozen(bridge.files), true);
   assert.equal(Object.isFrozen(bridge.business), true);
   assert.equal(Object.isFrozen(bridge.appearance), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "events", "files", "hostState", "network", "schemaVersion"]);
+  assert.equal(Object.isFrozen(bridge.databaseStatsCache), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "databaseStatsCache", "events", "files", "hostState", "network", "schemaVersion"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   assert.equal("notifications" in bridge, false);
   assert.deepEqual(invocations, []);
+});
+
+test("database stats cache bridge exposes only semantic read and write commands", async () => {
+  const { bridge, invocations } = await executePreload();
+  const snapshot = { refreshed_at: "2026-08-08T00:00:00Z", tables: [] };
+  assert.deepEqual(Object.keys(bridge.databaseStatsCache).sort(), ["read", "write"]);
+  await bridge.databaseStatsCache.read("admin");
+  await bridge.databaseStatsCache.write("admin", snapshot);
+  assert.deepEqual(invocations.map(([channel, payload]) => [channel, payload && typeof payload === "object" ? { ...payload, snapshot: payload.snapshot ? { ...payload.snapshot, tables: [...payload.snapshot.tables] } : payload.snapshot } : payload]), [
+    ["yuance:database-stats-cache-read", "admin"],
+    ["yuance:database-stats-cache-write", { username: "admin", snapshot }],
+  ]);
 });
 
 test("appearance bridge exposes only bounded theme commands", async () => {
