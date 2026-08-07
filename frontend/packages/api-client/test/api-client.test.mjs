@@ -207,6 +207,25 @@ test('work item list view uses the atomic shared page endpoint', async () => {
   assert.equal(calls[0].url, '/api/v1/work-item-list-view?item_type=bug&project_key=YCE&cycle_id=7&sort=updated_desc&page=1&per_page=10');
 });
 
+test('work item saved views use fixed JSON mutation contracts', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.createWorkItemSavedView({ projectKey: 'YCE', itemType: 'task', name: '重点任务', status: 'open', cycleId: '7', sort: 'updated_desc', perPage: 20, isDefault: true });
+  await client.renameWorkItemSavedView(9, '核心任务');
+  await client.setDefaultWorkItemSavedView(9);
+  await client.deleteWorkItemSavedView(9);
+  assert.deepEqual(writes, ['prepare', 'prepare', 'prepare', 'prepare']);
+  assert.deepEqual(calls.map(({ url, options }) => [options?.method, url]), [
+    ['POST', '/api/v1/work-item-saved-views'],
+    ['PATCH', '/api/v1/work-item-saved-views/9'],
+    ['POST', '/api/v1/work-item-saved-views/9/default'],
+    ['DELETE', '/api/v1/work-item-saved-views/9'],
+  ]);
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    project_key: 'YCE', item_type: 'task', name: '重点任务', q: '', status: 'open', priority: '',
+    assignee_username: '', cycle_id: '7', sort: 'updated_desc', per_page: 20, is_default: true,
+  });
+});
+
 test('updateWorkItem uses injected transport and JSON payload without CSRF logic', async () => {
   const { client, calls, writes } = createRecordedClient();
 

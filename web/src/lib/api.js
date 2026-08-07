@@ -102,6 +102,10 @@ export const updateCurrentProject = /** @type {(projectKey: string) => Promise<{
 export const getWorkItems = /** @type {(query?: { itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, page?: number, perPage?: number }) => Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getWorkItems);
 
 export const getWorkItemListView = apiClient.getWorkItemListView;
+export const createWorkItemSavedView = apiClient.createWorkItemSavedView;
+export const renameWorkItemSavedView = apiClient.renameWorkItemSavedView;
+export const setDefaultWorkItemSavedView = apiClient.setDefaultWorkItemSavedView;
+export const deleteWorkItemSavedView = apiClient.deleteWorkItemSavedView;
 
 export const getWorkItem = /** @type {(itemKey: string) => Promise<WorkItemDetail>} */ (apiClient.getWorkItem);
 
@@ -207,6 +211,10 @@ export const webApi = {
   getWorkItemComments,
   getWorkItemListView,
   getWorkItems,
+  createWorkItemSavedView,
+  renameWorkItemSavedView,
+  setDefaultWorkItemSavedView,
+  deleteWorkItemSavedView,
   handoffWorkItem,
   logout,
   markAllNotificationsRead,

@@ -1309,6 +1309,7 @@
           {"name": "assignee_username", "in": "query", "schema": {"type": "string"}},
           {"name": "cycle_id", "in": "query", "schema": {"type": "integer", "minimum": 1}},
           {"name": "sort", "in": "query", "schema": {"type": "string", "enum": ["updated_desc", "created_desc", "priority_desc", "due_date_asc"]}},
+          {"name": "clear_default", "in": "query", "schema": {"type": "boolean", "default": false}},
           {"$ref": "#/components/parameters/Page"},
           {"$ref": "#/components/parameters/PerPage"}
         ],
@@ -1319,6 +1320,46 @@
           },
           "400": {"$ref": "#/components/responses/Error"},
           "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-item-saved-views": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "保存当前工作项列表视图",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateWorkItemSavedViewRequest"}}}},
+        "responses": {
+          "201": {"description": "视图已保存", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemSavedViewEnvelope"}}}},
+          "400": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-item-saved-views/{saved_view_id}": {
+      "parameters": [{"name": "saved_view_id", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1}}],
+      "patch": {
+        "tags": ["work-items"],
+        "summary": "重命名保存视图",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RenameWorkItemSavedViewRequest"}}}},
+        "responses": {
+          "200": {"description": "视图已重命名", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemSavedViewEnvelope"}}}},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "delete": {
+        "tags": ["work-items"],
+        "summary": "删除保存视图",
+        "responses": {"204": {"description": "视图已删除"}, "404": {"$ref": "#/components/responses/Error"}}
+      }
+    },
+    "/api/v1/work-item-saved-views/{saved_view_id}/default": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "设为默认工作项视图",
+        "parameters": [{"name": "saved_view_id", "in": "path", "required": true, "schema": {"type": "integer", "minimum": 1}}],
+        "responses": {
+          "200": {"description": "默认视图已更新", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemSavedViewEnvelope"}}}},
+          "404": {"$ref": "#/components/responses/Error"}
         }
       }
     },
@@ -3342,25 +3383,53 @@
                   "properties": {"id": {"type": "integer"}, "name": {"type": "string"}, "is_closed": {"type": "boolean"}}
                 }
               },
-              "saved_views": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["id", "name", "filters", "per_page", "is_default"],
-                  "properties": {
-                    "id": {"type": "integer"},
-                    "name": {"type": "string"},
-                    "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
-                    "per_page": {"type": "integer"},
-                    "is_default": {"type": "boolean"}
-                  }
-                }
-              },
+              "saved_views": {"type": "array", "items": {"$ref": "#/components/schemas/WorkItemSavedView"}},
               "can_manage_work_items": {"type": "boolean"}
             }
           }
         }
+      },
+      "WorkItemSavedView": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "filters", "per_page", "is_default"],
+        "properties": {
+          "id": {"type": "integer"},
+          "name": {"type": "string"},
+          "filters": {"$ref": "#/components/schemas/WorkItemListFilter"},
+          "per_page": {"type": "integer"},
+          "is_default": {"type": "boolean"}
+        }
+      },
+      "WorkItemSavedViewEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["data"],
+        "properties": {"data": {"$ref": "#/components/schemas/WorkItemSavedView"}}
+      },
+      "CreateWorkItemSavedViewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["project_key", "item_type", "name", "per_page"],
+        "properties": {
+          "project_key": {"type": "string"},
+          "item_type": {"type": "string", "enum": ["requirement", "task", "bug"]},
+          "name": {"type": "string", "minLength": 1, "maxLength": 40},
+          "q": {"type": "string"},
+          "status": {"type": "string"},
+          "priority": {"type": "string"},
+          "assignee_username": {"type": "string"},
+          "cycle_id": {"type": "string"},
+          "sort": {"type": "string"},
+          "per_page": {"type": "integer", "minimum": 1, "maximum": 100},
+          "is_default": {"type": "boolean"}
+        }
+      },
+      "RenameWorkItemSavedViewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 40}}
       },
       "WorkItemDetailEnvelope": {
         "type": "object",

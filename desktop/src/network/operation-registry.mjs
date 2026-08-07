@@ -18,6 +18,7 @@ const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
 const WORK_ITEM_STATUSES = new Set(["open", "in_progress", "pending_confirmation", "done", "verified", "resolved", "closed", "cancelled"]);
+const WORK_ITEM_SAVED_VIEW_STATUSES = new Set(["", "pending", ...WORK_ITEM_STATUSES]);
 const WORK_ITEM_SORTS = new Set(["", "updated_desc", "created_desc", "priority_desc", "due_date_asc"]);
 const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
 
@@ -74,6 +75,10 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["notification.readall", noInputOperation("POST", "/api/v1/notifications/read-all", parseAffected, false)],
     ["workitem.list", workItemListOperation],
     ["workitem.listview", workItemListViewOperation],
+    ["workitem.savedviewcreate", workItemSavedViewCreateOperation],
+    ["workitem.savedviewrename", workItemSavedViewRenameOperation],
+    ["workitem.savedviewdefault", workItemSavedViewDefaultOperation],
+    ["workitem.savedviewdelete", workItemSavedViewDeleteOperation],
     ["workitem.detail", workItemDetailOperation],
     ["workitem.update", workItemUpdateOperation],
     ["workitem.handoff", workItemHandoffOperation],
@@ -404,7 +409,7 @@ function notificationReadOperation(input) {
 }
 
 function workItemListOperation(input) {
-  exactKeys(input, ["assigneeUsername", "cycleId", "itemType", "page", "perPage", "priority", "projectKey", "q", "sort", "status"]);
+  exactKeys(input, ["assigneeUsername", "clearDefault", "cycleId", "itemType", "page", "perPage", "priority", "projectKey", "q", "sort", "status"]);
   const query = new URLSearchParams();
   appendOptionalString(query, "item_type", optionalEnum(input.itemType, ITEM_TYPES, "itemType", ""));
   appendOptionalString(query, "q", optionalText(input.q, "q", 120));
@@ -414,6 +419,10 @@ function workItemListOperation(input) {
   if (input.projectKey !== undefined && input.projectKey !== "") query.set("project_key", projectKey(input.projectKey));
   if (input.cycleId !== undefined) query.set("cycle_id", String(integer(input.cycleId, 1, "cycleId")));
   appendOptionalString(query, "sort", optionalEnum(input.sort, WORK_ITEM_SORTS, "sort", ""));
+  if (input.clearDefault !== undefined) {
+    if (input.clearDefault !== true) throw new TypeError("clearDefault is invalid");
+    query.set("clear_default", "true");
+  }
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/work-items", query), parseWorkItemPage);
 }
@@ -421,6 +430,41 @@ function workItemListOperation(input) {
 function workItemListViewOperation(input) {
   const operation = workItemListOperation(input);
   return descriptor("GET", operation.path.replace("/api/v1/work-items", "/api/v1/work-item-list-view"), parseWorkItemListView);
+}
+
+function workItemSavedViewCreateOperation(input) {
+  exactKeys(input, ["assigneeUsername", "cycleId", "isDefault", "itemType", "name", "perPage", "priority", "projectKey", "q", "sort", "status"]);
+  const cycleId = optionalText(input.cycleId, "cycleId", 20);
+  if (cycleId && !/^[1-9][0-9]{0,18}$/u.test(cycleId)) throw new TypeError("cycleId is invalid");
+  const body = {
+    project_key: projectKey(input.projectKey),
+    item_type: requiredEnum(input.itemType, ITEM_TYPES, "itemType", false),
+    name: boundedRequiredText(input.name, "name", 40),
+    q: optionalText(input.q, "q", 120),
+    status: optionalEnum(input.status, WORK_ITEM_SAVED_VIEW_STATUSES, "status", ""),
+    priority: optionalEnum(input.priority, ITEM_PRIORITIES, "priority", ""),
+    assignee_username: optionalText(input.assigneeUsername, "assigneeUsername", 64),
+    cycle_id: cycleId,
+    sort: optionalEnum(input.sort, WORK_ITEM_SORTS, "sort", ""),
+    per_page: integer(input.perPage, 1, "perPage", 100),
+    is_default: boolean(input.isDefault),
+  };
+  return descriptor("POST", "/api/v1/work-item-saved-views", parseWorkItemSavedView, false, "object", jsonBody(body));
+}
+
+function workItemSavedViewRenameOperation(input) {
+  exactKeys(input, ["name", "savedViewId"]);
+  return descriptor("PATCH", `/api/v1/work-item-saved-views/${integer(input.savedViewId, 1, "savedViewId")}`, parseWorkItemSavedView, false, "object", jsonBody({ name: boundedRequiredText(input.name, "name", 40) }));
+}
+
+function workItemSavedViewDefaultOperation(input) {
+  exactKeys(input, ["savedViewId"]);
+  return descriptor("POST", `/api/v1/work-item-saved-views/${integer(input.savedViewId, 1, "savedViewId")}/default`, parseWorkItemSavedView, false);
+}
+
+function workItemSavedViewDeleteOperation(input) {
+  exactKeys(input, ["savedViewId"]);
+  return Object.freeze({ ...descriptor("DELETE", `/api/v1/work-item-saved-views/${integer(input.savedViewId, 1, "savedViewId")}`, parseNoContent, false, "nullable-object"), allowNoContent: true });
 }
 
 function workItemDetailOperation(input) {
@@ -604,6 +648,9 @@ function parseWorkItemListView(data) {
 function parseWorkItemListFilter(value) { return freezeDto(value, {
   item_type: shortString, q: textString, status: shortString, priority: shortString,
   project_key: shortString, assignee_username: shortString, cycle_id: shortString, sort: shortString,
+}); }
+function parseWorkItemSavedView(value) { return freezeDto(value, {
+  id: positiveInteger, name: textString, filters: parseWorkItemListFilter, per_page: positiveInteger, is_default: boolean,
 }); }
 function parseWorkItemSummary(value) { return freezeDto(value, {
   key: shortString, item_type: shortString, title: textString, status: shortString, priority: shortString,

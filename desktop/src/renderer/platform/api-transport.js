@@ -81,7 +81,7 @@ function resolveReadOperation(url, options) {
   }) };
   if (parsed.pathname === "/api/v1/work-item-list-view") return { operation: "workitem.listview", input: parseQuery(parsed.searchParams, {
     item_type: "itemType", q: "q", status: "status", priority: "priority", assignee_username: "assigneeUsername",
-    project_key: "projectKey", cycle_id: "cycleId", sort: "sort", page: "page", per_page: "perPage",
+    project_key: "projectKey", cycle_id: "cycleId", sort: "sort", clear_default: "clearDefault", page: "page", per_page: "perPage",
   }) };
   if (parsed.pathname === "/api/v1/work-items") return { operation: "workitem.list", input: parseQuery(parsed.searchParams, {
     item_type: "itemType", q: "q", status: "status", priority: "priority", assignee_username: "assigneeUsername",
@@ -225,6 +225,27 @@ function resolveMutationOperation(parsed, method, options) {
     rejectBody(options);
     return { operation: "notification.read", input: { notificationId: positiveInteger(notificationRead[1]) } };
   }
+  if (method === "POST" && parsed.pathname === "/api/v1/work-item-saved-views") {
+    const body = parseJsonBody(options, ["assignee_username", "cycle_id", "is_default", "item_type", "name", "per_page", "priority", "project_key", "q", "sort", "status"]);
+    return { operation: "workitem.savedviewcreate", input: renameBody(body, {
+      assignee_username: "assigneeUsername", cycle_id: "cycleId", is_default: "isDefault",
+      item_type: "itemType", per_page: "perPage", project_key: "projectKey",
+    }) };
+  }
+  const savedViewDefault = parsed.pathname.match(/^\/api\/v1\/work-item-saved-views\/(\d+)\/default$/u);
+  if (method === "POST" && savedViewDefault) {
+    rejectBody(options);
+    return { operation: "workitem.savedviewdefault", input: { savedViewId: positiveInteger(savedViewDefault[1]) } };
+  }
+  const savedView = parsed.pathname.match(/^\/api\/v1\/work-item-saved-views\/(\d+)$/u);
+  if (method === "PATCH" && savedView) {
+    const body = parseJsonBody(options, ["name"]);
+    return { operation: "workitem.savedviewrename", input: { savedViewId: positiveInteger(savedView[1]), name: body.name } };
+  }
+  if (method === "DELETE" && savedView) {
+    rejectBody(options);
+    return { operation: "workitem.savedviewdelete", input: { savedViewId: positiveInteger(savedView[1]) } };
+  }
   const handoff = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/handoff$/u);
   if (method === "POST" && handoff) {
     const body = parseJsonBody(options, ["assignee_username", "body", "source_comment_id", "status"]);
@@ -293,7 +314,12 @@ function parseQuery(params, names) {
   for (const [wireName, domainName] of Object.entries(names)) {
     if (!params.has(wireName)) continue;
     const value = params.get(wireName);
-    input[domainName] = ["page", "per_page", "limit", "cycle_id"].includes(wireName) ? positiveInteger(value) : value;
+    if (wireName === "clear_default") {
+      if (value !== "true") throw apiError("invalid_request", 400);
+      input[domainName] = true;
+    } else {
+      input[domainName] = ["page", "per_page", "limit", "cycle_id"].includes(wireName) ? positiveInteger(value) : value;
+    }
   }
   return input;
 }

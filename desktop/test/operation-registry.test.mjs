@@ -268,6 +268,10 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["project.select", { projectKey: "DEMO" }, "PATCH", "/api/v1/current-project", { project_key: "DEMO" }],
     ["notification.read", { notificationId: 7 }, "POST", "/api/v1/notifications/7/read", undefined],
     ["notification.readall", {}, "POST", "/api/v1/notifications/read-all", undefined],
+    ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: "Focus", q: "", status: "open", priority: "P1", assigneeUsername: "alice", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true }, "POST", "/api/v1/work-item-saved-views", { project_key: "DEMO", item_type: "task", name: "Focus", q: "", status: "open", priority: "P1", assignee_username: "alice", cycle_id: "7", sort: "updated_desc", per_page: 20, is_default: true }],
+    ["workitem.savedviewrename", { savedViewId: 7, name: "Focus 2" }, "PATCH", "/api/v1/work-item-saved-views/7", { name: "Focus 2" }],
+    ["workitem.savedviewdefault", { savedViewId: 7 }, "POST", "/api/v1/work-item-saved-views/7/default", undefined],
+    ["workitem.savedviewdelete", { savedViewId: 7 }, "DELETE", "/api/v1/work-item-saved-views/7", undefined],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assigneeUsername: "alice", dueDate: "2026-08-31", parentItemKey: "" } }, "PATCH", "/api/v1/work-items/DEMO-1", { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assignee_username: "alice", due_date: "2026-08-31", parent_item_key: "" }],
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Continue", sourceCommentId: null } }, "POST", "/api/v1/work-items/DEMO-1/handoff", { status: "in_progress", assignee_username: "alice", body: "Continue", source_comment_id: null }],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "Comment", bodyFormat: "plain" } }, "POST", "/api/v1/work-items/DEMO-1/comments", { body: "Comment", body_format: "plain" }],
@@ -282,6 +286,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     assert.equal(operation.body === undefined ? operation.contentType : operation.contentType, body === undefined ? undefined : "application/json");
   }
   assert.equal(registry.resolve("project.memberremove", { projectKey: "DEMO", username: "bob" }).allowNoContent, true);
+  assert.equal(registry.resolve("workitem.savedviewdelete", { savedViewId: 7 }).allowNoContent, true);
 });
 
 test("rejects invalid mutation fields before a descriptor is created", () => {
@@ -303,6 +308,10 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
     ["project.resourcepasswordreset", { projectKey: "DEMO", resourceId: 9, accessPasswordAction: "clear", accessPassword: "leak" }],
     ["identity.profileupdate", { displayName: " ", email: "", mobile: "" }],
     ["notification.read", { notificationId: 0 }],
+    ["workitem.savedviewcreate", { projectKey: "demo", itemType: "task", name: "Focus", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
+    ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "incident", name: "Focus", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
+    ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: " ", q: "", status: "", priority: "", assigneeUsername: "", cycleId: "", sort: "", perPage: 20, isDefault: false }],
+    ["workitem.savedviewrename", { savedViewId: 0, name: "Focus" }],
     ["workitem.update", { itemKey: "DEMO-1", payload: {} }],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: " " } }],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "x".repeat(161) } }],

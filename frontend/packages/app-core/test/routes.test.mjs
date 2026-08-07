@@ -127,6 +127,7 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
       projectKey: '',
       cycleId: 7,
       sort: 'due_date_asc',
+      clearDefault: false,
       page: 2,
       perPage: 20,
       title: '任务列表',
@@ -135,6 +136,10 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
   assert.equal(
     buildWorkItemListPath({ owner: 'web', itemType: 'bug', status: 'pending', assigneeUsername: 'admin', projectKey: 'YCE', cycleId: 7, sort: 'priority_desc' }),
     '/web/bugs?status=pending&assignee_username=admin&project_key=YCE&cycle_id=7&sort=priority_desc',
+  );
+  assert.equal(
+    buildWorkItemListPath({ owner: 'app', itemType: 'task', clearDefault: true }),
+    '/web/app/tasks?clear_default=true',
   );
   assert.deepEqual(
     parseAppRoute('/web/app/work-items/YCE-TASK-2', ''),

@@ -1248,6 +1248,8 @@ pub struct WorkItemQuery {
     #[serde(default)]
     sort: String,
     #[serde(default)]
+    clear_default: bool,
+    #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
     per_page: Option<i64>,
@@ -1400,6 +1402,34 @@ pub struct HandoffWorkItemRequest {
     body: String,
     #[serde(default)]
     source_comment_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CreateWorkItemSavedViewRequest {
+    project_key: String,
+    item_type: String,
+    name: String,
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    assignee_username: String,
+    #[serde(default)]
+    cycle_id: String,
+    #[serde(default)]
+    sort: String,
+    #[serde(default = "default_work_item_saved_view_per_page")]
+    per_page: i64,
+    #[serde(default)]
+    is_default: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RenameWorkItemSavedViewRequest {
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2669,18 +2699,54 @@ pub async fn get_work_item_list_view(
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
 
-    let filter = projects::WorkItemListFilter {
-        item_type: Some(item_type.to_string()),
-        keyword: query.q,
-        status: query.status,
-        priority: query.priority,
-        project_key: project.project_key.clone(),
-        assignee_username: query.assignee_username,
-        cycle_id: query.cycle_id,
-        sort_by: query.sort,
+    let saved_views = projects::list_work_item_saved_views_for_user(
+        pool,
+        user.id,
+        can_access_all_projects,
+        &project.project_key,
+        item_type,
+    )
+    .await?;
+    let default_view = if query.clear_default {
+        None
+    } else {
+        saved_views.iter().find(|view| view.is_default)
     };
-    let pagination = normalize_api_pagination(query.page, query.per_page)?;
-    let (page, stats, members, cycles, saved_views) = tokio::try_join!(
+    let mut filter = default_view
+        .map(|view| view.filter.clone())
+        .unwrap_or_else(|| projects::WorkItemListFilter {
+            item_type: Some(item_type.to_string()),
+            project_key: project.project_key.clone(),
+            sort_by: "updated_desc".to_string(),
+            ..projects::WorkItemListFilter::default()
+        });
+    if !query.q.trim().is_empty() {
+        filter.keyword = query.q;
+    }
+    if !query.status.trim().is_empty() {
+        filter.status = query.status;
+    }
+    if !query.priority.trim().is_empty() {
+        filter.priority = query.priority;
+    }
+    if !query.assignee_username.trim().is_empty() {
+        filter.assignee_username = query.assignee_username;
+    }
+    if !query.cycle_id.trim().is_empty() {
+        filter.cycle_id = query.cycle_id;
+    }
+    if !query.sort.trim().is_empty() {
+        filter.sort_by = query.sort;
+    }
+    filter.item_type = Some(item_type.to_string());
+    filter.project_key = project.project_key.clone();
+    let pagination = normalize_api_pagination(
+        query.page,
+        query
+            .per_page
+            .or_else(|| default_view.map(|view| view.per_page)),
+    )?;
+    let (page, stats, members, cycles) = tokio::try_join!(
         projects::list_work_item_summaries_filtered_for_user_paginated(
             pool,
             user.id,
@@ -2696,13 +2762,6 @@ pub async fn get_work_item_list_view(
         ),
         projects::list_project_members(pool, project.id),
         projects::list_project_cycles(pool, project.id),
-        projects::list_work_item_saved_views_for_user(
-            pool,
-            user.id,
-            can_access_all_projects,
-            &project.project_key,
-            item_type,
-        ),
     )?;
     let can_manage_work_items = projects::ensure_project_accepts_writes(&project.status).is_ok()
         && ((can_access_all_projects
@@ -2757,6 +2816,114 @@ pub async fn get_work_item_list_view(
             .collect(),
         can_manage_work_items,
     }))
+}
+
+pub async fn create_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<CreateWorkItemSavedViewRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "work_item.view").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
+    let view = projects::create_work_item_saved_view(
+        pool,
+        user.id,
+        api_user_can_access_all_projects(pool, user).await?,
+        &payload.project_key,
+        &payload.item_type,
+        projects::CreateWorkItemSavedViewInput {
+            name: payload.name,
+            filter: projects::WorkItemListFilter {
+                item_type: Some(payload.item_type.clone()),
+                keyword: payload.q,
+                status: payload.status,
+                priority: payload.priority,
+                project_key: payload.project_key.clone(),
+                assignee_username: payload.assignee_username,
+                cycle_id: payload.cycle_id,
+                sort_by: payload.sort,
+            },
+            per_page: payload.per_page,
+            is_default: payload.is_default,
+        },
+    )
+    .await?;
+    Ok((
+        StatusCode::CREATED,
+        json(work_item_saved_view_payload(view)),
+    ))
+}
+
+pub async fn rename_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+    Json(payload): Json<RenameWorkItemSavedViewRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemSavedViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
+    ensure_api_token_scope(
+        pool,
+        &headers,
+        principal.user.id,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+    )
+    .await?;
+    let view = projects::rename_work_item_saved_view(
+        pool,
+        principal.user.id,
+        saved_view_id,
+        &payload.name,
+    )
+    .await?;
+    Ok(json(work_item_saved_view_payload(view)))
+}
+
+pub async fn set_default_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+) -> AppResult<axum::Json<ApiEnvelope<WorkItemSavedViewPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
+    ensure_api_token_scope(
+        pool,
+        &headers,
+        principal.user.id,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+    )
+    .await?;
+    let view =
+        projects::set_default_work_item_saved_view(pool, principal.user.id, saved_view_id).await?;
+    Ok(json(work_item_saved_view_payload(view)))
+}
+
+pub async fn delete_work_item_saved_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(saved_view_id): Path<i64>,
+) -> AppResult<StatusCode> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, principal.user.id, "work_item.view").await?;
+    ensure_api_token_scope(
+        pool,
+        &headers,
+        principal.user.id,
+        api_tokens::SCOPE_WORK_ITEM_WRITE,
+    )
+    .await?;
+    projects::delete_work_item_saved_view(pool, principal.user.id, saved_view_id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn create_work_item(
@@ -6639,6 +6806,21 @@ fn work_item_list_filter_payload(
             filter.sort_by
         },
     }
+}
+
+fn work_item_saved_view_payload(view: projects::WorkItemSavedView) -> WorkItemSavedViewPayload {
+    let item_type = view.item_type.clone();
+    WorkItemSavedViewPayload {
+        id: view.id,
+        name: view.name,
+        filters: work_item_list_filter_payload(&item_type, view.filter),
+        per_page: view.per_page,
+        is_default: view.is_default,
+    }
+}
+
+fn default_work_item_saved_view_per_page() -> i64 {
+    10
 }
 
 fn work_item_detail_payload(item: projects::WorkItemDetail) -> WorkItemDetailPayload {

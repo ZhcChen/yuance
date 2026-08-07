@@ -285,7 +285,7 @@ test('app-owner task list can filter and open read-only work item detail', async
   await expect(filters.locator('select[name="cycle_id"]')).toHaveValue('');
   await expect(filters.locator('select[name="sort"]')).toHaveValue('priority_desc');
   await filters.getByRole('button', { name: '重置' }).click();
-  await expect(page).toHaveURL('/web/app/tasks');
+  await expect(page).toHaveURL('/web/app/tasks?clear_default=true');
   await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
 
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-2' }).getByRole('link', { name: '打开详情' }).click();
@@ -293,6 +293,34 @@ test('app-owner task list can filter and open read-only work item detail', async
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
   await expect(page.getByRole('link', { name: '打开旧版详情' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 3, name: '评论与流转' })).toBeVisible();
+});
+
+test('shared work item saved views create restore rename and delete', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  await ensureCurrentProject(page, 'YCE');
+  await page.goto('/web/app/tasks');
+
+  const filters = page.locator('.work-item-filter-bar');
+  await filters.locator('select[name="priority"]').selectOption('P0');
+  await filters.getByRole('button', { name: '筛选' }).click();
+  await expect(page).toHaveURL(/priority=P0/);
+  await page.getByRole('button', { name: '保存当前视图' }).click();
+  await page.locator('#work-item-saved-view-name').fill('重点任务');
+  await page.locator('input[name="is_default"]').check();
+  await page.getByRole('dialog').getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('button', { name: '重点任务 · 默认' })).toBeVisible();
+
+  await page.goto('/web/app/tasks');
+  await expect(page.locator('.work-item-filter-bar select[name="priority"]')).toHaveValue('P0');
+  await page.getByRole('button', { name: '重命名' }).click();
+  await page.locator('#work-item-saved-view-name').fill('核心任务');
+  await page.getByRole('dialog').getByRole('button', { name: '保存' }).click();
+  await expect(page.getByRole('button', { name: '核心任务 · 默认' })).toBeVisible();
+
+  await page.getByRole('button', { name: '删除' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '确认删除' }).click();
+  await expect(page.getByRole('button', { name: '核心任务 · 默认' })).toHaveCount(0);
+  await expect(page.locator('.work-item-filter-bar select[name="priority"]')).toHaveValue('');
 });
 
 test('work item detail can edit and handoff through app shell forms', async ({ page }) => {

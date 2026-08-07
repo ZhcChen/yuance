@@ -106,6 +106,10 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.updateCurrentProject("DEMO");
   await client.markNotificationRead(7);
   await client.markAllNotificationsRead();
+  await client.createWorkItemSavedView({ projectKey: "DEMO", itemType: "task", name: "Focus", status: "open", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true });
+  await client.renameWorkItemSavedView(7, "Focus 2");
+  await client.setDefaultWorkItemSavedView(7);
+  await client.deleteWorkItemSavedView(7);
   await client.updateWorkItem("DEMO-1", { title: "Updated", description: "Body", priority: "P1" });
   await client.handoffWorkItem("DEMO-1", { status: "in_progress", assigneeUsername: "alice", body: "Please continue" });
   await client.createWorkItemComment("DEMO-1", { body: "New comment" });
@@ -144,6 +148,10 @@ test("api-client mutations map to fixed domain operations without request primit
     ["project.select", { projectKey: "DEMO" }],
     ["notification.read", { notificationId: 7 }],
     ["notification.readall", {}],
+    ["workitem.savedviewcreate", { projectKey: "DEMO", itemType: "task", name: "Focus", q: "", status: "open", priority: "", assigneeUsername: "", cycleId: "7", sort: "updated_desc", perPage: 20, isDefault: true }],
+    ["workitem.savedviewrename", { savedViewId: 7, name: "Focus 2" }],
+    ["workitem.savedviewdefault", { savedViewId: 7 }],
+    ["workitem.savedviewdelete", { savedViewId: 7 }],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", priority: "P1" } }],
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Please continue" } }],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "New comment", bodyFormat: "plain" } }],

@@ -6975,6 +6975,151 @@ async fn api_v1_work_item_list_view_returns_atomic_shared_page_contract() {
 }
 
 #[tokio::test]
+async fn api_v1_work_item_saved_view_json_lifecycle_is_user_scoped() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let create = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/v1/work-item-saved-views")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(
+                    r#"{"project_key":"YCE","item_type":"task","name":"我的任务","status":"in_progress","priority":"P0","sort":"priority_desc","per_page":20}"#,
+                ))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(create.status(), StatusCode::CREATED);
+    let created: serde_json::Value =
+        serde_json::from_str(&response_body(create).await).expect("create response should be json");
+    let saved_view_id = created["data"]["id"]
+        .as_i64()
+        .expect("saved view id should exist");
+    assert_eq!(created["data"]["name"], "我的任务");
+    assert_eq!(created["data"]["filters"]["status"], "in_progress");
+    assert_eq!(created["data"]["per_page"], 20);
+
+    let rename = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("PATCH")
+                .uri(format!("/api/v1/work-item-saved-views/{saved_view_id}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::from(r#"{"name":"重点任务"}"#))
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(rename.status(), StatusCode::OK);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response_body(rename).await)
+            .expect("rename response should be json")["data"]["name"],
+        "重点任务"
+    );
+
+    let set_default = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/api/v1/work-item-saved-views/{saved_view_id}/default"
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(set_default.status(), StatusCode::OK);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&response_body(set_default).await)
+            .expect("default response should be json")["data"]["is_default"],
+        true
+    );
+
+    let list = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-list-view?item_type=task&project_key=YCE")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(list.status(), StatusCode::OK);
+    let listed: serde_json::Value =
+        serde_json::from_str(&response_body(list).await).expect("list response should be json");
+    assert_eq!(listed["data"]["saved_views"][0]["id"], saved_view_id);
+    assert_eq!(listed["data"]["saved_views"][0]["name"], "重点任务");
+    assert_eq!(listed["data"]["filters"]["status"], "in_progress");
+    assert_eq!(listed["data"]["pagination"]["per_page"], 20);
+
+    let cleared = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(
+                    "/api/v1/work-item-list-view?item_type=task&project_key=YCE&clear_default=true&per_page=10",
+                )
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let cleared: serde_json::Value = serde_json::from_str(&response_body(cleared).await)
+        .expect("cleared list response should be json");
+    assert_eq!(cleared["data"]["filters"]["status"], "");
+    assert_eq!(cleared["data"]["pagination"]["per_page"], 10);
+
+    let delete = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!("/api/v1/work-item-saved-views/{saved_view_id}"))
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete.status(), StatusCode::NO_CONTENT);
+
+    let after_delete = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-item-list-view?item_type=task&project_key=YCE")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let after_delete: serde_json::Value =
+        serde_json::from_str(&response_body(after_delete).await).expect("response should be json");
+    assert_eq!(after_delete["data"]["saved_views"], serde_json::json!([]));
+}
+
+#[tokio::test]
 async fn api_v1_work_items_returns_pagination_metadata() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

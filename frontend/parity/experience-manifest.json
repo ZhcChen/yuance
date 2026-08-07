@@ -9,6 +9,7 @@
     { "path": "/api/v1/notifications", "methods": ["GET", "POST"], "owners": ["page.message-search.messages", "action.messages.read-all"], "purpose": "通知列表和已读状态" },
     { "path": "/api/v1/work-items/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.work-item-list.requirements", "page.work-item-detail.detail", "action.work-item.create"], "purpose": "工作项、评论和附件共享 DTO 与 mutation" },
     { "path": "/api/v1/work-item-list-view", "methods": ["GET"], "owners": ["page.work-item-list.requirements", "page.work-item-list.tasks", "page.work-item-list.bugs"], "purpose": "Web 与 Desktop 原子读取工作项列表视图" },
+    { "path": "/api/v1/work-item-saved-views/**", "methods": ["POST", "PATCH", "DELETE"], "owners": ["action.work-item.saved-view.create", "action.work-item.saved-view.rename", "action.work-item.saved-view.default", "action.work-item.saved-view.delete"], "purpose": "Web 与 Desktop 共享保存视图生命周期" },
     { "path": "/api/v1/projects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail", "page.project.resource-detail", "action.project.resource.create"], "purpose": "项目文件、资源和附件共享 DTO 与 mutation" },
     { "path": "/api/v1/file-objects/**", "methods": ["GET", "POST", "PATCH", "DELETE"], "owners": ["page.project.detail"], "purpose": "项目文件夹和文件对象操作" },
     { "path": "/api/v1/system/database-stats", "methods": ["GET"], "owners": ["page.system.database-stats"], "purpose": "数据库统计分页刷新" },
@@ -921,13 +922,14 @@
       "validation": "名称必填，query schema 受控，return-to 为站内对应列表。",
       "confirmation": "none",
       "request": { "method": "POST", "path": "/web/work-item-views" },
+      "apiEffects": [{ "phase": "primary", "method": "POST", "path": "/api/v1/work-item-saved-views", "purpose": "保存当前 resolved filters 和分页" }],
       "successEffect": "保存当前视图并在当前列表选中该视图。",
       "errorEffects": ["名称冲突", "筛选字段失效", "项目无权限", "视图数量限制"],
       "realtimeEffect": "同账号其他宿主的保存视图列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-022-web-desktop-u4-work-item-saved-views-review.md"] }
     },
     {
       "id": "action.work-item.saved-view.rename",
@@ -937,13 +939,14 @@
       "validation": "视图属于当前用户，名称必填且 return-to 安全。",
       "confirmation": "none",
       "request": { "method": "POST", "path": "/web/work-item-views/{saved_view_id}/rename" },
+      "apiEffects": [{ "phase": "primary", "method": "PATCH", "path": "/api/v1/work-item-saved-views/{saved_view_id}", "purpose": "重命名当前用户保存视图" }],
       "successEffect": "更新视图名称并保持当前 query 与选中状态。",
       "errorEffects": ["视图不存在", "名称冲突", "视图已被删除"],
       "realtimeEffect": "同账号其他宿主的保存视图列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-022-web-desktop-u4-work-item-saved-views-review.md"] }
     },
     {
       "id": "action.work-item.saved-view.default",
@@ -953,13 +956,14 @@
       "validation": "视图属于当前用户且适用于对应列表类型。",
       "confirmation": "none",
       "request": { "method": "POST", "path": "/web/work-item-views/{saved_view_id}/default" },
+      "apiEffects": [{ "phase": "primary", "method": "POST", "path": "/api/v1/work-item-saved-views/{saved_view_id}/default", "purpose": "原子替换同项目同类型默认视图" }],
       "successEffect": "原子替换同类型默认视图，刷新后自动恢复其 query。",
       "errorEffects": ["视图不存在或失效", "项目无权限时降级到安全默认筛选"],
       "realtimeEffect": "同账号其他宿主的默认视图失效并重载。",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-022-web-desktop-u4-work-item-saved-views-review.md"] }
     },
     {
       "id": "action.work-item.saved-view.delete",
@@ -969,13 +973,14 @@
       "validation": "视图属于当前用户且仍存在。",
       "confirmation": "明确展示被删除视图名称。",
       "request": { "method": "POST", "path": "/web/work-item-views/{saved_view_id}/delete" },
+      "apiEffects": [{ "phase": "primary", "method": "DELETE", "path": "/api/v1/work-item-saved-views/{saved_view_id}", "purpose": "删除当前用户保存视图" }],
       "successEffect": "删除视图；若为默认或当前视图则回退到受控列表 query。",
       "errorEffects": ["视图已删除时刷新最终状态", "return-to 无效时返回对应列表首页"],
       "realtimeEffect": "同账号其他宿主的保存视图和默认状态失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-022-web-desktop-u4-work-item-saved-views-review.md"] }
     },
     {
       "id": "action.work-item.flow-history.load", "pageId": "page.work-item-detail.detail", "trigger": "open flow history", "inputs": ["item-key"], "validation": "工作项存在且用户可访问所属项目。", "confirmation": "none", "request": { "method": "GET", "path": "/web/work-items/{item_key}/flow-records" }, "successEffect": "加载按时间排序的状态、移交和编辑记录。", "errorEffects": ["工作项不存在", "项目无权限", "加载失败可重试"], "realtimeEffect": "新流转事件使历史失效。", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
