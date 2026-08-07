@@ -164,3 +164,12 @@ test('search route parser and result targets preserve owner semantics', () => {
   assert.equal(routePathForOwner('https://evil.example/web/projects/YCE', 'app'), '/web/app');
   assert.equal(routePathForOwner('/web/app/projects', 'app'), '/web/app');
 });
+
+test('profile route parser preserves Browser and Desktop owners', () => {
+  assert.deepEqual(parseAppRoute('/web/app/me', ''), {
+    id: 'profile', owner: 'app', pathname: '/web/app/me', search: '', title: '个人中心',
+  });
+  assert.deepEqual(parseAppRoute('/web/me', ''), {
+    id: 'profile', owner: 'web', pathname: '/web/me', search: '', title: '个人中心',
+  });
+});

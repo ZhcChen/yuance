@@ -53,6 +53,9 @@ export const getProjects = /** @type {(query?: { status?: string, page?: number,
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
+export const getOwnProfile = apiClient.getOwnProfile;
+export const updateOwnProfile = apiClient.updateOwnProfile;
+
 export const updateCurrentProject = /** @type {(projectKey: string) => Promise<{ key: string, name: string }>} */ (apiClient.updateCurrentProject);
 
 export const getWorkItems = /** @type {(query?: { itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, page?: number, perPage?: number }) => Promise<{ items: WorkItemSummary[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getWorkItems);
@@ -117,6 +120,7 @@ export const webApi = {
   getCurrentUser,
   getNotificationTarget,
   getNotifications,
+  getOwnProfile,
   getProjects,
   getTopbarStatus,
   getWorkItem,
@@ -138,6 +142,7 @@ export const webApi = {
   restorePendingReturnToHash,
   search,
   updateCurrentProject,
+  updateOwnProfile,
   updateWorkItem,
   updateWorkItemComment,
 };

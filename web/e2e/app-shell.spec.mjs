@@ -124,6 +124,48 @@ test('app-owner global search loads shared results and resolves result targets',
   await expect(page.getByRole('heading', { level: 2, name: /YCE-TASK-2/ })).toBeVisible();
 });
 
+test('shared profile page updates account identity through the common modal', async ({ page }) => {
+  await login(page, '/web/app');
+  await page.getByRole('button', { name: /打开 .* 的账户菜单/ }).click();
+  await page.getByRole('link', { name: '我的账号' }).click();
+
+  await expect(page).toHaveURL(/\/web\/app\/me$/);
+  await expect(page).toHaveTitle('个人中心 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '个人中心' })).toBeVisible();
+
+  const requests = [];
+  await page.route('**/api/v1/me/profile', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    requests.push({ headers: route.request().headers(), payload: route.request().postDataJSON() });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: {
+        id: 1, username: 'yuance_admin', display_name: '统一体验管理员', email: 'admin@yuance.test', mobile: '13800000000',
+        status: 'active', is_super_admin: true, roles: '超级管理员', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z',
+      } }),
+    });
+  });
+
+  await page.getByRole('button', { name: '编辑资料' }).click();
+  const dialog = page.getByRole('dialog', { name: '编辑个人资料' });
+  await dialog.getByLabel('显示名称').fill('统一体验管理员');
+  await dialog.getByLabel('邮箱').fill('admin@yuance.test');
+  await dialog.getByLabel('手机号').fill('13800000000');
+  await dialog.getByRole('button', { name: '保存个人资料' }).click();
+
+  await expect.poll(() => requests.length).toBe(1);
+  expect(requests[0].headers['x-yuance-csrf-token']).toBeTruthy();
+  expect(requests[0].payload).toEqual({ display_name: '统一体验管理员', email: 'admin@yuance.test', mobile: '13800000000' });
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '统一体验管理员' })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('个人资料已保存。');
+  await expect(page.getByRole('button', { name: '打开 统一体验管理员 的账户菜单' })).toBeVisible();
+});
+
 test('app-owner task list can filter and open read-only work item detail', async ({ page }) => {
   await login(page, '/web/app/projects');
   await ensureCurrentProject(page, 'YCE');

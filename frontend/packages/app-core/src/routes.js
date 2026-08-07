@@ -229,6 +229,16 @@ export function parseAppRoute(pathname = '/web', search = '') {
     };
   }
 
+  if (pathname === '/web/me' || pathname === '/web/app/me') {
+    return {
+      id: 'profile',
+      owner,
+      pathname,
+      search,
+      title: '个人中心',
+    };
+  }
+
   if (pathname === '/web/projects' || pathname === '/web/app/projects') {
     return {
       id: 'projects',

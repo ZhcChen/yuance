@@ -21,7 +21,11 @@ import {
   uploadWorkItemCommentAttachment,
 } from '@yuance/frontend-app-core';
 import {
+  Button,
+  Feedback,
+  Field,
   GlobalNavigation,
+  Modal,
   WorkItemAttachments,
   WorkItemComments,
   WorkItemDetail,
@@ -380,6 +384,8 @@ function routeDescription(route) {
       return '通过 JSON 契约加载、筛选和处理通知，兼容旧 URL 与前进后退。';
     case 'search':
       return '按当前权限搜索项目、工作项和资料，并在两个宿主中使用同一分页与目标解析。';
+    case 'profile':
+      return '查看并维护当前账户资料，保存结果会同步刷新全局账户信息。';
     case 'projects':
       return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
     case 'requirements':
@@ -402,6 +408,8 @@ function routeEyebrow(route) {
       return 'Message Center';
     case 'search':
       return 'Global Search';
+    case 'profile':
+      return 'Personal Workspace';
     case 'projects':
       return 'Projects';
     case 'requirements':
@@ -466,6 +474,7 @@ export function SharedApp({ services }) {
   const newCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const editCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const requestRef = useRef(0);
+  const profileActionRef = useRef(0);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -479,6 +488,11 @@ export function SharedApp({ services }) {
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
+  const [profile, setProfile] = useState(/** @type {Awaited<ReturnType<AppApiService['getOwnProfile']>> | null} */ (null));
+  const [profileForm, setProfileForm] = useState({ displayName: '', email: '', mobile: '' });
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileSubmitting, setProfileSubmitting] = useState(false);
+  const [profileError, setProfileError] = useState('');
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
@@ -650,10 +664,11 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
-        targetRoute.id === 'projects' || targetRoute.id === 'search' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
+        targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
+        targetRoute.id === 'projects' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? api.getNotifications({
@@ -703,6 +718,10 @@ export function SharedApp({ services }) {
       }
       setUser(nextUser);
       setTopbar(nextTopbar);
+      if (targetRoute.id === 'profile' && nextProfile) {
+        setProfile(nextProfile);
+        setProfileForm({ displayName: nextProfile.display_name, email: nextProfile.email, mobile: nextProfile.mobile });
+      }
       if (targetRoute.id === 'messages') {
         setMessageFeed(nextFeed);
       } else if (targetRoute.id === 'home') {
@@ -756,11 +775,36 @@ export function SharedApp({ services }) {
     syncRouteFromLocation();
   }
 
+  async function submitProfile(event) {
+    event.preventDefault();
+    const actionId = profileActionRef.current + 1;
+    profileActionRef.current = actionId;
+    setProfileSubmitting(true);
+    setProfileError('');
+    try {
+      const updated = await api.updateOwnProfile(profileForm);
+      if (profileActionRef.current !== actionId) return;
+      setProfile(updated);
+      setUser((current) => current ? { ...current, display_name: updated.display_name } : current);
+      setProfileForm({ displayName: updated.display_name, email: updated.email, mobile: updated.mobile });
+      setProfileModalOpen(false);
+      setStatusMessage('个人资料已保存。');
+    } catch (caught) {
+      if (profileActionRef.current === actionId) {
+        setProfileError(errorMessage(caught instanceof Error ? caught : new Error('保存失败。')));
+      }
+    } finally {
+      if (profileActionRef.current === actionId) setProfileSubmitting(false);
+    }
+  }
+
   useEffect(() => {
     const title = route.id === 'messages'
       ? '消息中心 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
+        : route.id === 'profile'
+          ? '个人中心 - 元策'
         : route.id === 'projects'
           ? '项目列表 - 元策'
           : route.id === 'requirements'
@@ -1886,7 +1930,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -2093,6 +2137,51 @@ export function SharedApp({ services }) {
               ) : (
                 <p className="shell-empty">{searchRoute?.q ? '没有找到匹配结果。' : '请输入搜索关键词。'}</p>
               )}
+            </section>
+          ) : route.id === 'profile' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="profile-title">
+              <div className="shell-panel-header">
+                <div>
+                  <h2 id="profile-title">{profile?.display_name || user?.display_name || user?.username}</h2>
+                  <p className="shell-muted">@{profile?.username || user?.username}</p>
+                </div>
+                <Button variant="secondary" onClick={() => { setProfileError(''); setProfileModalOpen(true); }}>编辑资料</Button>
+              </div>
+              <dl className="work-item-detail-meta">
+                <div><dt>角色</dt><dd>{profile?.roles || (profile?.is_super_admin ? '超级管理员' : '普通成员')}</dd></div>
+                <div><dt>状态</dt><dd>{profile?.status || 'active'}</dd></div>
+                <div><dt>邮箱</dt><dd>{profile?.email || '未填写'}</dd></div>
+                <div><dt>手机号</dt><dd>{profile?.mobile || '未填写'}</dd></div>
+                <div><dt>加入时间</dt><dd>{profile?.created_at ? formatTimestamp(profile.created_at) : '-'}</dd></div>
+                <div><dt>最近更新</dt><dd>{profile?.updated_at ? formatTimestamp(profile.updated_at) : '-'}</dd></div>
+              </dl>
+              <Modal
+                open={profileModalOpen}
+                title="编辑个人资料"
+                onClose={() => { if (!profileSubmitting) setProfileModalOpen(false); }}
+                footer={(
+                  <>
+                    <Button variant="secondary" disabled={profileSubmitting} onClick={() => setProfileModalOpen(false)}>取消</Button>
+                    <Button loading={profileSubmitting} ariaLabel="保存个人资料" onClick={() => {
+                      const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('profile-form'));
+                      form?.requestSubmit();
+                    }}>保存</Button>
+                  </>
+                )}
+              >
+                <form id="profile-form" onSubmit={submitProfile}>
+                  {profileError ? <Feedback tone="danger" title="保存失败">{profileError}</Feedback> : null}
+                  <Field id="profile-display-name" label="显示名称" required>
+                    <input value={profileForm.displayName} onChange={(event) => setProfileForm((current) => ({ ...current, displayName: event.target.value }))} />
+                  </Field>
+                  <Field id="profile-email" label="邮箱">
+                    <input type="email" value={profileForm.email} onChange={(event) => setProfileForm((current) => ({ ...current, email: event.target.value }))} />
+                  </Field>
+                  <Field id="profile-mobile" label="手机号">
+                    <input value={profileForm.mobile} onChange={(event) => setProfileForm((current) => ({ ...current, mobile: event.target.value }))} />
+                  </Field>
+                </form>
+              </Modal>
             </section>
           ) : route.id === 'projects' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-center-title">
