@@ -6,7 +6,9 @@ export { notificationTargetPath } from './notification-target.js';
 export {
   buildHomePath,
   buildMessagesPath,
+  buildProfilePath,
   buildProjectsPath,
+  buildSearchPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,

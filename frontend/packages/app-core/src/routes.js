@@ -83,6 +83,28 @@ export function buildHomePath(owner = 'web') {
   return owner === 'app' ? '/web/app' : '/web';
 }
 
+export function buildProfilePath(owner = 'web') {
+  return owner === 'app' ? '/web/app/me' : '/web/me';
+}
+
+export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof q === 'string' && q.trim()) {
+    params.set('q', q.trim());
+  }
+  if (normalizedPage > DEFAULT_PAGE) {
+    params.set('page', String(normalizedPage));
+  }
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) {
+    params.set('per_page', String(normalizedPerPage));
+  }
+  const basePath = owner === 'app' ? '/web/app/search' : '/web/search';
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
 export function buildMessagesPath({ owner = 'web', filter = DEFAULT_FILTER, page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedFilter = normalizeFilter(filter);

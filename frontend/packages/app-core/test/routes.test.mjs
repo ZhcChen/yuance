@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import {
   buildHomePath,
   buildMessagesPath,
+  buildProfilePath,
   buildProjectsPath,
+  buildSearchPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   parseAppRoute,
@@ -129,4 +131,18 @@ test('buildMessagesPath keeps owner-specific base path and compact query', () =>
 
 test('buildWorkItemDetailPath falls back to task list when item key is empty', () => {
   assert.equal(buildWorkItemDetailPath({ owner: 'app', itemKey: '' }), '/web/app/tasks');
+});
+
+test('profile and search builders preserve the route owner and normalize query values', () => {
+  assert.equal(buildProfilePath('web'), '/web/me');
+  assert.equal(buildProfilePath('app'), '/web/app/me');
+  assert.equal(buildSearchPath({ owner: 'app' }), '/web/app/search');
+  assert.equal(
+    buildSearchPath({ owner: 'web', q: '  登录失败  ', page: 2, perPage: 20 }),
+    '/web/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20',
+  );
+  assert.equal(
+    buildSearchPath({ owner: 'app', page: 0, perPage: -1 }),
+    '/web/app/search',
+  );
 });

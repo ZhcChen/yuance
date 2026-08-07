@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildHomePath,
   buildMessagesPath,
+  buildProfilePath,
   buildProjectsPath,
+  buildSearchPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
   createWorkItemComment as createWorkItemCommentUseCase,
@@ -518,6 +520,7 @@ export function SharedApp({ services }) {
   const currentProject = topbar?.current_project || null;
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
+  const profilePath = buildProfilePath(route.owner);
   const projectsPath = route.id === 'projects'
     ? buildProjectsPath({ owner: route.owner, status: route.status, page: route.page, perPage: route.perPage })
     : buildProjectsPath({ owner: 'app' });
@@ -1843,10 +1846,10 @@ export function SharedApp({ services }) {
         currentProject={currentProject}
         projectsHref={projectsPath}
         user={user}
-        profileHref={`${homePath}/me`}
+        profileHref={profilePath}
         theme={theme}
         onNavigate={(event, path, label) => handleNavigate(event, path, `已切换到${label}。`)}
-        onSearch={(query) => navigate(`${homePath}/search?q=${encodeURIComponent(query)}`, query ? `正在搜索 ${query}。` : '请输入搜索内容。')}
+        onSearch={(query) => navigate(buildSearchPath({ owner: route.owner, q: query }), query ? `正在搜索 ${query}。` : '请输入搜索内容。')}
         onThemeChange={handleThemeChange}
         onLogout={handleLogout}
       />
