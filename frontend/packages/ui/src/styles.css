@@ -174,6 +174,25 @@ html[data-theme="dark"] {
 .yc-modal-body { overflow: auto; padding: 18px 16px; }
 .yc-modal-footer { justify-content: flex-end; border-top: 1px solid var(--yc-line); }
 
+.attachment-preview { width: min(1120px, calc(100% - 32px)); height: min(820px, calc(100% - 32px)); padding: 0; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-panel); color: var(--yc-text); box-shadow: var(--yc-shadow); }
+.attachment-preview::backdrop { background: rgb(8 15 24 / 68%); }
+.attachment-preview-header, .attachment-preview-footer { min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; }
+.attachment-preview-header { border-bottom: 1px solid var(--yc-line); }
+.attachment-preview-header > div { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.attachment-preview-header h2 { margin: 0; overflow: hidden; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-preview-header span { color: var(--yc-muted); font-size: 12px; white-space: nowrap; }
+.attachment-preview-header button { width: 36px; height: 36px; border: 0; background: transparent; color: var(--yc-muted-strong); font-size: 24px; cursor: pointer; }
+.attachment-preview-stage { height: calc(100% - 118px); display: grid; place-items: center; overflow: auto; background: #10151c; }
+.attachment-preview-stage img, .attachment-preview-stage video { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.attachment-preview-message, .attachment-preview-error { max-width: 560px; padding: 18px; color: #d8e0e9; text-align: center; }
+.attachment-preview-error { color: #ffaaa4; }
+.attachment-preview-document { min-width: min(360px, calc(100% - 32px)); padding: 32px; color: #d8e0e9; text-align: center; }
+.attachment-preview-document strong { display: block; margin-bottom: 12px; font-size: 28px; }
+.attachment-preview-footer { border-top: 1px solid var(--yc-line); }
+.attachment-preview-footer > div { display: flex; gap: 8px; }
+.attachment-preview-footer button { min-height: 34px; padding: 0 12px; border: 1px solid var(--yc-line); border-radius: 6px; background: var(--yc-panel-soft); color: var(--yc-text); cursor: pointer; }
+.attachment-preview-footer button:disabled { cursor: not-allowed; opacity: .5; }
+
 .yc-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--yc-line); border-radius: var(--yc-radius); }
 .yc-table { width: 100%; border-collapse: collapse; background: var(--yc-panel); color: var(--yc-text); }
 .yc-table th,

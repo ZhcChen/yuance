@@ -16,9 +16,9 @@ import { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './f
  */
 
 /**
- * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, revealableId?: number | null, onDownload: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void, renderExtraAction?: (attachment: Attachment) => React.ReactNode, showCreator?: boolean, className?: string }} props
+ * @param {{ attachments: Attachment[], ariaLabel?: string, downloadLabel: '附件' | '评论附件', downloadingId: number | null, revealableId?: number | null, onDownload: (attachment: Attachment) => void, onPreview?: (attachment: Attachment) => void, onReveal?: (attachment: Attachment) => void, renderExtraAction?: (attachment: Attachment) => React.ReactNode, showCreator?: boolean, className?: string }} props
  */
-export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, revealableId = null, onDownload, onReveal, renderExtraAction, showCreator = false, className = '' }) {
+export function AttachmentList({ attachments, ariaLabel, downloadLabel, downloadingId, revealableId = null, onDownload, onPreview, onReveal, renderExtraAction, showCreator = false, className = '' }) {
   return (
     <ul className={`work-item-attachment-list ${className}`.trim()} aria-label={ariaLabel}>
       {attachments.map((attachment) => (
@@ -33,6 +33,7 @@ export function AttachmentList({ attachments, ariaLabel, downloadLabel, download
           <div className="work-item-attachment-actions">
             {attachmentIsUploaded(attachment) ? (
               <>
+                {onPreview ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" aria-label={`预览${downloadLabel} ${attachment.filename || attachment.id}`} onClick={() => onPreview(attachment)} disabled={downloadingId === attachment.id}>预览</button> : null}
                 <button
                   className="yuance-ui-button yuance-ui-button-secondary"
                   type="button"
