@@ -563,10 +563,6 @@ pub fn build_router(state: AppState) -> Router {
             "/web/partials/work-items",
             get(web::user::work_items_partial),
         )
-        .route(
-            "/web/partials/work-items/{item_key}",
-            get(web::user::work_item_detail_partial),
-        )
         .route("/web/api-docs", get(api_docs))
         .route("/web/system/api-docs", get(system_api_docs))
         .route("/api/openapi.json", get(openapi_json))

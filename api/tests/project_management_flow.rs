@@ -6269,44 +6269,20 @@ async fn web_project_detail_can_update_project_and_transfer_owner() {
 }
 
 #[tokio::test]
-async fn work_item_detail_partial_renders_comments() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    projects::seed_demo_data(&pool, initialized.user_id)
-        .await
-        .expect("demo seed should apply");
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+async fn work_item_detail_partial_is_retired() {
+    let app = build_router(AppState::for_tests());
 
     let response = app
         .oneshot(
             Request::builder()
                 .uri("/web/partials/work-items/YCE-TASK-2")
-                .header(header::COOKIE, initialized.cookie)
                 .body(Body::empty())
                 .expect("request should build"),
         )
         .await
         .expect("router should respond");
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response_body(response).await;
-
-    assert!(body.contains("详情说明"));
-    assert!(body.contains("发布人"));
-    assert!(body.contains(r#"class="work-item-publisher""#));
-    assert!(body.contains(r#"class="work-item-publisher-name""#));
-    assert!(body.contains(r#"class="section-kicker work-item-publisher-role">发布人</span>"#));
-    assert!(body.contains("先统一项目与工作项查询模型"));
-    assert!(body.contains("讨论"));
-    assert!(body.contains(r#"data-discussion-form"#));
-    assert!(body.contains(r#"data-discussion-current-username=""#));
-    assert!(body.contains(
-        r#"class="btn btn-sm btn-secondary" type="button" data-discussion-reply-toggle"#
-    ));
-    assert!(body.contains(r#"class="discussion-composer discussion-reply-form""#));
-    assert!(body.contains(
-        r#"class="btn btn-sm btn-secondary" type="button" data-modal-open="work-item-comment-edit-modal-"#
-    ));
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]

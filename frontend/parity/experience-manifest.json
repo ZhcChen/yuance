@@ -1110,9 +1110,6 @@
     },
     {
       "id": "action.internal.work-items.partial", "pageId": "page.work-item-list.requirements", "trigger": "legacy page requests filtered work item partial", "inputs": ["route-query", "hx-target"], "validation": "query 使用与完整列表相同 schema 和权限。", "confirmation": "none", "request": { "method": "GET", "path": "/web/partials/work-items" }, "successEffect": "返回列表、指标和分页的增量 HTML 载荷。", "errorEffects": ["query 无效", "项目无权限", "目标失效时完整页面恢复"], "realtimeEffect": "none", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U4", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
-    },
-    {
-      "id": "action.internal.work-item-detail.partial", "pageId": "page.work-item-detail.detail", "trigger": "legacy page requests work item detail partial", "inputs": ["item-key", "return-to"], "validation": "工作项可访问且 return-to 为站内列表上下文。", "confirmation": "none", "request": { "method": "GET", "path": "/web/partials/work-items/{item_key}" }, "successEffect": "返回详情增量 HTML，并保持返回路径和前后项上下文。", "errorEffects": ["工作项不存在", "项目无权限", "资源删除态"], "realtimeEffect": "none", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "hostExceptions": [

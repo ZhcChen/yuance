@@ -1227,10 +1227,6 @@
     return "/web/work-items/" + encodeURIComponent(itemKey);
   }
 
-  function workItemDetailPartialUrl(itemKey) {
-    return "/web/partials/work-items/" + encodeURIComponent(itemKey);
-  }
-
   function parseHtmlFragment(html) {
     var template = document.createElement("template");
     template.innerHTML = html;
@@ -1273,7 +1269,7 @@
         var previousCommentIds = discussionCommentIds(root);
         var previousCountNode = root.querySelector("[data-discussion-count]");
         var previousCount = discussionCountValue(previousCountNode);
-        var response = await fetch(workItemDetailPartialUrl(itemKey), {
+        var response = await fetch(workItemDetailPath(itemKey), {
           headers: { accept: "text/html" },
           credentials: "same-origin",
         });

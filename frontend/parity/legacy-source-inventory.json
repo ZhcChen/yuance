@@ -165,12 +165,6 @@
       ]
     },
     {
-      "route": "/web/partials/work-items/{item_key}",
-      "methods": [
-        "GET"
-      ]
-    },
-    {
       "route": "/web/projects",
       "methods": [
         "GET",

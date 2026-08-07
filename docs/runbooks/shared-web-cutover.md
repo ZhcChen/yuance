@@ -30,6 +30,8 @@ unset YUANCE_WEB_APP_SHELL_V1
 
 关闭后，已接入页面恢复 Askama SSR handler。回滚期间不得删除 `api/templates/web/` 中对应模板、旧列表 partial 或其 `api/static/app.js` / `api/static/app.css` 依赖。
 
+工作项详情的旧专用 partial route 已退役；回滚页的讨论增量刷新从完整详情 GET 响应中提取讨论区域，不依赖 `/web/partials/work-items/{item_key}`。
+
 ## 验证
 
 ```bash
