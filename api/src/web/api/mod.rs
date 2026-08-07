@@ -187,6 +187,41 @@ pub struct ProjectDetailPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ProjectCyclePayload {
+    pub id: i64,
+    pub name: String,
+    pub goal: String,
+    pub description: String,
+    pub owner_username: String,
+    pub owner: String,
+    pub start_date: String,
+    pub end_date: String,
+    pub closed_at: String,
+    pub is_closed: bool,
+    pub total_items: i64,
+    pub requirement_count: i64,
+    pub task_count: i64,
+    pub bug_count: i64,
+    pub pending_count: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub work_items: Vec<ProjectCycleWorkItemPayload>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectCycleWorkItemPayload {
+    pub key: String,
+    pub item_type: String,
+    pub title: String,
+    pub status: String,
+    pub priority: String,
+    pub assignee_username: String,
+    pub assignee: String,
+    pub due_date: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ProjectResourcePayload {
     pub id: i64,
     pub project_key: String,
@@ -1257,6 +1292,19 @@ pub struct UpdateProjectMemberRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ProjectCycleRequest {
+    name: String,
+    #[serde(default)]
+    goal: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    owner_username: String,
+    start_date: String,
+    end_date: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct CreateAttachmentRequest {
     original_filename: String,
     content_type: String,
@@ -2209,6 +2257,133 @@ pub async fn remove_project_member(
     .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn list_project_cycles(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+) -> AppResult<axum::Json<ApiEnvelope<Vec<ProjectCyclePayload>>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    Ok(json(
+        projects::list_project_cycles(pool, project.id)
+            .await?
+            .into_iter()
+            .map(|cycle| project_cycle_payload(cycle, Vec::new()))
+            .collect(),
+    ))
+}
+
+pub async fn get_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let cycle = projects::get_project_cycle(pool, project.id, cycle_id).await?;
+    let work_items = projects::list_project_cycle_work_item_snapshots(pool, project.id, cycle_id).await?;
+    Ok(json(project_cycle_payload(cycle, work_items)))
+}
+
+pub async fn create_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(project_key): Path<String>,
+    Json(payload): Json<ProjectCycleRequest>,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let cycle = projects::create_project_cycle(pool, user.id, &project_key, cycle_create_input(payload)).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.cycle.create",
+        "project_cycle",
+        &cycle.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok((StatusCode::CREATED, json(project_cycle_payload(cycle, Vec::new()))))
+}
+
+pub async fn update_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+    Json(payload): Json<ProjectCycleRequest>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let input = cycle_update_input(payload);
+    let cycle = projects::update_project_cycle(pool, user.id, &project_key, cycle_id, input).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.cycle.update",
+        "project_cycle",
+        &cycle.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok(json(project_cycle_payload(cycle, Vec::new())))
+}
+
+pub async fn close_project_cycle(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((project_key, cycle_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectCyclePayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, user.id, "project.view").await?;
+    let project = projects::get_project_detail(pool, &project_key)
+        .await?
+        .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
+    ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
+    let cycle = projects::close_project_cycle(pool, user.id, &project_key, cycle_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "project.cycle.close",
+        "project_cycle",
+        &cycle.id.to_string(),
+        &principal.audit_details_with(serde_json::json!({"project_key": project_key})),
+    )
+    .await?;
+    Ok(json(project_cycle_payload(cycle, Vec::new())))
 }
 
 pub async fn list_work_items(
@@ -5820,6 +5995,68 @@ fn project_member_summary_payload(member: projects::ProjectMemberSummary) -> Pro
         username: member.username,
         member_role: member.member_role,
         joined_at: member.joined_at,
+    }
+}
+
+fn project_cycle_payload(
+    cycle: projects::ProjectCycleDetail,
+    work_items: Vec<projects::ProjectCycleWorkItemSnapshot>,
+) -> ProjectCyclePayload {
+    let is_closed = !cycle.closed_at.is_empty();
+    ProjectCyclePayload {
+        id: cycle.id,
+        name: cycle.name,
+        goal: cycle.goal,
+        description: cycle.description,
+        owner_username: cycle.owner_username,
+        owner: cycle.owner_display_name,
+        start_date: cycle.start_date,
+        end_date: cycle.end_date,
+        closed_at: cycle.closed_at,
+        is_closed,
+        total_items: cycle.total_items,
+        requirement_count: cycle.requirement_count,
+        task_count: cycle.task_count,
+        bug_count: cycle.bug_count,
+        pending_count: cycle.pending_count,
+        created_at: cycle.created_at,
+        updated_at: cycle.updated_at,
+        work_items: work_items
+            .into_iter()
+            .map(|item| ProjectCycleWorkItemPayload {
+                key: item.item_key,
+                item_type: item.item_type,
+                title: item.title,
+                status: item.status,
+                priority: item.priority,
+                assignee_username: item.assignee_username,
+                assignee: item.assignee_display_name,
+                due_date: item.due_date,
+                updated_at: item.updated_at,
+            })
+            .collect(),
+    }
+}
+
+fn cycle_create_input(payload: ProjectCycleRequest) -> projects::CreateProjectCycleInput {
+    projects::CreateProjectCycleInput {
+        name: payload.name,
+        goal: payload.goal,
+        description: payload.description,
+        owner_username: payload.owner_username,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+    }
+}
+
+fn cycle_update_input(payload: ProjectCycleRequest) -> projects::UpdateProjectCycleInput {
+    projects::UpdateProjectCycleInput {
+        name: payload.name,
+        goal: payload.goal,
+        description: payload.description,
+        owner_username: payload.owner_username,
+        start_date: payload.start_date,
+        end_date: payload.end_date,
     }
 }
 

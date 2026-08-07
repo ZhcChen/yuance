@@ -792,6 +792,18 @@ pub fn build_router(state: AppState) -> Router {
             patch(web::api::update_project_member_role).delete(web::api::remove_project_member),
         )
         .route(
+            "/api/v1/projects/{project_key}/cycles",
+            get(web::api::list_project_cycles).post(web::api::create_project_cycle),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/cycles/{cycle_id}",
+            get(web::api::get_project_cycle).patch(web::api::update_project_cycle),
+        )
+        .route(
+            "/api/v1/projects/{project_key}/cycles/{cycle_id}/close",
+            post(web::api::close_project_cycle),
+        )
+        .route(
             "/api/v1/projects/{project_key}/attachments",
             get(web::api::list_project_attachments).post(web::api::create_project_attachment),
         )

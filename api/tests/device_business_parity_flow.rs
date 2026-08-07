@@ -67,6 +67,40 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(json_body(response).await["data"]["description"], "Device project mutation");
 
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/projects/YCE/cycles",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "name": "Device parity cycle", "goal": "Verify cycle parity", "description": "",
+            "owner_username": "admin", "start_date": "2026-08-01", "end_date": "2026-08-31"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let cycle_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    let response = request(
+        &app,
+        "GET",
+        &format!("/api/v1/projects/YCE/cycles/{cycle_id}"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(json_body(response).await["data"]["work_items"].is_array());
+    let response = request(
+        &app,
+        "POST",
+        &format!("/api/v1/projects/YCE/cycles/{cycle_id}/close"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["is_closed"], true);
+
     device_sessions::revoke_family_for_user(
         &pool,
         admin_id,
@@ -142,6 +176,26 @@ async fn device_principal_does_not_bypass_project_membership_or_viewer_role() {
     )
     .await;
     assert_eq!(response.status(), StatusCode::OK);
+    let response = request(
+        &app,
+        "GET",
+        "/api/v1/projects/YCE/cycles",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/projects/YCE/cycles",
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "name": "forbidden", "start_date": "2026-08-01", "end_date": "2026-08-31"
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     let response = request(
         &app,
         "PATCH",
