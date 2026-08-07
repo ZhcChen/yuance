@@ -12,17 +12,28 @@
  * @param {{ EventSourceImpl?: new (url: string, options: { withCredentials: boolean }) => EventSourceLike }} [dependencies]
  */
 export function createBrowserEvents(dependencies = {}) {
-  /** @param {{ onRefresh: () => void, onReleaseVersion?: (version: string) => void }} callbacks */
+  /** @param {{ onEvent: (event: object) => void }} callbacks */
   function openTopbarEvents(callbacks) {
     const EventSourceImpl = dependencies.EventSourceImpl
       || /** @type {new (url: string, options: { withCredentials: boolean }) => EventSourceLike} */ (globalThis.EventSource);
     const source = new EventSourceImpl('/api/v1/topbar/events', { withCredentials: true });
+    const connectionId = 'topbar';
+    let sequence = 0;
     source.addEventListener('release-version', (event) => {
-      if (typeof callbacks.onReleaseVersion === 'function') {
-        callbacks.onReleaseVersion(/** @type {MessageEvent} */ (event).data);
-      }
+      callbacks.onEvent(Object.freeze({
+        type: 'release-version',
+        connectionId,
+        sequence: ++sequence,
+        version: /** @type {MessageEvent} */ (event).data,
+      }));
     });
-    source.addEventListener('topbar', callbacks.onRefresh);
+    source.addEventListener('topbar', (event) => {
+      callbacks.onEvent(Object.freeze({
+        type: /** @type {MessageEvent} */ (event).data === 'connected' ? 'stream-connected' : 'topbar-invalidated',
+        connectionId,
+        sequence: ++sequence,
+      }));
+    });
     source.onerror = () => {
       // Browser EventSource owns reconnect behavior.
     };

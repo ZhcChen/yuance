@@ -13,13 +13,10 @@ test("desktop events map fixed host facts to shared callbacks and internal navig
       listener = callback;
       return () => { unsubscribed = true; };
     },
-  }, {
-    assign: (path) => calls.push(["assign", path]),
   });
 
   const unsubscribe = events.openTopbarEvents({
-    onRefresh: () => calls.push(["refresh"]),
-    onReleaseVersion: (version) => calls.push(["release", version]),
+    onEvent: (event) => calls.push(["event", event]),
   });
   listener({ type: "topbar" });
   listener({ type: "release-version", version: "0.2.0" });
@@ -28,13 +25,13 @@ test("desktop events map fixed host facts to shared callbacks and internal navig
   unsubscribe();
 
   assert.deepEqual(calls, [
-    ["refresh"],
-    ["release", "0.2.0"],
-    ["assign", "/web/app/work-items/YCE-TASK-2#comment-3"],
+    ["event", { type: "stream-connected", connectionId: "topbar", sequence: 1 }],
+    ["event", { type: "release-version", connectionId: "topbar", sequence: 2, version: "0.2.0" }],
+    ["event", { type: "notification-target", path: "/web/app/work-items/YCE-TASK-2#comment-3" }],
   ]);
   assert.equal(unsubscribed, true);
 });
 
 test("desktop events degrade to a no-op without the restricted bridge", () => {
-  assert.doesNotThrow(() => createDesktopEvents(undefined, undefined).openTopbarEvents({})());
+  assert.doesNotThrow(() => createDesktopEvents(undefined).openTopbarEvents({})());
 });

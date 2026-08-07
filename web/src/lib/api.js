@@ -166,7 +166,7 @@ export const markAllNotificationsRead = /** @type {() => Promise<{ affected: num
 export const logout = /** @type {() => Promise<{ revoked: boolean }>} */ (apiClient.logout);
 
 /**
- * @param {{ onRefresh: () => void, onReleaseVersion?: (version: string) => void }} callbacks
+ * @param {{ onEvent: (event: object) => void }} callbacks
  */
 export function openTopbarEvents(callbacks) {
   return browserEvents.openTopbarEvents(callbacks);

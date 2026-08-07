@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  createNotificationEventCoordinator,
   createProjectResourceWithAttachments,
   buildHomePath,
   buildMessagesPath,
@@ -632,7 +633,7 @@ function notificationKindLabel(kind) {
 /**
  * @param {{ services: {
  *   api: AppApiService,
- *   events: { openTopbarEvents(callbacks: { onRefresh: () => void, onReleaseVersion?: (version: string) => void }): () => void },
+ *   events: { openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void },
  *   files: AppFileService,
  *   router: AppRouterService,
  *   runtime: {
@@ -2256,16 +2257,19 @@ export function SharedApp({ services }) {
   }, [router]);
 
   useEffect(() => {
-    const close = events.openTopbarEvents({
-      onRefresh: () => {
-        void loadRouteState(routeRef.current, 'refresh');
-      },
-      onReleaseVersion: (value) => {
-        setReleaseVersion(value);
-      },
+    const coordinator = createNotificationEventCoordinator({
+      refresh: () => loadRouteState(routeRef.current, 'refresh'),
+      onReleaseVersion: (value) => setReleaseVersion(value),
+      onNavigate: (path) => router.assign(path),
     });
-    return close;
-  }, [events]);
+    const close = events.openTopbarEvents({
+      onEvent: (event) => coordinator.handle(event),
+    });
+    return () => {
+      coordinator.dispose();
+      close();
+    };
+  }, [events, router]);
 
   useEffect(() => {
     if (!loading) {

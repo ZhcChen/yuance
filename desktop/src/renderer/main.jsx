@@ -35,7 +35,7 @@ const services = Object.freeze({
       logout: auth.logout,
       restorePendingReturnToHash() {},
     }),
-    events: createDesktopEvents(bridge?.events, router),
+    events: createDesktopEvents(bridge?.events),
     files: createDesktopAppFiles(bridge?.files, hostFiles),
     router,
     runtime: Object.freeze({
