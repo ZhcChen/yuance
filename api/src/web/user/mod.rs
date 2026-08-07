@@ -8072,6 +8072,30 @@ pub async fn system_audit_page(
     )
 }
 
+pub async fn system_api_docs_page(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
+) -> AppResult<Response> {
+    let return_to = original_uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or_else(|| original_uri.path());
+    if let Some(response) =
+        shared_system_web_app_response(&state, &headers, return_to, "system.api_tokens.view")
+            .await?
+    {
+        return Ok(response);
+    }
+    if state.pool.is_some()
+        && let Err(response) =
+            system_context_or_redirect(&state, &headers, "system.api_tokens.view").await?
+    {
+        return Ok(response);
+    }
+    Ok(crate::web::router::legacy_system_api_docs_response())
+}
+
 struct WorkItemListPageMeta {
     active: &'static str,
     title: &'static str,

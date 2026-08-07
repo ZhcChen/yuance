@@ -221,6 +221,7 @@ async fn system_api_docs_page_embeds_scalar_and_system_token_summary() {
     assert!(body.contains("url: '/api/system/openapi.json'"));
     assert!(body.contains("系统版本管理 API"));
     assert!(body.contains("进入系统 Token 管理"));
+    assert!(!body.contains("/web/app/assets/"));
 }
 
 #[tokio::test]
@@ -584,6 +585,7 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/system/permissions?q=roles",
             "/web/system/database-stats",
             "/web/system/audit?actor=admin&action=auth.login&target_type=user&target_id=7&page=2&per_page=20",
+            "/web/system/api-docs",
             "/web/system/storage?page=2&per_page=20",
             "/web/system/openapi",
             "/web/system/releases?page=2&per_page=20",

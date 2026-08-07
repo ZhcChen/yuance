@@ -585,6 +585,72 @@ async fn web_app_system_audit_owner_keeps_rust_permission_gate() {
 }
 
 #[tokio::test]
+async fn web_app_system_api_docs_owner_preserves_unauthenticated_return_path() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/api-docs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
+    assert_eq!(
+        response.headers().get(header::LOCATION).unwrap(),
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fapi-docs"
+    );
+}
+
+#[tokio::test]
+async fn web_app_system_api_docs_owner_keeps_rust_permission_gate() {
+    let _guard = env_lock().lock().expect("env lock should acquire");
+    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
+
+    let pool = test_pool().await;
+    bootstrap_admin_session(&pool).await;
+    let user_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "system_api_docs_denied".to_string(),
+            display_name: "系统文档拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let session = auth::issue_session(&pool, user_id, 3600)
+        .await
+        .expect("member session should issue");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/api-docs")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn web_app_system_owner_keeps_rust_permission_gate() {
     let _guard = env_lock().lock().expect("env lock should acquire");
     let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));

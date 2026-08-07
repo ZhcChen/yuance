@@ -564,7 +564,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::work_items_partial),
         )
         .route("/web/api-docs", get(api_docs))
-        .route("/web/system/api-docs", get(system_api_docs))
+        .route(
+            "/web/system/api-docs",
+            get(web::user::system_api_docs_page),
+        )
         .route("/api/openapi.json", get(openapi_json))
         .route("/api/system/openapi.json", get(system_openapi_json))
         .route(
@@ -2202,7 +2205,7 @@ async fn api_docs() -> impl IntoResponse {
     )
 }
 
-async fn system_api_docs() -> impl IntoResponse {
+pub(crate) fn legacy_system_api_docs_response() -> Response {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
         r#"<!doctype html>
@@ -2376,6 +2379,7 @@ async fn system_api_docs() -> impl IntoResponse {
 </body>
 </html>"#,
     )
+        .into_response()
 }
 
 async fn admin_not_found() -> impl IntoResponse {

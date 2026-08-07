@@ -2277,7 +2277,7 @@ test('shared system API docs render bounded endpoint navigation without remote S
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { source: JSON.stringify(document) } }) });
   });
 
-  await login(page, '/web/app/system/api-docs');
+  await login(page, '/web/system/api-docs');
   await expect(page).toHaveTitle('系统 API 文档 - 元策');
   await expect(page.getByRole('heading', { level: 2, name: '元策系统 API' })).toBeVisible();
   const navigation = page.getByRole('navigation', { name: 'API 端点导航' });
@@ -2295,7 +2295,7 @@ test('shared system API docs render bounded endpoint navigation without remote S
   await expect(page.locator('details', { hasText: '查看 Components' }).locator('pre')).toContainText('"Page"');
   await page.getByText('查看完整 OpenAPI JSON').click();
   await expect(page.locator('details', { hasText: '查看完整 OpenAPI JSON' }).locator('pre')).toContainText('"openapi": "3.1.0"');
-  await expect(page.getByRole('link', { name: '系统 Token 管理' })).toHaveAttribute('href', '/web/app/system/openapi');
+  await expect(page.getByRole('link', { name: '系统 Token 管理' })).toHaveAttribute('href', '/web/system/openapi');
   expect(methods.length).toBeGreaterThan(0);
   expect(methods.every((method) => method === 'GET')).toBe(true);
   expect(await page.locator('script[src*="scalar"], iframe').count()).toBe(0);
