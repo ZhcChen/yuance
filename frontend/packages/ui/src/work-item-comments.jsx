@@ -148,7 +148,7 @@ export function WorkItemComments(props) {
             const attachmentStatus = attachmentStatusByComment[String(comment.id)] || '';
             const commentUploading = uploadingCommentId === comment.id;
             return (
-              <li key={comment.id} id={`comment-${comment.id}`} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
+              <li key={comment.id} id={`comment-${comment.id}`} tabIndex={-1} className={`work-item-comment-row ${comment.is_flow ? 'is-flow' : ''}`}>
                 <div className="work-item-comment-heading">
                   <strong>{comment.author}</strong>
                   {comment.parent_comment_id ? <span className="yuance-ui-meta">回复 {comment.parent_author}</span> : null}

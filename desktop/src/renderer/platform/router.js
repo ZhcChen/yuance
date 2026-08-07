@@ -22,7 +22,7 @@ export function createDesktopRouter(dependencies = {}) {
     },
     currentRoute() {
       const shared = new URL(desktopToSharedPath(location), "https://desktop.invalid");
-      return parseAppRoute(shared.pathname, shared.search);
+      return parseAppRoute(shared.pathname, shared.search, shared.hash);
     },
     navigate(pathname, { replace = false } = {}) {
       const target = sharedToDesktopPath(pathname);

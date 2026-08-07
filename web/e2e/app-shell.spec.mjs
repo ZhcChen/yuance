@@ -2120,6 +2120,8 @@ test('message center opens semantic target and unread filter becomes empty after
     openButton.click(),
   ]);
   await expect(page).toHaveURL(/\/web\/work-items\/YCE-TASK-2(#comment-\d+)?$/);
+  const commentHash = new URL(page.url()).hash;
+  if (commentHash) await expect(page.locator(commentHash)).toBeFocused();
 
   await page.goto('/web/messages?filter=unread');
   await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeVisible();
@@ -2136,6 +2138,8 @@ test('app-owner message center opens semantic target inside app shell', async ({
     openButton.click(),
   ]);
   await expect(page).toHaveURL(/\/web\/app\/work-items\/[^#?]+(#comment-\d+)?$/);
+  const appCommentHash = new URL(page.url()).hash;
+  if (appCommentHash) await expect(page.locator(appCommentHash)).toBeFocused();
   await expect(page.locator('.work-item-detail-center').getByRole('heading', { level: 2 })).toBeVisible();
 });
 

@@ -234,7 +234,7 @@ export function buildWorkItemDetailPath({ owner = 'app', itemKey = '', commentId
   return basePath;
 }
 
-export function parseAppRoute(pathname = '/web', search = '') {
+export function parseAppRoute(pathname = '/web', search = '', hash = '') {
   const owner = normalizeOwner(pathname);
   const query = new URLSearchParams(search);
   const filter = normalizeFilter(query.get('filter') || '');
@@ -360,12 +360,15 @@ export function parseAppRoute(pathname = '/web', search = '') {
 
   const workItemDetailMatch = pathname.match(/^\/web(?:\/app)?\/work-items\/([^/]+)$/);
   if (workItemDetailMatch) {
+    const commentMatch = String(hash || '').match(/^#comment-(\d+)$/u);
+    const commentId = commentMatch ? normalizePositiveInt(commentMatch[1], 0) : 0;
     return {
       id: 'work-item-detail',
       owner,
       pathname,
       search,
       itemKey: decodeURIComponent(workItemDetailMatch[1]),
+      commentId: commentId || null,
       title: '工作项详情',
     };
   }

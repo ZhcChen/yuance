@@ -2294,7 +2294,14 @@ export function SharedApp({ services }) {
   useEffect(() => {
     if (!loading) {
       runtime.scheduleFrame(() => {
-        headingRef.current?.focus();
+        const commentId = route.id === 'work-item-detail' ? route.commentId : null;
+        const target = commentId ? runtime.getElementById(`comment-${commentId}`) : null;
+        if (target) {
+          target.focus({ preventScroll: true });
+          target.scrollIntoView({ block: 'center' });
+        } else {
+          headingRef.current?.focus();
+        }
       });
     }
   }, [loading, route]);

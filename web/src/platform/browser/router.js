@@ -4,7 +4,7 @@ import { parseAppRoute } from '@yuance/frontend-app-core';
 
 /**
  * @param {{
- *   location?: Pick<Location, 'pathname' | 'search' | 'assign'>,
+ *   location?: Pick<Location, 'pathname' | 'search' | 'hash' | 'assign'>,
  *   history?: Pick<History, 'pushState' | 'replaceState'>,
  *   eventTarget?: Pick<Window, 'addEventListener' | 'removeEventListener'>,
  *   document?: Pick<Document, 'title'>,
@@ -18,7 +18,7 @@ export function createBrowserRouter(dependencies = {}) {
 
   function currentRoute() {
     const currentLocation = location();
-    return parseAppRoute(currentLocation.pathname, currentLocation.search);
+    return parseAppRoute(currentLocation.pathname, currentLocation.search, currentLocation.hash);
   }
 
   /** @param {string} path @param {{ replace?: boolean }} [options] */
@@ -36,7 +36,7 @@ export function createBrowserRouter(dependencies = {}) {
 
   return {
     assign: (path) => location().assign(path),
-    currentPath: () => `${location().pathname}${location().search}`,
+    currentPath: () => `${location().pathname}${location().search}${location().hash}`,
     currentRoute,
     navigate,
     setTitle: (title) => { document().title = title; },

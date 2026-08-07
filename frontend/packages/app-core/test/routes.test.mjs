@@ -149,6 +149,7 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
       pathname: '/web/app/work-items/YCE-TASK-2',
       search: '',
       itemKey: 'YCE-TASK-2',
+      commentId: null,
       title: '工作项详情',
     },
   );
@@ -160,6 +161,14 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
     buildWorkItemDetailPath({ owner: 'app', itemKey: 'YCE-TASK-2', commentId: 42 }),
     '/web/app/work-items/YCE-TASK-2#comment-42',
   );
+  assert.deepEqual(
+    parseAppRoute('/web/app/work-items/YCE-TASK-2', '', '#comment-42'),
+    {
+      id: 'work-item-detail', owner: 'app', pathname: '/web/app/work-items/YCE-TASK-2', search: '',
+      itemKey: 'YCE-TASK-2', commentId: 42, title: '工作项详情',
+    },
+  );
+  assert.equal(parseAppRoute('/web/app/work-items/YCE-TASK-2', '', '#comment-invalid').commentId, null);
 });
 
 test('buildMessagesPath keeps owner-specific base path and compact query', () => {

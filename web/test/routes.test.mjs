@@ -102,6 +102,7 @@ test('parseAppRoute supports work item list filters and detail routes', () => {
       pathname: '/web/app/work-items/YCE-TASK-2',
       search: '',
       itemKey: 'YCE-TASK-2',
+      commentId: null,
       title: '工作项详情',
     },
   );

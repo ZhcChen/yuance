@@ -88,6 +88,13 @@ test("desktop router translates shared app paths and rejects absolute or encoded
   router.navigate("/web/app/projects/YCE/my-analysis");
   assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9", "/projects/YCE/my-analysis"]);
   assert.equal(updates, 3);
+  const commentRouter = createDesktopRouter({
+    location: { pathname: "/work-items/YCE-TASK-2", search: "", hash: "#comment-7" },
+    history: { pushState() {}, replaceState() {} },
+    eventTarget,
+  });
+  assert.equal(commentRouter.currentPath(), "/web/app/work-items/YCE-TASK-2#comment-7");
+  assert.equal(commentRouter.currentRoute().commentId, 7);
   assert.throws(() => router.navigate("https://attacker.test"), /not allowed/);
   assert.throws(() => router.navigate("/web/projects"), /not allowed/);
   assert.throws(() => router.navigate("/web/app/unknown"), /not allowed/);

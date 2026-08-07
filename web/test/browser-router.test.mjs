@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createBrowserRouter } from '../src/platform/browser/router.js';
 
 test('browser router owns location parsing, history and popstate subscriptions', () => {
-  const location = { pathname: '/web/app/tasks', search: '?page=2', assign() {} };
+  const location = { pathname: '/web/app/work-items/YCE-TASK-2', search: '', hash: '#comment-7', assign() {} };
   const historyCalls = [];
   const listeners = new Map();
   const eventTarget = {
@@ -22,7 +22,11 @@ test('browser router owns location parsing, history and popstate subscriptions',
     eventTarget,
   });
 
-  assert.equal(router.currentRoute().id, 'tasks');
+  assert.deepEqual(router.currentRoute(), {
+    id: 'work-item-detail', owner: 'app', pathname: '/web/app/work-items/YCE-TASK-2', search: '',
+    itemKey: 'YCE-TASK-2', commentId: 7, title: '工作项详情',
+  });
+  assert.equal(router.currentPath(), '/web/app/work-items/YCE-TASK-2#comment-7');
   router.navigate('/web/app/messages');
   router.navigate('/web/app/projects', { replace: true });
   assert.deepEqual(historyCalls, [
