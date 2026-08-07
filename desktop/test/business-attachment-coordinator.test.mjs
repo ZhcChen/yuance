@@ -26,6 +26,18 @@ test("coordinates comment upload with fixed business references", async () => {
   assert.deepEqual(calls[5], ["attachment.commentconfirm", { itemKey: "YCE-TASK-2", commentId: 4, attachmentId: 9 }]);
 });
 
+test("coordinates project attachment upload and download with project references", async () => {
+  const calls = [];
+  const coordinator = fixture({ calls, signedAttachment: attachment("uploaded") });
+  await coordinator.uploadProjectAttachment({ projectKey: "YCE", fileCapability: capability, binding, onStage: () => {}, signal: undefined });
+  assert.deepEqual(calls[1], ["attachment.projectcreate", { projectKey: "YCE", metadata }]);
+  assert.deepEqual(calls[2], ["attachment.projectuploadsign", { projectKey: "YCE", attachmentId: 9 }]);
+  assert.deepEqual(calls[5], ["attachment.projectconfirm", { projectKey: "YCE", attachmentId: 9 }]);
+  calls.length = 0;
+  await coordinator.downloadProjectAttachment({ projectKey: "YCE", attachmentId: 9, binding, signal: undefined, window: Object.freeze({ id: 1 }) });
+  assert.deepEqual(calls[0], ["attachment.projectdownloadsign", { projectKey: "YCE", attachmentId: 9 }]);
+});
+
 test("fails closed on signed metadata drift before issuing a grant", async () => {
   const calls = [];
   const coordinator = fixture({ calls, signedAttachment: { ...attachment("pending"), byte_size: 13 } });

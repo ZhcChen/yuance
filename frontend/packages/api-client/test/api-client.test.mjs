@@ -8,6 +8,7 @@ import {
   attachmentFromPayload,
   createApiClient,
   projectApiPath,
+  projectAttachmentApiPath,
   projectCycleApiPath,
   projectMemberApiPath,
   workItemApiPath,
@@ -63,6 +64,28 @@ test('project cycle methods share fixed paths and write payloads', async () => {
     ['/api/v1/projects/YCE/cycles', 'POST', { name: 'Sprint 1', goal: 'Ship', description: 'Cycle', owner_username: 'alice', start_date: '2026-08-01', end_date: '2026-08-31' }],
     ['/api/v1/projects/YCE/cycles/7', 'PATCH', { name: 'Sprint 1', goal: 'Ship', description: 'Cycle', owner_username: 'alice', start_date: '2026-08-01', end_date: '2026-08-31' }],
     ['/api/v1/projects/YCE/cycles/7/close', 'POST', undefined],
+  ]);
+});
+
+test('project attachment methods use fixed paths and filter private fields', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  const created = await client.createProjectAttachment('YCE/1', { originalFilename: 'design.pdf', contentType: 'application/pdf', byteSize: 2048 });
+  await client.getProjectAttachments('YCE/1');
+  const signed = await client.getProjectAttachmentUploadUrl('YCE/1', 7, { expiresInSeconds: 60 });
+  await client.markProjectAttachmentUploaded('YCE/1', 7);
+  await client.getProjectAttachmentDownloadUrl('YCE/1', 7);
+  await client.archiveProjectAttachment('YCE/1', 7);
+  assert.equal(projectAttachmentApiPath('YCE/1', 7), '/api/v1/projects/YCE%2F1/attachments/7');
+  assert.equal(Object.hasOwn(created, 'object_key'), false);
+  assert.equal(Object.hasOwn(signed.attachment, 'file_object_id'), false);
+  assert.deepEqual(writes, ['prepare', 'prepare', 'prepare']);
+  assert.deepEqual(calls.map(({ url, options }) => [url, options.method || 'GET']), [
+    ['/api/v1/projects/YCE%2F1/attachments', 'POST'],
+    ['/api/v1/projects/YCE%2F1/attachments', 'GET'],
+    ['/api/v1/projects/YCE%2F1/attachments/7/upload-url?expires_in_seconds=60', 'GET'],
+    ['/api/v1/projects/YCE%2F1/attachments/7/uploaded', 'POST'],
+    ['/api/v1/projects/YCE%2F1/attachments/7/download-url', 'GET'],
+    ['/api/v1/projects/YCE%2F1/attachments/7', 'DELETE'],
   ]);
 });
 

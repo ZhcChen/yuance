@@ -47,6 +47,8 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["project.cyclecreate", projectCycleCreateOperation],
     ["project.cycleupdate", projectCycleUpdateOperation],
     ["project.cycleclose", projectCycleCloseOperation],
+    ["project.attachments", projectAttachmentsOperation],
+    ["project.attachmentarchive", projectAttachmentArchiveOperation],
     ["project.current", noInputOperation("GET", "/api/v1/current-project", parseCurrentProject, true, "nullable-object")],
     ["project.select", projectSelectOperation],
     ["notification.list", notificationListOperation],
@@ -182,6 +184,16 @@ function projectCycleUpdateOperation(input) {
 function projectCycleCloseOperation(input) {
   exactKeys(input, ["cycleId", "projectKey"]);
   return descriptor("POST", `/api/v1/projects/${projectKey(input.projectKey)}/cycles/${positiveInteger(input.cycleId)}/close`, parseProjectCycle, false);
+}
+
+function projectAttachmentsOperation(input) {
+  exactKeys(input, ["projectKey"]);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/attachments`, parseAttachments, true, "array");
+}
+
+function projectAttachmentArchiveOperation(input) {
+  exactKeys(input, ["attachmentId", "projectKey"]);
+  return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/attachments/${positiveInteger(input.attachmentId)}`, parseAttachment, false);
 }
 
 function projectCycleBody(input) {

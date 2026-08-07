@@ -23,6 +23,11 @@ test("builds fixed main-only work item and comment attachment descriptors", () =
     registry.resolve("attachment.workitemdownloadsign", { itemKey: "YCE-TASK-2", attachmentId: 9 }).path,
     "/api/v1/work-items/YCE-TASK-2/attachments/9/download-url?expires_in_seconds=60",
   );
+  assert.equal(registry.resolve("attachment.projectcreate", { projectKey: "YCE", metadata }).path, "/api/v1/projects/YCE/attachments");
+  assert.equal(registry.resolve("attachment.projectuploadsign", { projectKey: "YCE", attachmentId: 9 }).path, "/api/v1/projects/YCE/attachments/9/upload-url?expires_in_seconds=60");
+  assert.equal(registry.resolve("attachment.projectdownloadsign", { projectKey: "YCE", attachmentId: 9 }).path, "/api/v1/projects/YCE/attachments/9/download-url?expires_in_seconds=60");
+  assert.equal(createOperationRegistry().resolve("project.attachments", { projectKey: "YCE" }).path, "/api/v1/projects/YCE/attachments");
+  assert.equal(createOperationRegistry().resolve("project.attachmentarchive", { projectKey: "YCE", attachmentId: 9 }).method, "DELETE");
 });
 
 test("signed responses become private transfer inputs and public attachment DTOs", () => {

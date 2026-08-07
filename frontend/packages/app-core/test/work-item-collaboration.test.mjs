@@ -308,6 +308,8 @@ test('desktop delegated attachment upload preserves stages without exposing sign
         uploadWorkItemCommentAttachment: async () => ({ created, uploaded }),
         downloadWorkItemAttachment: async () => ({ status: 'completed' }),
         downloadWorkItemCommentAttachment: async () => ({ status: 'completed' }),
+        uploadProjectAttachment: async () => ({ created, uploaded }),
+        downloadProjectAttachment: async () => ({ status: 'completed' }),
         revealDownload: async () => ({ status: 'revealed' }),
       },
     },
@@ -347,6 +349,8 @@ test('desktop delegated attachment download avoids renderer signing and honors c
         return { status: /** @type {const} */ ('cancelled') };
       },
       downloadWorkItemCommentAttachment: async () => ({ status: /** @type {const} */ ('completed') }),
+      uploadProjectAttachment: async () => { throw new Error('unused'); },
+      downloadProjectAttachment: async () => ({ status: /** @type {const} */ ('completed') }),
       revealDownload: async () => ({ status: /** @type {const} */ ('revealed') }),
     },
   };

@@ -28,6 +28,10 @@ export function createBusinessAttachmentCoordinator({
     return uploadAttachment("comment", input);
   }
 
+  async function uploadProjectAttachment(input) {
+    return uploadAttachment("project", input);
+  }
+
   async function uploadAttachment(target, input) {
     const { reference, fileCapability, binding, signal, onStage } = parseUploadInput(target, input);
     const uploadBinding = Object.freeze({ ...binding, purpose: "upload" });
@@ -72,6 +76,10 @@ export function createBusinessAttachmentCoordinator({
     return downloadAttachment("comment", input);
   }
 
+  async function downloadProjectAttachment(input) {
+    return downloadAttachment("project", input);
+  }
+
   async function downloadAttachment(target, input) {
     const { reference, binding, signal, window } = parseDownloadInput(target, input);
     const signed = await restTransport.execute(`attachment.${target}downloadsign`, reference);
@@ -107,15 +115,17 @@ export function createBusinessAttachmentCoordinator({
   return Object.freeze({
     uploadWorkItemAttachment,
     uploadWorkItemCommentAttachment,
+    uploadProjectAttachment,
     downloadWorkItemAttachment,
     downloadWorkItemCommentAttachment,
+    downloadProjectAttachment,
   });
 }
 
 function parseUploadInput(target, input) {
   const allowed = target === "comment"
     ? ["binding", "commentId", "fileCapability", "itemKey", "onStage", "signal"]
-    : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
+    : target === "project" ? ["binding", "fileCapability", "onStage", "projectKey", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
   exactInput(input, allowed);
   if (typeof input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(input.fileCapability) || typeof input.onStage !== "function") throw new TypeError("Attachment upload input is invalid");
   validateBinding(input.binding);
@@ -132,7 +142,7 @@ function parseUploadInput(target, input) {
 function parseDownloadInput(target, input) {
   const allowed = target === "comment"
     ? ["attachmentId", "binding", "commentId", "itemKey", "signal", "window"]
-    : ["attachmentId", "binding", "itemKey", "signal", "window"];
+    : target === "project" ? ["attachmentId", "binding", "projectKey", "signal", "window"] : ["attachmentId", "binding", "itemKey", "signal", "window"];
   exactInput(input, allowed);
   validateBinding(input.binding);
   validateSignal(input.signal);
@@ -141,7 +151,7 @@ function parseDownloadInput(target, input) {
 
 function attachmentReference(target, input, includeAttachment) {
   return Object.freeze({
-    itemKey: input.itemKey,
+    ...(target === "project" ? { projectKey: input.projectKey } : { itemKey: input.itemKey }),
     ...(target === "comment" ? { commentId: input.commentId } : {}),
     ...(includeAttachment ? { attachmentId: input.attachmentId } : {}),
   });

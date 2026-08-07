@@ -102,8 +102,10 @@ const bridge = Object.freeze({
     downloadCanary() { return ipcRenderer.invoke("yuance:file-download-canary"); },
     uploadWorkItemAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-work-item-attachment", input, onStage); },
     uploadWorkItemCommentAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-work-item-comment-attachment", input, onStage); },
+    uploadProjectAttachment(input, onStage) { return invokeAttachmentUpload("yuance:file-upload-project-attachment", input, onStage); },
     downloadWorkItemAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-attachment", input); },
     downloadWorkItemCommentAttachment(input) { return ipcRenderer.invoke("yuance:file-download-work-item-comment-attachment", input); },
+    downloadProjectAttachment(input) { return ipcRenderer.invoke("yuance:file-download-project-attachment", input); },
     revealDownload(capability) { return ipcRenderer.invoke("yuance:file-reveal-download", capability); },
   }),
   events: Object.freeze({

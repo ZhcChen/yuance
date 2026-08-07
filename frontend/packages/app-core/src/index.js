@@ -20,9 +20,11 @@ export {
   createWorkItemComment,
   downloadWorkItemAttachment,
   downloadWorkItemCommentAttachment,
+  downloadProjectAttachment,
   handoffWorkItem,
   saveWorkItem,
   updateWorkItemComment,
   uploadWorkItemAttachment,
   uploadWorkItemCommentAttachment,
+  uploadProjectAttachment,
 } from './work-item-collaboration.js';

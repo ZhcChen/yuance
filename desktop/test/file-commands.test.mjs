@@ -20,8 +20,10 @@ function fixture() {
     attachmentCoordinator: {
       uploadWorkItemAttachment: async (input) => { calls.push(["attachment-upload", input]); input.onStage("registering"); input.onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       uploadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-upload", input]); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
+      uploadProjectAttachment: async (input) => { calls.push(["project-attachment-upload", input]); input.onStage("registering"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       downloadWorkItemAttachment: async (input) => { calls.push(["attachment-download", input]); return { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }; },
       downloadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-download", input]); return { status: "cancelled" }; },
+      downloadProjectAttachment: async (input) => { calls.push(["project-attachment-download", input]); return { status: "completed", filename: "project.txt", byteSize: 12 }; },
     },
     revealController: { reveal: async (capability, binding) => { calls.push(["reveal", capability, binding]); return { status: "revealed", path: "/secret" }; } },
   });
@@ -64,6 +66,8 @@ test("business attachment commands publish bounded progress and public results",
     ["send", FILE_CHANNELS.attachmentProgress, { operationId, stage: "uploading" }],
   ]);
   assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadWorkItemAttachment)(value.event, { itemKey: "YCE-TASK-2", attachmentId: 9, suggestedFilename: "ignored.txt" }), { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"b".repeat(32)}` });
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.uploadProjectAttachment)(value.event, { operationId, input: { projectKey: "YCE", fileCapability: `yfc_${"a".repeat(32)}` } }), { created: attachment("pending"), uploaded: attachment("uploaded") });
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadProjectAttachment)(value.event, { projectKey: "YCE", attachmentId: 9, suggestedFilename: "ignored.txt" }), { status: "completed", filename: "project.txt", byteSize: 12 });
   assert.equal(JSON.stringify(result).includes("/secret"), false);
 });
 

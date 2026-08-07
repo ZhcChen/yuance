@@ -15,8 +15,10 @@ export function createDesktopAppFiles(bridge, hostFiles = createDesktopFiles(bri
   const attachments = defineHostDelegatedAttachmentCapabilities({
     uploadWorkItemAttachment: async (input, onStage) => normalizeUploadResult(await requireOperation(bridge, "uploadWorkItemAttachment")(input, onStage)),
     uploadWorkItemCommentAttachment: async (input, onStage) => normalizeUploadResult(await requireOperation(bridge, "uploadWorkItemCommentAttachment")(input, onStage)),
+    uploadProjectAttachment: async (input, onStage) => normalizeUploadResult(await requireOperation(bridge, "uploadProjectAttachment")(input, onStage)),
     downloadWorkItemAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadWorkItemAttachment")(input)),
     downloadWorkItemCommentAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadWorkItemCommentAttachment")(input)),
+    downloadProjectAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadProjectAttachment")(input)),
     revealDownload: async (capability) => normalizeReveal(await requireOperation(bridge, "revealDownload")(capability)),
   });
   return Object.freeze({

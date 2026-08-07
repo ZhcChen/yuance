@@ -118,8 +118,10 @@ test("desktop app file adapter delegates business attachments and rejects signed
     downloadCanary: async () => ({ status: "completed" }),
     uploadWorkItemAttachment: async (input, onStage) => { calls.push(input); onStage("uploading"); return { created: attachment("pending"), uploaded: attachment("uploaded"), url: "https://secret" }; },
     uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadProjectAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
+    downloadProjectAttachment: async () => ({ status: "cancelled" }),
     revealDownload: async (capability) => { calls.push(capability); return { status: "revealed", path: "/secret" }; },
   };
   const platform = createDesktopAppFiles(bridge);

@@ -210,6 +210,22 @@ export function uploadWorkItemAttachment({ api, platform, itemKey, file, lifecyc
   });
 }
 
+export function uploadProjectAttachment({ api, platform, projectKey, file, lifecycle }) {
+  const attachments = platform.attachments;
+  if (typeof attachments?.uploadProjectAttachment === 'function') {
+    return uploadDelegatedAttachment({
+      execute: (onStage) => attachments.uploadProjectAttachment({ projectKey, fileCapability: file.capability }, onStage),
+      lifecycle,
+    });
+  }
+  return uploadAttachment({
+    create: (payload) => api.createProjectAttachment(projectKey, payload),
+    sign: (attachment) => api.getProjectAttachmentUploadUrl(projectKey, attachment.id),
+    confirm: (attachment) => api.markProjectAttachmentUploaded(projectKey, attachment.id),
+    platform, file, lifecycle,
+  });
+}
+
 /**
  * @template {{ id: number }} T
  * @param {{
@@ -290,6 +306,18 @@ export function downloadWorkItemAttachment({ api, platform, itemKey, attachmentI
     platform,
     suggestedFilename,
     isCurrent,
+  });
+}
+
+export function downloadProjectAttachment({ api, platform, projectKey, attachmentId, suggestedFilename, isCurrent }) {
+  if (typeof platform.attachments?.downloadProjectAttachment === 'function') {
+    if (!isCurrent()) return Promise.resolve({ completed: false, revealCapability: null });
+    return platform.attachments.downloadProjectAttachment({ projectKey, attachmentId, suggestedFilename })
+      .then((result) => ({ completed: result.status === 'completed' && isCurrent(), revealCapability: result.revealCapability || null }));
+  }
+  return downloadAttachment({
+    getSignedRequest: () => api.getProjectAttachmentDownloadUrl(projectKey, attachmentId),
+    platform, suggestedFilename, isCurrent,
   });
 }
 

@@ -1,4 +1,5 @@
 const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
+const PROJECT_KEY = /^[A-Z][A-Z0-9-]{1,31}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
@@ -6,12 +7,16 @@ export function createAttachmentOperationRegistry() {
   const operations = new Map([
     ["attachment.workitemcreate", createOperation("work-item")],
     ["attachment.commentcreate", createOperation("comment")],
+    ["attachment.projectcreate", createOperation("project")],
     ["attachment.workitemuploadsign", signOperation("work-item", "upload")],
     ["attachment.commentuploadsign", signOperation("comment", "upload")],
+    ["attachment.projectuploadsign", signOperation("project", "upload")],
     ["attachment.workitemconfirm", confirmOperation("work-item")],
     ["attachment.commentconfirm", confirmOperation("comment")],
+    ["attachment.projectconfirm", confirmOperation("project")],
     ["attachment.workitemdownloadsign", signOperation("work-item", "download")],
     ["attachment.commentdownloadsign", signOperation("comment", "download")],
+    ["attachment.projectdownloadsign", signOperation("project", "download")],
   ]);
   return Object.freeze({
     resolve(name, input) {
@@ -23,7 +28,7 @@ export function createAttachmentOperationRegistry() {
 
 function createOperation(target) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["commentId", "itemKey", "metadata"] : ["itemKey", "metadata"]);
+    exactKeys(input, target === "comment" ? ["commentId", "itemKey", "metadata"] : target === "project" ? ["metadata", "projectKey"] : ["itemKey", "metadata"]);
     const reference = parseReference(input, target, false);
     const metadata = parseMetadata(input.metadata);
     return descriptor("POST", collectionPath(reference, target), parsePublicAttachment, false, JSON.stringify({
@@ -37,7 +42,7 @@ function createOperation(target) {
 
 function signOperation(target, purpose) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : ["attachmentId", "itemKey"]);
+    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : ["attachmentId", "itemKey"]);
     const reference = parseReference(input, target, true);
     return descriptor("GET", `${memberPath(reference, target)}/${purpose}-url?expires_in_seconds=60`, (value) => parseSignedAttachment(value, purpose));
   };
@@ -45,7 +50,7 @@ function signOperation(target, purpose) {
 
 function confirmOperation(target) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : ["attachmentId", "itemKey"]);
+    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : ["attachmentId", "itemKey"]);
     const reference = parseReference(input, target, true);
     return descriptor("POST", `${memberPath(reference, target)}/uploaded`, parsePublicAttachment, false);
   };
@@ -56,13 +61,15 @@ function descriptor(method, path, parse, idempotent = true, body) {
 }
 
 function parseReference(input, target, needsAttachment) {
-  const itemKey = parseItemKey(input.itemKey);
+  const itemKey = target === "project" ? undefined : parseItemKey(input.itemKey);
+  const projectKey = target === "project" ? parseProjectKey(input.projectKey) : undefined;
   const commentId = target === "comment" ? positiveInteger(input.commentId, "commentId") : undefined;
   const attachmentId = needsAttachment ? positiveInteger(input.attachmentId, "attachmentId") : undefined;
-  return Object.freeze({ itemKey, commentId, attachmentId });
+  return Object.freeze({ itemKey, projectKey, commentId, attachmentId });
 }
 
 function collectionPath(reference, target) {
+  if (target === "project") return `/api/v1/projects/${encodeURIComponent(reference.projectKey)}/attachments`;
   const base = `/api/v1/work-items/${encodeURIComponent(reference.itemKey)}`;
   return target === "comment" ? `${base}/comments/${reference.commentId}/attachments` : `${base}/attachments`;
 }
@@ -124,6 +131,7 @@ function parsePublicAttachment(value) {
 }
 
 function parseItemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
+function parseProjectKey(value) { if (typeof value !== "string" || !PROJECT_KEY.test(value)) throw new TypeError("projectKey is invalid"); return value; }
 function positiveInteger(value, name) { return boundedInteger(value, 1, Number.MAX_SAFE_INTEGER, name); }
 function boundedInteger(value, minimum, maximum, name = "integer") { if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new TypeError(`${name} is invalid`); return value; }
 function boundedString(value, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError("string field is invalid"); return value; }
