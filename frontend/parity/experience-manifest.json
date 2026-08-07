@@ -166,8 +166,8 @@
       "states": ["loading", "ready", "tab-synced", "empty-section", "editing", "submitting", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md", "docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md", "docs/reviews/2026-08-07-006-web-desktop-u3-project-attachments-review.md"] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "api/tests/routing_smoke.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/desktop-business-file-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md", "docs/reviews/2026-08-07-005-web-desktop-u3-project-cycles-review.md", "docs/reviews/2026-08-07-006-web-desktop-u3-project-attachments-review.md", "docs/reviews/2026-08-07-016-web-desktop-u3-project-resource-create-attachments-review.md", "docs/reviews/2026-08-07-017-web-desktop-u3-project-personal-analysis-review.md", "docs/reviews/2026-08-07-018-web-desktop-u3-formal-web-cutover-review.md", "docs/reviews/2026-08-07-019-web-desktop-u3-closure-review.md"] }
     },
     {
       "id": "page.project.cycle-detail",
@@ -196,8 +196,8 @@
       "states": ["loading", "locked", "unlocking", "ready", "editing", "uploading", "archived", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/ui/test/rich-text.test.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/app-bundle-verification.test.mjs"], "reviews": ["docs/reviews/2026-08-07-009-web-desktop-u3-project-resource-read-unlock-review.md", "docs/reviews/2026-08-07-014-web-desktop-u3-project-resource-rich-text-review.md"] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/ui/test/rich-text.test.mjs", "api/tests/device_business_parity_flow.rs", "api/tests/routing_smoke.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/desktop-business-file-integration.test.mjs", "desktop/test/app-bundle-verification.test.mjs"], "reviews": ["docs/reviews/2026-08-07-009-web-desktop-u3-project-resource-read-unlock-review.md", "docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md", "docs/reviews/2026-08-07-011-web-desktop-u3-project-resource-password-reset-review.md", "docs/reviews/2026-08-07-012-web-desktop-u3-project-resource-attachment-lifecycle-review.md", "docs/reviews/2026-08-07-013-web-desktop-u3-project-resource-attachment-preview-review.md", "docs/reviews/2026-08-07-014-web-desktop-u3-project-resource-rich-text-review.md", "docs/reviews/2026-08-07-015-web-desktop-u3-project-resource-inline-attachments-review.md", "docs/reviews/2026-08-07-016-web-desktop-u3-project-resource-create-attachments-review.md", "docs/reviews/2026-08-07-018-web-desktop-u3-formal-web-cutover-review.md", "docs/reviews/2026-08-07-019-web-desktop-u3-closure-review.md"] }
     },
     {
       "id": "page.project.personal-analysis",
@@ -756,8 +756,8 @@
       "realtimeEffect": "项目资源列表和活动流失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/ui/test/rich-text.test.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/app-bundle-verification.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md", "docs/reviews/2026-08-07-014-web-desktop-u3-project-resource-rich-text-review.md"] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/project-resource-creation.test.mjs", "frontend/packages/ui/test/rich-text.test.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/app-bundle-verification.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md", "docs/reviews/2026-08-07-014-web-desktop-u3-project-resource-rich-text-review.md", "docs/reviews/2026-08-07-016-web-desktop-u3-project-resource-create-attachments-review.md", "docs/reviews/2026-08-07-019-web-desktop-u3-closure-review.md"] }
     },
     {
       "id": "action.project.resource.unlock",
@@ -812,8 +812,8 @@
       "realtimeEffect": "资源详情和项目资源列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "in_progress",
-      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/ui/test/rich-text.test.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/app-bundle-verification.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md", "docs/reviews/2026-08-07-014-web-desktop-u3-project-resource-rich-text-review.md"] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/ui/test/rich-text.test.mjs", "api/tests/device_business_parity_flow.rs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs", "desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs", "desktop/test/app-bundle-verification.test.mjs"], "reviews": ["docs/reviews/2026-08-07-010-web-desktop-u3-project-resource-mutations-review.md", "docs/reviews/2026-08-07-014-web-desktop-u3-project-resource-rich-text-review.md", "docs/reviews/2026-08-07-015-web-desktop-u3-project-resource-inline-attachments-review.md", "docs/reviews/2026-08-07-019-web-desktop-u3-closure-review.md"] }
     },
     {
       "id": "action.project.resource.archive",
