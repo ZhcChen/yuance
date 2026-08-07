@@ -2139,6 +2139,79 @@ async fn api_system_database_stats_requires_permission_and_returns_snapshot() {
 }
 
 #[tokio::test]
+async fn api_system_roles_view_returns_atomic_selection_permissions_and_capabilities() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    for index in 1..=11 {
+        let role_code = format!("atomic_role_{index:02}");
+        rbac::create_role(&pool, &role_code, &format!("原子角色 {index:02}"), "all")
+            .await
+            .expect("role should create");
+    }
+    rbac::replace_role_permissions(
+        &pool,
+        "atomic_role_11",
+        &["system.dashboard.view".to_string()],
+    )
+    .await
+    .expect("role permissions should update");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/roles-view?role=atomic_role_11")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload: Value = serde_json::from_str(&response_body(response).await)
+        .expect("roles view response should be JSON");
+    assert_eq!(payload["data"]["items"].as_array().map(Vec::len), Some(10));
+    assert_eq!(payload["data"]["pagination"]["page"], 1);
+    assert_eq!(payload["data"]["pagination"]["per_page"], 10);
+    assert_eq!(payload["data"]["pagination"]["total_items"], 13);
+    assert_eq!(payload["data"]["pagination"]["total_pages"], 2);
+    assert_eq!(
+        payload["data"]["selected_role"]["role_code"],
+        "atomic_role_11"
+    );
+    assert_eq!(payload["data"]["can_manage_roles"], true);
+    assert_eq!(payload["data"]["can_edit_permissions"], true);
+    assert!(
+        payload["data"]["permissions"]
+            .as_array()
+            .is_some_and(|permissions| permissions.iter().any(|permission| {
+                permission["permission_key"] == "system.dashboard.view"
+                    && permission["granted"] == true
+            }))
+    );
+
+    let system_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/roles-view?role=system_admin&page=2")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(system_response.status(), StatusCode::OK);
+    let system_payload: Value = serde_json::from_str(&response_body(system_response).await)
+        .expect("roles view response should be JSON");
+    assert_eq!(
+        system_payload["data"]["selected_role"]["role_code"],
+        "system_admin"
+    );
+    assert_eq!(system_payload["data"]["can_edit_permissions"], false);
+}
+
+#[tokio::test]
 async fn api_system_user_management_flow_uses_rbac_and_csrf() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

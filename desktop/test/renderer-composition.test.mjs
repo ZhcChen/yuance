@@ -89,8 +89,9 @@ test("desktop router translates shared app paths and rejects absolute or encoded
   router.navigate("/web/app/projects/YCE/my-analysis");
   router.navigate("/web/app/system");
   router.navigate("/web/app/system/users?page=2&per_page=20");
-  assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9", "/projects/YCE/my-analysis", "/system", "/system/users?page=2&per_page=20"]);
-  assert.equal(updates, 5);
+  router.navigate("/web/app/system/roles?role=qa_lead&page=2&per_page=20");
+  assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9", "/projects/YCE/my-analysis", "/system", "/system/users?page=2&per_page=20", "/system/roles?role=qa_lead&page=2&per_page=20"]);
+  assert.equal(updates, 6);
   const systemUsersRouter = createDesktopRouter({
     location: { pathname: "/system/users", search: "?page=2&per_page=20", hash: "" },
     history: { pushState() {}, replaceState() {} },
@@ -100,6 +101,16 @@ test("desktop router translates shared app paths and rejects absolute or encoded
   assert.deepEqual(systemUsersRouter.currentRoute(), {
     id: "system-users", owner: "app", pathname: "/web/app/system/users", search: "?page=2&per_page=20",
     page: 2, perPage: 20, title: "用户管理",
+  });
+  const systemRolesRouter = createDesktopRouter({
+    location: { pathname: "/system/roles", search: "?role=qa_lead&page=2&per_page=20", hash: "" },
+    history: { pushState() {}, replaceState() {} },
+    eventTarget,
+  });
+  assert.equal(systemRolesRouter.currentPath(), "/web/app/system/roles?role=qa_lead&page=2&per_page=20");
+  assert.deepEqual(systemRolesRouter.currentRoute(), {
+    id: "system-roles", owner: "app", pathname: "/web/app/system/roles", search: "?role=qa_lead&page=2&per_page=20",
+    role: "qa_lead", page: 2, perPage: 20, title: "角色权限",
   });
   const commentRouter = createDesktopRouter({
     location: { pathname: "/work-items/YCE-TASK-2", search: "", hash: "#comment-7" },

@@ -22,6 +22,7 @@ export {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemRolesPath,
   buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,

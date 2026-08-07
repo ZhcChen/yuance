@@ -25,6 +25,18 @@ test('system users view preserves compact pagination query', async () => {
   assert.deepEqual(calls, ['/api/v1/system/users-view', '/api/v1/system/users-view?page=3&per_page=20']);
 });
 
+test('system roles view preserves compact selection and pagination query', async () => {
+  const calls = [];
+  const client = createSystemClient({ request: async (url) => {
+    calls.push(url);
+    return { items: [] };
+  } });
+
+  await client.getSystemRolesView();
+  await client.getSystemRolesView({ role: 'qa lead', page: 3, perPage: 20 });
+  assert.deepEqual(calls, ['/api/v1/system/roles-view', '/api/v1/system/roles-view?role=qa+lead&page=3&per_page=20']);
+});
+
 test('system user mutations use fixed JSON contracts after write preparation', async () => {
   const calls = [];
   const client = createSystemClient({

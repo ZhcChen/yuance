@@ -44,6 +44,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["system.usersview", systemUsersViewOperation],
+    ["system.rolesview", systemRolesViewOperation],
     ["system.usercreate", systemUserCreateOperation],
     ["system.userstatusupdate", systemUserStatusUpdateOperation],
     ["system.userroleupdate", systemUserRoleUpdateOperation],
@@ -423,6 +424,14 @@ function systemUsersViewOperation(input) {
   const query = new URLSearchParams();
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/users-view", query), parseSystemUsersView);
+}
+
+function systemRolesViewOperation(input) {
+  exactKeys(input, ["page", "perPage", "role"]);
+  const query = new URLSearchParams();
+  if (input.role !== undefined && boundedText(input.role, "role", 64).trim()) query.set("role", boundedText(input.role, "role", 64).trim());
+  appendPagination(query, input);
+  return descriptor("GET", withQuery("/api/v1/system/roles-view", query), parseSystemRolesView);
 }
 
 function systemUserCreateOperation(input) {
@@ -809,6 +818,26 @@ function parseSystemUsersView(data) {
     }),
     can_manage_users: boolean,
     can_manage_user_projects: boolean,
+  });
+}
+function parseSystemRole(data) { return freezeExactDto(data, {
+  role_code: shortString, role_name: textString, status: shortString, is_system: boolean,
+  data_scope_type: shortString, permission_count: nonNegativeInteger,
+}); }
+function parseSystemPermission(data) { return freezeExactDto(data, {
+  permission_key: shortString, permission_name: textString, resource_type: shortString,
+  resource_key: shortString, granted: boolean,
+}); }
+function parseSystemRolesView(data) {
+  return freezeExactDto(data, {
+    items: (items) => boundedArray(items, parseSystemRole, 100, "system roles"),
+    selected_role: (role) => role === null ? null : parseSystemRole(role),
+    permissions: (permissions) => boundedArray(permissions, parseSystemPermission, 500, "system permissions"),
+    pagination: (pagination) => freezeExactDto(pagination, {
+      page: positiveInteger, per_page: positiveInteger, total_items: nonNegativeInteger, total_pages: positiveInteger,
+    }),
+    can_manage_roles: boolean,
+    can_edit_permissions: boolean,
   });
 }
 function parseSystemUserView(data) { return freezeExactDto(data, {

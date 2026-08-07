@@ -114,6 +114,17 @@ export function buildSystemUsersPath({ owner = 'web', page = DEFAULT_PAGE, perPa
   return params.size ? `${base}?${params.toString()}` : base;
 }
 
+export function buildSystemRolesPath({ owner = 'web', role = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (typeof role === 'string' && role.trim()) params.set('role', role.trim());
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/roles' : '/web/system/roles';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
 export function buildSearchPath({ owner = 'web', q = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -320,6 +331,19 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       page,
       perPage,
       title: '用户管理',
+    };
+  }
+
+  if (pathname === '/web/system/roles' || pathname === '/web/app/system/roles') {
+    return {
+      id: 'system-roles',
+      owner,
+      pathname,
+      search,
+      role: (query.get('role') || '').trim(),
+      page,
+      perPage,
+      title: '角色权限',
     };
   }
 

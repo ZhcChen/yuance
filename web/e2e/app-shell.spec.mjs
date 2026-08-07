@@ -2188,6 +2188,40 @@ test('shared system users view renders atomic rows and preserves pagination in t
   await expect.poll(() => requests).toContain('?per_page=20');
 });
 
+test('shared system roles view renders atomic selection and permissions in the app owner', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/roles-view*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push(url.search);
+    const roleCode = url.searchParams.get('role') || 'system_admin';
+    const currentPage = Number(url.searchParams.get('page') || 1);
+    const perPage = Number(url.searchParams.get('per_page') || 10);
+    const selected = {
+      role_code: roleCode, role_name: roleCode === 'qa_lead' ? '质量负责人' : '系统管理员', status: 'active',
+      is_system: roleCode === 'system_admin', data_scope_type: 'all', permission_count: 1,
+    };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      items: [selected], selected_role: selected,
+      permissions: [
+        { permission_key: 'system.dashboard.view', permission_name: '查看系统管理', resource_type: 'system', resource_key: 'dashboard', granted: true },
+        { permission_key: 'system.users.manage', permission_name: '管理用户', resource_type: 'system', resource_key: 'users', granted: false },
+      ],
+      pagination: { page: currentPage, per_page: perPage, total_items: 21, total_pages: Math.ceil(21 / perPage) },
+      can_manage_roles: true, can_edit_permissions: !selected.is_system,
+    } }) });
+  });
+
+  await login(page, '/web/app/system/roles?role=qa_lead&page=2&per_page=20');
+  await expect(page).toHaveTitle('角色权限 - 元策');
+  await expect(page.getByRole('heading', { level: 1, name: '角色权限' })).toBeVisible();
+  await expect(page.getByRole('table', { name: '系统角色列表' })).toContainText('质量负责人');
+  const permissions = page.getByRole('table', { name: '角色权限集合' });
+  await expect(permissions).toContainText('查看系统管理');
+  await expect(permissions.getByRole('checkbox', { name: '查看系统管理 已授权' })).toBeChecked();
+  await expect(permissions.getByRole('checkbox', { name: '管理用户 未授权' })).not.toBeChecked();
+  await expect.poll(() => requests).toContain('?role=qa_lead&page=2&per_page=20');
+});
+
 test('shared system users core mutations use the same confirmed interaction contract', async ({ page }) => {
   const mutations = [];
   const user = {

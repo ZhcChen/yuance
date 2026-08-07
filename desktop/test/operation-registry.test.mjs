@@ -37,6 +37,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["shell.topbar", {}, "/api/v1/topbar/status"],
     ["system.dashboard", {}, "/api/v1/system/dashboard"],
     ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
+    ["system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }, "/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20"],
     ["search.list", { q: " 登录失败 ", page: 2, perPage: 20 }, "/api/v1/search?q=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5&page=2&per_page=20"],
     ["project.list", {}, "/api/v1/projects"],
     ["project.list", { status: "in_progress", page: 2, perPage: 25 }, "/api/v1/projects?status=in_progress&page=2&per_page=25"],
@@ -87,6 +88,22 @@ test("system dashboard response is bounded to fixed web navigation fields", () =
   assert.deepEqual(result, { links: [{ id: "users", title: "用户管理", description: "账号管理。", path: "/web/system/users" }] });
   assert.throws(() => parse({ links: [{ id: "users", title: "用户管理", description: "账号管理。", path: "https://evil.example" }] }), /path/i);
   assert.throws(() => parse({ links: [], token: "secret" }), /response|fields/i);
+});
+
+test("system roles view response is bounded to the atomic role contract", () => {
+  const parse = createOperationRegistry().resolve("system.rolesview", { role: "qa_lead" }).parse;
+  const payload = {
+    items: [{ role_code: "qa_lead", role_name: "质量负责人", status: "active", is_system: false, data_scope_type: "all", permission_count: 1 }],
+    selected_role: { role_code: "qa_lead", role_name: "质量负责人", status: "active", is_system: false, data_scope_type: "all", permission_count: 1 },
+    permissions: [{ permission_key: "system.dashboard.view", permission_name: "查看系统管理", resource_type: "system", resource_key: "dashboard", granted: true }],
+    pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 },
+    can_manage_roles: true,
+    can_edit_permissions: true,
+  };
+  const result = parse(payload);
+  assert.deepEqual(result, payload);
+  assert.ok(Object.isFrozen(result));
+  assert.throws(() => parse({ ...payload, private_key: "secret" }), /fields are invalid/i);
 });
 
 test("rejects invalid business identifiers, filters and pagination", () => {

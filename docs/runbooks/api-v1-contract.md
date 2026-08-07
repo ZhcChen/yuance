@@ -892,12 +892,15 @@ PATCH /api/v1/system/users/{username}/projects/{project_key}/role
 
 ```text
 GET   /api/v1/system/roles
+GET   /api/v1/system/roles-view
 POST  /api/v1/system/roles
 PATCH /api/v1/system/roles/{role_code}/status
 GET   /api/v1/system/roles/{role_code}/permissions
 PATCH /api/v1/system/roles/{role_code}/permissions
 GET   /api/v1/system/permissions
 ```
+
+`roles-view` 是 Web 与 Desktop 共享角色工作台的原子读取入口，返回当前分页角色、选中角色、完整权限集合和服务端计算的角色管理能力；默认每页 10 条。
 
 数据库统计：
 

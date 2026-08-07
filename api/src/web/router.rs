@@ -688,6 +688,10 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::list_system_roles).post(web::api::create_system_role),
         )
         .route(
+            "/api/v1/system/roles-view",
+            get(web::api::get_system_roles_view),
+        )
+        .route(
             "/api/v1/system/roles/{role_code}/status",
             patch(web::api::update_system_role_status),
         )

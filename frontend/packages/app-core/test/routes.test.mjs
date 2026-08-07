@@ -12,6 +12,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemRolesPath,
   buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
@@ -32,6 +33,15 @@ test('system users route preserves owner and pagination', () => {
   assert.deepEqual(parseAppRoute('/web/system/users', '?page=2&per_page=20'), {
     id: 'system-users', owner: 'web', pathname: '/web/system/users', search: '?page=2&per_page=20',
     page: 2, perPage: 20, title: '用户管理',
+  });
+});
+
+test('system roles route preserves owner selection and pagination', () => {
+  assert.equal(buildSystemRolesPath({ owner: 'web' }), '/web/system/roles');
+  assert.equal(buildSystemRolesPath({ owner: 'app', role: 'qa lead', page: 2, perPage: 20 }), '/web/app/system/roles?role=qa+lead&page=2&per_page=20');
+  assert.deepEqual(parseAppRoute('/web/system/roles', '?role=qa_lead&page=2&per_page=20'), {
+    id: 'system-roles', owner: 'web', pathname: '/web/system/roles', search: '?role=qa_lead&page=2&per_page=20',
+    role: 'qa_lead', page: 2, perPage: 20, title: '角色权限',
   });
 });
 

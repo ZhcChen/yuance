@@ -1100,6 +1100,13 @@ pub struct SystemUsersViewQuery {
     per_page: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SystemRolesViewQuery {
+    role: Option<String>,
+    page: Option<i64>,
+    per_page: Option<i64>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct SystemUserProjectPayload {
     pub key: String,
@@ -1145,6 +1152,16 @@ pub struct SystemRolePayload {
     pub is_system: bool,
     pub data_scope_type: String,
     pub permission_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SystemRolesViewPayload {
+    pub items: Vec<SystemRolePayload>,
+    pub selected_role: Option<SystemRolePayload>,
+    pub permissions: Vec<SystemPermissionPayload>,
+    pub pagination: PaginationPayload,
+    pub can_manage_roles: bool,
+    pub can_edit_permissions: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -6017,6 +6034,62 @@ pub async fn list_system_roles(
         .collect();
 
     Ok(json(payload))
+}
+
+pub async fn get_system_roles_view(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SystemRolesViewQuery>,
+) -> AppResult<axum::Json<ApiEnvelope<SystemRolesViewPayload>>> {
+    let actor = require_api_user(&state, &headers).await?;
+    let pool = state.pool()?;
+    ensure_api_permission(pool, &headers, actor.id, "system.roles.view").await?;
+    let pagination = normalize_api_pagination(query.page, Some(query.per_page.unwrap_or(10)))?;
+    let total_items = rbac::count_roles(pool).await?;
+    let total_pages = ((total_items + pagination.per_page - 1) / pagination.per_page).max(1);
+    let page = pagination.page.min(total_pages);
+    let roles = rbac::list_roles_page(pool, page, pagination.per_page).await?;
+    let requested_role = query.role.as_deref().map(str::trim).unwrap_or_default();
+    let selected_role = if requested_role.is_empty() {
+        roles.first().cloned()
+    } else if let Some(role) = roles
+        .iter()
+        .find(|role| role.role_code == requested_role)
+        .cloned()
+    {
+        Some(role)
+    } else {
+        match rbac::find_role(pool, requested_role).await {
+            Ok(Some(role)) => Some(role),
+            Ok(None) | Err(AppError::BadRequest(_)) => roles.first().cloned(),
+            Err(error) => return Err(error),
+        }
+    };
+    let permissions = match selected_role.as_ref() {
+        Some(role) => rbac::list_permissions_for_role(pool, Some(&role.role_code))
+            .await?
+            .into_iter()
+            .map(system_permission_payload)
+            .collect(),
+        None => Vec::new(),
+    };
+    let can_manage_roles = rbac::user_has_permission(pool, actor.id, "system.roles.manage").await?;
+    let can_edit_permissions =
+        can_manage_roles && selected_role.as_ref().is_some_and(|role| !role.is_system);
+
+    Ok(json(SystemRolesViewPayload {
+        items: roles.into_iter().map(system_role_payload).collect(),
+        selected_role: selected_role.map(system_role_payload),
+        permissions,
+        pagination: PaginationPayload {
+            page,
+            per_page: pagination.per_page,
+            total_items,
+            total_pages,
+        },
+        can_manage_roles,
+        can_edit_permissions,
+    }))
 }
 
 pub async fn create_system_role(

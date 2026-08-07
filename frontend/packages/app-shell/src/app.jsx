@@ -15,6 +15,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemRolesPath,
   buildSystemUsersPath,
   buildWorkItemDetailPath,
   buildWorkItemListPath,
@@ -578,6 +579,8 @@ function routeDescription(route) {
       return '系统入口严格按当前主体的服务端权限返回，Browser 与 Desktop 共用同一管理导航事实。';
     case 'system-users':
       return '用户、角色候选、项目关系和分页由服务端原子读取，两个宿主不拼接管理事实。';
+    case 'system-roles':
+      return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
     case 'unsupported':
       return '这个 URL 还没有迁移到新应用壳，当前保留回旧版 SSR 页面的安全退路。';
     default:
@@ -607,6 +610,7 @@ function routeEyebrow(route) {
       return 'Work Items';
     case 'system-dashboard':
     case 'system-users':
+    case 'system-roles':
       return 'System';
     default:
       return 'Web App';
@@ -770,6 +774,7 @@ export function SharedApp({ services }) {
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
+  const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemUserCreateOpen, setSystemUserCreateOpen] = useState(false);
   const [systemUserCreateForm, setSystemUserCreateForm] = useState({ username: '', displayName: '', email: '', mobile: '', password: '', passwordConfirm: '', roleCode: '' });
   const [systemUserAction, setSystemUserAction] = useState(/** @type {{ kind: 'status' | 'role' | 'password', user: any } | null} */ (null));
@@ -1144,7 +1149,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1256,6 +1261,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-users'
           ? api.getSystemUsersView({ page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
+        targetRoute.id === 'system-roles'
+          ? api.getSystemRolesView({ role: targetRoute.role, page: targetRoute.page, perPage: targetRoute.perPage })
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1307,6 +1315,9 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'system-users') {
         setSystemUsersView(nextSystemUsersView);
+      }
+      if (targetRoute.id === 'system-roles') {
+        setSystemRolesView(nextSystemRolesView);
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -2375,6 +2386,8 @@ export function SharedApp({ services }) {
         ? '系统管理 - 元策'
       : route.id === 'system-users'
         ? '用户管理 - 元策'
+      : route.id === 'system-roles'
+        ? '角色权限 - 元策'
       : route.id === 'search'
         ? '全局搜索 - 元策'
         : route.id === 'profile'
@@ -4028,8 +4041,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4057,7 +4070,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4121,7 +4134,38 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'system-users' ? (
+          {route.id === 'system-roles' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-roles-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-roles-title">角色工作台</h2><p className="shell-muted">选择角色后查看数据范围和完整权限集合。</p></div>
+                {systemRolesView?.selected_role?.is_system ? <span className="shell-muted">系统内置角色只读</span> : null}
+              </div>
+              <DataTable
+                caption="系统角色列表"
+                rows={systemRolesView?.items || []}
+                rowKey={(item) => item.role_code}
+                emptyText="暂无角色。"
+                columns={[
+                  { key: 'role', label: '角色', render: (item) => <a className="shell-link" href={buildSystemRolesPath({ owner: route.owner, role: item.role_code, page: systemRolesView?.pagination.page, perPage: systemRolesView?.pagination.per_page })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner, role: item.role_code, page: systemRolesView?.pagination.page, perPage: systemRolesView?.pagination.per_page }), `正在打开${item.role_name}。`)}><strong>{item.role_name}</strong><br /><span className="shell-muted">{item.role_code}{item.is_system ? ' · 系统内置' : ''}</span></a> },
+                  { key: 'status', label: '状态', render: (item) => item.status },
+                  { key: 'scope', label: '数据范围', render: (item) => item.data_scope_type === 'all' ? '全部项目' : '仅本人' },
+                  { key: 'permissions', label: '权限', render: (item) => `${item.permission_count} 项` },
+                ]}
+              />
+              {systemRolesView ? <div className="shell-panel-header">
+                <Pagination page={systemRolesView.pagination.page} totalPages={systemRolesView.pagination.total_pages} totalItems={systemRolesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemRolesPath({ owner: route.owner, role: systemRolesView.selected_role?.role_code || '', page, perPage: systemRolesView.pagination.per_page }), `正在加载第 ${page} 页角色。`)} />
+                <label className="shell-page-size">每页<select value={systemRolesView.pagination.per_page} onChange={(event) => navigate(buildSystemRolesPath({ owner: route.owner, role: systemRolesView.selected_role?.role_code || '', perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
+              </div> : null}
+              {systemRolesView?.selected_role ? <section aria-labelledby="system-role-permissions-title">
+                <div className="shell-panel-header"><div><h3 id="system-role-permissions-title">{systemRolesView.selected_role.role_name}</h3><p className="shell-muted">{systemRolesView.selected_role.role_code} · 已授权 {systemRolesView.selected_role.permission_count} 项</p></div></div>
+                <DataTable caption="角色权限集合" rows={systemRolesView.permissions} rowKey={(permission) => permission.permission_key} emptyText="暂无权限点。" columns={[
+                  { key: 'granted', label: '授权', render: (permission) => <input type="checkbox" checked={permission.granted} readOnly aria-label={`${permission.permission_name} ${permission.granted ? '已授权' : '未授权'}`} /> },
+                  { key: 'permission', label: '权限', render: (permission) => <><strong>{permission.permission_name}</strong><br /><code>{permission.permission_key}</code></> },
+                  { key: 'resource', label: '资源', render: (permission) => `${permission.resource_type} · ${permission.resource_key}` },
+                ]} />
+              </section> : <Feedback tone="info" title="请选择角色">当前分页没有可查看的角色。</Feedback>}
+            </section>
+          ) : route.id === 'system-users' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-users-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-users-title">用户列表</h2><p className="shell-muted">按创建时间倒序排列。</p></div>
