@@ -475,6 +475,7 @@ export function SharedApp({ services }) {
   const editCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
+  const projectSwitchRef = useRef(false);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -488,6 +489,7 @@ export function SharedApp({ services }) {
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
+  const [projectSwitchingKey, setProjectSwitchingKey] = useState('');
   const [profile, setProfile] = useState(/** @type {Awaited<ReturnType<AppApiService['getOwnProfile']>> | null} */ (null));
   const [profileForm, setProfileForm] = useState({ displayName: '', email: '', mobile: '' });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -916,12 +918,26 @@ export function SharedApp({ services }) {
 
   /** @param {AppProject} project */
   async function handleSetCurrentProject(project) {
+    if (projectSwitchRef.current) return;
+    projectSwitchRef.current = true;
+    setProjectSwitchingKey(project.key);
+    requestRef.current += 1;
     try {
-      await api.updateCurrentProject(project.key);
+      const selected = await api.updateCurrentProject(project.key);
+      setTopbar((current) => current ? {
+        ...current,
+        current_project: {
+          ...selected,
+          pending_count: current.project_badges.find((badge) => badge.project_key === selected.key)?.pending_count || 0,
+        },
+      } : current);
       setStatusMessage(`已切换当前项目到 ${project.key}。`);
       await loadRouteState(routeRef.current, 'refresh');
     } catch (caught) {
       setError(caught instanceof Error ? caught : new Error('切换当前项目失败。'));
+    } finally {
+      projectSwitchRef.current = false;
+      setProjectSwitchingKey('');
     }
   }
 
@@ -2231,10 +2247,10 @@ export function SharedApp({ services }) {
                             <button
                               className="shell-button shell-button-secondary"
                               type="button"
-                              disabled={isCurrentProject}
+                              disabled={isCurrentProject || Boolean(projectSwitchingKey)}
                               onClick={() => void handleSetCurrentProject(project)}
                             >
-                              {isCurrentProject ? '当前项目' : '设为当前项目'}
+                              {isCurrentProject ? '当前项目' : projectSwitchingKey === project.key ? '切换中…' : '设为当前项目'}
                             </button>
                           </div>
                         </li>

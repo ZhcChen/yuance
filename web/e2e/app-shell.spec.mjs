@@ -1368,8 +1368,50 @@ test('project list can switch current project inside the app shell', async ({ pa
   await expect(page).toHaveURL(/\/web\/app\/projects/);
   await expect(page.getByRole('heading', { level: 1, name: '项目列表' })).toBeVisible();
   await page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '设为当前项目' }).click();
-  await expect(page.getByText('OPS · 交付运维台')).toBeVisible();
+  await expect(page.getByLabel('顶部状态摘要').getByText('OPS · 交付运维台')).toBeVisible();
   await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
+});
+
+test('project switch serializes repeated input and refreshes the current context', async ({ page }) => {
+  await login(page, '/web/app/projects');
+  let patchCount = 0;
+  let switched = false;
+  let releaseSwitch = () => {};
+  const switchRelease = new Promise((resolve) => { releaseSwitch = resolve; });
+
+  await page.route('**/api/v1/current-project', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    patchCount += 1;
+    await switchRelease;
+    switched = true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { key: 'OPS', name: '交付运维台' } }) });
+  });
+  await page.route('**/api/v1/topbar/status', async (route) => {
+    if (!switched) {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      requirements_count: 0, tasks_count: 0, bugs_count: 0, notifications_count: 0,
+      project_badges: [{ project_key: 'OPS', pending_count: 0 }],
+      current_project: { key: 'OPS', name: '交付运维台', pending_count: 0 },
+    } }) });
+  });
+
+  const opsRow = page.locator('.project-row', { hasText: 'OPS' });
+  const switchButton = opsRow.getByRole('button', { name: '设为当前项目' });
+  await switchButton.click();
+  await expect.poll(() => patchCount).toBe(1);
+  await expect(opsRow.getByRole('button', { name: '切换中…' })).toBeDisabled();
+  await expect(page.locator('.project-row button:enabled', { hasText: '设为当前项目' })).toHaveCount(0);
+
+  releaseSwitch();
+  await expect(opsRow.getByRole('button', { name: '当前项目' })).toBeVisible();
+  await expect(page.getByLabel('顶部状态摘要').getByText('OPS · 交付运维台')).toBeVisible();
+  expect(patchCount).toBe(1);
 });
 
 test('shared global shell remains usable at canonical responsive widths', async ({ page }, testInfo) => {
