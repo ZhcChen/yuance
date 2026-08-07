@@ -3121,7 +3121,7 @@ pub async fn create_project_attachment(
     Path(project_key): Path<String>,
     Json(payload): Json<CreateAttachmentRequest>,
 ) -> AppResult<impl IntoResponse> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
@@ -3173,7 +3173,8 @@ pub async fn list_project_attachments(
     headers: HeaderMap,
     Path(project_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<Vec<AttachmentPayload>>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -3195,7 +3196,8 @@ pub async fn project_attachment_upload_url(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -3225,7 +3227,8 @@ pub async fn project_attachment_mark_uploaded(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
@@ -3266,7 +3269,8 @@ pub async fn project_attachment_download_url(
     Path((project_key, attachment_id)): Path<(String, i64)>,
     Query(query): Query<SignedUrlQuery>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentSignedUrlPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "project.view").await?;
     let project = projects::get_project_detail(pool, &project_key)
@@ -3305,7 +3309,7 @@ pub async fn project_attachment_delete(
     headers: HeaderMap,
     Path((project_key, attachment_id)): Path<(String, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
     let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;

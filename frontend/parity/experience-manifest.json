@@ -661,7 +661,7 @@
       "request": { "method": "POST", "path": "/web/projects/{project_key}/attachments" },
       "apiEffects": [
         { "phase": "register", "method": "POST", "path": "/api/v1/projects/{project_key}/attachments", "purpose": "登记附件元数据并取得附件 ID" },
-        { "phase": "sign", "method": "POST", "path": "/api/v1/projects/{project_key}/attachments/{attachment_id}/upload-url", "purpose": "获取受限上传 URL" },
+        { "phase": "sign", "method": "GET", "path": "/api/v1/projects/{project_key}/attachments/{attachment_id}/upload-url", "purpose": "获取受限上传 URL" },
         { "phase": "complete", "method": "POST", "path": "/api/v1/projects/{project_key}/attachments/{attachment_id}/uploaded", "purpose": "确认对象上传完成" }
       ],
       "successEffect": "附件进入项目文件列表并记录项目动态和审计。",
