@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use std::sync::{Mutex, OnceLock};
 use tower::ServiceExt;
 use yuance_api::{
-    domains::{api_tokens, auth, bootstrap, projects, users},
+    domains::{auth, bootstrap, users},
     platform::{
         config::Settings,
         db,
@@ -1579,7 +1579,7 @@ async fn logout_revokes_session_and_clears_cookies() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
+        "/web/login?return_to=%2Fweb"
     );
 }
 
@@ -1725,312 +1725,30 @@ async fn api_token_scope_is_enforced_for_bearer_requests() {
 }
 
 #[tokio::test]
-async fn me_page_creates_api_token_and_renders_plaintext_once() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Alpha 项目".to_string(),
-            description: "用于验证 Token 项目范围多选".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project A should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Beta 项目".to_string(),
-            description: "用于验证 Token 项目范围多选".to_string(),
-            status: "not_started".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project B should create");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+async fn retired_personal_web_mutation_routes_are_not_registered() {
+    let app = build_router(AppState::for_tests());
 
-    let page_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/me")
-                .header(header::COOKIE, initialized.cookie.clone())
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("Personal Access Token"));
-    assert!(page_body.contains("创建访问 Token"));
-    assert!(page_body.contains("可用 Token 0/100"));
-    assert!(page_body.contains(r#"name="project_scope_projects" value="all" checked"#));
-    assert!(page_body.contains("全部项目（包含后续新增）"));
-    assert!(page_body.contains("Alpha 项目"));
-    assert!(page_body.contains("Beta 项目"));
-
-    let create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "name=Agent%20UI&project_scope_projects=all&scopes=project%3Aread&scopes=work_item%3Aread",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(create_response.status(), StatusCode::OK);
-    let create_body = response_body(create_response).await;
-    assert!(create_body.contains("点击复制"));
-    assert!(create_body.contains("yuance_pat_"));
-    assert!(create_body.contains("Agent UI"));
-    assert!(create_body.contains("Token 名称（归属人）"));
-    assert!(create_body.contains("全部项目（含后续新增）"));
-
-    let scoped_body = format!(
-        "name=Agent%20Scoped&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread",
-        project_a.project_key, project_b.project_key
-    );
-    let scoped_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&scoped_body)))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(scoped_response.status(), StatusCode::OK);
-    let scoped_page = response_body(scoped_response).await;
-    assert!(scoped_page.contains("Agent Scoped"));
-    assert!(scoped_page.contains(&format!(
-        "{}、{}",
-        project_a.project_key, project_b.project_key
-    )));
-
-    let stored_scope = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT project_scope
-        FROM api_tokens
-        WHERE user_id = ?1
-          AND name = 'Agent Scoped'
-        "#,
-    )
-    .bind(initialized.user_id)
-    .fetch_one(&pool)
-    .await
-    .expect("scoped token should persist");
-    assert_eq!(
-        stored_scope,
-        format!("{},{}", project_a.project_key, project_b.project_key)
-    );
-}
-
-#[tokio::test]
-async fn web_me_api_token_can_edit_name_scopes_and_project_scope() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let project_a = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Alpha 项目".to_string(),
-            description: "第一个项目".to_string(),
-            status: "in_progress".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project a should create");
-    let project_b = projects::create_project(
-        &pool,
-        initialized.user_id,
-        projects::CreateProjectInput {
-            name: "Beta 项目".to_string(),
-            description: "第二个项目".to_string(),
-            status: "acceptance".to_string(),
-            start_date: String::new(),
-            due_date: String::new(),
-        },
-    )
-    .await
-    .expect("project b should create");
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let create_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "name=Agent%20Editable&project_scope_projects={}&scopes=project%3Aread&scopes=resource%3Aread&expires_at=2026-12-31",
-                    project_a.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(create_response.status(), StatusCode::OK);
-
-    let token_id = sqlx::query_scalar::<_, i64>(
-        r#"
-        SELECT id
-        FROM api_tokens
-        WHERE user_id = ?1
-          AND name = 'Agent Editable'
-        ORDER BY id DESC
-        LIMIT 1
-        "#,
-    )
-    .bind(initialized.user_id)
-    .fetch_one(&pool)
-    .await
-    .expect("token should exist");
-
-    let update_response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/web/me/api-tokens/{token_id}/edit"))
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(&format!(
-                    "name=Agent%20Updated&project_scope_projects={}&project_scope_projects={}&scopes=project%3Aread&scopes=work_item%3Awrite&scopes=notification%3Aread",
-                    project_a.project_key, project_b.project_key
-                ))))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(update_response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        update_response.headers().get(header::LOCATION).unwrap(),
-        "/web/me"
-    );
-
-    let stored = sqlx::query_as::<_, (String, String, String)>(
-        r#"
-        SELECT name, scopes, project_scope
-        FROM api_tokens
-        WHERE id = ?1
-        "#,
-    )
-    .bind(token_id)
-    .fetch_one(&pool)
-    .await
-    .expect("updated token should load");
-    assert_eq!(stored.0, "Agent Updated");
-    assert_eq!(
-        stored.2,
-        format!("{},{}", project_a.project_key, project_b.project_key)
-    );
-    assert!(stored.1.contains("project:read"));
-    assert!(stored.1.contains("work_item:write"));
-    assert!(stored.1.contains("notification:read"));
-    assert!(!stored.1.contains("resource:read"));
-
-    let expires_at = sqlx::query_scalar::<_, String>(
-        r#"
-        SELECT expires_at
-        FROM api_tokens
-        WHERE id = ?1
-        "#,
-    )
-    .bind(token_id)
-    .fetch_one(&pool)
-    .await
-    .expect("expires_at should remain");
-    assert_eq!(expires_at, "2026-12-31");
-
-    let page_response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/me")
-                .header(header::COOKIE, initialized.cookie)
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-    assert_eq!(page_response.status(), StatusCode::OK);
-    let page_body = response_body(page_response).await;
-    assert!(page_body.contains("编辑访问 Token"));
-    assert!(page_body.contains("Agent Updated"));
-    assert!(page_body.contains("工作项写入"));
-    assert!(page_body.contains("消息读取"));
-    assert!(page_body.contains(&format!(r#"action="/web/me/api-tokens/{token_id}/edit""#)));
-}
-
-#[tokio::test]
-async fn api_token_creation_rejects_more_than_100_unrevoked_tokens() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    for index in 0..api_tokens::MAX_ACTIVE_TOKENS_PER_USER {
-        sqlx::query(
-            r#"
-            INSERT INTO api_tokens (
-                user_id,
-                name,
-                token_hash,
-                token_suffix,
-                scopes,
-                project_scope
+    for (uri, method) in [
+        ("/web/me/profile", "POST"),
+        ("/web/me/password", "POST"),
+        ("/web/me/api-tokens", "POST"),
+        ("/web/me/api-tokens/7/edit", "POST"),
+        ("/web/me/api-tokens/7/delete", "POST"),
+        ("/web/me/device-sessions/family-7/revoke", "POST"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
             )
-            VALUES (?1, ?2, ?3, ?4, '["project:read"]', 'all')
-            "#,
-        )
-        .bind(initialized.user_id)
-        .bind(format!("Token {index}"))
-        .bind(format!("hash-{index}"))
-        .bind(format!("{index:08}"))
-        .execute(&pool)
-        .await
-        .expect("token fixture should insert");
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{method} {uri}");
     }
-
-    let create_response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/me/api-tokens")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(with_csrf(
-                    "name=Overflow&project_scope_projects=all&scopes=project%3Aread",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(create_response.status(), StatusCode::BAD_REQUEST);
-    let body = response_body(create_response).await;
-    assert!(body.contains("最多可同时保留 100 个访问 Token"));
 }
 
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
@@ -2047,13 +1765,11 @@ async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {
     .expect("bootstrap should initialize");
 
     InitializedAdmin {
-        user_id: result.user_id,
         cookie: auth::session_cookie_header(&result.session.raw_token, false),
     }
 }
 
 struct InitializedAdmin {
-    user_id: i64,
     cookie: String,
 }
 

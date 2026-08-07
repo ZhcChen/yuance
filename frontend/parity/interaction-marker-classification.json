@@ -238,13 +238,6 @@
       ]
     },
     {
-      "marker": "data-category",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-comment-id",
       "category": "presentation",
       "sources": [
@@ -439,13 +432,6 @@
       "category": "state",
       "sources": [
         "app-js"
-      ]
-    },
-    {
-      "marker": "data-cycle-status",
-      "category": "state",
-      "sources": [
-        "template"
       ]
     },
     {
@@ -1070,63 +1056,49 @@
       "marker": "data-member-batch-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-member-batch-submit",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-member-candidate",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-member-candidate-checkbox",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-member-candidate-empty",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-member-candidate-list",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-member-candidate-search",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-member-selected-count",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1561,81 +1533,28 @@
       "marker": "data-resource-body",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-resource-body-format",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-create-url",
-      "category": "transport",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-field",
-      "category": "control",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-resource-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-id",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-project-key",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-rich-editor",
-      "category": "control",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-resource-status",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-submit",
-      "category": "action",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-resource-update-url",
-      "category": "transport",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1785,8 +1704,7 @@
       "marker": "data-roles",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1892,8 +1810,7 @@
       "marker": "data-skip-success-toast",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1912,13 +1829,6 @@
       ]
     },
     {
-      "marker": "data-status",
-      "category": "state",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-success-message",
       "category": "presentation",
       "sources": [
@@ -1929,15 +1839,7 @@
       "marker": "data-success-redirect",
       "category": "transport",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-success-redirect-template",
-      "category": "transport",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1960,24 +1862,21 @@
       "marker": "data-tab-key",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-tab-panel",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-tab-target",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1991,16 +1890,14 @@
       "marker": "data-tabs",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-tabs-sync-url",
       "category": "transport",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -2028,39 +1925,28 @@
       "marker": "data-token-project-all",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-token-project-option",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-token-project-scope",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-token-project-summary",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-tone",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {

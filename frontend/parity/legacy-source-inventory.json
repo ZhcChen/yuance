@@ -105,42 +105,6 @@
       ]
     },
     {
-      "route": "/web/me/api-tokens",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/me/api-tokens/{token_id}/delete",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/me/api-tokens/{token_id}/edit",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/me/device-sessions/{family_id}/revoke",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/me/password",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/me/profile",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
       "route": "/web/messages",
       "methods": [
         "GET"
@@ -167,26 +131,13 @@
     {
       "route": "/web/projects",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ]
     },
     {
       "route": "/web/projects/{project_key}",
       "methods": [
         "GET"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/attachments",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/attachments/{attachment_id}/delete",
-      "methods": [
-        "POST"
       ]
     },
     {
@@ -208,51 +159,9 @@
       ]
     },
     {
-      "route": "/web/projects/{project_key}/cycles",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
       "route": "/web/projects/{project_key}/cycles/{cycle_id}",
       "methods": [
         "GET"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/cycles/{cycle_id}/close",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/cycles/{cycle_id}/edit",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/edit",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/members",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/members/{username}/remove",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/members/{username}/role",
-      "methods": [
-        "POST"
       ]
     },
     {
@@ -262,21 +171,9 @@
       ]
     },
     {
-      "route": "/web/projects/{project_key}/resources",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
       "route": "/web/projects/{project_key}/resources/{resource_id}",
       "methods": [
         "GET"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/resources/{resource_id}/archive",
-      "methods": [
-        "POST"
       ]
     },
     {
@@ -295,24 +192,6 @@
       "route": "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/preview/content",
       "methods": [
         "GET"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/resources/{resource_id}/edit",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/resources/{resource_id}/password/reset",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/projects/{project_key}/resources/{resource_id}/unlock",
-      "methods": [
-        "POST"
       ]
     },
     {
@@ -636,29 +515,20 @@
   ],
   "templates": [
     "bootstrap.html",
-    "dashboard.html",
     "desktop_downloads.html",
     "device_authorization.html",
     "device_authorization_result.html",
     "document_preview.html",
     "login.html",
-    "me.html",
     "messages.html",
     "partials/pagination_pages.html",
     "partials/pagination_size_jump.html",
-    "partials/project_create_modal.html",
     "partials/rich_text_toolbar.html",
     "partials/work_item_detail.html",
     "partials/work_item_flow_history.html",
     "partials/work_item_pagination.html",
     "partials/work_item_table.html",
     "partials/work_items.html",
-    "projects.html",
-    "projects/cycle_detail.html",
-    "projects/detail.html",
-    "projects/personal_analysis.html",
-    "projects/resource_detail.html",
-    "search.html",
     "system/audit.html",
     "system/dashboard.html",
     "system/database_stats.html",
@@ -956,7 +826,6 @@
     "data-bug-report-item-field",
     "data-bug-report-status",
     "data-cache-key",
-    "data-category",
     "data-comment-id",
     "data-comment-parent-id",
     "data-confirm-action",
@@ -977,7 +846,6 @@
     "data-copy-text",
     "data-copy-toast-success",
     "data-copy-unavailable-message",
-    "data-cycle-status",
     "data-database-stats-body",
     "data-database-stats-cache-state",
     "data-database-stats-empty",
@@ -1022,14 +890,6 @@
     "data-kind",
     "data-media-kind",
     "data-media-preview",
-    "data-member-batch-form",
-    "data-member-batch-submit",
-    "data-member-candidate",
-    "data-member-candidate-checkbox",
-    "data-member-candidate-empty",
-    "data-member-candidate-list",
-    "data-member-candidate-search",
-    "data-member-selected-count",
     "data-message-center",
     "data-message-center-form",
     "data-message-read-all-form",
@@ -1076,47 +936,21 @@
     "data-release-platform",
     "data-release-upload-list",
     "data-release-upload-submit",
-    "data-resource-body",
-    "data-resource-body-format",
-    "data-resource-create-url",
-    "data-resource-field",
-    "data-resource-form",
-    "data-resource-id",
-    "data-resource-project-key",
-    "data-resource-rich-editor",
-    "data-resource-status",
-    "data-resource-submit",
-    "data-resource-update-url",
     "data-return-url",
     "data-rich-command",
     "data-rich-initial-html",
     "data-rich-mention-options",
     "data-rich-text-editor",
     "data-rich-text-input",
-    "data-roles",
     "data-select-panel-min-width",
     "data-select-search-placeholder",
     "data-select-searchable",
-    "data-skip-success-toast",
     "data-smart-back",
     "data-smart-back-key",
-    "data-status",
     "data-success-message",
-    "data-success-redirect",
-    "data-success-redirect-template",
     "data-system-release-asset-delete",
     "data-system-release-upload",
-    "data-tab-key",
-    "data-tab-panel",
-    "data-tab-target",
     "data-table",
-    "data-tabs",
-    "data-tabs-sync-url",
-    "data-token-project-all",
-    "data-token-project-option",
-    "data-token-project-scope",
-    "data-token-project-summary",
-    "data-tone",
     "data-user-avatar",
     "data-user-project-assign-form",
     "data-user-project-assign-summary",

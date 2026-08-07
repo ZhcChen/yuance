@@ -1006,40 +1006,58 @@ async fn unknown_route_returns_not_found() {
 }
 
 #[tokio::test]
-async fn web_renders_dashboard_shell() {
-    let app = build_router(AppState::for_tests());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web")
-                .body(Body::empty())
-                .expect("request should build"),
+async fn retired_web_business_pages_ignore_shell_flag() {
+    with_web_dist_dir(|dist_dir| async move {
+        fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
+        fs::write(
+            dist_dir.join("index.html"),
+            "<!doctype html><html><body><div id=\"root\"></div></body></html>",
         )
-        .await
-        .expect("router should respond");
+        .expect("index should write");
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body = response
-        .into_body()
-        .collect()
-        .await
-        .expect("body should collect")
-        .to_bytes();
-    let body = std::str::from_utf8(&body).expect("body should be utf-8");
+        let previous = std::env::var("YUANCE_WEB_APP_SHELL_V1").ok();
+        unsafe {
+            std::env::set_var("YUANCE_WEB_APP_SHELL_V1", "disabled");
+        }
 
-    assert!(body.contains("元策"));
-    assert!(body.contains("href=\"/favicon.ico\""));
-    assert!(!body.contains("我的工作项"));
-    assert!(body.contains("我的待处理"));
-    assert!(body.contains("/my-analysis"));
-    assert!(body.contains("/web/system/storage"));
-    assert!(body.contains(r#"id="app-update-modal""#));
-    assert!(body.contains(r#"data-app-update-modal"#));
-    assert!(body.contains(r#"data-app-update-refresh"#));
-    assert!(body.contains(r#"id="confirm-action-modal""#));
-    assert!(body.contains(r#"data-confirm-modal"#));
-    assert!(body.contains(r#"class="account-menu-action" type="submit">退出登录</button>"#));
+        let app = build_router(AppState::for_tests());
+        let mut bodies = Vec::new();
+        for uri in [
+            "/web",
+            "/web/me",
+            "/web/search?q=release&page=2",
+            "/web/projects?status=in_progress",
+            "/web/projects/YCE?tab=library",
+            "/web/projects/YCE/cycles/7",
+            "/web/projects/YCE/resources/9?access=opaque-token",
+            "/web/projects/YCE/my-analysis",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(uri)
+                        .body(Body::empty())
+                        .expect("request should build"),
+                )
+                .await
+                .expect("router should respond");
+            assert_eq!(response.status(), StatusCode::OK, "{uri}");
+            bodies.push(response_body(response).await);
+        }
+
+        unsafe {
+            match previous {
+                Some(value) => std::env::set_var("YUANCE_WEB_APP_SHELL_V1", value),
+                None => std::env::remove_var("YUANCE_WEB_APP_SHELL_V1"),
+            }
+        }
+
+        assert!(bodies.iter().all(|body| body == &bodies[0]));
+        assert!(bodies[0].contains(r#"<div id="root"></div>"#));
+        assert!(!bodies[0].contains("data-project-create-form"));
+    })
+    .await;
 }
 
 #[test]

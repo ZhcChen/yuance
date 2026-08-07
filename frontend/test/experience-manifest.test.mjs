@@ -81,7 +81,11 @@ test('体验清单 ID 和引用保持唯一且闭合', async () => {
   }
   for (const action of manifest.actions) {
     assert.ok(pageIds.includes(action.pageId), `${action.id} 引用了不存在的页面 ${action.pageId}`);
-    assert.ok(routeMethods.get(action.request.path)?.includes(action.request.method), `${action.id} 引用了不存在的正式 Web 请求 ${action.request.method} ${action.request.path}`);
+    if (action.status === 'retired') {
+      assert.ok(action.request.path.startsWith('/api/'), `${action.id} 退役后必须指向共享 API 请求`);
+    } else {
+      assert.ok(routeMethods.get(action.request.path)?.includes(action.request.method), `${action.id} 引用了不存在的正式 Web 请求 ${action.request.method} ${action.request.path}`);
+    }
   }
   for (const effect of manifest.dynamicApiEffects) {
     assert.ok(effect.owners.every((owner) => contractIds.has(owner)), `${effect.path} 存在无效 owner`);
@@ -140,7 +144,11 @@ test('页面只拥有读取入口且每个 route method 只有一个 contract ow
     }
   }
   for (const action of manifest.actions) {
-    register(`${action.request.method} ${action.request.path}`, action.id);
+    if (action.request.path.startsWith('/web')) {
+      register(`${action.request.method} ${action.request.path}`, action.id);
+    } else {
+      assert.equal(action.status, 'retired', `${action.id} 使用共享 API 前必须完成 legacy action 退役`);
+    }
     for (const effect of action.apiEffects ?? []) {
       assert.ok(effect.path.startsWith('/api/'), `${action.id} 的动态 API effect 必须使用 /api 路径`);
       assert.ok(effect.purpose.length > 0, `${action.id} 的动态 API effect 必须说明业务目的`);

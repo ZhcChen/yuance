@@ -927,6 +927,25 @@ page=1
 per_page=20
 ```
 
+系统 API 文档：
+
+```text
+GET /api/v1/system/api-docs-view
+```
+
+该接口返回仓库内置的 OpenAPI JSON 文本，仅允许具备 `system.api_tokens.view` 权限的主体读取，供 Web 与 Desktop 的本地共享查看器使用。
+
+系统 OpenAPI Token：
+
+```text
+GET    /api/v1/system/openapi-view
+POST   /api/v1/system/api-tokens
+PATCH  /api/v1/system/api-tokens/{token_id}
+DELETE /api/v1/system/api-tokens/{token_id}
+```
+
+`openapi-view` 返回共享管理页所需的 Token 列表、scope 候选、数量限制和创建能力；明文 Token 只在创建响应中出现一次。
+
 系统版本管理：
 
 ```text

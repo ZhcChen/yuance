@@ -233,21 +233,6 @@ pub fn build_router(state: AppState) -> Router {
             "/web/device-authorization/deny",
             post(web::device_auth::deny_authorization),
         )
-        .route("/web/me/profile", post(web::user::me_profile_update))
-        .route("/web/me/password", post(web::user::me_password_update))
-        .route("/web/me/api-tokens", post(web::user::me_api_token_create))
-        .route(
-            "/web/me/api-tokens/{token_id}/edit",
-            post(web::user::me_api_token_update),
-        )
-        .route(
-            "/web/me/api-tokens/{token_id}/delete",
-            post(web::user::me_api_token_delete),
-        )
-        .route(
-            "/web/me/device-sessions/{family_id}/revoke",
-            post(web::user::me_device_session_revoke),
-        )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
         .route(
@@ -258,57 +243,18 @@ pub fn build_router(state: AppState) -> Router {
             "/web/messages/{notification_id}/open",
             get(web::user::message_open),
         )
-        .route(
-            "/web/projects",
-            get(web::user::projects_page).post(web::user::projects_create),
-        )
+        .route("/web/projects", get(web::user::projects_page))
         .route(
             "/web/current-project",
-            axum::routing::post(web::user::current_project_update),
+            post(web::user::current_project_update),
         )
         .route(
             "/web/projects/{project_key}",
             get(web::user::project_detail_page),
         )
         .route(
-            "/web/projects/{project_key}/edit",
-            post(web::user::project_update),
-        )
-        .route(
-            "/web/projects/{project_key}/members",
-            post(web::user::project_member_add),
-        )
-        .route(
-            "/web/projects/{project_key}/members/{username}/remove",
-            post(web::user::project_member_remove),
-        )
-        .route(
-            "/web/projects/{project_key}/members/{username}/role",
-            post(web::user::project_member_role_update),
-        )
-        .route(
-            "/web/projects/{project_key}/cycles",
-            post(web::user::project_cycle_create),
-        )
-        .route(
             "/web/projects/{project_key}/cycles/{cycle_id}",
             get(web::user::project_cycle_detail_page),
-        )
-        .route(
-            "/web/projects/{project_key}/cycles/{cycle_id}/edit",
-            post(web::user::project_cycle_update),
-        )
-        .route(
-            "/web/projects/{project_key}/cycles/{cycle_id}/close",
-            post(web::user::project_cycle_close),
-        )
-        .route(
-            "/web/projects/{project_key}/attachments",
-            post(web::user::project_attachment_create),
-        )
-        .route(
-            "/web/projects/{project_key}/attachments/{attachment_id}/delete",
-            post(web::user::project_attachment_delete),
         )
         .route(
             "/web/projects/{project_key}/attachments/{attachment_id}/download",
@@ -323,28 +269,8 @@ pub fn build_router(state: AppState) -> Router {
             get(web::user::project_attachment_preview_content),
         )
         .route(
-            "/web/projects/{project_key}/resources",
-            post(web::user::project_resource_create),
-        )
-        .route(
             "/web/projects/{project_key}/resources/{resource_id}",
             get(web::user::project_resource_detail_page),
-        )
-        .route(
-            "/web/projects/{project_key}/resources/{resource_id}/unlock",
-            post(web::user::project_resource_unlock),
-        )
-        .route(
-            "/web/projects/{project_key}/resources/{resource_id}/password/reset",
-            post(web::user::project_resource_password_reset),
-        )
-        .route(
-            "/web/projects/{project_key}/resources/{resource_id}/edit",
-            post(web::user::project_resource_update),
-        )
-        .route(
-            "/web/projects/{project_key}/resources/{resource_id}/archive",
-            post(web::user::project_resource_archive),
         )
         .route(
             "/web/projects/{project_key}/resources/{resource_id}/attachments/{attachment_id}/download",
