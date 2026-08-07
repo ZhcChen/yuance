@@ -216,6 +216,15 @@ h2 {
   align-items: center;
 }
 
+.account-security-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--yc-line);
+}
+
+.account-security-list { display: grid; gap: 8px; }
+.account-security-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; border: 1px solid var(--yc-line); border-radius: 6px; }
+
 .shell-actions {
   flex-wrap: wrap;
   justify-content: flex-end;

@@ -475,6 +475,7 @@ export function SharedApp({ services }) {
   const editCommentTextareaRef = useRef(/** @type {HTMLTextAreaElement | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
+  const accountSecurityActionRef = useRef(false);
   const projectSwitchRef = useRef(false);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
@@ -495,6 +496,16 @@ export function SharedApp({ services }) {
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileSubmitting, setProfileSubmitting] = useState(false);
   const [profileError, setProfileError] = useState('');
+  const [apiTokens, setApiTokens] = useState(/** @type {any[]} */ ([]));
+  const [deviceSessions, setDeviceSessions] = useState(/** @type {any[]} */ ([]));
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', newPasswordConfirm: '' });
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
+  const [tokenForm, setTokenForm] = useState({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' });
+  const [accountSecuritySubmitting, setAccountSecuritySubmitting] = useState(false);
+  const [accountSecurityError, setAccountSecurityError] = useState('');
+  const [createdRawToken, setCreatedRawToken] = useState('');
+  const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [workItemPage, setWorkItemPage] = useState(/** @type {AppWorkItemPage | null} */ (null));
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
@@ -666,7 +677,7 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -714,6 +725,9 @@ export function SharedApp({ services }) {
             return { item, comments, attachmentBundle };
           })()
           : Promise.resolve(null),
+        targetRoute.id === 'profile'
+          ? Promise.all([api.getApiTokens(), api.getDeviceSessions()])
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -723,6 +737,8 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'profile' && nextProfile) {
         setProfile(nextProfile);
         setProfileForm({ displayName: nextProfile.display_name, email: nextProfile.email, mobile: nextProfile.mobile });
+        setApiTokens(nextSecurity?.[0] || []);
+        setDeviceSessions(nextSecurity?.[1] || []);
       }
       if (targetRoute.id === 'messages') {
         setMessageFeed(nextFeed);
@@ -798,6 +814,51 @@ export function SharedApp({ services }) {
     } finally {
       if (profileActionRef.current === actionId) setProfileSubmitting(false);
     }
+  }
+
+  /** @param {() => Promise<any>} action @param {string} successMessage */
+  async function runAccountSecurity(action, successMessage) {
+    if (accountSecurityActionRef.current) return;
+    accountSecurityActionRef.current = true;
+    setAccountSecuritySubmitting(true);
+    setAccountSecurityError('');
+    try {
+      const result = await action();
+      const [tokens, sessions] = await Promise.all([api.getApiTokens(), api.getDeviceSessions()]);
+      setApiTokens(tokens); setDeviceSessions(sessions); setStatusMessage(successMessage);
+      return result;
+    } catch (caught) {
+      setAccountSecurityError(errorMessage(caught instanceof Error ? caught : new Error('操作失败。')));
+      throw caught;
+    } finally {
+      accountSecurityActionRef.current = false; setAccountSecuritySubmitting(false);
+    }
+  }
+
+  async function submitPassword(event) {
+    event.preventDefault();
+    try { await runAccountSecurity(() => api.updateOwnPassword(passwordForm), '密码已更新，其他登录会话已撤销。'); setPasswordModalOpen(false); setPasswordForm({ currentPassword: '', newPassword: '', newPasswordConfirm: '' }); } catch { return; }
+  }
+
+  async function submitToken(event) {
+    event.preventDefault();
+    try {
+      if (tokenForm.id) await runAccountSecurity(() => api.updateApiToken(tokenForm.id, tokenForm), '访问 Token 已更新。');
+      else {
+        const created = await runAccountSecurity(() => api.createApiToken(tokenForm), '访问 Token 已创建。');
+        setCreatedRawToken(created?.raw_token || '');
+      }
+      setTokenModalOpen(false);
+    } catch { return; }
+  }
+
+  async function confirmAccountAction() {
+    if (!accountConfirmation) return;
+    try {
+      if (accountConfirmation.kind === 'token') await runAccountSecurity(() => api.deleteApiToken(Number(accountConfirmation.id)), '访问 Token 已删除。');
+      else await runAccountSecurity(() => api.revokeDeviceSession(String(accountConfirmation.id)), '设备会话已撤销。');
+      setAccountConfirmation(null);
+    } catch { return; }
   }
 
   useEffect(() => {
@@ -2171,6 +2232,26 @@ export function SharedApp({ services }) {
                 <div><dt>加入时间</dt><dd>{profile?.created_at ? formatTimestamp(profile.created_at) : '-'}</dd></div>
                 <div><dt>最近更新</dt><dd>{profile?.updated_at ? formatTimestamp(profile.updated_at) : '-'}</dd></div>
               </dl>
+              {accountSecurityError ? <Feedback tone="danger" title="账户安全操作失败">{accountSecurityError}</Feedback> : null}
+              {createdRawToken ? <Feedback tone="success" title="访问 Token 仅显示一次"><code>{createdRawToken}</code><Button variant="secondary" onClick={() => setCreatedRawToken('')}>我已保存</Button></Feedback> : null}
+              <div className="account-security-section">
+                <div className="shell-panel-header"><div><h2>登录密码</h2><p className="shell-muted">修改后保留当前登录，撤销其他登录会话。</p></div><Button variant="secondary" onClick={() => { setAccountSecurityError(''); setPasswordModalOpen(true); }}>修改密码</Button></div>
+              </div>
+              <div className="account-security-section">
+                <div className="shell-panel-header"><div><h2>Personal Access Token</h2><p className="shell-muted">共 {apiTokens.length} 个访问 Token</p></div><Button variant="secondary" onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>新建 Token</Button></div>
+                {apiTokens.length ? <div className="account-security-list">{apiTokens.map((token) => <div className="account-security-row" key={token.id}><div><strong>{token.name}</strong><p className="shell-muted">尾号 {token.token_suffix} · {token.scopes.join('、')}</p></div><div className="shell-actions-inline"><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => { setTokenForm({ id: token.id, name: token.name, scopes: token.scopes, projectScope: token.project_scope, expiresAt: '' }); setTokenModalOpen(true); }}>编辑</Button><Button variant="danger" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation({ kind: 'token', id: token.id, label: token.name })}>删除</Button></div></div>)}</div> : <p className="shell-empty">暂无访问 Token。</p>}
+              </div>
+              <div className="account-security-section">
+                <div className="shell-panel-header"><div><h2>已授权设备</h2><p className="shell-muted">管理 Desktop 登录设备。</p></div></div>
+                {deviceSessions.length ? <div className="account-security-list">{deviceSessions.map((session) => <div className="account-security-row" key={session.family_id}><div><strong>{session.device_name}{session.is_current ? '（当前设备）' : ''}</strong><p className="shell-muted">{session.platform} · {session.client_version} · {session.status}</p></div><Button variant="danger" disabled={accountSecuritySubmitting || session.status !== 'active'} onClick={() => setAccountConfirmation({ kind: 'device', id: session.family_id, label: session.device_name })}>撤销</Button></div>)}</div> : <p className="shell-empty">暂无已授权设备。</p>}
+              </div>
+              <Modal open={Boolean(accountConfirmation)} title={accountConfirmation?.kind === 'token' ? '删除访问 Token' : '撤销设备会话'} onClose={() => { if (!accountSecuritySubmitting) setAccountConfirmation(null); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation(null)}>取消</Button><Button variant="danger" loading={accountSecuritySubmitting} onClick={() => void confirmAccountAction()}>确认</Button></>}><p>确认处理“{accountConfirmation?.label}”？此操作会立即失效且不可撤销。</p></Modal>
+              <Modal open={passwordModalOpen} title="修改密码" onClose={() => { if (!accountSecuritySubmitting) setPasswordModalOpen(false); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setPasswordModalOpen(false)}>取消</Button><Button loading={accountSecuritySubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('password-form')); form?.requestSubmit(); }}>保存</Button></>}>
+                <form id="password-form" onSubmit={submitPassword}><Field id="current-password" label="当前密码" required><input type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} /></Field><Field id="new-password" label="新密码" required><input type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} /></Field><Field id="new-password-confirm" label="确认新密码" required><input type="password" value={passwordForm.newPasswordConfirm} onChange={(event) => setPasswordForm((current) => ({ ...current, newPasswordConfirm: event.target.value }))} /></Field></form>
+              </Modal>
+              <Modal open={tokenModalOpen} title={tokenForm.id ? '编辑访问 Token' : '新建访问 Token'} onClose={() => { if (!accountSecuritySubmitting) setTokenModalOpen(false); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setTokenModalOpen(false)}>取消</Button><Button loading={accountSecuritySubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('token-form')); form?.requestSubmit(); }}>保存</Button></>}>
+                <form id="token-form" onSubmit={submitToken}><Field id="token-name" label="名称" required><input value={tokenForm.name} onChange={(event) => setTokenForm((current) => ({ ...current, name: event.target.value }))} /></Field><Field id="token-scope" label="权限" required><select value={tokenForm.scopes[0]} onChange={(event) => setTokenForm((current) => ({ ...current, scopes: [event.target.value] }))}><option value="project:read">读取项目</option><option value="work_item:read">读取工作项</option><option value="work_item:write">修改工作项</option><option value="comment:write">发表评论</option></select></Field><Field id="token-project-scope" label="项目范围" required><input value={tokenForm.projectScope} onChange={(event) => setTokenForm((current) => ({ ...current, projectScope: event.target.value }))} /></Field>{!tokenForm.id ? <Field id="token-expires-at" label="到期时间"><input value={tokenForm.expiresAt} onChange={(event) => setTokenForm((current) => ({ ...current, expiresAt: event.target.value }))} /></Field> : null}</form>
+              </Modal>
               <Modal
                 open={profileModalOpen}
                 title="编辑个人资料"
