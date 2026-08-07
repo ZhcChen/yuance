@@ -21,7 +21,7 @@ test("issues an opaque bound app preview source without leaking private paths", 
   assert.equal(issued.source, `app://yuance/.preview/${issued.capability}`);
   assert.equal(JSON.stringify(issued).includes("/private/"), false);
   assert.equal(vault.resolve(issued.capability, binding).privatePath, "/private/preview.bin");
-  vault.release(issued.capability);
+  vault.release(issued.capability, binding);
   await vault.invalidateAll();
   assert.equal(entry.removed(), 1);
 });

@@ -32,9 +32,14 @@ export function createPreviewCapabilityVault({ now = Date.now, randomBytes = nod
     return entry.snapshot;
   }
 
-  function release(capability) {
+  function release(capability, binding) {
+    validateBinding(binding);
     const entry = entries.get(capability);
-    if (entry) remove(capability, entry);
+    if (!entry || !sameBinding(entry.binding, binding)) {
+      if (entry) remove(capability, entry);
+      throw previewError("preview_capability_invalid");
+    }
+    remove(capability, entry);
   }
 
   function pruneExpired() {
