@@ -17,6 +17,8 @@ const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing Desktop renderer root.");
 
 const bridge = globalThis.yuanceDesktop;
+const initialTheme = await bridge?.appearance?.getTheme().catch(() => "light") ?? "light";
+document.documentElement.dataset.theme = initialTheme === "dark" ? "dark" : "light";
 const auth = createDesktopAuthState(bridge?.hostState, bridge?.auth);
 const apiTransport = createDesktopApiTransport(bridge?.business);
 const apiClient = createApiClient({ request: apiTransport.request });
@@ -40,15 +42,14 @@ const services = Object.freeze({
       scheduleFrame: (callback) => window.requestAnimationFrame(callback),
       getElementById: (id) => document.getElementById(id),
       readFormValue: (form, name) => String(new FormData(form).get(name) || ""),
-      readTheme: () => document.documentElement.dataset.theme === "dark" ? "dark" : "light",
+      readTheme: () => initialTheme === "dark" ? "dark" : "light",
       writeTheme: (theme) => {
         document.documentElement.dataset.theme = theme;
+        void bridge?.appearance?.setTheme(theme).catch(() => {});
       },
     }),
   }),
 });
-
-services.app.runtime.writeTheme(services.app.runtime.readTheme());
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>

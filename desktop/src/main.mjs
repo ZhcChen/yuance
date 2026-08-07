@@ -37,6 +37,8 @@ import { registerAuthCommandHandlers } from "./ipc/auth-commands.mjs";
 import { createNetworkStatePublisher } from "./ipc/network-state.mjs";
 import { registerFileCommandHandlers } from "./ipc/file-commands.mjs";
 import { registerBusinessCommandHandlers } from "./ipc/business-commands.mjs";
+import { registerAppearanceCommandHandlers } from "./ipc/appearance-commands.mjs";
+import { createAppearanceStore } from "./preferences/appearance-store.mjs";
 import { createFileStateController } from "./ipc/file-state.mjs";
 import {
   createIpcSenderPolicy,
@@ -137,6 +139,7 @@ let disposeNetworkPowerLifecycle = () => {};
 let disposeFileCommands = () => {};
 let disposeFilePowerLifecycle = () => {};
 let disposeBusinessCommands = () => {};
+let disposeAppearanceCommands = () => {};
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
@@ -1441,6 +1444,15 @@ if (singleInstanceProbe) {
     catch (error) { process.stderr.write(`desktop business file smoke failed: ${error.message}\n`); app.exit(1); }
   });
 } else {
+  disposeAppearanceCommands = registerAppearanceCommandHandlers({
+    ipcMain,
+    assertSender: assertTrustedIpcSender,
+    store: createAppearanceStore({
+      fs,
+      filePath: path.join(app.getPath("userData"), "Preferences", "appearance.json"),
+      platform: process.platform,
+    }),
+  });
   disposeBusinessCommands = registerBusinessCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
@@ -1548,6 +1560,8 @@ app.on("before-quit", (event) => {
   notificationController = null;
   disposeBusinessCommands();
   disposeBusinessCommands = () => {};
+  disposeAppearanceCommands();
+  disposeAppearanceCommands = () => {};
   disposeNetworkPowerLifecycle();
   disposeNetworkPowerLifecycle = () => {};
   networkCoordinator?.stop();

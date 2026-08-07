@@ -57,7 +57,11 @@ ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 7,
+  schemaVersion: 8,
+  appearance: Object.freeze({
+    getTheme() { return ipcRenderer.invoke("yuance:appearance-get-theme"); },
+    setTheme(theme) { return ipcRenderer.invoke("yuance:appearance-set-theme", theme); },
+  }),
   auth: Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },

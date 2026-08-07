@@ -42,7 +42,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 7);
+  assert.equal(bridge.schemaVersion, 8);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -50,12 +50,24 @@ test("preload exposes a frozen versioned bridge without generic IPC", async () =
   assert.equal(Object.isFrozen(bridge.network), true);
   assert.equal(Object.isFrozen(bridge.files), true);
   assert.equal(Object.isFrozen(bridge.business), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["auth", "business", "events", "files", "hostState", "network", "schemaVersion"]);
+  assert.equal(Object.isFrozen(bridge.appearance), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "events", "files", "hostState", "network", "schemaVersion"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   assert.equal("notifications" in bridge, false);
   assert.deepEqual(invocations, []);
+});
+
+test("appearance bridge exposes only bounded theme commands", async () => {
+  const { bridge, invocations } = await executePreload();
+  assert.deepEqual(Object.keys(bridge.appearance).sort(), ["getTheme", "setTheme"]);
+  await bridge.appearance.getTheme();
+  await bridge.appearance.setTheme("dark");
+  assert.deepEqual(invocations, [
+    ["yuance:appearance-get-theme", undefined],
+    ["yuance:appearance-set-theme", "dark"],
+  ]);
 });
 
 test("business bridge exposes only one semantic execute command", async () => {
