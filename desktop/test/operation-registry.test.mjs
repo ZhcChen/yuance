@@ -61,6 +61,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["workitem.detailview", { itemKey: "DEMO-1" }, "/api/v1/work-item-detail-view/DEMO-1"],
     ["workitem.comments", { itemKey: "DEMO-1" }, "/api/v1/work-items/DEMO-1/comments"],
     ["workitem.attachments", { itemKey: "DEMO-1" }, "/api/v1/work-items/DEMO-1/attachments"],
+    ["workitem.attachmentpreview", { itemKey: "DEMO-1", attachmentId: 3 }, "/api/v1/work-items/DEMO-1/attachments/3/preview"],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: 7 }, "/api/v1/work-items/DEMO-1/comments/7/attachments"],
   ];
   for (const [name, input, path] of cases) {
@@ -225,6 +226,15 @@ test("normalizes and freezes allowlisted business response DTOs", () => {
   });
   assert.deepEqual(resourcePreview.navigation.next, { id: 4, title: "next.txt" });
   assert.equal(JSON.stringify(resourcePreview.navigation).includes("private-grant"), false);
+  const workItemPreview = registry.resolve("workitem.attachmentpreview", { itemKey: "DEMO-1", attachmentId: 3 }).parse({
+    attachment: { id: 3, filename: "report.txt", content_type: "text/plain", byte_size: 12, status: "uploaded", created_by: "Alice", created_at: "2026-08-03T00:00:00Z" },
+    preview: { kind: "document", strategy: "text", file_type: "txt", kind_label: "文本", is_experimental: false, legacy_preview_enabled: false, content_enabled: true },
+    navigation: { position: 1, total: 1, previous: null, next: null },
+    content_url: "/api/v1/work-items/DEMO-1/attachments/3/preview/content",
+    download_url: "/api/v1/work-items/DEMO-1/attachments/3/download-url",
+  });
+  assert.equal(workItemPreview.attachment.id, 3);
+  assert.equal(workItemPreview.content_url, "/api/v1/work-items/DEMO-1/attachments/3/preview/content");
 });
 
 test("rejects malformed or oversized business responses", () => {

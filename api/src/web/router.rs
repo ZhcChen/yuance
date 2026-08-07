@@ -1028,6 +1028,15 @@ pub fn build_router(state: AppState) -> Router {
             "/api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
             get(web::api::work_item_attachment_download_url),
         )
+        .route(
+            "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview",
+            get(web::api::work_item_attachment_preview),
+        )
+        .route(
+            "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content",
+            get(web::api::work_item_attachment_preview_content)
+                .head(web::api::work_item_attachment_preview_content),
+        )
         .route("/version.json", get(version_manifest))
         .route("/static/app.css", get(static_app_css))
         .route("/static/app.js", get(static_app_js))

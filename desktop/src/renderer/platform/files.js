@@ -22,6 +22,7 @@ export function createDesktopAppFiles(bridge, hostFiles = createDesktopFiles(bri
     downloadProjectAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadProjectAttachment")(input)),
     downloadProjectResourceAttachment: async (input) => normalizeAttachmentDownload(await requireOperation(bridge, "downloadProjectResourceAttachment")(input)),
     openProjectAttachmentPreview: async (input) => normalizePreview(await requireOperation(bridge, "openProjectAttachmentPreview")(input)),
+    openWorkItemAttachmentPreview: async (input) => normalizePreview(await requireOperation(bridge, "openWorkItemAttachmentPreview")(input)),
     openProjectResourceAttachmentPreview: async (input) => normalizePreview(await requireOperation(bridge, "openProjectResourceAttachmentPreview")(input)),
     releaseProjectAttachmentPreview: async (capability) => normalizeRelease(await requireOperation(bridge, "releaseProjectAttachmentPreview")(capability)),
     revealDownload: async (capability) => normalizeReveal(await requireOperation(bridge, "revealDownload")(capability)),

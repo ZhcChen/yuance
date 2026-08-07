@@ -130,6 +130,8 @@ export const publishWorkItemCommentDraft = /** @type {(itemKey: string, commentI
 
 export const getWorkItemAttachments = /** @type {(itemKey: string) => Promise<Attachment[]>} */ (apiClient.getWorkItemAttachments);
 
+export const getWorkItemAttachmentPreview = apiClient.getWorkItemAttachmentPreview;
+
 export const createWorkItemAttachment = /** @type {(itemKey: string, payload: AttachmentCreatePayload) => Promise<Attachment>} */ (apiClient.createWorkItemAttachment);
 
 export const getWorkItemAttachmentUploadUrl = /** @type {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} */ (apiClient.getWorkItemAttachmentUploadUrl);
@@ -211,6 +213,7 @@ export const webApi = {
   restoreWorkItem,
   updateWorkItemPrimaryPost,
   getWorkItemAttachmentDownloadUrl,
+  getWorkItemAttachmentPreview,
   getWorkItemAttachmentUploadUrl,
   getWorkItemAttachments,
   getWorkItemCommentAttachmentDownloadUrl,

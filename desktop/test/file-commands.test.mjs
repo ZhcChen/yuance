@@ -29,6 +29,7 @@ function fixture() {
     },
     previewCoordinator: {
       openProjectAttachmentPreview: async (input) => { calls.push(["preview-open", input]); return { capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "application/pdf", byteSize: 12, attachment: attachment("uploaded"), preview: { kind: "document", strategy: "pdf", file_type: "pdf", kind_label: "PDF", is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }; },
+      openWorkItemAttachmentPreview: async (input) => { calls.push(["work-item-preview-open", input]); return { capability: `ypv_${"e".repeat(32)}`, source: `app://yuance/.preview/ypv_${"e".repeat(32)}`, contentType: "application/pdf", byteSize: 12, attachment: attachment("uploaded"), preview: { kind: "document", strategy: "pdf", file_type: "pdf", kind_label: "PDF", is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }; },
       openProjectResourceAttachmentPreview: async (input) => { calls.push(["resource-preview-open", input]); return { capability: `ypv_${"d".repeat(32)}`, source: `app://yuance/.preview/ypv_${"d".repeat(32)}`, contentType: "application/pdf", byteSize: 12, attachment: attachment("uploaded"), preview: { kind: "document", strategy: "pdf", file_type: "pdf", kind_label: "PDF", is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }; },
       releaseProjectAttachmentPreview: (input) => { calls.push(["preview-release", input]); return { status: "released" }; },
     },
@@ -107,6 +108,9 @@ test("project preview commands bind sender and expose only opaque content source
   assert.equal(result.source, `app://yuance/.preview/${result.capability}`);
   assert.equal(JSON.stringify(result).includes("/secret"), false);
   assert.equal(value.calls.find(([name]) => name === "preview-open")[1].binding.webContentsId, 7);
+  const workItemResult = await value.handlers.get(FILE_CHANNELS.openWorkItemAttachmentPreview)(value.event, { itemKey: "YCE-TASK-2", attachmentId: 9 });
+  assert.equal(workItemResult.source, `app://yuance/.preview/ypv_${"e".repeat(32)}`);
+  assert.equal(value.calls.find(([name]) => name === "work-item-preview-open")[1].binding.webContentsId, 7);
   const resourceResult = await value.handlers.get(FILE_CHANNELS.openProjectResourceAttachmentPreview)(value.event, { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant" });
   assert.equal(resourceResult.source, `app://yuance/.preview/ypv_${"d".repeat(32)}`);
   assert.equal(JSON.stringify(resourceResult).includes("/secret"), false);

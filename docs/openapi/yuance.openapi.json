@@ -104,7 +104,10 @@
     "POST /api/v1/work-items/{item_key}/attachments",
     "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url",
     "POST /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded",
-    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url"
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview",
+    "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content",
+    "HEAD /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"
   ],
   "paths": {
     "/.well-known/yuance-desktop": {
@@ -1759,6 +1762,58 @@
       "head": {
         "tags": ["projects"],
         "summary": "读取项目附件预览内容响应头",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview": {
+      "get": {
+        "tags": ["work-items"],
+        "summary": "获取工作项附件预览元数据",
+        "description": "复用工作项项目成员权限与附件归属校验，返回预览分类和可预览附件前后项。",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [
+          {"$ref": "#/components/parameters/WorkItemKey"},
+          {"$ref": "#/components/parameters/AttachmentId"}
+        ],
+        "responses": {
+          "200": {"description": "附件预览元数据", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ProjectAttachmentPreviewEnvelope"}}}},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content": {
+      "parameters": [
+        {"$ref": "#/components/parameters/WorkItemKey"},
+        {"$ref": "#/components/parameters/AttachmentId"}
+      ],
+      "get": {
+        "tags": ["work-items"],
+        "summary": "读取工作项附件预览内容",
+        "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
+        "parameters": [{"$ref": "#/components/parameters/Range"}],
+        "responses": {
+          "200": {"$ref": "#/components/responses/PreviewContent"},
+          "206": {"$ref": "#/components/responses/PreviewPartialContent"},
+          "416": {"$ref": "#/components/responses/PreviewRangeNotSatisfiable"},
+          "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}
+        }
+      },
+      "head": {
+        "tags": ["work-items"],
+        "summary": "读取工作项附件预览内容响应头",
         "security": [{"bearerAuth": []}, {"deviceAccess": []}, {"cookieSession": []}],
         "parameters": [{"$ref": "#/components/parameters/Range"}],
         "responses": {

@@ -5270,6 +5270,93 @@ pub async fn work_item_attachment_download_url(
     Ok(json(payload))
 }
 
+pub async fn work_item_attachment_preview(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<ProjectAttachmentPreviewPayload>>> {
+    let (user, item, _project) = require_api_work_item_context(&state, &headers, &item_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+    let legacy_preview_enabled = state.settings.experimental_legacy_preview_enabled();
+    let strategy =
+        attachment_preview::strategy(&attachment.original_filename, &attachment.content_type);
+    let preview_kind = attachment_preview::kind(
+        &attachment.original_filename,
+        &attachment.content_type,
+        legacy_preview_enabled,
+    );
+    let content_enabled = attachment.status == "uploaded" && preview_kind.is_some();
+    let navigation = attachment_preview_navigation(
+        files::list_attachments(pool, "work_item", item.id).await?,
+        attachment.id,
+        legacy_preview_enabled,
+        |sibling| {
+            format!(
+                "/api/v1/work-items/{item_key}/attachments/{}/preview",
+                sibling.id
+            )
+        },
+    );
+    audit::record(
+        pool,
+        Some(user.id),
+        "file.preview",
+        "work_item",
+        &item_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await?;
+
+    Ok(json(ProjectAttachmentPreviewPayload {
+        attachment: attachment_payload(attachment.clone()),
+        preview: AttachmentPreviewPayload {
+            kind: preview_kind,
+            strategy: strategy.map(|value| value.code()),
+            file_type: attachment_preview::file_type(
+                &attachment.original_filename,
+                &attachment.content_type,
+            ),
+            kind_label: strategy.map(|value| value.kind_label()),
+            is_experimental: strategy.is_some_and(|value| value.is_experimental()),
+            legacy_preview_enabled,
+            content_enabled,
+        },
+        navigation,
+        content_url: format!(
+            "/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"
+        ),
+        download_url: format!(
+            "/api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url"
+        ),
+    }))
+}
+
+pub async fn work_item_attachment_preview_content(
+    State(state): State<AppState>,
+    method: Method,
+    headers: HeaderMap,
+    Path((item_key, attachment_id)): Path<(String, i64)>,
+) -> AppResult<Response> {
+    let (user, item, _project) = require_api_work_item_context(&state, &headers, &item_key).await?;
+    let pool = state.pool()?;
+    let attachment =
+        files::get_attachment_for_target(pool, attachment_id, "work_item", item.id).await?;
+    attachment_preview_content_response(
+        &state,
+        pool,
+        &headers,
+        method,
+        attachment,
+        user.id,
+        "work_item",
+        &item_key,
+        &format!(r#"{{"source":"api","attachment_id":{attachment_id}}}"#),
+    )
+    .await
+}
+
 pub async fn list_system_users(
     State(state): State<AppState>,
     headers: HeaderMap,

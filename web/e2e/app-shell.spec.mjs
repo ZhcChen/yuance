@@ -1721,6 +1721,86 @@ test('work item attachments can list download and upload for item and comments',
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论附件已上传。');
 });
 
+test('work item attachments share preview navigation fallback download and stale-route protection', async ({ page }) => {
+  const attachments = [
+    attachmentFixture({ id: 821, filename: 'work-item-overview.png', content_type: 'image/png', byte_size: 68 }),
+    attachmentFixture({ id: 822, filename: 'work-item-plan.pdf', content_type: 'application/pdf' }),
+    attachmentFixture({ id: 823, filename: 'work-item-archive.bin', content_type: 'application/octet-stream' }),
+  ];
+  const previewRequests = [];
+  const downloadRequests = [];
+  let releaseDelayedPreview;
+  const delayedPreview = new Promise((resolve) => { releaseDelayedPreview = resolve; });
+  let delayNextPreview = false;
+  const previewPayload = (index, kind, fileType) => ({
+    attachment: attachments[index],
+    preview: { kind, strategy: kind === 'image' ? 'image' : kind ? 'pdf' : null, file_type: fileType, kind_label: fileType?.toUpperCase() || null, is_experimental: false, legacy_preview_enabled: false, content_enabled: Boolean(kind) },
+    navigation: {
+      position: index < 2 ? index + 1 : 0,
+      total: 2,
+      previous: index === 1 ? { id: 821, title: attachments[0].filename, url: '/api/v1/work-items/YCE-TASK-2/attachments/821/preview' } : null,
+      next: index === 0 ? { id: 822, title: attachments[1].filename, url: '/api/v1/work-items/YCE-TASK-2/attachments/822/preview' } : null,
+    },
+    content_url: `/api/v1/work-items/YCE-TASK-2/attachments/${attachments[index].id}/preview/content`,
+    download_url: `/api/v1/work-items/YCE-TASK-2/attachments/${attachments[index].id}/download-url`,
+  });
+
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/preview', async (route) => {
+    const attachmentId = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+    previewRequests.push(attachmentId);
+    if (delayNextPreview) await delayedPreview;
+    const index = attachments.findIndex((attachment) => attachment.id === attachmentId);
+    const payload = index === 0 ? previewPayload(index, 'image', 'png') : index === 1 ? previewPayload(index, 'document', 'pdf') : previewPayload(index, null, null);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: payload }) });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: '' }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments/*/download-url', async (route) => {
+    const attachmentId = Number(new URL(route.request().url()).pathname.split('/').at(-2));
+    downloadRequests.push(attachmentId);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: attachments.find((attachment) => attachment.id === attachmentId), request: { method: 'GET', url: `/signed-download/work-item-preview-${attachmentId}`, headers: [] }, expires_in_seconds: 600 } }) });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [] }) }));
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workItemDetailFixture() }) });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await page.evaluate(() => {
+    window.__yuanceDownloadClicks = [];
+    HTMLAnchorElement.prototype.click = function click() { window.__yuanceDownloadClicks.push(this.href); };
+  });
+  const attachmentPanel = page.locator('.work-item-attachments-panel');
+  await attachmentPanel.getByRole('button', { name: '预览附件 work-item-overview.png' }).click();
+  const imagePreview = page.getByRole('dialog', { name: 'work-item-overview.png' });
+  await expect(imagePreview.getByRole('img', { name: 'work-item-overview.png' })).toHaveAttribute('src', '/api/v1/work-items/YCE-TASK-2/attachments/821/preview/content');
+  await expect(imagePreview).toContainText('1 / 2');
+  await imagePreview.getByRole('button', { name: '下一个' }).click();
+  const documentPreview = page.getByRole('dialog', { name: 'work-item-plan.pdf' });
+  await expect(documentPreview).toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
+  await documentPreview.getByRole('button', { name: '下载' }).click();
+  await expect.poll(() => downloadRequests).toEqual([822]);
+  await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/work-item-preview-822');
+  await documentPreview.getByRole('button', { name: '关闭附件预览' }).click();
+
+  await attachmentPanel.getByRole('button', { name: '预览附件 work-item-archive.bin' }).click();
+  const unsupportedPreview = page.getByRole('dialog', { name: 'work-item-archive.bin' });
+  await expect(unsupportedPreview).toContainText('此文件类型不支持预览。');
+  await unsupportedPreview.getByRole('button', { name: '关闭附件预览' }).click();
+
+  delayNextPreview = true;
+  await attachmentPanel.getByRole('button', { name: '预览附件 work-item-overview.png' }).click();
+  await page.evaluate(() => {
+    history.pushState({}, '', '/web/app/tasks');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  releaseDelayedPreview();
+  await expect(page).toHaveURL(/\/web\/app\/tasks/u);
+  await expect(page.getByRole('dialog', { name: 'work-item-overview.png' })).toHaveCount(0);
+  expect(previewRequests).toEqual([821, 822, 823, 821]);
+});
+
 test('work item attachment confirmation failure keeps pending file context', async ({ page }) => {
   const workItemAttachments = [];
   const comments = [workItemCommentFixture()];

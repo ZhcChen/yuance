@@ -1078,6 +1078,173 @@ async fn device_project_attachment_preview_supports_metadata_navigation_and_byte
     assert_eq!(response.headers()[header::ACCEPT_RANGES], "bytes");
 }
 
+#[tokio::test]
+async fn device_work_item_attachment_preview_enforces_contract_and_ownership() {
+    let pool = test_pool().await;
+    let admin_id = bootstrap_admin(&pool).await;
+    projects::seed_demo_data(&pool, admin_id).await.unwrap();
+    seed_memory_storage(&pool, admin_id).await;
+    let credentials = issue_device_credentials(&pool, admin_id, "work-item-preview").await;
+    let app = test_app(pool.clone());
+    let collection_path = "/api/v1/work-items/YCE-TASK-2/attachments";
+
+    let first_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        collection_path,
+        "preview-first.md",
+        "text/markdown",
+        b"first preview",
+    )
+    .await;
+    let selected_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        collection_path,
+        "preview-second.pdf",
+        "application/pdf",
+        b"0123456789",
+    )
+    .await;
+    let unsupported_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        collection_path,
+        "preview-unsupported.bin",
+        "application/octet-stream",
+        b"unsupported",
+    )
+    .await;
+    let pending_response = request(
+        &app,
+        "POST",
+        collection_path,
+        &credentials.access_token,
+        Some(serde_json::json!({
+            "original_filename": "preview-pending.png",
+            "content_type": "image/png",
+            "byte_size": 4,
+            "checksum_sha256": format!("{:x}", Sha256::digest(b"png!"))
+        })),
+    )
+    .await;
+    assert_eq!(pending_response.status(), StatusCode::CREATED);
+    let pending_id = json_body(pending_response).await["data"]["id"]
+        .as_i64()
+        .unwrap();
+
+    let preview_path = format!("{collection_path}/{selected_id}/preview");
+    let response = request(&app, "GET", &preview_path, &credentials.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let metadata = json_body(response).await;
+    assert_eq!(metadata["data"]["attachment"]["id"], selected_id);
+    assert_eq!(metadata["data"]["preview"]["kind"], "document");
+    assert_eq!(metadata["data"]["preview"]["strategy"], "pdf");
+    assert_eq!(metadata["data"]["preview"]["content_enabled"], true);
+    assert_eq!(metadata["data"]["navigation"]["position"], 1);
+    assert_eq!(metadata["data"]["navigation"]["total"], 2);
+    assert!(metadata["data"]["navigation"]["previous"].is_null());
+    assert_eq!(metadata["data"]["navigation"]["next"]["id"], first_id);
+
+    for (attachment_id, expected_kind) in [
+        (unsupported_id, serde_json::Value::Null),
+        (pending_id, serde_json::Value::String("image".to_string())),
+    ] {
+        let response = request(
+            &app,
+            "GET",
+            &format!("{collection_path}/{attachment_id}/preview"),
+            &credentials.access_token,
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let metadata = json_body(response).await;
+        assert_eq!(metadata["data"]["preview"]["kind"], expected_kind);
+        assert_eq!(metadata["data"]["preview"]["content_enabled"], false);
+        assert_eq!(metadata["data"]["navigation"]["position"], 0);
+        assert_eq!(metadata["data"]["navigation"]["total"], 2);
+    }
+
+    let content_path = format!("{preview_path}/content");
+    let response = request_with_headers(
+        &app,
+        "GET",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=2-5")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert_eq!(response.headers()[header::CONTENT_LENGTH], "4");
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "application/pdf");
+    assert_eq!(
+        &response.into_body().collect().await.unwrap().to_bytes()[..],
+        b"2345"
+    );
+
+    let response = request_with_headers(
+        &app,
+        "HEAD",
+        &content_path,
+        &credentials.access_token,
+        &[(header::RANGE.as_str(), "bytes=2-5")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes 2-5/10");
+    assert!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .is_empty()
+    );
+
+    let other_id = create_uploaded_attachment_fixture(
+        &app,
+        &pool,
+        &credentials.access_token,
+        "/api/v1/work-items/YCE-BUG-1/attachments",
+        "other-item.pdf",
+        "application/pdf",
+        b"other",
+    )
+    .await;
+    let response = request(
+        &app,
+        "GET",
+        &format!("{collection_path}/{other_id}/preview"),
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+    let outsider_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "work_item_preview_outsider".to_string(),
+            display_name: "Work Item Preview Outsider".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "OutsiderPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .unwrap();
+    let outsider = issue_device_credentials(&pool, outsider_id, "work-item-preview-outsider").await;
+    let response = request(&app, "GET", &preview_path, &outsider.access_token, None).await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
 async fn run_attachment_lifecycle(
     app: &Router,
     pool: &SqlitePool,
@@ -1160,6 +1327,58 @@ async fn run_attachment_lifecycle(
     let signed = json_body(response).await;
     assert_eq!(signed["data"]["request"]["method"], "GET");
     assert_eq!(signed["data"]["attachment"]["id"], attachment_id);
+}
+
+async fn create_uploaded_attachment_fixture(
+    app: &Router,
+    pool: &SqlitePool,
+    token: &str,
+    collection_path: &str,
+    filename: &str,
+    content_type: &str,
+    content: &[u8],
+) -> i64 {
+    let response = request(
+        app,
+        "POST",
+        collection_path,
+        token,
+        Some(serde_json::json!({
+            "original_filename": filename,
+            "content_type": content_type,
+            "byte_size": content.len(),
+            "checksum_sha256": format!("{:x}", Sha256::digest(content))
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let attachment_id = json_body(response).await["data"]["id"].as_i64().unwrap();
+    let object_key = sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",
+    )
+    .bind(attachment_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    storage::write_test_memory_object(
+        pool,
+        &test_settings(),
+        &object_key,
+        content_type,
+        content.to_vec(),
+    )
+    .await
+    .unwrap();
+    let response = request(
+        app,
+        "POST",
+        &format!("{collection_path}/{attachment_id}/uploaded"),
+        token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    attachment_id
 }
 
 async fn seed_memory_storage(pool: &SqlitePool, actor_user_id: i64) {

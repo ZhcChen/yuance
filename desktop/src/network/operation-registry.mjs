@@ -93,6 +93,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.commentcreate", workItemCommentCreateOperation],
     ["workitem.commentupdate", workItemCommentUpdateOperation],
     ["workitem.attachments", workItemAttachmentsOperation],
+    ["workitem.attachmentpreview", workItemAttachmentPreviewOperation],
     ["workitem.commentattachments", workItemCommentAttachmentsOperation],
   ]);
   const active = new Set();
@@ -587,6 +588,11 @@ function workItemCommentsOperation(input) {
 function workItemAttachmentsOperation(input) {
   exactKeys(input, ["itemKey"]);
   return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/attachments`, parseAttachments, true, "array");
+}
+
+function workItemAttachmentPreviewOperation(input) {
+  exactKeys(input, ["attachmentId", "itemKey"]);
+  return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/attachments/${positiveInteger(input.attachmentId)}/preview`, parseAttachmentPreview);
 }
 
 function workItemCommentAttachmentsOperation(input) {

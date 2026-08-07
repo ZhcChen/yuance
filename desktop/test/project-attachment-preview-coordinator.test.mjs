@@ -27,6 +27,22 @@ test("rejects disabled or substituted content metadata before loading bytes", as
   assert.equal(loaded, false);
 });
 
+test("work item preview derives content only from its fixed semantic reference", async () => {
+  const calls = [];
+  const snapshot = Object.freeze({ privatePath: "/private/work-item-preview", contentType: "application/pdf", byteSize: 12, remove: async () => {} });
+  const coordinator = createProjectAttachmentPreviewCoordinator({
+    restTransport: { execute: async (operation, input) => { calls.push([operation, input]); return { attachment, preview: { kind: "document", content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: "/api/v1/work-items/YCE-TASK-2/attachments/7/preview/content", download_url: "https://ignored.example/private" }; } },
+    loader: { load: async (input) => { calls.push(["load", input]); return snapshot; } },
+    vault: { issue: () => ({ capability: "ypv_work_item", source: "app://yuance/.preview/ypv_work_item", contentType: "application/pdf", byteSize: 12 }), release: () => {} },
+  });
+  const result = await coordinator.openWorkItemAttachmentPreview({ itemKey: "YCE-TASK-2", attachmentId: 7, binding, signal: undefined });
+  assert.equal(result.source, "app://yuance/.preview/ypv_work_item");
+  assert.deepEqual(calls[0], ["workitem.attachmentpreview", { itemKey: "YCE-TASK-2", attachmentId: 7 }]);
+  assert.equal(calls[1][1].contentPath, "/api/v1/work-items/YCE-TASK-2/attachments/7/preview/content");
+  assert.equal(JSON.stringify(result).includes("ignored.example"), false);
+  await assert.rejects(coordinator.openWorkItemAttachmentPreview({ itemKey: "YCE-TASK-2", attachmentId: 7, binding, signal: undefined, url: "https://evil.example" }), /invalid/);
+});
+
 test("resource preview binds the access grant to metadata and content paths", async () => {
   const calls = [];
   const snapshot = Object.freeze({ privatePath: "/private/resource-preview", contentType: "application/pdf", byteSize: 12, remove: async () => {} });

@@ -11,6 +11,7 @@ export const FILE_CHANNELS = Object.freeze({
   downloadProjectAttachment: "yuance:file-download-project-attachment",
   downloadProjectResourceAttachment: "yuance:file-download-project-resource-attachment",
   openProjectAttachmentPreview: "yuance:file-open-project-attachment-preview",
+  openWorkItemAttachmentPreview: "yuance:file-open-work-item-attachment-preview",
   openProjectResourceAttachmentPreview: "yuance:file-open-project-resource-attachment-preview",
   releaseProjectAttachmentPreview: "yuance:file-release-project-attachment-preview",
   attachmentProgress: "yuance:file-attachment-progress",
@@ -62,6 +63,16 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
       const onDestroyed = () => controller.abort();
       event.sender.once?.("destroyed", onDestroyed);
       try { return normalizePreview(await previewCoordinator.openProjectAttachmentPreview({ ...reference, binding, signal: controller.signal })); }
+      finally { event.sender.removeListener?.("destroyed", onDestroyed); }
+    },
+    [FILE_CHANNELS.openWorkItemAttachmentPreview]: async (event, payload) => {
+      assertSender(event);
+      const reference = parseWorkItemPreview(payload);
+      const binding = stripPurpose(getBinding(event, "preview"));
+      const controller = new AbortController();
+      const onDestroyed = () => controller.abort();
+      event.sender.once?.("destroyed", onDestroyed);
+      try { return normalizePreview(await previewCoordinator.openWorkItemAttachmentPreview({ ...reference, binding, signal: controller.signal })); }
       finally { event.sender.removeListener?.("destroyed", onDestroyed); }
     },
     [FILE_CHANNELS.openProjectResourceAttachmentPreview]: async (event, payload) => {
@@ -147,6 +158,10 @@ function parseProjectPreview(value) {
   if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "projectKey"]) || typeof value.projectKey !== "string" || !/^[A-Z][A-Z0-9-]{1,31}$/u.test(value.projectKey) || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1) throw new TypeError("preview request is invalid");
   return Object.freeze({ projectKey: value.projectKey, attachmentId: value.attachmentId });
 }
+function parseWorkItemPreview(value) {
+  if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "itemKey"]) || typeof value.itemKey !== "string" || !/^[A-Z][A-Z0-9-]{2,63}$/u.test(value.itemKey) || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1) throw new TypeError("work item preview request is invalid");
+  return Object.freeze({ itemKey: value.itemKey, attachmentId: value.attachmentId });
+}
 function parseProjectResourcePreview(value) {
   if (!isPlainObject(value) || !sameKeys(value, ["accessToken", "attachmentId", "projectKey", "resourceId"]) || typeof value.projectKey !== "string" || !/^[A-Z][A-Z0-9-]{1,31}$/u.test(value.projectKey) || !Number.isSafeInteger(value.resourceId) || value.resourceId < 1 || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1 || typeof value.accessToken !== "string" || value.accessToken.length > 4096) throw new TypeError("resource preview request is invalid");
   return Object.freeze({ projectKey: value.projectKey, resourceId: value.resourceId, attachmentId: value.attachmentId, accessToken: value.accessToken });
@@ -191,7 +206,7 @@ function normalizeAttachment(value) {
 function hasAttachmentOperations(value) {
   return ["uploadWorkItemAttachment", "uploadWorkItemCommentAttachment", "uploadProjectAttachment", "uploadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "downloadProjectAttachment", "downloadProjectResourceAttachment"].every((name) => typeof value?.[name] === "function");
 }
-function hasPreviewOperations(value) { return ["openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "releaseProjectAttachmentPreview"].every((name) => typeof value?.[name] === "function"); }
+function hasPreviewOperations(value) { return ["openProjectAttachmentPreview", "openWorkItemAttachmentPreview", "openProjectResourceAttachmentPreview", "releaseProjectAttachmentPreview"].every((name) => typeof value?.[name] === "function"); }
 function rejectPayload(payload) { if (payload !== undefined) throw new TypeError("file command does not accept payload"); }
 function normalizeSelection(value) {
   if (value === null) return null;

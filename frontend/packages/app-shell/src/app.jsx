@@ -1566,6 +1566,42 @@ export function SharedApp({ services }) {
     if (attachment) void openProjectAttachmentPreview(attachment);
   }
 
+  /** @param {AppAttachment} attachment */
+  async function openWorkItemAttachmentPreview(attachment) {
+    if (!activeWorkItemDetail || !attachmentIsUploaded(attachment)) return;
+    const itemKey = activeWorkItemDetail.key;
+    const requestId = projectAttachmentPreviewRequestRef.current + 1;
+    projectAttachmentPreviewRequestRef.current = requestId;
+    const previousCapability = projectAttachmentPreviewCapabilityRef.current;
+    projectAttachmentPreviewCapabilityRef.current = '';
+    if (previousCapability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(previousCapability).catch(() => {});
+    setProjectAttachmentPreview({ open: true, loading: true, error: '', attachment, source: '', kind: null, fileType: null, position: 0, total: 0, previousId: null, nextId: null });
+    try {
+      /** @type {{ capability: string, source: string, attachment: AppAttachment, preview: any, navigation: any }} */
+      let result;
+      if (typeof files.attachments?.openWorkItemAttachmentPreview === 'function') {
+        const hostResult = await files.attachments.openWorkItemAttachmentPreview({ itemKey, attachmentId: attachment.id });
+        result = { capability: hostResult.capability, source: hostResult.source, attachment: hostResult.attachment, preview: hostResult.preview, navigation: hostResult.navigation };
+      } else {
+        const browserResult = await api.getWorkItemAttachmentPreview(itemKey, attachment.id);
+        result = { capability: '', source: browserResult.content_url, attachment: browserResult.attachment, preview: browserResult.preview, navigation: browserResult.navigation };
+      }
+      if (projectAttachmentPreviewRequestRef.current !== requestId || !isCurrentWorkItemDetailRoute(itemKey)) {
+        if (result.capability && typeof files.attachments?.releaseProjectAttachmentPreview === 'function') void files.attachments.releaseProjectAttachmentPreview(result.capability).catch(() => {});
+        return;
+      }
+      projectAttachmentPreviewCapabilityRef.current = result.capability || '';
+      setProjectAttachmentPreview({ open: true, loading: false, error: '', attachment: result.attachment, source: result.source, kind: result.preview.kind, fileType: result.preview.file_type, position: result.navigation.position, total: result.navigation.total, previousId: result.navigation.previous?.id || null, nextId: result.navigation.next?.id || null });
+    } catch (caught) {
+      if (projectAttachmentPreviewRequestRef.current === requestId && isCurrentWorkItemDetailRoute(itemKey)) setProjectAttachmentPreview((current) => current ? { ...current, loading: false, error: errorMessage(caught instanceof Error ? caught : new Error('预览加载失败。')) } : current);
+    }
+  }
+
+  function navigateWorkItemAttachmentPreview(attachmentId) {
+    const attachment = workItemAttachments.find((item) => item.id === attachmentId);
+    if (attachment) void openWorkItemAttachmentPreview(attachment);
+  }
+
   async function openProjectResourceAttachmentPreview(attachment) {
     const current = routeRef.current;
     if (current.id !== 'project-resource-detail' || !projectResourceDetail || projectResourceLocked || !attachmentIsUploaded(attachment)) return;
@@ -4479,9 +4515,12 @@ export function SharedApp({ services }) {
                     revealableId={workItemAttachmentReveal?.attachmentId || null}
                     onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
                     onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
+                    onPreview={(attachment) => void openWorkItemAttachmentPreview(attachment)}
                     onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
                     onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
                   />
+
+                  <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadWorkItemAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
 
                   <WorkItemComments
                     comments={workItemComments}

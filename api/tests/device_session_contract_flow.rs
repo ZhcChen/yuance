@@ -473,7 +473,10 @@ fn openapi_freezes_d2_device_business_allowlist() {
         "POST /api/v1/work-items/{item_key}/attachments",
         "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/upload-url",
         "POST /api/v1/work-items/{item_key}/attachments/{attachment_id}/uploaded",
-        "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url"
+        "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/download-url",
+        "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview",
+        "GET /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content",
+        "HEAD /api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"
     ]);
     assert_eq!(allowlist, expected.as_array().unwrap());
     for forbidden in [
@@ -532,6 +535,37 @@ fn openapi_publishes_project_attachment_preview_metadata_and_range_content() {
             ["const"],
         "bytes"
     );
+}
+
+#[test]
+fn openapi_publishes_work_item_attachment_preview_metadata_and_range_content() {
+    let document: serde_json::Value =
+        serde_json::from_str(include_str!("../../docs/openapi/yuance.openapi.json"))
+            .expect("OpenAPI document should parse");
+    let preview =
+        &document["paths"]["/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview"];
+    assert_eq!(
+        preview["get"]["responses"]["200"]["content"]["application/json"]["schema"]["$ref"],
+        "#/components/schemas/ProjectAttachmentPreviewEnvelope"
+    );
+
+    let content = &document["paths"]["/api/v1/work-items/{item_key}/attachments/{attachment_id}/preview/content"];
+    assert_eq!(
+        content["get"]["parameters"][0]["$ref"],
+        "#/components/parameters/Range"
+    );
+    for method in ["get", "head"] {
+        for status in ["200", "206", "416"] {
+            assert!(
+                content[method]["responses"][status].is_object(),
+                "{method} {status}"
+            );
+        }
+        assert_eq!(
+            content[method]["responses"]["206"]["$ref"],
+            "#/components/responses/PreviewPartialContent"
+        );
+    }
 }
 
 async fn test_pool() -> SqlitePool {

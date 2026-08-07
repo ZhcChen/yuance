@@ -33,6 +33,7 @@ test('work item attachments render content, status and callbacks as controls', (
     downloadingId: null,
     onChooseUpload: () => {},
     onRetryUpload: () => {},
+    onPreview: () => {},
     onDownload: () => {},
   }));
 
@@ -40,6 +41,7 @@ test('work item attachments render content, status and callbacks as controls', (
   assert.match(html, /design\.txt/);
   assert.match(html, /1\.5 KB/);
   assert.match(html, /aria-label="下载附件 design\.txt"/);
+  assert.match(html, /aria-label="预览附件 design\.txt"/);
   assert.match(html, /role="alert"/);
 });
 
