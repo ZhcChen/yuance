@@ -6,6 +6,7 @@ import {
   createWorkItemAttachment,
   createWorkItemCommentAttachment,
   deleteWorkItemCommentAttachment,
+  deleteWorkItemPrimaryPostAttachment,
   createWorkItemCommentDraft,
   createWorkItemComment,
   cancelWorkItemCommentDraft,
@@ -516,5 +517,20 @@ test('comment attachment clients cover list, create, delete, signed URLs and upl
     const deleteHeaders = new Headers(calls[8].options.headers);
     assert.equal(deleteHeaders.get('x-yuance-csrf-token'), 'csrf-comment-delete');
     assert.equal(deleteHeaders.get('x-yuance-editor-context'), 'work-item-comment-edit');
+  });
+});
+
+test('primary post attachment deletion exposes the distinct bounded browser adapter', async () => {
+  await withFetchQueue([
+    jsonResponse({ csrf_token: 'csrf-primary-delete' }, { csrfToken: 'csrf-primary-delete' }),
+    jsonResponse(attachmentPayload({ id: 13, filename: 'primary.txt', status: 'deleted' })),
+  ], async (calls) => {
+    const deleted = await deleteWorkItemPrimaryPostAttachment('YCE-TASK/2', 43, 13);
+    assert.equal(deleted.status, 'deleted');
+    assert.equal(calls[1].url, '/api/v1/work-items/YCE-TASK%2F2/comments/43/attachments/13');
+    assert.equal(calls[1].options.method, 'DELETE');
+    const headers = new Headers(calls[1].options.headers);
+    assert.equal(headers.get('x-yuance-csrf-token'), 'csrf-primary-delete');
+    assert.equal(headers.get('x-yuance-editor-context'), 'work-item-primary-post');
   });
 });

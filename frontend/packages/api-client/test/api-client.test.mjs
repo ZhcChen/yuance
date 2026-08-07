@@ -240,6 +240,16 @@ test('work item comment attachment deletion fixes the editor context header', as
   });
 });
 
+test('work item primary post attachment deletion uses its distinct fixed editor context', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.deleteWorkItemPrimaryPostAttachment('YCE-TASK-2', 9, 7);
+  assert.deepEqual(writes, ['prepare']);
+  assert.deepEqual(calls[0], {
+    url: '/api/v1/work-items/YCE-TASK-2/comments/9/attachments/7',
+    options: { method: 'DELETE', headers: { 'x-yuance-editor-context': 'work-item-primary-post' } },
+  });
+});
+
 test('work item list preserves cycle and allowlisted sort query', async () => {
   const { client, calls } = createRecordedClient();
   await client.getWorkItems({ itemType: 'task', projectKey: 'yce', cycleId: 7, sort: 'due_date_asc', page: 2, perPage: 20 });

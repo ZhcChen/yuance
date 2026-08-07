@@ -297,8 +297,8 @@ function resolveMutationOperation(parsed, method, options) {
   }
   const commentAttachment = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)\/attachments\/(\d+)$/u);
   if (method === "DELETE" && commentAttachment) {
-    requireFixedHeaders(options, { "x-yuance-editor-context": "work-item-comment-edit" });
-    return { operation: "workitem.commentattachmentdelete", input: { itemKey: decodeSegment(commentAttachment[1]), commentId: positiveInteger(commentAttachment[2]), attachmentId: positiveInteger(commentAttachment[3]) } };
+    const editorContext = requireEditorContext(options);
+    return { operation: editorContext === "work-item-primary-post" ? "workitem.primarypostattachmentdelete" : "workitem.commentattachmentdelete", input: { itemKey: decodeSegment(commentAttachment[1]), commentId: positiveInteger(commentAttachment[2]), attachmentId: positiveInteger(commentAttachment[3]) } };
   }
   const comment = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)$/u);
   if (method === "PATCH" && comment) {
@@ -341,11 +341,13 @@ function rejectBody(options) {
   if (!isPlainObject(options) || !sameKeys(options, ["method"])) throw apiError("invalid_request", 400);
 }
 
-function requireFixedHeaders(options, expectedHeaders) {
-  if (!isPlainObject(options) || !sameKeys(options, ["headers", "method"]) || !isPlainObject(options.headers) || !sameKeys(options.headers, Object.keys(expectedHeaders))) {
+function requireEditorContext(options) {
+  if (!isPlainObject(options) || !sameKeys(options, ["headers", "method"]) || !isPlainObject(options.headers) || !sameKeys(options.headers, ["x-yuance-editor-context"])) {
     throw apiError("invalid_request", 400);
   }
-  for (const [name, value] of Object.entries(expectedHeaders)) if (options.headers[name] !== value) throw apiError("invalid_request", 400);
+  const value = options.headers["x-yuance-editor-context"];
+  if (!["work-item-comment-edit", "work-item-primary-post"].includes(value)) throw apiError("invalid_request", 400);
+  return value;
 }
 
 function renameBody(body, names) {

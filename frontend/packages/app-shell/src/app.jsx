@@ -812,7 +812,7 @@ export function SharedApp({ services }) {
   const [workItemCommentAttachmentDownloadingKey, setWorkItemCommentAttachmentDownloadingKey] = useState('');
   const [workItemCommentAttachmentReveal, setWorkItemCommentAttachmentReveal] = useState(/** @type {{ key: string, capability: import('@yuance/frontend-platform-contract').RevealDownloadCapability } | null} */ (null));
   const [workItemCommentAttachmentStatus, setWorkItemCommentAttachmentStatus] = useState(/** @type {Record<string, string>} */ ({}));
-  const [workItemCommentAttachmentDeleteTarget, setWorkItemCommentAttachmentDeleteTarget] = useState(/** @type {{ commentId: number, attachment: AppAttachment } | null} */ (null));
+  const [workItemCommentAttachmentDeleteTarget, setWorkItemCommentAttachmentDeleteTarget] = useState(/** @type {{ commentId: number, attachment: AppAttachment, editorContext: 'comment-edit' | 'primary-post' } | null} */ (null));
   const [workItemCommentAttachmentDeletingId, setWorkItemCommentAttachmentDeletingId] = useState(/** @type {number | null} */ (null));
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
@@ -2871,31 +2871,56 @@ export function SharedApp({ services }) {
   function requestWorkItemCommentAttachmentDelete(commentId, attachment) {
     if (workItemEditingCommentId !== commentId || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
     setWorkItemCommentActionError('');
-    setWorkItemCommentAttachmentDeleteTarget({ commentId, attachment });
+    setWorkItemCommentAttachmentDeleteTarget({ commentId, attachment, editorContext: 'comment-edit' });
+  }
+
+  /** @param {{ id: number, filename: string }} attachment */
+  function requestWorkItemPrimaryPostAttachmentDelete(attachment) {
+    const primaryPostId = activeWorkItemDetailView?.primary_post?.id;
+    if (!primaryPostId || !activeWorkItemDetailView?.permissions.can_edit_primary_post || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
+    setWorkItemActionError('');
+    const source = (workItemCommentAttachments[String(primaryPostId)] || []).find((candidate) => candidate.id === attachment.id);
+    if (source) setWorkItemCommentAttachmentDeleteTarget({ commentId: primaryPostId, attachment: source, editorContext: 'primary-post' });
   }
 
   async function confirmWorkItemCommentAttachmentDelete() {
     const target = workItemCommentAttachmentDeleteTarget;
-    if (!activeWorkItemDetail || !target || workItemEditingCommentId !== target.commentId || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
+    const targetIsCurrent = target?.editorContext === 'primary-post'
+      ? activeWorkItemDetailView?.primary_post?.id === target.commentId && activeWorkItemDetailView.permissions.can_edit_primary_post
+      : workItemEditingCommentId === target?.commentId;
+    if (!activeWorkItemDetail || !target || !targetIsCurrent || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
     const itemKey = activeWorkItemDetail.key;
-    const editor = runtime.getElementById(`work-item-comment-edit-${target.commentId}`);
+    const editor = runtime.getElementById(target.editorContext === 'primary-post' ? 'work-item-primary-post' : `work-item-comment-edit-${target.commentId}`);
     const staging = editor?.ownerDocument.createElement('div');
     if (!staging) {
-      setWorkItemCommentActionError('评论编辑器不可用。');
+      if (target.editorContext === 'primary-post') setWorkItemActionError('主内容编辑器不可用。');
+      else setWorkItemCommentActionError('评论编辑器不可用。');
       return;
     }
-    staging.innerHTML = workItemEditCommentBody;
+    staging.innerHTML = target.editorContext === 'primary-post' ? workItemEditForm.description : workItemEditCommentBody;
     for (const node of staging.querySelectorAll(`[data-yuance-attachment-id="${target.attachment.id}"]`)) node.remove();
     const nextBody = staging.innerHTML;
     const actionId = workItemAttachmentActionRef.current + 1;
     workItemAttachmentActionRef.current = actionId;
     workItemAttachmentMutationRef.current = true;
     setWorkItemCommentAttachmentDeletingId(target.attachment.id);
-    setWorkItemCommentActionError('');
+    if (target.editorContext === 'primary-post') setWorkItemActionError('');
+    else setWorkItemCommentActionError('');
     try {
-      await api.deleteWorkItemCommentAttachment(itemKey, target.commentId, target.attachment.id);
-      if (!isCurrentWorkItemDetailRoute(itemKey) || workItemAttachmentActionRef.current !== actionId || workItemEditingCommentId !== target.commentId) return;
-      setWorkItemEditCommentBody(nextBody);
+      if (target.editorContext === 'primary-post') await api.deleteWorkItemPrimaryPostAttachment(itemKey, target.commentId, target.attachment.id);
+      else await api.deleteWorkItemCommentAttachment(itemKey, target.commentId, target.attachment.id);
+      const targetStillCurrent = target.editorContext === 'primary-post'
+        ? activeWorkItemDetailView?.primary_post?.id === target.commentId
+        : workItemEditingCommentId === target.commentId;
+      if (!isCurrentWorkItemDetailRoute(itemKey) || workItemAttachmentActionRef.current !== actionId || !targetStillCurrent) return;
+      if (target.editorContext === 'primary-post') {
+        setWorkItemEditForm((current) => ({ ...current, description: nextBody }));
+        setWorkItemDetailView((current) => current?.primary_post?.id === target.commentId
+          ? { ...current, primary_post: { ...current.primary_post, body: nextBody } }
+          : current);
+      } else {
+        setWorkItemEditCommentBody(nextBody);
+      }
       setWorkItemCommentAttachments((current) => ({
         ...current,
         [String(target.commentId)]: (current[String(target.commentId)] || []).filter((attachment) => attachment.id !== target.attachment.id),
@@ -2904,7 +2929,9 @@ export function SharedApp({ services }) {
       setStatusMessage(`${target.attachment.filename} 及正文引用已删除。`);
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey) && workItemAttachmentActionRef.current === actionId) {
-        setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('删除评论附件失败。')));
+        const message = errorMessage(caught instanceof Error ? caught : new Error('删除附件失败。'));
+        if (target.editorContext === 'primary-post') setWorkItemActionError(message);
+        else setWorkItemCommentActionError(message);
       }
     } finally {
       if (workItemAttachmentActionRef.current === actionId) {
@@ -4659,6 +4686,7 @@ export function SharedApp({ services }) {
                   <WorkItemDetail
                     item={activeWorkItemDetail}
                     primaryPost={activeWorkItemDetailView?.primary_post || null}
+                    primaryPostAttachments={(workItemCommentAttachments[String(activeWorkItemDetailView?.primary_post?.id || '')] || []).filter((attachment) => attachment.status !== 'deleted').map((attachment) => ({ id: attachment.id, filename: attachment.filename, contentType: attachment.content_type, url: `/api/v1/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${activeWorkItemDetailView?.primary_post?.id}/attachments/${attachment.id}/preview/content` }))}
                     editForm={workItemEditForm}
                     handoffForm={workItemHandoffForm}
                     statusOptions={activeWorkItemDetailView?.status_options || []}
@@ -4688,6 +4716,7 @@ export function SharedApp({ services }) {
                     onSubmitEdit={submitWorkItemEdit}
                     onSubmitHandoff={submitWorkItemHandoff}
                     onRequestLifecycleAction={setWorkItemLifecycleAction}
+                    onRequestDeletePrimaryPostAttachment={requestWorkItemPrimaryPostAttachmentDelete}
                   />
 
                   <WorkItemAttachments
@@ -4752,8 +4781,8 @@ export function SharedApp({ services }) {
                     onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}
                     onRequestDeleteAttachment={requestWorkItemCommentAttachmentDelete}
                   />
-                  <Modal open={Boolean(workItemCommentAttachmentDeleteTarget)} title="删除评论附件" onClose={() => { if (workItemCommentAttachmentDeletingId === null) setWorkItemCommentAttachmentDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemCommentAttachmentDeletingId !== null} onClick={() => setWorkItemCommentAttachmentDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemCommentAttachmentDeletingId !== null} onClick={() => void confirmWorkItemCommentAttachmentDelete()}>确认删除</Button></>}>
-                    <p>确认删除“{workItemCommentAttachmentDeleteTarget?.attachment.filename}”？对象存储中的文件和评论正文中的附件引用都会立即删除。</p>
+                  <Modal open={Boolean(workItemCommentAttachmentDeleteTarget)} title={workItemCommentAttachmentDeleteTarget?.editorContext === 'primary-post' ? '删除主内容附件' : '删除评论附件'} onClose={() => { if (workItemCommentAttachmentDeletingId === null) setWorkItemCommentAttachmentDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemCommentAttachmentDeletingId !== null} onClick={() => setWorkItemCommentAttachmentDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemCommentAttachmentDeletingId !== null} onClick={() => void confirmWorkItemCommentAttachmentDelete()}>确认删除</Button></>}>
+                    <p>确认删除“{workItemCommentAttachmentDeleteTarget?.attachment.filename}”？对象存储中的文件和{workItemCommentAttachmentDeleteTarget?.editorContext === 'primary-post' ? '主内容' : '评论正文'}中的附件引用都会立即删除。</p>
                   </Modal>
                 </>
               ) : (

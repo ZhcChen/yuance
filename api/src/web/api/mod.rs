@@ -6981,6 +6981,9 @@ fn work_item_comment_matches_primary_post_summary(
     item: &projects::WorkItemDetail,
     comment: &projects::WorkItemCommentSummary,
 ) -> bool {
+    if let Some(primary_post_comment_id) = item.primary_post_comment_id {
+        return comment.id == primary_post_comment_id;
+    }
     if comment.is_flow
         || comment.parent_comment_id.is_some()
         || comment.body_format != "html"

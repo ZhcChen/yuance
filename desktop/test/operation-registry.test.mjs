@@ -335,6 +335,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 9 }, "DELETE", "/api/v1/work-items/DEMO-1/comments/9/draft", undefined],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }, "PATCH", "/api/v1/work-items/DEMO-1/comments/9", { body: "Edited", body_format: "plain", parent_comment_id: null }],
     ["workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }, "DELETE", "/api/v1/work-items/DEMO-1/comments/9/attachments/7", undefined],
+    ["workitem.primarypostattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }, "DELETE", "/api/v1/work-items/DEMO-1/comments/9/attachments/7", undefined],
   ];
   for (const [name, input, method, path, body] of cases) {
     const operation = registry.resolve(name, input);
@@ -347,6 +348,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
   assert.equal(registry.resolve("project.memberremove", { projectKey: "DEMO", username: "bob" }).allowNoContent, true);
   assert.equal(registry.resolve("workitem.savedviewdelete", { savedViewId: 7 }).allowNoContent, true);
   assert.equal(registry.resolve("workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }).editorContext, "work-item-comment-edit");
+  assert.equal(registry.resolve("workitem.primarypostattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }).editorContext, "work-item-primary-post");
 });
 
 test("rejects invalid mutation fields before a descriptor is created", () => {
@@ -396,6 +398,7 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
     ["workitem.commentdraftpublish", { itemKey: "DEMO-1", commentId: 9, payload: { body: "", bodyFormat: "html" } }],
     ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 0 }],
     ["workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7, headers: {} }],
+    ["workitem.primarypostattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7, editorContext: "forged" }],
   ]) assert.throws(() => registry.resolve(name, input), /invalid|unknown/i);
 });
 

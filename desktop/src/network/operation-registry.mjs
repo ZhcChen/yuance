@@ -100,6 +100,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.commentattachments", workItemCommentAttachmentsOperation],
     ["workitem.commentattachmentpreview", workItemCommentAttachmentPreviewOperation],
     ["workitem.commentattachmentdelete", workItemCommentAttachmentDeleteOperation],
+    ["workitem.primarypostattachmentdelete", workItemPrimaryPostAttachmentDeleteOperation],
   ]);
   const active = new Set();
   function resolve(name, input) {
@@ -647,6 +648,19 @@ function workItemCommentAttachmentDeleteOperation(input) {
     "object",
     undefined,
     "work-item-comment-edit",
+  );
+}
+
+function workItemPrimaryPostAttachmentDeleteOperation(input) {
+  exactKeys(input, ["attachmentId", "commentId", "itemKey"]);
+  return descriptor(
+    "DELETE",
+    `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments/${positiveInteger(input.attachmentId)}`,
+    parseAttachment,
+    false,
+    "object",
+    undefined,
+    "work-item-primary-post",
   );
 }
 

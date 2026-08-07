@@ -103,8 +103,8 @@ export function richTextAttachmentHtml(attachment) {
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
 /** @typedef {{ username: string, displayName: string }} RichTextMentionOption */
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[] }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [] }) {
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[], mentionOptions?: RichTextMentionOption[], onRequestRemoveAttachment?: (attachment: RichTextAttachmentOption) => void }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [], mentionOptions = [], onRequestRemoveAttachment }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
   const mentionRangeRef = useRef(/** @type {Range | null} */ (null));
   const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
@@ -212,6 +212,11 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
   function removeAttachment(attachmentId) {
     const input = inputRef.current;
     if (!input || disabled) return;
+    const attachment = attachments.find((candidate) => candidate.id === attachmentId);
+    if (attachment && onRequestRemoveAttachment) {
+      onRequestRemoveAttachment(attachment);
+      return;
+    }
     input.querySelector(`[data-yuance-attachment-id="${attachmentId}"]`)?.remove();
     publish(input);
   }

@@ -80,7 +80,7 @@ test("api-client mutations map to fixed domain operations without request primit
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {
     calls.push([operation, input]);
-    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : ["project.resourceattachmentdelete", "workitem.commentattachmentdelete"].includes(operation) ? attachmentFixture : {} };
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : ["project.resourceattachmentdelete", "workitem.commentattachmentdelete", "workitem.primarypostattachmentdelete"].includes(operation) ? attachmentFixture : {} };
   } });
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
@@ -123,6 +123,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.cancelWorkItemCommentDraft("DEMO-1", 9);
   await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
   await client.deleteWorkItemCommentAttachment("DEMO-1", 9, 7);
+  await client.deleteWorkItemPrimaryPostAttachment("DEMO-1", 9, 8);
   assert.deepEqual(calls, [
     ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
     ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }],
@@ -173,6 +174,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 9 }],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }],
     ["workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }],
+    ["workitem.primarypostattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 8 }],
   ]);
   assert.equal(JSON.stringify(calls).includes("content-type"), false);
   assert.equal(JSON.stringify(calls).includes("/api/v1/"), false);

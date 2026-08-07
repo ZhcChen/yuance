@@ -25,7 +25,7 @@ export function createRestTransport({ profile, credentialRuntime, fetchImpl, reg
         let response;
         try {
           response = await fetchImpl(url, { method: operation.method, redirect: "manual", credentials: "omit", cache: "no-store", signal: controller.signal,
-            headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}`, "Cache-Control": "no-store", ...(operation.contentType ? { "Content-Type": operation.contentType } : {}), ...(operation.editorContext === "work-item-comment-edit" ? { "X-Yuance-Editor-Context": operation.editorContext } : {}) },
+            headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}`, "Cache-Control": "no-store", ...(operation.contentType ? { "Content-Type": operation.contentType } : {}), ...(["work-item-comment-edit", "work-item-primary-post"].includes(operation.editorContext) ? { "X-Yuance-Editor-Context": operation.editorContext } : {}) },
             ...(operation.body === undefined ? {} : { body: operation.body }) });
         } catch {
           if (!operation.idempotent) throw new ResponseContractError("mutation_result_uncertain", "Mutation result is uncertain");

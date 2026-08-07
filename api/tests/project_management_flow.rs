@@ -2329,12 +2329,13 @@ async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
     .await
     .expect("draft should publish");
 
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri(format!("/web/work-items/{}", item.item_key))
-                .header(header::COOKIE, admin.cookie)
+                .header(header::COOKIE, admin.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -2359,6 +2360,66 @@ async fn work_item_detail_promotes_primary_post_with_inline_file_attachments() {
     assert!(discussion_section.contains("还没有讨论"));
     assert!(!discussion_section.contains(&format!(r#"src="{image_url}""#)));
     assert!(!discussion_section.contains(&format!(r#"href="{file_url}""#)));
+    let promoted_post = projects::get_work_item_comment(&pool, item.id, draft.id)
+        .await
+        .expect("promoted primary post should load");
+    projects::bind_work_item_primary_post(
+        &pool,
+        &item.item_key,
+        draft.id,
+        &projects::work_item_primary_post_summary(&promoted_post.body, &promoted_post.body_format),
+    )
+    .await
+    .expect("promoted primary post should bind");
+    let promoted_item = projects::get_work_item_detail(&pool, &item.item_key)
+        .await
+        .expect("promoted work item should load")
+        .expect("promoted work item should exist");
+    assert_eq!(promoted_item.primary_post_comment_id, Some(draft.id));
+
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/{}/comments/{}/attachments/{}",
+                    item.item_key, draft.id, file_attachment.id
+                ))
+                .header(header::COOKIE, admin.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header("x-yuance-editor-context", "work-item-primary-post")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+    let updated_post = projects::get_work_item_comment(&pool, item.id, draft.id)
+        .await
+        .expect("primary post should remain");
+    assert!(updated_post.body.contains(&format!(
+        "data-yuance-attachment-id=\"{}\"",
+        image_attachment.id
+    )));
+    assert!(!updated_post.body.contains(&format!(
+        "data-yuance-attachment-id=\"{}\"",
+        file_attachment.id
+    )));
+    assert_eq!(
+        files::get_attachment(&pool, file_attachment.id)
+            .await
+            .expect("attachment should remain auditable")
+            .status,
+        "deleted"
+    );
+    let updated_item = projects::get_work_item_detail(&pool, &item.item_key)
+        .await
+        .expect("updated work item should load")
+        .expect("updated work item should exist");
+    assert_eq!(
+        updated_item.description,
+        projects::work_item_primary_post_summary(&updated_post.body, &updated_post.body_format)
+    );
 }
 
 #[tokio::test]

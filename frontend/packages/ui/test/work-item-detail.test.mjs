@@ -29,6 +29,7 @@ function renderDetail(overrides = {}) {
   return renderToStaticMarkup(createElement(WorkItemDetail, {
     item,
     primaryPost: null,
+    primaryPostAttachments: [],
     editForm: { title: item.title, description: item.description, status: item.status, priority: item.priority, assigneeUsername: 'alice', dueDate: item.due_date, parentItemKey: item.parent_item_key },
     handoffForm: { status: 'pending_confirmation', assigneeUsername: 'bob', body: '请确认' },
     statusOptions: [{ value: 'in_progress', label: '处理中' }, { value: 'pending_confirmation', label: '待确认' }],
@@ -58,6 +59,7 @@ function renderDetail(overrides = {}) {
     onSubmitEdit: () => {},
     onSubmitHandoff: () => {},
     onRequestLifecycleAction: () => {},
+    onRequestDeletePrimaryPostAttachment: () => {},
     ...overrides,
   }));
 }
@@ -80,10 +82,16 @@ test('work item detail renders metadata and both mutation forms', () => {
 });
 
 test('work item detail prefers the canonical HTML primary post over the legacy summary', () => {
-  const html = renderDetail({ primaryPost: { id: 91, body: '<h2>共享主帖</h2><p>富文本正文</p>', body_format: 'html' } });
+  const primaryBody = '<h2>共享主帖</h2><p>富文本正文</p><a data-yuance-attachment-id="7">附件</a>';
+  const html = renderDetail({
+    primaryPost: { id: 91, body: primaryBody, body_format: 'html' },
+    editForm: { title: item.title, description: primaryBody, status: item.status, priority: item.priority, assigneeUsername: 'alice', dueDate: item.due_date, parentItemKey: item.parent_item_key },
+    primaryPostAttachments: [{ id: 7, filename: 'primary.txt', contentType: 'text/plain', url: '/web/work-items/YCE-TASK-2/comments/91/attachments/7/download' }],
+  });
 
   assert.match(html, /yc-rich-text-content/);
   assert.doesNotMatch(html, />提取共享 UI</);
+  assert.match(html, /primary\.txt[\s\S]*移除引用/);
 });
 
 test('work item detail keeps handoff available while hiding author-only primary post editing', () => {
