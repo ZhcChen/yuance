@@ -24,6 +24,7 @@ export {
   buildSystemPath,
   buildSystemOpenApiPath,
   buildSystemDatabaseStatsPath,
+  buildSystemAuditPath,
   buildSystemPermissionsPath,
   buildSystemRolesPath,
   buildSystemReleasesPath,

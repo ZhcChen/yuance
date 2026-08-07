@@ -286,6 +286,14 @@ test("system database stats map to one fixed Desktop read operation", async () =
   assert.deepEqual(calls, [["system.databasestats", {}]]);
 });
 
+test("system audit filters map to one fixed Desktop read operation", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: { items: [], pagination: { page: 2, per_page: 20, total_items: 0, total_pages: 1 } } }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemAuditLogs({ actor: "Alice", action: "auth.login", targetType: "user", targetId: "7", page: 2, perPage: 20 });
+  assert.deepEqual(calls, [["system.audit", { actor: "Alice", action: "auth.login", targetType: "user", targetId: "7", page: 2, perPage: 20 }]]);
+});
+
 test("system release mutations map to fixed Desktop operations", async () => {
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });

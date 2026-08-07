@@ -37,6 +37,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     ["shell.topbar", {}, "/api/v1/topbar/status"],
     ["system.dashboard", {}, "/api/v1/system/dashboard"],
     ["system.databasestats", {}, "/api/v1/system/database-stats"],
+    ["system.audit", { actor: "Alice", action: "auth.login", targetType: "user", targetId: "7", page: 2, perPage: 20 }, "/api/v1/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20"],
     ["system.usersview", { page: 2, perPage: 20 }, "/api/v1/system/users-view?page=2&per_page=20"],
     ["system.rolesview", { role: "qa_lead", page: 2, perPage: 20 }, "/api/v1/system/roles-view?role=qa_lead&page=2&per_page=20"],
     ["system.storageview", { page: 2, perPage: 20 }, "/api/v1/system/storage-view?page=2&per_page=20"],
@@ -125,6 +126,13 @@ test("system database stats response is deeply bounded", () => {
   assert.deepEqual(parse(payload), payload);
   assert.throws(() => parse({ ...payload, secret: "no" }), /fields/i);
   assert.throws(() => parse({ ...payload, tables: [{ ...payload.tables[0], columns: [{ ...payload.tables[0].columns[0], secret: "no" }] }] }), /fields/i);
+});
+
+test("system audit response is bounded to public log fields", () => {
+  const parse = createOperationRegistry().resolve("system.audit", {}).parse;
+  const payload = { items: [{ id: 1, actor_display_name: "Alice", actor_username: "alice", action: "auth.login", target_type: "user", target_id: "7", metadata: "{}", ip: "127.0.0.1", user_agent: "test", created_at: "2026-08-08T00:00:00Z" }], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 } };
+  assert.deepEqual(parse(payload), payload);
+  assert.throws(() => parse({ ...payload, items: [{ ...payload.items[0], secret: "no" }] }), /fields/i);
 });
 
 test("system storage view response excludes raw storage credentials", () => {

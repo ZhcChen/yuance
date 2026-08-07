@@ -14,6 +14,7 @@ import {
   buildSystemPath,
   buildSystemOpenApiPath,
   buildSystemDatabaseStatsPath,
+  buildSystemAuditPath,
   buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
@@ -80,6 +81,15 @@ test('system database stats route preserves Browser and Desktop owners', () => {
     id: 'system-database-stats', owner: 'web', pathname: '/web/system/database-stats', search: '', title: '数据库统计',
   });
   assert.equal(parseAppRoute('/web/app/system/database-stats').owner, 'app');
+});
+
+test('system audit route preserves owner filters and pagination', () => {
+  assert.equal(buildSystemAuditPath({ owner: 'web' }), '/web/system/audit');
+  assert.equal(buildSystemAuditPath({ owner: 'app', actor: ' Alice ', action: 'auth.login', targetType: 'user', targetId: '7', page: 2, perPage: 20 }), '/web/app/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20');
+  assert.deepEqual(parseAppRoute('/web/system/audit', '?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20'), {
+    id: 'system-audit', owner: 'web', pathname: '/web/system/audit', search: '?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20',
+    actor: 'Alice', action: 'auth.login', targetType: 'user', targetId: '7', page: 2, perPage: 20, title: '审计日志',
+  });
 });
 
 test('system permissions route preserves owner and compact search', () => {

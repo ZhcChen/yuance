@@ -49,6 +49,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["system.permissions", noInputOperation("GET", "/api/v1/system/permissions", parseSystemPermissions, true, "array")],
     ["system.databasestats", noInputOperation("GET", "/api/v1/system/database-stats", parseSystemDatabaseStats)],
+    ["system.audit", systemAuditOperation],
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
@@ -471,6 +472,16 @@ function systemReleasesViewOperation(input) {
   const query = new URLSearchParams();
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/releases-view", query), parseSystemReleasesView);
+}
+
+function systemAuditOperation(input) {
+  exactKeys(input, ["action", "actor", "page", "perPage", "targetId", "targetType"]);
+  const query = new URLSearchParams();
+  for (const [key, value, limit] of [["actor", input.actor, 80], ["action", input.action, 120], ["target_type", input.targetType, 80], ["target_id", input.targetId, 120]]) {
+    if (value !== undefined && boundedText(value, key, limit).trim()) query.set(key, boundedText(value, key, limit).trim());
+  }
+  appendPagination(query, input);
+  return descriptor("GET", withQuery("/api/v1/system/audit", query), parseSystemAuditPage);
 }
 
 function systemApiTokenBody(input, includeId) {
@@ -984,6 +995,15 @@ function parseSystemDatabaseStatsTable(data) { return freezeExactDto(data, {
 function parseSystemDatabaseStats(data) { return freezeExactDto(data, {
   refreshed_at: shortString,
   tables: (tables) => boundedArray(tables, parseSystemDatabaseStatsTable, 500, "database tables"),
+}); }
+function parseSystemAuditLog(data) { return freezeExactDto(data, {
+  id: positiveInteger, actor_display_name: textString, actor_username: shortString, action: shortString,
+  target_type: shortString, target_id: shortString, metadata: longString, ip: shortString,
+  user_agent: textString, created_at: shortString,
+}); }
+function parseSystemAuditPage(data) { return freezeExactDto(data, {
+  items: (items) => boundedArray(items, parseSystemAuditLog, 100, "audit logs"),
+  pagination: parsePagination,
 }); }
 function parseSystemRolesView(data) {
   return freezeExactDto(data, {

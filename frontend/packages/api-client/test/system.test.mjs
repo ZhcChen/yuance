@@ -28,6 +28,14 @@ test('system database stats use one fixed read contract', async () => {
   assert.deepEqual(calls, ['/api/v1/system/database-stats']);
 });
 
+test('system audit logs preserve compact filters and pagination', async () => {
+  const calls = [];
+  const client = createSystemClient({ request: async (url) => { calls.push(url); return { items: [] }; } });
+  await client.getSystemAuditLogs();
+  await client.getSystemAuditLogs({ actor: ' Alice ', action: 'auth.login', targetType: 'user', targetId: '7', page: 2, perPage: 20 });
+  assert.deepEqual(calls, ['/api/v1/system/audit', '/api/v1/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20']);
+});
+
 test('system users view preserves compact pagination query', async () => {
   const calls = [];
   const client = createSystemClient({ request: async (url) => {

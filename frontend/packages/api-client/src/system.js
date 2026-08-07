@@ -8,10 +8,11 @@
 /** @typedef {{ versionName: string, title?: string, notes?: string, channel?: string, manifestSha256?: string, signingKeyId?: string, sourceCommit?: string, sourceTag?: string }} CreateSystemReleasePayload */
 /** @typedef {{ platform: string, architecture: string, artifactKind: string, originalFilename: string, contentType: string, byteSize: number, checksumSha256?: string }} CreateSystemReleaseAssetPayload */
 /** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemPermissions(): Promise<any[]>, getSystemDatabaseStats(): Promise<any>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, getSystemStorageView(query?: SystemUsersQuery): Promise<any>, getSystemOpenApiView(): Promise<any>, createSystemApiToken(name: string, scopes: string[]): Promise<any>, updateSystemApiToken(tokenId: number, name: string, scopes: string[]): Promise<any>, deleteSystemApiToken(tokenId: number): Promise<any>, getSystemReleasesView(query?: SystemUsersQuery): Promise<any>, updateSystemReleaseSettings(retentionCount: number): Promise<any>, createSystemRelease(payload: CreateSystemReleasePayload): Promise<any>, updateSystemRelease(releaseId: number, payload: { versionName: string, title?: string, notes?: string, publish?: boolean }): Promise<any>, verifySystemRelease(releaseId: number): Promise<any>, withdrawSystemRelease(releaseId: number, reason: string): Promise<any>, createSystemReleaseAsset(releaseId: number, payload: CreateSystemReleaseAssetPayload): Promise<any>, getSystemReleaseAssetUploadUrl(releaseId: number, assetId: number): Promise<any>, markSystemReleaseAssetUploaded(releaseId: number, assetId: number): Promise<any>, getSystemReleaseAssetDownloadUrl(releaseId: number, assetId: number): Promise<any>, deleteSystemReleaseAsset(releaseId: number, assetId: number): Promise<any>, saveStorageConfig(payload: SaveStorageConfigPayload): Promise<any>, probeStorageConfig(): Promise<any>, initializeStorageConfig(): Promise<any>, rollbackStorageConfig(version: number): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
+/** @typedef {{ getSystemAuditLogs(query?: { actor?: string, action?: string, targetType?: string, targetId?: string, page?: number, perPage?: number }): Promise<any> }} SystemAuditClient */
 
 /**
  * @param {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite?: () => Promise<void> }} dependencies
- * @returns {SystemClient}
+ * @returns {SystemClient & SystemAuditClient}
  */
 export function createSystemClient({ request, prepareWrite = async () => {} }) {
   const write = async (url, method, body) => {
@@ -29,6 +30,17 @@ export function createSystemClient({ request, prepareWrite = async () => {} }) {
     },
     getSystemDatabaseStats() {
       return request('/api/v1/system/database-stats');
+    },
+    getSystemAuditLogs(query = {}) {
+      const params = new URLSearchParams();
+      if (typeof query.actor === 'string' && query.actor.trim()) params.set('actor', query.actor.trim());
+      if (typeof query.action === 'string' && query.action.trim()) params.set('action', query.action.trim());
+      if (typeof query.targetType === 'string' && query.targetType.trim()) params.set('target_type', query.targetType.trim());
+      if (typeof query.targetId === 'string' && query.targetId.trim()) params.set('target_id', query.targetId.trim());
+      if (Number.isInteger(query.page) && Number(query.page) > 1) params.set('page', String(query.page));
+      if (Number.isInteger(query.perPage) && Number(query.perPage) !== 10) params.set('per_page', String(query.perPage));
+      const suffix = params.size ? `?${params.toString()}` : '';
+      return request(`/api/v1/system/audit${suffix}`);
     },
     getSystemUsersView(query = {}) {
       const params = new URLSearchParams();

@@ -2215,6 +2215,50 @@ test('shared database stats load cache first and preserve it across refresh fail
   expect(requestCount).toBe(2);
 });
 
+test('shared system audit preserves filters pagination and read-only evidence', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/audit*', async (route) => {
+    const url = new URL(route.request().url());
+    requests.push({ method: route.request().method(), search: url.search });
+    const pageNumber = Number(url.searchParams.get('page') || 1);
+    const perPage = Number(url.searchParams.get('per_page') || 10);
+    const empty = url.searchParams.get('actor') === 'Nobody';
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      items: empty ? [] : [{
+        id: pageNumber, actor_display_name: 'Alice Chen', actor_username: 'alice', action: 'auth.login',
+        target_type: 'user', target_id: '7', metadata: '{"result":"success"}', ip: '127.0.0.1',
+        user_agent: 'Playwright Audit Fixture', created_at: '2026-08-08T08:00:00Z',
+      }],
+      pagination: { page: pageNumber, per_page: perPage, total_items: empty ? 0 : 21, total_pages: empty ? 1 : 2 },
+    } }) });
+  });
+
+  await login(page, '/web/app/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&per_page=20');
+  await expect(page).toHaveTitle('审计日志 - 元策');
+  const table = page.getByRole('table', { name: '审计日志列表' });
+  await expect(table).toContainText('Alice Chen @alice');
+  await expect(table).toContainText('用户登录');
+  await expect(table).toContainText('auth.login');
+  await expect(table).toContainText('user / 7');
+  await expect(table).toContainText('127.0.0.1');
+  await expect(table).toContainText('Playwright Audit Fixture');
+  await expect(table).toContainText('{"result":"success"}');
+
+  await page.getByRole('button', { name: '下一页' }).click();
+  await expect(page).toHaveURL('/web/app/system/audit?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20');
+
+  await page.locator('input[name="actor"]').fill('Nobody');
+  await page.getByRole('button', { name: '筛选', exact: true }).click();
+  await expect(page).toHaveURL('/web/app/system/audit?actor=Nobody&action=auth.login&target_type=user&target_id=7&per_page=20');
+  await expect(table).toContainText('暂无审计记录。');
+
+  await page.getByRole('button', { name: '重置' }).click();
+  await expect(page).toHaveURL('/web/app/system/audit');
+  await expect.poll(() => requests.length).toBeGreaterThanOrEqual(4);
+  expect(requests.every(({ method }) => method === 'GET')).toBe(true);
+  expect(requests.some(({ search }) => search === '?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20')).toBe(true);
+});
+
 test('shared system users view renders atomic rows and preserves pagination in the app owner', async ({ page }) => {
   const requests = [];
   await page.route('**/api/v1/system/users-view*', async (route) => {

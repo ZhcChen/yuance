@@ -15,6 +15,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemAuditPath,
   buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
@@ -590,6 +591,8 @@ function routeDescription(route) {
       return '权限点由服务端固定目录提供，两个宿主共用同一搜索和只读展示。';
     case 'system-database-stats':
       return '进入页面只读取当前宿主缓存；手动刷新后才读取最新表清单、备注和数据量。';
+    case 'system-audit':
+      return '关键系统操作按操作人、动作和对象过滤，两个宿主共用同一只读审计事实。';
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
     case 'system-openapi':
@@ -628,6 +631,7 @@ function routeEyebrow(route) {
     case 'system-roles':
     case 'system-permissions':
     case 'system-database-stats':
+    case 'system-audit':
     case 'system-storage':
     case 'system-openapi':
     case 'system-releases':
@@ -678,6 +682,18 @@ function normalizeDatabaseStatsSnapshot(value) {
     tables.push({ table_name: table.table_name, remark: table.remark, row_count: table.row_count, column_count: table.column_count, columns });
   }
   return { refreshed_at: value.refreshed_at, tables };
+}
+
+function auditActionLabel(action) {
+  return ({
+    'auth.login': '用户登录', 'auth.login.failed': '登录失败', 'auth.logout': '用户退出', 'bootstrap.init': '首次初始化',
+    'storage.config.save': '保存对象存储配置', 'storage.config.probe': '探测对象存储配置', 'storage.bucket.initialize': '初始化对象存储桶',
+    'file.download': '下载附件', 'file.download.url': '生成附件下载链接', 'permission.denied': '权限拒绝',
+    'user.create': '创建用户', 'user.status.update': '更新用户状态', 'user.password.reset': '重置用户密码',
+    'role.create': '创建角色', 'role.status.update': '更新角色状态', 'role.permissions.update': '更新角色权限',
+    'api_token.create': '创建访问 Token', 'api_token.update': '更新访问 Token', 'api_token.delete': '删除访问 Token',
+    'project_resource.password.reset': '重置资料保险箱密码',
+  })[action] || action;
 }
 
 /**
@@ -815,6 +831,7 @@ export function SharedApp({ services }) {
   const [systemDatabaseStatsRefreshing, setSystemDatabaseStatsRefreshing] = useState(false);
   const [systemDatabaseStatsError, setSystemDatabaseStatsError] = useState('');
   const systemDatabaseStatsRefreshRef = useRef(false);
+  const [systemAuditPage, setSystemAuditPage] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemAuditLogs']>> | null} */ (null));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
@@ -1239,7 +1256,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1366,6 +1383,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-releases'
           ? api.getSystemReleasesView({ page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
+        targetRoute.id === 'system-audit'
+          ? api.getSystemAuditLogs({ actor: targetRoute.actor, action: targetRoute.action, targetType: targetRoute.targetType, targetId: targetRoute.targetId, page: targetRoute.page, perPage: targetRoute.perPage })
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -1439,6 +1459,7 @@ export function SharedApp({ services }) {
         setSystemReleasesView(nextSystemReleasesView);
         setSystemReleaseSettingsCount(nextSystemReleasesView?.settings.retention_count || 5);
       }
+      if (targetRoute.id === 'system-audit') setSystemAuditPage(nextSystemAuditPage);
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
       }
@@ -2914,6 +2935,8 @@ export function SharedApp({ services }) {
         ? '权限目录 - 元策'
       : route.id === 'system-database-stats'
         ? '数据库统计 - 元策'
+      : route.id === 'system-audit'
+        ? '审计日志 - 元策'
       : route.id === 'system-storage'
         ? '对象存储 - 元策'
       : route.id === 'system-openapi'
@@ -4573,8 +4596,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4602,7 +4625,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4709,6 +4732,33 @@ export function SharedApp({ services }) {
                   {systemDatabaseStatsError || '点击“刷新”后，系统会读取最新的表清单、表备注和数据量。'}
                 </Feedback>
               )}
+            </section>
+          ) : route.id === 'system-audit' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-audit-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-audit-title">审计日志</h2><p className="shell-muted">记录登录、权限、用户、角色和系统配置等关键操作。</p></div>
+              </div>
+              <form className="shell-filters" aria-label="审计日志筛选" onSubmit={(event) => {
+                event.preventDefault();
+                const values = new globalThis.FormData(event.currentTarget);
+                navigate(buildSystemAuditPath({ owner: route.owner, actor: String(values.get('actor') || ''), action: String(values.get('action') || ''), targetType: String(values.get('target_type') || ''), targetId: String(values.get('target_id') || ''), perPage: Number(values.get('per_page') || 10) }), '正在筛选审计日志。');
+              }}>
+                <Field id="system-audit-actor" label="操作人"><input name="actor" defaultValue={route.actor} placeholder="用户名或显示名称" /></Field>
+                <Field id="system-audit-action" label="动作"><input name="action" defaultValue={route.action} placeholder="如 auth.login" /></Field>
+                <Field id="system-audit-target-type" label="对象类型"><input name="target_type" defaultValue={route.targetType} placeholder="如 user / project" /></Field>
+                <Field id="system-audit-target-id" label="对象 ID"><input name="target_id" defaultValue={route.targetId} placeholder="对象编号或主键" /></Field>
+                <Field id="system-audit-per-page" label="每页数量"><select name="per_page" defaultValue={String(route.perPage)}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></Field>
+                <div className="shell-actions-inline"><Button type="submit">筛选</Button><Button variant="secondary" onClick={() => navigate(buildSystemAuditPath({ owner: route.owner }), '已重置审计筛选。')}>重置</Button></div>
+              </form>
+              <DataTable caption="审计日志列表" rows={systemAuditPage?.items || []} rowKey={(log) => log.id} emptyText="暂无审计记录。" columns={[
+                { key: 'time', label: '时间', render: (log) => formatTimestamp(log.created_at) },
+                { key: 'actor', label: '操作人', render: (log) => log.actor_username ? `${log.actor_display_name} @${log.actor_username}` : log.actor_display_name },
+                { key: 'action', label: '动作', render: (log) => <><strong>{auditActionLabel(log.action)}</strong><br /><code>{log.action}</code></> },
+                { key: 'target', label: '对象', render: (log) => log.target_type || log.target_id ? `${log.target_type}${log.target_id ? ` / ${log.target_id}` : ''}` : '系统' },
+                { key: 'source', label: '来源', render: (log) => <>{log.ip || '-'}<br /><span className="shell-muted">{log.user_agent || '-'}</span></> },
+                { key: 'metadata', label: '元数据', render: (log) => <code>{log.metadata || '{}'}</code> },
+              ]} />
+              {systemAuditPage ? <Pagination page={systemAuditPage.pagination.page} totalPages={systemAuditPage.pagination.total_pages} totalItems={systemAuditPage.pagination.total_items} onPageChange={(page) => navigate(buildSystemAuditPath({ owner: route.owner, actor: route.actor, action: route.action, targetType: route.targetType, targetId: route.targetId, page, perPage: route.perPage }), `正在打开第 ${page} 页审计日志。`)} /> : null}
             </section>
           ) : route.id === 'system-openapi' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-openapi-title">

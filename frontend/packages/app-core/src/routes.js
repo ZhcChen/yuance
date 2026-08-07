@@ -150,6 +150,19 @@ export function buildSystemDatabaseStatsPath(owner = 'web') {
   return owner === 'app' ? '/web/app/system/database-stats' : '/web/system/database-stats';
 }
 
+export function buildSystemAuditPath({ owner = 'web', actor = '', action = '', targetType = '', targetId = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of [['actor', actor], ['action', action], ['target_type', targetType], ['target_id', targetId]]) {
+    if (typeof value === 'string' && value.trim()) params.set(key, value.trim());
+  }
+  const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
+  const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
+  if (normalizedPage > DEFAULT_PAGE) params.set('page', String(normalizedPage));
+  if (normalizedPerPage !== DEFAULT_PER_PAGE) params.set('per_page', String(normalizedPerPage));
+  const base = owner === 'app' ? '/web/app/system/audit' : '/web/system/audit';
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
 export function buildSystemReleasesPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -404,6 +417,15 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
   if (pathname === '/web/system/database-stats' || pathname === '/web/app/system/database-stats') {
     return {
       id: 'system-database-stats', owner, pathname, search, title: '数据库统计',
+    };
+  }
+
+  if (pathname === '/web/system/audit' || pathname === '/web/app/system/audit') {
+    return {
+      id: 'system-audit', owner, pathname, search,
+      actor: (query.get('actor') || '').trim(), action: (query.get('action') || '').trim(),
+      targetType: (query.get('target_type') || '').trim(), targetId: (query.get('target_id') || '').trim(),
+      page, perPage, title: '审计日志',
     };
   }
 
