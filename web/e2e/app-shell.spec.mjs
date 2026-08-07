@@ -2154,6 +2154,33 @@ test('shared system dashboard renders the permission-filtered management entry s
   await expect(dashboard.locator('a')).toHaveCount(7);
 });
 
+test('shared system permissions preserve app owner search and fixed catalog', async ({ page }) => {
+  const requests = [];
+  await page.route('**/api/v1/system/permissions', async (route) => {
+    requests.push(route.request().method());
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [
+      { permission_key: 'system.roles.view', permission_name: '查看角色权限', resource_type: 'page', resource_key: 'system.roles', granted: false },
+      { permission_key: 'system.users.manage', permission_name: '管理系统用户', resource_type: 'action', resource_key: 'system.users', granted: false },
+    ] }) });
+  });
+
+  await login(page, '/web/app/system/permissions?q=roles');
+  await expect(page).toHaveTitle('权限目录 - 元策');
+  await expect(page).toHaveURL('/web/app/system/permissions?q=roles');
+  const table = page.getByRole('table', { name: '系统权限目录' });
+  await expect(table).toContainText('system.roles.view');
+  await expect(table).not.toContainText('system.users.manage');
+  await expect.poll(() => requests.length).toBeGreaterThan(0);
+  expect(requests.every((method) => method === 'GET')).toBe(true);
+  const initialRequestCount = requests.length;
+
+  await page.getByRole('button', { name: '清除' }).click();
+  await expect(page).toHaveURL('/web/app/system/permissions');
+  await expect(table).toContainText('system.users.manage');
+  await expect.poll(() => requests.length).toBeGreaterThan(initialRequestCount);
+  expect(requests.every((method) => method === 'GET')).toBe(true);
+});
+
 test('shared system users view renders atomic rows and preserves pagination in the app owner', async ({ page }) => {
   const requests = [];
   await page.route('**/api/v1/system/users-view*', async (route) => {

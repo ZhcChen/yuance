@@ -13,6 +13,7 @@ import {
   buildSearchPath,
   buildSystemPath,
   buildSystemOpenApiPath,
+  buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemStoragePath,
@@ -69,6 +70,14 @@ test('system OpenAPI route preserves Browser and Desktop owners', () => {
     id: 'system-openapi', owner: 'web', pathname: '/web/system/openapi', search: '', title: '系统 OpenAPI',
   });
   assert.equal(parseAppRoute('/web/app/system/openapi').owner, 'app');
+});
+
+test('system permissions route preserves owner and compact search', () => {
+  assert.equal(buildSystemPermissionsPath({ owner: 'web' }), '/web/system/permissions');
+  assert.equal(buildSystemPermissionsPath({ owner: 'app', q: '系统 管理' }), '/web/app/system/permissions?q=%E7%B3%BB%E7%BB%9F+%E7%AE%A1%E7%90%86');
+  assert.deepEqual(parseAppRoute('/web/system/permissions', '?q=system.roles'), {
+    id: 'system-permissions', owner: 'web', pathname: '/web/system/permissions', search: '?q=system.roles', q: 'system.roles', title: '权限目录',
+  });
 });
 
 test('system releases route preserves owner and version pagination', () => {

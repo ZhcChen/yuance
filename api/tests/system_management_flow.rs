@@ -153,6 +153,71 @@ async fn api_system_dashboard_returns_only_fixed_authorized_links() {
 }
 
 #[tokio::test]
+async fn api_system_permissions_returns_fixed_catalog_and_enforces_permission() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/permissions")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    let payload = response_json(response).await;
+    let items = payload["data"]
+        .as_array()
+        .expect("catalog should be an array");
+    assert!(
+        items
+            .iter()
+            .any(|item| item["permission_key"] == "system.roles.view")
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item.as_object().is_some_and(|object| object.len() == 5))
+    );
+
+    let member_id = users::create_user(
+        &pool,
+        users::CreateUserInput {
+            username: "permission_catalog_denied".to_string(),
+            display_name: "权限目录拒绝用户".to_string(),
+            email: String::new(),
+            mobile: String::new(),
+            password: "MemberPass2026!".to_string(),
+            role_code: "member".to_string(),
+        },
+    )
+    .await
+    .expect("member should create");
+    let member_session = auth::issue_session(&pool, member_id, 3600)
+        .await
+        .expect("member session should issue");
+    let denied = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/system/permissions")
+                .header(
+                    header::COOKIE,
+                    auth::session_cookie_header(&member_session.raw_token, false),
+                )
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(denied.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn api_system_users_view_returns_atomic_pagination_permissions_and_project_constraints() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

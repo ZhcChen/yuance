@@ -108,6 +108,13 @@ test("system roles view response is bounded to the atomic role contract", () => 
   assert.throws(() => parse({ ...payload, private_key: "secret" }), /fields are invalid/i);
 });
 
+test("system permissions response is a bounded fixed catalog", () => {
+  const registry = createOperationRegistry();
+  const permission = { permission_key: "system.roles.view", permission_name: "查看角色", resource_type: "page", resource_key: "system.roles", granted: false };
+  assert.deepEqual(registry.resolve("system.permissions", {}).parse([permission]), [permission]);
+  assert.throws(() => registry.resolve("system.permissions", {}).parse([{ ...permission, secret: "no" }]), /fields/i);
+});
+
 test("system storage view response excludes raw storage credentials", () => {
   const parse = createOperationRegistry().resolve("system.storageview", {}).parse;
   const payload = {

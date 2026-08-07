@@ -104,6 +104,13 @@ export function buildSystemPath(owner = 'web') {
   return owner === 'app' ? '/web/app/system' : '/web/system';
 }
 
+export function buildSystemPermissionsPath({ owner = 'web', q = '' } = {}) {
+  const base = owner === 'app' ? '/web/app/system/permissions' : '/web/system/permissions';
+  const params = new URLSearchParams();
+  if (typeof q === 'string' && q.trim()) params.set('q', q.trim());
+  return params.size ? `${base}?${params.toString()}` : base;
+}
+
 export function buildSystemUsersPath({ owner = 'web', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
@@ -355,6 +362,12 @@ export function parseAppRoute(pathname = '/web', search = '', hash = '') {
       page,
       perPage,
       title: '用户管理',
+    };
+  }
+
+  if (pathname === '/web/system/permissions' || pathname === '/web/app/system/permissions') {
+    return {
+      id: 'system-permissions', owner, pathname, search, q: (query.get('q') || '').trim(), title: '权限目录',
     };
   }
 

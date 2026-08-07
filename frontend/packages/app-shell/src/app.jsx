@@ -15,6 +15,7 @@ import {
   buildProjectsPath,
   buildSearchPath,
   buildSystemPath,
+  buildSystemPermissionsPath,
   buildSystemReleasesPath,
   buildSystemRolesPath,
   buildSystemStoragePath,
@@ -585,6 +586,8 @@ function routeDescription(route) {
       return '用户、角色候选、项目关系和分页由服务端原子读取，两个宿主不拼接管理事实。';
     case 'system-roles':
       return '角色分页、选中角色和权限集合由服务端原子读取，Browser 与 Desktop 共用同一角色工作台。';
+    case 'system-permissions':
+      return '权限点由服务端固定目录提供，两个宿主共用同一搜索和只读展示。';
     case 'system-storage':
       return '当前配置、初始化检查和版本历史由服务端原子读取，敏感凭证始终只显示脱敏提示。';
     case 'system-openapi':
@@ -621,6 +624,7 @@ function routeEyebrow(route) {
     case 'system-dashboard':
     case 'system-users':
     case 'system-roles':
+    case 'system-permissions':
     case 'system-storage':
     case 'system-openapi':
     case 'system-releases':
@@ -786,6 +790,7 @@ export function SharedApp({ services }) {
   const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
+  const [systemPermissions, setSystemPermissions] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemPermissions']>>} */ ([]));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
@@ -1208,7 +1213,7 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
@@ -1317,6 +1322,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'system-dashboard'
           ? api.getSystemDashboard()
           : Promise.resolve(null),
+        targetRoute.id === 'system-permissions'
+          ? api.getSystemPermissions()
+          : Promise.resolve(null),
         targetRoute.id === 'system-users'
           ? api.getSystemUsersView({ page: targetRoute.page, perPage: targetRoute.perPage })
           : Promise.resolve(null),
@@ -1381,6 +1389,7 @@ export function SharedApp({ services }) {
       if (targetRoute.id === 'system-dashboard') {
         setSystemDashboard(nextSystemDashboard);
       }
+      if (targetRoute.id === 'system-permissions') setSystemPermissions(nextSystemPermissions || []);
       if (targetRoute.id === 'system-users') {
         setSystemUsersView(nextSystemUsersView);
       }
@@ -2844,6 +2853,8 @@ export function SharedApp({ services }) {
         ? '用户管理 - 元策'
       : route.id === 'system-roles'
         ? '角色权限 - 元策'
+      : route.id === 'system-permissions'
+        ? '权限目录 - 元策'
       : route.id === 'system-storage'
         ? '对象存储 - 元策'
       : route.id === 'system-openapi'
@@ -4503,8 +4514,8 @@ export function SharedApp({ services }) {
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
           { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
+          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
+            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
@@ -4532,7 +4543,7 @@ export function SharedApp({ services }) {
           <p className="shell-subtitle">{routeDescription(route)}</p>
         </div>
         <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
+          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -4596,7 +4607,23 @@ export function SharedApp({ services }) {
             </article>
           </section>
 
-          {route.id === 'system-openapi' ? (
+          {route.id === 'system-permissions' ? (
+            <section className="shell-card shell-panel-wide" aria-labelledby="system-permissions-title">
+              <div className="shell-panel-header">
+                <div><h2 id="system-permissions-title">权限目录</h2><p className="shell-muted">权限点由 core seed 维护，共 {systemPermissions.length} 项。</p></div>
+                <a className="shell-link" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>角色权限</a>
+              </div>
+              <form className="shell-filters" onSubmit={(event) => { event.preventDefault(); const input = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q')); navigate(buildSystemPermissionsPath({ owner: route.owner, q: input?.value || '' }), '正在筛选权限目录。'); }}>
+                <Field id="system-permissions-query" label="搜索权限"><input name="q" defaultValue={route.q} placeholder="名称、权限键或资源" /></Field>
+                <div className="shell-actions-inline"><Button type="submit">搜索</Button>{route.q ? <Button variant="secondary" onClick={() => navigate(buildSystemPermissionsPath({ owner: route.owner }), '已清除权限筛选。')}>清除</Button> : null}</div>
+              </form>
+              <DataTable caption="系统权限目录" rows={systemPermissions.filter((permission) => { const query = (route.q || '').toLocaleLowerCase(); return !query || [permission.permission_name, permission.permission_key, permission.resource_type, permission.resource_key].some((value) => value.toLocaleLowerCase().includes(query)); })} rowKey={(permission) => permission.permission_key} emptyText={route.q ? '没有匹配的权限点。' : '暂无权限点。'} columns={[
+                { key: 'permission', label: '权限', render: (permission) => <><strong>{permission.permission_name}</strong><br /><code>{permission.permission_key}</code></> },
+                { key: 'resource', label: '资源', render: (permission) => permission.resource_key },
+                { key: 'type', label: '类型', render: (permission) => permission.resource_type === 'page' ? '页面' : '操作' },
+              ]} />
+            </section>
+          ) : route.id === 'system-openapi' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-openapi-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-openapi-title">系统 OpenAPI Token</h2><p className="shell-muted">已创建 {systemOpenApiView?.active_count || 0}/{systemOpenApiView?.token_limit || 100} 个</p></div>
@@ -4749,7 +4776,7 @@ export function SharedApp({ services }) {
             <section className="shell-card shell-panel-wide" aria-labelledby="system-roles-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-roles-title">角色工作台</h2><p className="shell-muted">选择角色后查看数据范围和完整权限集合。</p></div>
-                <div className="shell-actions-inline">{systemRolesView?.selected_role?.is_system ? <span className="shell-muted">系统内置角色只读</span> : null}{systemRolesView?.can_manage_roles ? <Button onClick={() => { setSystemRoleError(''); setSystemRoleCreateOpen(true); }}>新建角色</Button> : null}</div>
+                <div className="shell-actions-inline"><a className="shell-link" href={buildSystemPermissionsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemPermissionsPath({ owner: route.owner }), '正在打开权限目录。')}>权限目录</a>{systemRolesView?.selected_role?.is_system ? <span className="shell-muted">系统内置角色只读</span> : null}{systemRolesView?.can_manage_roles ? <Button onClick={() => { setSystemRoleError(''); setSystemRoleCreateOpen(true); }}>新建角色</Button> : null}</div>
               </div>
               {systemRoleError && !systemRoleCreateOpen && !systemRoleStatusTarget ? <Feedback tone="danger" title="角色操作失败">{systemRoleError}</Feedback> : null}
               <DataTable

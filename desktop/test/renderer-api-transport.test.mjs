@@ -270,6 +270,14 @@ test("system OpenAPI token lifecycle maps to fixed Desktop operations", async ()
   ]);
 });
 
+test("system permissions map to one fixed Desktop read operation", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: [] }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.getSystemPermissions();
+  assert.deepEqual(calls, [["system.permissions", {}]]);
+});
+
 test("system release mutations map to fixed Desktop operations", async () => {
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });

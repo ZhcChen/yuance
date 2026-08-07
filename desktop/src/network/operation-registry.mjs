@@ -47,6 +47,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["identity.devicesessionrevoke", deviceSessionRevokeOperation],
     ["shell.topbar", noInputOperation("GET", "/api/v1/topbar/status", parseTopbar)],
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
+    ["system.permissions", noInputOperation("GET", "/api/v1/system/permissions", parseSystemPermissions, true, "array")],
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
@@ -970,6 +971,7 @@ function parseSystemPermission(data) { return freezeExactDto(data, {
   permission_key: shortString, permission_name: textString, resource_type: shortString,
   resource_key: shortString, granted: boolean,
 }); }
+function parseSystemPermissions(data) { return boundedArray(data, parseSystemPermission, 500, "system permissions"); }
 function parseSystemRolesView(data) {
   return freezeExactDto(data, {
     items: (items) => boundedArray(items, parseSystemRole, 100, "system roles"),

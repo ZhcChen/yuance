@@ -13,6 +13,13 @@ test('system dashboard uses one fixed read contract', async () => {
   assert.deepEqual(calls, ['/api/v1/system/dashboard']);
 });
 
+test('system permissions use one fixed read contract', async () => {
+  const calls = [];
+  const client = createSystemClient({ request: async (url) => { calls.push(url); return []; } });
+  assert.deepEqual(await client.getSystemPermissions(), []);
+  assert.deepEqual(calls, ['/api/v1/system/permissions']);
+});
+
 test('system users view preserves compact pagination query', async () => {
   const calls = [];
   const client = createSystemClient({ request: async (url) => {
