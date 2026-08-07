@@ -36,7 +36,9 @@ RUN apt-get update \
 
 COPY Cargo.toml Cargo.lock ./
 COPY api/Cargo.toml api/Cargo.toml
+COPY tools/yuance-agent-cli/Cargo.toml tools/yuance-agent-cli/Cargo.toml
 COPY api/src api/src
+COPY tools/yuance-agent-cli/src tools/yuance-agent-cli/src
 COPY api/templates api/templates
 COPY api/static api/static
 COPY api/migrations api/migrations

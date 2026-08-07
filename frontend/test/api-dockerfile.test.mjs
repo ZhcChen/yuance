@@ -26,3 +26,25 @@ test('API Dockerfile provides shared frontend packages before web npm ci', async
   assert.ok(sourceCopyIndex > frontendInstallIndex, 'shared source should be copied after dependency install');
   assert.ok(sourceCopyIndex < webInstallIndex, 'shared source should be available before web install');
 });
+
+test('API Dockerfile provides every Rust workspace member before cargo build', async () => {
+  const [dockerfile, workspaceManifest] = await Promise.all([
+    readFile(new URL('../../api/Dockerfile', import.meta.url), 'utf8'),
+    readFile(new URL('../../Cargo.toml', import.meta.url), 'utf8'),
+  ]);
+  const buildIndex = dockerfile.indexOf('RUN cargo build --release -p yuance-api');
+  const membersMatch = workspaceManifest.match(/members\s*=\s*\[([^\]]+)\]/s);
+
+  assert.notEqual(buildIndex, -1, 'API Dockerfile should build yuance-api');
+  assert.ok(membersMatch, 'root Cargo.toml should declare workspace members');
+
+  const members = [...membersMatch[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+  assert.ok(members.length > 0, 'workspace should contain at least one member');
+
+  for (const member of members) {
+    const manifestCopyIndex = dockerfile.indexOf(`COPY ${member}/Cargo.toml ${member}/Cargo.toml`);
+    const sourceCopyIndex = dockerfile.indexOf(`COPY ${member}/src ${member}/src`);
+    assert.ok(manifestCopyIndex >= 0 && manifestCopyIndex < buildIndex, `${member} manifest must exist before cargo build`);
+    assert.ok(sourceCopyIndex >= 0 && sourceCopyIndex < buildIndex, `${member} source must exist before cargo build`);
+  }
+});
