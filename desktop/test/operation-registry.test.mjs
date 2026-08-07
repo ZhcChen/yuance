@@ -61,6 +61,7 @@ test("builds fixed read-only business paths from validated domain input", () => 
     });
   }
   assert.equal(registry.resolve("workitem.comments", { itemKey: "DEMO-1" }).dataKind, "array");
+  assert.equal(registry.resolve("project.members", { projectKey: "DEMO" }).dataKind, "array");
   assert.equal(registry.resolve("workitem.attachments", { itemKey: "DEMO-1" }).dataKind, "array");
   assert.equal(registry.resolve("project.current", {}).dataKind, "nullable-object");
 });
@@ -189,6 +190,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     assert.deepEqual(operation.body === undefined ? undefined : JSON.parse(operation.body), body);
     assert.equal(operation.body === undefined ? operation.contentType : operation.contentType, body === undefined ? undefined : "application/json");
   }
+  assert.equal(registry.resolve("project.memberremove", { projectKey: "DEMO", username: "bob" }).allowNoContent, true);
 });
 
 test("rejects invalid mutation fields before a descriptor is created", () => {

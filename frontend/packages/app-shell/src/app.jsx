@@ -5,6 +5,7 @@ import {
   buildHomePath,
   buildMessagesPath,
   buildProfilePath,
+  buildProjectDetailPath,
   buildProjectsPath,
   buildSearchPath,
   buildWorkItemDetailPath,
@@ -22,6 +23,7 @@ import {
 } from '@yuance/frontend-app-core';
 import {
   Button,
+  DataTable,
   Feedback,
   Field,
   GlobalNavigation,
@@ -111,6 +113,29 @@ import { errorMessage } from './errors.js';
  * @property {number} work_item_count
  * @property {number} active_work_item_count
  * @property {string} updated_at
+ */
+
+/**
+ * @typedef AppProjectDetail
+ * @property {string} key
+ * @property {string} name
+ * @property {string} description
+ * @property {string} status
+ * @property {string} owner_username
+ * @property {string} owner
+ * @property {string} start_date
+ * @property {string} due_date
+ * @property {string} created_at
+ * @property {string} updated_at
+ */
+
+/**
+ * @typedef AppProjectMember
+ * @property {number} user_id
+ * @property {string} display_name
+ * @property {string} username
+ * @property {string} member_role
+ * @property {string} joined_at
  */
 
 /**
@@ -254,6 +279,10 @@ function projectStatusLabel(status) {
   }
 }
 
+function projectMemberRoleLabel(role) {
+  return { owner: '项目负责人', maintainer: '项目管理员', member: '项目成员', viewer: '只读成员' }[role] || role;
+}
+
 function workItemTypeLabel(itemType) {
   switch (itemType) {
     case 'requirement':
@@ -388,6 +417,8 @@ function routeDescription(route) {
       return '查看并维护当前账户资料，保存结果会同步刷新全局账户信息。';
     case 'projects':
       return '项目列表已切到浏览器应用壳，当前项目切换仍复用既有服务端权限与偏好存储。';
+    case 'project-detail':
+      return '项目资料和成员管理由 Browser 与 Desktop 共用同一页面、表单和确认流程。';
     case 'requirements':
     case 'tasks':
     case 'bugs':
@@ -411,6 +442,7 @@ function routeEyebrow(route) {
     case 'profile':
       return 'Personal Workspace';
     case 'projects':
+    case 'project-detail':
       return 'Projects';
     case 'requirements':
     case 'tasks':
@@ -477,6 +509,7 @@ export function SharedApp({ services }) {
   const profileActionRef = useRef(0);
   const accountSecurityActionRef = useRef(false);
   const projectSwitchRef = useRef(false);
+  const projectMutationRef = useRef(false);
   const workItemActionRef = useRef(0);
   const workItemMutationRef = useRef(false);
   const workItemMutationActionRef = useRef(0);
@@ -490,6 +523,16 @@ export function SharedApp({ services }) {
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [messageFeed, setMessageFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
   const [projectPage, setProjectPage] = useState(/** @type {AppProjectPage | null} */ (null));
+  const [projectDetail, setProjectDetail] = useState(/** @type {AppProjectDetail | null} */ (null));
+  const [projectMembers, setProjectMembers] = useState(/** @type {AppProjectMember[]} */ ([]));
+  const [projectMutationSubmitting, setProjectMutationSubmitting] = useState(false);
+  const [projectMutationError, setProjectMutationError] = useState('');
+  const [projectEditOpen, setProjectEditOpen] = useState(false);
+  const [projectEditForm, setProjectEditForm] = useState({ name: '', description: '', status: 'not_started', ownerUsername: '', startDate: '', dueDate: '' });
+  const [projectMemberOpen, setProjectMemberOpen] = useState(false);
+  const [projectMemberForm, setProjectMemberForm] = useState({ username: '', memberRole: 'member' });
+  const [projectMemberTarget, setProjectMemberTarget] = useState(/** @type {AppProjectMember | null} */ (null));
+  const [projectMemberRemoveTarget, setProjectMemberRemoveTarget] = useState(/** @type {AppProjectMember | null} */ (null));
   const [projectSwitchingKey, setProjectSwitchingKey] = useState('');
   const [projectCreateOpen, setProjectCreateOpen] = useState(false);
   const [projectCreateSubmitting, setProjectCreateSubmitting] = useState(false);
@@ -564,6 +607,7 @@ export function SharedApp({ services }) {
   const messageRoute = route.id === 'messages' ? route : null;
   const searchRoute = route.id === 'search' ? route : null;
   const projectRoute = route.id === 'projects' ? route : null;
+  const projectDetailRoute = route.id === 'project-detail' ? route : null;
   const workItemListRoute = isWorkItemListRouteId(route.id) ? route : null;
   const workItemDetailRoute = route.id === 'work-item-detail' ? route : null;
   const workItemOwner = workItemOwnerForRoute(route);
@@ -620,6 +664,9 @@ export function SharedApp({ services }) {
   const activeWorkItemDetail = workItemDetailRoute && workItemDetail?.key === workItemDetailRoute.itemKey
     ? workItemDetail
     : null;
+  const activeProjectDetail = projectDetailRoute && projectDetail?.key === projectDetailRoute.projectKey ? projectDetail : null;
+  const currentProjectMember = user ? projectMembers.find((member) => member.username === user.username) : null;
+  const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
   const detailBackPath = buildWorkItemListPath({
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
@@ -644,6 +691,16 @@ export function SharedApp({ services }) {
       setLoading(true);
       if (targetRoute.id === 'search') {
         setSearchPage(null);
+      }
+      if (targetRoute.id === 'project-detail') {
+        setProjectDetail(null);
+        setProjectMembers([]);
+        setProjectMutationSubmitting(projectMutationRef.current);
+        setProjectMutationError('');
+        setProjectEditOpen(false);
+        setProjectMemberOpen(false);
+        setProjectMemberTarget(null);
+        setProjectMemberRemoveTarget(null);
       }
       if (targetRoute.id === 'work-item-detail') {
         workItemActionRef.current += 1;
@@ -681,11 +738,11 @@ export function SharedApp({ services }) {
     }
 
     try {
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity] = await Promise.all([
+      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
-        targetRoute.id === 'projects' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
+        targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
           : targetRoute.id === 'messages'
             ? api.getNotifications({
@@ -732,6 +789,9 @@ export function SharedApp({ services }) {
         targetRoute.id === 'profile'
           ? Promise.all([api.getApiTokens(), api.getDeviceSessions()])
           : Promise.resolve(null),
+        targetRoute.id === 'project-detail'
+          ? Promise.all([api.getProject(targetRoute.projectKey), api.getProjectMembers(targetRoute.projectKey)])
+          : Promise.resolve(null),
       ]);
       if (requestRef.current !== requestId) {
         return;
@@ -751,6 +811,10 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'projects') {
         setProjectPage(nextProjects);
+      }
+      if (targetRoute.id === 'project-detail') {
+        setProjectDetail(nextProjectBundle?.[0] || null);
+        setProjectMembers(nextProjectBundle?.[1] || []);
       }
       if (targetRoute.id === 'search') {
         setSearchPage(nextSearch);
@@ -835,6 +899,84 @@ export function SharedApp({ services }) {
     } finally { setProjectCreateSubmitting(false); }
   }
 
+  function openProjectEdit() {
+    if (!activeProjectDetail) return;
+    setProjectMutationError('');
+    setProjectEditForm({
+      name: activeProjectDetail.name,
+      description: activeProjectDetail.description,
+      status: activeProjectDetail.status,
+      ownerUsername: activeProjectDetail.owner_username,
+      startDate: activeProjectDetail.start_date,
+      dueDate: activeProjectDetail.due_date,
+    });
+    setProjectEditOpen(true);
+  }
+
+  /** @param {() => Promise<any>} action @param {string} successMessage */
+  async function runProjectMutation(action, successMessage) {
+    if (!projectDetailRoute || projectMutationRef.current) return false;
+    const projectKey = projectDetailRoute.projectKey;
+    projectMutationRef.current = true;
+    setProjectMutationSubmitting(true);
+    setProjectMutationError('');
+    try {
+      await action();
+      const [detail, members, nextTopbar] = await Promise.all([
+        api.getProject(projectKey), api.getProjectMembers(projectKey), api.getTopbarStatus(),
+      ]);
+      if (routeRef.current.id !== 'project-detail' || routeRef.current.projectKey !== projectKey) return false;
+      setProjectDetail(detail); setProjectMembers(members); setTopbar(nextTopbar); setStatusMessage(successMessage);
+      return true;
+    } catch (caught) {
+      if (routeRef.current.id === 'project-detail' && routeRef.current.projectKey === projectKey) {
+        setProjectMutationError(errorMessage(caught instanceof Error ? caught : new Error('项目操作失败。')));
+      }
+      throw caught;
+    } finally {
+      projectMutationRef.current = false; setProjectMutationSubmitting(false);
+    }
+  }
+
+  async function submitProjectEdit(event) {
+    event.preventDefault();
+    if (!activeProjectDetail) return;
+    try {
+      if (await runProjectMutation(() => api.updateProject(activeProjectDetail.key, projectEditForm), '项目资料已更新。')) setProjectEditOpen(false);
+    } catch { return; }
+  }
+
+  async function submitProjectMember(event) {
+    event.preventDefault();
+    if (!activeProjectDetail) return;
+    try {
+      if (await runProjectMutation(() => api.addProjectMember(activeProjectDetail.key, projectMemberForm), '项目成员已添加。')) {
+        setProjectMemberOpen(false); setProjectMemberForm({ username: '', memberRole: 'member' });
+      }
+    } catch { return; }
+  }
+
+  async function submitProjectMemberRole(event) {
+    event.preventDefault();
+    if (!activeProjectDetail || !projectMemberTarget) return;
+    try {
+      if (await runProjectMutation(
+        () => api.updateProjectMemberRole(activeProjectDetail.key, projectMemberTarget.username, runtime.readFormValue(event.currentTarget, 'memberRole') || 'member'),
+        '成员角色已更新。',
+      )) setProjectMemberTarget(null);
+    } catch { return; }
+  }
+
+  async function confirmProjectMemberRemove() {
+    if (!activeProjectDetail || !projectMemberRemoveTarget) return;
+    try {
+      if (await runProjectMutation(
+        () => api.removeProjectMember(activeProjectDetail.key, projectMemberRemoveTarget.username),
+        '项目成员已移除。',
+      )) setProjectMemberRemoveTarget(null);
+    } catch { return; }
+  }
+
   /** @param {() => Promise<any>} action @param {string} successMessage */
   async function runAccountSecurity(action, successMessage) {
     if (accountSecurityActionRef.current) return;
@@ -889,6 +1031,10 @@ export function SharedApp({ services }) {
           ? '个人中心 - 元策'
         : route.id === 'projects'
           ? '项目列表 - 元策'
+          : route.id === 'project-detail' && activeProjectDetail
+            ? `${activeProjectDetail.key} · ${activeProjectDetail.name} - 元策`
+            : route.id === 'project-detail'
+              ? '项目详情 - 元策'
           : route.id === 'requirements'
             ? '需求列表 - 元策'
             : route.id === 'tasks'
@@ -903,7 +1049,7 @@ export function SharedApp({ services }) {
                       ? '未迁移路由 - 元策'
                       : '元策浏览器工作台 - 元策';
     router.setTitle(title);
-  }, [route, activeWorkItemDetail, router]);
+  }, [route, activeProjectDetail, activeWorkItemDetail, router]);
 
   useEffect(() => {
     void loadRouteState(route, 'load');
@@ -1999,7 +2145,7 @@ export function SharedApp({ services }) {
         links={[
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
           { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
-          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' },
+          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' },
         ]}
         currentProject={currentProject}
         projectsHref={projectsPath}
@@ -2030,7 +2176,7 @@ export function SharedApp({ services }) {
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
-          ) : route.id === 'projects' ? (
+          ) : route.id === 'projects' || route.id === 'project-detail' ? (
             <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
               返回工作台
             </a>
@@ -2361,7 +2507,7 @@ export function SharedApp({ services }) {
                             </dl>
                           </div>
                           <div className="project-actions">
-                            <a className="shell-link" href={`/web/projects/${project.key}`}>打开详情</a>
+                            <a className="shell-link" href={buildProjectDetailPath({ owner: route.owner, projectKey: project.key })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: project.key }), `已打开项目 ${project.key}。`)}>打开详情</a>
                             <button
                               className="shell-button shell-button-secondary"
                               type="button"
@@ -2413,6 +2559,77 @@ export function SharedApp({ services }) {
               ) : (
                 <p className="shell-empty">当前筛选下没有项目。</p>
               )}
+            </section>
+          ) : route.id === 'project-detail' ? (
+            <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-detail-title">
+              <div className="shell-panel-header project-center-header">
+                <div>
+                  <h2 id="project-detail-title">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</h2>
+                  <p className="shell-muted">{activeProjectDetail ? `${projectStatusLabel(activeProjectDetail.status)} · 负责人 ${activeProjectDetail.owner || activeProjectDetail.owner_username}` : '正在加载项目详情。'}</p>
+                </div>
+                <div className="shell-actions-inline">
+                  <a className="shell-link" href={buildProjectsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildProjectsPath({ owner: route.owner }), '已返回项目列表。')}>返回项目列表</a>
+                  {canManageProject ? <Button variant="secondary" onClick={openProjectEdit}>编辑项目</Button> : null}
+                </div>
+              </div>
+
+              <nav className="message-tabs" aria-label="项目详情导航">
+                {[['info', '项目信息'], ['members', '项目成员']].map(([tab, label]) => {
+                  const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
+                  return <a key={tab} className={`message-tab ${route.tab === tab ? 'active' : ''}`} href={path} aria-current={route.tab === tab ? 'page' : undefined} onClick={(event) => handleNavigate(event, path, `已切换到${label}。`)}><span>{label}</span></a>;
+                })}
+              </nav>
+
+              {projectMutationError ? <Feedback tone="danger" title="项目操作失败">{projectMutationError}</Feedback> : null}
+              {activeProjectDetail && route.tab === 'info' ? (
+                <div className="work-item-detail-grid">
+                  <article className="work-item-detail-panel"><h3>项目描述</h3><p className="work-item-detail-description">{activeProjectDetail.description || '暂无描述。'}</p></article>
+                  <article className="work-item-detail-panel"><h3>关键信息</h3><dl className="work-item-detail-meta">
+                    <div><dt>状态</dt><dd>{projectStatusLabel(activeProjectDetail.status)}</dd></div>
+                    <div><dt>负责人</dt><dd>{activeProjectDetail.owner || activeProjectDetail.owner_username}</dd></div>
+                    <div><dt>开始日期</dt><dd>{activeProjectDetail.start_date || '未设置'}</dd></div>
+                    <div><dt>截止日期</dt><dd>{activeProjectDetail.due_date || '未设置'}</dd></div>
+                    <div><dt>创建时间</dt><dd>{formatTimestamp(activeProjectDetail.created_at)}</dd></div>
+                    <div><dt>更新时间</dt><dd>{formatTimestamp(activeProjectDetail.updated_at)}</dd></div>
+                  </dl></article>
+                </div>
+              ) : null}
+
+              {activeProjectDetail && route.tab === 'members' ? (
+                <section aria-labelledby="project-members-title">
+                  <div className="shell-panel-header"><div><h3 id="project-members-title">项目成员</h3><p className="shell-muted">共 {projectMembers.length} 名成员</p></div>{canManageProject ? <Button variant="secondary" onClick={() => { setProjectMutationError(''); setProjectMemberOpen(true); }}>添加成员</Button> : null}</div>
+                  <DataTable
+                    caption="项目成员"
+                    rows={projectMembers}
+                    rowKey={(member) => member.username}
+                    emptyText="当前项目暂无成员。"
+                    columns={[
+                      { key: 'member', label: '成员', render: (member) => <><strong>{member.display_name}</strong><br /><span className="shell-muted">@{member.username}</span></> },
+                      { key: 'role', label: '角色', render: (member) => projectMemberRoleLabel(member.member_role) },
+                      { key: 'joined', label: '加入时间', render: (member) => formatTimestamp(member.joined_at) },
+                      { key: 'actions', label: '操作', render: (member) => member.username === activeProjectDetail.owner_username || !canManageProject ? <span className="shell-muted">{member.username === activeProjectDetail.owner_username ? '负责人' : '只读'}</span> : <div className="shell-actions-inline"><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => { setProjectMutationError(''); setProjectMemberTarget(member); }}>调整角色</Button><Button variant="danger" disabled={projectMutationSubmitting} onClick={() => { setProjectMutationError(''); setProjectMemberRemoveTarget(member); }}>移除</Button></div> },
+                    ]}
+                  />
+                </section>
+              ) : null}
+
+              <Modal open={projectEditOpen} title="编辑项目" onClose={() => { if (!projectMutationSubmitting) setProjectEditOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectEditOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-edit-form'))?.requestSubmit()}>保存</Button></>}>
+                <form id="project-edit-form" onSubmit={submitProjectEdit}>
+                  <Field id="project-edit-name" label="项目名称" required><input value={projectEditForm.name} maxLength={120} onChange={(event) => setProjectEditForm((current) => ({ ...current, name: event.target.value }))} /></Field>
+                  <Field id="project-edit-status" label="状态" required><select value={projectEditForm.status} onChange={(event) => setProjectEditForm((current) => ({ ...current, status: event.target.value }))}>{['not_started', 'in_progress', 'acceptance', 'completed', 'on_hold', 'cancelled', 'archived'].map((status) => <option key={status} value={status}>{projectStatusLabel(status)}</option>)}</select></Field>
+                  <Field id="project-edit-owner" label="负责人用户名" required><input value={projectEditForm.ownerUsername} maxLength={64} onChange={(event) => setProjectEditForm((current) => ({ ...current, ownerUsername: event.target.value }))} /></Field>
+                  <Field id="project-edit-start" label="开始日期"><input type="date" value={projectEditForm.startDate} onChange={(event) => setProjectEditForm((current) => ({ ...current, startDate: event.target.value }))} /></Field>
+                  <Field id="project-edit-due" label="截止日期"><input type="date" min={projectEditForm.startDate || undefined} value={projectEditForm.dueDate} onChange={(event) => setProjectEditForm((current) => ({ ...current, dueDate: event.target.value }))} /></Field>
+                  <Field id="project-edit-description" label="项目描述"><textarea value={projectEditForm.description} maxLength={2000} onChange={(event) => setProjectEditForm((current) => ({ ...current, description: event.target.value }))} /></Field>
+                </form>
+              </Modal>
+              <Modal open={projectMemberOpen} title="添加项目成员" onClose={() => { if (!projectMutationSubmitting) setProjectMemberOpen(false); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberOpen(false)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-member-form'))?.requestSubmit()}>添加</Button></>}>
+                <form id="project-member-form" onSubmit={submitProjectMember}><Field id="project-member-username" label="用户名" required><input value={projectMemberForm.username} maxLength={64} onChange={(event) => setProjectMemberForm((current) => ({ ...current, username: event.target.value }))} /></Field><Field id="project-member-role" label="项目角色" required><select value={projectMemberForm.memberRole} onChange={(event) => setProjectMemberForm((current) => ({ ...current, memberRole: event.target.value }))}><option value="member">项目成员</option><option value="maintainer">项目管理员</option><option value="viewer">只读成员</option></select></Field></form>
+              </Modal>
+              <Modal open={Boolean(projectMemberTarget)} title="调整成员角色" onClose={() => { if (!projectMutationSubmitting) setProjectMemberTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberTarget(null)}>取消</Button><Button loading={projectMutationSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-member-role-form'))?.requestSubmit()}>保存</Button></>}>
+                <form id="project-member-role-form" onSubmit={submitProjectMemberRole}><p>{projectMemberTarget?.display_name} @{projectMemberTarget?.username}</p><Field id="project-member-role-value" label="项目角色" required><select key={`${projectMemberTarget?.username || ''}:${projectMemberTarget?.member_role || ''}`} name="memberRole" defaultValue={projectMemberTarget?.member_role || 'member'}><option value="viewer">只读成员</option><option value="member">项目成员</option><option value="maintainer">项目管理员</option></select></Field></form>
+              </Modal>
+              <Modal open={Boolean(projectMemberRemoveTarget)} title="移除项目成员" onClose={() => { if (!projectMutationSubmitting) setProjectMemberRemoveTarget(null); }} footer={<><Button variant="secondary" disabled={projectMutationSubmitting} onClick={() => setProjectMemberRemoveTarget(null)}>取消</Button><Button variant="danger" loading={projectMutationSubmitting} onClick={() => void confirmProjectMemberRemove()}>确认移除</Button></>}><p>确认从项目中移除 {projectMemberRemoveTarget?.display_name} @{projectMemberRemoveTarget?.username}？</p></Modal>
             </section>
           ) : isWorkItemListRouteId(route.id) ? (
             <section className="shell-card shell-panel-wide work-item-center" aria-labelledby="work-item-center-title">

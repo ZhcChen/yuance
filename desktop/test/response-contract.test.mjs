@@ -20,6 +20,12 @@ test("accepts only the operation-declared data root kind", async () => {
   await assert.rejects(parseJsonResponse(jsonResponse({ data: {} }), { ...options, dataKind: "anything" }), /dataKind is invalid/);
 });
 
+test("accepts 204 only through an explicit nullable no-content contract", async () => {
+  const options = { expectedUrl: "https://yuance.example/api/v1/device-session", dataKind: "nullable-object" };
+  assert.equal(await parseJsonResponse(new Response(null, { status: 204 }), { ...options, allowEmptyUrl: true, allowNoContent: true }), null);
+  await assert.rejects(parseJsonResponse(new Response(null, { status: 204 }), { ...options, allowEmptyUrl: true }), (error) => error.code === "invalid_content_type");
+});
+
 test("rejects redirects, URL drift, content type, oversized JSON, and malformed envelopes", async () => {
   const cases = [
     jsonResponse({ data: {} }, { status: 302 }),

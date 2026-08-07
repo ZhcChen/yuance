@@ -132,7 +132,7 @@ function projectUpdateOperation(input) {
 
 function projectMembersOperation(input) {
   exactKeys(input, ["projectKey"]);
-  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/members`, parseProjectMembers);
+  return descriptor("GET", `/api/v1/projects/${projectKey(input.projectKey)}/members`, parseProjectMembers, true, "array");
 }
 
 function projectMemberAddOperation(input) {
@@ -151,7 +151,7 @@ function projectMemberRoleUpdateOperation(input) {
 
 function projectMemberRemoveOperation(input) {
   exactKeys(input, ["projectKey", "username"]);
-  return descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/members/${username(input.username)}`, parseNoContent, false, "nullable-object");
+  return Object.freeze({ ...descriptor("DELETE", `/api/v1/projects/${projectKey(input.projectKey)}/members/${username(input.username)}`, parseNoContent, false, "nullable-object"), allowNoContent: true });
 }
 
 function searchListOperation(input) {

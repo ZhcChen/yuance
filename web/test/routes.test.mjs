@@ -37,16 +37,17 @@ test('parseAppRoute normalizes message center filters and pagination', () => {
   );
 });
 
-test('parseAppRoute maps app-side unknown routes back to legacy fallback', () => {
+test('parseAppRoute recognizes shared project detail routes', () => {
   assert.deepEqual(
     parseAppRoute('/web/app/projects/YCE', '?view=kanban'),
     {
-      id: 'unsupported',
+      id: 'project-detail',
       owner: 'app',
       pathname: '/web/app/projects/YCE',
       search: '?view=kanban',
-      legacyPath: '/web/projects/YCE',
-      title: '未迁移路由',
+      projectKey: 'YCE',
+      tab: 'info',
+      title: '项目详情',
     },
   );
 });

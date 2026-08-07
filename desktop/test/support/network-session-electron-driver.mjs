@@ -429,6 +429,26 @@ async function runRealBusinessApi({ origin, mode, network }) {
     status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31",
   });
   const projectsAfterCreate = await rest.execute("project.list", { page: 1, perPage: 100 });
+  stage("manage-project");
+  const projectDetail = await rest.execute("project.detail", { projectKey: createdProject.key });
+  stage("update-project");
+  const updatedProject = await rest.execute("project.update", {
+    projectKey: createdProject.key, description: "Desktop project detail integration",
+  });
+  stage("add-project-member");
+  const addedProjectMember = await rest.execute("project.memberadd", {
+    projectKey: createdProject.key, username: "desktop_parity_member", memberRole: "member",
+  });
+  stage("update-project-member-role");
+  const updatedProjectMember = await rest.execute("project.memberroleupdate", {
+    projectKey: createdProject.key, username: "desktop_parity_member", memberRole: "maintainer",
+  });
+  stage("list-project-members");
+  const projectMembers = await rest.execute("project.members", { projectKey: createdProject.key });
+  stage("remove-project-member");
+  await rest.execute("project.memberremove", { projectKey: createdProject.key, username: "desktop_parity_member" });
+  stage("verify-project-member-remove");
+  const projectMembersAfterRemove = await rest.execute("project.members", { projectKey: createdProject.key });
   stage("update-profile");
   const updatedProfile = await rest.execute("identity.profileupdate", {
     displayName: "Desktop profile integration",
@@ -490,6 +510,10 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const mutationOperations = [
     "project.select",
     "project.create",
+    "project.update",
+    "project.memberadd",
+    "project.memberroleupdate",
+    "project.memberremove",
     "identity.profileupdate",
     "workitem.update",
     "workitem.handoff",
@@ -522,6 +546,12 @@ async function runRealBusinessApi({ origin, mode, network }) {
     projectSelected: selectedProject.key === "YCE",
     projectCreated: createdProject.key.startsWith("P")
       && projectsAfterCreate.items.some((project) => project.key === createdProject.key),
+    projectManaged: projectDetail.key === createdProject.key
+      && updatedProject.description === "Desktop project detail integration"
+      && addedProjectMember.username === "desktop_parity_member"
+      && updatedProjectMember.member_role === "maintainer"
+      && projectMembers.some((member) => member.username === "desktop_parity_member")
+      && !projectMembersAfterRemove.some((member) => member.username === "desktop_parity_member"),
     profileUpdated: updatedProfile.display_name === "Desktop profile integration"
       && verifiedProfile.display_name === updatedProfile.display_name,
     accountSecurity: deviceSessions.some((session) => session.is_current)

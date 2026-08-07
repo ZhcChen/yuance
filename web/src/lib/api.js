@@ -51,6 +51,12 @@ export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiCl
 
 export const getProjects = /** @type {(query?: { status?: string, page?: number, perPage?: number }) => Promise<{ items: Array<{ key: string, name: string, status: string, owner: string, work_item_count: number, active_work_item_count: number, updated_at: string }>, pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.getProjects);
 export const createProject = apiClient.createProject;
+export const getProject = apiClient.getProject;
+export const getProjectMembers = apiClient.getProjectMembers;
+export const updateProject = apiClient.updateProject;
+export const addProjectMember = apiClient.addProjectMember;
+export const updateProjectMemberRole = apiClient.updateProjectMemberRole;
+export const removeProjectMember = apiClient.removeProjectMember;
 
 export const search = /** @type {(query?: { q?: string, page?: number, perPage?: number }) => Promise<{ items: SearchResult[], pagination: { page: number, per_page: number, total_items: number, total_pages: number } }>} */ (apiClient.search);
 
@@ -122,6 +128,7 @@ export function openTopbarEvents(callbacks) {
 }
 
 export const webApi = {
+  addProjectMember,
   createApiToken,
   createProject,
   createWorkItemAttachment,
@@ -134,6 +141,8 @@ export const webApi = {
   getNotificationTarget,
   getNotifications,
   getOwnProfile,
+  getProject,
+  getProjectMembers,
   getProjects,
   getTopbarStatus,
   getWorkItem,
@@ -153,12 +162,15 @@ export const webApi = {
   markWorkItemCommentAttachmentUploaded,
   refreshCsrfToken,
   restorePendingReturnToHash,
+  removeProjectMember,
   revokeDeviceSession,
   search,
   updateApiToken,
   updateCurrentProject,
   updateOwnProfile,
   updateOwnPassword,
+  updateProject,
+  updateProjectMemberRole,
   updateWorkItem,
   updateWorkItemComment,
 };

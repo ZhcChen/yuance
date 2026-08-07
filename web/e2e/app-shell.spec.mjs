@@ -1466,6 +1466,66 @@ test('shared project list creates a project with one validated request', async (
   expect(requests[0].payload).toEqual({ name: '共享创建项目', description: '项目创建 E2E', status: 'not_started', start_date: '2026-08-08', due_date: '2026-08-31' });
 });
 
+test('shared project detail manages project information and member lifecycle', async ({ page }) => {
+  const detail = {
+    key: 'YCE', name: '元策研发平台', description: '原始描述', status: 'in_progress',
+    owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '2026-08-01', due_date: '2026-08-31',
+    created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z',
+  };
+  let members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const mutations = [];
+  await page.route('**/api/v1/projects/YCE', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      mutations.push(['update', route.request().postDataJSON()]);
+      Object.assign(detail, route.request().postDataJSON());
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: detail }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', async (route) => {
+    if (route.request().method() === 'POST') {
+      const payload = route.request().postDataJSON();
+      mutations.push(['add', payload]);
+      members.push({ user_id: 2, display_name: '协作成员', username: payload.username, member_role: payload.member_role, joined_at: '2026-08-08T00:00:00Z' });
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: members.at(-1) }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members/collaborator', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      const payload = route.request().postDataJSON(); mutations.push(['role', payload]); members = members.map((member) => member.username === 'collaborator' ? { ...member, member_role: payload.member_role } : member);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members.find((member) => member.username === 'collaborator') }) }); return;
+    }
+    mutations.push(['remove']); members = members.filter((member) => member.username !== 'collaborator');
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await login(page, '/web/app/projects/YCE');
+  await expect(page.getByRole('heading', { level: 2, name: 'YCE · 元策研发平台' })).toBeVisible();
+  await page.getByRole('button', { name: '编辑项目' }).click();
+  const editDialog = page.getByRole('dialog', { name: '编辑项目' });
+  await editDialog.getByLabel('项目描述').fill('共享详情描述');
+  await editDialog.getByRole('button', { name: '保存' }).click();
+  await expect(page.getByText('共享详情描述')).toBeVisible();
+
+  await page.getByRole('link', { name: '项目成员' }).click();
+  await page.getByRole('button', { name: '添加成员' }).click();
+  const addDialog = page.getByRole('dialog', { name: '添加项目成员' });
+  await addDialog.getByLabel('用户名').fill('collaborator');
+  await addDialog.getByLabel('项目角色').selectOption('member');
+  await addDialog.getByRole('button', { name: '添加' }).click();
+  const memberRow = page.getByRole('row', { name: /协作成员/ });
+  await memberRow.getByRole('button', { name: '调整角色' }).click();
+  const roleDialog = page.getByRole('dialog', { name: '调整成员角色' });
+  await roleDialog.getByLabel('项目角色').selectOption('maintainer');
+  await roleDialog.getByRole('button', { name: '保存' }).click();
+  await expect(memberRow).toContainText('项目管理员');
+  await memberRow.getByRole('button', { name: '移除' }).click();
+  await page.getByRole('dialog', { name: '移除项目成员' }).getByRole('button', { name: '确认移除' }).click();
+  await expect(page.getByRole('row', { name: /协作成员/ })).toHaveCount(0);
+  expect(mutations.map(([kind]) => kind)).toEqual(['update', 'add', 'role', 'remove']);
+});
+
 test('project switch serializes repeated input and refreshes the current context', async ({ page }) => {
   await login(page, '/web/app/projects');
   let patchCount = 0;

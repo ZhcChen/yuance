@@ -33,7 +33,7 @@ export function createRestTransport({ profile, credentialRuntime, fetchImpl, reg
           throw new ResponseContractError("network_error", "Request failed");
         }
         try {
-          const data = await parseJsonResponse(response, { expectedUrl: url, maxResponseBytes, signal: controller.signal, allowEmptyUrl: true, dataKind: operation.dataKind });
+          const data = await parseJsonResponse(response, { expectedUrl: url, maxResponseBytes, signal: controller.signal, allowEmptyUrl: true, allowNoContent: operation.allowNoContent === true, dataKind: operation.dataKind });
           try { return Object.freeze({ expired: false, value: operation.parse(data, profile) }); }
           catch { throw new ResponseContractError("invalid_response", "Response data is invalid"); }
         } catch (error) {

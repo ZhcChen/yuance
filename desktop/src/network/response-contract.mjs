@@ -17,18 +17,21 @@ export async function parseJsonResponse(response, {
   signal = new AbortController().signal,
   errorFactory = defaultErrorFactory,
   allowEmptyUrl = false,
+  allowNoContent = false,
   dataKind = "object",
 } = {}) {
   if (!response || typeof response.status !== "number") throw new TypeError("response is required");
   if (typeof expectedUrl !== "string" || expectedUrl.length === 0) throw new TypeError("expectedUrl is required");
   if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes < 1) throw new TypeError("maxResponseBytes is invalid");
   if (!DATA_KINDS.has(dataKind)) throw new TypeError("dataKind is invalid");
+  if (typeof allowNoContent !== "boolean") throw new TypeError("allowNoContent is invalid");
   if (response.redirected || (response.status >= 300 && response.status < 400)) {
     throw errorFactory("redirect_not_allowed", "Response redirects are not allowed", { status: response.status });
   }
   if ((!response.url && !allowEmptyUrl) || (response.url && response.url !== expectedUrl)) {
     throw errorFactory("response_url_mismatch", "Response URL changed", { status: response.status });
   }
+  if (allowNoContent && dataKind === "nullable-object" && response.status === 204) return null;
   if (!JSON_CONTENT_TYPE.test(response.headers.get("content-type") || "")) {
     throw errorFactory("invalid_content_type", "Response must be JSON", { status: response.status });
   }

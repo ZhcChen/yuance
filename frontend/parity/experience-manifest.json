@@ -150,8 +150,8 @@
       "states": ["loading", "ready", "filtered", "empty", "creating", "validation-error", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "page.project.detail",
@@ -166,8 +166,8 @@
       "states": ["loading", "ready", "tab-synced", "empty-section", "editing", "submitting", "forbidden", "not-found", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "page.project.cycle-detail",
@@ -520,8 +520,8 @@
       "realtimeEffect": "项目列表与项目切换候选失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "action.project.current.switch",
@@ -552,8 +552,8 @@
       "realtimeEffect": "项目摘要、成员角色和相关页面缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "action.project.member.add",
@@ -568,8 +568,8 @@
       "realtimeEffect": "成员、权限候选和项目可见性缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "action.project.member.remove",
@@ -584,8 +584,8 @@
       "realtimeEffect": "被移除用户的项目权限和相关实时订阅失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "action.project.member.role.update",
@@ -600,8 +600,8 @@
       "realtimeEffect": "目标用户权限、菜单和项目操作缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U3",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "shared",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs"], "desktopTests": ["desktop/test/desktop-business-api-integration.test.mjs"], "reviews": ["docs/reviews/2026-08-07-004-web-desktop-u3-project-detail-members-review.md"] }
     },
     {
       "id": "action.project.cycle.create",
