@@ -761,6 +761,44 @@ html[data-theme="dark"] {
 .yc-rich-text-content [data-yuance-align="left"],
 .yc-rich-text-input [data-yuance-align="left"] { text-align: left; }
 
+.yc-rich-text-input figure {
+  margin: 12px 0;
+}
+
+.yc-rich-text-input img,
+.yc-rich-text-input video,
+.yc-rich-text-content img,
+.yc-rich-text-content video {
+  display: block;
+  max-width: 100%;
+  max-height: 480px;
+}
+
+.yc-rich-text-attachments {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--yc-line);
+}
+
+.yc-rich-text-attachments > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.yc-rich-text-attachments span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yc-rich-text-attachments button {
+  flex-shrink: 0;
+}
+
 .work-item-comment-actions {
   display: flex;
   gap: 8px;

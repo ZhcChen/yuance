@@ -148,6 +148,8 @@ test("desktop app file adapter delegates business attachments and rejects signed
   assert.equal(JSON.stringify(preview).includes("secret"), false);
   const resourcePreview = await platform.attachments.openProjectResourceAttachmentPreview({ projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant" });
   assert.equal(resourcePreview.source, `app://yuance/.preview/ypv_${"d".repeat(32)}`);
+  assert.equal(JSON.stringify(resourcePreview).includes("secret"), false);
+  assert.deepEqual(Object.keys(resourcePreview).sort(), ["attachment", "byteSize", "capability", "contentType", "navigation", "preview", "source"]);
   assert.deepEqual(await platform.attachments.releaseProjectAttachmentPreview(preview.capability), { status: "released" });
   assert.throws(() => platform.transfers.authorizeSignedRequest(), /unavailable/);
   assert.equal(JSON.stringify(result).includes("secret"), false);

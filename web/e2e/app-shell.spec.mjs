@@ -1902,8 +1902,9 @@ test('shared project resources create edit password actions and archive', async 
 test('shared project resource attachments upload download and delete', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
-  const resource = projectResourceFixture({ id: 960, title: '附件资料', url: '/web/projects/YCE/resources/960' });
+  let resource = projectResourceFixture({ id: 960, title: '附件资料', url: '/web/projects/YCE/resources/960' });
   const stages = [];
+  const inlineOperations = [];
   let checksum = '';
   let attachments = [];
   let downloadRequests = 0;
@@ -1925,7 +1926,7 @@ test('shared project resource attachments upload download and delete', async ({ 
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: attachments[0], preview: { kind: 'document', strategy: 'text', file_type: 'txt', kind_label: '文本', is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, content_url: '/api/v1/projects/YCE/resources/960/attachments/961/preview/content', download_url: '/api/v1/projects/YCE/resources/960/attachments/961/download-url' } }) });
   });
   await page.route('**/api/v1/projects/YCE/resources/960/attachments/961', async (route) => {
-    expect(route.request().method()).toBe('DELETE'); attachments = [{ ...attachments[0], status: 'deleted' }];
+    expect(route.request().method()).toBe('DELETE'); inlineOperations.push('delete'); attachments = [{ ...attachments[0], status: 'deleted' }];
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments[0] }) });
   });
   await page.route(/\/api\/v1\/projects\/YCE\/resources\/960\/attachments(?:\?.*)?$/u, async (route) => {
@@ -1936,7 +1937,12 @@ test('shared project resource attachments upload download and delete', async ({ 
     }
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) });
   });
-  await page.route('**/api/v1/projects/YCE/resources/960', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) }));
+  await page.route('**/api/v1/projects/YCE/resources/960', async (route) => {
+    if (route.request().method() === 'PATCH') {
+      const payload = route.request().postDataJSON(); inlineOperations.push(['patch', payload.body]); resource = { ...resource, ...payload, body_format: payload.body_format };
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+  });
   await page.route('**/api/v1/projects/YCE/resources', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [resource] }) }));
   await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
   await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
@@ -1948,6 +1954,18 @@ test('shared project resource attachments upload download and delete', async ({ 
   await expect.poll(() => stages).toEqual(['create', 'sign', 'put', 'confirm']);
   const list = page.getByRole('list', { name: '资料附件列表' });
   await expect(list).toContainText('resource-notes.txt');
+  await page.getByRole('button', { name: '编辑' }).click();
+  let resourceDialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await resourceDialog.getByRole('button', { name: '插入正文' }).click();
+  await resourceDialog.getByRole('button', { name: '保存' }).click();
+  await expect(resourceDialog).not.toBeVisible();
+  await expect.poll(() => inlineOperations.length).toBe(1);
+  expect(inlineOperations[0][0]).toBe('patch');
+  expect(inlineOperations[0][1]).toContain('data-yuance-attachment-id="961"');
+  expect(inlineOperations[0][1]).toContain('/web/projects/YCE/resources/960/attachments/961/download');
+  await page.getByRole('link', { name: 'resource-notes.txt' }).click();
+  await expect(page.getByRole('dialog', { name: 'resource-notes.txt' })).toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
+  await page.getByRole('dialog', { name: 'resource-notes.txt' }).getByRole('button', { name: '关闭' }).click();
   await list.getByRole('button', { name: '预览附件 resource-notes.txt' }).click();
   const previewDialog = page.getByRole('dialog', { name: 'resource-notes.txt' });
   await expect(previewDialog).toContainText('此文档暂不支持内嵌渲染，可下载后查看。');
@@ -1956,12 +1974,16 @@ test('shared project resource attachments upload download and delete', async ({ 
   await list.getByRole('button', { name: '下载附件 resource-notes.txt' }).click();
   await expect.poll(() => downloadRequests).toBe(1);
   await expect.poll(async () => page.evaluate(() => window.__yuanceDownloadClicks[0] || '')).toContain('/signed-download/resource-961?token=e2e');
-  await list.getByRole('button', { name: '删除' }).click();
-  const dialog = page.getByRole('dialog', { name: '删除资料附件' });
-  await expect(dialog).toContainText('对象存储中的文件也会一并删除');
-  await dialog.getByRole('button', { name: '确认删除' }).click();
-  await expect(list).toContainText('已归档');
-  await expect(list.getByRole('button', { name: '下载附件 resource-notes.txt' })).toHaveCount(0);
+  await page.getByRole('button', { name: '编辑' }).click();
+  resourceDialog = page.getByRole('dialog', { name: '编辑项目资料' });
+  await resourceDialog.getByRole('button', { name: '移除引用' }).click();
+  await resourceDialog.getByRole('button', { name: '保存' }).click();
+  await expect(resourceDialog).not.toBeVisible();
+  await expect.poll(() => inlineOperations.length).toBe(3);
+  expect(inlineOperations.slice(1).map((entry) => Array.isArray(entry) ? entry[0] : entry)).toEqual(['patch', 'delete']);
+  expect(inlineOperations[1][1]).not.toContain('data-yuance-attachment-id="961"');
+  await expect(page.getByText('当前资料暂无附件。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '下载附件 resource-notes.txt' })).toHaveCount(0);
 });
 
 test('shared project resources hide mutations from viewers', async ({ page }) => {

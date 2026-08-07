@@ -2,24 +2,67 @@
 
 import createDOMPurify from 'dompurify';
 import { marked } from 'marked';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
-const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'li', 'ol', 'p', 'pre', 's', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul'];
-const EDITOR_ATTRIBUTES = ['data-yuance-align', 'href', 'title'];
-const CONTENT_TAGS = [...EDITOR_TAGS, 'figcaption', 'figure', 'img', 'source', 'video'];
-const CONTENT_ATTRIBUTES = [...EDITOR_ATTRIBUTES, 'alt', 'controls', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'loading', 'playsinline', 'preload', 'src'];
+const EDITOR_TAGS = ['a', 'b', 'blockquote', 'br', 'code', 'del', 'div', 'em', 'figcaption', 'figure', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 's', 'source', 'strong', 'table', 'tbody', 'td', 'th', 'thead', 'tr', 'u', 'ul', 'video'];
+const EDITOR_ATTRIBUTES = ['alt', 'controls', 'data-yuance-align', 'data-yuance-attachment-id', 'data-yuance-attachment-kind', 'data-yuance-file-ext', 'data-yuance-file-kind', 'href', 'loading', 'playsinline', 'preload', 'src', 'title'];
+const CONTENT_TAGS = EDITOR_TAGS;
+const CONTENT_ATTRIBUTES = EDITOR_ATTRIBUTES;
 
-/** @param {{ html: string, format?: string, emptyText?: string }} props */
-export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。' }) {
+/** @typedef {{ source: string, release?: () => void | Promise<void> }} RichTextResolvedSource */
+
+/** @param {{ html: string, format?: string, emptyText?: string, onAttachmentActivate?: (attachmentId: number) => void, resolveAttachmentSource?: (attachmentId: number) => Promise<RichTextResolvedSource> }} props */
+export function RichTextContent({ html, format = 'html', emptyText = '暂无正文。', onAttachmentActivate, resolveAttachmentSource }) {
   const contentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const activateRef = useRef(onAttachmentActivate);
+  const resolveRef = useRef(resolveAttachmentSource);
+  activateRef.current = onAttachmentActivate;
+  resolveRef.current = resolveAttachmentSource;
   useEffect(() => {
     const content = contentRef.current;
     const view = content?.ownerDocument.defaultView;
-    if (content && view && format === 'html') content.innerHTML = createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: CONTENT_TAGS, ALLOWED_ATTR: CONTENT_ATTRIBUTES });
-  }, [format, html]);
+    if (!content || !view || format !== 'html') return undefined;
+    const sanitized = createDOMPurify(view).sanitize(html, { ALLOWED_TAGS: CONTENT_TAGS, ALLOWED_ATTR: CONTENT_ATTRIBUTES });
+    const staging = content.ownerDocument.createElement('div');
+    staging.innerHTML = sanitized;
+    const mediaReferences = [...staging.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')];
+    if (resolveRef.current) for (const media of mediaReferences) media.removeAttribute('src');
+    content.replaceChildren(...staging.childNodes);
+    let active = true;
+    const releases = [];
+    if (resolveRef.current) for (const media of [...content.querySelectorAll('[data-yuance-attachment-id] img, [data-yuance-attachment-id] video')]) {
+      const owner = media.closest('[data-yuance-attachment-id]');
+      const attachmentId = Number(owner?.getAttribute('data-yuance-attachment-id'));
+      if (!Number.isSafeInteger(attachmentId) || attachmentId < 1) continue;
+      void resolveRef.current(attachmentId).then((resolved) => {
+        if (!active) { releaseResolvedSource(resolved); return; }
+        media.setAttribute('src', resolved.source);
+        if (resolved.release) releases.push(resolved.release);
+      }).catch(() => {});
+    }
+    const activate = (event) => {
+      const target = event.target instanceof view.Element ? event.target.closest('[data-yuance-attachment-id]') : null;
+      const attachmentId = Number(target?.getAttribute('data-yuance-attachment-id'));
+      if (!Number.isSafeInteger(attachmentId) || attachmentId < 1 || !activateRef.current) return;
+      event.preventDefault();
+      activateRef.current(attachmentId);
+    };
+    content.addEventListener('click', activate);
+    return () => {
+      active = false;
+      content.removeEventListener('click', activate);
+      for (const release of releases) releaseResolvedSource({ source: '', release });
+    };
+  }, [format, html, Boolean(resolveAttachmentSource)]);
   if (!html) return <p className="yc-rich-text-empty">{emptyText}</p>;
   if (format !== 'html') return <div className="yc-rich-text-content yc-rich-text-plain">{html}</div>;
   return <div ref={contentRef} className="yc-rich-text-content" />;
+}
+
+/** @param {RichTextResolvedSource} resolved */
+function releaseResolvedSource(resolved) {
+  if (!resolved.release) return;
+  try { void Promise.resolve(resolved.release()).catch(() => {}); } catch { /* Host capability cleanup is best-effort. */ }
 }
 
 /** @param {string} value */
@@ -39,15 +82,26 @@ export function richTextHasContent(value) {
   return /<(?:hr|img|video)\b/iu.test(value) || value.replace(/<[^>]*>/gu, '').replaceAll('&nbsp;', ' ').trim().length > 0;
 }
 
-/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string }} props */
-export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文' }) {
+/** @param {string} value */
+export function richTextAttachmentIds(value) {
+  const ids = new Set();
+  for (const match of value.matchAll(/\bdata-yuance-attachment-id\s*=\s*["']([1-9][0-9]*)["']/giu)) ids.add(Number(match[1]));
+  return [...ids];
+}
+
+/** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
+
+/** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[] }} props */
+export function RichTextEditor({ id, value, onChange, disabled = false, required = false, label = '资料正文', attachments = [] }) {
   const inputRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const [attachmentIds, setAttachmentIds] = useState(() => richTextAttachmentIds(value));
 
   useEffect(() => {
     const input = inputRef.current;
     if (!input) return;
     const sanitized = sanitizeEditorHtml(input, value);
     if (input.innerHTML !== sanitized) input.innerHTML = sanitized;
+    setAttachmentIds(richTextAttachmentIds(sanitized));
     if (sanitized !== value) onChange(sanitized);
   }, [value]);
 
@@ -91,6 +145,23 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
     publish(input);
   }
 
+  /** @param {RichTextAttachmentOption} attachment */
+  function insertAttachment(attachment) {
+    const input = inputRef.current;
+    if (!input || disabled || attachmentIds.includes(attachment.id)) return;
+    const node = createAttachmentNode(input.ownerDocument, attachment);
+    insertAtSelection(input, node);
+    publish(input);
+  }
+
+  /** @param {number} attachmentId */
+  function removeAttachment(attachmentId) {
+    const input = inputRef.current;
+    if (!input || disabled) return;
+    input.querySelector(`[data-yuance-attachment-id="${attachmentId}"]`)?.remove();
+    publish(input);
+  }
+
   return (
     <div className={`yc-rich-text-editor${disabled ? ' is-disabled' : ''}`}>
       <div className="yc-rich-text-toolbar" role="toolbar" aria-label="富文本工具栏">
@@ -123,13 +194,58 @@ export function RichTextEditor({ id, value, onChange, disabled = false, required
           publish(event.currentTarget);
         }}
       />
+      {attachments.length ? <div className="yc-rich-text-attachments" aria-label="资料正文附件">
+        {attachments.map((attachment) => {
+          const inserted = attachmentIds.includes(attachment.id);
+          return <div key={attachment.id}><span>{attachment.filename}</span>{inserted ? <button type="button" disabled={disabled} onClick={() => removeAttachment(attachment.id)}>移除引用</button> : <button type="button" disabled={disabled} onClick={() => insertAttachment(attachment)}>插入正文</button>}</div>;
+        })}
+      </div> : null}
     </div>
   );
 
   /** @param {HTMLDivElement} input */
   function publish(input) {
-    onChange(sanitizeEditorHtml(input, input.innerHTML));
+    const sanitized = sanitizeEditorHtml(input, input.innerHTML);
+    setAttachmentIds(richTextAttachmentIds(sanitized));
+    onChange(sanitized);
   }
+}
+
+/** @param {Document} ownerDocument @param {RichTextAttachmentOption} attachment */
+function createAttachmentNode(ownerDocument, attachment) {
+  const mediaKind = attachment.contentType.startsWith('image/') ? 'image' : attachment.contentType.startsWith('video/') ? 'video' : 'file';
+  const container = ownerDocument.createElement(mediaKind === 'file' ? 'a' : 'figure');
+  container.setAttribute('data-yuance-attachment-id', String(attachment.id));
+  container.setAttribute('data-yuance-attachment-kind', mediaKind);
+  container.setAttribute('data-yuance-align', 'left');
+  if (mediaKind === 'file') {
+    container.setAttribute('href', attachment.url);
+    container.setAttribute('title', attachment.filename);
+    container.textContent = attachment.filename;
+    return container;
+  }
+  const media = ownerDocument.createElement(mediaKind === 'image' ? 'img' : 'video');
+  media.setAttribute('src', attachment.url);
+  if (mediaKind === 'image') { media.setAttribute('alt', attachment.filename); media.setAttribute('loading', 'lazy'); }
+  else { media.setAttribute('controls', 'controls'); media.setAttribute('preload', 'metadata'); media.setAttribute('playsinline', 'playsinline'); media.setAttribute('title', attachment.filename); }
+  container.appendChild(media);
+  return container;
+}
+
+/** @param {HTMLDivElement} input @param {Element} node */
+function insertAtSelection(input, node) {
+  const selection = input.ownerDocument.getSelection();
+  if (!selection || selection.rangeCount === 0 || !selection.anchorNode || !input.contains(selection.anchorNode)) input.appendChild(node);
+  else {
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(node);
+    range.setStartAfter(node);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  input.appendChild(input.ownerDocument.createElement('p')).appendChild(input.ownerDocument.createElement('br'));
 }
 
 /** @param {HTMLDivElement} input @param {string} html */
