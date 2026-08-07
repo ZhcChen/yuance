@@ -91,6 +91,9 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.handoff", workItemHandoffOperation],
     ["workitem.comments", workItemCommentsOperation],
     ["workitem.commentcreate", workItemCommentCreateOperation],
+    ["workitem.commentdraftcreate", workItemCommentDraftCreateOperation],
+    ["workitem.commentdraftpublish", workItemCommentDraftPublishOperation],
+    ["workitem.commentdraftcancel", workItemCommentDraftCancelOperation],
     ["workitem.commentupdate", workItemCommentUpdateOperation],
     ["workitem.attachments", workItemAttachmentsOperation],
     ["workitem.attachmentpreview", workItemAttachmentPreviewOperation],
@@ -574,6 +577,33 @@ function workItemHandoffOperation(input) {
 function workItemCommentCreateOperation(input) {
   exactKeys(input, ["itemKey", "payload"]);
   return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments`, parseComment, false, "object", jsonBody(commentBody(input.payload)));
+}
+
+function workItemCommentDraftCreateOperation(input) {
+  exactKeys(input, ["itemKey", "payload"]);
+  const payload = plainPayload(input.payload, "payload");
+  exactKeys(payload, ["body", "bodyFormat", "parentCommentId"]);
+  return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/draft`, parseComment, false, "object", jsonBody({
+    body: boundedText(payload.body, "body", 20_000),
+    body_format: requiredEnum(payload.bodyFormat, new Set(["html"]), "bodyFormat"),
+    ...(payload.parentCommentId === undefined ? {} : { parent_comment_id: nullablePositiveInteger(payload.parentCommentId) }),
+  }));
+}
+
+function workItemCommentDraftPublishOperation(input) {
+  exactKeys(input, ["commentId", "itemKey", "payload"]);
+  const payload = plainPayload(input.payload, "payload");
+  exactKeys(payload, ["body", "bodyFormat", "parentCommentId"]);
+  return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/publish`, parseComment, false, "object", jsonBody({
+    body: boundedRequiredText(payload.body, "body", 20_000),
+    body_format: requiredEnum(payload.bodyFormat, new Set(["html"]), "bodyFormat"),
+    ...(payload.parentCommentId === undefined ? {} : { parent_comment_id: nullablePositiveInteger(payload.parentCommentId) }),
+  }));
+}
+
+function workItemCommentDraftCancelOperation(input) {
+  exactKeys(input, ["commentId", "itemKey"]);
+  return descriptor("DELETE", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/draft`, parseComment, false);
 }
 
 function workItemCommentUpdateOperation(input) {

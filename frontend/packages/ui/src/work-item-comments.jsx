@@ -37,6 +37,10 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   editingCommentId: number | null,
  *   replyingToCommentId: number | null,
  *   newCommentBody: string,
+ *   newCommentDraftId: number | null,
+ *   newCommentAttachments: Attachment[],
+ *   newCommentAttachmentStatus: string,
+ *   newCommentAttachmentUploading: boolean,
  *   editCommentBody: string,
  *   replyCommentBody: string,
  *   commentSubmitting: boolean,
@@ -45,6 +49,8 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   error: string,
  *   onSubmitNew: (event: import('react').FormEvent<HTMLFormElement>) => void,
  *   onChangeNew: (value: string) => void,
+ *   onUploadNewAttachment: () => void,
+ *   onCancelNewDraft: () => void,
  *   onSubmitEdit: (event: import('react').FormEvent<HTMLFormElement>) => void,
  *   onChangeEdit: (value: string) => void,
  *   onSubmitReply: (event: import('react').FormEvent<HTMLFormElement>) => void,
@@ -74,6 +80,10 @@ export function WorkItemComments(props) {
     editingCommentId,
     replyingToCommentId,
     newCommentBody,
+    newCommentDraftId,
+    newCommentAttachments,
+    newCommentAttachmentStatus,
+    newCommentAttachmentUploading,
     editCommentBody,
     replyCommentBody,
     commentSubmitting,
@@ -82,6 +92,8 @@ export function WorkItemComments(props) {
     error,
     onSubmitNew,
     onChangeNew,
+    onUploadNewAttachment,
+    onCancelNewDraft,
     onSubmitEdit,
     onChangeEdit,
     onSubmitReply,
@@ -104,7 +116,23 @@ export function WorkItemComments(props) {
       </div>
       {canWriteComments ? <form className="work-item-comment-form" onSubmit={onSubmitNew}>
         <RichTextEditor id="work-item-new-comment" value={newCommentBody} onChange={onChangeNew} label="新增评论" mentionOptions={mentionOptions} />
+        {newCommentAttachments.length ? (
+          <AttachmentList
+            attachments={newCommentAttachments}
+            ariaLabel="新评论附件"
+            downloadLabel="评论附件"
+            downloadingId={newCommentDraftId !== null && downloadingKey.startsWith(`${newCommentDraftId}:`) ? Number(downloadingKey.split(':')[1]) : null}
+            revealableId={newCommentDraftId !== null && revealableKey.startsWith(`${newCommentDraftId}:`) ? Number(revealableKey.split(':')[1]) : null}
+            onPreview={(attachment) => { if (newCommentDraftId !== null) onPreviewAttachment(newCommentDraftId, attachment); }}
+            onDownload={(attachment) => { if (newCommentDraftId !== null) onDownloadAttachment(newCommentDraftId, attachment); }}
+            onReveal={(attachment) => { if (newCommentDraftId !== null) onRevealAttachment(newCommentDraftId, attachment); }}
+            className="work-item-comment-attachment-list"
+          />
+        ) : null}
+        {newCommentAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{newCommentAttachmentStatus}</p> : null}
         <div className="work-item-form-actions">
+          <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onUploadNewAttachment} disabled={mutationBusy || newCommentAttachmentUploading}>{newCommentAttachmentUploading ? '处理中…' : '添加附件'}</button>
+          {newCommentDraftId !== null ? <button className="yuance-ui-button yuance-ui-button-secondary" type="button" onClick={onCancelNewDraft} disabled={mutationBusy}>取消草稿</button> : null}
           <button className="yuance-ui-button" type="submit" disabled={mutationBusy}>{commentSubmitting ? '发布中…' : '发布评论'}</button>
         </div>
       </form> : null}

@@ -9929,6 +9929,99 @@ async fn api_v1_can_delete_draft_comment_attachment_and_cleanup_object() {
 }
 
 #[tokio::test]
+async fn api_v1_can_cancel_own_comment_draft_and_cleanup_all_attachments() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    seed_memory_storage_config(&pool, initialized.user_id).await;
+    let draft = projects::create_work_item_comment_draft(
+        &pool,
+        initialized.user_id,
+        "YCE-TASK-2",
+        None,
+        "",
+    )
+    .await
+    .expect("draft should create");
+    let project = projects::get_project_detail(&pool, "YCE")
+        .await
+        .expect("project should load")
+        .expect("project should exist");
+    let config = storage::active_config(&pool)
+        .await
+        .expect("storage config should load")
+        .expect("storage config should exist");
+    let attachment = files::create_attachment(
+        &pool,
+        &config,
+        files::CreateAttachmentInput {
+            folder_id: None,
+            target_type: "comment".to_string(),
+            target_id: draft.id,
+            project_id: Some(project.id),
+            original_filename: "cancelled-draft.png".to_string(),
+            content_type: "image/png".to_string(),
+            byte_size: 1024,
+            created_by_user_id: initialized.user_id,
+            created_by_display_name_snapshot: String::new(),
+            activity_summary: None,
+        },
+    )
+    .await
+    .expect("attachment should create");
+    write_test_object(&pool, &attachment)
+        .await
+        .expect("test object should write");
+    files::mark_attachment_uploaded(&pool, attachment.id, "comment", draft.id)
+        .await
+        .expect("attachment should upload");
+
+    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{}/draft",
+                    draft.id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response_body(response).await.contains(r#""is_draft":true"#));
+    let work_item_id =
+        sqlx::query_scalar::<_, i64>("SELECT id FROM work_items WHERE item_key = 'YCE-TASK-2'")
+            .fetch_one(&pool)
+            .await
+            .expect("work item id should load");
+    assert!(
+        projects::get_work_item_comment_including_drafts(&pool, work_item_id, draft.id,)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        files::get_attachment(&pool, attachment.id)
+            .await
+            .expect("attachment should load")
+            .status,
+        "deleted"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachment.object_key)
+            .await
+            .expect("test object should read")
+            .is_none()
+    );
+}
+
+#[tokio::test]
 async fn api_v1_can_delete_project_resource_attachment_and_cleanup_object() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

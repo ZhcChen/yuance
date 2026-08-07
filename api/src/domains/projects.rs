@@ -5541,6 +5541,61 @@ pub async fn publish_work_item_comment_draft(
     get_work_item_comment(pool, work_item_id, comment_id).await
 }
 
+pub async fn cancel_work_item_comment_draft(
+    pool: &SqlitePool,
+    actor_user_id: i64,
+    item_key: &str,
+    comment_id: i64,
+) -> AppResult<WorkItemCommentSummary> {
+    let Some((work_item_id, project_status)) = sqlx::query_as::<_, (i64, String)>(
+        r#"
+        SELECT wi.id, p.status
+        FROM work_items wi
+        JOIN projects p ON p.id = wi.project_id
+        WHERE wi.item_key = ?1
+          AND wi.deleted_at IS NULL
+        "#,
+    )
+    .bind(item_key)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("工作项不存在".to_string()));
+    };
+    ensure_project_accepts_writes(&project_status)?;
+    let draft = get_work_item_comment_including_drafts(pool, work_item_id, comment_id).await?;
+    if !draft.is_draft {
+        return Err(AppError::BadRequest("该评论不是草稿".to_string()));
+    }
+    if draft.is_flow {
+        return Err(AppError::Forbidden("流程记录不能作为草稿取消".to_string()));
+    }
+    if draft.author_user_id != Some(actor_user_id) {
+        return Err(AppError::Forbidden("只能取消自己的草稿评论".to_string()));
+    }
+
+    let affected = sqlx::query(
+        r#"
+        UPDATE work_item_comments
+        SET deleted_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND is_draft = 1
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .execute(pool)
+    .await?
+    .rows_affected();
+    if affected == 0 {
+        return Err(AppError::NotFound("草稿评论不存在".to_string()));
+    }
+    Ok(draft)
+}
+
 pub async fn get_work_item_comment(
     pool: &SqlitePool,
     work_item_id: i64,

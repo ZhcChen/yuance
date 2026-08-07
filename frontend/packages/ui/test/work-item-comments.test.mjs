@@ -44,6 +44,10 @@ function renderComments(overrides = {}) {
     editingCommentId: null,
     replyingToCommentId: null,
     newCommentBody: '',
+    newCommentDraftId: null,
+    newCommentAttachments: [],
+    newCommentAttachmentStatus: '',
+    newCommentAttachmentUploading: false,
     editCommentBody: '',
     replyCommentBody: '',
     commentSubmitting: false,
@@ -52,6 +56,8 @@ function renderComments(overrides = {}) {
     error: '',
     onSubmitNew: () => {},
     onChangeNew: () => {},
+    onUploadNewAttachment: () => {},
+    onCancelNewDraft: () => {},
     onSubmitEdit: () => {},
     onChangeEdit: () => {},
     onSubmitReply: () => {},
@@ -85,6 +91,19 @@ test('work item comments render edit and error states', () => {
   assert.match(html, /编辑评论/);
   assert.match(html, /work-item-comment-edit-9/);
   assert.match(html, /role="alert"/);
+});
+
+test('work item comments expose draft attachments in the shared composer', () => {
+  const html = renderComments({
+    newCommentDraftId: 12,
+    newCommentAttachments: [attachment],
+    newCommentAttachmentStatus: '草稿附件上传完成。',
+  });
+
+  assert.match(html, /新评论附件/);
+  assert.match(html, /comment\.txt/);
+  assert.match(html, /草稿附件上传完成/);
+  assert.match(html, /取消草稿/);
 });
 
 test('work item comments render reply composer and hide edit from non-authors', () => {

@@ -127,6 +127,7 @@ export const createWorkItemCommentDraft = /** @type {(itemKey: string, payload: 
 export const updateWorkItemComment = /** @type {(itemKey: string, commentId: number, payload: CommentRequestPayload) => Promise<WorkItemComment>} */ (apiClient.updateWorkItemComment);
 
 export const publishWorkItemCommentDraft = /** @type {(itemKey: string, commentId: number, payload: CommentRequestPayload) => Promise<WorkItemComment>} */ (apiClient.publishWorkItemCommentDraft);
+export const cancelWorkItemCommentDraft = /** @type {(itemKey: string, commentId: number) => Promise<WorkItemComment>} */ (apiClient.cancelWorkItemCommentDraft);
 
 export const getWorkItemAttachments = /** @type {(itemKey: string) => Promise<Attachment[]>} */ (apiClient.getWorkItemAttachments);
 
@@ -189,6 +190,9 @@ export const webApi = {
   createProjectAttachment,
   createWorkItemAttachment,
   createWorkItemComment,
+  createWorkItemCommentDraft,
+  publishWorkItemCommentDraft,
+  cancelWorkItemCommentDraft,
   createWorkItemCommentAttachment,
   deleteApiToken,
   getApiTokens,

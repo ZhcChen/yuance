@@ -20,7 +20,41 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
 /** @typedef {{ body: string, bodyFormat?: string, parentCommentId?: number | null }} CommentRequestPayload */
 /** @typedef {{ originalFilename: string, contentType: string, byteSize: number, checksumSha256?: string }} AttachmentCreatePayload */
 /** @typedef {{ expiresInSeconds?: number }} SignedUrlOptions */
-/** @typedef {{ getWorkItems(query?: WorkItemListQuery): Promise<{ items: WorkItemSummary[], pagination: Pagination }>, getWorkItemListView(query?: WorkItemListQuery): Promise<WorkItemListView>, getWorkItemDetailView(itemKey: string): Promise<WorkItemDetailView>, createWorkItem(payload: WorkItemCreatePayload): Promise<WorkItemDetail>, batchUpdateWorkItems(payload: WorkItemBatchUpdatePayload): Promise<WorkItemBatchUpdateResult>, createWorkItemSavedView(payload: WorkItemSavedViewCreatePayload): Promise<WorkItemSavedView>, renameWorkItemSavedView(savedViewId: number, name: string): Promise<WorkItemSavedView>, setDefaultWorkItemSavedView(savedViewId: number): Promise<WorkItemSavedView>, deleteWorkItemSavedView(savedViewId: number): Promise<void>, getWorkItem(itemKey: string): Promise<WorkItemDetail>, getWorkItemComments(itemKey: string): Promise<WorkItemComment[]>, updateWorkItem(itemKey: string, payload: WorkItemUpdatePayload): Promise<WorkItemDetail>, updateWorkItemPrimaryPost(itemKey: string, body: string): Promise<WorkItemComment>, restoreWorkItem(itemKey: string): Promise<WorkItemDetail>, handoffWorkItem(itemKey: string, payload: WorkItemHandoffPayload): Promise<WorkItemDetail>, createWorkItemComment(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, createWorkItemCommentDraft(itemKey: string, payload: CommentRequestPayload): Promise<WorkItemComment>, updateWorkItemComment(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, publishWorkItemCommentDraft(itemKey: string, commentId: number, payload: CommentRequestPayload): Promise<WorkItemComment>, getWorkItemAttachments(itemKey: string): Promise<Attachment[]>, getWorkItemAttachmentPreview(itemKey: string, attachmentId: number): Promise<AttachmentPreview>, createWorkItemAttachment(itemKey: string, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemAttachmentUploadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemAttachmentUploaded(itemKey: string, attachmentId: number): Promise<Attachment>, getWorkItemAttachmentDownloadUrl(itemKey: string, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, getWorkItemCommentAttachments(itemKey: string, commentId: number): Promise<Attachment[]>, getWorkItemCommentAttachmentPreview(itemKey: string, commentId: number, attachmentId: number): Promise<AttachmentPreview>, createWorkItemCommentAttachment(itemKey: string, commentId: number, payload: AttachmentCreatePayload): Promise<Attachment>, getWorkItemCommentAttachmentUploadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl>, markWorkItemCommentAttachmentUploaded(itemKey: string, commentId: number, attachmentId: number): Promise<Attachment>, getWorkItemCommentAttachmentDownloadUrl(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions): Promise<AttachmentSignedUrl> }} WorkItemClient */
+/**
+ * @typedef {object} WorkItemClient
+ * @property {(query?: WorkItemListQuery) => Promise<{ items: WorkItemSummary[], pagination: Pagination }>} getWorkItems
+ * @property {(query?: WorkItemListQuery) => Promise<WorkItemListView>} getWorkItemListView
+ * @property {(itemKey: string) => Promise<WorkItemDetailView>} getWorkItemDetailView
+ * @property {(payload: WorkItemCreatePayload) => Promise<WorkItemDetail>} createWorkItem
+ * @property {(payload: WorkItemBatchUpdatePayload) => Promise<WorkItemBatchUpdateResult>} batchUpdateWorkItems
+ * @property {(payload: WorkItemSavedViewCreatePayload) => Promise<WorkItemSavedView>} createWorkItemSavedView
+ * @property {(savedViewId: number, name: string) => Promise<WorkItemSavedView>} renameWorkItemSavedView
+ * @property {(savedViewId: number) => Promise<WorkItemSavedView>} setDefaultWorkItemSavedView
+ * @property {(savedViewId: number) => Promise<void>} deleteWorkItemSavedView
+ * @property {(itemKey: string) => Promise<WorkItemDetail>} getWorkItem
+ * @property {(itemKey: string) => Promise<WorkItemComment[]>} getWorkItemComments
+ * @property {(itemKey: string, payload: WorkItemUpdatePayload) => Promise<WorkItemDetail>} updateWorkItem
+ * @property {(itemKey: string, body: string) => Promise<WorkItemComment>} updateWorkItemPrimaryPost
+ * @property {(itemKey: string) => Promise<WorkItemDetail>} restoreWorkItem
+ * @property {(itemKey: string, payload: WorkItemHandoffPayload) => Promise<WorkItemDetail>} handoffWorkItem
+ * @property {(itemKey: string, payload: CommentRequestPayload) => Promise<WorkItemComment>} createWorkItemComment
+ * @property {(itemKey: string, payload: CommentRequestPayload) => Promise<WorkItemComment>} createWorkItemCommentDraft
+ * @property {(itemKey: string, commentId: number, payload: CommentRequestPayload) => Promise<WorkItemComment>} updateWorkItemComment
+ * @property {(itemKey: string, commentId: number, payload: CommentRequestPayload) => Promise<WorkItemComment>} publishWorkItemCommentDraft
+ * @property {(itemKey: string, commentId: number) => Promise<WorkItemComment>} cancelWorkItemCommentDraft
+ * @property {(itemKey: string) => Promise<Attachment[]>} getWorkItemAttachments
+ * @property {(itemKey: string, attachmentId: number) => Promise<AttachmentPreview>} getWorkItemAttachmentPreview
+ * @property {(itemKey: string, payload: AttachmentCreatePayload) => Promise<Attachment>} createWorkItemAttachment
+ * @property {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemAttachmentUploadUrl
+ * @property {(itemKey: string, attachmentId: number) => Promise<Attachment>} markWorkItemAttachmentUploaded
+ * @property {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemAttachmentDownloadUrl
+ * @property {(itemKey: string, commentId: number) => Promise<Attachment[]>} getWorkItemCommentAttachments
+ * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<AttachmentPreview>} getWorkItemCommentAttachmentPreview
+ * @property {(itemKey: string, commentId: number, payload: AttachmentCreatePayload) => Promise<Attachment>} createWorkItemCommentAttachment
+ * @property {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemCommentAttachmentUploadUrl
+ * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} markWorkItemCommentAttachmentUploaded
+ * @property {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemCommentAttachmentDownloadUrl
+ */
 /** @typedef {{ itemType?: string, q?: string, status?: string, priority?: string, assigneeUsername?: string, projectKey?: string, cycleId?: number, sort?: string, clearDefault?: boolean, page?: number, perPage?: number }} WorkItemListQuery */
 /** @typedef {{ page: number, per_page: number, total_items: number, total_pages: number }} Pagination */
 /** @typedef {{ item_type: string, q: string, status: string, priority: string, project_key: string, assignee_username: string, cycle_id: string, sort: string }} WorkItemListFilter */
@@ -424,6 +458,12 @@ export function createWorkItemClient({ request, prepareWrite }) {
         },
         body: JSON.stringify(commentRequestBody(payload)),
       });
+    },
+
+    /** @param {string} itemKey @param {number} commentId */
+    async cancelWorkItemCommentDraft(itemKey, commentId) {
+      await prepareWrite();
+      return request(`${workItemCommentApiPath(itemKey, commentId)}/draft`, { method: 'DELETE' });
     },
 
     /** @param {string} itemKey */

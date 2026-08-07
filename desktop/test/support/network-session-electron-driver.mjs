@@ -593,6 +593,22 @@ async function runRealBusinessApi({ origin, mode, network }) {
     commentId: createdComment.id,
     payload: { body: "Desktop comment integration updated", bodyFormat: "plain" },
   });
+  stage("publish-comment-draft");
+  const commentDraft = await rest.execute("workitem.commentdraftcreate", {
+    itemKey,
+    payload: { body: "", bodyFormat: "html" },
+  });
+  const publishedDraft = await rest.execute("workitem.commentdraftpublish", {
+    itemKey,
+    commentId: commentDraft.id,
+    payload: { body: "<p>Desktop draft integration</p>", bodyFormat: "html" },
+  });
+  stage("cancel-comment-draft");
+  const cancelledDraft = await rest.execute("workitem.commentdraftcreate", {
+    itemKey,
+    payload: { body: "", bodyFormat: "html" },
+  });
+  await rest.execute("workitem.commentdraftcancel", { itemKey, commentId: cancelledDraft.id });
   stage("verify-mutations");
   const verifiedDetail = await rest.execute("workitem.detail", { itemKey });
   const verifiedProfile = await rest.execute("identity.profile", {});
@@ -623,6 +639,9 @@ async function runRealBusinessApi({ origin, mode, network }) {
     "workitem.update",
     "workitem.handoff",
     "workitem.commentcreate",
+    "workitem.commentdraftcreate",
+    "workitem.commentdraftpublish",
+    "workitem.commentdraftcancel",
     "workitem.commentupdate",
     "notification.readall",
     "identity.tokencreate",
@@ -648,6 +667,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
     comments: comments.length,
     attachments: attachments.length,
     commentAttachments: commentAttachments.length,
+    commentDraftLifecycle: publishedDraft.id === commentDraft.id && publishedDraft.is_draft === false,
     projectSelected: selectedProject.key === "YCE",
     projectCreated: createdProject.key.startsWith("P")
       && projectsAfterCreate.items.some((project) => project.key === createdProject.key),
@@ -697,7 +717,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
     sseRefresh: businessFacts.some((fact) => fact.type === "topbar"),
     releaseVersion: businessFacts.some((fact) => fact.type === "release-version"),
     foregroundSuppressed: nativeNotifications.length === 0,
-    mutationsExecutedOnce: mutationOperations.every((name) => operationCounts.get(name) === 1),
+    mutationsExecutedOnce: mutationOperations.every((name) => operationCounts.get(name) === (name === "workitem.commentdraftcreate" ? 2 : 1)),
   })}\n`);
   app.exit(0);
 }

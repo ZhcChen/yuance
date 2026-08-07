@@ -330,6 +330,9 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Continue", sourceCommentId: null } }, "POST", "/api/v1/work-items/DEMO-1/handoff", { status: "in_progress", assignee_username: "alice", body: "Continue", source_comment_id: null }],
     ["workitem.restore", { itemKey: "DEMO-1" }, "POST", "/api/v1/work-items/DEMO-1/restore", undefined],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "Comment", bodyFormat: "plain" } }, "POST", "/api/v1/work-items/DEMO-1/comments", { body: "Comment", body_format: "plain" }],
+    ["workitem.commentdraftcreate", { itemKey: "DEMO-1", payload: { body: "", bodyFormat: "html" } }, "POST", "/api/v1/work-items/DEMO-1/comments/draft", { body: "", body_format: "html" }],
+    ["workitem.commentdraftpublish", { itemKey: "DEMO-1", commentId: 9, payload: { body: "<p>Comment</p>", bodyFormat: "html" } }, "POST", "/api/v1/work-items/DEMO-1/comments/9/publish", { body: "<p>Comment</p>", body_format: "html" }],
+    ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 9 }, "DELETE", "/api/v1/work-items/DEMO-1/comments/9/draft", undefined],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }, "PATCH", "/api/v1/work-items/DEMO-1/comments/9", { body: "Edited", body_format: "plain", parent_comment_id: null }],
   ];
   for (const [name, input, method, path, body] of cases) {
@@ -387,6 +390,9 @@ test("rejects invalid mutation fields before a descriptor is created", () => {
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "x".repeat(5_001) } }],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "x", bodyFormat: "html" } }],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 0, payload: { body: "x" } }],
+    ["workitem.commentdraftcreate", { itemKey: "DEMO-1", payload: { body: "", bodyFormat: "plain" } }],
+    ["workitem.commentdraftpublish", { itemKey: "DEMO-1", commentId: 9, payload: { body: "", bodyFormat: "html" } }],
+    ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 0 }],
   ]) assert.throws(() => registry.resolve(name, input), /invalid|unknown/i);
 });
 

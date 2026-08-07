@@ -3722,6 +3722,62 @@ pub async fn publish_work_item_comment_draft(
     Ok(json(comment_payload(comment)))
 }
 
+pub async fn cancel_work_item_comment_draft(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((item_key, comment_id)): Path<(String, i64)>,
+) -> AppResult<axum::Json<ApiEnvelope<CommentPayload>>> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let (item, project, comment) = require_api_comment_context_for_user(
+        &state,
+        &headers,
+        &principal.user,
+        &item_key,
+        comment_id,
+    )
+    .await?;
+    let user = &principal.user;
+    ensure_api_csrf(&headers)?;
+    let pool = state.pool()?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
+    ensure_api_work_item_accepts_writes(&item)?;
+    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    projects::ensure_project_accepts_writes(&project.status)?;
+    if !comment.is_draft {
+        return Err(AppError::BadRequest("该评论不是草稿".to_string()));
+    }
+    if comment.author_user_id != Some(user.id) {
+        return Err(AppError::Forbidden("只能取消自己的草稿评论".to_string()));
+    }
+
+    for attachment in files::list_attachments(pool, "comment", comment.id).await? {
+        storage::delete_object_if_exists(pool, &state.settings, &attachment.object_key).await?;
+        files::archive_attachment(
+            pool,
+            attachment.id,
+            "comment",
+            comment.id,
+            user.id,
+            &principal.actor_display_name_snapshot(),
+            None,
+            None,
+        )
+        .await?;
+    }
+    let cancelled =
+        projects::cancel_work_item_comment_draft(pool, user.id, &item_key, comment_id).await?;
+    audit::record(
+        pool,
+        Some(user.id),
+        "work_item.comment.draft.cancel",
+        "work_item",
+        &item_key,
+        &format!(r#"{{"comment_id":{comment_id}}}"#),
+    )
+    .await?;
+    Ok(json(comment_payload(cancelled)))
+}
+
 pub async fn list_work_item_comments(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -6835,6 +6891,17 @@ async fn require_api_work_item_context(
     projects::ProjectDetail,
 )> {
     let user = require_d2_api_principal(state, headers).await?.user;
+    let (item, project) =
+        require_api_work_item_context_for_user(state, headers, &user, item_key).await?;
+    Ok((user, item, project))
+}
+
+async fn require_api_work_item_context_for_user(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: &auth::AuthUser,
+    item_key: &str,
+) -> AppResult<(projects::WorkItemDetail, projects::ProjectDetail)> {
     let pool = state.pool()?;
     ensure_api_permission(pool, headers, user.id, "work_item.view").await?;
     let item = projects::get_work_item_detail(pool, item_key)
@@ -6845,7 +6912,7 @@ async fn require_api_work_item_context(
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, headers, user.id, user.is_super_admin, project.id).await?;
 
-    Ok((user, item, project))
+    Ok((item, project))
 }
 
 async fn require_api_comment_context(
@@ -6860,6 +6927,34 @@ async fn require_api_comment_context(
     projects::WorkItemCommentSummary,
 )> {
     let (user, item, project) = require_api_work_item_context(state, headers, item_key).await?;
+    let comment = require_api_comment_for_user(state, &user, &item, comment_id).await?;
+
+    Ok((user, item, project, comment))
+}
+
+async fn require_api_comment_context_for_user(
+    state: &AppState,
+    headers: &HeaderMap,
+    user: &auth::AuthUser,
+    item_key: &str,
+    comment_id: i64,
+) -> AppResult<(
+    projects::WorkItemDetail,
+    projects::ProjectDetail,
+    projects::WorkItemCommentSummary,
+)> {
+    let (item, project) =
+        require_api_work_item_context_for_user(state, headers, user, item_key).await?;
+    let comment = require_api_comment_for_user(state, user, &item, comment_id).await?;
+    Ok((item, project, comment))
+}
+
+async fn require_api_comment_for_user(
+    state: &AppState,
+    user: &auth::AuthUser,
+    item: &projects::WorkItemDetail,
+    comment_id: i64,
+) -> AppResult<projects::WorkItemCommentSummary> {
     let pool = state.pool()?;
     let comment =
         projects::get_work_item_comment_including_drafts(pool, item.id, comment_id).await?;
@@ -6867,7 +6962,7 @@ async fn require_api_comment_context(
         return Err(AppError::Forbidden("无权访问该草稿评论".to_string()));
     }
 
-    Ok((user, item, project, comment))
+    Ok(comment)
 }
 
 fn work_item_comment_matches_primary_post_summary(

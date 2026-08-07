@@ -7,6 +7,7 @@ import {
   createWorkItemCommentAttachment,
   createWorkItemCommentDraft,
   createWorkItemComment,
+  cancelWorkItemCommentDraft,
   createProjectResource,
   createProjectResourceAttachment,
   deleteProjectResourceAttachment,
@@ -349,12 +350,14 @@ test('comment clients create and update plain text comments', async () => {
   });
 });
 
-test('draft and publish comment clients use the expected paths and payloads', async () => {
+test('draft, publish and cancel comment clients use the expected paths and payloads', async () => {
   await withFetchQueue([
     jsonResponse({ csrf_token: 'csrf-draft-token' }, { csrfToken: 'csrf-draft-token' }),
     jsonResponse({ id: 50, body: '', body_format: 'plain', is_draft: true }, { status: 201 }),
     jsonResponse({ csrf_token: 'csrf-publish-token' }, { csrfToken: 'csrf-publish-token' }),
     jsonResponse({ id: 50, body: '发布草稿', body_format: 'html', is_draft: false }),
+    jsonResponse({ csrf_token: 'csrf-cancel-token' }, { csrfToken: 'csrf-cancel-token' }),
+    jsonResponse({ id: 51, body: '', body_format: 'html', is_draft: true }),
   ], async (calls) => {
     const draft = await createWorkItemCommentDraft('YCE-TASK-2', {
       body: '',
@@ -364,9 +367,11 @@ test('draft and publish comment clients use the expected paths and payloads', as
       body: '<p>发布草稿</p>',
       bodyFormat: 'html',
     });
+    const cancelled = await cancelWorkItemCommentDraft('YCE-TASK-2', 51);
 
     assert.equal(draft.is_draft, true);
     assert.equal(published.body_format, 'html');
+    assert.equal(cancelled.is_draft, true);
     assert.equal(calls[1].url, '/api/v1/work-items/YCE-TASK-2/comments/draft');
     assert.equal(calls[1].options.method, 'POST');
     assert.deepEqual(JSON.parse(String(calls[1].options.body)), {
@@ -380,6 +385,8 @@ test('draft and publish comment clients use the expected paths and payloads', as
       body: '<p>发布草稿</p>',
       body_format: 'html',
     });
+    assert.equal(calls[5].url, '/api/v1/work-items/YCE-TASK-2/comments/51/draft');
+    assert.equal(calls[5].options.method, 'DELETE');
   });
 });
 

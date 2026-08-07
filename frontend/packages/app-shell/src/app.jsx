@@ -54,7 +54,7 @@ import { errorMessage } from './errors.js';
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 /** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
 
-/** @typedef {Omit<ReturnType<typeof import('@yuance/frontend-api-client').createApiClient>, 'createWorkItemCommentDraft' | 'publishWorkItemCommentDraft'> & { restorePendingReturnToHash(): void }} AppApiService */
+/** @typedef {ReturnType<typeof import('@yuance/frontend-api-client').createApiClient> & { restorePendingReturnToHash(): void }} AppApiService */
 /** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
@@ -671,6 +671,7 @@ export function SharedApp({ services }) {
   const workItemPrimaryPostRetryRef = useRef(/** @type {{ itemKey: string, fields: string } | null} */ (null));
   const workItemAttachmentActionRef = useRef(0);
   const workItemAttachmentMutationRef = useRef(false);
+  const workItemCommentDraftRef = useRef(/** @type {{ itemKey: string, commentId: number } | null} */ (null));
   const workItemBatchMutationRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -791,6 +792,8 @@ export function SharedApp({ services }) {
   const [workItemLifecycleAction, setWorkItemLifecycleAction] = useState(/** @type {'close' | 'reopen' | 'restore' | null} */ (null));
   const [workItemLifecycleSubmitting, setWorkItemLifecycleSubmitting] = useState(false);
   const [workItemNewCommentBody, setWorkItemNewCommentBody] = useState('');
+  const [workItemNewCommentDraftId, setWorkItemNewCommentDraftId] = useState(/** @type {number | null} */ (null));
+  const [workItemNewCommentAttachmentUploading, setWorkItemNewCommentAttachmentUploading] = useState(false);
   const [workItemCommentSubmitting, setWorkItemCommentSubmitting] = useState(false);
   const [workItemEditingCommentId, setWorkItemEditingCommentId] = useState(/** @type {number | null} */ (null));
   const [workItemEditCommentBody, setWorkItemEditCommentBody] = useState('');
@@ -924,7 +927,7 @@ export function SharedApp({ services }) {
     owner: workItemOwner,
     itemType: activeWorkItemDetail?.item_type || 'task',
   });
-  const workItemAttachmentSubmitting = workItemAttachmentUploading || workItemCommentAttachmentUploadingId !== null;
+  const workItemAttachmentSubmitting = workItemAttachmentUploading || workItemCommentAttachmentUploadingId !== null || workItemNewCommentAttachmentUploading;
   const workItemMutationSubmitting = workItemEditSubmitting
     || workItemHandoffSubmitting
     || workItemLifecycleSubmitting
@@ -942,6 +945,19 @@ export function SharedApp({ services }) {
     const requestId = requestRef.current + 1;
     requestRef.current = requestId;
     if (mode === 'load') {
+      const draft = workItemCommentDraftRef.current;
+      const targetItemKey = targetRoute.id === 'work-item-detail' ? targetRoute.itemKey : '';
+      if (draft && draft.itemKey !== targetItemKey) {
+        try {
+          await api.cancelWorkItemCommentDraft(draft.itemKey, draft.commentId);
+          if (workItemCommentDraftRef.current?.commentId === draft.commentId) {
+            workItemCommentDraftRef.current = null;
+            setWorkItemNewCommentDraftId(null);
+          }
+        } catch {
+          setStatusMessage(`${draft.itemKey} 评论草稿自动清理失败，请稍后重试。`);
+        }
+      }
       if (targetRoute.id !== 'project-personal-analysis' && projectPersonalAnalysisSelectionRef.current) {
         projectPersonalAnalysisSelectionRef.current = { projectKey: '', promise: projectPersonalAnalysisSelectionRef.current.promise };
       }
@@ -1030,6 +1046,8 @@ export function SharedApp({ services }) {
         setWorkItemLifecycleAction(null);
         setWorkItemLifecycleSubmitting(false);
         setWorkItemNewCommentBody('');
+        setWorkItemNewCommentDraftId(null);
+        setWorkItemNewCommentAttachmentUploading(false);
         setWorkItemEditingCommentId(null);
         setWorkItemEditCommentBody('');
         setWorkItemCommentActionError('');
@@ -2665,32 +2683,78 @@ export function SharedApp({ services }) {
     setWorkItemCommentSubmitting(true);
     setWorkItemCommentActionError('');
     try {
-      await createWorkItemCommentUseCase({
-        api,
-        itemKey,
-        payload: { body, bodyFormat: 'html' },
-        lifecycle: {
-          isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
-          onCommitted: (created) => {
-            requestRef.current += 1;
-            setRefreshing(false);
-            setWorkItemComments((current) => [...current, created]);
-            setWorkItemNewCommentBody('');
-            setStatusMessage(`${itemKey} 评论已发布。`);
+      const draft = workItemCommentDraftRef.current;
+      let created;
+      if (draft?.itemKey === itemKey) {
+        created = await api.publishWorkItemCommentDraft(itemKey, draft.commentId, { body, bodyFormat: 'html' });
+        if (workItemCommentDraftRef.current?.commentId === draft.commentId) {
+          workItemCommentDraftRef.current = null;
+        }
+      } else {
+        const result = await createWorkItemCommentUseCase({
+          api,
+          itemKey,
+          payload: { body, bodyFormat: 'html' },
+          lifecycle: {
+            isCurrent: () => isCurrentWorkItemDetailRoute(itemKey, actionId),
+            onCommitted: () => {},
           },
-          refreshCompanion: () => refreshWorkItemCompanionState(
-            itemKey,
-            '评论已发布',
-            actionId,
-          ),
-        },
-      });
+        });
+        created = result.value;
+      }
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+        requestRef.current += 1;
+        setRefreshing(false);
+        setWorkItemComments((current) => [...current, created]);
+        setWorkItemNewCommentBody('');
+        setWorkItemNewCommentDraftId(null);
+        setStatusMessage(`${itemKey} 评论已发布。`);
+        try {
+          await refreshWorkItemCompanionState(itemKey, '评论已发布', actionId);
+        } catch {
+          if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
+            setStatusMessage(`${itemKey} 评论已发布，但关联状态刷新失败，请手动刷新。`);
+          }
+        }
+      }
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('发布评论失败。')));
       }
     } finally {
       clearWorkItemMutation(actionId, setWorkItemCommentSubmitting);
+    }
+  }
+
+  async function cancelWorkItemCommentDraft() {
+    const draft = workItemCommentDraftRef.current;
+    if (!draft || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
+    workItemMutationRef.current = true;
+    setWorkItemCommentSubmitting(true);
+    setWorkItemCommentActionError('');
+    try {
+      await api.cancelWorkItemCommentDraft(draft.itemKey, draft.commentId);
+      if (workItemCommentDraftRef.current?.commentId === draft.commentId) {
+        setWorkItemNewCommentBody('');
+        setWorkItemCommentAttachments((current) => {
+          const next = { ...current };
+          delete next[String(draft.commentId)];
+          return next;
+        });
+        setWorkItemCommentAttachmentStatus((current) => {
+          const next = { ...current };
+          delete next[String(draft.commentId)];
+          return next;
+        });
+        setWorkItemNewCommentDraftId(null);
+        workItemCommentDraftRef.current = null;
+        setStatusMessage(`${draft.itemKey} 评论草稿已取消。`);
+      }
+    } catch (caught) {
+      setWorkItemCommentActionError(errorMessage(caught instanceof Error ? caught : new Error('取消评论草稿失败。')));
+    } finally {
+      workItemMutationRef.current = false;
+      setWorkItemCommentSubmitting(false);
     }
   }
 
@@ -3075,47 +3139,72 @@ export function SharedApp({ services }) {
   }
 
   /**
-   * @param {number} commentId
+   * @param {number | null} [requestedCommentId]
    */
-  async function uploadSelectedWorkItemCommentAttachment(commentId) {
+  async function uploadSelectedWorkItemCommentAttachment(requestedCommentId = null) {
     if (!activeWorkItemDetail || workItemAttachmentMutationRef.current || workItemMutationRef.current) {
       return;
     }
     const itemKey = activeWorkItemDetail.key;
+    let commentId = requestedCommentId;
     const actionId = workItemAttachmentActionRef.current + 1;
     workItemAttachmentActionRef.current = actionId;
     workItemAttachmentMutationRef.current = true;
-    setWorkItemCommentAttachmentUploadingId(commentId);
-    setWorkItemCommentAttachmentStatus((current) => ({ ...current, [String(commentId)]: '正在选择评论附件。' }));
+    if (commentId === null) setWorkItemNewCommentAttachmentUploading(true);
+    else setWorkItemCommentAttachmentUploadingId(commentId);
     let file;
     try { file = await files.files.chooseFile(); }
     catch (caught) {
       workItemAttachmentMutationRef.current = false;
       setWorkItemCommentAttachmentUploadingId(null);
+      setWorkItemNewCommentAttachmentUploading(false);
       if (isCurrentWorkItemAttachmentRoute(itemKey, actionId)) setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('选择附件失败。')));
       return;
     }
     if (!isCurrentWorkItemAttachmentRoute(itemKey, actionId)) {
       workItemAttachmentMutationRef.current = false;
       setWorkItemCommentAttachmentUploadingId(null);
+      setWorkItemNewCommentAttachmentUploading(false);
       return;
     }
     if (!file) {
       workItemAttachmentMutationRef.current = false;
       setWorkItemCommentAttachmentUploadingId(null);
-      setWorkItemCommentAttachmentStatus((current) => ({ ...current, [String(commentId)]: '已取消选择附件。' }));
+      setWorkItemNewCommentAttachmentUploading(false);
       return;
     }
     if (!file.byteSize || file.byteSize <= 0) {
       setWorkItemAttachmentActionError('请选择非空文件。');
-      setWorkItemCommentAttachmentStatus((current) => ({
-        ...current,
-        [String(commentId)]: `${file.filename || '附件'} 未上传。`,
-      }));
       workItemAttachmentMutationRef.current = false;
       setWorkItemCommentAttachmentUploadingId(null);
+      setWorkItemNewCommentAttachmentUploading(false);
       return;
     }
+    if (commentId === null) {
+      try {
+        const existingDraft = workItemCommentDraftRef.current;
+        if (existingDraft && existingDraft.itemKey !== itemKey) {
+          await api.cancelWorkItemCommentDraft(existingDraft.itemKey, existingDraft.commentId);
+          if (workItemCommentDraftRef.current?.commentId === existingDraft.commentId) {
+            workItemCommentDraftRef.current = null;
+          }
+        }
+        const retainedDraft = workItemCommentDraftRef.current;
+        const draft = retainedDraft?.itemKey === itemKey
+          ? retainedDraft
+          : await api.createWorkItemCommentDraft(itemKey, { body: '', bodyFormat: 'html' });
+        commentId = 'commentId' in draft ? draft.commentId : draft.id;
+        workItemCommentDraftRef.current = { itemKey, commentId };
+        setWorkItemNewCommentDraftId(commentId);
+      } catch (caught) {
+        workItemAttachmentMutationRef.current = false;
+        setWorkItemNewCommentAttachmentUploading(false);
+        setWorkItemAttachmentActionError(errorMessage(caught instanceof Error ? caught : new Error('创建评论草稿失败。')));
+        return;
+      }
+    }
+    if (commentId === null) return;
+    const resolvedCommentId = commentId;
 
     const filename = file.filename || 'attachment.bin';
     let createdAttachment = /** @type {AppAttachment | null} */ (null);
@@ -3123,14 +3212,14 @@ export function SharedApp({ services }) {
     setWorkItemAttachmentActionError('');
     setWorkItemCommentAttachmentStatus((current) => ({
       ...current,
-      [String(commentId)]: `${filename} 正在登记附件。`,
+      [String(resolvedCommentId)]: `${filename} 正在登记附件。`,
     }));
     try {
       const result = await uploadWorkItemCommentAttachment({
         api,
         platform: files,
         itemKey,
-        commentId,
+        commentId: resolvedCommentId,
         file,
         lifecycle: {
           isCurrent: () => isCurrentWorkItemAttachmentRoute(itemKey, actionId),
@@ -3144,14 +3233,14 @@ export function SharedApp({ services }) {
             };
             setWorkItemCommentAttachmentStatus((current) => ({
               ...current,
-              [String(commentId)]: `${filename} ${labels[stage]}`,
+              [String(resolvedCommentId)]: `${filename} ${labels[stage]}`,
             }));
           },
           onCreated: (created) => {
             createdAttachment = created;
             setWorkItemCommentAttachments((current) => ({
               ...current,
-              [String(commentId)]: upsertAttachment(current[String(commentId)] || [], created),
+              [String(resolvedCommentId)]: upsertAttachment(current[String(resolvedCommentId)] || [], created),
             }));
           },
           onUploaded: (uploaded) => {
@@ -3159,17 +3248,26 @@ export function SharedApp({ services }) {
             setRefreshing(false);
             setWorkItemCommentAttachments((current) => ({
               ...current,
-              [String(commentId)]: upsertAttachment(current[String(commentId)] || [], uploaded),
+              [String(resolvedCommentId)]: upsertAttachment(current[String(resolvedCommentId)] || [], uploaded),
             }));
           },
-          refresh: async () => { await refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId); },
+          refresh: async () => { await refreshWorkItemCommentAttachmentList(itemKey, resolvedCommentId, actionId); },
         },
       });
       if (result.completed) {
+        const uploaded = result.uploaded;
+        if (requestedCommentId === null && uploaded) {
+          setWorkItemNewCommentBody((current) => `${current}${richTextAttachmentHtml({
+            id: uploaded.id,
+            filename: uploaded.filename,
+            contentType: uploaded.content_type,
+            url: `/api/v1/work-items/${encodeURIComponent(itemKey)}/comments/${resolvedCommentId}/attachments/${uploaded.id}/preview/content`,
+          })}`);
+        }
         setStatusMessage(`${itemKey} 评论附件已上传。`);
         setWorkItemCommentAttachmentStatus((current) => ({
           ...current,
-          [String(commentId)]: `${filename} 上传完成。`,
+          [String(resolvedCommentId)]: `${filename} 上传完成。`,
         }));
         if (result.refreshError) {
           setWorkItemAttachmentActionError('评论附件已上传，但列表刷新失败，请手动刷新。');
@@ -3180,7 +3278,7 @@ export function SharedApp({ services }) {
         if (uploadStage === 'confirming') {
           let confirmedByRefresh = false;
           try {
-            const refreshed = await refreshWorkItemCommentAttachmentList(itemKey, commentId, actionId);
+            const refreshed = await refreshWorkItemCommentAttachmentList(itemKey, resolvedCommentId, actionId);
             confirmedByRefresh = refreshed.some((attachment) => (
               attachment.id === createdAttachment?.id && attachment.status === 'uploaded'
             ));
@@ -3191,13 +3289,13 @@ export function SharedApp({ services }) {
             setStatusMessage(`${itemKey} 评论附件已上传。`);
             setWorkItemCommentAttachmentStatus((current) => ({
               ...current,
-              [String(commentId)]: `${filename} 上传完成。`,
+              [String(resolvedCommentId)]: `${filename} 上传完成。`,
             }));
           } else {
             setWorkItemAttachmentActionError(`${filename} 已上传，但服务端确认失败，请手动刷新后检查。`);
             setWorkItemCommentAttachmentStatus((current) => ({
               ...current,
-              [String(commentId)]: `${filename} 上传结果待确认。`,
+              [String(resolvedCommentId)]: `${filename} 上传结果待确认。`,
             }));
           }
         } else if (createdAttachment) {
@@ -3207,20 +3305,20 @@ export function SharedApp({ services }) {
           });
           setWorkItemCommentAttachments((current) => ({
             ...current,
-            [String(commentId)]: upsertAttachment(current[String(commentId)] || [], failedAttachment),
+            [String(resolvedCommentId)]: upsertAttachment(current[String(resolvedCommentId)] || [], failedAttachment),
           }));
           const message = errorMessage(caught instanceof Error ? caught : new Error('上传评论附件失败。'));
           setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
           setWorkItemCommentAttachmentStatus((current) => ({
             ...current,
-            [String(commentId)]: `${filename} 上传失败，请重试。`,
+            [String(resolvedCommentId)]: `${filename} 上传失败，请重试。`,
           }));
         } else {
           const message = errorMessage(caught instanceof Error ? caught : new Error('上传评论附件失败。'));
           setWorkItemAttachmentActionError(`${filename} 上传失败：${message}`);
           setWorkItemCommentAttachmentStatus((current) => ({
             ...current,
-            [String(commentId)]: `${filename} 上传失败，请重试。`,
+            [String(resolvedCommentId)]: `${filename} 上传失败，请重试。`,
           }));
         }
       }
@@ -3228,6 +3326,7 @@ export function SharedApp({ services }) {
       if (workItemAttachmentActionRef.current === actionId) {
         workItemAttachmentMutationRef.current = false;
         setWorkItemCommentAttachmentUploadingId(null);
+        setWorkItemNewCommentAttachmentUploading(false);
       }
     }
   }
@@ -4573,6 +4672,10 @@ export function SharedApp({ services }) {
                     editingCommentId={workItemEditingCommentId}
                     replyingToCommentId={workItemReplyingToCommentId}
                     newCommentBody={workItemNewCommentBody}
+                    newCommentDraftId={workItemNewCommentDraftId}
+                    newCommentAttachments={workItemNewCommentDraftId === null ? [] : (workItemCommentAttachments[String(workItemNewCommentDraftId)] || [])}
+                    newCommentAttachmentStatus={workItemNewCommentDraftId === null ? '' : (workItemCommentAttachmentStatus[String(workItemNewCommentDraftId)] || '')}
+                    newCommentAttachmentUploading={workItemNewCommentAttachmentUploading}
                     editCommentBody={workItemEditCommentBody}
                     replyCommentBody={workItemReplyCommentBody}
                     commentSubmitting={workItemCommentSubmitting}
@@ -4581,6 +4684,8 @@ export function SharedApp({ services }) {
                     error={workItemCommentActionError}
                     onSubmitNew={submitWorkItemComment}
                     onChangeNew={changeWorkItemNewComment}
+                    onUploadNewAttachment={() => void uploadSelectedWorkItemCommentAttachment(null)}
+                    onCancelNewDraft={() => void cancelWorkItemCommentDraft()}
                     onSubmitEdit={submitWorkItemCommentEdit}
                     onChangeEdit={changeWorkItemEditComment}
                     onSubmitReply={submitWorkItemCommentReply}

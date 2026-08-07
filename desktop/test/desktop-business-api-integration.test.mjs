@@ -32,6 +32,7 @@ test("real API and Electron complete the D2 business read and mutation matrix", 
   assert.ok(report.comments >= 1);
   assert.ok(report.attachments >= 0);
   assert.ok(report.commentAttachments >= 0);
+  assert.equal(report.commentDraftLifecycle, true);
   assert.equal(report.projectSelected, true);
   assert.equal(report.projectCreated, true);
   assert.equal(report.projectManaged, true);

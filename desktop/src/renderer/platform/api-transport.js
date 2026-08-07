@@ -282,6 +282,19 @@ function resolveMutationOperation(parsed, method, options) {
   if (method === "POST" && comments) {
     return { operation: "workitem.commentcreate", input: { itemKey: decodeSegment(comments[1]), payload: commentPayload(options) } };
   }
+  const commentDraftCreate = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/draft$/u);
+  if (method === "POST" && commentDraftCreate) {
+    return { operation: "workitem.commentdraftcreate", input: { itemKey: decodeSegment(commentDraftCreate[1]), payload: commentPayload(options) } };
+  }
+  const commentDraftPublish = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)\/publish$/u);
+  if (method === "POST" && commentDraftPublish) {
+    return { operation: "workitem.commentdraftpublish", input: { itemKey: decodeSegment(commentDraftPublish[1]), commentId: positiveInteger(commentDraftPublish[2]), payload: commentPayload(options) } };
+  }
+  const commentDraftCancel = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)\/draft$/u);
+  if (method === "DELETE" && commentDraftCancel) {
+    rejectBody(options);
+    return { operation: "workitem.commentdraftcancel", input: { itemKey: decodeSegment(commentDraftCancel[1]), commentId: positiveInteger(commentDraftCancel[2]) } };
+  }
   const comment = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments\/(\d+)$/u);
   if (method === "PATCH" && comment) {
     return { operation: "workitem.commentupdate", input: { itemKey: decodeSegment(comment[1]), commentId: positiveInteger(comment[2]), payload: commentPayload(options) } };

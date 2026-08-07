@@ -118,6 +118,9 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.handoffWorkItem("DEMO-1", { status: "in_progress", assigneeUsername: "alice", body: "Please continue" });
   await client.restoreWorkItem("DEMO-1");
   await client.createWorkItemComment("DEMO-1", { body: "New comment" });
+  await client.createWorkItemCommentDraft("DEMO-1", { body: "", bodyFormat: "html" });
+  await client.publishWorkItemCommentDraft("DEMO-1", 9, { body: "<p>New comment</p>", bodyFormat: "html" });
+  await client.cancelWorkItemCommentDraft("DEMO-1", 9);
   await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
   assert.deepEqual(calls, [
     ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
@@ -164,6 +167,9 @@ test("api-client mutations map to fixed domain operations without request primit
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Please continue" } }],
     ["workitem.restore", { itemKey: "DEMO-1" }],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "New comment", bodyFormat: "plain" } }],
+    ["workitem.commentdraftcreate", { itemKey: "DEMO-1", payload: { body: "", bodyFormat: "html" } }],
+    ["workitem.commentdraftpublish", { itemKey: "DEMO-1", commentId: 9, payload: { body: "<p>New comment</p>", bodyFormat: "html" } }],
+    ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 9 }],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }],
   ]);
   assert.equal(JSON.stringify(calls).includes("content-type"), false);
@@ -180,7 +186,7 @@ test("mutation adapter rejects malformed JSON contracts before IPC", async () =>
     ["/api/v1/current-project", json('{"project_key":"DEMO","url":"https://evil.example"}')],
     ["/api/v1/current-project", json('{"project_key":"DEMO"}', { "content-type": "text/plain" })],
     ["/api/v1/work-items/DEMO-1", { ...json('{"title":"x"}'), headers: { "content-type": "application/json", Authorization: "Bearer forged" } }],
-    ["/api/v1/work-items/DEMO-1/comments/draft", { method: "POST", headers: { "content-type": "application/json" }, body: '{"body":"x"}' }],
+    ["/api/v1/work-items/DEMO-1/comments/draft", { method: "POST", headers: { "content-type": "application/json" }, body: '{"body":"x","url":"https://evil.example"}' }],
   ];
   for (const [url, options] of rejected) await assert.rejects(transport.request(url, options), (error) => error instanceof ApiError);
   assert.equal(calls, 0);

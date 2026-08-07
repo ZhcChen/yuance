@@ -155,6 +155,7 @@ POST  /api/v1/work-items/{item_key}/comments
 POST  /api/v1/work-items/{item_key}/comments/draft
 PATCH /api/v1/work-items/{item_key}/comments/{comment_id}
 POST  /api/v1/work-items/{item_key}/comments/{comment_id}/publish
+DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/draft
 GET   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 POST  /api/v1/work-items/{item_key}/comments/{comment_id}/attachments
 GET   /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/upload-url
@@ -561,6 +562,7 @@ POST   /api/v1/work-items/{item_key}/comments
 POST   /api/v1/work-items/{item_key}/comments/draft
 PATCH  /api/v1/work-items/{item_key}/comments/{comment_id}
 POST   /api/v1/work-items/{item_key}/comments/{comment_id}/publish
+DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/draft
 ```
 
 创建/更新请求：

@@ -991,6 +991,10 @@ pub fn build_router(state: AppState) -> Router {
             post(web::api::publish_work_item_comment_draft),
         )
         .route(
+            "/api/v1/work-items/{item_key}/comments/{comment_id}/draft",
+            delete(web::api::cancel_work_item_comment_draft),
+        )
+        .route(
             "/api/v1/work-items/{item_key}/comments/{comment_id}/attachments",
             get(web::api::list_work_item_comment_attachments)
                 .post(web::api::create_work_item_comment_attachment),

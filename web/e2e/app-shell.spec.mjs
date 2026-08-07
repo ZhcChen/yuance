@@ -1439,6 +1439,10 @@ test('work item attachments can list download and upload for item and comments',
   const downloadUrlRequests = [];
   const workItemCreateRequests = [];
   const commentCreateRequests = [];
+  const commentDraftRequests = [];
+  const commentDraftPublishRequests = [];
+  const commentDraftCancelRequests = [];
+  let nextDraftId = 950;
   const uploadStages = [];
   let workItemAttachmentListGets = 0;
   const commentAttachmentListGets = {};
@@ -1589,7 +1593,7 @@ test('work item attachments can list download and upload for item and comments',
       const payload = route.request().postDataJSON();
       commentCreateRequests.push({ commentId, payload });
       const created = attachmentFixture({
-        id: 812,
+        id: commentId === 901 ? 812 : 813 + commentCreateRequests.length,
         filename: payload.original_filename,
         content_type: payload.content_type,
         byte_size: payload.byte_size,
@@ -1610,6 +1614,33 @@ test('work item attachments can list download and upload for item and comments',
       contentType: 'application/json',
       body: JSON.stringify({ data: commentAttachments[commentId] || [] }),
     });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/draft', async (route) => {
+    const payload = route.request().postDataJSON();
+    const id = nextDraftId++;
+    commentDraftRequests.push(payload);
+    commentAttachments[id] = [];
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ data: workItemCommentFixture({ id, body: '', body_format: 'html', is_draft: true }) }),
+    });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/publish', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const commentId = Number(parts[parts.indexOf('comments') + 1]);
+    const payload = route.request().postDataJSON();
+    commentDraftPublishRequests.push({ commentId, payload });
+    const published = workItemCommentFixture({ id: commentId, body: payload.body, body_format: payload.body_format, is_draft: false });
+    comments.push(published);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: published }) });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/*/draft', async (route) => {
+    const parts = new URL(route.request().url()).pathname.split('/');
+    const commentId = Number(parts[parts.indexOf('comments') + 1]);
+    commentDraftCancelRequests.push(commentId);
+    commentAttachments[commentId] = [];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: workItemCommentFixture({ id: commentId, body: '', body_format: 'html', is_draft: true }) }) });
   });
   await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments/811/preview', async (route) => {
     await route.fulfill({
@@ -1739,6 +1770,33 @@ test('work item attachments can list download and upload for item and comments',
   await expect(comment901).toContainText('comment-upload.txt');
   await expect(comment902).not.toContainText('comment-upload.txt');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 评论附件已上传。');
+
+  const newCommentEditor = page.getByLabel('新增评论');
+  await newCommentEditor.fill('带附件的新评论');
+  await chooseFile(page, page.getByRole('button', { name: '添加附件' }), {
+    name: 'draft-note.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('draft attachment'),
+  });
+  await expect.poll(() => commentDraftRequests.length).toBe(1);
+  await expect.poll(() => commentCreateRequests.some((request) => request.commentId === 950)).toBe(true);
+  await expect(page.getByLabel('新评论附件')).toContainText('draft-note.txt');
+  await expect(newCommentEditor).toContainText('带附件的新评论');
+  await page.getByRole('button', { name: '发布评论' }).click();
+  await expect.poll(() => commentDraftPublishRequests.length).toBe(1);
+  expect(commentDraftPublishRequests[0].commentId).toBe(950);
+  expect(commentDraftPublishRequests[0].payload.body).toContain('/comments/950/attachments/');
+
+  await newCommentEditor.fill('稍后取消');
+  await chooseFile(page, page.getByRole('button', { name: '添加附件' }), {
+    name: 'cancel-me.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('cancel attachment'),
+  });
+  await page.getByRole('button', { name: '取消草稿' }).click();
+  await expect.poll(() => commentDraftCancelRequests).toEqual([951]);
+  await expect(newCommentEditor).toHaveText('');
+  await expect(page.getByRole('button', { name: '取消草稿' })).toHaveCount(0);
 });
 
 test('work item attachments share preview navigation fallback download and stale-route protection', async ({ page }) => {
