@@ -24,6 +24,8 @@ const WORK_ITEM_SORTS = new Set(["", "updated_desc", "created_desc", "priority_d
 const WORK_ITEM_BATCH_ACTIONS = new Set(["assignee", "status", "priority", "cycle"]);
 const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
 const SYSTEM_USER_STATUSES = new Set(["active", "disabled", "locked"]);
+const SYSTEM_ROLE_STATUSES = new Set(["active", "disabled"]);
+const SYSTEM_ROLE_DATA_SCOPES = new Set(["self", "all"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
   if (!Number.isSafeInteger(maxActiveOperations) || maxActiveOperations < 1 || maxActiveOperations > MAX_ACTIVE_OPERATIONS) throw new TypeError("maxActiveOperations exceeds the fixed safety limit");
@@ -45,6 +47,9 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.dashboard", noInputOperation("GET", "/api/v1/system/dashboard", parseSystemDashboard)],
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
+    ["system.rolecreate", systemRoleCreateOperation],
+    ["system.rolestatusupdate", systemRoleStatusUpdateOperation],
+    ["system.rolepermissionsupdate", systemRolePermissionsUpdateOperation],
     ["system.usercreate", systemUserCreateOperation],
     ["system.userstatusupdate", systemUserStatusUpdateOperation],
     ["system.userroleupdate", systemUserRoleUpdateOperation],
@@ -432,6 +437,29 @@ function systemRolesViewOperation(input) {
   if (input.role !== undefined && boundedText(input.role, "role", 64).trim()) query.set("role", boundedText(input.role, "role", 64).trim());
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/roles-view", query), parseSystemRolesView);
+}
+
+function systemRoleCreateOperation(input) {
+  exactKeys(input, ["dataScopeType", "roleCode", "roleName"]);
+  return descriptor("POST", "/api/v1/system/roles", parseSystemRole, false, "object", jsonBody({
+    role_code: username(input.roleCode), role_name: boundedRequiredText(input.roleName, "roleName", 64),
+    data_scope_type: requiredEnum(input.dataScopeType, SYSTEM_ROLE_DATA_SCOPES, "dataScopeType", false),
+  }));
+}
+
+function systemRoleStatusUpdateOperation(input) {
+  exactKeys(input, ["roleCode", "status"]);
+  return descriptor("PATCH", `/api/v1/system/roles/${username(input.roleCode)}/status`, parseSystemRole, false, "object", jsonBody({
+    status: requiredEnum(input.status, SYSTEM_ROLE_STATUSES, "status", false),
+  }));
+}
+
+function systemRolePermissionsUpdateOperation(input) {
+  exactKeys(input, ["permissionKeys", "roleCode"]);
+  return descriptor("PATCH", `/api/v1/system/roles/${username(input.roleCode)}/permissions`,
+    (permissions) => boundedArray(permissions, parseSystemPermission, 500, "system permissions"), false, "array", jsonBody({
+      permission_keys: boundedArray(input.permissionKeys, permissionKey, 500, "permissionKeys"),
+    }));
 }
 
 function systemUserCreateOperation(input) {
@@ -1081,6 +1109,7 @@ function optionalEnum(value, allowed, name, fallback) { const normalized = value
 function requiredEnum(value, allowed, name, allowEmpty = true) { if (typeof value !== "string" || !allowed.has(value) || (!allowEmpty && value === "")) throw new TypeError(`${name} is invalid`); return value; }
 function projectKey(value) { if (typeof value !== "string" || !PROJECT_KEY.test(value)) throw new TypeError("projectKey is invalid"); return value; }
 function username(value) { if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u.test(value)) throw new TypeError("username is invalid"); return value; }
+function permissionKey(value) { if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)) throw new TypeError("permissionKey is invalid"); return value; }
 function optionalUsername(value) { return value === "" ? "" : username(value); }
 function itemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
 function optionalItemKey(value) { return value === "" ? "" : itemKey(value); }

@@ -51,6 +51,9 @@ export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiCl
 export const getSystemDashboard = apiClient.getSystemDashboard;
 export const getSystemUsersView = apiClient.getSystemUsersView;
 export const getSystemRolesView = apiClient.getSystemRolesView;
+export const createSystemRole = apiClient.createSystemRole;
+export const updateSystemRoleStatus = apiClient.updateSystemRoleStatus;
+export const updateSystemRolePermissions = apiClient.updateSystemRolePermissions;
 export const createSystemUser = apiClient.createSystemUser;
 export const updateSystemUserStatus = apiClient.updateSystemUserStatus;
 export const updateSystemUserRole = apiClient.updateSystemUserRole;
@@ -230,6 +233,9 @@ export const webApi = {
   getSystemDashboard,
   getSystemUsersView,
   getSystemRolesView,
+  createSystemRole,
+  updateSystemRoleStatus,
+  updateSystemRolePermissions,
   createSystemUser,
   updateSystemUserStatus,
   updateSystemUserRole,

@@ -78,7 +78,7 @@
             "additionalProperties": false,
             "required": ["phase", "method", "path", "purpose"],
             "properties": {
-              "phase": { "enum": ["primary", "register", "sign", "transfer", "complete", "delete", "fallback"] },
+              "phase": { "enum": ["primary", "register", "sign", "transfer", "complete", "refresh", "delete", "fallback"] },
               "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
               "path": { "type": "string", "pattern": "^/api/" },
               "purpose": { "$ref": "#/$defs/nonEmptyString" }
@@ -123,7 +123,7 @@
             "additionalProperties": false,
             "required": ["phase", "method", "path", "purpose"],
             "properties": {
-              "phase": { "enum": ["primary", "register", "sign", "transfer", "complete", "delete", "fallback"] },
+              "phase": { "enum": ["primary", "register", "sign", "transfer", "complete", "refresh", "delete", "fallback"] },
               "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
               "path": { "type": "string", "pattern": "^/api/" },
               "purpose": { "$ref": "#/$defs/nonEmptyString" }

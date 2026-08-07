@@ -119,6 +119,22 @@ function resolveMutationOperation(parsed, method, options) {
     const body = parseJsonBody(options, ["display_name", "email", "mobile", "password", "role_code", "username"]);
     return { operation: "system.usercreate", input: renameBody(body, { display_name: "displayName", role_code: "roleCode" }) };
   }
+  if (method === "POST" && parsed.pathname === "/api/v1/system/roles") {
+    const body = parseJsonBody(options, ["data_scope_type", "role_code", "role_name"]);
+    return { operation: "system.rolecreate", input: renameBody(body, { data_scope_type: "dataScopeType", role_code: "roleCode", role_name: "roleName" }) };
+  }
+  const systemRoleAction = parsed.pathname.match(/^\/api\/v1\/system\/roles\/([^/]+)\/(status|permissions)$/u);
+  if (systemRoleAction) {
+    const roleCode = decodeSegment(systemRoleAction[1]);
+    if (method === "PATCH" && systemRoleAction[2] === "status") {
+      const body = parseJsonBody(options, ["status"]);
+      return { operation: "system.rolestatusupdate", input: { roleCode, status: body.status } };
+    }
+    if (method === "PATCH" && systemRoleAction[2] === "permissions") {
+      const body = parseJsonBody(options, ["permission_keys"]);
+      return { operation: "system.rolepermissionsupdate", input: { roleCode, permissionKeys: body.permission_keys } };
+    }
+  }
   const systemUserAction = parsed.pathname.match(/^\/api\/v1\/system\/users\/([^/]+)\/(status|role|password)$/u);
   if (systemUserAction) {
     const username = decodeSegment(systemUserAction[1]);

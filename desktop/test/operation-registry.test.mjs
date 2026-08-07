@@ -106,6 +106,18 @@ test("system roles view response is bounded to the atomic role contract", () => 
   assert.throws(() => parse({ ...payload, private_key: "secret" }), /fields are invalid/i);
 });
 
+test("system role mutations use fixed validated descriptors", () => {
+  const registry = createOperationRegistry();
+  assert.deepEqual(registry.resolve("system.rolecreate", { roleCode: "qa_lead", roleName: "质量负责人", dataScopeType: "all" }), {
+    method: "POST", path: "/api/v1/system/roles", body: '{"role_code":"qa_lead","role_name":"质量负责人","data_scope_type":"all"}', contentType: "application/json", idempotent: false,
+    parse: registry.resolve("system.rolecreate", { roleCode: "qa_lead", roleName: "质量负责人", dataScopeType: "all" }).parse,
+  });
+  assert.equal(registry.resolve("system.rolestatusupdate", { roleCode: "qa_lead", status: "disabled" }).path, "/api/v1/system/roles/qa_lead/status");
+  assert.equal(registry.resolve("system.rolepermissionsupdate", { roleCode: "qa_lead", permissionKeys: ["system.dashboard.view"] }).body, '{"permission_keys":["system.dashboard.view"]}');
+  assert.throws(() => registry.resolve("system.rolecreate", { roleCode: "qa_lead", roleName: "质量负责人", dataScopeType: "project" }), /dataScopeType/i);
+  assert.throws(() => registry.resolve("system.rolepermissionsupdate", { roleCode: "qa_lead", permissionKeys: ["../../secret"] }), /permissionKey/i);
+});
+
 test("rejects invalid business identifiers, filters and pagination", () => {
   const registry = createOperationRegistry();
   for (const [name, input] of [

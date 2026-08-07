@@ -775,6 +775,13 @@ export function SharedApp({ services }) {
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
+  const [systemRoleCreateOpen, setSystemRoleCreateOpen] = useState(false);
+  const [systemRoleCreateForm, setSystemRoleCreateForm] = useState({ roleCode: '', roleName: '', dataScopeType: 'self' });
+  const [systemRoleStatusTarget, setSystemRoleStatusTarget] = useState(/** @type {any | null} */ (null));
+  const [systemRolePermissionKeys, setSystemRolePermissionKeys] = useState(/** @type {string[]} */ ([]));
+  const [systemRoleSubmitting, setSystemRoleSubmitting] = useState(false);
+  const [systemRoleError, setSystemRoleError] = useState('');
+  const systemRoleMutationRef = useRef(false);
   const [systemUserCreateOpen, setSystemUserCreateOpen] = useState(false);
   const [systemUserCreateForm, setSystemUserCreateForm] = useState({ username: '', displayName: '', email: '', mobile: '', password: '', passwordConfirm: '', roleCode: '' });
   const [systemUserAction, setSystemUserAction] = useState(/** @type {{ kind: 'status' | 'role' | 'password', user: any } | null} */ (null));
@@ -971,6 +978,17 @@ export function SharedApp({ services }) {
     : null;
   const systemUserAssignedProjectKeys = new Set((systemUserProjectTarget?.assigned_projects || []).map((project) => project.key));
   const systemUserAssignableProjects = (systemUsersView?.project_options || []).filter((project) => !systemUserAssignedProjectKeys.has(project.key));
+  const systemRolePermissionGroups = useMemo(() => {
+    const groups = new Map();
+    for (const permission of systemRolesView?.permissions || []) {
+      const key = permission.resource_key || permission.permission_key;
+      const group = groups.get(key) || { key, pages: [], actions: [] };
+      if (permission.resource_type === 'page') group.pages.push(permission);
+      else group.actions.push(permission);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [systemRolesView?.permissions]);
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
   const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
   const cycleMemberLoad = projectCycleDetail ? projectCycleMemberLoad(projectCycleDetail, projectMembers) : [];
@@ -1318,6 +1336,8 @@ export function SharedApp({ services }) {
       }
       if (targetRoute.id === 'system-roles') {
         setSystemRolesView(nextSystemRolesView);
+        setSystemRolePermissionKeys((nextSystemRolesView?.permissions || []).filter((permission) => permission.granted).map((permission) => permission.permission_key));
+        setSystemRoleError('');
       }
       if (isWorkItemListRouteId(targetRoute.id)) {
         setWorkItemPage(nextWorkItems);
@@ -1864,6 +1884,78 @@ export function SharedApp({ services }) {
       systemUserMutationRef.current = false;
       setSystemUserSubmitting(false);
     }
+  }
+
+  async function refreshSystemRolesAfterMutation(roleCode = '') {
+    const current = routeRef.current;
+    if (current.id !== 'system-roles') return null;
+    const view = await api.getSystemRolesView({ role: roleCode || current.role, page: current.page, perPage: current.perPage });
+    if (routeRef.current.id === 'system-roles' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) {
+      setSystemRolesView(view);
+      setSystemRolePermissionKeys(view.permissions.filter((permission) => permission.granted).map((permission) => permission.permission_key));
+    }
+    return view;
+  }
+
+  async function runSystemRoleMutation(action, successMessage, roleCode = '') {
+    if (systemRoleMutationRef.current) return false;
+    systemRoleMutationRef.current = true;
+    setSystemRoleSubmitting(true);
+    setSystemRoleError('');
+    try {
+      await action();
+      setStatusMessage(successMessage);
+      try { await refreshSystemRolesAfterMutation(roleCode); }
+      catch (caught) { setSystemRoleError(`操作已成功，但角色工作台刷新失败：${errorMessage(caught instanceof Error ? caught : new Error('刷新失败。'))}`); }
+      return true;
+    } catch (caught) {
+      setSystemRoleError(errorMessage(caught instanceof Error ? caught : new Error('角色操作失败。')));
+      return false;
+    } finally {
+      systemRoleMutationRef.current = false;
+      setSystemRoleSubmitting(false);
+    }
+  }
+
+  async function submitSystemRoleCreate(event) {
+    event.preventDefault();
+    const roleCode = systemRoleCreateForm.roleCode.trim();
+    const created = await runSystemRoleMutation(() => api.createSystemRole(roleCode, systemRoleCreateForm.roleName.trim(), systemRoleCreateForm.dataScopeType), '角色已创建。', roleCode);
+    if (!created) return;
+    setSystemRoleCreateOpen(false);
+    setSystemRoleCreateForm({ roleCode: '', roleName: '', dataScopeType: 'self' });
+    const totalItems = (systemRolesView?.pagination.total_items || 0) + 1;
+    const perPage = systemRolesView?.pagination.per_page || 10;
+    navigate(buildSystemRolesPath({ owner: route.owner, role: roleCode, page: Math.max(1, Math.ceil(totalItems / perPage)), perPage }), `正在打开${roleCode}。`);
+  }
+
+  async function confirmSystemRoleStatus() {
+    if (!systemRoleStatusTarget) return;
+    const nextStatus = systemRoleStatusTarget.status === 'active' ? 'disabled' : 'active';
+    const updated = await runSystemRoleMutation(() => api.updateSystemRoleStatus(systemRoleStatusTarget.role_code, nextStatus), `角色已${nextStatus === 'active' ? '启用' : '禁用'}。`, systemRoleStatusTarget.role_code);
+    if (updated) setSystemRoleStatusTarget(null);
+  }
+
+  function toggleSystemRolePermission(permission, checked) {
+    if (!systemRolesView?.can_edit_permissions || systemRoleSubmitting) return;
+    const group = systemRolePermissionGroups.find((item) => item.key === permission.resource_key);
+    setSystemRolePermissionKeys((current) => {
+      const next = new Set(current);
+      if (permission.resource_type === 'page') {
+        for (const item of [...(group?.pages || []), ...(group?.actions || [])]) checked ? next.add(item.permission_key) : next.delete(item.permission_key);
+      } else if (checked) {
+        next.add(permission.permission_key);
+        for (const pagePermission of group?.pages || []) next.add(pagePermission.permission_key);
+      } else next.delete(permission.permission_key);
+      return [...next].sort();
+    });
+  }
+
+  async function submitSystemRolePermissions(event) {
+    event.preventDefault();
+    const roleCode = systemRolesView?.selected_role?.role_code;
+    if (!roleCode || !systemRolesView?.can_edit_permissions) return;
+    await runSystemRoleMutation(() => api.updateSystemRolePermissions(roleCode, [...systemRolePermissionKeys].sort()), '角色权限已保存。', roleCode);
   }
 
   async function submitSystemUserCreate(event) {
@@ -4138,8 +4230,9 @@ export function SharedApp({ services }) {
             <section className="shell-card shell-panel-wide" aria-labelledby="system-roles-title">
               <div className="shell-panel-header">
                 <div><h2 id="system-roles-title">角色工作台</h2><p className="shell-muted">选择角色后查看数据范围和完整权限集合。</p></div>
-                {systemRolesView?.selected_role?.is_system ? <span className="shell-muted">系统内置角色只读</span> : null}
+                <div className="shell-actions-inline">{systemRolesView?.selected_role?.is_system ? <span className="shell-muted">系统内置角色只读</span> : null}{systemRolesView?.can_manage_roles ? <Button onClick={() => { setSystemRoleError(''); setSystemRoleCreateOpen(true); }}>新建角色</Button> : null}</div>
               </div>
+              {systemRoleError && !systemRoleCreateOpen && !systemRoleStatusTarget ? <Feedback tone="danger" title="角色操作失败">{systemRoleError}</Feedback> : null}
               <DataTable
                 caption="系统角色列表"
                 rows={systemRolesView?.items || []}
@@ -4150,20 +4243,25 @@ export function SharedApp({ services }) {
                   { key: 'status', label: '状态', render: (item) => item.status },
                   { key: 'scope', label: '数据范围', render: (item) => item.data_scope_type === 'all' ? '全部项目' : '仅本人' },
                   { key: 'permissions', label: '权限', render: (item) => `${item.permission_count} 项` },
+                  { key: 'actions', label: '操作', render: (item) => systemRolesView?.can_manage_roles && !item.is_system ? <Button variant={item.status === 'active' ? 'danger' : 'secondary'} disabled={systemRoleSubmitting} onClick={() => { setSystemRoleError(''); setSystemRoleStatusTarget(item); }}>{item.status === 'active' ? '禁用' : '启用'}</Button> : '只读' },
                 ]}
               />
               {systemRolesView ? <div className="shell-panel-header">
                 <Pagination page={systemRolesView.pagination.page} totalPages={systemRolesView.pagination.total_pages} totalItems={systemRolesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemRolesPath({ owner: route.owner, role: systemRolesView.selected_role?.role_code || '', page, perPage: systemRolesView.pagination.per_page }), `正在加载第 ${page} 页角色。`)} />
                 <label className="shell-page-size">每页<select value={systemRolesView.pagination.per_page} onChange={(event) => navigate(buildSystemRolesPath({ owner: route.owner, role: systemRolesView.selected_role?.role_code || '', perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
               </div> : null}
-              {systemRolesView?.selected_role ? <section aria-labelledby="system-role-permissions-title">
-                <div className="shell-panel-header"><div><h3 id="system-role-permissions-title">{systemRolesView.selected_role.role_name}</h3><p className="shell-muted">{systemRolesView.selected_role.role_code} · 已授权 {systemRolesView.selected_role.permission_count} 项</p></div></div>
+              {systemRolesView?.selected_role ? <form onSubmit={submitSystemRolePermissions} aria-labelledby="system-role-permissions-title">
+                <div className="shell-panel-header"><div><h3 id="system-role-permissions-title">{systemRolesView.selected_role.role_name}</h3><p className="shell-muted">{systemRolesView.selected_role.role_code} · 已选择 {systemRolePermissionKeys.length}/{systemRolesView.permissions.length} 项</p></div>{systemRolesView.can_edit_permissions ? <Button type="submit" loading={systemRoleSubmitting}>保存权限</Button> : null}</div>
                 <DataTable caption="角色权限集合" rows={systemRolesView.permissions} rowKey={(permission) => permission.permission_key} emptyText="暂无权限点。" columns={[
-                  { key: 'granted', label: '授权', render: (permission) => <input type="checkbox" checked={permission.granted} readOnly aria-label={`${permission.permission_name} ${permission.granted ? '已授权' : '未授权'}`} /> },
+                  { key: 'granted', label: '授权', render: (permission) => <input type="checkbox" checked={systemRolePermissionKeys.includes(permission.permission_key)} disabled={!systemRolesView.can_edit_permissions || systemRoleSubmitting} readOnly={!systemRolesView.can_edit_permissions} aria-label={`${permission.permission_name} ${systemRolePermissionKeys.includes(permission.permission_key) ? '已授权' : '未授权'}`} onChange={(event) => toggleSystemRolePermission(permission, event.target.checked)} /> },
                   { key: 'permission', label: '权限', render: (permission) => <><strong>{permission.permission_name}</strong><br /><code>{permission.permission_key}</code></> },
                   { key: 'resource', label: '资源', render: (permission) => `${permission.resource_type} · ${permission.resource_key}` },
                 ]} />
-              </section> : <Feedback tone="info" title="请选择角色">当前分页没有可查看的角色。</Feedback>}
+              </form> : <Feedback tone="info" title="请选择角色">当前分页没有可查看的角色。</Feedback>}
+              <Modal open={systemRoleCreateOpen} title="创建角色" onClose={() => { if (!systemRoleSubmitting) { setSystemRoleCreateOpen(false); setSystemRoleError(''); } }} footer={<><Button variant="secondary" disabled={systemRoleSubmitting} onClick={() => setSystemRoleCreateOpen(false)}>取消</Button><Button loading={systemRoleSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-role-create-form'))?.requestSubmit()}>创建</Button></>}>
+                <form id="system-role-create-form" onSubmit={submitSystemRoleCreate}>{systemRoleError ? <Feedback tone="danger" title="创建失败">{systemRoleError}</Feedback> : null}<Field id="system-role-code" label="角色编码" required><input value={systemRoleCreateForm.roleCode} maxLength={64} placeholder="project_manager" onChange={(event) => setSystemRoleCreateForm((current) => ({ ...current, roleCode: event.target.value }))} /></Field><Field id="system-role-name" label="角色名称" required><input value={systemRoleCreateForm.roleName} maxLength={64} placeholder="项目经理" onChange={(event) => setSystemRoleCreateForm((current) => ({ ...current, roleName: event.target.value }))} /></Field><Field id="system-role-scope" label="数据范围"><select value={systemRoleCreateForm.dataScopeType} onChange={(event) => setSystemRoleCreateForm((current) => ({ ...current, dataScopeType: event.target.value }))}><option value="self">本人数据</option><option value="all">全部数据</option></select></Field></form>
+              </Modal>
+              <Modal open={Boolean(systemRoleStatusTarget)} title={systemRoleStatusTarget?.status === 'active' ? '确认禁用角色' : '确认启用角色'} onClose={() => { if (!systemRoleSubmitting) { setSystemRoleStatusTarget(null); setSystemRoleError(''); } }} footer={<><Button variant="secondary" disabled={systemRoleSubmitting} onClick={() => setSystemRoleStatusTarget(null)}>取消</Button><Button variant={systemRoleStatusTarget?.status === 'active' ? 'danger' : 'primary'} loading={systemRoleSubmitting} onClick={() => void confirmSystemRoleStatus()}>确认{systemRoleStatusTarget?.status === 'active' ? '禁用' : '启用'}</Button></>}><p>{systemRoleStatusTarget?.status === 'active' ? `确认禁用角色“${systemRoleStatusTarget?.role_name}”？禁用后该角色授权不会再生效。` : `确认启用角色“${systemRoleStatusTarget?.role_name}”？启用后该角色授权会重新生效。`}</p>{systemRoleError ? <Feedback tone="danger" title="状态更新失败">{systemRoleError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-users' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-users-title">

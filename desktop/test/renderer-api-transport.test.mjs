@@ -225,6 +225,20 @@ test("system user project mutations map to fixed Desktop operations", async () =
   ]);
 });
 
+test("system role mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  const api = createApiClient({ request: transport.request });
+  await api.createSystemRole("qa_lead", "质量负责人", "all");
+  await api.updateSystemRoleStatus("qa_lead", "disabled");
+  await api.updateSystemRolePermissions("qa_lead", ["system.dashboard.view"]);
+  assert.deepEqual(calls, [
+    ["system.rolecreate", { roleCode: "qa_lead", roleName: "质量负责人", dataScopeType: "all" }],
+    ["system.rolestatusupdate", { roleCode: "qa_lead", status: "disabled" }],
+    ["system.rolepermissionsupdate", { roleCode: "qa_lead", permissionKeys: ["system.dashboard.view"] }],
+  ]);
+});
+
 test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
   let calls = 0;
   const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });

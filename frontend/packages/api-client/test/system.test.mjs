@@ -37,6 +37,22 @@ test('system roles view preserves compact selection and pagination query', async
   assert.deepEqual(calls, ['/api/v1/system/roles-view', '/api/v1/system/roles-view?role=qa+lead&page=3&per_page=20']);
 });
 
+test('system role mutations use fixed JSON contracts after write preparation', async () => {
+  const calls = [];
+  const client = createSystemClient({
+    prepareWrite: async () => { calls.push(['prepare']); },
+    request: async (url, options) => { calls.push([url, options]); return {}; },
+  });
+  await client.createSystemRole('qa_lead', '质量负责人', 'all');
+  await client.updateSystemRoleStatus('qa_lead', 'disabled');
+  await client.updateSystemRolePermissions('qa_lead', ['system.dashboard.view']);
+  assert.deepEqual(calls, [
+    ['prepare'], ['/api/v1/system/roles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"role_code":"qa_lead","role_name":"质量负责人","data_scope_type":"all"}' }],
+    ['prepare'], ['/api/v1/system/roles/qa_lead/status', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"status":"disabled"}' }],
+    ['prepare'], ['/api/v1/system/roles/qa_lead/permissions', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: '{"permission_keys":["system.dashboard.view"]}' }],
+  ]);
+});
+
 test('system user mutations use fixed JSON contracts after write preparation', async () => {
   const calls = [];
   const client = createSystemClient({
