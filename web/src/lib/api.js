@@ -144,6 +144,7 @@ export const getWorkItemAttachmentDownloadUrl = /** @type {(itemKey: string, att
 export const getWorkItemCommentAttachments = /** @type {(itemKey: string, commentId: number) => Promise<Attachment[]>} */ (apiClient.getWorkItemCommentAttachments);
 
 export const getWorkItemCommentAttachmentPreview = apiClient.getWorkItemCommentAttachmentPreview;
+export const deleteWorkItemCommentAttachment = apiClient.deleteWorkItemCommentAttachment;
 
 export const createWorkItemCommentAttachment = /** @type {(itemKey: string, commentId: number, payload: AttachmentCreatePayload) => Promise<Attachment>} */ (apiClient.createWorkItemCommentAttachment);
 
@@ -223,6 +224,7 @@ export const webApi = {
   getWorkItemAttachmentUploadUrl,
   getWorkItemAttachments,
   getWorkItemCommentAttachmentDownloadUrl,
+  deleteWorkItemCommentAttachment,
   getWorkItemCommentAttachmentPreview,
   getWorkItemCommentAttachmentUploadUrl,
   getWorkItemCommentAttachments,

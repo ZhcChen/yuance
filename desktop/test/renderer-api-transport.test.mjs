@@ -80,7 +80,7 @@ test("api-client mutations map to fixed domain operations without request primit
   const calls = [];
   const transport = createDesktopApiTransport({ execute: async (operation, input) => {
     calls.push([operation, input]);
-    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : operation === "project.resourceattachmentdelete" ? attachmentFixture : {} };
+    return { ok: true, data: operation === "notification.readall" ? { affected: 1 } : ["project.resources"].includes(operation) ? [resourceFixture] : operation === "project.resourceattachments" ? [] : ["project.resourcedetail", "project.resourceunlock", "project.resourcecreate", "project.resourceupdate", "project.resourcearchive", "project.resourcepasswordreset"].includes(operation) ? resourceFixture : ["project.resourceattachmentdelete", "workitem.commentattachmentdelete"].includes(operation) ? attachmentFixture : {} };
   } });
   const client = createApiClient({ request: transport.request });
   await client.updateOwnProfile({ displayName: "Alice", email: "alice@example.com", mobile: "13800000000" });
@@ -122,6 +122,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.publishWorkItemCommentDraft("DEMO-1", 9, { body: "<p>New comment</p>", bodyFormat: "html" });
   await client.cancelWorkItemCommentDraft("DEMO-1", 9);
   await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
+  await client.deleteWorkItemCommentAttachment("DEMO-1", 9, 7);
   assert.deepEqual(calls, [
     ["identity.profileupdate", { displayName: "Alice", email: "alice@example.com", mobile: "13800000000" }],
     ["project.create", { name: "New project", description: "Description", status: "not_started", startDate: "2026-08-08", dueDate: "2026-08-31" }],
@@ -171,6 +172,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["workitem.commentdraftpublish", { itemKey: "DEMO-1", commentId: 9, payload: { body: "<p>New comment</p>", bodyFormat: "html" } }],
     ["workitem.commentdraftcancel", { itemKey: "DEMO-1", commentId: 9 }],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }],
+    ["workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 }],
   ]);
   assert.equal(JSON.stringify(calls).includes("content-type"), false);
   assert.equal(JSON.stringify(calls).includes("/api/v1/"), false);
@@ -180,13 +182,15 @@ test("mutation adapter rejects malformed JSON contracts before IPC", async () =>
   let calls = 0;
   const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });
   const json = (body, headers = { "content-type": "application/json" }) => ({ method: "PATCH", headers, body });
-  /** @type {Array<[string, { method: string, headers: Record<string, string>, body: string }]>} */
+  /** @type {Array<[string, { method: string, headers?: Record<string, string>, body?: string }]>} */
   const rejected = [
     ["/api/v1/current-project", json("not-json")],
     ["/api/v1/current-project", json('{"project_key":"DEMO","url":"https://evil.example"}')],
     ["/api/v1/current-project", json('{"project_key":"DEMO"}', { "content-type": "text/plain" })],
     ["/api/v1/work-items/DEMO-1", { ...json('{"title":"x"}'), headers: { "content-type": "application/json", Authorization: "Bearer forged" } }],
     ["/api/v1/work-items/DEMO-1/comments/draft", { method: "POST", headers: { "content-type": "application/json" }, body: '{"body":"x","url":"https://evil.example"}' }],
+    ["/api/v1/work-items/DEMO-1/comments/9/attachments/7", { method: "DELETE", headers: { "x-yuance-editor-context": "forged" } }],
+    ["/api/v1/work-items/DEMO-1/comments/9/attachments/7", { method: "DELETE", headers: { "x-yuance-editor-context": "work-item-comment-edit", Authorization: "Bearer forged" } }],
   ];
   for (const [url, options] of rejected) await assert.rejects(transport.request(url, options), (error) => error instanceof ApiError);
   assert.equal(calls, 0);

@@ -99,6 +99,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.attachmentpreview", workItemAttachmentPreviewOperation],
     ["workitem.commentattachments", workItemCommentAttachmentsOperation],
     ["workitem.commentattachmentpreview", workItemCommentAttachmentPreviewOperation],
+    ["workitem.commentattachmentdelete", workItemCommentAttachmentDeleteOperation],
   ]);
   const active = new Set();
   function resolve(name, input) {
@@ -124,8 +125,8 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
   return Object.freeze({ resolve, begin, abortAll, snapshot: () => Object.freeze({ active: active.size }) });
 }
 
-function descriptor(method, path, parse, idempotent = true, dataKind = "object", body) {
-  return Object.freeze({ idempotent, method, path, parse, ...(dataKind === "object" ? {} : { dataKind }), ...(body === undefined ? {} : { body, contentType: "application/json" }) });
+function descriptor(method, path, parse, idempotent = true, dataKind = "object", body, editorContext) {
+  return Object.freeze({ idempotent, method, path, parse, ...(dataKind === "object" ? {} : { dataKind }), ...(body === undefined ? {} : { body, contentType: "application/json" }), ...(editorContext === undefined ? {} : { editorContext }) });
 }
 
 function noInputOperation(method, path, parse, idempotent = true, dataKind = "object") {
@@ -634,6 +635,19 @@ function workItemCommentAttachmentsOperation(input) {
 function workItemCommentAttachmentPreviewOperation(input) {
   exactKeys(input, ["attachmentId", "commentId", "itemKey"]);
   return descriptor("GET", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments/${positiveInteger(input.attachmentId)}/preview`, parseAttachmentPreview);
+}
+
+function workItemCommentAttachmentDeleteOperation(input) {
+  exactKeys(input, ["attachmentId", "commentId", "itemKey"]);
+  return descriptor(
+    "DELETE",
+    `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/comments/${integer(input.commentId, 1, "commentId")}/attachments/${positiveInteger(input.attachmentId)}`,
+    parseAttachment,
+    false,
+    "object",
+    undefined,
+    "work-item-comment-edit",
+  );
 }
 
 function parseSessionProbe(data, profile) {

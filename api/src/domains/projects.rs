@@ -7475,6 +7475,124 @@ pub fn work_item_comment_inline_attachment_ids(
         .collect()
 }
 
+pub async fn archive_work_item_comment_inline_attachment(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+    attachment_id: i64,
+    file_object_id: i64,
+) -> AppResult<()> {
+    let mut tx = pool.begin().await?;
+    let Some((body, body_format)) = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT body, body_format
+        FROM work_item_comments
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Err(AppError::NotFound("评论不存在".to_string()));
+    };
+    let prepared =
+        prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id)?;
+    if let Some(prepared) = &prepared {
+        sqlx::query(
+            r#"
+            UPDATE work_item_comments
+            SET body = ?3,
+                updated_at = datetime('now')
+            WHERE id = ?1
+              AND work_item_id = ?2
+              AND deleted_at IS NULL
+            "#,
+        )
+        .bind(comment_id)
+        .bind(work_item_id)
+        .bind(&prepared.body)
+        .execute(&mut *tx)
+        .await?;
+    }
+    sqlx::query(
+        r#"
+        UPDATE file_objects
+        SET status = 'deleted',
+            updated_at = datetime('now')
+        WHERE id = ?1
+          AND status <> 'deleted'
+        "#,
+    )
+    .bind(file_object_id)
+    .execute(&mut *tx)
+    .await?;
+    let primary_post_summary = prepared
+        .as_ref()
+        .map(|prepared| work_item_primary_post_summary(&prepared.body, &prepared.body_format));
+    sqlx::query(
+        r#"
+        UPDATE work_items
+        SET description = CASE
+                WHEN primary_post_comment_id = ?2 AND ?3 IS NOT NULL THEN ?3
+                ELSE description
+            END,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        "#,
+    )
+    .bind(work_item_id)
+    .bind(comment_id)
+    .bind(primary_post_summary)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+pub async fn ensure_work_item_comment_inline_attachment_can_be_removed(
+    pool: &SqlitePool,
+    work_item_id: i64,
+    comment_id: i64,
+    attachment_id: i64,
+) -> AppResult<()> {
+    let Some((body, body_format)) = sqlx::query_as::<_, (String, String)>(
+        r#"
+        SELECT body, body_format
+        FROM work_item_comments
+        WHERE id = ?1
+          AND work_item_id = ?2
+          AND deleted_at IS NULL
+        "#,
+    )
+    .bind(comment_id)
+    .bind(work_item_id)
+    .fetch_optional(pool)
+    .await?
+    else {
+        return Err(AppError::NotFound("评论不存在".to_string()));
+    };
+    prepare_work_item_comment_body_without_attachment(&body, &body_format, attachment_id)?;
+    Ok(())
+}
+
+fn prepare_work_item_comment_body_without_attachment(
+    body: &str,
+    body_format: &str,
+    attachment_id: i64,
+) -> AppResult<Option<PreparedWorkItemCommentBody>> {
+    if body_format != COMMENT_BODY_FORMAT_HTML {
+        return Ok(None);
+    }
+    let next_body = strip_inline_attachment_node(body, attachment_id);
+    (next_body != body)
+        .then(|| prepare_work_item_comment_body(&next_body, body_format))
+        .transpose()
+}
+
 fn sanitize_comment_html(body: &str) -> String {
     ammonia::Builder::default()
         .add_tags(&[
@@ -7855,6 +7973,54 @@ fn strip_inline_attachment_nodes(value: &str) -> String {
     }
     output.push_str(remaining);
     output
+}
+
+fn strip_inline_attachment_node(value: &str, attachment_id: i64) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut remaining = value;
+    while let Some((start, end)) = next_inline_attachment_range_for_id(remaining, attachment_id) {
+        output.push_str(&remaining[..start]);
+        remaining = &remaining[end..];
+    }
+    output.push_str(remaining);
+    output
+}
+
+fn next_inline_attachment_range_for_id(value: &str, attachment_id: i64) -> Option<(usize, usize)> {
+    let figure = rich_attachment_tag_range_for_id(value, "figure", attachment_id);
+    let link = rich_attachment_tag_range_for_id(value, "a", attachment_id);
+    match (figure, link) {
+        (Some(left), Some(right)) => Some(if left.0 <= right.0 { left } else { right }),
+        (Some(range), None) | (None, Some(range)) => Some(range),
+        (None, None) => None,
+    }
+}
+
+fn rich_attachment_tag_range_for_id(
+    value: &str,
+    tag: &str,
+    attachment_id: i64,
+) -> Option<(usize, usize)> {
+    let open = format!("<{tag}");
+    let close = format!("</{tag}>");
+    let mut search_from = 0;
+    while let Some(relative_start) = value[search_from..].find(&open) {
+        let start = search_from + relative_start;
+        let after_start = &value[start..];
+        let relative_tag_end = after_start.find('>')?;
+        let tag_end = start + relative_tag_end + 1;
+        let open_tag = &value[start..tag_end];
+        let matches_id = html_attribute_value(open_tag, "data-yuance-attachment-id")
+            .and_then(|value| value.parse::<i64>().ok())
+            == Some(attachment_id);
+        if !matches_id {
+            search_from = tag_end;
+            continue;
+        }
+        let relative_close_start = value[tag_end..].find(&close)?;
+        return Some((start, tag_end + relative_close_start + close.len()));
+    }
+    None
 }
 
 fn next_inline_attachment_range(value: &str) -> Option<(usize, usize)> {
@@ -8894,10 +9060,27 @@ async fn seed_demo_activities(pool: &SqlitePool, owner_user_id: i64) -> AppResul
 #[cfg(test)]
 mod tests {
     use super::{
-        WorkItemCommentSummary, work_item_comment_body_html_for_display,
-        work_item_description_html_for_display, work_item_primary_post,
-        work_item_primary_post_summary,
+        WorkItemCommentSummary, strip_inline_attachment_node,
+        work_item_comment_body_html_for_display, work_item_description_html_for_display,
+        work_item_primary_post, work_item_primary_post_summary,
     };
+
+    #[test]
+    fn inline_attachment_removal_only_removes_the_target_node() {
+        let html = concat!(
+            "<p>正文</p>",
+            "<figure data-yuance-attachment-id=\"7\" data-yuance-attachment-kind=\"image\"><img src=\"/seven\"></figure>",
+            "<a data-yuance-attachment-id=\"17\" data-yuance-attachment-kind=\"file\" href=\"/seventeen\">17</a>",
+            "<a data-yuance-attachment-id=\"7\" data-yuance-attachment-kind=\"file\" href=\"/seven\">7</a>"
+        );
+
+        let updated = strip_inline_attachment_node(html, 7);
+
+        assert_eq!(
+            updated,
+            "<p>正文</p><a data-yuance-attachment-id=\"17\" data-yuance-attachment-kind=\"file\" href=\"/seventeen\">17</a>"
+        );
+    }
 
     #[test]
     fn work_item_primary_post_matches_a_truncated_long_summary() {

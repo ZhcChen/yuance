@@ -32,6 +32,7 @@ test("real API and Electron complete project, resource, work item, and comment a
     resourcePreviewed: true,
     projectArchived: true,
     resourceDeleted: true,
+    commentDeleted: true,
     hashesMatch: true,
     revealCount: 4,
     cancelled: true,

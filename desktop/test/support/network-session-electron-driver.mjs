@@ -308,6 +308,8 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const projectListArchived = await rest.execute("project.attachments", { projectKey: "YCE" });
   const resourceDeleted = await rest.execute("project.resourceattachmentdelete", { projectKey: "YCE", resourceId: resource.id, attachmentId: resourceUpload.uploaded.id });
   const resourceListDeleted = await rest.execute("project.resourceattachments", { projectKey: "YCE", resourceId: resource.id, accessToken: "" });
+  const commentDeleted = await rest.execute("workitem.commentattachmentdelete", { itemKey, commentId, attachmentId: commentUpload.uploaded.id });
+  const commentListDeleted = await rest.execute("workitem.commentattachments", { itemKey, commentId });
   await runtime.logout();
   runtime.dispose();
   process.stdout.write(`${JSON.stringify({
@@ -324,6 +326,7 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
     resourcePreviewed: resourcePreview.attachment.id === resourceUpload.uploaded.id && hash(resourcePreviewBytes) === hash(resourceContent) && previewVault.snapshot().entries === 0,
     projectArchived: projectArchived.id === projectUpload.uploaded.id && projectArchived.status === "deleted" && projectListArchived.some((value) => value.id === projectUpload.uploaded.id && value.status === "deleted"),
     resourceDeleted: resourceDeleted.id === resourceUpload.uploaded.id && resourceDeleted.status === "deleted" && resourceListDeleted.some((value) => value.id === resourceUpload.uploaded.id && value.status === "deleted"),
+    commentDeleted: commentDeleted.id === commentUpload.uploaded.id && commentDeleted.status === "deleted" && commentListDeleted.some((value) => value.id === commentUpload.uploaded.id && value.status === "deleted"),
     hashesMatch: hash(downloaded[0]) === hash(itemContent) && hash(downloaded[1]) === hash(commentContent) && hash(downloaded[2]) === hash(projectContent) && hash(downloaded[3]) === hash(resourceContent),
     revealCount: revealed.length,
     cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability,

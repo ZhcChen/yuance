@@ -1141,7 +1141,10 @@ test('work item comments create rich mentions, reply, and edit through one share
   const createRequests = [];
   const updateRequests = [];
   const comments = [
-    workItemCommentFixture(),
+    workItemCommentFixture({
+      body: '<p>初始可编辑评论</p><a data-yuance-attachment-id="811" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/901/attachments/811/download">comment-log.txt</a>',
+      body_format: 'html',
+    }),
     workItemCommentFixture({
       id: 902,
       body: '已有流转记录',
@@ -1405,6 +1408,50 @@ test('work item comment creation preserves comment anchor route', async ({ page 
 
   await expect(page.getByText('锚点保持评论')).toBeVisible();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2#comment-901$/);
+});
+
+test('work item comment edit confirms attachment deletion and removes its rich text reference', async ({ page }) => {
+  const attachment = attachmentFixture({ id: 811, filename: 'comment-log.txt', content_type: 'text/plain', byte_size: 512 });
+  const comments = [workItemCommentFixture({
+    body: '<p>保留正文 811</p><a data-yuance-attachment-id="811" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/901/attachments/811/download">comment-log.txt</a>',
+    body_format: 'html',
+  })];
+  const deleteRequests = [];
+  const updateRequests = [];
+  let attachments = [attachment];
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901/attachments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachments }) }));
+  await page.route(/\/api\/v1\/work-items\/YCE-TASK-2\/comments\/901\/attachments\/811$/u, async (route) => {
+    deleteRequests.push(route.request().headers());
+    attachments = [];
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ...attachment, status: 'deleted' } }) });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments/901', async (route) => {
+    const payload = route.request().postDataJSON();
+    updateRequests.push(payload);
+    comments[0] = { ...comments[0], body: payload.body, body_format: payload.body_format };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: comments[0] }) });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: comments }) }));
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  const row = page.locator('#comment-901');
+  await row.getByRole('button', { name: '编辑' }).click();
+  await row.getByRole('button', { name: '删除', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '删除评论附件' });
+  await expect(dialog).toContainText('对象存储中的文件和评论正文中的附件引用都会立即删除');
+  await dialog.getByRole('button', { name: '取消' }).click();
+  await expect(dialog).toBeHidden();
+  expect(deleteRequests).toHaveLength(0);
+  await row.getByRole('button', { name: '删除', exact: true }).click();
+  await dialog.getByRole('button', { name: '确认删除' }).click();
+  await expect.poll(() => deleteRequests.length).toBe(1);
+  expect(deleteRequests[0]['x-yuance-editor-context']).toBe('work-item-comment-edit');
+  await expect(row.getByRole('button', { name: '下载评论附件 comment-log.txt' })).toHaveCount(0);
+  await expect(row.getByLabel('编辑评论').locator('[data-yuance-attachment-id="811"]')).toHaveCount(0);
+  await row.getByRole('button', { name: '保存评论' }).click();
+  await expect.poll(() => updateRequests.length).toBe(1);
+  expect(updateRequests[0].body).toContain('保留正文 811');
+  expect(updateRequests[0].body).not.toContain('data-yuance-attachment-id="811"');
 });
 
 test('work item attachments can list download and upload for item and comments', async ({ page }) => {

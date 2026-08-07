@@ -50,6 +50,7 @@ import { attachmentPreviewFromPayload } from './attachment-preview.js';
  * @property {(itemKey: string, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemAttachmentDownloadUrl
  * @property {(itemKey: string, commentId: number) => Promise<Attachment[]>} getWorkItemCommentAttachments
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<AttachmentPreview>} getWorkItemCommentAttachmentPreview
+ * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} deleteWorkItemCommentAttachment
  * @property {(itemKey: string, commentId: number, payload: AttachmentCreatePayload) => Promise<Attachment>} createWorkItemCommentAttachment
  * @property {(itemKey: string, commentId: number, attachmentId: number, query?: SignedUrlOptions) => Promise<AttachmentSignedUrl>} getWorkItemCommentAttachmentUploadUrl
  * @property {(itemKey: string, commentId: number, attachmentId: number) => Promise<Attachment>} markWorkItemCommentAttachmentUploaded
@@ -539,6 +540,13 @@ export function createWorkItemClient({ request, prepareWrite }) {
       return workItemAttachmentPreviewFromPayload(await request(
         `${workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId)}/preview`,
       ));
+    },
+    async deleteWorkItemCommentAttachment(itemKey, commentId, attachmentId) {
+      await prepareWrite();
+      return attachmentFromPayload(await request(workItemCommentAttachmentApiPath(itemKey, commentId, attachmentId), {
+        method: 'DELETE',
+        headers: { 'x-yuance-editor-context': 'work-item-comment-edit' },
+      }));
     },
 
     /**

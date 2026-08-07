@@ -4114,9 +4114,16 @@ pub async fn work_item_comment_attachment_delete(
     headers: HeaderMap,
     Path((item_key, comment_id, attachment_id)): Path<(String, i64, i64)>,
 ) -> AppResult<axum::Json<ApiEnvelope<AttachmentPayload>>> {
-    let principal = require_api_principal(&state, &headers).await?;
-    let (user, item, project, comment) =
-        require_api_comment_context(&state, &headers, &item_key, comment_id).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let (item, project, comment) = require_api_comment_context_for_user(
+        &state,
+        &headers,
+        &principal.user,
+        &item_key,
+        comment_id,
+    )
+    .await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_COMMENT_WRITE).await?;
@@ -4150,18 +4157,23 @@ pub async fn work_item_comment_attachment_delete(
     }
     let existing =
         files::get_attachment_for_target(pool, attachment_id, "comment", comment.id).await?;
-    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
-    let attachment = files::archive_attachment(
+    projects::ensure_work_item_comment_inline_attachment_can_be_removed(
         pool,
-        attachment_id,
-        "comment",
+        item.id,
         comment.id,
-        user.id,
-        &principal.actor_display_name_snapshot(),
-        None,
-        None,
+        attachment_id,
     )
     .await?;
+    storage::delete_object_if_exists(pool, &state.settings, &existing.object_key).await?;
+    projects::archive_work_item_comment_inline_attachment(
+        pool,
+        item.id,
+        comment.id,
+        attachment_id,
+        existing.file_object_id,
+    )
+    .await?;
+    let attachment = files::get_attachment(pool, attachment_id).await?;
     audit::record(
         pool,
         Some(user.id),

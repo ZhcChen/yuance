@@ -52,6 +52,7 @@ function renderComments(overrides = {}) {
     replyCommentBody: '',
     commentSubmitting: false,
     editSubmitting: false,
+    deletingAttachmentId: null,
     replySubmitting: false,
     error: '',
     onSubmitNew: () => {},
@@ -70,6 +71,7 @@ function renderComments(overrides = {}) {
     onPreviewAttachment: () => {},
     onDownloadAttachment: () => {},
     onRevealAttachment: () => {},
+    onRequestDeleteAttachment: () => {},
     ...overrides,
   }));
 }
@@ -91,6 +93,13 @@ test('work item comments render edit and error states', () => {
   assert.match(html, /编辑评论/);
   assert.match(html, /work-item-comment-edit-9/);
   assert.match(html, /role="alert"/);
+  assert.match(html, />删除<\/button>/);
+});
+
+test('work item comments only expose attachment deletion to the active author editor', () => {
+  assert.doesNotMatch(renderComments(), />删除<\/button>/);
+  assert.doesNotMatch(renderComments({ editingCommentId: 9, currentUsername: 'bob' }), />删除<\/button>/);
+  assert.match(renderComments({ editingCommentId: 9, deletingAttachmentId: 7 }), /删除中/);
 });
 
 test('work item comments expose draft attachments in the shared composer', () => {

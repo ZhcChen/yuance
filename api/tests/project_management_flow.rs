@@ -9066,6 +9066,7 @@ async fn web_work_item_detail_allows_comment_edit_but_not_delete() {
     )));
 
     let delete_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("POST")
@@ -9277,7 +9278,7 @@ async fn web_project_detail_can_register_project_attachment() {
         .oneshot(
             Request::builder()
                 .uri("/web/projects/YCE")
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -9814,8 +9815,23 @@ async fn api_v1_can_register_comment_attachment() {
     assert_eq!(uploaded_response.status(), StatusCode::OK);
     let uploaded_body = response_body(uploaded_response).await;
     assert!(uploaded_body.contains(r#""status":"uploaded""#));
-
-    let delete_response = app
+    let attachment_only_body = format!(
+        r#"<a data-yuance-attachment-id="{attachment_id}" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/{}/attachments/{attachment_id}/download" title="api-comment-log.txt">api-comment-log.txt</a>"#,
+        comment.id
+    );
+    projects::update_work_item_comment_with_format(
+        &pool,
+        initialized.user_id,
+        true,
+        "YCE-TASK-2",
+        comment.id,
+        &attachment_only_body,
+        "html",
+    )
+    .await
+    .expect("attachment-only body should persist");
+    let empty_body_delete_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method("DELETE")
@@ -9823,7 +9839,54 @@ async fn api_v1_can_register_comment_attachment() {
                     "/api/v1/work-items/YCE-TASK-2/comments/{}/attachments/{}",
                     comment.id, attachment_id
                 ))
-                .header(header::COOKIE, initialized.cookie)
+                .header(header::COOKIE, initialized.cookie.clone())
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header("x-yuance-editor-context", "work-item-comment-edit")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(empty_body_delete_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        files::get_attachment(&pool, attachment_id)
+            .await
+            .expect("rejected deletion should preserve attachment")
+            .status,
+        "uploaded"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachments[0].object_key)
+            .await
+            .expect("test object should read")
+            .is_some()
+    );
+    let inline_body = format!(
+        r#"<p>保留正文</p><a data-yuance-attachment-id="{attachment_id}" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/{}/attachments/{attachment_id}/download" title="api-comment-log.txt">api-comment-log.txt</a>"#,
+        comment.id
+    );
+    projects::update_work_item_comment_with_format(
+        &pool,
+        initialized.user_id,
+        true,
+        "YCE-TASK-2",
+        comment.id,
+        &inline_body,
+        "html",
+    )
+    .await
+    .expect("inline attachment reference should persist");
+
+    let delete_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{}/attachments/{}",
+                    comment.id, attachment_id
+                ))
+                .header(header::COOKIE, initialized.cookie.clone())
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::empty())
                 .expect("request should build"),
@@ -9835,6 +9898,51 @@ async fn api_v1_can_register_comment_attachment() {
         .await
         .expect("attachment should remain");
     assert_eq!(preserved.status, "uploaded");
+
+    let delete_response = app
+        .oneshot(
+            Request::builder()
+                .method("DELETE")
+                .uri(format!(
+                    "/api/v1/work-items/YCE-TASK-2/comments/{}/attachments/{}",
+                    comment.id, attachment_id
+                ))
+                .header(header::COOKIE, initialized.cookie)
+                .header("x-yuance-csrf-token", CSRF_TOKEN)
+                .header("x-yuance-editor-context", "work-item-comment-edit")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(delete_response.status(), StatusCode::OK);
+    assert!(
+        response_body(delete_response)
+            .await
+            .contains(r#""status":"deleted""#)
+    );
+    assert_eq!(
+        files::get_attachment(&pool, attachment_id)
+            .await
+            .expect("attachment should remain auditable")
+            .status,
+        "deleted"
+    );
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &attachments[0].object_key)
+            .await
+            .expect("test object should read")
+            .is_none()
+    );
+    let updated_comment = projects::get_work_item_comment(&pool, item.id, comment.id)
+        .await
+        .expect("comment should remain");
+    assert!(updated_comment.body.contains("保留正文"));
+    assert!(
+        !updated_comment
+            .body
+            .contains(&format!("data-yuance-attachment-id=\"{attachment_id}\""))
+    );
 }
 
 #[tokio::test]

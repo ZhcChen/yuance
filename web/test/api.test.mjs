@@ -5,6 +5,7 @@ import {
   batchUpdateWorkItems,
   createWorkItemAttachment,
   createWorkItemCommentAttachment,
+  deleteWorkItemCommentAttachment,
   createWorkItemCommentDraft,
   createWorkItemComment,
   cancelWorkItemCommentDraft,
@@ -456,7 +457,7 @@ test('createWorkItemAttachment posts attachment metadata with CSRF', async () =>
   });
 });
 
-test('comment attachment clients cover list, create, signed URLs and uploaded marker', async () => {
+test('comment attachment clients cover list, create, delete, signed URLs and uploaded marker', async () => {
   await withFetchQueue([
     jsonResponse([attachmentPayload({ id: 11, filename: 'comment-log.txt' })]),
     jsonResponse({ csrf_token: 'csrf-comment-attachment' }, { csrfToken: 'csrf-comment-attachment' }),
@@ -471,6 +472,8 @@ test('comment attachment clients cover list, create, signed URLs and uploaded ma
       attachment: { id: 12, filename: 'comment.png' },
       request: { method: 'GET', url: '/comment-download' },
     })),
+    jsonResponse({ csrf_token: 'csrf-comment-delete' }, { csrfToken: 'csrf-comment-delete' }),
+    jsonResponse(attachmentPayload({ id: 12, filename: 'comment.png', status: 'deleted' })),
   ], async (calls) => {
     const attachments = await getWorkItemCommentAttachments('YCE-TASK/2', 42);
     const created = await createWorkItemCommentAttachment('YCE-TASK/2', 42, {
@@ -485,12 +488,14 @@ test('comment attachment clients cover list, create, signed URLs and uploaded ma
     const download = await getWorkItemCommentAttachmentDownloadUrl('YCE-TASK/2', 42, 12, {
       expiresInSeconds: 240,
     });
+    const deleted = await deleteWorkItemCommentAttachment('YCE-TASK/2', 42, 12);
 
     assert.equal(attachments[0].filename, 'comment-log.txt');
     assert.equal(created.filename, 'comment.png');
     assert.equal(upload.request.method, 'PUT');
     assert.equal(uploaded.status, 'uploaded');
     assert.equal(download.request.method, 'GET');
+    assert.equal(deleted.status, 'deleted');
     assert.equal(calls[0].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments');
     assert.equal(calls[1].url, '/api/v1/auth/csrf');
     assert.equal(calls[2].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments');
@@ -505,5 +510,11 @@ test('comment attachment clients cover list, create, signed URLs and uploaded ma
     assert.equal(calls[5].options.method, 'POST');
     assert.equal(new Headers(calls[5].options.headers).get('x-yuance-csrf-token'), 'csrf-comment-uploaded');
     assert.equal(calls[6].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12/download-url?expires_in_seconds=240');
+    assert.equal(calls[7].url, '/api/v1/auth/csrf');
+    assert.equal(calls[8].url, '/api/v1/work-items/YCE-TASK%2F2/comments/42/attachments/12');
+    assert.equal(calls[8].options.method, 'DELETE');
+    const deleteHeaders = new Headers(calls[8].options.headers);
+    assert.equal(deleteHeaders.get('x-yuance-csrf-token'), 'csrf-comment-delete');
+    assert.equal(deleteHeaders.get('x-yuance-editor-context'), 'work-item-comment-edit');
   });
 });

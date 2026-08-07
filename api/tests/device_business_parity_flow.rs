@@ -666,7 +666,7 @@ async fn device_principal_completes_work_item_and_comment_attachment_signing_lif
     .fetch_one(&pool)
     .await
     .unwrap();
-    run_attachment_lifecycle(
+    let comment_attachment_id = run_attachment_lifecycle(
         &app,
         &pool,
         &credentials.access_token,
@@ -674,6 +674,61 @@ async fn device_principal_completes_work_item_and_comment_attachment_signing_lif
         "device-comment.txt",
     )
     .await;
+    let member_path = format!(
+        "/api/v1/work-items/YCE-TASK-2/comments/{comment_id}/attachments/{comment_attachment_id}"
+    );
+    sqlx::query(
+        "UPDATE work_item_comments SET body = ?2, body_format = 'html' WHERE id = ?1",
+    )
+    .bind(comment_id)
+    .bind(format!(
+        r#"<p>device body</p><a data-yuance-attachment-id="{comment_attachment_id}" data-yuance-attachment-kind="file" href="/web/work-items/YCE-TASK-2/comments/{comment_id}/attachments/{comment_attachment_id}/download">device-comment.txt</a>"#
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let response = request(
+        &app,
+        "DELETE",
+        &member_path,
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let object_key = sqlx::query_scalar::<_, String>(
+        "SELECT object_key FROM file_objects WHERE id = (SELECT file_object_id FROM file_attachments WHERE id = ?1)",
+    )
+    .bind(comment_attachment_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let response = request_with_headers(
+        &app,
+        "DELETE",
+        &member_path,
+        &credentials.access_token,
+        &[("x-yuance-editor-context", "work-item-comment-edit")],
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "deleted");
+    assert!(
+        storage::read_test_memory_object(&pool, &test_settings(), &object_key)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let comment_body =
+        sqlx::query_scalar::<_, String>("SELECT body FROM work_item_comments WHERE id = ?1")
+            .bind(comment_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(comment_body.contains("device body"));
+    assert!(!comment_body.contains(&format!(
+        "data-yuance-attachment-id=\"{comment_attachment_id}\""
+    )));
 }
 
 #[tokio::test]
@@ -1467,7 +1522,7 @@ async fn run_attachment_lifecycle(
     token: &str,
     collection_path: &str,
     filename: &str,
-) {
+) -> i64 {
     let content = b"device attachment parity".to_vec();
     let checksum_sha256 = format!("{:x}", Sha256::digest(&content));
     let invalid = request(
@@ -1543,6 +1598,7 @@ async fn run_attachment_lifecycle(
     let signed = json_body(response).await;
     assert_eq!(signed["data"]["request"]["method"], "GET");
     assert_eq!(signed["data"]["attachment"]["id"], attachment_id);
+    attachment_id
 }
 
 async fn create_uploaded_attachment_fixture(

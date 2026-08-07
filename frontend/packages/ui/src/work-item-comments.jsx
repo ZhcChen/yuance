@@ -45,6 +45,7 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   replyCommentBody: string,
  *   commentSubmitting: boolean,
  *   editSubmitting: boolean,
+ *   deletingAttachmentId: number | null,
  *   replySubmitting: boolean,
  *   error: string,
  *   onSubmitNew: (event: import('react').FormEvent<HTMLFormElement>) => void,
@@ -63,6 +64,7 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   onPreviewAttachment: (commentId: number, attachment: Attachment) => void,
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
+ *   onRequestDeleteAttachment: (commentId: number, attachment: Attachment) => void,
  * }} props
  */
 export function WorkItemComments(props) {
@@ -88,6 +90,7 @@ export function WorkItemComments(props) {
     replyCommentBody,
     commentSubmitting,
     editSubmitting,
+    deletingAttachmentId,
     replySubmitting,
     error,
     onSubmitNew,
@@ -106,6 +109,7 @@ export function WorkItemComments(props) {
     onPreviewAttachment,
     onDownloadAttachment,
     onRevealAttachment,
+    onRequestDeleteAttachment,
   } = props;
 
   return (
@@ -173,6 +177,11 @@ export function WorkItemComments(props) {
                     onPreview={(attachment) => onPreviewAttachment(comment.id, attachment)}
                     onDownload={(attachment) => onDownloadAttachment(comment.id, attachment)}
                     onReveal={(attachment) => onRevealAttachment(comment.id, attachment)}
+                    renderExtraAction={(attachment) => editingCommentId === comment.id && comment.author_username === currentUsername ? (
+                      <button className="yuance-ui-button yuance-ui-button-danger" type="button" onClick={() => onRequestDeleteAttachment(comment.id, attachment)} disabled={mutationBusy || deletingAttachmentId !== null}>
+                        {deletingAttachmentId === attachment.id ? '删除中…' : '删除'}
+                      </button>
+                    ) : null}
                     className="work-item-comment-attachment-list"
                   />
                 ) : null}

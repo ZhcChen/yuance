@@ -28,6 +28,25 @@ test("uses only a runtime lease and fixed no-ambient request fields", async () =
   assert.equal(calls[0].options.cache, "no-store");
 });
 
+test("adds only registry-controlled headers to comment attachment deletion", async () => {
+  const calls = [];
+  const transport = createRestTransport({
+    profile,
+    credentialRuntime: runtimeFixture(),
+    fetchImpl: await trustedFetch(async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse(
+        { data: { id: 7, filename: "comment.txt", content_type: "text/plain", byte_size: 7, status: "deleted", created_by: "Alice", created_at: "2026-08-08T00:00:00Z" } },
+        { url },
+      );
+    }),
+  });
+  await transport.execute("workitem.commentattachmentdelete", { itemKey: "DEMO-1", commentId: 9, attachmentId: 7 });
+  assert.equal(calls[0].options.method, "DELETE");
+  assert.equal(calls[0].options.headers["X-Yuance-Editor-Context"], "work-item-comment-edit");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer yuance_dat_lease-1");
+});
+
 test("refreshes and retries an idempotent read once only for access expiry", async () => {
   const runtime = runtimeFixture();
   let calls = 0;
