@@ -65,6 +65,21 @@ test("rejects request primitive injection and keeps attachment operations out of
   assert.throws(() => createOperationRegistry().resolve("attachment.workitemcreate", { itemKey: "YCE-TASK-2", metadata }), /unknown operation/);
 });
 
+test("builds fixed release asset lifecycle descriptors and strips signed storage fields", () => {
+  const registry = createAttachmentOperationRegistry();
+  const create = registry.resolve("attachment.releasecreate", { releaseId: 7, platform: "windows", architecture: "x64", artifactKind: "installer", metadata });
+  assert.equal(create.path, "/api/v1/system/releases/7/assets");
+  assert.deepEqual(JSON.parse(create.body), { platform: "windows", architecture: "x64", artifact_kind: "installer", original_filename: "report.txt", content_type: "text/plain", byte_size: 12, checksum_sha256: "a".repeat(64) });
+  assert.equal(registry.resolve("attachment.releaseuploadsign", { releaseId: 7, attachmentId: 19 }).path, "/api/v1/system/releases/7/assets/19/upload-url?expires_in_seconds=60");
+  assert.equal(registry.resolve("attachment.releaseconfirm", { releaseId: 7, attachmentId: 19 }).path, "/api/v1/system/releases/7/assets/19/uploaded");
+  const download = registry.resolve("attachment.releasedownloadsign", { releaseId: 7, attachmentId: 19 });
+  assert.equal(download.path, "/api/v1/system/releases/7/assets/19/download-url?expires_in_seconds=60");
+  const parsed = download.parse({ attachment: { ...rawAttachment(), id: 19, created_by: "" }, request: { method: "GET", url: "/api/v1/test-storage/download?object_key=private", headers: [] }, expires_in_seconds: 60, expires_at: new Date(Date.now() + 60_000).toISOString(), checksum_sha256: "a".repeat(64) });
+  assert.deepEqual(Object.keys(parsed.attachment).sort(), ["byte_size", "content_type", "created_at", "created_by", "filename", "id", "status"]);
+  assert.equal(JSON.stringify(parsed.attachment).includes("object_key"), false);
+  for (const input of [{ releaseId: 0, platform: "windows", architecture: "x64", artifactKind: "installer", metadata }, { releaseId: 7, platform: "darwin", architecture: "x64", artifactKind: "installer", metadata }, { releaseId: 7, platform: "windows", architecture: "ia32", artifactKind: "installer", metadata }, { releaseId: 7, platform: "windows", architecture: "x64", artifactKind: "binary", metadata }]) assert.throws(() => registry.resolve("attachment.releasecreate", input));
+});
+
 function rawAttachment() {
   return {
     id: 9,

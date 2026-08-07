@@ -6,10 +6,12 @@ export const FILE_CHANNELS = Object.freeze({
   uploadWorkItemCommentAttachment: "yuance:file-upload-work-item-comment-attachment",
   uploadProjectAttachment: "yuance:file-upload-project-attachment",
   uploadProjectResourceAttachment: "yuance:file-upload-project-resource-attachment",
+  uploadSystemReleaseAsset: "yuance:file-upload-system-release-asset",
   downloadWorkItemAttachment: "yuance:file-download-work-item-attachment",
   downloadWorkItemCommentAttachment: "yuance:file-download-work-item-comment-attachment",
   downloadProjectAttachment: "yuance:file-download-project-attachment",
   downloadProjectResourceAttachment: "yuance:file-download-project-resource-attachment",
+  downloadSystemReleaseAsset: "yuance:file-download-system-release-asset",
   openProjectAttachmentPreview: "yuance:file-open-project-attachment-preview",
   openWorkItemAttachmentPreview: "yuance:file-open-work-item-attachment-preview",
   openWorkItemCommentAttachmentPreview: "yuance:file-open-work-item-comment-attachment-preview",
@@ -21,6 +23,9 @@ export const FILE_CHANNELS = Object.freeze({
 
 const OPERATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const STAGES = new Set(["registering", "signing", "uploading", "confirming"]);
+const RELEASE_PLATFORMS = new Set(["windows", "macos", "linux", "android", "ios"]);
+const RELEASE_ARCHITECTURES = new Set(["universal", "x64", "arm64"]);
+const RELEASE_ARTIFACT_KINDS = new Set(["installer", "signature", "sbom", "manifest", "checksums"]);
 
 export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding, getWindow, fileDialog, issueTransferGrant, uploadExecutor, downloadExecutor, attachmentCoordinator, previewCoordinator, revealController } = {}) {
   if (!ipcMain || typeof ipcMain.handle !== "function" || typeof ipcMain.removeHandler !== "function") throw new TypeError("ipcMain is required");
@@ -52,10 +57,12 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
     [FILE_CHANNELS.uploadWorkItemCommentAttachment]: attachmentUploadHandler("uploadWorkItemCommentAttachment", "comment"),
     [FILE_CHANNELS.uploadProjectAttachment]: attachmentUploadHandler("uploadProjectAttachment", "project"),
     [FILE_CHANNELS.uploadProjectResourceAttachment]: attachmentUploadHandler("uploadProjectResourceAttachment", "resource"),
+    [FILE_CHANNELS.uploadSystemReleaseAsset]: attachmentUploadHandler("uploadSystemReleaseAsset", "release"),
     [FILE_CHANNELS.downloadWorkItemAttachment]: attachmentDownloadHandler("downloadWorkItemAttachment", "workitem"),
     [FILE_CHANNELS.downloadWorkItemCommentAttachment]: attachmentDownloadHandler("downloadWorkItemCommentAttachment", "comment"),
     [FILE_CHANNELS.downloadProjectAttachment]: attachmentDownloadHandler("downloadProjectAttachment", "project"),
     [FILE_CHANNELS.downloadProjectResourceAttachment]: attachmentDownloadHandler("downloadProjectResourceAttachment", "resource"),
+    [FILE_CHANNELS.downloadSystemReleaseAsset]: attachmentDownloadHandler("downloadSystemReleaseAsset", "release"),
     [FILE_CHANNELS.openProjectAttachmentPreview]: async (event, payload) => {
       assertSender(event);
       const reference = parseProjectPreview(payload);
@@ -122,9 +129,9 @@ export function registerFileCommandHandlers({ ipcMain, assertSender, getBinding,
           fileCapability: parsed.fileCapability,
           binding,
           signal: controller.signal,
-          onStage: (stage, created) => publishProgress(event, parsed.operationId, stage, created),
+          onStage: (stage, created) => publishProgress(event, parsed.operationId, stage, created, target),
         });
-        return normalizeAttachmentUploadResult(result);
+        return normalizeAttachmentUploadResult(result, target);
       } finally {
         controller.abort();
         event.sender.removeListener?.("destroyed", onDestroyed);
@@ -154,16 +161,21 @@ function sanitize(handler) {
   };
 }
 function parseAttachmentUpload(value, target) {
-  const inputKeys = target === "comment" ? ["commentId", "fileCapability", "itemKey"] : target === "project" ? ["fileCapability", "projectKey"] : target === "resource" ? ["fileCapability", "projectKey", "resourceId"] : ["fileCapability", "itemKey"];
+  const inputKeys = target === "comment" ? ["commentId", "fileCapability", "itemKey"] : target === "project" ? ["fileCapability", "projectKey"] : target === "resource" ? ["fileCapability", "projectKey", "resourceId"] : target === "release" ? ["architecture", "artifactKind", "fileCapability", "platform", "releaseId"] : ["fileCapability", "itemKey"];
   const actualKeys = isPlainObject(value?.input) ? Object.keys(value.input) : [];
   const validRetryKeys = ["workitem", "project", "resource"].includes(target) && sameKeys(value.input, ["attachmentId", ...inputKeys]);
   if (!isPlainObject(value) || !sameKeys(value, ["input", "operationId"]) || !OPERATION_ID.test(value.operationId) || !isPlainObject(value.input) || (!sameKeys(value.input, inputKeys) && !validRetryKeys) || typeof value.input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(value.input.fileCapability) || (actualKeys.includes("attachmentId") && (!Number.isSafeInteger(value.input.attachmentId) || value.input.attachmentId < 1))) throw new TypeError("attachment upload request is invalid");
+  if (target === "release") validateReleaseReference(value.input, false);
   return Object.freeze({ operationId: value.operationId, fileCapability: value.input.fileCapability, reference: attachmentReference(value.input, target, actualKeys.includes("attachmentId")) });
 }
 function parseAttachmentDownload(value, target) {
-  const keys = target === "comment" ? ["attachmentId", "commentId", "itemKey", "suggestedFilename"] : target === "project" ? ["attachmentId", "projectKey", "suggestedFilename"] : target === "resource" ? ["accessToken", "attachmentId", "projectKey", "resourceId", "suggestedFilename"] : ["attachmentId", "itemKey", "suggestedFilename"];
+  const keys = target === "comment" ? ["attachmentId", "commentId", "itemKey", "suggestedFilename"] : target === "project" ? ["attachmentId", "projectKey", "suggestedFilename"] : target === "resource" ? ["accessToken", "attachmentId", "projectKey", "resourceId", "suggestedFilename"] : target === "release" ? ["attachmentId", "releaseId", "suggestedFilename"] : ["attachmentId", "itemKey", "suggestedFilename"];
   if (!isPlainObject(value) || !sameKeys(value, keys) || typeof value.suggestedFilename !== "string") throw new TypeError("attachment download request is invalid");
+  if (target === "release") validateReleaseReference(value, true);
   return attachmentReference(value, target, true);
+}
+function validateReleaseReference(value, attachment) {
+  if (!Number.isSafeInteger(value.releaseId) || value.releaseId < 1 || (attachment && (!Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1)) || (!attachment && (!RELEASE_PLATFORMS.has(value.platform) || !RELEASE_ARCHITECTURES.has(value.architecture) || !RELEASE_ARTIFACT_KINDS.has(value.artifactKind)))) throw new TypeError("release asset reference is invalid");
 }
 function parseProjectPreview(value) {
   if (!isPlainObject(value) || !sameKeys(value, ["attachmentId", "projectKey"]) || typeof value.projectKey !== "string" || !/^[A-Z][A-Z0-9-]{1,31}$/u.test(value.projectKey) || !Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1) throw new TypeError("preview request is invalid");
@@ -182,19 +194,20 @@ function parseProjectResourcePreview(value) {
   return Object.freeze({ projectKey: value.projectKey, resourceId: value.resourceId, attachmentId: value.attachmentId, accessToken: value.accessToken });
 }
 function attachmentReference(value, target, attachment) {
-  return Object.freeze({ ...(["project", "resource"].includes(target) ? { projectKey: value.projectKey } : { itemKey: value.itemKey }), ...(target === "resource" ? { resourceId: value.resourceId, ...(value.accessToken === undefined ? {} : { accessToken: value.accessToken }) } : {}), ...(target === "comment" ? { commentId: value.commentId } : {}), ...(attachment ? { attachmentId: value.attachmentId } : {}) });
+  return Object.freeze({ ...(["project", "resource"].includes(target) ? { projectKey: value.projectKey } : target === "release" ? { releaseId: value.releaseId } : { itemKey: value.itemKey }), ...(target === "resource" ? { resourceId: value.resourceId, ...(value.accessToken === undefined ? {} : { accessToken: value.accessToken }) } : {}), ...(target === "comment" ? { commentId: value.commentId } : {}), ...(target === "release" && !attachment ? { platform: value.platform, architecture: value.architecture, artifactKind: value.artifactKind } : {}), ...(attachment ? { attachmentId: value.attachmentId } : {}) });
 }
-function publishProgress(event, operationId, stage, created) {
+function publishProgress(event, operationId, stage, created, target) {
   if (!STAGES.has(stage) || event.sender.isDestroyed?.()) return;
-  event.sender.send(FILE_CHANNELS.attachmentProgress, Object.freeze({ operationId, stage, ...(created ? { created: normalizeAttachment(created) } : {}) }));
+  event.sender.send(FILE_CHANNELS.attachmentProgress, Object.freeze({ operationId, stage, ...(created ? { created: target === "release" ? normalizeReleaseAsset(created) : normalizeAttachment(created) } : {}) }));
 }
 function stripPurpose(binding) {
   const { purpose: _purpose, ...value } = binding;
   return Object.freeze(value);
 }
-function normalizeAttachmentUploadResult(value) {
+function normalizeAttachmentUploadResult(value, target) {
   if (!value || !isPlainObject(value) || !sameKeys(value, ["created", "uploaded"])) throw publicError("file_unavailable");
-  return Object.freeze({ created: normalizeAttachment(value.created), uploaded: normalizeAttachment(value.uploaded) });
+  const normalize = target === "release" ? normalizeReleaseAsset : normalizeAttachment;
+  return Object.freeze({ created: normalize(value.created), uploaded: normalize(value.uploaded) });
 }
 function normalizeAttachmentDownloadResult(value) {
   const result = normalizeResult(value);
@@ -218,8 +231,12 @@ function normalizeAttachment(value) {
   if (!isPlainObject(value)) throw publicError("file_unavailable");
   return Object.freeze({ id: value.id, filename: value.filename, content_type: value.content_type, byte_size: value.byte_size, status: value.status, created_by: value.created_by, created_at: value.created_at });
 }
+function normalizeReleaseAsset(value) {
+  if (!isPlainObject(value) || !Number.isSafeInteger(value.id) || value.id < 1 || !Number.isSafeInteger(value.release_id) || value.release_id < 1 || typeof value.filename !== "string" || typeof value.content_type !== "string" || !Number.isSafeInteger(value.byte_size) || typeof value.status !== "string" || typeof value.checksum_sha256 !== "string" || typeof value.created_at !== "string") throw publicError("file_unavailable");
+  return Object.freeze({ id: value.id, release_id: value.release_id, platform: value.platform, architecture: value.architecture, artifact_kind: value.artifact_kind, filename: value.filename, content_type: value.content_type, byte_size: value.byte_size, status: value.status, checksum_sha256: value.checksum_sha256, created_at: value.created_at });
+}
 function hasAttachmentOperations(value) {
-  return ["uploadWorkItemAttachment", "uploadWorkItemCommentAttachment", "uploadProjectAttachment", "uploadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "downloadProjectAttachment", "downloadProjectResourceAttachment"].every((name) => typeof value?.[name] === "function");
+  return ["uploadWorkItemAttachment", "uploadWorkItemCommentAttachment", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadSystemReleaseAsset", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadSystemReleaseAsset"].every((name) => typeof value?.[name] === "function");
 }
 function hasPreviewOperations(value) { return ["openProjectAttachmentPreview", "openWorkItemAttachmentPreview", "openWorkItemCommentAttachmentPreview", "openProjectResourceAttachmentPreview", "releaseProjectAttachmentPreview"].every((name) => typeof value?.[name] === "function"); }
 function rejectPayload(payload) { if (payload !== undefined) throw new TypeError("file command does not accept payload"); }
@@ -232,6 +249,6 @@ function normalizeResult(value) {
   if (!value || !["completed", "cancelled"].includes(value.status)) throw publicError("file_unavailable");
   return Object.freeze({ status: value.status, ...(Number.isSafeInteger(value.byteSize) ? { byteSize: value.byteSize } : {}), ...(typeof value.filename === "string" ? { filename: value.filename } : {}) });
 }
-function publicError(code, created) { return Object.assign(new Error("File operation failed"), { code, ...(created === undefined ? {} : { created: normalizeAttachment(created) }) }); }
+function publicError(code, created) { return Object.assign(new Error("File operation failed"), { code, ...(created === undefined ? {} : { created: created?.release_id === undefined ? normalizeAttachment(created) : normalizeReleaseAsset(created) }) }); }
 function sameKeys(value, expected) { const keys = Object.keys(value).sort(); return keys.length === expected.length && keys.every((key, index) => key === expected[index]); }
 function isPlainObject(value) { return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype; }

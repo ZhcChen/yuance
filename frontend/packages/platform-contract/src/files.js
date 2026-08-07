@@ -145,6 +145,21 @@ export function defineHostDelegatedAttachmentCapabilities(capabilities) {
 }
 
 /**
+ * Desktop 发布资产由主进程完成登记、签名、传输和确认；renderer 不接触 signed request。
+ * @typedef {object} HostDelegatedReleaseAssetCapabilities
+ * @property {(input: { releaseId: number, platform: string, architecture: string, artifactKind: string, fileCapability: FileCapability }, onStage: (stage: 'registering' | 'signing' | 'uploading' | 'confirming', created?: any) => void) => Promise<{ created: any, uploaded: any }>} uploadSystemReleaseAsset
+ * @property {(input: { releaseId: number, assetId: number, suggestedFilename: string }) => Promise<{ status: 'completed' | 'cancelled', revealCapability?: RevealDownloadCapability }>} downloadSystemReleaseAsset
+ */
+
+/** @param {Partial<HostDelegatedReleaseAssetCapabilities>} capabilities @returns {HostDelegatedReleaseAssetCapabilities} */
+export function defineHostDelegatedReleaseAssetCapabilities(capabilities) {
+  requireObject(capabilities);
+  requireOperation(capabilities, 'uploadSystemReleaseAsset');
+  requireOperation(capabilities, 'downloadSystemReleaseAsset');
+  return /** @type {HostDelegatedReleaseAssetCapabilities} */ (capabilities);
+}
+
+/**
  * @param {object} capabilities
  * @param {string} operation
  */

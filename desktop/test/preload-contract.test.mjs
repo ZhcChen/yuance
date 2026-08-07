@@ -82,7 +82,7 @@ test("business bridge exposes only one semantic execute command", async () => {
 
 test("file bridge exposes only fixed host-delegated commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "openWorkItemAttachmentPreview", "openWorkItemCommentAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
+  assert.deepEqual(Object.keys(bridge.files).sort(), ["choose", "downloadCanary", "downloadProjectAttachment", "downloadProjectResourceAttachment", "downloadSystemReleaseAsset", "downloadWorkItemAttachment", "downloadWorkItemCommentAttachment", "openProjectAttachmentPreview", "openProjectResourceAttachmentPreview", "openWorkItemAttachmentPreview", "openWorkItemCommentAttachmentPreview", "releaseProjectAttachmentPreview", "revealDownload", "uploadCanary", "uploadProjectAttachment", "uploadProjectResourceAttachment", "uploadSystemReleaseAsset", "uploadWorkItemAttachment", "uploadWorkItemCommentAttachment"]);
   await bridge.files.choose();
   await bridge.files.uploadCanary("yfc_opaque");
   await bridge.files.downloadCanary();

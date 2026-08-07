@@ -5,6 +5,7 @@ import {
   defineDownloadCapabilities,
   defineFileCapabilities,
   defineHostDelegatedAttachmentCapabilities,
+  defineHostDelegatedReleaseAssetCapabilities,
   defineHostDelegatedFileCapabilities,
   definePlatformCapabilities,
   defineRouterCapabilities,
@@ -86,6 +87,15 @@ test('host-delegated attachment capabilities require the complete business matri
     'uploadWorkItemCommentAttachment',
   ]);
   assert.throws(() => defineHostDelegatedAttachmentCapabilities({}), /uploadWorkItemAttachment/);
+});
+
+test('host-delegated release asset capabilities require upload and download operations', () => {
+  const capabilities = defineHostDelegatedReleaseAssetCapabilities({
+    uploadSystemReleaseAsset: async () => ({ created: {}, uploaded: {} }),
+    downloadSystemReleaseAsset: async () => ({ status: 'completed' }),
+  });
+  assert.deepEqual(Object.keys(capabilities).sort(), ['downloadSystemReleaseAsset', 'uploadSystemReleaseAsset']);
+  assert.throws(() => defineHostDelegatedReleaseAssetCapabilities({ uploadSystemReleaseAsset: async () => ({ created: {}, uploaded: {} }) }), /downloadSystemReleaseAsset/);
 });
 
 test('platform capability definitions reject missing operations', () => {

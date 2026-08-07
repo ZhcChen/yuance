@@ -2,6 +2,9 @@ const ITEM_KEY = /^[A-Z][A-Z0-9-]{2,63}$/u;
 const PROJECT_KEY = /^[A-Z][A-Z0-9-]{1,31}$/u;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+const RELEASE_PLATFORMS = new Set(["windows", "macos", "linux", "android", "ios"]);
+const RELEASE_ARCHITECTURES = new Set(["universal", "x64", "arm64"]);
+const RELEASE_ARTIFACT_KINDS = new Set(["installer", "signature", "sbom", "manifest", "checksums"]);
 
 export function createAttachmentOperationRegistry() {
   const operations = new Map([
@@ -9,18 +12,22 @@ export function createAttachmentOperationRegistry() {
     ["attachment.commentcreate", createOperation("comment")],
     ["attachment.projectcreate", createOperation("project")],
     ["attachment.resourcecreate", createOperation("resource")],
+    ["attachment.releasecreate", createOperation("release")],
     ["attachment.workitemuploadsign", signOperation("work-item", "upload")],
     ["attachment.commentuploadsign", signOperation("comment", "upload")],
     ["attachment.projectuploadsign", signOperation("project", "upload")],
     ["attachment.resourceuploadsign", signOperation("resource", "upload")],
+    ["attachment.releaseuploadsign", signOperation("release", "upload")],
     ["attachment.workitemconfirm", confirmOperation("work-item")],
     ["attachment.commentconfirm", confirmOperation("comment")],
     ["attachment.projectconfirm", confirmOperation("project")],
     ["attachment.resourceconfirm", confirmOperation("resource")],
+    ["attachment.releaseconfirm", confirmOperation("release")],
     ["attachment.workitemdownloadsign", signOperation("work-item", "download")],
     ["attachment.commentdownloadsign", signOperation("comment", "download")],
     ["attachment.projectdownloadsign", signOperation("project", "download")],
     ["attachment.resourcedownloadsign", signOperation("resource", "download")],
+    ["attachment.releasedownloadsign", signOperation("release", "download")],
   ]);
   return Object.freeze({
     resolve(name, input) {
@@ -32,10 +39,11 @@ export function createAttachmentOperationRegistry() {
 
 function createOperation(target) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["commentId", "itemKey", "metadata"] : target === "project" ? ["metadata", "projectKey"] : target === "resource" ? ["metadata", "projectKey", "resourceId"] : ["itemKey", "metadata"]);
+    exactKeys(input, target === "comment" ? ["commentId", "itemKey", "metadata"] : target === "project" ? ["metadata", "projectKey"] : target === "resource" ? ["metadata", "projectKey", "resourceId"] : target === "release" ? ["architecture", "artifactKind", "metadata", "platform", "releaseId"] : ["itemKey", "metadata"]);
     const reference = parseReference(input, target, false);
     const metadata = parseMetadata(input.metadata);
-    return descriptor("POST", collectionPath(reference, target), parsePublicAttachment, false, JSON.stringify({
+    return descriptor("POST", collectionPath(reference, target), target === "release" ? parsePublicReleaseAsset : parsePublicAttachment, false, JSON.stringify({
+      ...(target === "release" ? { platform: reference.platform, architecture: reference.architecture, artifact_kind: reference.artifactKind } : {}),
       original_filename: metadata.filename,
       content_type: metadata.contentType,
       byte_size: metadata.byteSize,
@@ -46,7 +54,7 @@ function createOperation(target) {
 
 function signOperation(target, purpose) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : target === "resource" ? [...(purpose === "download" ? ["accessToken"] : []), "attachmentId", "projectKey", "resourceId"] : ["attachmentId", "itemKey"]);
+    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : target === "resource" ? [...(purpose === "download" ? ["accessToken"] : []), "attachmentId", "projectKey", "resourceId"] : target === "release" ? ["attachmentId", "releaseId"] : ["attachmentId", "itemKey"]);
     const reference = parseReference(input, target, true);
     const query = new URLSearchParams({ expires_in_seconds: "60" });
     if (target === "resource" && purpose === "download") query.set("access", parseAccessToken(input.accessToken));
@@ -56,9 +64,9 @@ function signOperation(target, purpose) {
 
 function confirmOperation(target) {
   return (input) => {
-    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : target === "resource" ? ["attachmentId", "projectKey", "resourceId"] : ["attachmentId", "itemKey"]);
+    exactKeys(input, target === "comment" ? ["attachmentId", "commentId", "itemKey"] : target === "project" ? ["attachmentId", "projectKey"] : target === "resource" ? ["attachmentId", "projectKey", "resourceId"] : target === "release" ? ["attachmentId", "releaseId"] : ["attachmentId", "itemKey"]);
     const reference = parseReference(input, target, true);
-    return descriptor("POST", `${memberPath(reference, target)}/uploaded`, parsePublicAttachment, false);
+    return descriptor("POST", `${memberPath(reference, target)}/uploaded`, target === "release" ? parsePublicReleaseAsset : parsePublicAttachment, false);
   };
 }
 
@@ -67,15 +75,20 @@ function descriptor(method, path, parse, idempotent = true, body) {
 }
 
 function parseReference(input, target, needsAttachment) {
-  const itemKey = ["project", "resource"].includes(target) ? undefined : parseItemKey(input.itemKey);
+  const itemKey = ["project", "resource", "release"].includes(target) ? undefined : parseItemKey(input.itemKey);
   const projectKey = ["project", "resource"].includes(target) ? parseProjectKey(input.projectKey) : undefined;
   const resourceId = target === "resource" ? positiveInteger(input.resourceId, "resourceId") : undefined;
   const commentId = target === "comment" ? positiveInteger(input.commentId, "commentId") : undefined;
   const attachmentId = needsAttachment ? positiveInteger(input.attachmentId, "attachmentId") : undefined;
-  return Object.freeze({ itemKey, projectKey, resourceId, commentId, attachmentId });
+  const releaseId = target === "release" ? positiveInteger(input.releaseId, "releaseId") : undefined;
+  const platform = target === "release" && !needsAttachment ? requiredEnum(input.platform, RELEASE_PLATFORMS, "platform") : undefined;
+  const architecture = target === "release" && !needsAttachment ? requiredEnum(input.architecture, RELEASE_ARCHITECTURES, "architecture") : undefined;
+  const artifactKind = target === "release" && !needsAttachment ? requiredEnum(input.artifactKind, RELEASE_ARTIFACT_KINDS, "artifactKind") : undefined;
+  return Object.freeze({ itemKey, projectKey, resourceId, commentId, attachmentId, releaseId, platform, architecture, artifactKind });
 }
 
 function collectionPath(reference, target) {
+  if (target === "release") return `/api/v1/system/releases/${reference.releaseId}/assets`;
   if (target === "project") return `/api/v1/projects/${encodeURIComponent(reference.projectKey)}/attachments`;
   if (target === "resource") return `/api/v1/projects/${encodeURIComponent(reference.projectKey)}/resources/${reference.resourceId}/attachments`;
   const base = `/api/v1/work-items/${encodeURIComponent(reference.itemKey)}`;
@@ -137,6 +150,16 @@ function parsePublicAttachment(value) {
     created_at: boundedString(value.created_at, 64),
   });
 }
+function parsePublicReleaseAsset(value) {
+  if (!isPlainObject(value)) throw new TypeError("release asset response is invalid");
+  return Object.freeze({
+    id: positiveInteger(value.id, "id"), release_id: positiveInteger(value.release_id, "release_id"),
+    platform: requiredEnum(value.platform, RELEASE_PLATFORMS, "platform"), architecture: requiredEnum(value.architecture, RELEASE_ARCHITECTURES, "architecture"),
+    artifact_kind: requiredEnum(value.artifact_kind, RELEASE_ARTIFACT_KINDS, "artifact_kind"), filename: boundedString(value.filename, 255),
+    content_type: boundedString(value.content_type, 128), byte_size: boundedInteger(value.byte_size, 0, MAX_ATTACHMENT_BYTES),
+    status: boundedString(value.status, 32), checksum_sha256: boundedString(value.checksum_sha256, 64), created_at: boundedString(value.created_at, 64),
+  });
+}
 
 function parseItemKey(value) { if (typeof value !== "string" || !ITEM_KEY.test(value)) throw new TypeError("itemKey is invalid"); return value; }
 function parseProjectKey(value) { if (typeof value !== "string" || !PROJECT_KEY.test(value)) throw new TypeError("projectKey is invalid"); return value; }
@@ -144,6 +167,7 @@ function parseAccessToken(value) { if (typeof value !== "string" || value.length
 function positiveInteger(value, name) { return boundedInteger(value, 1, Number.MAX_SAFE_INTEGER, name); }
 function boundedInteger(value, minimum, maximum, name = "integer") { if (!Number.isSafeInteger(value) || value < minimum || value > maximum) throw new TypeError(`${name} is invalid`); return value; }
 function boundedString(value, maximum) { if (typeof value !== "string" || value.length > maximum) throw new TypeError("string field is invalid"); return value; }
+function requiredEnum(value, allowed, name) { if (typeof value !== "string" || !allowed.has(value)) throw new TypeError(`${name} is invalid`); return value; }
 function exactKeys(value, allowed) { if (Object.keys(value).some((key) => !allowed.includes(key))) throw new TypeError("attachment operation contains unknown fields"); }
 function sameKeys(value, expected) { const keys = Object.keys(value).sort(); return keys.length === expected.length && keys.every((key, index) => key === expected[index]); }
 function isPlainObject(value) { return value !== null && typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype; }

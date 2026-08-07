@@ -1,6 +1,9 @@
 import { parseTransferContract } from "./transfer-contract.mjs";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
+const RELEASE_PLATFORMS = new Set(["windows", "macos", "linux", "android", "ios"]);
+const RELEASE_ARCHITECTURES = new Set(["universal", "x64", "arm64"]);
+const RELEASE_ARTIFACT_KINDS = new Set(["installer", "signature", "sbom", "manifest", "checksums"]);
 
 export function createBusinessAttachmentCoordinator({
   restTransport,
@@ -36,8 +39,13 @@ export function createBusinessAttachmentCoordinator({
     return uploadAttachment("resource", input);
   }
 
+  async function uploadSystemReleaseAsset(input) {
+    return uploadAttachment("release", input);
+  }
+
   async function uploadAttachment(target, input) {
     const { reference, fileCapability, binding, signal, onStage } = parseUploadInput(target, input);
+    const memberReference = target === "release" ? Object.freeze({ releaseId: reference.releaseId }) : reference;
     const uploadBinding = Object.freeze({ ...binding, purpose: "upload" });
     const metadata = fileVault.describe(fileCapability, uploadBinding);
     let created;
@@ -52,7 +60,7 @@ export function createBusinessAttachmentCoordinator({
     }
     try {
       onStage("signing", created);
-      const signed = await restTransport.execute(`attachment.${target}uploadsign`, { ...reference, ...(created ? { attachmentId: created.id } : {}) });
+      const signed = await restTransport.execute(`attachment.${target}uploadsign`, { ...memberReference, ...(created ? { attachmentId: created.id } : {}) });
       created ||= signed?.attachment;
       validateUploadPair(created, signed, metadata);
       const contract = parseBusinessContract(signed.transfer, "upload");
@@ -62,7 +70,7 @@ export function createBusinessAttachmentCoordinator({
       onStage("confirming");
       let uploaded;
       try {
-        uploaded = await restTransport.execute(`attachment.${target}confirm`, { ...reference, attachmentId: created.id });
+        uploaded = await restTransport.execute(`attachment.${target}confirm`, { ...memberReference, attachmentId: created.id });
       } catch (error) {
         if (error?.code === "mutation_result_uncertain") throw publicError("attachment_confirm_uncertain", created);
         throw error;
@@ -89,6 +97,10 @@ export function createBusinessAttachmentCoordinator({
 
   async function downloadProjectResourceAttachment(input) {
     return downloadAttachment("resource", input);
+  }
+
+  async function downloadSystemReleaseAsset(input) {
+    return downloadAttachment("release", input);
   }
 
   async function downloadAttachment(target, input) {
@@ -128,10 +140,12 @@ export function createBusinessAttachmentCoordinator({
     uploadWorkItemCommentAttachment,
     uploadProjectAttachment,
     uploadProjectResourceAttachment,
+    uploadSystemReleaseAsset,
     downloadWorkItemAttachment,
     downloadWorkItemCommentAttachment,
     downloadProjectAttachment,
     downloadProjectResourceAttachment,
+    downloadSystemReleaseAsset,
   });
 }
 
@@ -139,10 +153,12 @@ function parseUploadInput(target, input) {
   const allowed = target === "comment"
     ? ["binding", "commentId", "fileCapability", "itemKey", "onStage", "signal"]
     : target === "project" ? ["binding", "fileCapability", "onStage", "projectKey", "signal"]
-      : target === "resource" ? ["binding", "fileCapability", "onStage", "projectKey", "resourceId", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
+      : target === "resource" ? ["binding", "fileCapability", "onStage", "projectKey", "resourceId", "signal"]
+        : target === "release" ? ["architecture", "artifactKind", "binding", "fileCapability", "onStage", "platform", "releaseId", "signal"] : ["binding", "fileCapability", "itemKey", "onStage", "signal"];
   const retryAllowed = ["workitem", "project", "resource"].includes(target) && sameKeys(input, [...allowed, "attachmentId"]);
   if (!retryAllowed) exactInput(input, allowed);
   if (typeof input.fileCapability !== "string" || !/^yfc_[A-Za-z0-9_-]{32}$/u.test(input.fileCapability) || typeof input.onStage !== "function" || (retryAllowed && (!Number.isSafeInteger(input.attachmentId) || input.attachmentId < 1))) throw new TypeError("Attachment upload input is invalid");
+  if (target === "release") validateReleaseReference(input, false);
   validateBinding(input.binding);
   validateSignal(input.signal);
   return Object.freeze({
@@ -158,18 +174,25 @@ function parseDownloadInput(target, input) {
   const allowed = target === "comment"
     ? ["attachmentId", "binding", "commentId", "itemKey", "signal", "window"]
     : target === "project" ? ["attachmentId", "binding", "projectKey", "signal", "window"]
-      : target === "resource" ? ["accessToken", "attachmentId", "binding", "projectKey", "resourceId", "signal", "window"] : ["attachmentId", "binding", "itemKey", "signal", "window"];
+      : target === "resource" ? ["accessToken", "attachmentId", "binding", "projectKey", "resourceId", "signal", "window"]
+        : target === "release" ? ["attachmentId", "binding", "releaseId", "signal", "window"] : ["attachmentId", "binding", "itemKey", "signal", "window"];
   exactInput(input, allowed);
+  if (target === "release") validateReleaseReference(input, true);
   validateBinding(input.binding);
   validateSignal(input.signal);
   return Object.freeze({ reference: attachmentReference(target, input, true), binding: input.binding, signal: input.signal, window: input.window });
 }
 
+function validateReleaseReference(value, attachment) {
+  if (!Number.isSafeInteger(value.releaseId) || value.releaseId < 1 || (attachment && (!Number.isSafeInteger(value.attachmentId) || value.attachmentId < 1)) || (!attachment && (!RELEASE_PLATFORMS.has(value.platform) || !RELEASE_ARCHITECTURES.has(value.architecture) || !RELEASE_ARTIFACT_KINDS.has(value.artifactKind)))) throw new TypeError("Release attachment reference is invalid");
+}
+
 function attachmentReference(target, input, includeAttachment) {
   return Object.freeze({
-    ...(["project", "resource"].includes(target) ? { projectKey: input.projectKey } : { itemKey: input.itemKey }),
+    ...(["project", "resource"].includes(target) ? { projectKey: input.projectKey } : target === "release" ? { releaseId: input.releaseId } : { itemKey: input.itemKey }),
     ...(target === "resource" ? { resourceId: input.resourceId, ...(input.accessToken === undefined ? {} : { accessToken: input.accessToken }) } : {}),
     ...(target === "comment" ? { commentId: input.commentId } : {}),
+    ...(target === "release" && !includeAttachment ? { platform: input.platform, architecture: input.architecture, artifactKind: input.artifactKind } : {}),
     ...(includeAttachment ? { attachmentId: input.attachmentId } : {}),
   });
 }

@@ -58,6 +58,11 @@ export const createSystemRelease = apiClient.createSystemRelease;
 export const updateSystemRelease = apiClient.updateSystemRelease;
 export const verifySystemRelease = apiClient.verifySystemRelease;
 export const withdrawSystemRelease = apiClient.withdrawSystemRelease;
+export const createSystemReleaseAsset = apiClient.createSystemReleaseAsset;
+export const getSystemReleaseAssetUploadUrl = apiClient.getSystemReleaseAssetUploadUrl;
+export const markSystemReleaseAssetUploaded = apiClient.markSystemReleaseAssetUploaded;
+export const getSystemReleaseAssetDownloadUrl = apiClient.getSystemReleaseAssetDownloadUrl;
+export const deleteSystemReleaseAsset = apiClient.deleteSystemReleaseAsset;
 export const saveStorageConfig = apiClient.saveStorageConfig;
 export const probeStorageConfig = apiClient.probeStorageConfig;
 export const initializeStorageConfig = apiClient.initializeStorageConfig;
@@ -251,6 +256,11 @@ export const webApi = {
   updateSystemRelease,
   verifySystemRelease,
   withdrawSystemRelease,
+  createSystemReleaseAsset,
+  getSystemReleaseAssetUploadUrl,
+  markSystemReleaseAssetUploaded,
+  getSystemReleaseAssetDownloadUrl,
+  deleteSystemReleaseAsset,
   saveStorageConfig,
   probeStorageConfig,
   initializeStorageConfig,

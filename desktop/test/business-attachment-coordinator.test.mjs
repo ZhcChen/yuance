@@ -50,6 +50,32 @@ test("coordinates resource attachments with scoped resource references", async (
   assert.deepEqual(calls[0], ["attachment.resourcedownloadsign", { projectKey: "YCE", resourceId: 8, attachmentId: 9, accessToken: "grant-token" }]);
 });
 
+test("coordinates release asset upload and download entirely in the main process", async () => {
+  const calls = [];
+  const stages = [];
+  const coordinator = fixture({ calls, release: true, signedAttachment: releaseSignedAttachment("uploaded") });
+  const result = await coordinator.uploadSystemReleaseAsset({ releaseId: 7, platform: "windows", architecture: "x64", artifactKind: "installer", fileCapability: capability, binding, onStage: (stage) => stages.push(stage), signal: undefined });
+  assert.deepEqual(stages, ["registering", "signing", "uploading", "confirming"]);
+  assert.deepEqual(calls[1], ["attachment.releasecreate", { releaseId: 7, platform: "windows", architecture: "x64", artifactKind: "installer", metadata }]);
+  assert.deepEqual(calls[2], ["attachment.releaseuploadsign", { releaseId: 7, attachmentId: 19 }]);
+  assert.deepEqual(calls[5], ["attachment.releaseconfirm", { releaseId: 7, attachmentId: 19 }]);
+  assert.equal(JSON.stringify(result).includes("object_key"), false);
+  calls.length = 0;
+  const downloaded = await coordinator.downloadSystemReleaseAsset({ releaseId: 7, attachmentId: 19, binding, signal: undefined, window: Object.freeze({ id: 1 }) });
+  assert.deepEqual(calls[0], ["attachment.releasedownloadsign", { releaseId: 7, attachmentId: 19 }]);
+  assert.equal(downloaded.status, "completed");
+  assert.equal(JSON.stringify(downloaded).includes("test-storage"), false);
+});
+
+test("rejects invalid release asset references before any transport call", async () => {
+  const calls = [];
+  const coordinator = fixture({ calls, release: true });
+  for (const input of [{ releaseId: 0, platform: "windows", architecture: "x64", artifactKind: "installer" }, { releaseId: 7, platform: "darwin", architecture: "x64", artifactKind: "installer" }, { releaseId: 7, platform: "windows", architecture: "ia32", artifactKind: "installer" }, { releaseId: 7, platform: "windows", architecture: "x64", artifactKind: "binary" }]) {
+    await assert.rejects(coordinator.uploadSystemReleaseAsset({ ...input, fileCapability: capability, binding, onStage: () => {}, signal: undefined }), TypeError);
+  }
+  assert.deepEqual(calls, []);
+});
+
 test("retries a project attachment without creating a duplicate record", async () => {
   const calls = [];
   const stages = [];
@@ -117,14 +143,14 @@ test("rejects download grants for attachments that are not uploaded", async () =
   assert.equal(calls.some(([name]) => name === "download"), false);
 });
 
-function fixture({ calls = [], signedAttachment = attachment("pending"), executeError, revealError = false } = {}) {
+function fixture({ calls = [], signedAttachment = attachment("pending"), executeError, revealError = false, release = false } = {}) {
   const transfer = signedTransfer("upload");
   const restTransport = {
     async execute(name, input) {
       calls.push([name, input]);
       if (executeError?.[0] === name) throw Object.assign(new Error("failed"), { code: executeError[1] });
-      if (name.endsWith("create")) return attachment("pending");
-      if (name.endsWith("confirm")) return attachment("uploaded");
+      if (name.endsWith("create")) return release ? releaseAsset("pending") : attachment("pending");
+      if (name.endsWith("confirm")) return release ? releaseAsset("uploaded") : attachment("uploaded");
       if (name.endsWith("uploadsign")) return { attachment: signedAttachment, transfer };
       if (name.endsWith("downloadsign")) return { attachment: signedAttachment, transfer: signedTransfer("download") };
       throw new Error(`Unexpected operation: ${name}`);
@@ -145,6 +171,14 @@ function fixture({ calls = [], signedAttachment = attachment("pending"), execute
 
 function attachment(status) {
   return Object.freeze({ id: 9, filename: "report.txt", content_type: "text/plain", byte_size: 12, status, created_by: "Alice", created_at: "2026-08-03T00:00:00Z" });
+}
+
+function releaseAsset(status) {
+  return Object.freeze({ id: 19, release_id: 7, platform: "windows", architecture: "x64", artifact_kind: "installer", filename: "report.txt", content_type: "text/plain", byte_size: 12, status, checksum_sha256: "b".repeat(64), created_at: "2026-08-08T00:00:00Z" });
+}
+
+function releaseSignedAttachment(status) {
+  return Object.freeze({ id: 19, filename: "report.txt", content_type: "text/plain", byte_size: 12, status, created_at: "2026-08-08T00:00:00Z" });
 }
 
 function signedTransfer(purpose) {

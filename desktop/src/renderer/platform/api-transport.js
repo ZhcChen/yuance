@@ -162,6 +162,11 @@ function resolveMutationOperation(parsed, method, options) {
     if (body.github_withdrawal_status !== "pending") throw apiError("invalid_request", 400);
     return { operation: "system.releasewithdraw", input: { releaseId: positiveInteger(systemReleaseAction[1]), reason: body.reason } };
   }
+  const systemReleaseAsset = parsed.pathname.match(/^\/api\/v1\/system\/releases\/(\d+)\/assets\/(\d+)$/u);
+  if (systemReleaseAsset && method === "DELETE") {
+    rejectBody(options);
+    return { operation: "system.releaseassetdelete", input: { releaseId: positiveInteger(systemReleaseAsset[1]), assetId: positiveInteger(systemReleaseAsset[2]) } };
+  }
   if (method === "POST" && parsed.pathname === "/api/v1/system/users") {
     const body = parseJsonBody(options, ["display_name", "email", "mobile", "password", "role_code", "username"]);
     return { operation: "system.usercreate", input: renameBody(body, { display_name: "displayName", role_code: "roleCode" }) };

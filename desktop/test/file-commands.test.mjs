@@ -22,10 +22,12 @@ function fixture() {
       uploadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-upload", input]); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       uploadProjectAttachment: async (input) => { calls.push(["project-attachment-upload", input]); input.onStage("registering"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
       uploadProjectResourceAttachment: async (input) => { calls.push(["resource-attachment-upload", input]); input.onStage("registering"); return { created: attachment("pending"), uploaded: attachment("uploaded") }; },
+      uploadSystemReleaseAsset: async (input) => { calls.push(["release-asset-upload", input]); const created = { ...releaseAsset("pending"), object_key: "private/release" }; input.onStage("registering", created); input.onStage("signing"); input.onStage("uploading"); input.onStage("confirming"); return { created, uploaded: { ...releaseAsset("uploaded"), object_key: "private/release" } }; },
       downloadWorkItemAttachment: async (input) => { calls.push(["attachment-download", input]); return { status: "completed", filename: "report.txt", byteSize: 12, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }; },
       downloadWorkItemCommentAttachment: async (input) => { calls.push(["comment-attachment-download", input]); return { status: "cancelled" }; },
       downloadProjectAttachment: async (input) => { calls.push(["project-attachment-download", input]); return { status: "completed", filename: "project.txt", byteSize: 12 }; },
       downloadProjectResourceAttachment: async (input) => { calls.push(["resource-attachment-download", input]); return { status: "completed", filename: "resource.txt", byteSize: 12 }; },
+      downloadSystemReleaseAsset: async (input) => { calls.push(["release-asset-download", input]); return { status: "completed", filename: "desktop.exe", byteSize: 12 }; },
     },
     previewCoordinator: {
       openProjectAttachmentPreview: async (input) => { calls.push(["preview-open", input]); return { capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "application/pdf", byteSize: 12, attachment: attachment("uploaded"), preview: { kind: "document", strategy: "pdf", file_type: "pdf", kind_label: "PDF", is_experimental: false, legacy_preview_enabled: false, content_enabled: true }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }; },
@@ -130,6 +132,25 @@ test("business attachment commands reject injected primitives before coordinator
   assert.equal(value.calls.some(([name]) => name === "attachment-upload"), false);
 });
 
+test("system release asset commands expose fixed public DTOs and reject injected references", async () => {
+  const value = fixture();
+  const operationId = "12345678-1234-4123-8123-123456789abc";
+  const input = { releaseId: 7, platform: "windows", architecture: "x64", artifactKind: "installer", fileCapability: `yfc_${"a".repeat(32)}` };
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.uploadSystemReleaseAsset)(value.event, { operationId, input }), { created: releaseAsset("pending"), uploaded: releaseAsset("uploaded") });
+  assert.deepEqual(await value.handlers.get(FILE_CHANNELS.downloadSystemReleaseAsset)(value.event, { releaseId: 7, attachmentId: 19, suggestedFilename: "ignored.exe" }), { status: "completed", filename: "desktop.exe", byteSize: 12 });
+  const progress = value.calls.filter(([name]) => name === "send");
+  assert.deepEqual(progress.map((entry) => entry[2].stage), ["registering", "signing", "uploading", "confirming"]);
+  assert.equal(JSON.stringify(progress).includes("object_key"), false);
+  for (const invalid of [{ ...input, releaseId: 0 }, { ...input, platform: "darwin" }, { ...input, architecture: "ia32" }, { ...input, artifactKind: "binary" }, { ...input, url: "https://secret" }]) {
+    await assert.rejects(value.handlers.get(FILE_CHANNELS.uploadSystemReleaseAsset)(value.event, { operationId, input: invalid }), (error) => error.code === "file_unavailable");
+  }
+  assert.equal(value.calls.filter(([name]) => name === "release-asset-upload").length, 1);
+});
+
 function attachment(status) {
   return { id: 9, filename: "report.txt", content_type: "text/plain", byte_size: 12, status, created_by: "Alice", created_at: "2026-08-03T00:00:00Z" };
+}
+
+function releaseAsset(status) {
+  return { id: 19, release_id: 7, platform: "windows", architecture: "x64", artifact_kind: "installer", filename: "desktop.exe", content_type: "application/octet-stream", byte_size: 12, status, checksum_sha256: "a".repeat(64), created_at: "2026-08-08T00:00:00Z" };
 }

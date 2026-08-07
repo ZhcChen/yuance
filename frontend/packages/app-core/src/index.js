@@ -46,3 +46,4 @@ export {
   uploadProjectResourceAttachment,
 } from './work-item-collaboration.js';
 export { createProjectResourceWithAttachments } from './project-resource-creation.js';
+export { downloadSystemReleaseAsset, uploadSystemReleaseAsset } from './system-release-assets.js';

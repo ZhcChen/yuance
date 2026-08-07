@@ -4,6 +4,7 @@
 /** @typedef {import('./files.js').FileCapabilities} FileCapabilities */
 /** @typedef {import('./files.js').FileCapability} FileCapability */
 /** @typedef {import('./files.js').HostDelegatedAttachmentCapabilities} HostDelegatedAttachmentCapabilities */
+/** @typedef {import('./files.js').HostDelegatedReleaseAssetCapabilities} HostDelegatedReleaseAssetCapabilities */
 /** @typedef {import('./files.js').RevealDownloadCapability} RevealDownloadCapability */
 /** @typedef {import('./files.js').SelectedFile} SelectedFile */
 /** @typedef {import('./files.js').SignedTransferCapability} SignedTransferCapability */
@@ -18,6 +19,7 @@ export {
   defineFileCapabilities,
   defineHostDelegatedAttachmentCapabilities,
   defineHostDelegatedFileCapabilities,
+  defineHostDelegatedReleaseAssetCapabilities,
   defineTransferCapabilities,
 } from './files.js';
 export { definePlatformCapabilities, defineStatusCapabilities } from './platform.js';

@@ -26,6 +26,7 @@ import {
   downloadProjectResourceAttachment as downloadProjectResourceAttachmentUseCase,
   downloadWorkItemAttachment as downloadWorkItemAttachmentUseCase,
   downloadWorkItemCommentAttachment as downloadWorkItemCommentAttachmentUseCase,
+  downloadSystemReleaseAsset as downloadSystemReleaseAssetUseCase,
   handoffWorkItem as handoffWorkItemUseCase,
   notificationTargetPath,
   routePathForOwner,
@@ -34,6 +35,7 @@ import {
   uploadWorkItemCommentAttachment,
   uploadProjectAttachment,
   uploadProjectResourceAttachment,
+  uploadSystemReleaseAsset,
 } from '@yuance/frontend-app-core';
 import {
   AttachmentList,
@@ -63,7 +65,7 @@ import { errorMessage } from './errors.js';
 /** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
 
 /** @typedef {ReturnType<typeof import('@yuance/frontend-api-client').createApiClient> & { restorePendingReturnToHash(): void }} AppApiService */
-/** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities }} AppFileService */
+/** @typedef {Pick<import('@yuance/frontend-platform-contract').PlatformCapabilities, 'files' | 'downloads' | 'transfers'> & { attachments?: import('@yuance/frontend-platform-contract').HostDelegatedAttachmentCapabilities, releaseAssets?: import('@yuance/frontend-platform-contract').HostDelegatedReleaseAssetCapabilities }} AppFileService */
 /** @typedef {import('@yuance/frontend-platform-contract').RouterCapabilities & { assign(path: string): void, currentRoute(): ReturnType<typeof import('@yuance/frontend-app-core').parseAppRoute>, setTitle(title: string): void, subscribe(callback: () => void): () => void }} AppRouterService */
 
 /**
@@ -791,7 +793,12 @@ export function SharedApp({ services }) {
   const [systemReleaseConfirmation, setSystemReleaseConfirmation] = useState(/** @type {{ kind: 'publish' | 'verify' | 'withdraw', release: any, reason?: string } | null} */ (null));
   const [systemReleaseSubmitting, setSystemReleaseSubmitting] = useState(false);
   const [systemReleaseError, setSystemReleaseError] = useState('');
+  const [systemReleaseAssetForm, setSystemReleaseAssetForm] = useState({ platform: 'windows', architecture: 'x64', artifactKind: 'installer' });
+  const [systemReleaseAssetStage, setSystemReleaseAssetStage] = useState('');
+  const [systemReleaseAssetDownloadingId, setSystemReleaseAssetDownloadingId] = useState(/** @type {number | null} */ (null));
+  const [systemReleaseAssetDeleteTarget, setSystemReleaseAssetDeleteTarget] = useState(/** @type {any | null} */ (null));
   const systemReleaseMutationRef = useRef(false);
+  const systemReleaseAssetGenerationRef = useRef(0);
   const [systemStorageEditOpen, setSystemStorageEditOpen] = useState(false);
   const [systemStorageForm, setSystemStorageForm] = useState({ endpoint: '', region: '', bucket: '', accessKeyId: '', accessKeySecret: '' });
   const [systemStorageConfirmation, setSystemStorageConfirmation] = useState(/** @type {{ kind: 'save', payload: any } | { kind: 'initialize' } | { kind: 'rollback', version: number, bucket: string } | null} */ (null));
@@ -2087,6 +2094,62 @@ export function SharedApp({ services }) {
     }
     const completed = await runSystemReleaseMutation(action, message);
     if (completed) setSystemReleaseConfirmation(null);
+  }
+
+  async function uploadSelectedSystemReleaseAsset() {
+    const releaseId = systemReleaseEditor?.mode === 'edit' ? systemReleaseEditor.releaseId : undefined;
+    if (!releaseId || systemReleaseSubmitting) return;
+    setSystemReleaseError('');
+    let file;
+    try { file = await files.files.chooseFile(); }
+    catch (caught) { setSystemReleaseError(errorMessage(caught instanceof Error ? caught : new Error('文件选择失败。'))); return; }
+    if (!file) return;
+    const generation = ++systemReleaseAssetGenerationRef.current;
+    systemReleaseMutationRef.current = true;
+    setSystemReleaseSubmitting(true);
+    setSystemReleaseAssetStage('registering');
+    try {
+      const result = await uploadSystemReleaseAsset({
+        api, platform: files, releaseId, platformName: systemReleaseAssetForm.platform,
+        architecture: systemReleaseAssetForm.architecture, artifactKind: systemReleaseAssetForm.artifactKind, file,
+        lifecycle: {
+          isCurrent: () => generation === systemReleaseAssetGenerationRef.current && routeRef.current.id === 'system-releases',
+          onStage: setSystemReleaseAssetStage,
+          onCreated() {}, onUploaded() {}, refresh: refreshSystemReleasesAfterMutation,
+        },
+      });
+      if (result.completed) setStatusMessage(`${file.filename} 已上传。`);
+      if (result.refreshError) setSystemReleaseError(`文件已上传，但发布工作台刷新失败：${errorMessage(result.refreshError instanceof Error ? result.refreshError : new Error('刷新失败。'))}`);
+    } catch (caught) {
+      setSystemReleaseError(errorMessage(caught instanceof Error ? caught : new Error('版本资产上传失败。')));
+      try { await refreshSystemReleasesAfterMutation(); }
+      catch (_refreshError) { /* 原上传错误优先展示。 */ }
+    } finally {
+      if (generation === systemReleaseAssetGenerationRef.current) {
+        systemReleaseMutationRef.current = false;
+        setSystemReleaseSubmitting(false);
+        setSystemReleaseAssetStage('');
+      }
+    }
+  }
+
+  async function downloadSystemReleaseAsset(asset) {
+    if (systemReleaseAssetDownloadingId !== null) return;
+    const generation = systemReleaseAssetGenerationRef.current;
+    setSystemReleaseAssetDownloadingId(asset.id);
+    setSystemReleaseError('');
+    try {
+      const result = await downloadSystemReleaseAssetUseCase({ api, platform: files, releaseId: asset.release_id, assetId: asset.id, suggestedFilename: asset.filename, isCurrent: () => generation === systemReleaseAssetGenerationRef.current && routeRef.current.id === 'system-releases' });
+      if (result.status === 'completed') setStatusMessage(`${asset.filename} 下载已开始。`);
+    } catch (caught) { setSystemReleaseError(errorMessage(caught instanceof Error ? caught : new Error('版本资产下载失败。'))); }
+    finally { setSystemReleaseAssetDownloadingId(null); }
+  }
+
+  async function deleteSystemReleaseAsset() {
+    const asset = systemReleaseAssetDeleteTarget;
+    if (!asset) return;
+    const completed = await runSystemReleaseMutation(() => api.deleteSystemReleaseAsset(asset.release_id, asset.id), `${asset.filename} 已删除。`);
+    if (completed) setSystemReleaseAssetDeleteTarget(null);
   }
 
   async function runSystemStorageMutation(action, successMessage) {
@@ -4479,7 +4542,7 @@ export function SharedApp({ services }) {
               </section>
               <section aria-labelledby="system-release-assets-title">
                 <div className="shell-panel-header"><div><h3 id="system-release-assets-title">版本资产</h3></div></div>
-                <DataTable caption="系统版本资产" rows={(systemReleasesView?.items || []).flatMap((item) => item.assets.map((asset) => ({ ...asset, version_name: item.release.version_name })))} rowKey={(item) => item.id} emptyText="当前页版本暂无资产。" columns={[
+                <DataTable caption="系统版本资产" rows={(systemReleasesView?.items || []).flatMap((item) => item.assets.map((asset) => ({ ...asset, version_name: item.release.version_name, release_status: item.release.status })))} rowKey={(item) => item.id} emptyText="当前页版本暂无资产。" columns={[
                   { key: 'version', label: '版本', render: (item) => item.version_name },
                   { key: 'platform', label: '平台', render: (item) => `${item.platform} · ${item.architecture}` },
                   { key: 'filename', label: '文件', render: (item) => <><strong>{item.filename}</strong><br /><span className="shell-muted">{item.content_type}</span></> },
@@ -4487,6 +4550,7 @@ export function SharedApp({ services }) {
                   { key: 'size', label: '字节数', render: (item) => item.byte_size.toLocaleString() },
                   { key: 'status', label: '状态', render: (item) => item.status },
                   { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) },
+                  { key: 'actions', label: '操作', render: (item) => <div className="shell-actions-inline">{item.status === 'uploaded' ? <Button variant="secondary" loading={systemReleaseAssetDownloadingId === item.id} disabled={systemReleaseAssetDownloadingId !== null || systemReleaseSubmitting} onClick={() => void downloadSystemReleaseAsset(item)}>下载</Button> : null}{systemReleasesView?.can_manage_releases && item.release_status === 'draft' ? <Button variant="danger" disabled={systemReleaseSubmitting || systemReleaseAssetDownloadingId !== null} onClick={() => setSystemReleaseAssetDeleteTarget(item)}>删除</Button> : null}</div> },
                 ]} />
               </section>
               {systemReleasesView ? <div className="shell-panel-header"><Pagination page={systemReleasesView.pagination.page} totalPages={systemReleasesView.pagination.total_pages} totalItems={systemReleasesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemReleasesPath({ owner: route.owner, page, perPage: systemReleasesView.pagination.per_page }), `正在加载第 ${page} 页版本。`)} /><label className="shell-page-size">每页<select value={systemReleasesView.pagination.per_page} onChange={(event) => navigate(buildSystemReleasesPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
@@ -4504,12 +4568,23 @@ export function SharedApp({ services }) {
                   </> : null}
                   {systemReleaseError ? <Feedback tone="danger" title="版本保存失败">{systemReleaseError}</Feedback> : null}
                 </form>
+                {systemReleaseEditor?.mode === 'edit' ? <section aria-labelledby="system-release-upload-title">
+                  <div className="shell-panel-header"><div><h3 id="system-release-upload-title">版本资产</h3><p className="shell-muted">选择资产坐标后由当前宿主安全上传。</p></div></div>
+                  <div className="shell-actions-inline">
+                    <Field id="system-release-asset-platform" label="平台"><select value={systemReleaseAssetForm.platform} onChange={(event) => setSystemReleaseAssetForm((current) => ({ ...current, platform: event.target.value }))}><option value="windows">Windows</option><option value="macos">macOS</option><option value="linux">Linux</option><option value="android">Android</option><option value="ios">iOS</option></select></Field>
+                    <Field id="system-release-asset-architecture" label="架构"><select value={systemReleaseAssetForm.architecture} onChange={(event) => setSystemReleaseAssetForm((current) => ({ ...current, architecture: event.target.value }))}><option value="x64">x64</option><option value="arm64">ARM64</option><option value="universal">通用</option></select></Field>
+                    <Field id="system-release-asset-kind" label="资产类型"><select value={systemReleaseAssetForm.artifactKind} onChange={(event) => setSystemReleaseAssetForm((current) => ({ ...current, artifactKind: event.target.value }))}><option value="installer">安装包</option><option value="signature">签名</option><option value="sbom">SBOM</option><option value="manifest">Manifest</option><option value="checksums">Checksums</option></select></Field>
+                    <Button type="button" variant="secondary" loading={systemReleaseSubmitting} onClick={() => void uploadSelectedSystemReleaseAsset()}>选择并上传</Button>
+                  </div>
+                  {systemReleaseAssetStage ? <p role="status" className="shell-muted">上传阶段：{systemReleaseAssetStage}</p> : null}
+                </section> : null}
               </Modal>
               <Modal open={Boolean(systemReleaseConfirmation)} title={systemReleaseConfirmation?.kind === 'publish' ? '发布版本' : systemReleaseConfirmation?.kind === 'verify' ? '校验内部版本' : '撤回版本'} onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseConfirmation(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation(null)}>取消</Button><Button variant={systemReleaseConfirmation?.kind === 'withdraw' ? 'danger' : 'primary'} loading={systemReleaseSubmitting} disabled={systemReleaseConfirmation?.kind === 'withdraw' && !systemReleaseConfirmation.reason?.trim()} onClick={() => void confirmSystemReleaseAction()}>确认</Button></>}>
                 <p>{systemReleaseConfirmation?.kind === 'publish' ? `确认发布 ${systemReleaseConfirmation.release.version_name}？发布后版本元数据和资产不可修改。` : systemReleaseConfirmation?.kind === 'verify' ? `确认校验 ${systemReleaseConfirmation.release.version_name} 的平台资产、签名和供应链证据？` : `确认撤回 ${systemReleaseConfirmation?.release.version_name || ''}？下载入口将立即失效。`}</p>
                 {systemReleaseConfirmation?.kind === 'withdraw' ? <Field id="system-release-withdraw-reason" label="撤回原因" required><textarea required rows={4} value={systemReleaseConfirmation.reason || ''} onChange={(event) => setSystemReleaseConfirmation((current) => current ? { ...current, reason: event.target.value } : current)} /></Field> : null}
                 {systemReleaseError ? <Feedback tone="danger" title="操作失败">{systemReleaseError}</Feedback> : null}
               </Modal>
+              <Modal open={Boolean(systemReleaseAssetDeleteTarget)} title="删除版本资产" onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseAssetDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseAssetDeleteTarget(null)}>取消</Button><Button variant="danger" loading={systemReleaseSubmitting} onClick={() => void deleteSystemReleaseAsset()}>确认删除</Button></>}><p>确认删除 {systemReleaseAssetDeleteTarget?.filename || ''}？对象存储中的文件也会被删除。</p></Modal>
             </section>
           ) : route.id === 'system-storage' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-storage-title">

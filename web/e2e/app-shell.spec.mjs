@@ -2459,6 +2459,52 @@ test('shared system release management preserves state transitions, locks, and f
   ]);
 });
 
+test('shared system release assets complete browser upload download and confirmed deletion', async ({ page }) => {
+  const requests = [];
+  const release = { id: 7, version_name: 'v2.3.0', title: '资产生命周期', notes: 'Browser 直传', status: 'draft', channel: 'internal', verification_status: 'pending', manifest_sha256: 'a'.repeat(64), signing_key_id: 'release-key-1', source_commit: 'b'.repeat(40), source_tag: 'desktop-v2.3.0', published_at: '', verified_at: '', withdrawn_at: '', withdrawal_reason: '', github_withdrawal_status: '', created_by: '发布管理员', updated_by: '发布管理员', created_at: '2026-08-08T00:00:00Z', updated_at: '2026-08-08T01:00:00Z', asset_count: 0, platform_count: 0 };
+  const assets = [];
+  const view = () => ({ settings: { retention_count: 5, updated_by: '发布管理员', updated_at: '2026-08-08T01:00:00Z' }, items: [{ release: { ...release, asset_count: assets.length, platform_count: new Set(assets.map((asset) => asset.platform)).size }, assets: [...assets] }], pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, can_manage_releases: true });
+  await page.route('**/api/v1/system/releases-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) }));
+  await page.route('**/api/v1/system/releases/7/assets', async (route) => {
+    const body = route.request().postDataJSON();
+    requests.push(['create', body]);
+    const asset = { id: 19, release_id: 7, platform: body.platform, architecture: body.architecture, artifact_kind: body.artifact_kind, filename: body.original_filename, content_type: body.content_type, byte_size: body.byte_size, status: 'pending', checksum_sha256: body.checksum_sha256, created_at: '2026-08-08T02:00:00Z' };
+    assets.push(asset);
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: asset }) });
+  });
+  await page.route('**/api/v1/system/releases/7/assets/19/upload-url*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: { id: 19, file_object_id: 99, object_key: 'private/release', filename: 'desktop.exe', content_type: 'application/octet-stream', byte_size: 12, status: 'pending', created_by: '', created_at: '2026-08-08T02:00:00Z' }, request: { method: 'PUT', url: '/e2e-release-upload', headers: [['content-type', 'application/octet-stream']] }, expires_in_seconds: 60, expires_at: new Date(Date.now() + 60_000).toISOString(), checksum_sha256: '' } }) }));
+  await page.route('**/e2e-release-upload', async (route) => { requests.push(['upload', route.request().method(), route.request().postDataBuffer()?.length]); await route.fulfill({ status: 200, body: '' }); });
+  await page.route('**/api/v1/system/releases/7/assets/19/uploaded', async (route) => { requests.push(['confirm']); assets[0] = { ...assets[0], status: 'uploaded' }; await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: assets[0] }) }); });
+  await page.route('**/api/v1/system/releases/7/assets/19/download-url*', (route) => { requests.push(['download-sign']); return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment: { id: 19, file_object_id: 99, object_key: 'private/release', filename: 'desktop.exe', content_type: 'application/octet-stream', byte_size: 12, status: 'uploaded', created_by: '', created_at: '2026-08-08T02:00:00Z' }, request: { method: 'GET', url: '/e2e-release-download', headers: [] }, expires_in_seconds: 60, expires_at: new Date(Date.now() + 60_000).toISOString(), checksum_sha256: assets[0].checksum_sha256 } }) }); });
+  await page.route('**/e2e-release-download', (route) => route.fulfill({ status: 200, contentType: 'application/octet-stream', body: 'desktop-data' }));
+  await page.route('**/api/v1/system/releases/7/assets/19', async (route) => { requests.push(['delete']); const deleted = assets.shift(); await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: deleted }) }); });
+
+  await login(page, '/web/app/system/releases');
+  await page.getByRole('row').filter({ hasText: 'v2.3.0' }).getByRole('button', { name: '编辑' }).click();
+  const editor = page.getByRole('dialog', { name: '编辑版本草稿' });
+  await editor.getByLabel('平台').selectOption('windows');
+  await editor.getByLabel('架构').selectOption('x64');
+  await editor.getByLabel('资产类型').selectOption('installer');
+  await chooseFile(page, editor.getByRole('button', { name: '选择并上传' }), { name: 'desktop.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('desktopdata') });
+  await expect(page.locator('p.shell-live-region[role="status"]')).toHaveText('desktop.exe 已上传。');
+  await editor.getByRole('button', { name: '取消' }).click();
+  const assetRow = page.getByRole('row').filter({ hasText: 'desktop.exe' });
+  await expect(assetRow).toContainText('uploaded');
+  const popupPromise = page.waitForEvent('popup');
+  await assetRow.getByRole('button', { name: '下载' }).click();
+  const popup = await popupPromise;
+  await popup.close();
+  await expect(page.locator('p.shell-live-region[role="status"]')).toHaveText('desktop.exe 下载已开始。');
+  await assetRow.getByRole('button', { name: '删除' }).click();
+  const deletion = page.getByRole('dialog', { name: '删除版本资产' });
+  await expect(deletion).toContainText('desktop.exe');
+  await deletion.getByRole('button', { name: '确认删除' }).click();
+  await expect(page.getByRole('table', { name: '系统版本资产' })).toContainText('当前页版本暂无资产。');
+  expect(requests.map(([kind]) => kind)).toEqual(['create', 'upload', 'confirm', 'download-sign', 'delete']);
+  expect(requests[0][1]).toMatchObject({ platform: 'windows', architecture: 'x64', artifact_kind: 'installer', original_filename: 'desktop.exe', byte_size: 11 });
+  expect(requests[0][1].checksum_sha256).toMatch(/^[0-9a-f]{64}$/u);
+});
+
 test('shared system storage mutations preserve confirmation lock and final refresh semantics', async ({ page }) => {
   const mutations = [];
   let version = 3;

@@ -55,6 +55,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.releaseupdate", systemReleaseUpdateOperation],
     ["system.releaseverify", systemReleaseVerifyOperation],
     ["system.releasewithdraw", systemReleaseWithdrawOperation],
+    ["system.releaseassetdelete", systemReleaseAssetDeleteOperation],
     ["system.storagesave", systemStorageSaveOperation],
     ["system.storageprobe", noInputOperation("POST", "/api/v1/storage/config/probe", parseStorageProbe, false)],
     ["system.storageinitialize", noInputOperation("POST", "/api/v1/storage/config/initialize", parseStorageInitialize, false)],
@@ -503,6 +504,11 @@ function systemReleaseWithdrawOperation(input) {
   return descriptor("POST", `/api/v1/system/releases/${positiveInteger(input.releaseId)}/withdraw`, parseSystemReleaseMutationDetail, false, "object", jsonBody({
     reason: boundedRequiredText(input.reason, "reason", 2000), github_withdrawal_status: "pending",
   }));
+}
+
+function systemReleaseAssetDeleteOperation(input) {
+  exactKeys(input, ["assetId", "releaseId"]);
+  return descriptor("DELETE", `/api/v1/system/releases/${positiveInteger(input.releaseId)}/assets/${positiveInteger(input.assetId)}`, parseSystemReleaseMutationAsset, false);
 }
 
 function systemStorageSaveOperation(input) {

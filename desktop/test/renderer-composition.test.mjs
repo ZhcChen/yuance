@@ -155,10 +155,12 @@ test("desktop app file adapter delegates business attachments and rejects signed
     uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadProjectAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadProjectResourceAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadSystemReleaseAsset: async () => ({ created: releaseAsset("pending"), uploaded: releaseAsset("uploaded") }),
     downloadWorkItemAttachment: async () => ({ status: "completed", filename: "a.txt", byteSize: 1, revealCapability: `yrd_${"b".repeat(32)}`, path: "/secret" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
     downloadProjectAttachment: async () => ({ status: "cancelled" }),
     downloadProjectResourceAttachment: async () => ({ status: "cancelled" }),
+    downloadSystemReleaseAsset: async () => ({ status: "cancelled" }),
     openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: `app://yuance/.preview/ypv_${"c".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
     openWorkItemAttachmentPreview: async () => ({ capability: `ypv_${"e".repeat(32)}`, source: `app://yuance/.preview/ypv_${"e".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
     openWorkItemCommentAttachmentPreview: async () => ({ capability: `ypv_${"f".repeat(32)}`, source: `app://yuance/.preview/ypv_${"f".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image", file_type: "png" }, navigation: { position: 1, total: 1, previous: null, next: null }, privatePath: "/secret" }),
@@ -204,10 +206,12 @@ test("desktop preview adapter rejects a content source that is not bound to its 
     uploadWorkItemCommentAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadProjectAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
     uploadProjectResourceAttachment: async () => ({ created: attachment("pending"), uploaded: attachment("uploaded") }),
+    uploadSystemReleaseAsset: async () => ({ created: releaseAsset("pending"), uploaded: releaseAsset("uploaded") }),
     downloadWorkItemAttachment: async () => ({ status: "cancelled" }),
     downloadWorkItemCommentAttachment: async () => ({ status: "cancelled" }),
     downloadProjectAttachment: async () => ({ status: "cancelled" }),
     downloadProjectResourceAttachment: async () => ({ status: "cancelled" }),
+    downloadSystemReleaseAsset: async () => ({ status: "cancelled" }),
     openProjectAttachmentPreview: async () => ({ capability: `ypv_${"c".repeat(32)}`, source: "https://example.test/private", contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
     openWorkItemAttachmentPreview: async () => ({ capability: `ypv_${"e".repeat(32)}`, source: `app://yuance/.preview/ypv_${"e".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
     openWorkItemCommentAttachmentPreview: async () => ({ capability: `ypv_${"f".repeat(32)}`, source: `app://yuance/.preview/ypv_${"f".repeat(32)}`, contentType: "image/png", byteSize: 1, attachment: attachment("uploaded"), preview: { kind: "image" }, navigation: {} }),
@@ -220,6 +224,10 @@ test("desktop preview adapter rejects a content source that is not bound to its 
 
 function attachment(status) {
   return { id: 9, filename: "a.txt", content_type: "text/plain", byte_size: 1, status, created_by: "Alice", created_at: "2026-08-03T00:00:00Z" };
+}
+
+function releaseAsset(status) {
+  return { id: 19, release_id: 7, platform: "windows", architecture: "x64", artifact_kind: "installer", filename: "desktop.exe", content_type: "application/octet-stream", byte_size: 1, status, checksum_sha256: "a".repeat(64), created_at: "2026-08-08T00:00:00Z" };
 }
 
 test("renderer composition uses shared components and contracts without Browser transports", async () => {

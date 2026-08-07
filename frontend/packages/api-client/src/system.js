@@ -6,7 +6,8 @@
 /** @typedef {{ username: string, displayName: string, email?: string, mobile?: string, password: string, roleCode: string }} CreateSystemUserPayload */
 /** @typedef {{ endpoint: string, region: string, bucket: string, accessKeyId: string, accessKeySecret: string, activate: boolean }} SaveStorageConfigPayload */
 /** @typedef {{ versionName: string, title?: string, notes?: string, channel?: string, manifestSha256?: string, signingKeyId?: string, sourceCommit?: string, sourceTag?: string }} CreateSystemReleasePayload */
-/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, getSystemStorageView(query?: SystemUsersQuery): Promise<any>, getSystemReleasesView(query?: SystemUsersQuery): Promise<any>, updateSystemReleaseSettings(retentionCount: number): Promise<any>, createSystemRelease(payload: CreateSystemReleasePayload): Promise<any>, updateSystemRelease(releaseId: number, payload: { versionName: string, title?: string, notes?: string, publish?: boolean }): Promise<any>, verifySystemRelease(releaseId: number): Promise<any>, withdrawSystemRelease(releaseId: number, reason: string): Promise<any>, saveStorageConfig(payload: SaveStorageConfigPayload): Promise<any>, probeStorageConfig(): Promise<any>, initializeStorageConfig(): Promise<any>, rollbackStorageConfig(version: number): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
+/** @typedef {{ platform: string, architecture: string, artifactKind: string, originalFilename: string, contentType: string, byteSize: number, checksumSha256?: string }} CreateSystemReleaseAssetPayload */
+/** @typedef {{ getSystemDashboard(): Promise<SystemDashboard>, getSystemUsersView(query?: SystemUsersQuery): Promise<any>, getSystemRolesView(query?: { role?: string, page?: number, perPage?: number }): Promise<any>, getSystemStorageView(query?: SystemUsersQuery): Promise<any>, getSystemReleasesView(query?: SystemUsersQuery): Promise<any>, updateSystemReleaseSettings(retentionCount: number): Promise<any>, createSystemRelease(payload: CreateSystemReleasePayload): Promise<any>, updateSystemRelease(releaseId: number, payload: { versionName: string, title?: string, notes?: string, publish?: boolean }): Promise<any>, verifySystemRelease(releaseId: number): Promise<any>, withdrawSystemRelease(releaseId: number, reason: string): Promise<any>, createSystemReleaseAsset(releaseId: number, payload: CreateSystemReleaseAssetPayload): Promise<any>, getSystemReleaseAssetUploadUrl(releaseId: number, assetId: number): Promise<any>, markSystemReleaseAssetUploaded(releaseId: number, assetId: number): Promise<any>, getSystemReleaseAssetDownloadUrl(releaseId: number, assetId: number): Promise<any>, deleteSystemReleaseAsset(releaseId: number, assetId: number): Promise<any>, saveStorageConfig(payload: SaveStorageConfigPayload): Promise<any>, probeStorageConfig(): Promise<any>, initializeStorageConfig(): Promise<any>, rollbackStorageConfig(version: number): Promise<any>, createSystemRole(roleCode: string, roleName: string, dataScopeType: string): Promise<any>, updateSystemRoleStatus(roleCode: string, status: string): Promise<any>, updateSystemRolePermissions(roleCode: string, permissionKeys: string[]): Promise<any>, createSystemUser(payload: CreateSystemUserPayload): Promise<any>, updateSystemUserStatus(username: string, status: string): Promise<any>, updateSystemUserRole(username: string, roleCode: string): Promise<any>, resetSystemUserPassword(username: string, password: string): Promise<any>, assignSystemUserProjects(username: string, projectKeys: string[], memberRole: string): Promise<any>, removeSystemUserProjects(username: string, projectKeys: string[]): Promise<any>, removeSystemUserProject(username: string, projectKey: string): Promise<any>, updateSystemUserProjectRole(username: string, projectKey: string, memberRole: string): Promise<any> }} SystemClient */
 
 /**
  * @param {{ request: (url: string, options?: { method?: string, headers?: Record<string, string>, body?: string }) => Promise<any>, prepareWrite?: () => Promise<void> }} dependencies
@@ -73,6 +74,25 @@ export function createSystemClient({ request, prepareWrite = async () => {} }) {
     withdrawSystemRelease(releaseId, reason) {
       return write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/withdraw`, 'POST', { reason, github_withdrawal_status: 'pending' });
     },
+    async createSystemReleaseAsset(releaseId, payload) {
+      return publicReleaseAsset(await write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/assets`, 'POST', {
+        platform: payload.platform, architecture: payload.architecture, artifact_kind: payload.artifactKind,
+        original_filename: payload.originalFilename, content_type: payload.contentType, byte_size: payload.byteSize,
+        checksum_sha256: payload.checksumSha256 || '',
+      }));
+    },
+    async getSystemReleaseAssetUploadUrl(releaseId, assetId) {
+      return signedReleaseAsset(await request(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/assets/${encodeURIComponent(String(assetId))}/upload-url?expires_in_seconds=60`));
+    },
+    async markSystemReleaseAssetUploaded(releaseId, assetId) {
+      return publicReleaseAsset(await write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/assets/${encodeURIComponent(String(assetId))}/uploaded`, 'POST'));
+    },
+    async getSystemReleaseAssetDownloadUrl(releaseId, assetId) {
+      return signedReleaseAsset(await request(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/assets/${encodeURIComponent(String(assetId))}/download-url?expires_in_seconds=60`));
+    },
+    async deleteSystemReleaseAsset(releaseId, assetId) {
+      return publicReleaseAsset(await write(`/api/v1/system/releases/${encodeURIComponent(String(releaseId))}/assets/${encodeURIComponent(String(assetId))}`, 'DELETE'));
+    },
     saveStorageConfig(payload) {
       return write('/api/v1/storage/config', 'POST', {
         endpoint: payload.endpoint,
@@ -129,4 +149,29 @@ export function createSystemClient({ request, prepareWrite = async () => {} }) {
       return write(`/api/v1/system/users/${encodeURIComponent(username)}/projects/${encodeURIComponent(projectKey)}/role`, 'PATCH', { member_role: memberRole });
     },
   };
+}
+
+function publicReleaseAsset(value) {
+  if (!value || typeof value !== 'object') throw new TypeError('system release asset is invalid');
+  return Object.freeze({
+    id: value.id, release_id: value.release_id, platform: value.platform, architecture: value.architecture,
+    artifact_kind: value.artifact_kind, filename: value.filename, content_type: value.content_type,
+    byte_size: value.byte_size, status: value.status, checksum_sha256: value.checksum_sha256, created_at: value.created_at,
+  });
+}
+
+function signedReleaseAsset(value) {
+  if (!value || typeof value !== 'object') throw new TypeError('signed system release asset is invalid');
+  return Object.freeze({
+    attachment: signedReleaseAssetAttachment(value.attachment),
+    request: value.request, expires_in_seconds: value.expires_in_seconds, expires_at: value.expires_at, checksum_sha256: value.checksum_sha256,
+  });
+}
+
+function signedReleaseAssetAttachment(value) {
+  if (!value || typeof value !== 'object') throw new TypeError('signed system release asset attachment is invalid');
+  return Object.freeze({
+    id: value.id, filename: value.filename, content_type: value.content_type,
+    byte_size: value.byte_size, status: value.status, created_at: value.created_at,
+  });
 }

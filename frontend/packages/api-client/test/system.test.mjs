@@ -77,6 +77,22 @@ test('system release mutations use fixed JSON contracts after write preparation'
   ]);
 });
 
+test('system release asset lifecycle uses fixed routes and strips private signed fields', async () => {
+  const calls = [];
+  const asset = { id: 19, release_id: 7, file_object_id: 11, object_key: 'private/release', platform: 'windows', architecture: 'x64', artifact_kind: 'installer', filename: 'desktop.exe', content_type: 'application/octet-stream', byte_size: 12, status: 'pending', checksum_sha256: 'a'.repeat(64), created_at: '2026-08-08T00:00:00Z' };
+  const signed = { attachment: { id: 19, file_object_id: 11, object_key: 'private/release', filename: 'desktop.exe', content_type: 'application/octet-stream', byte_size: 12, status: 'pending', created_by: '', created_at: asset.created_at }, request: { method: 'PUT', url: '/private', headers: [] }, expires_in_seconds: 60, expires_at: asset.created_at, checksum_sha256: 'a'.repeat(64) };
+  const client = createSystemClient({ prepareWrite: async () => { calls.push(['prepare']); }, request: async (url, options) => { calls.push([url, options]); if (url.includes('upload-url') || url.includes('download-url')) return signed; return asset; } });
+  const created = await client.createSystemReleaseAsset(7, { platform: 'windows', architecture: 'x64', artifactKind: 'installer', originalFilename: 'desktop.exe', contentType: 'application/octet-stream', byteSize: 12, checksumSha256: 'a'.repeat(64) });
+  const upload = await client.getSystemReleaseAssetUploadUrl(7, 19);
+  await client.markSystemReleaseAssetUploaded(7, 19);
+  await client.getSystemReleaseAssetDownloadUrl(7, 19);
+  await client.deleteSystemReleaseAsset(7, 19);
+  assert.equal(JSON.stringify(created).includes('object_key'), false);
+  assert.deepEqual(Object.keys(upload.attachment).sort(), ['byte_size', 'content_type', 'created_at', 'filename', 'id', 'status']);
+  assert.equal(JSON.stringify(upload.attachment).includes('file_object_id'), false);
+  assert.deepEqual(calls.map((entry) => entry[0]), ['prepare', '/api/v1/system/releases/7/assets', '/api/v1/system/releases/7/assets/19/upload-url?expires_in_seconds=60', 'prepare', '/api/v1/system/releases/7/assets/19/uploaded', '/api/v1/system/releases/7/assets/19/download-url?expires_in_seconds=60', 'prepare', '/api/v1/system/releases/7/assets/19']);
+});
+
 test('system storage mutations use fixed JSON contracts after write preparation', async () => {
   const calls = [];
   const client = createSystemClient({
