@@ -32,7 +32,6 @@ button:disabled {
 
 .app-shell {
   min-height: 100vh;
-  padding: 24px;
 }
 
 .app-topbar,
@@ -47,6 +46,20 @@ button:disabled {
   max-width: 1200px;
   margin: 0 auto;
 }
+
+.shell-header,
+.shell-grid,
+.shell-columns,
+.shell-banner,
+.message-center,
+.project-center,
+.work-item-center,
+.work-item-detail-center,
+.shell-loading {
+  width: min(1200px, calc(100% - 48px));
+}
+
+.shell-header { padding-top: 24px; }
 
 .app-topbar {
   display: flex;
@@ -582,4 +595,49 @@ h2 {
     justify-content: flex-start;
     flex-wrap: wrap;
   }
+}
+
+html[data-theme="dark"] .shell-card,
+html[data-theme="dark"] .shell-loading,
+html[data-theme="dark"] .shell-banner,
+html[data-theme="dark"] .message-center,
+html[data-theme="dark"] .project-center,
+html[data-theme="dark"] .work-item-center,
+html[data-theme="dark"] .work-item-detail-center {
+  border-color: var(--yc-line);
+  background: var(--yc-panel);
+  color: var(--yc-text);
+  box-shadow: var(--yc-shadow-soft);
+}
+
+html[data-theme="dark"] .shell-subtitle,
+html[data-theme="dark"] .shell-muted,
+html[data-theme="dark"] .shell-meta,
+html[data-theme="dark"] .shell-empty,
+html[data-theme="dark"] .shell-copy,
+html[data-theme="dark"] .app-topbar-meta,
+html[data-theme="dark"] .work-item-filter-field,
+html[data-theme="dark"] .page-size-control {
+  color: var(--yc-muted);
+}
+
+html[data-theme="dark"] .shell-button-secondary,
+html[data-theme="dark"] .message-tab,
+html[data-theme="dark"] .work-item-filter-field input,
+html[data-theme="dark"] .work-item-filter-field select,
+html[data-theme="dark"] .page-size-control select,
+html[data-theme="dark"] .project-stats div {
+  border-color: var(--yc-line);
+  background: var(--yc-panel-soft);
+  color: var(--yc-text);
+}
+
+html[data-theme="dark"] .badge-row,
+html[data-theme="dark"] .notification-row,
+html[data-theme="dark"] .message-row,
+html[data-theme="dark"] .project-row,
+html[data-theme="dark"] .work-item-row,
+html[data-theme="dark"] .message-pagination,
+html[data-theme="dark"] .shell-stats div {
+  border-color: var(--yc-line);
 }

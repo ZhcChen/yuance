@@ -88,7 +88,7 @@ test('browser shell restores login return_to for direct /web/app/messages entry'
   await expect(page).toHaveTitle('消息中心 - 元策');
   await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeFocused();
-  await expect(page.getByRole('button', { name: '打开' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '打开', exact: true })).toBeVisible();
 });
 
 test('browser shell supports root navigation and logout on /web owner route', async ({ page }) => {
@@ -102,6 +102,7 @@ test('browser shell supports root navigation and logout on /web owner route', as
   await expect(page).toHaveURL(/\/web\/messages/);
   await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeFocused();
 
+  await page.getByRole('button', { name: /打开 .* 的账户菜单/ }).click();
   await page.getByRole('button', { name: '退出登录' }).click();
   await expect(page).toHaveURL(/\/web\/login/);
 });
@@ -1276,7 +1277,7 @@ test('work item attachment confirmation failure keeps pending file context', asy
 test('message center opens semantic target and unread filter becomes empty after read', async ({ page }) => {
   await login(page, '/web/messages?filter=unread');
 
-  const openButton = page.getByRole('button', { name: '打开' }).first();
+  const openButton = page.getByRole('button', { name: '打开', exact: true }).first();
   await expect(openButton).toBeVisible();
   await Promise.all([
     page.waitForURL(/\/web\/app\/work-items\/YCE-TASK-2/),
@@ -1292,7 +1293,7 @@ test('message center opens semantic target and unread filter becomes empty after
 test('app-owner message center opens semantic target inside app shell', async ({ page }) => {
   await login(page, '/web/app/messages?filter=all');
 
-  const openButton = page.getByRole('button', { name: '打开' }).first();
+  const openButton = page.getByRole('button', { name: '打开', exact: true }).first();
   await expect(openButton).toBeVisible();
   await Promise.all([
     page.waitForURL(/\/web\/app\/work-items\//),
@@ -1310,4 +1311,25 @@ test('project list can switch current project inside the app shell', async ({ pa
   await page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '设为当前项目' }).click();
   await expect(page.getByText('OPS · 交付运维台')).toBeVisible();
   await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
+});
+
+test('shared global shell remains usable at canonical responsive widths', async ({ page }, testInfo) => {
+  await login(page, '/web/app');
+
+  for (const width of [390, 768, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.locator('.global-nav')).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '应用导航' })).toBeVisible();
+    await expect(page.getByRole('search')).toBeVisible();
+    await expect(page.getByRole('button', { name: '切换当前项目' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /打开 .* 的账户菜单/ })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath(`global-shell-${width}.png`), fullPage: true });
+  }
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.getByRole('button', { name: /打开 .* 的账户菜单/ }).click();
+  await page.getByRole('button', { name: '深色模式' }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await page.screenshot({ path: testInfo.outputPath('global-shell-390-dark.png'), fullPage: true });
 });

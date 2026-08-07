@@ -18,6 +18,7 @@ import {
   uploadWorkItemCommentAttachment,
 } from '@yuance/frontend-app-core';
 import {
+  GlobalNavigation,
   WorkItemAttachments,
   WorkItemComments,
   WorkItemDetail,
@@ -444,6 +445,8 @@ function notificationKindLabel(kind) {
  *     scheduleFrame(callback: () => void): void,
  *     getElementById(id: string): HTMLElement | null,
  *     readFormValue(form: HTMLFormElement, name: string): string,
+ *     readTheme?(): 'light' | 'dark',
+ *     writeTheme?(theme: 'light' | 'dark'): void,
  *   },
  * } }} props
  * @returns {React.ReactElement}
@@ -510,6 +513,7 @@ export function SharedApp({ services }) {
   const [workItemCommentAttachmentStatus, setWorkItemCommentAttachmentStatus] = useState(/** @type {Record<string, string>} */ ({}));
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
+  const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
 
   const currentProject = topbar?.current_project || null;
   const homePath = buildHomePath(route.owner);
@@ -812,6 +816,12 @@ export function SharedApp({ services }) {
       // Even if logout fails after the session is gone, returning to the login page is the safest path.
     }
     router.assign('/web/login');
+  }
+
+  /** @param {'light' | 'dark'} nextTheme */
+  function handleThemeChange(nextTheme) {
+    setTheme(nextTheme);
+    runtime.writeTheme?.(nextTheme);
   }
 
   /** @param {AppNotification} item */
@@ -1823,40 +1833,23 @@ export function SharedApp({ services }) {
         {statusMessage || (refreshing ? '正在刷新页面数据。' : '')}
       </p>
 
-      <nav className="app-topbar" aria-label="应用导航">
-        <div className="app-topbar-group">
-          <a
-            className={`app-nav-link ${route.id === 'home' ? 'active' : ''}`}
-            href={homePath}
-            aria-current={route.id === 'home' ? 'page' : undefined}
-            onClick={(event) => handleNavigate(event, homePath, '已切换到浏览器工作台。')}
-          >
-            工作台
-          </a>
-          <a
-            className={`app-nav-link ${route.id === 'messages' ? 'active' : ''}`}
-            href={messagesPath}
-            aria-current={route.id === 'messages' ? 'page' : undefined}
-            onClick={(event) => handleNavigate(event, messagesPath, '已切换到消息中心。')}
-          >
-            消息中心
-            {unreadCount > 0 ? <span className="app-nav-badge">{unreadCount}</span> : null}
-          </a>
-          <a
-            className={`app-nav-link ${route.id === 'projects' ? 'active' : ''}`}
-            href={projectsPath}
-            aria-current={route.id === 'projects' ? 'page' : undefined}
-            onClick={(event) => handleNavigate(event, projectsPath, '已切换到项目列表。')}
-          >
-            项目列表
-          </a>
-          <a className="app-nav-link" href="/web/me">我的账号</a>
-        </div>
-        <div className="app-topbar-group app-topbar-meta">
-          <span>{user?.display_name || user?.username || '未知用户'}</span>
-          <span>{releaseVersion ? `release ${releaseVersion}` : 'release unknown'}</span>
-        </div>
-      </nav>
+      <GlobalNavigation
+        productName="元策"
+        links={[
+          { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
+          { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
+          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' },
+        ]}
+        currentProject={currentProject}
+        projectsHref={projectsPath}
+        user={user}
+        profileHref={`${homePath}/me`}
+        theme={theme}
+        onNavigate={(event, path, label) => handleNavigate(event, path, `已切换到${label}。`)}
+        onSearch={(query) => navigate(`${homePath}/search?q=${encodeURIComponent(query)}`, query ? `正在搜索 ${query}。` : '请输入搜索内容。')}
+        onThemeChange={handleThemeChange}
+        onLogout={handleLogout}
+      />
 
       {error ? (
         <section className="shell-banner" role="alert">
@@ -1889,13 +1882,9 @@ export function SharedApp({ services }) {
               打开消息中心
             </a>
           )}
-          <a className="shell-link" href={currentProject ? `/web/projects/${currentProject.key}` : '/web/projects'}>
-            当前项目页
-          </a>
           <button className="shell-button shell-button-secondary" type="button" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
             {refreshing ? '刷新中…' : '刷新'}
           </button>
-          <button className="shell-button" type="button" onClick={handleLogout}>退出登录</button>
         </div>
       </section>
 

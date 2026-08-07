@@ -40,9 +40,15 @@ const services = Object.freeze({
       scheduleFrame: (callback) => window.requestAnimationFrame(callback),
       getElementById: (id) => document.getElementById(id),
       readFormValue: (form, name) => String(new FormData(form).get(name) || ""),
+      readTheme: () => document.documentElement.dataset.theme === "dark" ? "dark" : "light",
+      writeTheme: (theme) => {
+        document.documentElement.dataset.theme = theme;
+      },
     }),
   }),
 });
+
+services.app.runtime.writeTheme(services.app.runtime.readTheme());
 
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
