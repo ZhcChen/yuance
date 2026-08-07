@@ -115,6 +115,7 @@ test("api-client mutations map to fixed domain operations without request primit
   await client.deleteWorkItemSavedView(7);
   await client.updateWorkItem("DEMO-1", { title: "Updated", description: "Body", priority: "P1" });
   await client.handoffWorkItem("DEMO-1", { status: "in_progress", assigneeUsername: "alice", body: "Please continue" });
+  await client.restoreWorkItem("DEMO-1");
   await client.createWorkItemComment("DEMO-1", { body: "New comment" });
   await client.updateWorkItemComment("DEMO-1", 9, { body: "Edited", parentCommentId: null });
   assert.deepEqual(calls, [
@@ -159,6 +160,7 @@ test("api-client mutations map to fixed domain operations without request primit
     ["workitem.savedviewdelete", { savedViewId: 7 }],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", priority: "P1" } }],
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Please continue" } }],
+    ["workitem.restore", { itemKey: "DEMO-1" }],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "New comment", bodyFormat: "plain" } }],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }],
   ]);

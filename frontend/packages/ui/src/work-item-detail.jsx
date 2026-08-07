@@ -43,6 +43,9 @@ import React from 'react';
  *   error: string,
  *   canManageWorkItems: boolean,
  *   canEditPrimaryPost: boolean,
+ *   canCloseWorkItem: boolean,
+ *   canReopenWorkItem: boolean,
+ *   canRestoreWorkItem: boolean,
  *   cycleLabel: string,
  *   navigation: { previous: { item_key: string, title: string } | null, next: { item_key: string, title: string } | null },
  *   flowHistory: { items: { source_kind: string, actor: string, created_at: string, summary: string }[], pagination: { total_items: number } },
@@ -54,6 +57,7 @@ import React from 'react';
  *   onChangeHandoff: (event: FieldChangeEvent) => void,
  *   onSubmitEdit: (event: import('react').FormEvent<HTMLFormElement>) => void,
  *   onSubmitHandoff: (event: import('react').FormEvent<HTMLFormElement>) => void,
+ *   onRequestLifecycleAction: (action: 'close' | 'reopen' | 'restore') => void,
  * }} props
  */
 export function WorkItemDetail({
@@ -71,6 +75,9 @@ export function WorkItemDetail({
   error,
   canManageWorkItems,
   canEditPrimaryPost,
+  canCloseWorkItem,
+  canReopenWorkItem,
+  canRestoreWorkItem,
   cycleLabel,
   navigation,
   flowHistory,
@@ -82,6 +89,7 @@ export function WorkItemDetail({
   onChangeHandoff,
   onSubmitEdit,
   onSubmitHandoff,
+  onRequestLifecycleAction,
 }) {
   const previous = navigation.previous;
   const next = navigation.next;
@@ -149,6 +157,16 @@ export function WorkItemDetail({
         {flowHistory.items.length ? <ol className="work-item-flow-history">{flowHistory.items.map((record, index) => <li key={`${record.created_at}-${index}`}><strong>{record.actor}</strong><span>{record.summary}</span><time>{record.created_at}</time></li>)}</ol> : <p className="shell-muted">暂无流转记录。</p>}
         {flowHistory.pagination.total_items > flowHistory.items.length ? <p className="shell-muted">共 {flowHistory.pagination.total_items} 条，当前显示最近 {flowHistory.items.length} 条。</p> : null}
       </section>
+      {canCloseWorkItem || canReopenWorkItem || canRestoreWorkItem ? (
+        <section className="work-item-detail-panel" aria-label="工作项生命周期操作">
+          <h3>生命周期</h3>
+          <div className="work-item-form-actions">
+            {canCloseWorkItem ? <button className="yuance-ui-button yuance-ui-button-danger" type="button" disabled={mutationBusy} onClick={() => onRequestLifecycleAction('close')}>关闭工作项</button> : null}
+            {canReopenWorkItem ? <button className="yuance-ui-button" type="button" disabled={mutationBusy} onClick={() => onRequestLifecycleAction('reopen')}>重新打开</button> : null}
+            {canRestoreWorkItem ? <button className="yuance-ui-button" type="button" disabled={mutationBusy} onClick={() => onRequestLifecycleAction('restore')}>恢复工作项</button> : null}
+          </div>
+        </section>
+      ) : null}
       {error ? <p className="work-item-action-error" role="alert">{error}</p> : null}
     </>
   );

@@ -269,6 +269,11 @@ function resolveMutationOperation(parsed, method, options) {
       assignee_username: "assigneeUsername", source_comment_id: "sourceCommentId",
     }) } };
   }
+  const restore = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/restore$/u);
+  if (method === "POST" && restore) {
+    rejectBody(options);
+    return { operation: "workitem.restore", input: { itemKey: decodeSegment(restore[1]) } };
+  }
   const comments = parsed.pathname.match(/^\/api\/v1\/work-items\/([^/]+)\/comments$/u);
   if (method === "POST" && comments) {
     return { operation: "workitem.commentcreate", input: { itemKey: decodeSegment(comments[1]), payload: commentPayload(options) } };

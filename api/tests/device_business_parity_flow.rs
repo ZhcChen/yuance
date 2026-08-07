@@ -85,6 +85,27 @@ async fn device_principal_matches_business_read_write_and_revocation_contract() 
         json_body(response).await["data"]["title"],
         "Device parity mutation"
     );
+    projects::archive_work_item(&pool, admin_id, "YCE-TASK-2")
+        .await
+        .expect("fixture work item should archive");
+    let response = request(
+        &app,
+        "POST",
+        "/api/v1/work-items/YCE-TASK-2/restore",
+        &credentials.access_token,
+        None,
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["deleted_at"], "");
+    assert_eq!(
+        projects::get_work_item_detail(&pool, "YCE-TASK-2")
+            .await
+            .unwrap()
+            .unwrap()
+            .deleted_at,
+        ""
+    );
 
     let response = request(
         &app,

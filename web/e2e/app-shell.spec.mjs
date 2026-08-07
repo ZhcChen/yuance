@@ -658,6 +658,74 @@ test('work item edit success survives comments or topbar refresh failures', asyn
   await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
+test('work item lifecycle closes and reopens through shared confirmation', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  await expect(page.getByRole('button', { name: '关闭工作项' })).toBeVisible();
+
+  const statuses = [];
+  let currentDetail = workItemDetailFixture();
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.item = currentDetail;
+    payload.data.permissions.can_close_work_item = currentDetail.status !== 'closed';
+    payload.data.permissions.can_reopen_work_item = currentDetail.status === 'closed';
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2', async (route) => {
+    if (route.request().method() !== 'PATCH') {
+      await route.continue();
+      return;
+    }
+    const status = route.request().postDataJSON().status;
+    statuses.push(status);
+    currentDetail = workItemDetailFixture({ status, updated_at: `2026-08-08T10:0${statuses.length}:00Z` });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: currentDetail }) });
+  });
+
+  await page.getByRole('button', { name: '关闭工作项' }).click();
+  const closeDialog = page.getByRole('dialog', { name: '关闭工作项' });
+  await expect(closeDialog).toContainText('YCE-TASK-2');
+  await closeDialog.getByRole('button', { name: '确认' }).click();
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已关闭。');
+  await expect(page.getByRole('button', { name: '重新打开' })).toBeVisible();
+
+  await page.getByRole('button', { name: '重新打开' }).click();
+  await page.getByRole('dialog', { name: '重新打开工作项' }).getByRole('button', { name: '确认' }).click();
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已重新打开。');
+  await expect(page.getByRole('button', { name: '关闭工作项' })).toBeVisible();
+  expect(statuses).toEqual(['closed', 'in_progress']);
+});
+
+test('deleted work item restores through the shared lifecycle action', async ({ page }) => {
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  let currentDetail = workItemDetailFixture({ deleted_at: '2026-08-08T09:00:00Z' });
+  let restoreCount = 0;
+  await page.route('**/api/v1/work-item-detail-view/YCE-TASK-2', async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.data.item = currentDetail;
+    payload.data.permissions.can_edit_primary_post = !currentDetail.deleted_at;
+    payload.data.permissions.can_close_work_item = false;
+    payload.data.permissions.can_reopen_work_item = false;
+    payload.data.permissions.can_restore_work_item = Boolean(currentDetail.deleted_at);
+    await route.fulfill({ response, json: payload });
+  });
+  await page.route('**/api/v1/work-items/YCE-TASK-2/restore', async (route) => {
+    restoreCount += 1;
+    currentDetail = workItemDetailFixture({ deleted_at: '', updated_at: '2026-08-08T09:30:00Z' });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: currentDetail }) });
+  });
+  await page.reload();
+
+  await expect(page.getByText('该工作项已删除，恢复前不可编辑。')).toBeVisible();
+  await page.getByRole('button', { name: '恢复工作项' }).click();
+  await page.getByRole('dialog', { name: '恢复工作项' }).getByRole('button', { name: '确认' }).click();
+  await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已恢复。');
+  await expect(page.getByRole('heading', { name: '编辑工作项' })).toBeVisible();
+  expect(restoreCount).toBe(1);
+});
+
 test('work item detail load failure does not expose stale write forms', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();

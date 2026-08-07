@@ -455,6 +455,7 @@ fn openapi_freezes_d2_device_business_allowlist() {
         "POST /api/v1/work-items/batch",
         "GET /api/v1/work-items/{item_key}",
         "PATCH /api/v1/work-items/{item_key}",
+        "POST /api/v1/work-items/{item_key}/restore",
         "POST /api/v1/work-items/{item_key}/handoff",
         "GET /api/v1/work-items/{item_key}/events",
         "GET /api/v1/work-items/{item_key}/comments",
@@ -476,7 +477,6 @@ fn openapi_freezes_d2_device_business_allowlist() {
     assert_eq!(allowlist, expected.as_array().unwrap());
     for forbidden in [
         "GET /api/v1/projects/{project_key}",
-        "POST /api/v1/work-items/{item_key}/restore",
         "DELETE /api/v1/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}",
     ] {
         assert!(!allowlist.iter().any(|entry| entry == forbidden));

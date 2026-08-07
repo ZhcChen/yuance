@@ -96,6 +96,7 @@ test("rejects invalid business identifiers, filters and pagination", () => {
     ["workitem.listview", { sort: "random" }],
     ["workitem.detail", { itemKey: "bad/key" }],
     ["workitem.detailview", { itemKey: "bad/key" }],
+    ["workitem.restore", { itemKey: "bad/key" }],
     ["workitem.comments", { itemKey: "A" }],
     ["workitem.commentattachments", { itemKey: "DEMO-1", commentId: -1 }],
   ]) assert.throws(() => registry.resolve(name, input), /invalid/i, `${name} should reject invalid input`);
@@ -309,6 +310,7 @@ test("builds non-idempotent mutation descriptors from bounded domain payloads", 
     ["workitem.savedviewdelete", { savedViewId: 7 }, "DELETE", "/api/v1/work-item-saved-views/7", undefined],
     ["workitem.update", { itemKey: "DEMO-1", payload: { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assigneeUsername: "alice", dueDate: "2026-08-31", parentItemKey: "" } }, "PATCH", "/api/v1/work-items/DEMO-1", { title: "Updated", description: "Body", status: "in_progress", priority: "P1", assignee_username: "alice", due_date: "2026-08-31", parent_item_key: "" }],
     ["workitem.handoff", { itemKey: "DEMO-1", payload: { status: "in_progress", assigneeUsername: "alice", body: "Continue", sourceCommentId: null } }, "POST", "/api/v1/work-items/DEMO-1/handoff", { status: "in_progress", assignee_username: "alice", body: "Continue", source_comment_id: null }],
+    ["workitem.restore", { itemKey: "DEMO-1" }, "POST", "/api/v1/work-items/DEMO-1/restore", undefined],
     ["workitem.commentcreate", { itemKey: "DEMO-1", payload: { body: "Comment", bodyFormat: "plain" } }, "POST", "/api/v1/work-items/DEMO-1/comments", { body: "Comment", body_format: "plain" }],
     ["workitem.commentupdate", { itemKey: "DEMO-1", commentId: 9, payload: { body: "Edited", bodyFormat: "plain", parentCommentId: null } }, "PATCH", "/api/v1/work-items/DEMO-1/comments/9", { body: "Edited", body_format: "plain", parent_comment_id: null }],
   ];

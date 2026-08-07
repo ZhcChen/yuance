@@ -41,6 +41,9 @@ function renderDetail(overrides = {}) {
     error: '',
     canManageWorkItems: true,
     canEditPrimaryPost: true,
+    canCloseWorkItem: true,
+    canReopenWorkItem: false,
+    canRestoreWorkItem: false,
     cycleLabel: 'Sprint 1',
     navigation: { previous: { item_key: 'YCE-TASK-1', title: '前一任务' }, next: { item_key: 'YCE-TASK-3', title: '后一任务' } },
     flowHistory: { items: [{ source_kind: 'flow', actor: 'Alice', created_at: '2026-08-01', summary: '状态：待处理 → 进行中' }], pagination: { total_items: 1 } },
@@ -52,6 +55,7 @@ function renderDetail(overrides = {}) {
     onChangeHandoff: () => {},
     onSubmitEdit: () => {},
     onSubmitHandoff: () => {},
+    onRequestLifecycleAction: () => {},
     ...overrides,
   }));
 }
@@ -68,6 +72,7 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /Sprint 1/);
   assert.match(html, /上一项 · 前一任务/);
   assert.match(html, /状态：待处理 → 进行中/);
+  assert.match(html, /关闭工作项/);
 });
 
 test('work item detail hides mutations for read-only users', () => {
@@ -79,11 +84,19 @@ test('work item detail hides mutations for read-only users', () => {
 });
 
 test('work item detail hides mutations until a deleted item is restored', () => {
-  const html = renderDetail({ item: { ...item, deleted_at: '2026-08-07T12:00:00Z' } });
+  const html = renderDetail({ item: { ...item, deleted_at: '2026-08-07T12:00:00Z' }, canCloseWorkItem: false, canRestoreWorkItem: true });
 
   assert.doesNotMatch(html, /工作项写入操作/);
   assert.doesNotMatch(html, /推进并指派/);
   assert.match(html, /该工作项已删除，恢复前不可编辑/);
+  assert.match(html, /恢复工作项/);
+});
+
+test('work item detail exposes reopen only when the server permits it', () => {
+  const html = renderDetail({ canCloseWorkItem: false, canReopenWorkItem: true });
+
+  assert.match(html, /重新打开/);
+  assert.doesNotMatch(html, /关闭工作项/);
 });
 
 test('work item detail renders busy and error states', () => {

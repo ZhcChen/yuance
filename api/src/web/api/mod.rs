@@ -3487,10 +3487,12 @@ pub async fn restore_work_item(
     headers: HeaderMap,
     Path(item_key): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<WorkItemDetailPayload>>> {
-    let user = require_api_user(&state, &headers).await?;
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
     ensure_api_csrf(&headers)?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "work_item.manage").await?;
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_WRITE).await?;
     let item = projects::get_work_item_detail(pool, &item_key)
         .await?
         .ok_or_else(|| AppError::NotFound("工作项不存在".to_string()))?;
@@ -3498,7 +3500,7 @@ pub async fn restore_work_item(
         .await?
         .ok_or_else(|| AppError::NotFound("工作项所属项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
-    ensure_api_project_content_write_access(pool, &user, project.id).await?;
+    ensure_api_project_content_write_access(pool, user, project.id).await?;
     let restored = projects::restore_work_item(pool, user.id, &item_key).await?;
     audit::record(
         pool,

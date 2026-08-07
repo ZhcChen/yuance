@@ -86,6 +86,7 @@
     "POST /api/v1/work-items/batch",
     "GET /api/v1/work-items/{item_key}",
     "PATCH /api/v1/work-items/{item_key}",
+    "POST /api/v1/work-items/{item_key}/restore",
     "POST /api/v1/work-items/{item_key}/handoff",
     "GET /api/v1/work-items/{item_key}/events",
     "GET /api/v1/work-items/{item_key}/comments",
@@ -1459,6 +1460,19 @@
           "200": {
             "description": "流转成功"
           }
+        }
+      }
+    },
+    "/api/v1/work-items/{item_key}/restore": {
+      "post": {
+        "tags": ["work-items"],
+        "summary": "恢复已删除工作项",
+        "parameters": [{"$ref": "#/components/parameters/ItemKey"}],
+        "responses": {
+          "200": {"description": "恢复成功", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/WorkItemDetailEnvelope"}}}},
+          "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"},
+          "409": {"$ref": "#/components/responses/Error"}
         }
       }
     },

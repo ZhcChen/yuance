@@ -86,6 +86,7 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["workitem.detail", workItemDetailOperation],
     ["workitem.detailview", workItemDetailViewOperation],
     ["workitem.update", workItemUpdateOperation],
+    ["workitem.restore", workItemRestoreOperation],
     ["workitem.handoff", workItemHandoffOperation],
     ["workitem.comments", workItemCommentsOperation],
     ["workitem.commentcreate", workItemCommentCreateOperation],
@@ -538,6 +539,11 @@ function workItemUpdateOperation(input) {
   });
   if (Object.keys(body).length === 0) throw new TypeError("payload is invalid");
   return descriptor("PATCH", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}`, parseWorkItemDetail, false, "object", jsonBody(body));
+}
+
+function workItemRestoreOperation(input) {
+  exactKeys(input, ["itemKey"]);
+  return descriptor("POST", `/api/v1/work-items/${encodeURIComponent(itemKey(input.itemKey))}/restore`, parseWorkItemDetail, false);
 }
 
 function workItemHandoffOperation(input) {

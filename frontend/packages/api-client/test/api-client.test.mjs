@@ -213,6 +213,14 @@ test('work item detail view uses the atomic shared page endpoint', async () => {
   assert.equal(calls[0].url, '/api/v1/work-item-detail-view/YCE-TASK%2F2');
 });
 
+test('restoreWorkItem uses the fixed write endpoint', async () => {
+  const { client, calls, writes } = createRecordedClient();
+  await client.restoreWorkItem('YCE-TASK/2');
+  assert.equal(writes.length, 1);
+  assert.equal(calls[0].url, '/api/v1/work-items/YCE-TASK%2F2/restore');
+  assert.equal(calls[0].options.method, 'POST');
+});
+
 test('createWorkItem uses the complete shared creation contract', async () => {
   const { client, calls, writes } = createRecordedClient();
   await client.createWorkItem({ projectKey: 'YCE', itemType: 'task', title: '实现共享创建', description: '<p>说明</p>', priority: 'P1', assigneeUsername: 'alice', cycleId: 7, dueDate: '2026-08-31', parentItemKey: 'YCE-REQ-1' });

@@ -431,6 +431,10 @@ html[data-theme="dark"] {
   color: #111827;
 }
 
+.yuance-ui-button-danger {
+  background: var(--yc-danger);
+}
+
 .yuance-ui-pill {
   display: inline-flex;
   align-items: center;

@@ -789,6 +789,8 @@ export function SharedApp({ services }) {
   const [workItemEditSubmitting, setWorkItemEditSubmitting] = useState(false);
   const [workItemHandoffSubmitting, setWorkItemHandoffSubmitting] = useState(false);
   const [workItemActionError, setWorkItemActionError] = useState('');
+  const [workItemLifecycleAction, setWorkItemLifecycleAction] = useState(/** @type {'close' | 'reopen' | 'restore' | null} */ (null));
+  const [workItemLifecycleSubmitting, setWorkItemLifecycleSubmitting] = useState(false);
   const [workItemNewCommentBody, setWorkItemNewCommentBody] = useState('');
   const [workItemCommentSubmitting, setWorkItemCommentSubmitting] = useState(false);
   const [workItemEditingCommentId, setWorkItemEditingCommentId] = useState(/** @type {number | null} */ (null));
@@ -923,6 +925,7 @@ export function SharedApp({ services }) {
   const workItemAttachmentSubmitting = workItemAttachmentUploading || workItemCommentAttachmentUploadingId !== null;
   const workItemMutationSubmitting = workItemEditSubmitting
     || workItemHandoffSubmitting
+    || workItemLifecycleSubmitting
     || workItemCommentSubmitting
     || workItemEditCommentSubmitting
     || workItemAttachmentSubmitting;
@@ -1022,6 +1025,8 @@ export function SharedApp({ services }) {
         setWorkItemDetail(null);
         setWorkItemComments([]);
         setWorkItemActionError('');
+        setWorkItemLifecycleAction(null);
+        setWorkItemLifecycleSubmitting(false);
         setWorkItemNewCommentBody('');
         setWorkItemEditingCommentId(null);
         setWorkItemEditCommentBody('');
@@ -2493,6 +2498,32 @@ export function SharedApp({ services }) {
       }
     } finally {
       clearWorkItemMutation(actionId, setWorkItemHandoffSubmitting);
+    }
+  }
+
+  async function confirmWorkItemLifecycleAction() {
+    if (!activeWorkItemDetail || !workItemLifecycleAction || workItemMutationRef.current || workItemAttachmentMutationRef.current) return;
+    const itemKey = activeWorkItemDetail.key;
+    const action = workItemLifecycleAction;
+    const actionId = workItemActionRef.current + 1;
+    workItemActionRef.current = actionId;
+    workItemMutationRef.current = true;
+    workItemMutationActionRef.current = actionId;
+    setWorkItemLifecycleSubmitting(true);
+    setWorkItemActionError('');
+    try {
+      const updated = action === 'restore'
+        ? await api.restoreWorkItem(itemKey)
+        : await api.updateWorkItem(itemKey, { status: action === 'close' ? 'closed' : 'in_progress' });
+      const label = action === 'close' ? '已关闭' : action === 'reopen' ? '已重新打开' : '已恢复';
+      if (applyWorkItemMutationResult(updated, `${updated.key} ${label}。`, actionId)) {
+        await refreshWorkItemCompanionState(updated.key, `工作项${label}`, actionId, updated);
+        setWorkItemLifecycleAction(null);
+      }
+    } catch (caught) {
+      if (isCurrentWorkItemDetailRoute(itemKey, actionId)) setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('更新工作项生命周期失败。')));
+    } finally {
+      clearWorkItemMutation(actionId, setWorkItemLifecycleSubmitting);
     }
   }
 
@@ -4321,6 +4352,9 @@ export function SharedApp({ services }) {
                     error={workItemActionError}
                     canManageWorkItems={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items)}
                     canEditPrimaryPost={Boolean(activeWorkItemDetailView?.permissions.can_edit_primary_post)}
+                    canCloseWorkItem={Boolean(activeWorkItemDetailView?.permissions.can_close_work_item)}
+                    canReopenWorkItem={Boolean(activeWorkItemDetailView?.permissions.can_reopen_work_item)}
+                    canRestoreWorkItem={Boolean(activeWorkItemDetailView?.permissions.can_restore_work_item)}
                     cycleLabel={activeWorkItemDetailView?.cycle?.label || ''}
                     navigation={activeWorkItemDetailView?.navigation || { previous: null, next: null }}
                     flowHistory={activeWorkItemDetailView?.flow_history || { items: [], pagination: { page: 1, per_page: 10, total_items: 0, total_pages: 1 } }}
@@ -4332,6 +4366,7 @@ export function SharedApp({ services }) {
                     onChangeHandoff={changeWorkItemHandoffField}
                     onSubmitEdit={submitWorkItemEdit}
                     onSubmitHandoff={submitWorkItemHandoff}
+                    onRequestLifecycleAction={setWorkItemLifecycleAction}
                   />
 
                   <WorkItemAttachments
@@ -4434,6 +4469,7 @@ export function SharedApp({ services }) {
               </article>
             </section>
           )}
+          <Modal open={Boolean(workItemLifecycleAction)} title={workItemLifecycleAction === 'close' ? '关闭工作项' : workItemLifecycleAction === 'reopen' ? '重新打开工作项' : '恢复工作项'} onClose={() => { if (!workItemLifecycleSubmitting) setWorkItemLifecycleAction(null); }} footer={<><Button variant="secondary" disabled={workItemLifecycleSubmitting} onClick={() => setWorkItemLifecycleAction(null)}>取消</Button><Button variant={workItemLifecycleAction === 'close' ? 'danger' : 'primary'} loading={workItemLifecycleSubmitting} onClick={() => void confirmWorkItemLifecycleAction()}>确认</Button></>}><p>确认{workItemLifecycleAction === 'close' ? '关闭' : workItemLifecycleAction === 'reopen' ? '重新打开' : '恢复'}“{activeWorkItemDetail?.key} · {activeWorkItemDetail?.title}”？</p></Modal>
           <Modal open={projectResourceModalOpen} title={projectResourceForm.id ? '编辑项目资料' : '新建项目资料'} onClose={closeProjectResourceForm} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={closeProjectResourceForm}>{projectResourceCreateCheckpoint ? '转到资料详情' : '取消'}</Button><Button loading={projectResourceSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-resource-form'))?.requestSubmit()}>保存</Button></>}>
             <form id="project-resource-form" onSubmit={submitProjectResource}>
               <Field id="project-resource-title" label="资料标题" required><input value={projectResourceForm.title} maxLength={120} onChange={(event) => setProjectResourceForm((current) => ({ ...current, title: event.target.value }))} /></Field>
