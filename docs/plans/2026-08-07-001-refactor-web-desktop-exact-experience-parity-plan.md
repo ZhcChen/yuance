@@ -164,6 +164,37 @@ execution_status: planned
 
 首批允许的 `Host exception code` 固定为 `auth.transport`、`route.transport`、`file.picker`、`file.save`、`notification.native`、`window.lifecycle`；新增 code 必须修改 schema、计划 review 和双宿主测试，不能只修改数据文件。
 
+#### U0 剩余登记执行单元
+
+U0 的登记按以下顺序串行推进。当前来源基线以 `frontend/parity/legacy-source-inventory.json` 为准；数量仅用于核对当前差集，正式完成条件始终是双向覆盖测试归零，不能靠手工维护数量宣称完成。
+
+| 单元 | 登记范围 | 当前待覆盖 route/method | 主要产物 | 单元验收 |
+|---|---|---:|---|---|
+| U0.1 项目动作 | 当前项目切换、项目编辑、成员增删/角色、周期创建/编辑/关闭 | 8 | `experience-manifest.json` 的 project actions | 每个动作记录权限、确认、重复提交和成功后的项目上下文失效规则 |
+| U0.2 项目文件与资源 | 项目附件上传/删除/下载/预览，资源创建/解锁/密码重置/编辑/归档及附件读取 | 13 | project resource/file actions、文件宿主差异引用 | 上传、预览、下载、密码保护、归档和超级管理员重置语义闭合 |
+| U0.3 工作项列表 | 需求/任务/Bug 页面，创建、保存视图、默认视图、重命名/删除、批量操作 | 9 | 3 个 list page contract、list actions | query、指标、筛选、分页、选择清理、批量部分失败与默认视图恢复完整 |
+| U0.4 工作项详情协作 | 详情、流转记录、编辑/移交/状态/恢复、评论与评论编辑、附件上传下载预览 | 16 | detail page、collaboration/file actions | 权限、并发、富文本、回复、附件、SSE 去重和删除态完整 |
+| U0.5 系统管理页面 | dashboard、用户、角色、权限、存储、OpenAPI、发布、数据库统计、审计、API docs | 11 | system page contracts | 所有页面绑定 `super-admin` actor、具体权限和普通用户拒绝状态 |
+| U0.6 系统管理动作 | 用户/角色/权限、存储生命周期、OpenAPI token、版本发布及资产下载 | 22 | system actions | 高风险确认、脱敏、单次展示、审计、副作用和失败恢复完整 |
+| U0.7 入口与内部端点收口 | `/web/app*`、logout、下载资产、普通 API docs、两个 work-item partial | 8 | boundary/internal page 或 action contract、分类说明 | 每项明确 `shared entry`、SSR boundary 或 internal partial，禁止未分类豁免 |
+
+上述 route/method 只覆盖服务端正式入口。每个 U0.x 单元还必须同时完成以下交互登记，不能在 route 差集归零后跳过：
+
+1. 将相关模板的表单、按钮、标签页、筛选、分页、弹窗、确认框、空态和权限隐藏入口映射到 `controls`、`states` 或 `actions`。
+2. 将 `api/static/app.js` 中被该页面使用的 `data-*` handler 映射到动作或共享交互原语；纯展示属性可分类为 `presentation-marker`，但必须有受控分类而非自由文本忽略。
+3. 对模板中动态拼接的 `/api/v1/*` 请求登记实际 API effect；Web form route 与动态 API 同时存在时记录主请求、兼容/降级路径和最终业务效果。
+4. 为每个页面和动作预留 Browser test、Desktop test、fixture 和 review 证据位置；`baseline` 阶段允许证据数组为空，进入 `shared` 前必须补齐。
+5. 每个单元结束运行 schema、来源快照、route/method 引用闭合和该单元覆盖测试，并提交独立可回滚 commit。
+
+#### U0 最终收口 Gate
+
+- `113` 个当前 route/method 组合全部被 page/action 或受控 internal/boundary contract 覆盖；来源变化时以实时提取结果替代该基准数。
+- `35` 个当前 Askama 模板全部至少被一个页面引用，或以 partial/vendor boundary 形式登记 owner；禁止孤立模板。
+- `appInteractionMarkers` 与 `templateInteractionMarkers` 均有受控分类，关键 handler 必须关联 action，不用 marker 数量替代行为核验。
+- manifest 增加全量双向覆盖测试：正式来源未登记失败、登记项来源不存在失败、同一 route/method 被无理由重复 owner 失败。
+- 在 `docs/reviews/` 形成 U0 inventory review，按 U1-U8 输出页面族、动作数、权限入口、动态 API 和待补特征测试，不提前把任何条目标为 `shared`。
+- 只有以上 Gate 全部通过后才开始 U1；U0 完成不代表任何页面已迁移或 Browser/Desktop 已达成体验一致。
+
 ### U1：统一 design token、全局壳和基础交互原语
 
 - **Goal：** 建立唯一视觉基础，并对齐全局导航和通用交互状态。
