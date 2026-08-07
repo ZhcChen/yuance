@@ -277,6 +277,17 @@ test('app-owner task list can filter and open read-only work item detail', async
   await expect(page.getByRole('heading', { level: 1, name: '任务列表' })).toBeVisible();
   await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
 
+  const filters = page.locator('.work-item-filter-bar');
+  await filters.getByLabel('周期 ID', { exact: true }).fill('7');
+  await filters.locator('select[name="sort"]').selectOption('priority_desc');
+  await filters.getByRole('button', { name: '筛选' }).click();
+  await expect(page).toHaveURL(/cycle_id=7&sort=priority_desc/);
+  await expect(filters.getByLabel('周期 ID', { exact: true })).toHaveValue('7');
+  await expect(filters.locator('select[name="sort"]')).toHaveValue('priority_desc');
+  await filters.getByRole('button', { name: '重置' }).click();
+  await expect(page).toHaveURL('/web/app/tasks');
+  await expect(page.locator('.work-item-row', { hasText: 'YCE-TASK-2' })).toBeVisible();
+
   await page.locator('.work-item-row', { hasText: 'YCE-TASK-2' }).getByRole('link', { name: '打开详情' }).click();
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2/);
   await expect(page.getByRole('heading', { level: 2, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();

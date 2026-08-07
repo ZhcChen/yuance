@@ -1240,6 +1240,27 @@
             }
           },
           {
+            "name": "cycle_id",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated_desc",
+                "created_desc",
+                "priority_desc",
+                "due_date_asc"
+              ]
+            }
+          },
+          {
             "$ref": "#/components/parameters/Page"
           },
           {

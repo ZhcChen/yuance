@@ -6848,6 +6848,42 @@ async fn api_v1_filters_work_items_by_query_status_priority_project_and_assignee
 }
 
 #[tokio::test]
+async fn api_v1_filters_and_sorts_work_items_with_the_shared_cycle_contract() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    projects::seed_demo_data(&pool, initialized.user_id)
+        .await
+        .expect("demo seed should apply");
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let filtered = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items?item_type=task&project_key=YCE&cycle_id=999&sort=priority_desc")
+                .header(header::COOKIE, initialized.cookie.clone())
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(filtered.status(), StatusCode::OK);
+    assert!(response_body(filtered).await.contains(r#""items":[]"#));
+
+    let invalid_sort = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/work-items?item_type=task&project_key=YCE&sort=random")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(invalid_sort.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn api_v1_work_items_returns_pagination_metadata() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

@@ -32,7 +32,7 @@ test("desktop API transport maps only known read routes to domain operations", a
     ["/api/v1/search?q=crash&page=2&per_page=20", "search.list", { q: "crash", page: 2, perPage: 20 }],
     ["/api/v1/notifications?filter=unread&limit=10", "notification.list", { filter: "unread", limit: 10 }],
     ["/api/v1/notifications/7/target", "notification.target", { notificationId: 7 }],
-    ["/api/v1/work-items?item_type=bug&q=crash&priority=P1&project_key=DEMO", "workitem.list", { itemType: "bug", q: "crash", priority: "P1", projectKey: "DEMO" }],
+    ["/api/v1/work-items?item_type=bug&q=crash&priority=P1&project_key=DEMO&cycle_id=7&sort=priority_desc", "workitem.list", { itemType: "bug", q: "crash", priority: "P1", projectKey: "DEMO", cycleId: 7, sort: "priority_desc" }],
     ["/api/v1/work-items/DEMO-1", "workitem.detail", { itemKey: "DEMO-1" }],
     ["/api/v1/work-items/DEMO-1/comments", "workitem.comments", { itemKey: "DEMO-1" }],
     ["/api/v1/work-items/DEMO-1/attachments", "workitem.attachments", { itemKey: "DEMO-1" }],

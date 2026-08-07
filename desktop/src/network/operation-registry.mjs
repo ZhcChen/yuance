@@ -18,6 +18,7 @@ const ITEM_TYPES = new Set(["", "requirement", "task", "bug"]);
 const ITEM_PRIORITIES = new Set(["", "P0", "P1", "P2", "P3"]);
 const NOTIFICATION_FILTERS = new Set(["all", "unread", "pending", "read"]);
 const WORK_ITEM_STATUSES = new Set(["open", "in_progress", "pending_confirmation", "done", "verified", "resolved", "closed", "cancelled"]);
+const WORK_ITEM_SORTS = new Set(["", "updated_desc", "created_desc", "priority_desc", "due_date_asc"]);
 const API_TOKEN_SCOPES = new Set(["project:read", "work_item:read", "work_item:write", "comment:write", "resource:read", "resource:write", "resource:unlock", "notification:read"]);
 
 export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERATIONS } = {}) {
@@ -402,7 +403,7 @@ function notificationReadOperation(input) {
 }
 
 function workItemListOperation(input) {
-  exactKeys(input, ["assigneeUsername", "itemType", "page", "perPage", "priority", "projectKey", "q", "status"]);
+  exactKeys(input, ["assigneeUsername", "cycleId", "itemType", "page", "perPage", "priority", "projectKey", "q", "sort", "status"]);
   const query = new URLSearchParams();
   appendOptionalString(query, "item_type", optionalEnum(input.itemType, ITEM_TYPES, "itemType", ""));
   appendOptionalString(query, "q", optionalText(input.q, "q", 120));
@@ -410,6 +411,8 @@ function workItemListOperation(input) {
   appendOptionalString(query, "priority", optionalEnum(input.priority, ITEM_PRIORITIES, "priority", ""));
   appendOptionalString(query, "assignee_username", optionalText(input.assigneeUsername, "assigneeUsername", 64));
   if (input.projectKey !== undefined && input.projectKey !== "") query.set("project_key", projectKey(input.projectKey));
+  if (input.cycleId !== undefined) query.set("cycle_id", String(integer(input.cycleId, 1, "cycleId")));
+  appendOptionalString(query, "sort", optionalEnum(input.sort, WORK_ITEM_SORTS, "sort", ""));
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/work-items", query), parseWorkItemPage);
 }

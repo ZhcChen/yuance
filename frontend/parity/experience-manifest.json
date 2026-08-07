@@ -226,8 +226,8 @@
       "states": ["loading", "ready", "filtered", "empty", "selection", "batch-submitting", "partial-failure", "forbidden", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md"] }
     },
     {
       "id": "page.work-item-list.tasks",
@@ -241,8 +241,8 @@
       "states": ["loading", "ready", "filtered", "empty", "selection", "batch-submitting", "partial-failure", "forbidden", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md"] }
     },
     {
       "id": "page.work-item-list.bugs",
@@ -256,8 +256,8 @@
       "states": ["loading", "ready", "filtered", "empty", "selection", "batch-submitting", "partial-failure", "forbidden", "error"],
       "responsiveStates": ["compact", "regular", "wide"],
       "migrationUnit": "U4",
-      "status": "baseline",
-      "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+      "status": "in_progress",
+      "evidence": { "browserTests": ["web/e2e/app-shell.spec.mjs", "frontend/packages/app-core/test/routes.test.mjs", "api/tests/project_management_flow.rs"], "desktopTests": ["desktop/test/operation-registry.test.mjs", "desktop/test/renderer-api-transport.test.mjs"], "reviews": ["docs/reviews/2026-08-07-020-web-desktop-u4-work-item-cycle-sort-review.md"] }
     },
     {
       "id": "page.work-item-detail.detail",

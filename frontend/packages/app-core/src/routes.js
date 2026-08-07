@@ -54,7 +54,7 @@ function routeMetaForItemType(itemType = 'task') {
   return WORK_ITEM_ROUTE_META[itemType] || WORK_ITEM_ROUTE_META.task;
 }
 
-function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const params = new URLSearchParams();
   const normalizedPage = normalizePositiveInt(page, DEFAULT_PAGE);
   const normalizedPerPage = normalizePositiveInt(perPage, DEFAULT_PER_PAGE);
@@ -72,6 +72,13 @@ function buildWorkItemQuery({ q = '', status = '', priority = '', assigneeUserna
   }
   if (typeof projectKey === 'string' && projectKey.trim()) {
     params.set('project_key', projectKey.trim());
+  }
+  const normalizedCycleId = normalizePositiveInt(cycleId, 0);
+  if (normalizedCycleId > 0) {
+    params.set('cycle_id', String(normalizedCycleId));
+  }
+  if (typeof sort === 'string' && sort.trim()) {
+    params.set('sort', sort.trim());
   }
   if (normalizedPage > DEFAULT_PAGE) {
     params.set('page', String(normalizedPage));
@@ -200,10 +207,10 @@ export function buildProjectPersonalAnalysisPath({ owner = 'app', projectKey = '
   return `${buildProjectDetailPath({ owner, projectKey: normalizedKey })}/my-analysis`;
 }
 
-export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
+export function buildWorkItemListPath({ owner = 'app', itemType = 'task', q = '', status = '', priority = '', assigneeUsername = '', projectKey = '', cycleId = 0, sort = '', page = DEFAULT_PAGE, perPage = DEFAULT_PER_PAGE } = {}) {
   const meta = routeMetaForItemType(itemType);
   const basePath = owner === 'app' ? meta.appPath : meta.webPath;
-  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, projectKey, page, perPage });
+  const query = buildWorkItemQuery({ q, status, priority, assigneeUsername, projectKey, cycleId, sort, page, perPage });
   return query ? `${basePath}?${query}` : basePath;
 }
 
@@ -338,6 +345,8 @@ export function parseAppRoute(pathname = '/web', search = '') {
         priority: (query.get('priority') || '').trim().toUpperCase(),
         assigneeUsername: (query.get('assignee_username') || '').trim(),
         projectKey: (query.get('project_key') || '').trim(),
+        cycleId: normalizePositiveInt(query.get('cycle_id'), 0),
+        sort: (query.get('sort') || '').trim(),
         page,
         perPage,
         title: meta.title,

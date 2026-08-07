@@ -81,7 +81,7 @@ function resolveReadOperation(url, options) {
   }) };
   if (parsed.pathname === "/api/v1/work-items") return { operation: "workitem.list", input: parseQuery(parsed.searchParams, {
     item_type: "itemType", q: "q", status: "status", priority: "priority", assignee_username: "assigneeUsername",
-    project_key: "projectKey", page: "page", per_page: "perPage",
+    project_key: "projectKey", cycle_id: "cycleId", sort: "sort", page: "page", per_page: "perPage",
   }) };
   const target = matchPath(parsed, /^\/api\/v1\/notifications\/(\d+)\/target$/u, "notification.target", ([notificationId]) => ({ notificationId: positiveInteger(notificationId) }));
   if (target) return target;
@@ -289,7 +289,7 @@ function parseQuery(params, names) {
   for (const [wireName, domainName] of Object.entries(names)) {
     if (!params.has(wireName)) continue;
     const value = params.get(wireName);
-    input[domainName] = ["page", "per_page", "limit"].includes(wireName) ? positiveInteger(value) : value;
+    input[domainName] = ["page", "per_page", "limit", "cycle_id"].includes(wireName) ? positiveInteger(value) : value;
   }
   return input;
 }

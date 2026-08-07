@@ -1191,6 +1191,10 @@ pub struct WorkItemQuery {
     #[serde(default)]
     assignee_username: String,
     #[serde(default)]
+    cycle_id: String,
+    #[serde(default)]
+    sort: String,
+    #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
     per_page: Option<i64>,
@@ -2531,8 +2535,8 @@ pub async fn list_work_items(
                     priority: query.priority,
                     project_key: String::new(),
                     assignee_username: query.assignee_username,
-                    cycle_id: String::new(),
-                    sort_by: String::new(),
+                    cycle_id: query.cycle_id,
+                    sort_by: query.sort,
                 },
                 projects::Pagination {
                     page: 1,
@@ -2570,8 +2574,8 @@ pub async fn list_work_items(
             priority: query.priority,
             project_key,
             assignee_username: query.assignee_username,
-            cycle_id: String::new(),
-            sort_by: String::new(),
+            cycle_id: query.cycle_id,
+            sort_by: query.sort,
         },
         pagination,
     )

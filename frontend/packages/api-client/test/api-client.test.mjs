@@ -195,6 +195,12 @@ test('work item paths encode item keys', () => {
   assert.equal(workItemApiPath('YCE-TASK/2'), '/api/v1/work-items/YCE-TASK%2F2');
 });
 
+test('work item list preserves cycle and allowlisted sort query', async () => {
+  const { client, calls } = createRecordedClient();
+  await client.getWorkItems({ itemType: 'task', projectKey: 'yce', cycleId: 7, sort: 'due_date_asc', page: 2, perPage: 20 });
+  assert.equal(calls[0].url, '/api/v1/work-items?item_type=task&project_key=YCE&cycle_id=7&sort=due_date_asc&page=2&per_page=20');
+});
+
 test('updateWorkItem uses injected transport and JSON payload without CSRF logic', async () => {
   const { client, calls, writes } = createRecordedClient();
 

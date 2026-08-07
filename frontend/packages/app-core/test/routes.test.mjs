@@ -113,26 +113,28 @@ test('parseAppRoute supports projects route and owner-aware builders', () => {
 
 test('parseAppRoute supports work item list filters and detail routes', () => {
   assert.deepEqual(
-    parseAppRoute('/web/app/tasks', '?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=p0&assignee_username=admin&page=2&per_page=20'),
+    parseAppRoute('/web/app/tasks', '?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=p0&assignee_username=admin&cycle_id=7&sort=due_date_asc&page=2&per_page=20'),
     {
       id: 'tasks',
       owner: 'app',
       pathname: '/web/app/tasks',
-      search: '?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=p0&assignee_username=admin&page=2&per_page=20',
+      search: '?q=%E6%A8%A1%E5%9E%8B&status=in_progress&priority=p0&assignee_username=admin&cycle_id=7&sort=due_date_asc&page=2&per_page=20',
       itemType: 'task',
       q: '模型',
       status: 'in_progress',
       priority: 'P0',
       assigneeUsername: 'admin',
       projectKey: '',
+      cycleId: 7,
+      sort: 'due_date_asc',
       page: 2,
       perPage: 20,
       title: '任务列表',
     },
   );
   assert.equal(
-    buildWorkItemListPath({ owner: 'web', itemType: 'bug', status: 'pending', assigneeUsername: 'admin', projectKey: 'YCE' }),
-    '/web/bugs?status=pending&assignee_username=admin&project_key=YCE',
+    buildWorkItemListPath({ owner: 'web', itemType: 'bug', status: 'pending', assigneeUsername: 'admin', projectKey: 'YCE', cycleId: 7, sort: 'priority_desc' }),
+    '/web/bugs?status=pending&assignee_username=admin&project_key=YCE&cycle_id=7&sort=priority_desc',
   );
   assert.deepEqual(
     parseAppRoute('/web/app/work-items/YCE-TASK-2', ''),

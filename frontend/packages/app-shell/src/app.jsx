@@ -817,6 +817,8 @@ export function SharedApp({ services }) {
       priority: workItemListRoute.priority,
       assigneeUsername: workItemListRoute.assigneeUsername,
       projectKey: workItemListRoute.projectKey,
+      cycleId: workItemListRoute.cycleId,
+      sort: workItemListRoute.sort,
       perPage: workItemListRoute.perPage,
     }
     : {};
@@ -855,6 +857,8 @@ export function SharedApp({ services }) {
       priority: workItemListRoute.priority,
       assigneeUsername: workItemListRoute.assigneeUsername,
       projectKey: workItemListRoute.projectKey,
+      cycleId: workItemListRoute.cycleId,
+      sort: workItemListRoute.sort,
       page: workItemListRoute.page,
       perPage: workItemListRoute.perPage,
     })
@@ -1069,6 +1073,8 @@ export function SharedApp({ services }) {
             priority: targetRoute.priority,
             assigneeUsername: targetRoute.assigneeUsername,
             projectKey: targetRoute.projectKey,
+            cycleId: targetRoute.cycleId,
+            sort: targetRoute.sort,
             page: targetRoute.page,
             perPage: targetRoute.perPage,
           })
@@ -3095,6 +3101,8 @@ export function SharedApp({ services }) {
         priority: runtime.readFormValue(event.currentTarget, 'priority'),
         assigneeUsername: runtime.readFormValue(event.currentTarget, 'assignee_username'),
         projectKey: workItemListRoute.projectKey,
+        cycleId: Number.parseInt(runtime.readFormValue(event.currentTarget, 'cycle_id'), 10) || 0,
+        sort: runtime.readFormValue(event.currentTarget, 'sort'),
         page: 1,
         perPage: workItemListRoute.perPage,
       }),
@@ -3126,6 +3134,8 @@ export function SharedApp({ services }) {
         priority: workItemListRoute.priority,
         assigneeUsername: workItemListRoute.assigneeUsername,
         projectKey: workItemListRoute.projectKey,
+        cycleId: workItemListRoute.cycleId,
+        sort: workItemListRoute.sort,
         page: nextPage,
         perPage: workItemListRoute.perPage,
       }),
@@ -3148,6 +3158,8 @@ export function SharedApp({ services }) {
         priority: workItemListRoute.priority,
         assigneeUsername: workItemListRoute.assigneeUsername,
         projectKey: workItemListRoute.projectKey,
+        cycleId: workItemListRoute.cycleId,
+        sort: workItemListRoute.sort,
         page: 1,
         perPage: nextPerPage,
       }),
@@ -3854,6 +3866,20 @@ export function SharedApp({ services }) {
                 <label className="work-item-filter-field">
                   <span>处理人</span>
                   <input name="assignee_username" defaultValue={route.assigneeUsername} placeholder="用户名" />
+                </label>
+                <label className="work-item-filter-field">
+                  <span>周期 ID</span>
+                  <input name="cycle_id" type="number" min="1" defaultValue={route.cycleId || ''} placeholder="全部周期" />
+                </label>
+                <label className="work-item-filter-field">
+                  <span>排序</span>
+                  <select name="sort" defaultValue={route.sort}>
+                    <option value="">最近更新</option>
+                    <option value="updated_desc">最近更新</option>
+                    <option value="created_desc">最近创建</option>
+                    <option value="priority_desc">优先级从高到低</option>
+                    <option value="due_date_asc">截止日期最近</option>
+                  </select>
                 </label>
                 <div className="work-item-filter-actions">
                   <button className="shell-button" type="submit">筛选</button>
