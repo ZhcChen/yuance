@@ -290,6 +290,12 @@
     },
     {
       "id": "page.system.api-docs", "route": "/web/system/api-docs", "methods": ["GET"], "family": "system", "sourceTemplates": [], "sourceHandlers": ["api/src/web/router.rs::system_api_docs"], "actors": ["super-administrator"], "permissions": ["system.openapi.manage"], "controls": ["openapi-document", "endpoint-navigation"], "states": ["ready", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.boundary.shared-app", "route": "/web/app", "methods": ["GET"], "family": "boundary", "sourceTemplates": [], "sourceHandlers": ["api/src/web/router.rs::static_web_app_entry"], "actors": ["authenticated-user"], "permissions": ["authenticated"], "controls": ["shared-react-root", "startup-state"], "states": ["loading", "ready", "session-expired", "asset-error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U8", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "page.boundary.api-docs", "route": "/web/api-docs", "methods": ["GET"], "family": "boundary", "sourceTemplates": [], "sourceHandlers": ["api/src/web/router.rs::api_docs"], "actors": ["authenticated-user"], "permissions": ["authenticated"], "controls": ["openapi-document", "endpoint-navigation"], "states": ["ready", "forbidden", "error"], "responsiveStates": ["compact", "regular", "wide"], "migrationUnit": "U8", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "actions": [
@@ -685,6 +691,7 @@
     {
       "id": "action.project.attachment.preview",
       "pageId": "page.project.detail",
+      "sourceTemplates": ["document_preview.html"],
       "trigger": "open project file preview",
       "inputs": ["project-key", "attachment-id"],
       "validation": "附件属于可访问项目且文件类型支持预览或降级下载。",
@@ -1060,6 +1067,24 @@
     },
     {
       "id": "action.system.release.asset-download", "pageId": "page.system.releases", "trigger": "download release asset as administrator", "inputs": ["release-id", "asset-id"], "validation": "资产属于版本且对象存在。", "confirmation": "none", "request": { "method": "GET", "path": "/web/system/releases/{release_id}/assets/{asset_id}/download" }, "successEffect": "记录审计并跳转短时签名下载 URL。", "errorEffects": ["资产不存在", "对象缺失", "普通用户 403"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U7", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.boundary.shared-app.trailing-slash", "pageId": "page.boundary.shared-app", "trigger": "load shared app trailing-slash alias", "inputs": [], "validation": "仅作为共享应用入口别名，不改变 route model。", "confirmation": "none", "request": { "method": "GET", "path": "/web/app/" }, "successEffect": "返回与 /web/app 相同的共享应用入口。", "errorEffects": ["bundle 缺失", "服务不可用"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U8", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.boundary.shared-app.asset", "pageId": "page.boundary.shared-app", "trigger": "browser requests shared app asset", "inputs": ["path"], "validation": "路径必须命中嵌入式 Web bundle 且禁止目录穿越。", "confirmation": "none", "request": { "method": "GET", "path": "/web/app/{*path}" }, "successEffect": "返回带正确 MIME 和缓存策略的共享 bundle 资产。", "errorEffects": ["资产不存在返回 404", "非法路径拒绝", "MIME 不可推断时使用安全类型"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U8", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.boundary.download.asset", "pageId": "page.boundary.downloads", "trigger": "visitor downloads published desktop asset", "inputs": ["release-id", "asset-id"], "validation": "版本已发布、资产属于版本且平台文件可公开下载。", "confirmation": "none", "request": { "method": "GET", "path": "/web/downloads/{release_id}/assets/{asset_id}" }, "successEffect": "跳转短时签名下载 URL，不暴露存储凭证。", "errorEffects": ["版本未发布", "资产不存在", "对象存储不可用"], "realtimeEffect": "none", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U8", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.boundary.logout", "pageId": "page.shell.dashboard", "trigger": "submit logout", "inputs": ["csrf-token"], "validation": "请求来自当前 Browser session。", "confirmation": "none", "request": { "method": "POST", "path": "/web/logout" }, "successEffect": "撤销 Browser session、清理认证 cookie 并返回登录页。", "errorEffects": ["重复登出按已登出处理", "CSRF 错误拒绝"], "realtimeEffect": "关闭当前宿主 SSE；不撤销独立 Desktop device session。", "repeatSubmitPolicy": "idempotent", "migrationUnit": "U2", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.internal.work-items.partial", "pageId": "page.work-item-list.requirements", "trigger": "legacy page requests filtered work item partial", "inputs": ["route-query", "hx-target"], "validation": "query 使用与完整列表相同 schema 和权限。", "confirmation": "none", "request": { "method": "GET", "path": "/web/partials/work-items" }, "successEffect": "返回列表、指标和分页的增量 HTML 载荷。", "errorEffects": ["query 无效", "项目无权限", "目标失效时完整页面恢复"], "realtimeEffect": "none", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U4", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
+    },
+    {
+      "id": "action.internal.work-item-detail.partial", "pageId": "page.work-item-detail.detail", "trigger": "legacy page requests work item detail partial", "inputs": ["item-key", "return-to"], "validation": "工作项可访问且 return-to 为站内列表上下文。", "confirmation": "none", "request": { "method": "GET", "path": "/web/partials/work-items/{item_key}" }, "successEffect": "返回详情增量 HTML，并保持返回路径和前后项上下文。", "errorEffects": ["工作项不存在", "项目无权限", "资源删除态"], "realtimeEffect": "none", "repeatSubmitPolicy": "latest-wins", "migrationUnit": "U5", "status": "baseline", "evidence": { "browserTests": [], "desktopTests": [], "reviews": [] }
     }
   ],
   "hostExceptions": [

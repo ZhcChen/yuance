@@ -5,6 +5,7 @@ import { access, readFile } from 'node:fs/promises';
 const manifestUrl = new URL('../parity/experience-manifest.json', import.meta.url);
 const schemaUrl = new URL('../parity/experience-manifest.schema.json', import.meta.url);
 const sourceInventoryUrl = new URL('../parity/legacy-source-inventory.json', import.meta.url);
+const markerClassificationUrl = new URL('../parity/interaction-marker-classification.json', import.meta.url);
 
 const allowedExceptionCodes = [
   'auth.transport',
@@ -84,8 +85,24 @@ test('完成态清单不得留下空页面或动作基线', async () => {
   }
 });
 
+test('所有旧 Web 交互标记均有受控分类', async () => {
+  const [sourceInventory, classification] = await Promise.all([
+    readJson(sourceInventoryUrl),
+    readJson(markerClassificationUrl),
+  ]);
+  const sourceMarkers = [...new Set([...sourceInventory.appInteractionMarkers, ...sourceInventory.templateInteractionMarkers])].sort();
+  const classifiedMarkers = classification.classifications.map(({ marker }) => marker).sort();
+
+  assert.deepEqual(classifiedMarkers, sourceMarkers);
+  assert.equal(new Set(classifiedMarkers).size, classifiedMarkers.length);
+  for (const entry of classification.classifications) {
+    assert.ok(['action', 'control', 'state', 'transport', 'presentation'].includes(entry.category));
+    assert.ok(entry.sources.length > 0 && entry.sources.every((source) => ['app-js', 'template'].includes(source)));
+  }
+});
+
 test('页面只拥有读取入口且每个 route method 只有一个 contract owner', async () => {
-  const manifest = await readJson(manifestUrl);
+  const [manifest, sourceInventory] = await Promise.all([readJson(manifestUrl), readJson(sourceInventoryUrl)]);
   const owners = new Map();
   const register = (signature, owner) => {
     assert.equal(owners.has(signature), false, `${signature} 同时被 ${owners.get(signature)} 和 ${owner} 登记`);
@@ -103,4 +120,13 @@ test('页面只拥有读取入口且每个 route method 只有一个 contract ow
       assert.ok(effect.purpose.length > 0, `${action.id} 的动态 API effect 必须说明业务目的`);
     }
   }
+
+  const sourceSignatures = sourceInventory.routes.flatMap(({ route, methods }) => methods.map((method) => `${method} ${route}`));
+  assert.deepEqual([...owners.keys()].sort(), sourceSignatures.sort(), '每个正式 Web route/method 必须被且仅被一个 contract 覆盖');
+
+  const templateOwners = new Set([
+    ...manifest.pages.flatMap(({ sourceTemplates }) => sourceTemplates),
+    ...manifest.actions.flatMap(({ sourceTemplates = [] }) => sourceTemplates),
+  ]);
+  assert.deepEqual([...templateOwners].sort(), [...sourceInventory.templates].sort(), '每个 Askama 模板必须存在 contract owner');
 });

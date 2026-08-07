@@ -74,6 +74,7 @@
       "properties": {
         "id": { "type": "string", "pattern": "^action\\.[a-z0-9.-]+$" },
         "pageId": { "type": "string", "pattern": "^page\\.[a-z0-9.-]+$" },
+        "sourceTemplates": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
         "trigger": { "$ref": "#/$defs/nonEmptyString" },
         "inputs": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
         "validation": { "$ref": "#/$defs/nonEmptyString" },

@@ -1,0 +1,2547 @@
+{
+  "version": 1,
+  "classifications": [
+    {
+      "marker": "data-api-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-app-update-current",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-app-update-later",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-app-update-modal",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-app-update-next",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-app-update-refresh",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-asset-id",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-assign-target",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-assigned-projects",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-attachment-byte-size",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-attachment-complete-url-template",
+      "category": "transport",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-attachment-content-type",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-attachment-file",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-attachment-filename",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-attachment-id",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-attachment-upload-url-template",
+      "category": "transport",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-avatar-name",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-bug-report-add",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-body",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-create-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-bug-report-description",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-bug-report-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-bug-report-group",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-group-title",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-groups",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-image",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-image-name",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-immutable",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-bug-report-item-field",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-bug-report-locked",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-remove",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-bug-report-status",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-cache-key",
+      "category": "state",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-category",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-comment-id",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-comment-parent-id",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-composer-file-list",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-composer-file-remove",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-confirm-action",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-confirm-message",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-confirm-modal",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-confirm-submit",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-confirm-submit-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-confirm-title",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-content-tab",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-content-tab-indicator",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-content-tabs",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-content-tabs-pending",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-copy-idle-label",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-label-target",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-meta-idle-label",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-meta-success-label",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-meta-target",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-primary",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-secondary",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-success-label",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-target",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-copy-text",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-toast-success",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-copy-unavailable-message",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-current-project-badge",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-cycle-status",
+      "category": "state",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-body",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-cache-state",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-empty",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-page",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-refresh",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-sheet-wrap",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-database-stats-summary",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-direct-upload",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-discussion-assign",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-assign-status",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-body",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-body-format",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-count",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-current-username",
+      "category": "state",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-files",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-discussion-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-has-composer",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-list-region",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-main-composer",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-mention-options",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-modals",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-reply-cancel",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-reply-toggle",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-scroll-composer",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-status",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-submit",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-discussion-typing",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-display-name",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-document-preview-experimental",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-document-preview-root",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-document-preview-title",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-document-preview-url",
+      "category": "transport",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-drawer-close",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-drawer-open",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-dropdown-menu",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-dropdown-root",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-dropdown-trigger",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-existing-attachment-id",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-experimental-legacy-preview-enabled",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-fallback-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-file-content",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-folder-item",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-folder-open",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-folder-tree-list",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-folder-tree-toggle",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-manager",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-move",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-move-file-object-id",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-object-id",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-preview",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-preview-icon",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-preview-image",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-preview-meta",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-preview-name",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-file-preview-video",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-filename",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-folder-id",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-hx-get",
+      "category": "transport",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-hx-post",
+      "category": "transport",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-gallery",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-preview",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-preview-frame",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-preview-image",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-preview-state",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-preview-status",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-source",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-title",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-image-viewer",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-action",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-caption",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-image",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-image-action",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-pan",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-stage",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-status",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-title",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-image-viewer-video",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-item-key",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-kind",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-local-image-preview",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-local-media-preview",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-media-kind",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-media-preview",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-batch-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-batch-submit",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-candidate",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-candidate-checkbox",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-candidate-empty",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-candidate-list",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-candidate-search",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-member-selected-count",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-message-center",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-message-center-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-message-read-all-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-modal",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-modal-close",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-modal-open",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-notification-badge",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-notification-list",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-notification-read-all",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-notification-root",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-notification-summary",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-page",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-page-transition",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-page-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pagination-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pagination-size",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-preview",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-sidebar-panel",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-sidebar-tab",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-pdf-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-per-page",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-permission-group",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-permission-group-key",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-permission-node",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-permission-page",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-permission-parent",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-permission-tree",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-placeholder",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-experimental",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-file-type",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-host",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-kind-label",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-metric",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-nav",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-reload",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-status",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-status-copy",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-title",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-type",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-preview-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-primary-comment-id",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-priority",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-project-empty",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-project-key",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-project-name",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-project-option",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-project-option-badge",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-project-owner",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-project-role",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-project-search-input",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-project-status",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-project-switcher",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-release-architecture",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-release-files",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-release-id",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-release-platform",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-release-upload-list",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-release-upload-submit",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-body",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-body-format",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-create-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-field",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-id",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-project-key",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-rich-editor",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-status",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-submit",
+      "category": "action",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-resource-update-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-return-url",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-menu",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-menu-action",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-menu-title",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-overlay-status",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-remove",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-retry",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-attachment-status",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-command",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-rich-initial-html",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-rich-mention-option",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-mention-options",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-rich-mention-panel",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-progress-circle",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-progress-value",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-ready",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-selected",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-rich-text-editor",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-rich-text-input",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-roles",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-search-history",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-search-history-clear",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-search-history-empty",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-search-history-list",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-control-trigger",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-control-value",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-empty",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-option",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-options",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-panel-min-width",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-select-search",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-select-search-placeholder",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-select-searchable",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-selected-username",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-skip-success-toast",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-smart-back",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-smart-back-key",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-status",
+      "category": "state",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-success-message",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-success-redirect",
+      "category": "transport",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-success-redirect-template",
+      "category": "transport",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-system-release-asset-delete",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-system-release-upload",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-tab-key",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-tab-panel",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-tab-target",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-table",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-tabs",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-tabs-sync-url",
+      "category": "transport",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-theme-label",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-theme-toggle",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-toast-region",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-token-project-all",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-token-project-option",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-token-project-scope",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-token-project-summary",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-tone",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-topbar-badge",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-topbar-project-link",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-topbar-search-input",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-progress-circle",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-progress-description",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-progress-label",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-progress-ring",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-progress-value",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-state",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-status",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-submit",
+      "category": "action",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-upload-transfer",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-avatar",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-combobox",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-combobox-empty",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-combobox-input",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-combobox-panel",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-combobox-value",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-option",
+      "category": "control",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-project-assign-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-assign-summary",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-assign-trigger",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-checkbox",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-batch-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-batch-inputs",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-batch-submit",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-card",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-checkbox",
+      "category": "state",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-count",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-filter-empty",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-list",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-page",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-per-page",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-search",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-current-selected",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-empty",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-option",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-option-list",
+      "category": "control",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-page",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-per-page",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-search",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-selected-count",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-user-project-submit",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-username",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-action",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-checkbox",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-select-all",
+      "category": "control",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-selected-count",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-submit",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-target",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-batch-toolbar",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-comment-edit-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-discussion",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-edit-body",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-edit-body-format",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-edit-description",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-edit-form",
+      "category": "action",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-edit-status",
+      "category": "state",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-label",
+      "category": "presentation",
+      "sources": [
+        "template"
+      ]
+    },
+    {
+      "marker": "data-work-item-primary-comment-id",
+      "category": "presentation",
+      "sources": [
+        "app-js",
+        "template"
+      ]
+    },
+    {
+      "marker": "data-yuance-attachment-kind",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    },
+    {
+      "marker": "data-yuance-mention-username",
+      "category": "presentation",
+      "sources": [
+        "app-js"
+      ]
+    }
+  ]
+}
