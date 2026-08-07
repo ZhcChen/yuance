@@ -93,6 +93,30 @@ async fn system_releases_keep_ssr_rollback_when_shared_shell_is_disabled() {
 }
 
 #[tokio::test]
+async fn system_openapi_keeps_ssr_rollback_when_shared_shell_is_disabled() {
+    let pool = test_pool().await;
+    let initialized = bootstrap_admin_session(&pool).await;
+    let app = build_router(AppState::new(test_settings(), Some(pool)));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/openapi")
+                .header(header::COOKIE, initialized.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("系统 OpenAPI"));
+    assert!(body.contains(r#"action="/web/system/openapi""#));
+    assert!(!body.contains("/web/app/assets/"));
+}
+
+#[tokio::test]
 async fn api_system_dashboard_returns_only_fixed_authorized_links() {
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;

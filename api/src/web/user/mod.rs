@@ -6433,7 +6433,18 @@ pub async fn system_dashboard(
 pub async fn system_openapi_page(
     State(state): State<AppState>,
     headers: HeaderMap,
+    OriginalUri(original_uri): OriginalUri,
 ) -> AppResult<Response> {
+    if let Some(response) = shared_system_web_app_response(
+        &state,
+        &headers,
+        original_uri.path(),
+        "system.api_tokens.view",
+    )
+    .await?
+    {
+        return Ok(response);
+    }
     let context =
         match system_context_or_redirect(&state, &headers, "system.api_tokens.view").await? {
             Ok(context) => context,

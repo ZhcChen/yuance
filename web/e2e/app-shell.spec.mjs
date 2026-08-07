@@ -2335,7 +2335,8 @@ test('shared system OpenAPI tokens preserve one-time plaintext and confirmed lif
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: deleted }) });
   });
 
-  await login(page, '/web/app/system/openapi');
+  await login(page, '/web/system/openapi');
+  await expect(page).toHaveURL('/web/system/openapi');
   await expect(page).toHaveTitle('系统 OpenAPI - 元策');
   await expect.poll(() => viewRequests.length).toBeGreaterThan(0);
   await expect(page.getByRole('table', { name: '系统 OpenAPI Token 列表' })).toContainText('Release robot');
