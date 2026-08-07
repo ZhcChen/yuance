@@ -48,6 +48,10 @@ export function createOperationRegistry({ maxActiveOperations = MAX_ACTIVE_OPERA
     ["system.usersview", systemUsersViewOperation],
     ["system.rolesview", systemRolesViewOperation],
     ["system.storageview", systemStorageViewOperation],
+    ["system.storagesave", systemStorageSaveOperation],
+    ["system.storageprobe", noInputOperation("POST", "/api/v1/storage/config/probe", parseStorageProbe, false)],
+    ["system.storageinitialize", noInputOperation("POST", "/api/v1/storage/config/initialize", parseStorageInitialize, false)],
+    ["system.storagerollback", systemStorageRollbackOperation],
     ["system.rolecreate", systemRoleCreateOperation],
     ["system.rolestatusupdate", systemRoleStatusUpdateOperation],
     ["system.rolepermissionsupdate", systemRolePermissionsUpdateOperation],
@@ -445,6 +449,23 @@ function systemStorageViewOperation(input) {
   const query = new URLSearchParams();
   appendPagination(query, input);
   return descriptor("GET", withQuery("/api/v1/system/storage-view", query), parseSystemStorageView);
+}
+
+function systemStorageSaveOperation(input) {
+  exactKeys(input, ["accessKeyId", "accessKeySecret", "activate", "bucket", "endpoint", "region"]);
+  return descriptor("POST", "/api/v1/storage/config", parseStorageConfig, false, "object", jsonBody({
+    endpoint: boundedRequiredText(input.endpoint, "endpoint", 256),
+    region: boundedText(input.region, "region", 128).trim(),
+    bucket: boundedRequiredText(input.bucket, "bucket", 128),
+    access_key_id: boundedRequiredText(input.accessKeyId, "accessKeyId", 256),
+    access_key_secret: boundedRequiredText(input.accessKeySecret, "accessKeySecret", 512),
+    activate: boolean(input.activate),
+  }));
+}
+
+function systemStorageRollbackOperation(input) {
+  exactKeys(input, ["version"]);
+  return descriptor("POST", `/api/v1/storage/config/versions/${positiveInteger(input.version)}/rollback`, parseStorageConfig, false);
 }
 
 function systemRoleCreateOperation(input) {
@@ -902,6 +923,12 @@ function parseSystemStorageView(data) { return freezeExactDto(data, {
   }),
   inspection: (inspection) => inspection === null ? null : parseStorageInspection(inspection),
   inspection_error: textString, can_manage_storage: boolean,
+}); }
+function parseStorageProbe(data) { return freezeExactDto(data, {
+  ok: boolean, provider: shortString, bucket: shortString, message: textString,
+}); }
+function parseStorageInitialize(data) { return freezeExactDto(data, {
+  ok: boolean, provider: shortString, bucket: shortString, marker_key: shortString, message: textString,
 }); }
 function parseSystemUserView(data) { return freezeExactDto(data, {
   id: positiveInteger, username: shortString, display_name: textString, email: shortString,

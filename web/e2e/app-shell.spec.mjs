@@ -2273,6 +2273,88 @@ test('shared system storage view renders one masked paginated snapshot in the ap
   await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=3&per_page=20');
 });
 
+test('shared system storage mutations preserve confirmation lock and final refresh semantics', async ({ page }) => {
+  const mutations = [];
+  let version = 3;
+  let bucket = 'yuance-files';
+  let initialized = false;
+  const view = () => ({
+    config: { id: version, provider: 'aliyun_oss', endpoint: 'https://oss.example', region: 'cn-test', bucket, access_key_id_hint: 'AKIA****E2E1', status: 'active', version, updated_at: '2026-08-08T01:00:00Z' },
+    versions: [
+      { id: version, storage_config_id: version, version, provider: 'aliyun_oss', endpoint: 'https://oss.example', region: 'cn-test', bucket, access_key_id_hint: 'AKIA****E2E1', snapshot_status: 'active', current_status: 'active', created_by: '系统管理员', created_at: '2026-08-08T01:00:00Z' },
+      { id: 2, storage_config_id: 2, version: 2, provider: 'aliyun_oss', endpoint: 'https://oss-old.example', region: 'cn-old', bucket: 'yuance-old', access_key_id_hint: 'AKIA****OLD1', snapshot_status: 'active', current_status: 'disabled', created_by: '系统管理员', created_at: '2026-08-07T01:00:00Z' },
+    ],
+    pagination: { page: 1, per_page: 10, total_items: 2, total_pages: 1 },
+    inspection: { ok: initialized, provider: 'aliyun_oss', bucket, initialized, needs_initialization: !initialized, can_write: false, can_read: initialized, can_delete: false, marker_key: 'yuance-system/.initialized', checks: [{ code: 'init_marker', status: initialized ? 'pass' : 'warn', message: initialized ? '初始化标记存在。' : '初始化标记缺失。' }], message: initialized ? '对象存储桶运行就绪' : '对象存储桶需要初始化' },
+    inspection_error: '', can_manage_storage: true,
+  });
+  await page.route('**/api/v1/system/storage-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view() }) }));
+  await page.route('**/api/v1/storage/config', async (route) => {
+    const body = route.request().postDataJSON();
+    mutations.push(['save', body]);
+    version += 1; bucket = body.bucket;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: view().config }) });
+  });
+  await page.route('**/api/v1/storage/config/probe', async (route) => {
+    mutations.push(['probe']);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ok: true, provider: 'aliyun_oss', bucket, message: '对象存储探测通过' } }) });
+  });
+  await page.route('**/api/v1/storage/config/initialize', async (route) => {
+    mutations.push(['initialize']); initialized = true;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ok: true, provider: 'aliyun_oss', bucket, marker_key: 'yuance-system/.initialized', message: '对象存储桶初始化完成' } }) });
+  });
+  await page.route('**/api/v1/storage/config/versions/2/rollback', async (route) => {
+    mutations.push(['rollback', 2]); version += 1; bucket = 'yuance-old';
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: view().config }) });
+  });
+
+  await login(page, '/web/app/system/storage');
+  await page.getByRole('button', { name: '编辑配置' }).click();
+  const editor = page.getByRole('dialog', { name: '编辑阿里云 OSS 配置' });
+  await editor.getByLabel('Bucket').fill('yuance-next');
+  await editor.getByLabel('AccessKey ID').fill('AKIAORIGINALSECRET');
+  await editor.getByLabel('AccessKey Secret').fill('StorageSecret2026!');
+  await editor.getByRole('button', { name: '保存并激活' }).click();
+  const switchConfirmation = page.getByRole('dialog', { name: '切换对象存储目标' });
+  await expect(mutations).toHaveLength(0);
+  await switchConfirmation.getByRole('button', { name: '确认' }).click();
+  await expect(editor).not.toBeVisible();
+  await expect(page.getByRole('region', { name: '存储工作台' })).toContainText('yuance-next');
+
+  await page.getByRole('button', { name: '测试连接' }).click();
+  await expect(page.getByRole('status')).toHaveText('对象存储探测通过');
+  await page.getByRole('button', { name: '初始化桶' }).click();
+  await page.getByRole('dialog', { name: '初始化对象存储 Bucket' }).getByRole('button', { name: '确认' }).click();
+  await expect(page.getByRole('region', { name: '存储工作台' })).toContainText('运行就绪');
+
+  await page.getByRole('table', { name: '存储配置版本' }).getByRole('button', { name: '回滚' }).click();
+  await page.getByRole('dialog', { name: '回滚对象存储配置' }).getByRole('button', { name: '确认' }).click();
+  await expect.poll(() => mutations.map(([kind]) => kind)).toEqual(['save', 'probe', 'initialize', 'rollback']);
+  await expect(page.getByRole('region', { name: '存储工作台' }).locator('dl')).toContainText('yuance-old');
+  expect(mutations[0][1]).toEqual({ endpoint: 'https://oss.example', region: 'cn-test', bucket: 'yuance-next', access_key_id: 'AKIAORIGINALSECRET', access_key_secret: 'StorageSecret2026!', activate: true });
+});
+
+test('shared system storage reports committed probe separately when final refresh fails', async ({ page }) => {
+  let failRefresh = false;
+  let failedRefreshRequests = 0;
+  await page.route('**/api/v1/system/storage-view*', (route) => {
+    if (failRefresh) { failedRefreshRequests += 1; return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unavailable', message: '读取暂时不可用。' } }) }); }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+      config: { id: 1, provider: 'aliyun_oss', endpoint: 'https://oss.example', region: 'cn-test', bucket: 'yuance-files', access_key_id_hint: 'AKIA****E2E1', status: 'active', version: 1, updated_at: '2026-08-08T01:00:00Z' },
+      versions: [], pagination: { page: 1, per_page: 10, total_items: 0, total_pages: 1 }, inspection: null,
+      inspection_error: '检查暂时不可用。', can_manage_storage: true,
+    } }) });
+  });
+  await page.route('**/api/v1/storage/config/probe', (route) => { failRefresh = true; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { ok: true, provider: 'aliyun_oss', bucket: 'yuance-files', message: '对象存储探测通过' } }) }); });
+
+  await login(page, '/web/app/system/storage');
+  await page.getByRole('button', { name: '测试连接' }).click();
+  await expect(page.locator('p.shell-live-region[role="status"]')).toContainText('对象存储探测通过');
+  await expect(page.getByRole('alert')).toContainText('操作已成功，但存储工作台刷新失败');
+  await expect(page.getByRole('alert')).not.toContainText('探测失败');
+  expect(failedRefreshRequests).toBe(1);
+});
+
 test('shared system role mutations preserve permission parent and confirmation semantics', async ({ page }) => {
   const mutations = [];
   let status = 'active';

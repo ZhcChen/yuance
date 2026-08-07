@@ -118,6 +118,23 @@ function resolveReadOperation(url, options) {
 
 function resolveMutationOperation(parsed, method, options) {
   rejectQuery(parsed.searchParams, []);
+  if (method === "POST" && parsed.pathname === "/api/v1/storage/config") {
+    const body = parseJsonBody(options, ["access_key_id", "access_key_secret", "activate", "bucket", "endpoint", "region"]);
+    return { operation: "system.storagesave", input: renameBody(body, { access_key_id: "accessKeyId", access_key_secret: "accessKeySecret" }) };
+  }
+  if (method === "POST" && parsed.pathname === "/api/v1/storage/config/probe") {
+    rejectBody(options);
+    return { operation: "system.storageprobe", input: {} };
+  }
+  if (method === "POST" && parsed.pathname === "/api/v1/storage/config/initialize") {
+    rejectBody(options);
+    return { operation: "system.storageinitialize", input: {} };
+  }
+  const storageRollback = parsed.pathname.match(/^\/api\/v1\/storage\/config\/versions\/(\d+)\/rollback$/u);
+  if (method === "POST" && storageRollback) {
+    rejectBody(options);
+    return { operation: "system.storagerollback", input: { version: positiveInteger(storageRollback[1]) } };
+  }
   if (method === "POST" && parsed.pathname === "/api/v1/system/users") {
     const body = parseJsonBody(options, ["display_name", "email", "mobile", "password", "role_code", "username"]);
     return { operation: "system.usercreate", input: renameBody(body, { display_name: "displayName", role_code: "roleCode" }) };

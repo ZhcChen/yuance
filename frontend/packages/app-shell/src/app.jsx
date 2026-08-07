@@ -780,6 +780,12 @@ export function SharedApp({ services }) {
   const [systemUsersView, setSystemUsersView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemUsersView']>> | null} */ (null));
   const [systemRolesView, setSystemRolesView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemRolesView']>> | null} */ (null));
   const [systemStorageView, setSystemStorageView] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemStorageView']>> | null} */ (null));
+  const [systemStorageEditOpen, setSystemStorageEditOpen] = useState(false);
+  const [systemStorageForm, setSystemStorageForm] = useState({ endpoint: '', region: '', bucket: '', accessKeyId: '', accessKeySecret: '' });
+  const [systemStorageConfirmation, setSystemStorageConfirmation] = useState(/** @type {{ kind: 'save', payload: any } | { kind: 'initialize' } | { kind: 'rollback', version: number, bucket: string } | null} */ (null));
+  const [systemStorageSubmitting, setSystemStorageSubmitting] = useState(false);
+  const [systemStorageError, setSystemStorageError] = useState('');
+  const systemStorageMutationRef = useRef(false);
   const [systemRoleCreateOpen, setSystemRoleCreateOpen] = useState(false);
   const [systemRoleCreateForm, setSystemRoleCreateForm] = useState({ roleCode: '', roleName: '', dataScopeType: 'self' });
   const [systemRoleStatusTarget, setSystemRoleStatusTarget] = useState(/** @type {any | null} */ (null));
@@ -1965,6 +1971,97 @@ export function SharedApp({ services }) {
     const roleCode = systemRolesView?.selected_role?.role_code;
     if (!roleCode || !systemRolesView?.can_edit_permissions) return;
     await runSystemRoleMutation(() => api.updateSystemRolePermissions(roleCode, [...systemRolePermissionKeys].sort()), '角色权限已保存。', roleCode);
+  }
+
+  async function refreshSystemStorageAfterMutation() {
+    const current = routeRef.current;
+    if (current.id !== 'system-storage') return null;
+    const view = await api.getSystemStorageView({ page: current.page, perPage: current.perPage });
+    if (routeRef.current.id === 'system-storage' && routeRef.current.pathname === current.pathname && routeRef.current.search === current.search) setSystemStorageView(view);
+    return view;
+  }
+
+  async function runSystemStorageMutation(action, successMessage) {
+    if (systemStorageMutationRef.current) return false;
+    systemStorageMutationRef.current = true;
+    setSystemStorageSubmitting(true);
+    setSystemStorageError('');
+    try {
+      const result = await action();
+      setStatusMessage(typeof successMessage === 'function' ? successMessage(result) : successMessage);
+      try {
+        await refreshSystemStorageAfterMutation();
+      } catch (caught) {
+        setSystemStorageError(`操作已成功，但存储工作台刷新失败：${errorMessage(caught instanceof Error ? caught : new Error('刷新失败。'))}`);
+      }
+      return true;
+    } catch (caught) {
+      let detail = errorMessage(caught instanceof Error ? caught : new Error('存储操作失败。'));
+      try { await refreshSystemStorageAfterMutation(); }
+      catch (refreshError) { detail = `${detail}；最终状态刷新失败：${errorMessage(refreshError instanceof Error ? refreshError : new Error('刷新失败。'))}`; }
+      setSystemStorageError(detail);
+      return false;
+    } finally {
+      systemStorageMutationRef.current = false;
+      setSystemStorageSubmitting(false);
+    }
+  }
+
+  function openSystemStorageEdit() {
+    if (!systemStorageView?.can_manage_storage || systemStorageSubmitting) return;
+    const config = systemStorageView.config;
+    setSystemStorageForm({
+      endpoint: config?.endpoint || 'https://oss-cn-hangzhou.aliyuncs.com',
+      region: config?.region || 'oss-cn-hangzhou',
+      bucket: config?.bucket || 'yuance-files',
+      accessKeyId: '', accessKeySecret: '',
+    });
+    setSystemStorageError('');
+    setSystemStorageEditOpen(true);
+  }
+
+  function closeSystemStorageEdit() {
+    if (systemStorageSubmitting) return;
+    setSystemStorageEditOpen(false);
+    setSystemStorageForm({ endpoint: '', region: '', bucket: '', accessKeyId: '', accessKeySecret: '' });
+  }
+
+  async function executeSystemStorageSave(payload) {
+    const completed = await runSystemStorageMutation(
+      () => api.saveStorageConfig(payload),
+      payload.activate ? '对象存储配置已保存并激活。' : '对象存储配置草稿已保存。',
+    );
+    if (completed) closeSystemStorageEdit();
+    return completed;
+  }
+
+  async function requestSystemStorageSave(activate) {
+    const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-storage-form'));
+    if (!form?.checkValidity()) { form?.reportValidity(); return; }
+    const payload = {
+      endpoint: systemStorageForm.endpoint.trim(), region: systemStorageForm.region.trim(), bucket: systemStorageForm.bucket.trim(),
+      accessKeyId: systemStorageForm.accessKeyId.trim(), accessKeySecret: systemStorageForm.accessKeySecret, activate,
+    };
+    const current = systemStorageView?.config;
+    if (current && (current.endpoint !== payload.endpoint || current.bucket !== payload.bucket)) {
+      setSystemStorageConfirmation({ kind: 'save', payload });
+      return;
+    }
+    await executeSystemStorageSave(payload);
+  }
+
+  async function probeSystemStorage() {
+    await runSystemStorageMutation(() => api.probeStorageConfig(), (result) => result?.message || '对象存储连接检测完成。');
+  }
+
+  async function confirmSystemStorageAction() {
+    const confirmation = systemStorageConfirmation;
+    if (!confirmation || systemStorageSubmitting) return;
+    let completed = false;
+    if (confirmation.kind === 'save') completed = await executeSystemStorageSave(confirmation.payload);
+    else if (confirmation.kind === 'initialize') completed = await runSystemStorageMutation(() => api.initializeStorageConfig(), (result) => result?.message || '对象存储 Bucket 已初始化。');
+    else completed = await runSystemStorageMutation(() => api.rollbackStorageConfig(confirmation.version), `已回滚到 v${confirmation.version} 的配置快照并生成新的激活版本。`);
+    if (completed) setSystemStorageConfirmation(null);
   }
 
   async function submitSystemUserCreate(event) {
@@ -4239,7 +4336,8 @@ export function SharedApp({ services }) {
 
           {route.id === 'system-storage' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-storage-title">
-              <div className="shell-panel-header"><div><h2 id="system-storage-title">存储工作台</h2><p className="shell-muted">当前配置与版本记录</p></div></div>
+              <div className="shell-panel-header"><div><h2 id="system-storage-title">存储工作台</h2><p className="shell-muted">当前配置与版本记录</p></div>{systemStorageView?.can_manage_storage ? <div className="shell-actions-inline">{systemStorageView.config ? <Button variant="secondary" disabled={systemStorageSubmitting} onClick={() => void probeSystemStorage()}>测试连接</Button> : null}<Button disabled={systemStorageSubmitting} onClick={openSystemStorageEdit}>编辑配置</Button></div> : null}</div>
+              {systemStorageError ? <Feedback tone="danger" title="存储操作需要处理">{systemStorageError}</Feedback> : null}
               {systemStorageView?.config ? <dl className="shell-detail-grid">
                 <div><dt>Provider</dt><dd>{systemStorageView.config.provider}</dd></div>
                 <div><dt>状态</dt><dd>{systemStorageView.config.status}</dd></div>
@@ -4251,14 +4349,28 @@ export function SharedApp({ services }) {
                 <div><dt>更新时间</dt><dd>{formatTimestamp(systemStorageView.config.updated_at)}</dd></div>
               </dl> : <Feedback tone="info" title="尚未配置对象存储">{systemStorageView?.inspection_error || '当前没有可用配置。'}</Feedback>}
               {systemStorageView?.inspection ? <section aria-labelledby="system-storage-inspection-title">
-                <div className="shell-panel-header"><div><h3 id="system-storage-inspection-title">Bucket 检查</h3><p className="shell-muted">{systemStorageView.inspection.message}</p></div><strong>{systemStorageView.inspection.ok ? '运行就绪' : systemStorageView.inspection.needs_initialization ? '需要初始化' : '检测异常'}</strong></div>
+                <div className="shell-panel-header"><div><h3 id="system-storage-inspection-title">Bucket 检查</h3><p className="shell-muted">{systemStorageView.inspection.message}</p></div><div className="shell-actions-inline"><strong>{systemStorageView.inspection.ok ? '运行就绪' : systemStorageView.inspection.needs_initialization ? '需要初始化' : '检测异常'}</strong>{systemStorageView.can_manage_storage ? <><Button variant="secondary" disabled={systemStorageSubmitting} onClick={() => void probeSystemStorage()}>检测桶状态</Button><Button disabled={systemStorageSubmitting} onClick={() => setSystemStorageConfirmation({ kind: 'initialize' })}>初始化桶</Button></> : null}</div></div>
                 <DataTable caption="存储检查项目" rows={systemStorageView.inspection.checks} rowKey={(item) => item.code} emptyText="暂无检查项目。" columns={[{ key: 'code', label: '检查', render: (item) => item.code }, { key: 'status', label: '状态', render: (item) => item.status }, { key: 'message', label: '结果', render: (item) => item.message }]} />
-              </section> : systemStorageView?.config ? <Feedback tone="warning" title="Bucket 检查不可用">{systemStorageView.inspection_error}</Feedback> : null}
+              </section> : systemStorageView?.config ? <Feedback tone="warning" title="Bucket 检查不可用" action={systemStorageView.can_manage_storage ? <Button disabled={systemStorageSubmitting} onClick={() => setSystemStorageConfirmation({ kind: 'initialize' })}>初始化桶</Button> : null}>{systemStorageView.inspection_error}</Feedback> : null}
               <section aria-labelledby="system-storage-versions-title">
                 <div className="shell-panel-header"><div><h3 id="system-storage-versions-title">配置版本</h3></div></div>
-                <DataTable caption="存储配置版本" rows={systemStorageView?.versions || []} rowKey={(item) => item.id} emptyText="暂无配置版本。" columns={[{ key: 'version', label: '版本', render: (item) => `v${item.version}` }, { key: 'bucket', label: 'Bucket', render: (item) => item.bucket }, { key: 'credential', label: 'AccessKey', render: (item) => item.access_key_id_hint || '未配置' }, { key: 'status', label: '状态', render: (item) => item.current_status }, { key: 'creator', label: '创建人', render: (item) => item.created_by || '系统' }, { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) }]} />
+                <DataTable caption="存储配置版本" rows={systemStorageView?.versions || []} rowKey={(item) => item.id} emptyText="暂无配置版本。" columns={[{ key: 'version', label: '版本', render: (item) => `v${item.version}` }, { key: 'bucket', label: 'Bucket', render: (item) => item.bucket }, { key: 'credential', label: 'AccessKey', render: (item) => item.access_key_id_hint || '未配置' }, { key: 'status', label: '状态', render: (item) => item.current_status }, { key: 'creator', label: '创建人', render: (item) => item.created_by || '系统' }, { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) }, { key: 'actions', label: '操作', render: (item) => systemStorageView?.can_manage_storage ? item.current_status === 'active' ? <span className="shell-muted">当前激活</span> : <Button variant="secondary" disabled={systemStorageSubmitting} onClick={() => setSystemStorageConfirmation({ kind: 'rollback', version: item.version, bucket: item.bucket })}>回滚</Button> : null }]} />
               </section>
               {systemStorageView ? <div className="shell-panel-header"><Pagination page={systemStorageView.pagination.page} totalPages={systemStorageView.pagination.total_pages} totalItems={systemStorageView.pagination.total_items} onPageChange={(page) => navigate(buildSystemStoragePath({ owner: route.owner, page, perPage: systemStorageView.pagination.per_page }), `正在加载第 ${page} 页存储版本。`)} /><label className="shell-page-size">每页<select value={systemStorageView.pagination.per_page} onChange={(event) => navigate(buildSystemStoragePath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
+              <Modal open={systemStorageEditOpen} title="编辑阿里云 OSS 配置" onClose={closeSystemStorageEdit} footer={<><Button variant="secondary" disabled={systemStorageSubmitting} onClick={closeSystemStorageEdit}>取消</Button><Button variant="secondary" loading={systemStorageSubmitting} onClick={() => void requestSystemStorageSave(false)}>保存草稿</Button><Button loading={systemStorageSubmitting} onClick={() => void requestSystemStorageSave(true)}>保存并激活</Button></>}>
+                <form id="system-storage-form" onSubmit={(event) => { event.preventDefault(); void requestSystemStorageSave(true); }}>
+                  <Field id="system-storage-endpoint" label="Endpoint" required><input value={systemStorageForm.endpoint} onChange={(event) => setSystemStorageForm((current) => ({ ...current, endpoint: event.target.value }))} /></Field>
+                  <Field id="system-storage-region" label="Region"><input value={systemStorageForm.region} onChange={(event) => setSystemStorageForm((current) => ({ ...current, region: event.target.value }))} /></Field>
+                  <Field id="system-storage-bucket" label="Bucket" required><input value={systemStorageForm.bucket} onChange={(event) => setSystemStorageForm((current) => ({ ...current, bucket: event.target.value }))} /></Field>
+                  <Field id="system-storage-access-key-id" label="AccessKey ID" hint={systemStorageView?.config?.access_key_id_hint ? `当前仅显示脱敏值：${systemStorageView.config.access_key_id_hint}` : '保存后不再回显明文。'} required><input autoComplete="off" value={systemStorageForm.accessKeyId} onChange={(event) => setSystemStorageForm((current) => ({ ...current, accessKeyId: event.target.value }))} /></Field>
+                  <Field id="system-storage-access-key-secret" label="AccessKey Secret" hint="保存后不再回显明文。" required><input type="password" autoComplete="new-password" value={systemStorageForm.accessKeySecret} onChange={(event) => setSystemStorageForm((current) => ({ ...current, accessKeySecret: event.target.value }))} /></Field>
+                  {systemStorageError ? <Feedback tone="danger" title="配置保存失败">{systemStorageError}</Feedback> : null}
+                </form>
+              </Modal>
+              <Modal open={Boolean(systemStorageConfirmation)} title={systemStorageConfirmation?.kind === 'save' ? '切换对象存储目标' : systemStorageConfirmation?.kind === 'initialize' ? '初始化对象存储 Bucket' : '回滚对象存储配置'} onClose={() => { if (!systemStorageSubmitting) setSystemStorageConfirmation(null); }} footer={<><Button variant="secondary" disabled={systemStorageSubmitting} onClick={() => setSystemStorageConfirmation(null)}>取消</Button><Button variant={systemStorageConfirmation?.kind === 'save' ? 'primary' : 'danger'} loading={systemStorageSubmitting} onClick={() => void confirmSystemStorageAction()}>确认</Button></>}>
+                <p>{systemStorageConfirmation?.kind === 'save' ? 'Endpoint 或 Bucket 已变化。现有对象不会自动迁移，确认保存这个新目标？' : systemStorageConfirmation?.kind === 'initialize' ? '初始化会按需创建 Bucket、配置浏览器直传 CORS 并写入元策初始化标记。' : `确认回滚到 v${systemStorageConfirmation?.kind === 'rollback' ? systemStorageConfirmation.version : ''}（${systemStorageConfirmation?.kind === 'rollback' ? systemStorageConfirmation.bucket : ''}）？系统会生成新的激活版本。`}</p>
+                {systemStorageError ? <Feedback tone="danger" title="操作失败">{systemStorageError}</Feedback> : null}
+              </Modal>
             </section>
           ) : route.id === 'system-roles' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-roles-title">

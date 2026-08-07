@@ -121,6 +121,24 @@ test("system storage view response excludes raw storage credentials", () => {
   assert.throws(() => parse({ ...payload, config: { ...payload.config, access_key_id: "raw" } }), /fields are invalid/i);
 });
 
+test("system storage mutations are fixed non-idempotent operations", () => {
+  const registry = createOperationRegistry();
+  const save = registry.resolve("system.storagesave", {
+    endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files",
+    accessKeyId: "AKIAEXAMPLE", accessKeySecret: "SecretValue", activate: true,
+  });
+  assert.deepEqual({ method: save.method, path: save.path, idempotent: save.idempotent, body: save.body }, {
+    method: "POST", path: "/api/v1/storage/config", idempotent: false,
+    body: JSON.stringify({ endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", access_key_id: "AKIAEXAMPLE", access_key_secret: "SecretValue", activate: true }),
+  });
+  assert.equal(registry.resolve("system.storageprobe", {}).idempotent, false);
+  assert.equal(registry.resolve("system.storageinitialize", {}).idempotent, false);
+  assert.deepEqual({ method: registry.resolve("system.storagerollback", { version: 7 }).method, path: registry.resolve("system.storagerollback", { version: 7 }).path, idempotent: registry.resolve("system.storagerollback", { version: 7 }).idempotent }, {
+    method: "POST", path: "/api/v1/storage/config/versions/7/rollback", idempotent: false,
+  });
+  assert.throws(() => registry.resolve("system.storagesave", { endpoint: "https://oss.example", region: "", bucket: "yuance-files", accessKeyId: "raw", accessKeySecret: "secret", activate: true, retry: true }), /fields/i);
+});
+
 test("system role mutations use fixed validated descriptors", () => {
   const registry = createOperationRegistry();
   assert.deepEqual(registry.resolve("system.rolecreate", { roleCode: "qa_lead", roleName: "质量负责人", dataScopeType: "all" }), {

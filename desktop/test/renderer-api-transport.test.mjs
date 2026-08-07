@@ -240,6 +240,19 @@ test("system role mutations map to fixed Desktop operations", async () => {
   ]);
 });
 
+test("system storage mutations map to fixed Desktop operations", async () => {
+  const calls = [];
+  const transport = createDesktopApiTransport({ execute: async (operation, input) => { calls.push([operation, input]); return { ok: true, data: {} }; } });
+  await transport.request("/api/v1/storage/config", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", access_key_id: "AKIAEXAMPLE", access_key_secret: "SecretValue", activate: true }) });
+  await transport.request("/api/v1/storage/config/probe", { method: "POST" });
+  await transport.request("/api/v1/storage/config/initialize", { method: "POST" });
+  await transport.request("/api/v1/storage/config/versions/7/rollback", { method: "POST" });
+  assert.deepEqual(calls, [
+    ["system.storagesave", { endpoint: "https://oss.example", region: "cn-test", bucket: "yuance-files", accessKeyId: "AKIAEXAMPLE", accessKeySecret: "SecretValue", activate: true }],
+    ["system.storageprobe", {}], ["system.storageinitialize", {}], ["system.storagerollback", { version: 7 }],
+  ]);
+});
+
 test("mutation adapter rejects malformed JSON contracts before IPC", async () => {
   let calls = 0;
   const transport = createDesktopApiTransport({ execute: async () => { calls += 1; return { ok: true, data: {} }; } });

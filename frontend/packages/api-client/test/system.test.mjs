@@ -46,6 +46,26 @@ test('system storage view preserves compact version pagination query', async () 
   assert.deepEqual(calls, ['/api/v1/system/storage-view', '/api/v1/system/storage-view?page=3&per_page=20']);
 });
 
+test('system storage mutations use fixed JSON contracts after write preparation', async () => {
+  const calls = [];
+  const client = createSystemClient({
+    prepareWrite: async () => { calls.push(['prepare']); },
+    request: async (url, options) => { calls.push([url, options]); return {}; },
+  });
+
+  await client.saveStorageConfig({ endpoint: 'https://oss.example', region: 'cn-test', bucket: 'yuance-files', accessKeyId: 'AKIAEXAMPLE', accessKeySecret: 'SecretValue', activate: true });
+  await client.probeStorageConfig();
+  await client.initializeStorageConfig();
+  await client.rollbackStorageConfig(7);
+
+  assert.deepEqual(calls, [
+    ['prepare'], ['/api/v1/storage/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint: 'https://oss.example', region: 'cn-test', bucket: 'yuance-files', access_key_id: 'AKIAEXAMPLE', access_key_secret: 'SecretValue', activate: true }) }],
+    ['prepare'], ['/api/v1/storage/config/probe', { method: 'POST' }],
+    ['prepare'], ['/api/v1/storage/config/initialize', { method: 'POST' }],
+    ['prepare'], ['/api/v1/storage/config/versions/7/rollback', { method: 'POST' }],
+  ]);
+});
+
 test('system role mutations use fixed JSON contracts after write preparation', async () => {
   const calls = [];
   const client = createSystemClient({
