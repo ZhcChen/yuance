@@ -1,0 +1,57 @@
+{
+  "$schema": "./experience-manifest.schema.json",
+  "version": 1,
+  "status": "building",
+  "pages": [],
+  "actions": [],
+  "hostExceptions": [
+    {
+      "code": "auth.transport",
+      "capability": "认证凭证传输与失效恢复",
+      "browserBehavior": "使用 HttpOnly Cookie 和 CSRF token，失效后进入浏览器登录流程。",
+      "desktopBehavior": "使用文件权限约束的 device session，失效后进入设备授权流程；禁止 Keychain 和 safeStorage。",
+      "sharedOutcome": "共享应用只接收已认证身份或 session-expired 事实，并呈现相同业务状态。",
+      "tests": ["frontend/packages/app-core/test/host-auth-state.test.mjs", "desktop/test/credential-coordinator.test.mjs"]
+    },
+    {
+      "code": "route.transport",
+      "capability": "路由地址承载",
+      "browserBehavior": "通过 History API 和正式 /web URL 承载 route model。",
+      "desktopBehavior": "通过应用内部 route 和窗口生命周期承载同一 route model。",
+      "sharedOutcome": "相同 route model 解析为相同页面、query、fragment 和返回路径。",
+      "tests": ["frontend/packages/app-core/test/routes.test.mjs", "desktop/test/renderer-composition.test.mjs"]
+    },
+    {
+      "code": "file.picker",
+      "capability": "文件选择",
+      "browserBehavior": "使用浏览器 file input。",
+      "desktopBehavior": "通过受限 IPC 打开原生文件选择器并返回 capability。",
+      "sharedOutcome": "取消、校验、选中文件元数据和上传结果具有相同业务语义。",
+      "tests": ["frontend/packages/ui/test/work-item-attachments.test.mjs", "desktop/test/file-dialog.test.mjs"]
+    },
+    {
+      "code": "file.save",
+      "capability": "文件保存与下载",
+      "browserBehavior": "使用浏览器下载能力。",
+      "desktopBehavior": "通过受限 IPC 和一次性 capability 写入用户选择的位置。",
+      "sharedOutcome": "下载开始、取消、成功和失败反馈具有相同业务语义。",
+      "tests": ["frontend/packages/ui/test/work-item-attachments.test.mjs", "desktop/test/download-executor.test.mjs"]
+    },
+    {
+      "code": "notification.native",
+      "capability": "系统通知呈现",
+      "browserBehavior": "使用页面内通知；获得浏览器授权时可附加 Web Notification。",
+      "desktopBehavior": "应用处于后台时可附加 OS 原生通知。",
+      "sharedOutcome": "触发条件、badge、已读状态、目标解析和点击后的业务页面一致。",
+      "tests": ["frontend/packages/app-core/test/notification-target.test.mjs", "desktop/test/notification-controller.test.mjs"]
+    },
+    {
+      "code": "window.lifecycle",
+      "capability": "窗口前后台与关闭生命周期",
+      "browserBehavior": "根据页面 visibility、刷新和 tab 关闭恢复实时连接。",
+      "desktopBehavior": "根据窗口前后台、最小化和关闭恢复实时连接。",
+      "sharedOutcome": "共享应用收到一致的 active/inactive 事实，恢复后执行相同失效与增量同步规则。",
+      "tests": ["frontend/packages/platform-contract/test/platform.test.mjs", "desktop/test/desktop-network-lifecycle-electron-integration.test.mjs"]
+    }
+  ]
+}

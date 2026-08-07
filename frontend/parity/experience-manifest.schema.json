@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://yuance.local/schemas/experience-manifest.schema.json",
+  "title": "元策 Web 与 Desktop 体验一致性清单",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "status", "pages", "actions", "hostExceptions"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "version": { "const": 1 },
+    "status": { "enum": ["building", "complete"] },
+    "pages": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/page" }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "hostExceptions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/hostException" }
+    }
+  },
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/nonEmptyString" },
+      "uniqueItems": true
+    },
+    "migrationStatus": {
+      "enum": ["baseline", "in_progress", "shared", "cutover", "retired"]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["browserTests", "desktopTests", "reviews"],
+      "properties": {
+        "browserTests": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "desktopTests": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "reviews": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "fixture": { "$ref": "#/$defs/nonEmptyString" },
+        "cutoverFlag": { "$ref": "#/$defs/nonEmptyString" },
+        "rollbackTest": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "route", "methods", "family", "sourceTemplates", "actors", "permissions", "controls", "states", "responsiveStates", "migrationUnit", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^page\\.[a-z0-9.-]+$" },
+        "route": { "type": "string", "pattern": "^/web(?:/|$)" },
+        "methods": { "type": "array", "minItems": 1, "items": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] }, "uniqueItems": true },
+        "family": { "enum": ["boundary", "shell", "personal", "project", "work-item-list", "work-item-detail", "message-search", "system"] },
+        "sourceTemplates": { "$ref": "#/$defs/nonEmptyStrings" },
+        "actors": { "$ref": "#/$defs/nonEmptyStrings" },
+        "permissions": { "$ref": "#/$defs/nonEmptyStrings" },
+        "controls": { "$ref": "#/$defs/nonEmptyStrings" },
+        "states": { "$ref": "#/$defs/nonEmptyStrings" },
+        "responsiveStates": { "$ref": "#/$defs/nonEmptyStrings" },
+        "migrationUnit": { "enum": ["U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8"] },
+        "status": { "$ref": "#/$defs/migrationStatus" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "pageId", "trigger", "inputs", "validation", "confirmation", "request", "successEffect", "errorEffects", "realtimeEffect", "repeatSubmitPolicy", "migrationUnit", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^action\\.[a-z0-9.-]+$" },
+        "pageId": { "type": "string", "pattern": "^page\\.[a-z0-9.-]+$" },
+        "trigger": { "$ref": "#/$defs/nonEmptyString" },
+        "inputs": { "type": "array", "items": { "$ref": "#/$defs/nonEmptyString" }, "uniqueItems": true },
+        "validation": { "$ref": "#/$defs/nonEmptyString" },
+        "confirmation": { "$ref": "#/$defs/nonEmptyString" },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "path"],
+          "properties": {
+            "method": { "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+            "path": { "type": "string", "pattern": "^/(?:web|api)/" }
+          }
+        },
+        "successEffect": { "$ref": "#/$defs/nonEmptyString" },
+        "errorEffects": { "$ref": "#/$defs/nonEmptyStrings" },
+        "realtimeEffect": { "$ref": "#/$defs/nonEmptyString" },
+        "repeatSubmitPolicy": { "enum": ["lock", "idempotent", "latest-wins", "reject"] },
+        "migrationUnit": { "enum": ["U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8"] },
+        "status": { "$ref": "#/$defs/migrationStatus" },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "hostException": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "capability", "browserBehavior", "desktopBehavior", "sharedOutcome", "tests"],
+      "properties": {
+        "code": { "enum": ["auth.transport", "route.transport", "file.picker", "file.save", "notification.native", "window.lifecycle"] },
+        "capability": { "$ref": "#/$defs/nonEmptyString" },
+        "browserBehavior": { "$ref": "#/$defs/nonEmptyString" },
+        "desktopBehavior": { "$ref": "#/$defs/nonEmptyString" },
+        "sharedOutcome": { "$ref": "#/$defs/nonEmptyString" },
+        "tests": { "$ref": "#/$defs/nonEmptyStrings" }
+      }
+    }
+  }
+}
