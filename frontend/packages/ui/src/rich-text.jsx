@@ -89,6 +89,17 @@ export function richTextAttachmentIds(value) {
   return [...ids];
 }
 
+/** @param {RichTextAttachmentOption} attachment */
+export function richTextAttachmentHtml(attachment) {
+  const mediaKind = attachment.contentType.startsWith('image/') ? 'image' : attachment.contentType.startsWith('video/') ? 'video' : 'file';
+  const id = String(attachment.id);
+  const url = escapeAttribute(attachment.url);
+  const filename = escapeAttribute(attachment.filename);
+  if (mediaKind === 'file') return `<a data-yuance-attachment-id="${id}" data-yuance-attachment-kind="file" data-yuance-align="left" href="${url}" title="${filename}">${escapeText(attachment.filename)}</a>`;
+  if (mediaKind === 'image') return `<figure data-yuance-attachment-id="${id}" data-yuance-attachment-kind="image" data-yuance-align="left"><img src="${url}" alt="${filename}" loading="lazy"></figure>`;
+  return `<figure data-yuance-attachment-id="${id}" data-yuance-attachment-kind="video" data-yuance-align="left"><video src="${url}" controls preload="metadata" playsinline title="${filename}"></video></figure>`;
+}
+
 /** @typedef {{ id: number, filename: string, contentType: string, url: string }} RichTextAttachmentOption */
 
 /** @param {{ id: string, value: string, onChange(value: string): void, disabled?: boolean, required?: boolean, label?: string, attachments?: RichTextAttachmentOption[] }} props */
@@ -230,6 +241,16 @@ function createAttachmentNode(ownerDocument, attachment) {
   else { media.setAttribute('controls', 'controls'); media.setAttribute('preload', 'metadata'); media.setAttribute('playsinline', 'playsinline'); media.setAttribute('title', attachment.filename); }
   container.appendChild(media);
   return container;
+}
+
+/** @param {string} value */
+function escapeText(value) {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/** @param {string} value */
+function escapeAttribute(value) {
+  return escapeText(value).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
 /** @param {HTMLDivElement} input @param {Element} node */

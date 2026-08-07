@@ -6,7 +6,7 @@ export { GlobalNavigation, closeNavigationMenuOnBlur, closeNavigationMenuOnEscap
 export { Button, DataTable, Feedback, Field, Modal, Pagination, Skeleton } from './primitives.jsx';
 export { AttachmentList, WorkItemAttachments } from './work-item-attachments.jsx';
 export { AttachmentPreview } from './attachment-preview.jsx';
-export { RichTextContent, RichTextEditor, plainTextToRichHtml, richTextAttachmentIds, richTextHasContent } from './rich-text.jsx';
+export { RichTextContent, RichTextEditor, plainTextToRichHtml, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from './rich-text.jsx';
 export { WorkItemComments } from './work-item-comments.jsx';
 export { WorkItemDetail } from './work-item-detail.jsx';
 export { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';

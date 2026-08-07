@@ -60,6 +60,34 @@ test('project resource creation exposes committed resource before an attachment 
   assert.equal(calls[0][1], resource);
 });
 
+test('project resource creation delegates desktop attachment bytes without renderer signing', async () => {
+  const calls = [];
+  const resource = { id: 8, body: '<p>正文</p>' };
+  const pending = { id: 9, status: 'pending' };
+  const uploaded = { id: 9, status: 'uploaded' };
+  const result = await createProjectResourceWithAttachments({
+    api: {
+      createProjectResource: async () => resource,
+      createProjectResourceAttachment: async () => { throw new Error('renderer must not register'); },
+      getProjectResourceAttachmentUploadUrl: async () => { throw new Error('renderer must not sign'); },
+      markProjectResourceAttachmentUploaded: async () => { throw new Error('renderer must not confirm'); },
+      updateProjectResource: async (_projectKey, _resourceId, payload) => ({ ...resource, body: payload.body }),
+    },
+    platform: {
+      attachments: {
+        uploadProjectResourceAttachment: async (input, onStage) => {
+          calls.push(['delegate', input]);
+          for (const stage of ['registering', 'signing', 'uploading', 'confirming']) onStage(stage);
+          return { created: pending, uploaded };
+        },
+      },
+    },
+    projectKey: 'YCE', payload: { body: '<p>正文</p>' }, attachments: [{ file }], lifecycle: lifecycle(calls),
+  });
+  assert.equal(result.completed, true);
+  assert.deepEqual(calls[1], ['delegate', { projectKey: 'YCE', resourceId: 8, fileCapability: file.capability }]);
+});
+
 function lifecycle(calls) {
   return {
     isCurrent: () => true,

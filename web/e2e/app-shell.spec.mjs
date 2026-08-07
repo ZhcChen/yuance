@@ -1899,6 +1899,60 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[5]).toEqual(['archive', null]);
 });
 
+test('shared project resource creation resumes attachment upload without duplicate records', async ({ page }) => {
+  const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
+  const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
+  const operations = [];
+  let checksum = '';
+  let uploadAttempts = 0;
+  let resource = projectResourceFixture({ id: 970, title: '创建附件资料', body: '<p>正文</p>', url: '/web/projects/YCE/resources/970' });
+  let attachment = { id: 971, filename: 'create-notes.txt', content_type: 'text/plain', byte_size: 11, status: 'pending', created_by: '元策开发管理员', created_at: '2026-08-07T00:00:00Z' };
+  await page.route('**/api/v1/test-storage/upload**', async (route) => {
+    operations.push('put'); uploadAttempts += 1;
+    await route.fulfill({ status: uploadAttempts === 1 ? 500 : 200, body: '' });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/970/attachments/971/upload-url', async (route) => {
+    operations.push('sign');
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: { attachment, request: { method: 'PUT', url: '/api/v1/test-storage/upload?target=create-resource-971', headers: [['content-type', 'text/plain']] }, expires_in_seconds: 600, checksum_sha256: checksum } }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/970/attachments/971/uploaded', async (route) => {
+    operations.push('confirm'); attachment = { ...attachment, status: 'uploaded' };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: attachment }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/970/attachments', async (route) => {
+    operations.push('register'); checksum = route.request().postDataJSON().checksum_sha256;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: attachment }) });
+  });
+  await page.route('**/api/v1/projects/YCE/resources/970', async (route) => {
+    const payload = route.request().postDataJSON(); operations.push('patch'); resource = { ...resource, body: payload.body, body_format: payload.body_format };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: resource }) });
+  });
+  await page.route(/\/api\/v1\/projects\/YCE\/resources(?:\?.*)?$/u, async (route) => {
+    if (route.request().method() === 'POST') { operations.push('create'); await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ data: resource }) }); return; }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: operations.includes('create') ? [resource] : [] }) });
+  });
+  await page.route('**/api/v1/projects/YCE/members', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: members }) }));
+  await page.route('**/api/v1/projects/YCE', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: project }) }));
+
+  await login(page, '/web/app/projects/YCE?tab=resources');
+  await page.getByRole('button', { name: '新建资料' }).click();
+  const dialog = page.getByRole('dialog', { name: '新建项目资料' });
+  await dialog.getByLabel('资料标题').fill('创建附件资料');
+  await dialog.getByLabel('资料正文').evaluate((input) => { input.innerHTML = '<p>正文</p>'; input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' })); });
+  await chooseFile(page, dialog.getByRole('button', { name: '选择附件' }), { name: 'create-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello world') });
+  await expect(dialog).toContainText('create-notes.txt');
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await expect(dialog).toContainText('上传未完成，需要重新选择原文件');
+  await expect(dialog.getByRole('button', { name: '转到资料详情' })).toBeEnabled();
+  expect(operations).toEqual(['create', 'register', 'sign', 'put']);
+  await chooseFile(page, dialog.getByRole('button', { name: '重新选择' }), { name: 'create-notes.txt', mimeType: 'text/plain', buffer: Buffer.from('hello world') });
+  await dialog.getByRole('button', { name: '保存' }).click();
+  await expect(dialog).not.toBeVisible();
+  expect(operations).toEqual(['create', 'register', 'sign', 'put', 'sign', 'put', 'confirm', 'patch']);
+  expect(resource.body).toContain('data-yuance-attachment-id="971"');
+  expect(resource.body).toContain('/web/projects/YCE/resources/970/attachments/971/download');
+});
+
 test('shared project resource attachments upload download and delete', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   const members = [{ user_id: 1, display_name: '元策开发管理员', username: 'yuance_admin', member_role: 'owner', joined_at: '2026-08-01T00:00:00Z' }];
