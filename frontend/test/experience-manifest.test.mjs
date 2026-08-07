@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { access, readFile } from 'node:fs/promises';
+import Ajv2020 from 'ajv/dist/2020.js';
 
 const manifestUrl = new URL('../parity/experience-manifest.json', import.meta.url);
 const schemaUrl = new URL('../parity/experience-manifest.schema.json', import.meta.url);
@@ -19,6 +20,13 @@ const allowedExceptionCodes = [
 async function readJson(url) {
   return JSON.parse(await readFile(url, 'utf8'));
 }
+
+test('体验清单完整通过 Draft 2020 JSON Schema 校验', async () => {
+  const [manifest, schema] = await Promise.all([readJson(manifestUrl), readJson(schemaUrl)]);
+  const validate = new Ajv2020({ allErrors: true }).compile(schema);
+
+  assert.equal(validate(manifest), true, JSON.stringify(validate.errors, null, 2));
+});
 
 test('体验清单 schema 使用封闭对象和受控宿主差异枚举', async () => {
   const schema = await readJson(schemaUrl);

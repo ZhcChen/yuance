@@ -59,7 +59,7 @@ npm test --prefix frontend
 git diff --check
 ```
 
-结果：Frontend lint 通过，35 项测试通过。测试验证来源快照、宿主差异枚举、ID/引用闭合、route/method 唯一 owner、route 双向覆盖、模板双向覆盖和 marker 全量分类。
+结果：Frontend lint 通过，36 项测试通过。测试使用 Ajv Draft 2020 校验完整 manifest，并验证来源快照、宿主差异枚举、ID/引用闭合、route/method 唯一 owner、route 双向覆盖、模板双向覆盖和 marker 全量分类。
 
 ## 后续入口
 
