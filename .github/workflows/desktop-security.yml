@@ -52,10 +52,6 @@ jobs:
       - name: Install desktop dependencies
         run: npm --prefix desktop ci
 
-      - name: Install Linux secure storage runtime
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
-
       - name: Run focused Device API tests
         run: cargo test --manifest-path api/Cargo.toml --test desktop_enrollment_contract_flow --test device_access_auth_flow --test device_business_parity_flow --test device_sse_authorization_flow --test device_file_transfer_flow
 
@@ -72,12 +68,7 @@ jobs:
 
       - name: Run Linux desktop tests
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop test
-          '
+        run: xvfb-run -a npm --prefix desktop test
 
       - name: Build unpacked desktop app
         run: npm --prefix desktop run pack:dir
@@ -101,12 +92,7 @@ jobs:
 
       - name: Smoke Linux unpacked desktop feature parity
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop run smoke:desktop-feature-parity -- dist
-          '
+        run: xvfb-run -a npm --prefix desktop run smoke:desktop-feature-parity -- dist
 
       - name: Scan source, fixture, report, ASAR, and unpacked artifacts
         run: npm --prefix desktop run scan:credential-leaks
@@ -114,23 +100,13 @@ jobs:
       - name: Verify desktop feature parity evidence
         run: npm --prefix desktop run verify:desktop-feature-parity-artifacts
 
-      - name: Verify native safeStorage boundary
-        if: runner.os == 'Windows'
-        run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
-
-      - name: Verify macOS single-instance boundary without Keychain
-        if: runner.os == 'macOS'
+      - name: Verify native single-instance boundary
+        if: runner.os != 'Linux'
         run: npm --prefix desktop run smoke:single-instance
 
-      - name: Verify Linux secure safeStorage boundary
+      - name: Verify Linux single-instance boundary
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop run smoke:safe-storage -- --password-store=gnome-libsecret
-            xvfb-run -a npm --prefix desktop run smoke:single-instance
-          '
+        run: xvfb-run -a npm --prefix desktop run smoke:single-instance
 
       - name: Upload desktop security verification
         if: always()

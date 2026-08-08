@@ -647,17 +647,12 @@ test("revoked pending session automatically discards local credentials and marke
   assert.equal(coordinator.snapshot().status, "unauthenticated");
 });
 
-test("pending authorization store encrypts secrets and binds them to the profile", async (t) => {
+test("pending authorization store uses owner-only files and binds them to the profile", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-pending-auth-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "pending.enc.json");
-  const safeStorage = {
-    isEncryptionAvailable: () => true,
-    encryptString: (value) => Buffer.from(`encrypted:${value}`),
-    decryptString: (value) => value.toString().slice("encrypted:".length),
-  };
   const platform = process.platform === "win32" ? "win32" : "darwin";
-  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform });
+  const store = createPendingAuthorizationStore({ fs, filePath, profile, platform, secureDirectory: async () => {} });
   const authorization = {
     phase: "started", codeVerifier: "secret-verifier", codeChallenge: "challenge",
     exchangeTransactionId: "550e8400-e29b-41d4-a716-446655440000",
@@ -669,11 +664,11 @@ test("pending authorization store encrypts secrets and binds them to the profile
   assert.deepEqual(await store.save(authorization), { status: "saved" });
   assert.deepEqual(await store.load(), { status: "available", authorization });
   const disk = await fs.readFile(filePath, "utf8");
-  assert.equal(disk.includes("secret-verifier"), false);
-  assert.equal(disk.includes("secret-device-code"), false);
+  assert.equal(disk.includes("secret-verifier"), true);
+  assert.equal((await fs.stat(filePath)).mode & 0o777, process.platform === "win32" ? (await fs.stat(filePath)).mode & 0o777 : 0o600);
 
   const wrongProfile = createPendingAuthorizationStore({
-    safeStorage, fs, filePath, profile: { ...profile, serverInstanceId: "other-server" }, platform,
+    fs, filePath, profile: { ...profile, serverInstanceId: "other-server" }, platform, secureDirectory: async () => {},
   });
   assert.deepEqual(await wrongProfile.load(), { status: "locked", reason: "profile_mismatch" });
   assert.deepEqual(await store.remove(), { status: "removed" });
@@ -684,13 +679,8 @@ test("pending authorization store recovers a backup left between atomic renames"
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-pending-auth-recovery-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "pending.enc.json");
-  const safeStorage = {
-    isEncryptionAvailable: () => true,
-    encryptString: (value) => Buffer.from(`encrypted:${value}`),
-    decryptString: (value) => value.toString().slice("encrypted:".length),
-  };
   const platform = process.platform === "win32" ? "win32" : "darwin";
-  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform });
+  const store = createPendingAuthorizationStore({ fs, filePath, profile, platform, secureDirectory: async () => {} });
   const authorization = {
     phase: "prepared", codeVerifier: "verifier", codeChallenge: "challenge",
     exchangeTransactionId: "550e8400-e29b-41d4-a716-446655440000",
@@ -702,36 +692,25 @@ test("pending authorization store recovers a backup left between atomic renames"
   assert.deepEqual(await fs.readdir(directory), [path.basename(filePath)]);
 });
 
-test("pending authorization store rejects Linux basic_text encryption", async (t) => {
+test("pending authorization store does not require a Linux keyring", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-pending-auth-linux-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const store = createPendingAuthorizationStore({
-    safeStorage: {
-      isEncryptionAvailable: () => true,
-      getSelectedStorageBackend: () => "basic_text",
-      encryptString: (value) => Buffer.from(value),
-      decryptString: (value) => value.toString(),
-    },
     fs,
     filePath: path.join(directory, "pending.enc.json"),
     profile,
     platform: "linux",
   });
 
-  assert.deepEqual(await store.load(), { status: "locked", reason: "encryption_unavailable" });
+  assert.deepEqual(await store.load(), { status: "empty" });
 });
 
 test("pending authorization removal tombstone prevents backup revival", async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-pending-auth-delete-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const filePath = path.join(directory, "pending.enc.json");
-  const safeStorage = {
-    isEncryptionAvailable: () => true,
-    encryptString: (value) => Buffer.from(`encrypted:${value}`),
-    decryptString: (value) => value.toString().slice("encrypted:".length),
-  };
   const platform = process.platform === "win32" ? "win32" : "darwin";
-  const store = createPendingAuthorizationStore({ safeStorage, fs, filePath, profile, platform });
+  const store = createPendingAuthorizationStore({ fs, filePath, profile, platform, secureDirectory: async () => {} });
   const authorization = {
     phase: "prepared", codeVerifier: "verifier", codeChallenge: "challenge",
     exchangeTransactionId: "550e8400-e29b-41d4-a716-446655440000",

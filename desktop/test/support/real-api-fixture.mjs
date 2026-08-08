@@ -109,22 +109,25 @@ export async function startRealApiFixture({ repoRoot = DEFAULT_REPO_ROOT, fetchI
         return Object.freeze({ publicResourceId: publicResource.id, protectedResourceId: protectedResource.id });
       },
       async activateTestStorage(session) {
-        const body = new URLSearchParams({
-          _csrf: session.csrfToken,
+        const body = {
           endpoint: "memory://yuance-tests",
           region: "test",
           bucket: "desktop-file-canary",
           access_key_id: "DesktopFileFixtureAccessKey",
           access_key_secret: "DesktopFileFixtureSecret2026",
-          activate: "on",
-        });
-        const response = await fetchImpl(`${origin}/web/system/storage`, {
+          activate: true,
+        };
+        const response = await fetchImpl(`${origin}/api/v1/storage/config`, {
           method: "POST",
           redirect: "manual",
-          headers: { cookie: session.cookie, "content-type": "application/x-www-form-urlencoded" },
-          body,
+          headers: {
+            cookie: session.cookie,
+            "content-type": "application/json",
+            "x-yuance-csrf-token": session.csrfToken,
+          },
+          body: JSON.stringify(body),
         });
-        if (response.status !== 200) throw new Error(`test storage activation failed with ${response.status}`);
+        if (response.status !== 201) throw new Error(`test storage activation failed with ${response.status}`);
       },
       async stop({ beforeRemove = async () => {} } = {}) {
         if (stopped) return;

@@ -1,17 +1,9 @@
 import crypto from "node:crypto";
 import path from "node:path";
 
-export const CREDENTIAL_ENVELOPE_VERSION = 1;
-export const CREDENTIAL_PAYLOAD_VERSION = 1;
+export const CREDENTIAL_ENVELOPE_VERSION = 2;
 
-const ENVELOPE_KEYS = ["ciphertext", "encryption", "version"];
-const ENCRYPTION_NAME = "electron-safe-storage";
-const LINUX_SECURE_BACKENDS = new Set([
-  "gnome_libsecret",
-  "kwallet",
-  "kwallet5",
-  "kwallet6",
-]);
+const ENVELOPE_KEYS = ["credential", "profileIdentity", "version"];
 const CREDENTIAL_KEYS = [
   "accessExpiresAt",
   "authorizationVersion",
@@ -36,12 +28,12 @@ const REQUIRED_CREDENTIAL_KEYS = [
 ];
 
 export function createProfileCredentialStore({
-  safeStorage,
   fs,
   userDataPath,
   profile,
   platform = process.platform,
   randomBytes = crypto.randomBytes,
+  secureDirectory,
 }) {
   if (typeof userDataPath !== "string" || userDataPath.length === 0) {
     throw new TypeError("userDataPath is required");
@@ -52,24 +44,24 @@ export function createProfileCredentialStore({
   const match = /^yuance-desktop-profile-v1:([a-f0-9]{64})$/.exec(profile.key);
   if (!match) throw new TypeError("profile key is invalid");
   return createCredentialStore({
-    safeStorage,
     fs,
-    filePath: path.join(userDataPath, "Device Credentials", `${match[1]}.enc.json`),
+    filePath: path.join(userDataPath, "Device Credentials", `${match[1]}.json`),
     profileIdentity: profile,
     platform,
     randomBytes,
+    secureDirectory,
   });
 }
 
 export function createCredentialStore({
-  safeStorage,
   fs,
   filePath,
   profileIdentity,
   platform = process.platform,
   randomBytes = crypto.randomBytes,
+  secureDirectory,
 }) {
-  requireAdapter(safeStorage, fs, filePath);
+  requireAdapter(fs, filePath, platform, secureDirectory);
   if (!isPlainObject(profileIdentity)) throw new TypeError("profileIdentity must be an object");
   const expectedProfile = canonicalJson(profileIdentity, "profile identity");
   const storedProfile = JSON.parse(expectedProfile);
@@ -79,22 +71,6 @@ export function createCredentialStore({
       return unavailable("unsupported_platform");
     }
 
-    try {
-      if (!safeStorage.isEncryptionAvailable()) {
-        return unavailable("encryption_unavailable");
-      }
-      if (platform === "linux") {
-        if (typeof safeStorage.getSelectedStorageBackend !== "function") {
-          return unavailable("backend_unavailable");
-        }
-        const backend = String(safeStorage.getSelectedStorageBackend() || "").toLowerCase();
-        if (!LINUX_SECURE_BACKENDS.has(backend)) {
-          return unavailable(backend === "basic_text" ? "insecure_backend" : "backend_unavailable");
-        }
-      }
-    } catch {
-      return unavailable("backend_unavailable");
-    }
     return { status: "available" };
   }
 
@@ -102,6 +78,7 @@ export function createCredentialStore({
     const backend = availability();
     if (backend.status !== "available") return backend;
     try {
+      await prepareCredentialDirectory(fs, filePath, platform, secureDirectory);
       await finishPendingRemoval(fs, filePath, platform);
     } catch {
       return locked("recovery_failed");
@@ -116,6 +93,9 @@ export function createCredentialStore({
 
     let serialized;
     try {
+      if (platform !== "win32" && ((await fs.stat(filePath)).mode & 0o077) !== 0) {
+        return locked("insecure_permissions");
+      }
       serialized = await fs.readFile(filePath, "utf8");
     } catch (error) {
       if (error?.code === "ENOENT") return { status: "empty" };
@@ -130,20 +110,7 @@ export function createCredentialStore({
       return locked("corrupt_envelope");
     }
 
-    let plaintext;
-    try {
-      plaintext = safeStorage.decryptString(Buffer.from(envelope.ciphertext, "base64"));
-    } catch {
-      return locked("decryption_failed");
-    }
-
-    let payload;
-    try {
-      payload = JSON.parse(plaintext);
-      validatePayload(payload);
-    } catch {
-      return locked("invalid_payload");
-    }
+    const payload = envelope;
 
     let actualProfile;
     try {
@@ -160,6 +127,7 @@ export function createCredentialStore({
     const backend = availability();
     if (backend.status !== "available") return backend;
     try {
+      await prepareCredentialDirectory(fs, filePath, platform, secureDirectory);
       await finishPendingRemoval(fs, filePath, platform);
     } catch {
       return locked("recovery_failed");
@@ -180,18 +148,13 @@ export function createCredentialStore({
 
     let envelope;
     try {
-      const plaintext = JSON.stringify({
-        version: CREDENTIAL_PAYLOAD_VERSION,
+      envelope = JSON.stringify({
+        version: CREDENTIAL_ENVELOPE_VERSION,
         profileIdentity: storedProfile,
         credential,
       });
-      envelope = JSON.stringify({
-        version: CREDENTIAL_ENVELOPE_VERSION,
-        encryption: ENCRYPTION_NAME,
-        ciphertext: safeStorage.encryptString(plaintext).toString("base64"),
-      });
     } catch {
-      return locked("encryption_failed");
+      return locked("serialization_failed");
     }
 
     try {
@@ -204,6 +167,7 @@ export function createCredentialStore({
 
   async function remove() {
     try {
+      await prepareCredentialDirectory(fs, filePath, platform, secureDirectory);
       await writeRemovalMarker(fs, filePath, platform);
       await finishPendingRemoval(fs, filePath, platform);
       return { status: "removed" };
@@ -370,23 +334,10 @@ function validateEnvelope(value) {
   if (!isPlainObject(value) || Object.keys(value).sort().join(",") !== ENVELOPE_KEYS.join(",")) {
     throw new Error("invalid envelope");
   }
-  if (value.version !== CREDENTIAL_ENVELOPE_VERSION || value.encryption !== ENCRYPTION_NAME) {
+  if (value.version !== CREDENTIAL_ENVELOPE_VERSION) {
     throw new Error("unsupported envelope");
   }
-  if (typeof value.ciphertext !== "string" || !isCanonicalBase64(value.ciphertext)) {
-    throw new Error("invalid ciphertext");
-  }
-}
-
-function validatePayload(value) {
-  if (
-    !isPlainObject(value) ||
-    value.version !== CREDENTIAL_PAYLOAD_VERSION ||
-    !("profileIdentity" in value) ||
-    !("credential" in value)
-  ) {
-    throw new Error("invalid payload");
-  }
+  if (!isPlainObject(value.profileIdentity)) throw new Error("invalid profile identity");
   assertCredential(value.credential);
 }
 
@@ -455,25 +406,28 @@ function canonicalJson(value, label) {
   return JSON.stringify(normalize(value));
 }
 
-function isCanonicalBase64(value) {
-  if (value.length === 0 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(value)) {
-    return false;
-  }
-  return Buffer.from(value, "base64").toString("base64") === value;
-}
-
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function requireAdapter(safeStorage, fs, filePath) {
-  for (const name of ["isEncryptionAvailable", "encryptString", "decryptString"]) {
-    if (typeof safeStorage?.[name] !== "function") throw new TypeError(`safeStorage.${name} is required`);
-  }
+function requireAdapter(fs, filePath, platform, secureDirectory) {
   for (const name of ["readFile", "mkdir", "open", "copyFile", "rename", "unlink", "chmod", "stat"]) {
     if (typeof fs?.[name] !== "function") throw new TypeError(`fs.${name} is required`);
   }
+  if (platform === "win32" && typeof secureDirectory !== "function") {
+    throw new TypeError("secureDirectory is required on Windows");
+  }
   if (typeof filePath !== "string" || filePath.length === 0) throw new TypeError("filePath is required");
+}
+
+async function prepareCredentialDirectory(fs, filePath, platform, secureDirectory) {
+  const directory = path.dirname(filePath);
+  if (platform === "win32") {
+    await secureDirectory(directory);
+    return;
+  }
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  await fs.chmod(directory, 0o700);
 }
 
 function locked(reason) {

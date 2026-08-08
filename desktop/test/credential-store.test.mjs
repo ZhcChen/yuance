@@ -25,107 +25,54 @@ const credential = {
   lastConfirmedServerGeneration: 3,
 };
 
-function safeStorage({ available = true, backend = "gnome_libsecret", includeBackend = true } = {}) {
-  return {
-    isEncryptionAvailable: () => available,
-    ...(includeBackend ? { getSelectedStorageBackend: () => backend } : {}),
-    encryptString: (value) => Buffer.from(`encrypted:${value}`, "utf8"),
-    decryptString: (value) => {
-      const serialized = value.toString("utf8");
-      if (!serialized.startsWith("encrypted:")) throw new Error("invalid ciphertext");
-      return serialized.slice("encrypted:".length);
-    },
-  };
-}
-
 async function fixture(t, options = {}) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-credential-store-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const filePath = path.join(directory, "credentials", "device.enc.json");
+  const filePath = path.join(directory, "credentials", "device.json");
   return {
     filePath,
     store: createCredentialStore({
-      safeStorage: options.safeStorage ?? safeStorage(),
       fs: options.fs ?? fs,
       filePath,
       profileIdentity: options.profileIdentity ?? profile,
       platform: options.platform ?? process.platform,
       randomBytes: () => Buffer.alloc(12, options.nonce ?? 1),
+      secureDirectory: options.secureDirectory ?? (async () => {}),
     }),
   };
 }
 
-test("encrypts the complete payload and keeps the outer envelope non-sensitive", async (t) => {
+test("persists the complete payload in the owner-only versioned file", async (t) => {
   const { store, filePath } = await fixture(t);
   assert.deepEqual(await store.save(credential), { status: "saved" });
   assert.deepEqual(await store.load(), { status: "available", credential });
 
   const serialized = await fs.readFile(filePath, "utf8");
   const envelope = JSON.parse(serialized);
-  assert.deepEqual(Object.keys(envelope).sort(), ["ciphertext", "encryption", "version"]);
-  for (const secret of [profile.origin, profile.serverInstanceId, credential.userId, credential.refreshToken]) {
-    assert.equal(serialized.includes(secret), false);
-  }
-  assert.equal(envelope.version, 1);
-  assert.equal(envelope.encryption, "electron-safe-storage");
+  assert.deepEqual(Object.keys(envelope).sort(), ["credential", "profileIdentity", "version"]);
+  assert.equal(envelope.version, 2);
+  assert.deepEqual(envelope.profileIdentity, profile);
+  assert.deepEqual(envelope.credential, credential);
 });
 
-test("requires encryption on macOS and Windows", async (t) => {
-  for (const platform of ["darwin", "win32"]) {
-    const { store } = await fixture(t, {
-      platform,
-      safeStorage: safeStorage({ available: false }),
-      nonce: platform === "darwin" ? 2 : 3,
-    });
-    assert.deepEqual(store.availability(), {
-      status: "unavailable",
-      reason: "encryption_unavailable",
-    });
-    assert.deepEqual(await store.save(credential), {
-      status: "unavailable",
-      reason: "encryption_unavailable",
-    });
-  }
-});
-
-test("rejects Linux basic_text without plaintext fallback", async (t) => {
-  const { store, filePath } = await fixture(t, {
-    platform: "linux",
-    safeStorage: safeStorage({ backend: "basic_text" }),
-  });
-  assert.deepEqual(await store.save(credential), {
-    status: "unavailable",
-    reason: "insecure_backend",
-  });
-  await assert.rejects(fs.access(filePath), { code: "ENOENT" });
-});
-
-test("allows Linux only with an available secure backend", async (t) => {
+test("supports owner-only files on Linux without a desktop keyring", async (t) => {
   if (process.platform === "win32") {
     t.skip("POSIX atomic storage is covered by Linux CI");
     return;
   }
-  const { store } = await fixture(t, { platform: "linux" });
+  const { store, filePath } = await fixture(t, { platform: "linux" });
   assert.deepEqual(await store.save(credential), { status: "saved" });
   assert.deepEqual(await store.load(), { status: "available", credential });
+  assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);
 });
 
-test("rejects missing, empty, and unknown Linux storage backends", async (t) => {
-  for (const [index, adapter] of [
-    safeStorage({ includeBackend: false }),
-    safeStorage({ backend: "" }),
-    safeStorage({ backend: "future_backend" }),
-  ].entries()) {
-    const { store } = await fixture(t, {
-      platform: "linux",
-      safeStorage: adapter,
-      nonce: 20 + index,
-    });
-    assert.deepEqual(store.availability(), {
-      status: "unavailable",
-      reason: "backend_unavailable",
-    });
-  }
+test("requires a native private-directory guard on Windows", () => {
+  assert.throws(() => createCredentialStore({
+    fs,
+    filePath: "C:\\Users\\test\\credential.json",
+    profileIdentity: profile,
+    platform: "win32",
+  }), /secureDirectory is required on Windows/u);
 });
 
 test("replaces an existing Windows record through the controlled backup path", async (t) => {
@@ -143,11 +90,11 @@ test("recovers the last confirmed Windows record after a crash between renames",
   await fs.rename(filePath, `${filePath}.previous`);
 
   const restarted = createCredentialStore({
-    safeStorage: safeStorage(),
     fs,
     filePath,
     profileIdentity: profile,
     platform: "win32",
+    secureDirectory: async () => {},
   });
   assert.deepEqual(await restarted.load(), { status: "available", credential });
   assert.deepEqual(await fs.readdir(path.dirname(filePath)), [path.basename(filePath)]);
@@ -174,11 +121,11 @@ test("Windows removal tombstone prevents previous credentials from reviving", as
       },
     };
     const interrupted = createCredentialStore({
-      safeStorage: safeStorage(),
       fs: failingFs,
       filePath,
       profileIdentity: profile,
       platform: "win32",
+      secureDirectory: async () => {},
     });
     assert.deepEqual(await interrupted.remove(), {
       status: "locked",
@@ -186,26 +133,26 @@ test("Windows removal tombstone prevents previous credentials from reviving", as
     });
 
     const restarted = createCredentialStore({
-      safeStorage: safeStorage(),
       fs,
       filePath,
       profileIdentity: profile,
       platform: "win32",
+      secureDirectory: async () => {},
     });
     assert.deepEqual(await restarted.load(), { status: "empty" });
     assert.deepEqual(await fs.readdir(path.dirname(filePath)), []);
   }
 });
 
-test("strictly binds decrypted credentials to the current profile", async (t) => {
+test("strictly binds credentials to the current profile", async (t) => {
   const { store, filePath } = await fixture(t);
   await store.save(credential);
   const otherProfileStore = createCredentialStore({
-    safeStorage: safeStorage(),
     fs,
     filePath,
     profileIdentity: { ...profile, serverInstanceId: "server-2" },
     platform: process.platform,
+    secureDirectory: async () => {},
   });
   assert.deepEqual(await otherProfileStore.load(), {
     status: "locked",
@@ -221,7 +168,7 @@ test("freezes the profile identity at store construction", async (t) => {
   assert.deepEqual(await store.load(), { status: "available", credential });
 });
 
-test("returns locked for corrupt envelopes and ciphertext", async (t) => {
+test("returns locked for corrupt and obsolete envelopes", async (t) => {
   const { store, filePath } = await fixture(t);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, "not-json", { mode: 0o600 });
@@ -229,10 +176,10 @@ test("returns locked for corrupt envelopes and ciphertext", async (t) => {
 
   await fs.writeFile(
     filePath,
-    `${JSON.stringify({ version: 1, encryption: "electron-safe-storage", ciphertext: Buffer.from("bad").toString("base64") })}\n`,
+    `${JSON.stringify({ version: 1, ciphertext: "obsolete" })}\n`,
     { mode: 0o600 },
   );
-  assert.deepEqual(await store.load(), { status: "locked", reason: "decryption_failed" });
+  assert.deepEqual(await store.load(), { status: "locked", reason: "corrupt_envelope" });
 });
 
 test("preserves the last confirmed record when a temporary write fails", async (t) => {
@@ -250,8 +197,9 @@ test("preserves the last confirmed record when a temporary write fails", async (
     },
   };
   const failingStore = createCredentialStore({
-    safeStorage: safeStorage(), fs: failingFs, filePath, profileIdentity: profile, platform: process.platform,
+    fs: failingFs, filePath, profileIdentity: profile, platform: process.platform,
     randomBytes: () => Buffer.alloc(12, 4),
+    secureDirectory: async () => {},
   });
   assert.deepEqual(await failingStore.save({ ...credential, generation: 4 }), {
     status: "locked", reason: "write_failed",
@@ -285,7 +233,7 @@ test("restores the last confirmed record when post-rename directory fsync fails"
     },
   };
   const failingStore = createCredentialStore({
-    safeStorage: safeStorage(), fs: failingFs, filePath, profileIdentity: profile, platform: "darwin",
+    fs: failingFs, filePath, profileIdentity: profile, platform: "darwin",
     randomBytes: () => Buffer.alloc(12, 5),
   });
   assert.deepEqual(await failingStore.save({ ...credential, generation: 4 }), {
@@ -303,6 +251,17 @@ test("uses owner-only POSIX permissions and leaves no transaction artifacts", as
   await store.save(credential);
   assert.equal((await fs.stat(filePath)).mode & 0o777, 0o600);
   assert.deepEqual(await fs.readdir(path.dirname(filePath)), [path.basename(filePath)]);
+});
+
+test("refuses to read a POSIX credential file exposed to other users", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX permissions are covered by macOS and Linux CI");
+    return;
+  }
+  const { store, filePath } = await fixture(t, { platform: "linux" });
+  await store.save(credential);
+  await fs.chmod(filePath, 0o644);
+  assert.deepEqual(await store.load(), { status: "locked", reason: "insecure_permissions" });
 });
 
 test("refuses to persist an access token", async (t) => {
@@ -340,15 +299,15 @@ test("isolates credential files by the hash portion of the profile key", async (
     key: `yuance-desktop-profile-v1:${"a".repeat(64)}`,
   };
   const store = createProfileCredentialStore({
-    safeStorage: safeStorage(),
     fs,
     userDataPath: directory,
     profile: profileWithKey,
     platform: "win32",
     randomBytes: () => Buffer.alloc(12, 9),
+    secureDirectory: async () => {},
   });
   assert.deepEqual(await store.save(credential), { status: "saved" });
   assert.deepEqual(await fs.readdir(path.join(directory, "Device Credentials")), [
-    `${"a".repeat(64)}.enc.json`,
+    `${"a".repeat(64)}.json`,
   ]);
 });

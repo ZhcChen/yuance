@@ -56,16 +56,16 @@ test("workflow keeps internal trust labels and excludes updater metadata", async
   assert.doesNotMatch(source, /latest(?:-mac)?\.yml|electron-updater|notariz|signtool(?:\.exe)?\s+sign/iu);
 });
 
-test("Linux release tests run with the secure storage runtime", async () => {
+test("Linux release tests run without a desktop keyring", async () => {
   const source = await workflow();
-  assert.match(source, /apt-get install --yes dbus-x11 gnome-keyring/u);
-  assert.match(source, /dbus-run-session -- bash -euo pipefail -c[\s\S]*gnome-keyring-daemon --unlock --components=secrets[\s\S]*xvfb-run -a npm --prefix desktop test/u);
+  assert.doesNotMatch(source, /gnome-keyring|dbus-run-session|password-store/u);
+  assert.match(source, /xvfb-run -a npm --prefix desktop test/u);
 });
 
-test("macOS release jobs never invoke safeStorage", async () => {
+test("release jobs never invoke Electron safe storage", async () => {
   const source = await workflow();
-  assert.match(source, /Verify Windows native safeStorage boundary[\s\S]*if: runner\.os == 'Windows'[\s\S]*smoke:safe-storage/u);
-  assert.doesNotMatch(source, /if: runner\.os != 'Linux'[\s\S]{0,160}smoke:safe-storage/u);
+  assert.doesNotMatch(source, /safeStorage|safe-storage|gnome-keyring/u);
+  assert.match(source, /Verify native single-instance boundary/u);
 });
 
 test("platform runners prove native signing boundaries before upload", async () => {

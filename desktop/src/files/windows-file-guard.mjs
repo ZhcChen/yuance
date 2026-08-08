@@ -23,10 +23,11 @@ export function loadWindowsFileGuard({
   } catch {
     throw guardError("file_native_guard_required");
   }
-  for (const name of ["captureWindowsFile", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle", "commitWindowsDownload"]) {
+  for (const name of ["captureWindowsFile", "secureWindowsPrivateDirectory", "secureWindowsSpoolRoot", "cleanupWindowsSpool", "removeWindowsSnapshot", "verifyWindowsSnapshotHandle", "commitWindowsDownload"]) {
     if (typeof native?.[name] !== "function") throw guardError("file_native_guard_required");
   }
   return Object.freeze({
+    securePrivateDirectory: (directory) => invoke(native.secureWindowsPrivateDirectory, directory),
     secureSpoolRoot: (spoolRoot) => invoke(native.secureWindowsSpoolRoot, spoolRoot),
     cleanupSpool: (spoolRoot) => invoke(native.cleanupWindowsSpool, spoolRoot),
     captureFile: (input) => invoke(native.captureWindowsFile, input),

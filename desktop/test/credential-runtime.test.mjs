@@ -21,7 +21,6 @@ test("assembles one coordinator with an injected Electron session fetch", async 
     fetchImpl,
     userDataPath: "/tmp/yuance-runtime-test",
     fs: fakeFs(),
-    safeStorage: {},
     platform: "darwin",
     createClient: (options) => {
       captured.clientOptions = options;
@@ -47,7 +46,7 @@ test("assembles one coordinator with an injected Electron session fetch", async 
 
 test("requires fetch injection and never falls back to global fetch", () => {
   assert.throws(
-    () => createCredentialRuntime({ profile, userDataPath: "/tmp", fs: fakeFs(), safeStorage: {} }),
+    () => createCredentialRuntime({ profile, userDataPath: "/tmp", fs: fakeFs() }),
     /fetchImpl is required/,
   );
 });
@@ -170,7 +169,6 @@ function runtimeFixture({ coordinator = fakeCoordinator(), fs = fakeFs(), ...ove
     fetchImpl: async () => new Response("{}"),
     userDataPath: "/tmp/yuance-runtime-test",
     fs,
-    safeStorage: {},
     platform: "darwin",
     installationId: async () => "installation-1",
     deviceName: "Yuance Desktop",

@@ -7,12 +7,11 @@ import {
   nativeImage,
   protocol,
   powerMonitor,
-  safeStorage,
   session,
   shell,
 } from "electron";
 import fs from "node:fs/promises";
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,7 +30,6 @@ import {
 } from "./config.mjs";
 import { loadOrCreateInstallationId } from "./auth/installation-id.mjs";
 import { createCredentialRuntime } from "./auth/credential-runtime.mjs";
-import { runSafeStorageSmoke } from "./auth/safe-storage-smoke.mjs";
 import { createHostStatePublisher } from "./ipc/host-state.mjs";
 import { registerAuthCommandHandlers } from "./ipc/auth-commands.mjs";
 import { createNetworkStatePublisher } from "./ipc/network-state.mjs";
@@ -125,7 +123,8 @@ const desktopFeatureParityUiSmokeProfile = app.isPackaged
 const APP_PROTOCOL_SMOKE_STABILITY_MS = 1_000;
 const appProtocolSmokeRequests = [];
 const appProtocolSmokeResponses = [];
-const credentialStorage = process.platform === "darwin" ? createEphemeralCredentialStorage() : safeStorage;
+const windowsFileGuard = loadWindowsFileGuard();
+const secureCredentialDirectory = windowsFileGuard?.securePrivateDirectory;
 let appProtocolSmokePermissionChecks = 0;
 let appProtocolSmokeDataPath;
 let appProtocolSmokeInitialRenderer;
@@ -849,7 +848,7 @@ async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", o
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage: credentialStorage,
+    secureDirectory: secureCredentialDirectory,
     fs,
     userDataPath,
     platform: process.platform,
@@ -857,7 +856,7 @@ async function runDeviceAuthHeadless(serverInstanceId, { action = "authorize", o
     deviceName: `${appIdentity.displayName} (${process.platform})`,
     clientVersion: app.getVersion(),
   });
-  const initialized = await normalizeMacEphemeralSession(runtime, await runtime.initialize());
+  const initialized = await runtime.initialize();
   if (initialized.status === "authenticated") {
     if (action === "logout") {
       const loggedOut = await runtime.logout();
@@ -900,14 +899,15 @@ async function runDesktopNetworkSmoke() {
   let activeController;
   const authStates = [];
   const runtime = createCredentialRuntime({
-    profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: credentialStorage, fs,
+    profile: enrolled.profile, fetchImpl: network.fetch, fs,
     userDataPath: app.getPath("userData"), platform: process.platform,
+    secureDirectory: secureCredentialDirectory,
     installationId: () => installationId(app.getPath("userData")),
     deviceName: "Yuance Packaged Network Smoke", clientVersion: app.getVersion(),
     onNetworkInvalidated: () => activeController?.abort(),
     onPublicState: (state) => authStates.push(state.status),
   });
-  const initialized = await normalizeMacEphemeralSession(runtime, await runtime.initialize());
+  const initialized = await runtime.initialize();
   writeDesktopNetworkSmokeStage("credential-initialized");
   if (desktopNetworkSmokePhase === "authorize") {
     if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial smoke state: ${initialized.status}`);
@@ -985,8 +985,7 @@ async function runDesktopFileSmoke() {
   const userDataPath = app.getPath("userData");
   const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
   const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
-  const fileSmokeStorage = process.platform === "darwin" ? createEphemeralCredentialStorage() : credentialStorage;
-  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: fileSmokeStorage, fs, userDataPath, platform: process.platform, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged File Smoke", clientVersion: app.getVersion() });
+  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, fs, userDataPath, platform: process.platform, secureDirectory: secureCredentialDirectory, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged File Smoke", clientVersion: app.getVersion() });
   const initialized = await runtime.initialize();
   if (desktopFileSmokePhase === "authorize") {
     if (initialized.status !== "unauthenticated") throw new Error(`unexpected initial file smoke state: ${initialized.status}`);
@@ -1042,7 +1041,7 @@ async function runDesktopBusinessFileSmoke() {
   const userDataPath = app.getPath("userData");
   const network = await createTrustedNetworkSession({ electronSession: session, mode: "development", allowedOrigin: origin.origin });
   const enrolled = await enrollDesktop({ origin: origin.origin, mode: "development", fetchImpl: network.fetch });
-  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, safeStorage: process.platform === "darwin" ? createEphemeralCredentialStorage() : credentialStorage, fs, userDataPath, platform: process.platform, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged Business File Smoke", clientVersion: app.getVersion() });
+  const runtime = createCredentialRuntime({ profile: enrolled.profile, fetchImpl: network.fetch, fs, userDataPath, platform: process.platform, secureDirectory: secureCredentialDirectory, installationId: () => installationId(userDataPath), deviceName: "Yuance Packaged Business File Smoke", clientVersion: app.getVersion() });
   await runtime.initialize();
   await runtime.authorize({ openExternal: async () => {}, onUserCode: (userCode) => process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-business-file-user-code", userCode })}\n`) });
 
@@ -1106,40 +1105,6 @@ async function runDesktopBusinessFileSmoke() {
   revealVault.invalidateAll();
   const spoolFiles = (await fs.readdir(spoolRoot).catch(() => [])).filter((name) => /^(?:snapshot-|\.capture-)/u.test(name));
   process.stdout.write(`${JSON.stringify({ kind: "yuance-desktop-business-file-smoke", itemUploaded: itemUpload.uploaded.status === "uploaded", commentUploaded: commentUpload.uploaded.status === "uploaded", downloadsMatch: hash(downloaded[0]) === hash(contents[0]) && hash(downloaded[1]) === hash(contents[1]), revealCount, cancelled: cancelled.status === "cancelled" && !cancelled.revealCapability, stageCount: stages.length, activeOperations: registry.snapshot().active, spoolFiles: spoolFiles.length })}\n`);
-}
-
-function createEphemeralCredentialStorage() {
-  const key = randomBytes(32);
-  return Object.freeze({
-    isEncryptionAvailable: () => true,
-    encryptString(value) {
-      const nonce = randomBytes(12);
-      const cipher = createCipheriv("aes-256-gcm", key, nonce);
-      const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-      return Buffer.concat([nonce, cipher.getAuthTag(), encrypted]);
-    },
-    decryptString(value) {
-      const bytes = Buffer.from(value);
-      const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
-      decipher.setAuthTag(bytes.subarray(12, 28));
-      return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
-    },
-  });
-}
-
-function createUnavailableMacCredentialStorage() {
-  return Object.freeze({
-    isEncryptionAvailable: () => false,
-    encryptString: () => { throw new Error("macOS credential storage is unavailable"); },
-    decryptString: () => { throw new Error("macOS credential storage is unavailable"); },
-  });
-}
-
-async function normalizeMacEphemeralSession(runtime, initialized) {
-  if (process.platform === "darwin" && ["locked", "reauthorization_required"].includes(initialized.status)) {
-    return runtime.discardLocalSession();
-  }
-  return initialized;
 }
 
 function writeDesktopNetworkSmokeStage(stage) {
@@ -1207,7 +1172,7 @@ async function initializeDesktopCredentialRuntime() {
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage: credentialStorage,
+    secureDirectory: secureCredentialDirectory,
     fs,
     userDataPath,
     platform: process.platform,
@@ -1262,7 +1227,7 @@ async function initializeDesktopCredentialRuntime() {
   credentialRuntime = runtime;
   networkCoordinator = coordinator;
   let initialized;
-  try { initialized = await normalizeMacEphemeralSession(runtime, await runtime.initialize()); }
+  try { initialized = await runtime.initialize(); }
   catch (error) {
     coordinator.stop();
     runtime.dispose();
@@ -1380,7 +1345,6 @@ if (headlessUserDataPath) {
   app.setPath("userData", headlessUserDataPath);
   app.setPath("sessionData", path.join(headlessUserDataPath, "Session Data"));
 }
-const isSafeStorageSmoke = !app.isPackaged && process.argv.includes("--safe-storage-smoke");
 const deviceAuthHeadless = !app.isPackaged && process.argv.includes("--device-auth-headless");
 const headlessServerInstanceId = !app.isPackaged
   ? process.argv.find((value) => value.startsWith("--server-instance-id="))?.slice("--server-instance-id=".length)
@@ -1402,17 +1366,6 @@ if (singleInstanceProbe) {
       if (!process.argv.includes("--hold-lock-probe")) app.exit(0);
     });
   }
-} else if (isSafeStorageSmoke) {
-  app.whenReady().then(async () => {
-    try {
-      const result = await runSafeStorageSmoke({ safeStorage: process.platform === "darwin" ? createUnavailableMacCredentialStorage() : credentialStorage });
-      process.stdout.write(`${JSON.stringify(result)}\n`);
-      app.exit(0);
-    } catch (error) {
-      process.stderr.write(`safeStorage smoke failed: ${error.message}\n`);
-      app.exit(1);
-    }
-  });
 } else if (deviceAuthHeadless) {
   const hasSingleInstanceLock = app.requestSingleInstanceLock();
   if (!hasSingleInstanceLock) {

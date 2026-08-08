@@ -78,6 +78,44 @@ const FILE_RENAME_INFORMATION_EX_CLASS: i32 = 65;
 const FILE_RENAME_REPLACE_IF_EXISTS: u32 = 0x0000_0001;
 const FILE_RENAME_POSIX_SEMANTICS: u32 = 0x0000_0002;
 
+pub(super) fn secure_private_directory(directory: &str) -> Result<()> {
+    validate_windows_path(Path::new(directory), "ERR_FILE_GUARD_DIRECTORY_INVALID")?;
+    let path = Path::new(directory);
+    let created = match fs::create_dir(path) {
+        Ok(()) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => false,
+        Err(_) => return Err(stable_error("ERR_FILE_GUARD_DIRECTORY_CREATE")),
+    };
+    let result = (|| {
+        let original_chain = open_verified_directory_chain(path)?;
+        let original = original_chain
+            .last()
+            .ok_or_else(|| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))?;
+        verify_not_reparse(original)?;
+        let expected = identity(original)?;
+
+        let acl_handle = open_directory_for_acl(path)?;
+        verify_not_reparse(&acl_handle)?;
+        if !same_file_object(identity(&acl_handle)?, expected) {
+            return Err(stable_error("ERR_FILE_GUARD_DIRECTORY_CHANGED"));
+        }
+        apply_private_dacl(&acl_handle)?;
+
+        let verified_chain = open_verified_directory_chain(path)?;
+        let verified = verified_chain
+            .last()
+            .ok_or_else(|| stable_error("ERR_FILE_GUARD_DIRECTORY_OPEN"))?;
+        if !same_file_object(identity(verified)?, expected) {
+            return Err(stable_error("ERR_FILE_GUARD_DIRECTORY_CHANGED"));
+        }
+        Ok(())
+    })();
+    if result.is_err() && created {
+        let _ = fs::remove_dir(path);
+    }
+    result
+}
+
 pub(super) fn secure_spool_root(spool_root: &str) -> Result<()> {
     validate_windows_path(Path::new(spool_root), "ERR_FILE_GUARD_SPOOL_INVALID")?;
     let path = Path::new(spool_root);

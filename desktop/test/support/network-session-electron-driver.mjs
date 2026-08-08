@@ -1,5 +1,5 @@
-import { app, BrowserWindow, safeStorage, session } from "electron";
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
+import { app, BrowserWindow, session } from "electron";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -176,7 +176,7 @@ async function runRealBusinessFileApi({ origin, mode, network }) {
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage: process.platform === "darwin" ? createEphemeralStorage() : safeStorage,
+    secureDirectory: loadWindowsFileGuard()?.securePrivateDirectory,
     fs,
     userDataPath,
     platform: process.platform,
@@ -343,7 +343,7 @@ async function runRealFileApi({ origin, mode, network, observations }) {
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage: process.platform === "darwin" ? createEphemeralStorage() : safeStorage,
+    secureDirectory: loadWindowsFileGuard()?.securePrivateDirectory,
     fs,
     userDataPath,
     platform: process.platform,
@@ -402,7 +402,7 @@ async function runRealBusinessApi({ origin, mode, network }) {
   const runtime = createCredentialRuntime({
     profile: enrolled.profile,
     fetchImpl: network.fetch,
-    safeStorage: process.platform === "darwin" ? createEphemeralStorage() : safeStorage,
+    secureDirectory: loadWindowsFileGuard()?.securePrivateDirectory,
     fs,
     userDataPath,
     platform: process.platform,
@@ -732,25 +732,6 @@ async function waitUntil(predicate, timeoutMs = 5_000) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("business SSE integration timed out");
-}
-
-function createEphemeralStorage() {
-  const key = randomBytes(32);
-  return Object.freeze({
-    isEncryptionAvailable: () => true,
-    encryptString(value) {
-      const nonce = randomBytes(12);
-      const cipher = createCipheriv("aes-256-gcm", key, nonce);
-      const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-      return Buffer.concat([nonce, cipher.getAuthTag(), encrypted]);
-    },
-    decryptString(value) {
-      const bytes = Buffer.from(value);
-      const decipher = createDecipheriv("aes-256-gcm", key, bytes.subarray(0, 12));
-      decipher.setAuthTag(bytes.subarray(12, 28));
-      return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString("utf8");
-    },
-  });
 }
 
 function reportFailure(error) {

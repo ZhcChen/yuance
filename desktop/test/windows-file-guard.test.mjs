@@ -7,6 +7,7 @@ import { loadWindowsFileGuard } from "../src/files/windows-file-guard.mjs";
 test("loads only the exact Windows native binding and sanitizes native errors", async () => {
   const calls = [];
   const native = {
+    secureWindowsPrivateDirectory: async (...args) => calls.push(["private", ...args]),
     secureWindowsSpoolRoot: async (...args) => calls.push(["secure", ...args]),
     cleanupWindowsSpool: async () => 2,
     captureWindowsFile: async () => { throw new Error("ERR_FILE_GUARD_REPARSE_POINT: C:\\private"); },
@@ -18,6 +19,7 @@ test("loads only the exact Windows native binding and sanitizes native errors", 
     assert.equal(candidate, "C:\\native\\index.win32-x64-msvc.node");
     return native;
   } });
+  await guard.securePrivateDirectory("C:\\credentials");
   await guard.secureSpoolRoot("C:\\spool");
   await guard.commitDownload({ targetPath: "C:\\target" });
   await assert.rejects(guard.captureFile({}), (error) => {
@@ -25,7 +27,7 @@ test("loads only the exact Windows native binding and sanitizes native errors", 
     assert.equal(error.message.includes("C:\\private"), false);
     return true;
   });
-  assert.deepEqual(calls, [["secure", "C:\\spool"], ["commit", { targetPath: "C:\\target" }]]);
+  assert.deepEqual(calls, [["private", "C:\\credentials"], ["secure", "C:\\spool"], ["commit", { targetPath: "C:\\target" }]]);
 });
 
 test("Windows spool fails closed without native guard", () => {

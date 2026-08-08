@@ -92,6 +92,16 @@ pub fn secure_windows_spool_root(spool_root: String) -> Result<AsyncTask<SecureS
     Ok(AsyncTask::new(SecureSpoolTask(spool_root)))
 }
 
+#[napi(js_name = "secureWindowsPrivateDirectory")]
+pub fn secure_windows_private_directory(
+    directory: String,
+) -> Result<AsyncTask<SecureDirectoryTask>> {
+    if !is_absolute_normal_path(&directory) || directory.contains('\0') {
+        return Err(stable_error("ERR_FILE_GUARD_DIRECTORY_INVALID"));
+    }
+    Ok(AsyncTask::new(SecureDirectoryTask(directory)))
+}
+
 #[napi(js_name = "cleanupWindowsSpool")]
 pub fn cleanup_windows_spool(spool_root: String) -> Result<AsyncTask<CleanupSpoolTask>> {
     validate_spool_root(&spool_root)?;
@@ -173,6 +183,18 @@ impl Task for SecureSpoolTask {
     }
 }
 
+pub struct SecureDirectoryTask(String);
+impl Task for SecureDirectoryTask {
+    type Output = ();
+    type JsValue = ();
+    fn compute(&mut self) -> Result<Self::Output> {
+        platform::secure_private_directory(&self.0)
+    }
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
 pub struct CleanupSpoolTask(String);
 impl Task for CleanupSpoolTask {
     type Output = u32;
@@ -244,6 +266,10 @@ mod platform {
     }
 
     pub(super) fn secure_spool_root(_spool_root: &str) -> Result<()> {
+        Err(stable_error("ERR_FILE_GUARD_WINDOWS_REQUIRED"))
+    }
+
+    pub(super) fn secure_private_directory(_directory: &str) -> Result<()> {
         Err(stable_error("ERR_FILE_GUARD_WINDOWS_REQUIRED"))
     }
 

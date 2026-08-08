@@ -9,21 +9,6 @@ import test from "node:test";
 import electron from "electron";
 
 test("Electron headless persists, recovers, and revokes a device session", { timeout: 45_000 }, async (t) => {
-  if (process.platform === "darwin") {
-    await assert.rejects(runElectron(["--safe-storage-smoke"]), /encryption_unavailable/);
-    return;
-  }
-  const capability = await runElectron(["--safe-storage-smoke"]);
-  const smoke = JSON.parse(capability.stdout.trim().split("\n").at(-1));
-  if (process.platform === "win32") {
-    t.skip("Windows CI validates native safeStorage and atomic recovery in independent platform tests");
-    return;
-  }
-  if (smoke.status !== "available") {
-    t.skip(`safeStorage unavailable with backend ${smoke.backend}`);
-    return;
-  }
-
   const state = {
     exchanges: 0,
     probes: 0,
@@ -121,7 +106,13 @@ test("Electron headless persists, recovers, and revokes a device session", { tim
   assert.ok(filesAfterAuthorization.length > 0);
   const disk = Buffer.concat(filesAfterAuthorization).toString("latin1");
   assert.equal(disk.includes("yuance_dat_electron-access-token-value"), false);
-  assert.equal(disk.includes("yuance_drt_electron-refresh-token-value"), false);
+  assert.equal(disk.includes("yuance_drt_electron-refresh-token-value"), true);
+  if (process.platform !== "win32") {
+    const credentialDirectory = path.join(userDataPath, "Device Credentials");
+    const credentialFile = (await fs.readdir(credentialDirectory)).find((name) => /^[a-f0-9]{64}\.json$/u.test(name));
+    assert.ok(credentialFile);
+    assert.equal((await fs.stat(path.join(credentialDirectory, credentialFile))).mode & 0o777, 0o600);
+  }
 
   const recovered = await runElectron(args, env);
   assert.match(recovered.stdout, /"recovered":true/);

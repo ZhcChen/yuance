@@ -47,9 +47,6 @@ jobs:
           npm --prefix frontend ci
           npm --prefix desktop ci
 
-      - name: Install Linux secure storage runtime
-        run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
-
       - name: Verify release tag
         run: npm --prefix desktop run verify:release-tag
         env:
@@ -59,12 +56,7 @@ jobs:
         run: cargo build --package yuance-api --bin yuance-api
 
       - name: Run desktop tests
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop test
-          '
+        run: xvfb-run -a npm --prefix desktop test
 
   build:
     name: Build ${{ matrix.platform.name }} ${{ matrix.platform.arch }}
@@ -135,10 +127,6 @@ jobs:
           npm --prefix frontend ci
           npm --prefix desktop ci
 
-      - name: Install Linux secure storage runtime
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install --yes dbus-x11 gnome-keyring
-
       - name: Build real API integration fixture
         run: cargo build --package yuance-api --bin yuance-api
 
@@ -148,26 +136,15 @@ jobs:
 
       - name: Run Linux desktop tests
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop test
-          '
+        run: xvfb-run -a npm --prefix desktop test
 
-      - name: Verify Windows native safeStorage boundary
-        if: runner.os == 'Windows'
-        run: npm --prefix desktop run smoke:safe-storage && npm --prefix desktop run smoke:single-instance
+      - name: Verify native single-instance boundary
+        if: runner.os != 'Linux'
+        run: npm --prefix desktop run smoke:single-instance
 
-      - name: Verify Linux safeStorage fail-closed boundary
+      - name: Verify Linux single-instance boundary
         if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          dbus-run-session -- bash -euo pipefail -c '
-            eval "$(printf %s yuance-ci-keyring | gnome-keyring-daemon --unlock --components=secrets)"
-            xvfb-run -a npm --prefix desktop run smoke:safe-storage
-            xvfb-run -a npm --prefix desktop run smoke:single-instance
-          '
+        run: xvfb-run -a npm --prefix desktop run smoke:single-instance
 
       - name: Build installer and unpacked staging app
         run: npm --prefix desktop run dist:ci -- ${{ matrix.platform.target }} ${{ matrix.platform.arch_flag }}

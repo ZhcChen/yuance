@@ -10,12 +10,11 @@ import { createDeviceAuthClient } from "./device-auth-client.mjs";
 import { toPublicAuthState } from "./public-auth-state.mjs";
 
 const INVALIDATING_STATES = new Set(["unauthenticated", "locked", "revoked", "error"]);
-const PROFILE_EVIDENCE = /^([a-f0-9]{64})(?:\.authorization)?\.enc\.json$/u;
+const PROFILE_EVIDENCE = /^([a-f0-9]{64})(?:\.authorization)?(?:\.enc)?\.json$/u;
 
 export function createCredentialRuntime({
   profile,
   fetchImpl,
-  safeStorage,
   fs,
   userDataPath,
   platform = process.platform,
@@ -29,6 +28,7 @@ export function createCredentialRuntime({
   createCredentialStore = createProfileCredentialStore,
   createAuthorizationStore = createPendingAuthorizationStore,
   createRevocationStore = createPendingRevocationStore,
+  secureDirectory,
 } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl is required");
   if (!profile || typeof profile.key !== "string") throw new TypeError("profile is required");
@@ -46,18 +46,18 @@ export function createCredentialRuntime({
   const coordinator = createCoordinator({
     profile,
     credentialStore: createCredentialStore({
-      safeStorage,
       fs,
       userDataPath,
       profile,
       platform,
+      secureDirectory,
     }),
     pendingAuthorizationStore: createAuthorizationStore({
-      safeStorage,
       fs,
-      filePath: path.join(credentialDirectory, `${profileHash}.authorization.enc.json`),
+      filePath: path.join(credentialDirectory, `${profileHash}.authorization.json`),
       profile,
       platform,
+      secureDirectory,
     }),
     pendingRevocationStore: createRevocationStore({
       fs,

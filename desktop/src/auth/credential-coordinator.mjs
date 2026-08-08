@@ -18,13 +18,6 @@ const REVOKED_CODES = new Set([
   "rotation_recovery_failed",
   "idempotency_expired",
 ]);
-const LINUX_SECURE_BACKENDS = new Set([
-  "gnome_libsecret",
-  "kwallet",
-  "kwallet5",
-  "kwallet6",
-]);
-
 export class CredentialCoordinatorError extends Error {
   constructor(code, message, options) {
     super(message, options);
@@ -599,86 +592,66 @@ export function createPendingRevocationStore({ fs, directory }) {
 }
 
 export function createPendingAuthorizationStore({
-  safeStorage,
   fs,
   filePath,
   profile,
   platform = process.platform,
   randomBytes = nodeRandomBytes,
+  secureDirectory,
 }) {
   if (
-    !safeStorage || typeof safeStorage.isEncryptionAvailable !== "function" ||
-    typeof safeStorage.encryptString !== "function" || typeof safeStorage.decryptString !== "function" ||
     !fs || typeof fs.readFile !== "function" || typeof filePath !== "string" || !profile
   ) {
     throw new TypeError("pending authorization store adapter is invalid");
   }
+  if (platform === "win32" && typeof secureDirectory !== "function") {
+    throw new TypeError("secureDirectory is required on Windows");
+  }
   const expectedProfile = canonicalJson(profile);
 
-  function available() {
-    try {
-      if (safeStorage.isEncryptionAvailable() !== true) return false;
-      if (platform !== "linux") return true;
-      if (typeof safeStorage.getSelectedStorageBackend !== "function") return false;
-      return LINUX_SECURE_BACKENDS.has(safeStorage.getSelectedStorageBackend());
-    } catch {
-      return false;
-    }
-  }
-
   async function load() {
-    if (!available()) return { status: "locked", reason: "encryption_unavailable" };
     try {
+      await prepareSecretDirectory(fs, filePath, platform, secureDirectory);
       await recoverSecretFile(fs, filePath, platform);
     } catch {
       return { status: "locked", reason: "recovery_failed" };
     }
     let envelope;
     try {
+      if (platform !== "win32" && ((await fs.stat(filePath)).mode & 0o077) !== 0) {
+        return { status: "locked", reason: "insecure_permissions" };
+      }
       envelope = JSON.parse(await fs.readFile(filePath, "utf8"));
     } catch (error) {
       if (error?.code === "ENOENT") return { status: "empty" };
       return { status: "locked", reason: "read_failed" };
     }
     if (
-      !isPlainObject(envelope) || envelope.version !== 1 ||
-      typeof envelope.ciphertext !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/u.test(envelope.ciphertext)
+      !isPlainObject(envelope) || envelope.version !== 2 ||
+      !isPlainObject(envelope.profile) || !("authorization" in envelope)
     ) {
       return { status: "locked", reason: "corrupt_envelope" };
     }
-    let payload;
-    try {
-      payload = JSON.parse(safeStorage.decryptString(Buffer.from(envelope.ciphertext, "base64")));
-    } catch {
-      return { status: "locked", reason: "decryption_failed" };
-    }
-    if (!isPlainObject(payload) || payload.version !== 1 || !isPlainObject(payload.profile)) {
-      return { status: "locked", reason: "invalid_payload" };
-    }
-    if (canonicalJson(payload.profile) !== expectedProfile) {
+    if (canonicalJson(envelope.profile) !== expectedProfile) {
       return { status: "locked", reason: "profile_mismatch" };
     }
     try {
-      validatePendingAuthorization(payload.authorization, profile.origin);
+      validatePendingAuthorization(envelope.authorization, profile.origin);
     } catch {
       return { status: "locked", reason: "invalid_payload" };
     }
-    return { status: "available", authorization: payload.authorization };
+    return { status: "available", authorization: envelope.authorization };
   }
 
   async function save(authorization) {
-    if (!available()) return { status: "locked", reason: "encryption_unavailable" };
     try {
+      await prepareSecretDirectory(fs, filePath, platform, secureDirectory);
       await recoverSecretFile(fs, filePath, platform);
       validatePendingAuthorization(authorization, profile.origin);
-      const plaintext = JSON.stringify({
-        version: 1,
+      const envelope = `${JSON.stringify({
+        version: 2,
         profile: JSON.parse(expectedProfile),
         authorization,
-      });
-      const envelope = `${JSON.stringify({
-        version: 1,
-        ciphertext: safeStorage.encryptString(plaintext).toString("base64"),
       })}\n`;
       await replaceSecretFile(fs, filePath, envelope, platform, randomBytes);
       return { status: "saved" };
@@ -689,6 +662,7 @@ export function createPendingAuthorizationStore({
 
   async function remove() {
     try {
+      await prepareSecretDirectory(fs, filePath, platform, secureDirectory);
       await writeSecretRemovalMarker(fs, filePath, platform);
       await unlinkIfPresent(fs, filePath);
       await unlinkIfPresent(fs, `${filePath}.previous`);
@@ -703,6 +677,16 @@ export function createPendingAuthorizationStore({
   }
 
   return Object.freeze({ load, save, remove });
+}
+
+async function prepareSecretDirectory(fs, filePath, platform, secureDirectory) {
+  const directory = parentDirectory(filePath);
+  if (platform === "win32") {
+    await secureDirectory(directory);
+    return;
+  }
+  await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+  await fs.chmod(directory, 0o700);
 }
 
 async function recoverSecretFile(fs, filePath, platform) {
