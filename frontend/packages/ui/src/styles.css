@@ -340,21 +340,22 @@ html[data-theme="dark"] {
   flex-direction: column;
   justify-content: center;
   min-width: 0;
-  padding: 64px 68px 58px;
-  background: #f3f7fc;
+  padding: 64px 72px 58px;
+  background: #f5f8fc;
 }
 
 .host-status-content {
   width: 100%;
-  max-width: 440px;
+  max-width: 460px;
 }
 
 .host-status-indicator {
   display: block;
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: #8a9692;
+  box-shadow: 0 0 0 4px rgb(138 150 146 / 12%);
 }
 
 .host-status-authenticated { background: #3eb489; }
@@ -364,23 +365,18 @@ html[data-theme="dark"] {
 .host-status-state {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  min-height: 28px;
-  margin-bottom: 20px;
-  padding: 0 11px;
-  border: 1px solid #d7e0e9;
-  border-radius: 4px;
-  background: #eaf0f6;
+  gap: 10px;
+  margin-bottom: 17px;
   color: #536171;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
 }
-.host-status-panel h1 { max-width: 14em; margin: 0; color: #182332; font-size: 32px; line-height: 1.3; letter-spacing: 0; }
-.host-status-description { max-width: 40ch; margin: 18px 0 0; color: #667486; font-size: 14px; line-height: 1.75; }
+.host-status-panel h1 { max-width: 14em; margin: 0; color: #182332; font-size: 30px; line-height: 1.35; letter-spacing: 0; }
+.host-status-description { max-width: 32em; margin: 14px 0 0; color: #667486; font-size: 14px; line-height: 1.75; }
 .host-status-context { width: fit-content; margin: 18px 0 0; padding: 8px 10px; border-left: 3px solid #376b9b; background: #edf4f9; color: #435060; font-size: 13px; }
-.host-status-actions { width: 100%; max-width: 440px; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 34px; padding-top: 24px; border-top: 1px solid #dbe3eb; }
-.host-status-actions button { min-width: 142px; min-height: 46px; border: 1px solid #376b9b; border-radius: 5px; padding: 0 20px; background: #376b9b; color: #fff; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 6px 16px rgb(55 107 155 / 16%); transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
-.host-status-actions button:hover:not(:disabled) { border-color: #285579; background: #285579; transform: translateY(-1px); }
+.host-status-actions { width: 100%; max-width: 460px; display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.host-status-actions button { min-width: 164px; min-height: 46px; border: 1px solid #376b9b; border-radius: 5px; padding: 0 22px; background: #376b9b; color: #fff; font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 3px 10px rgb(55 107 155 / 14%); transition: background 150ms ease, border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
+.host-status-actions button:hover:not(:disabled) { border-color: #285579; background: #285579; box-shadow: 0 5px 14px rgb(40 85 121 / 18%); transform: translateY(-1px); }
 .host-status-actions button:focus-visible { outline: 3px solid rgb(55 107 155 / 24%); outline-offset: 3px; }
 .host-status-actions button:disabled { cursor: wait; opacity: .6; }
 .host-status-actions .host-status-secondary { border-color: #aebdcd; background: transparent; color: #435060; box-shadow: none; }
@@ -404,7 +400,7 @@ html[data-theme="dark"] {
   .host-status-steps strong { font-size: 12px; white-space: nowrap; }
   .host-status-panel { padding: 42px 28px 48px; }
   .host-status-panel h1 { font-size: 28px; }
-  .host-status-actions { margin-top: 28px; padding-top: 22px; }
+  .host-status-actions { margin-top: 26px; }
   .host-status-actions button { flex: 1 1 132px; }
 }
 
