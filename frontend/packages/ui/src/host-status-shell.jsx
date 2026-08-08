@@ -35,13 +35,15 @@ export function HostStatusShell({ productName, hostLabel, status, title, detail,
           <p className="host-status-guide-foot">{productName} / {hostLabel}</p>
         </aside>
         <section className="host-status-panel" aria-live="polite">
-          <div className="host-status-state">
-            <span className={`host-status-indicator host-status-${status}`} aria-hidden="true" />
-            <span>{title}</span>
+          <div className="host-status-content">
+            <div className="host-status-state">
+              <span className={`host-status-indicator host-status-${status}`} aria-hidden="true" />
+              <span>{title}</span>
+            </div>
+            <h1>{detail}</h1>
+            {description ? <p className="host-status-description">{description}</p> : null}
+            {context ? <p className="host-status-context">{context}</p> : null}
           </div>
-          <h1>{detail}</h1>
-          {description ? <p className="host-status-description">{description}</p> : null}
-          {context ? <p className="host-status-context">{context}</p> : null}
           {primaryAction || secondaryAction ? (
             <div className="host-status-actions">
               {primaryAction ? <button type="button" disabled={actionsDisabled} onClick={primaryAction.onClick}>{primaryAction.label}</button> : null}
