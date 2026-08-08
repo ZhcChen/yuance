@@ -111,24 +111,6 @@
       ]
     },
     {
-      "route": "/web/messages/{notification_id}/open",
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "route": "/web/messages/read-all",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/partials/work-items",
-      "methods": [
-        "GET"
-      ]
-    },
-    {
       "route": "/web/projects",
       "methods": [
         "GET"
@@ -381,45 +363,9 @@
       ]
     },
     {
-      "route": "/web/work-item-views",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-item-views/{saved_view_id}/default",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-item-views/{saved_view_id}/delete",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-item-views/{saved_view_id}/rename",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
       "route": "/web/work-items/{item_key}",
       "methods": [
         "GET"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/attachments",
-      "methods": [
-        "POST"
       ]
     },
     {
@@ -441,18 +387,6 @@
       ]
     },
     {
-      "route": "/web/work-items/{item_key}/comments",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
       "route": "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download",
       "methods": [
         "GET"
@@ -469,48 +403,6 @@
       "methods": [
         "GET"
       ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/comments/{comment_id}/edit",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/edit",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/flow-records",
-      "methods": [
-        "GET"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/handoff",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/restore",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items/{item_key}/status",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
-      "route": "/web/work-items/batch",
-      "methods": [
-        "POST"
-      ]
     }
   ],
   "templates": [
@@ -520,15 +412,8 @@
     "device_authorization_result.html",
     "document_preview.html",
     "login.html",
-    "messages.html",
     "partials/pagination_pages.html",
     "partials/pagination_size_jump.html",
-    "partials/rich_text_toolbar.html",
-    "partials/work_item_detail.html",
-    "partials/work_item_flow_history.html",
-    "partials/work_item_pagination.html",
-    "partials/work_item_table.html",
-    "partials/work_items.html",
     "system/audit.html",
     "system/dashboard.html",
     "system/database_stats.html",
@@ -537,9 +422,7 @@
     "system/releases.html",
     "system/roles.html",
     "system/storage.html",
-    "system/users.html",
-    "work_items/detail.html",
-    "work_items/list.html"
+    "system/users.html"
   ],
   "appInteractionMarkers": [
     "data-app-update-current",
@@ -816,25 +699,12 @@
   "templateInteractionMarkers": [
     "data-api-url",
     "data-asset-id",
-    "data-assign-target",
     "data-assigned-projects",
-    "data-avatar-name",
-    "data-bug-report-create-url",
-    "data-bug-report-description",
-    "data-bug-report-form",
-    "data-bug-report-immutable",
-    "data-bug-report-item-field",
-    "data-bug-report-status",
     "data-cache-key",
-    "data-comment-id",
-    "data-comment-parent-id",
     "data-confirm-action",
     "data-confirm-message",
     "data-confirm-submit-form",
     "data-confirm-title",
-    "data-content-tab",
-    "data-content-tab-indicator",
-    "data-content-tabs",
     "data-copy-idle-label",
     "data-copy-label-target",
     "data-copy-meta-idle-label",
@@ -853,46 +723,9 @@
     "data-database-stats-refresh",
     "data-database-stats-sheet-wrap",
     "data-database-stats-summary",
-    "data-discussion-assign",
-    "data-discussion-assign-status",
-    "data-discussion-body",
-    "data-discussion-body-format",
-    "data-discussion-count",
-    "data-discussion-current-username",
-    "data-discussion-form",
-    "data-discussion-has-composer",
-    "data-discussion-list-region",
-    "data-discussion-main-composer",
-    "data-discussion-mention-options",
-    "data-discussion-modals",
-    "data-discussion-reply-cancel",
-    "data-discussion-reply-toggle",
-    "data-discussion-scroll-composer",
-    "data-discussion-status",
-    "data-discussion-submit",
-    "data-discussion-typing",
     "data-display-name",
-    "data-document-preview-experimental",
     "data-document-preview-root",
-    "data-document-preview-title",
-    "data-document-preview-url",
-    "data-experimental-legacy-preview-enabled",
-    "data-fallback-url",
     "data-filename",
-    "data-image-gallery",
-    "data-image-preview",
-    "data-image-preview-frame",
-    "data-image-preview-image",
-    "data-image-preview-status",
-    "data-image-source",
-    "data-image-title",
-    "data-item-key",
-    "data-kind",
-    "data-media-kind",
-    "data-media-preview",
-    "data-message-center",
-    "data-message-center-form",
-    "data-message-read-all-form",
     "data-modal",
     "data-modal-close",
     "data-modal-open",
@@ -911,7 +744,6 @@
     "data-permission-page",
     "data-permission-parent",
     "data-permission-tree",
-    "data-placeholder",
     "data-preview-experimental",
     "data-preview-file-type",
     "data-preview-host",
@@ -924,8 +756,6 @@
     "data-preview-title",
     "data-preview-type",
     "data-preview-url",
-    "data-primary-comment-id",
-    "data-priority",
     "data-project-key",
     "data-project-name",
     "data-project-owner",
@@ -937,21 +767,11 @@
     "data-release-upload-list",
     "data-release-upload-submit",
     "data-return-url",
-    "data-rich-command",
-    "data-rich-initial-html",
-    "data-rich-mention-options",
-    "data-rich-text-editor",
-    "data-rich-text-input",
-    "data-select-panel-min-width",
     "data-select-search-placeholder",
     "data-select-searchable",
-    "data-smart-back",
-    "data-smart-back-key",
-    "data-success-message",
     "data-system-release-asset-delete",
     "data-system-release-upload",
     "data-table",
-    "data-user-avatar",
     "data-user-project-assign-form",
     "data-user-project-assign-summary",
     "data-user-project-assign-trigger",
@@ -974,23 +794,6 @@
     "data-user-project-search",
     "data-user-project-selected-count",
     "data-user-project-submit",
-    "data-username",
-    "data-work-item-batch-action",
-    "data-work-item-batch-checkbox",
-    "data-work-item-batch-form",
-    "data-work-item-batch-select-all",
-    "data-work-item-batch-selected-count",
-    "data-work-item-batch-submit",
-    "data-work-item-batch-target",
-    "data-work-item-batch-toolbar",
-    "data-work-item-comment-edit-form",
-    "data-work-item-discussion",
-    "data-work-item-edit-body",
-    "data-work-item-edit-body-format",
-    "data-work-item-edit-description",
-    "data-work-item-edit-form",
-    "data-work-item-edit-status",
-    "data-work-item-label",
-    "data-work-item-primary-comment-id"
+    "data-username"
   ]
 }

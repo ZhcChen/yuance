@@ -1026,11 +1026,16 @@ async fn retired_web_business_pages_ignore_shell_flag() {
             "/web",
             "/web/me",
             "/web/search?q=release&page=2",
+            "/web/messages?filter=unread&page=2",
             "/web/projects?status=in_progress",
             "/web/projects/YCE?tab=library",
             "/web/projects/YCE/cycles/7",
             "/web/projects/YCE/resources/9?access=opaque-token",
             "/web/projects/YCE/my-analysis",
+            "/web/requirements?project_key=YCE",
+            "/web/tasks?status=in_progress",
+            "/web/bugs?priority=P0",
+            "/web/work-items/YCE-TASK-2",
         ] {
             let response = app
                 .clone()

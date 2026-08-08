@@ -235,14 +235,6 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/web/search", get(web::user::search_page))
         .route("/web/messages", get(web::user::messages_page))
-        .route(
-            "/web/messages/read-all",
-            post(web::user::messages_mark_all_read),
-        )
-        .route(
-            "/web/messages/{notification_id}/open",
-            get(web::user::message_open),
-        )
         .route("/web/projects", get(web::user::projects_page))
         .route(
             "/web/current-project",
@@ -291,62 +283,9 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/requirements", get(web::user::requirements_page))
         .route("/web/tasks", get(web::user::tasks_page))
         .route("/web/bugs", get(web::user::bugs_page))
-        .route("/web/work-items", post(web::user::work_items_create))
-        .route(
-            "/web/work-items/batch",
-            post(web::user::work_item_batch_update),
-        )
-        .route(
-            "/web/work-item-views",
-            post(web::user::work_item_saved_view_create),
-        )
-        .route(
-            "/web/work-item-views/{saved_view_id}/rename",
-            post(web::user::work_item_saved_view_rename),
-        )
-        .route(
-            "/web/work-item-views/{saved_view_id}/default",
-            post(web::user::work_item_saved_view_set_default),
-        )
-        .route(
-            "/web/work-item-views/{saved_view_id}/delete",
-            post(web::user::work_item_saved_view_delete),
-        )
         .route(
             "/web/work-items/{item_key}",
             get(web::user::work_item_detail_page),
-        )
-        .route(
-            "/web/work-items/{item_key}/flow-records",
-            get(web::user::work_item_flow_history_partial),
-        )
-        .route(
-            "/web/work-items/{item_key}/status",
-            post(web::user::work_item_status_update),
-        )
-        .route(
-            "/web/work-items/{item_key}/handoff",
-            post(web::user::work_item_handoff),
-        )
-        .route(
-            "/web/work-items/{item_key}/edit",
-            post(web::user::work_item_update),
-        )
-        .route(
-            "/web/work-items/{item_key}/restore",
-            post(web::user::work_item_restore),
-        )
-        .route(
-            "/web/work-items/{item_key}/comments",
-            post(web::user::work_item_comment_create),
-        )
-        .route(
-            "/web/work-items/{item_key}/comments/{comment_id}/edit",
-            post(web::user::work_item_comment_update),
-        )
-        .route(
-            "/web/work-items/{item_key}/comments/{comment_id}/attachments",
-            post(web::user::work_item_comment_attachment_create),
         )
         .route(
             "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/download",
@@ -359,10 +298,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/web/work-items/{item_key}/comments/{comment_id}/attachments/{attachment_id}/preview/content",
             get(web::user::work_item_comment_attachment_preview_content),
-        )
-        .route(
-            "/web/work-items/{item_key}/attachments",
-            post(web::user::work_item_attachment_create),
         )
         .route(
             "/web/work-items/{item_key}/attachments/{attachment_id}/download",
@@ -485,10 +420,6 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(web::user::storage_settings_rollback),
         )
         .route("/web/system/audit", get(web::user::system_audit_page))
-        .route(
-            "/web/partials/work-items",
-            get(web::user::work_items_partial),
-        )
         .route("/web/api-docs", get(api_docs))
         .route(
             "/web/system/api-docs",

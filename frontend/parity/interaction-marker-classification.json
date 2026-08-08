@@ -51,13 +51,6 @@
       ]
     },
     {
-      "marker": "data-assign-target",
-      "category": "action",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-assigned-projects",
       "category": "action",
       "sources": [
@@ -117,8 +110,7 @@
       "marker": "data-avatar-name",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -136,26 +128,17 @@
       ]
     },
     {
-      "marker": "data-bug-report-create-url",
-      "category": "transport",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-bug-report-description",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-bug-report-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -197,15 +180,7 @@
       "marker": "data-bug-report-immutable",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-bug-report-item-field",
-      "category": "control",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -226,27 +201,12 @@
       "marker": "data-bug-report-status",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-cache-key",
       "category": "state",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-comment-id",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-comment-parent-id",
-      "category": "presentation",
       "sources": [
         "template"
       ]
@@ -315,24 +275,21 @@
       "marker": "data-content-tab",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-content-tab-indicator",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-content-tabs",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -501,47 +458,35 @@
       "marker": "data-discussion-assign",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-assign-status",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-body",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-body-format",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-count",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-discussion-current-username",
-      "category": "state",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -555,94 +500,70 @@
       "marker": "data-discussion-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-discussion-has-composer",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-list-region",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-main-composer",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-discussion-mention-options",
-      "category": "control",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-modals",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-reply-cancel",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-reply-toggle",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-scroll-composer",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-status",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-submit",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-discussion-typing",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -657,8 +578,7 @@
       "marker": "data-document-preview-experimental",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -672,16 +592,14 @@
       "marker": "data-document-preview-title",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-document-preview-url",
       "category": "transport",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -730,15 +648,7 @@
       "marker": "data-experimental-legacy-preview-enabled",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-fallback-url",
-      "category": "transport",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -878,32 +788,28 @@
       "marker": "data-image-gallery",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-image-preview",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-image-preview-frame",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-image-preview-image",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -917,24 +823,21 @@
       "marker": "data-image-preview-status",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-image-source",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-image-title",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1011,15 +914,7 @@
       "marker": "data-item-key",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-kind",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1040,16 +935,14 @@
       "marker": "data-media-kind",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-media-preview",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1105,24 +998,21 @@
       "marker": "data-message-center",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-message-center-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-message-read-all-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1304,13 +1194,6 @@
       ]
     },
     {
-      "marker": "data-placeholder",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-preview-experimental",
       "category": "action",
       "sources": [
@@ -1390,20 +1273,6 @@
     {
       "marker": "data-preview-url",
       "category": "transport",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-primary-comment-id",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-priority",
-      "category": "presentation",
       "sources": [
         "template"
       ]
@@ -1624,15 +1493,7 @@
       "marker": "data-rich-command",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-rich-initial-html",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1640,13 +1501,6 @@
       "category": "control",
       "sources": [
         "app-js"
-      ]
-    },
-    {
-      "marker": "data-rich-mention-options",
-      "category": "control",
-      "sources": [
-        "template"
       ]
     },
     {
@@ -1688,16 +1542,14 @@
       "marker": "data-rich-text-editor",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-rich-text-input",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -1771,13 +1623,6 @@
       ]
     },
     {
-      "marker": "data-select-panel-min-width",
-      "category": "control",
-      "sources": [
-        "template"
-      ]
-    },
-    {
       "marker": "data-select-search",
       "category": "control",
       "sources": [
@@ -1817,22 +1662,7 @@
       "marker": "data-smart-back",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-smart-back-key",
-      "category": "presentation",
-      "sources": [
-        "template"
-      ]
-    },
-    {
-      "marker": "data-success-message",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
@@ -2037,8 +1867,7 @@
       "marker": "data-user-avatar",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
@@ -2284,135 +2113,112 @@
       "marker": "data-work-item-batch-action",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-checkbox",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-select-all",
       "category": "control",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-selected-count",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-submit",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-target",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-batch-toolbar",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-comment-edit-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-discussion",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-edit-body",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-edit-body-format",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-edit-description",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-edit-form",
       "category": "action",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-edit-status",
       "category": "state",
       "sources": [
-        "app-js",
-        "template"
-      ]
-    },
-    {
-      "marker": "data-work-item-label",
-      "category": "presentation",
-      "sources": [
-        "template"
+        "app-js"
       ]
     },
     {
       "marker": "data-work-item-primary-comment-id",
       "category": "presentation",
       "sources": [
-        "app-js",
-        "template"
+        "app-js"
       ]
     },
     {

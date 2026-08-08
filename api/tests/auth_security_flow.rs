@@ -125,29 +125,6 @@ async fn login_submit_rejects_cross_origin_return_to() {
 }
 
 #[tokio::test]
-async fn message_open_redirects_unauthenticated_user_to_login_with_safe_return_to() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/messages/42/open")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/login?return_to=%2Fweb%2Fmessages%2F42%2Fopen"
-    );
-}
-
-#[tokio::test]
 async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to() {
     let _guard = env_lock().lock().expect("env lock should acquire");
     let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
@@ -1070,27 +1047,6 @@ async fn htmx_system_post_uses_hx_redirect_when_login_expired() {
                 .header("HX-Request", "true")
                 .header("x-yuance-csrf-token", CSRF_TOKEN)
                 .body(Body::from("permission_keys=project.view"))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert_eq!(response.headers().get("HX-Redirect").unwrap(), "/web/login");
-}
-
-#[tokio::test]
-async fn htmx_partial_uses_hx_redirect_when_login_expired() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/partials/work-items")
-                .header("HX-Request", "true")
-                .body(Body::empty())
                 .expect("request should build"),
         )
         .await

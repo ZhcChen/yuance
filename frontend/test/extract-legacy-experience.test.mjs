@@ -39,14 +39,14 @@ test('正式 Web 来源可被稳定提取且不存在无 method 路由', async (
     appScriptPath: new URL('api/static/app.js', repositoryUrl),
   });
 
-  assert.ok(inventory.routes.length > 70, '应覆盖正式 Web 页面和动作路由');
-  assert.ok(inventory.templates.length > 20, '应覆盖保留的边界、系统和工作项模板');
+  assert.ok(inventory.routes.length > 60, '应覆盖正式 Web 页面、边界和剩余动作路由');
+  assert.ok(inventory.templates.length > 15, '应覆盖保留的边界与系统模板');
   assert.ok(inventory.appInteractionMarkers.length > 50, '应覆盖 app.js 的主要交互标记');
   assert.ok(inventory.templateInteractionMarkers.length > 50, '应覆盖模板中的主要交互标记');
   assert.equal(inventory.routes.some(({ methods }) => methods.length === 0), false);
   assert.ok(inventory.routes.some(({ route, methods }) => route === '/web/login' && methods.join(',') === 'GET,POST'));
   assert.ok(inventory.templates.includes('system/users.html'));
-  assert.ok(inventory.templates.includes('partials/work_item_detail.html'));
+  assert.ok(inventory.templates.includes('document_preview.html'));
 });
 
 test('版本化来源清单与正式 Web 运行时来源完全一致', async () => {
