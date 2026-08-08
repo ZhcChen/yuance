@@ -308,6 +308,41 @@ async fn auth_css_is_bundled_without_retired_business_selectors() {
 }
 
 #[tokio::test]
+async fn server_rendered_boundaries_use_versioned_styles_without_inline_css() {
+    let app = build_router(AppState::for_tests());
+
+    for (uri, marker) in [
+        ("/static/desktop-downloads.css", ".platform-grid"),
+        ("/static/document-preview.css", ".preview-page"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/css; charset=utf-8"
+        );
+        assert!(response_body(response).await.contains(marker));
+    }
+
+    for template in [
+        include_str!("../templates/web/desktop_downloads.html"),
+        include_str!("../templates/web/document_preview.html"),
+    ] {
+        assert!(!template.contains("<style>"));
+        assert!(template.contains("/static/auth.css"));
+    }
+}
+
+#[tokio::test]
 async fn web_app_entry_serves_index_and_deep_links_without_cache() {
     with_web_dist_dir(|dist_dir| async move {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");

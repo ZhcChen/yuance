@@ -328,11 +328,17 @@
         "regular"
       ],
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/auth_security_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/device-auth-electron-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -369,11 +375,17 @@
         "regular"
       ],
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/auth_security_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/desktop-network-api-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -411,11 +423,17 @@
         "regular"
       ],
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/device_authorization_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/device-auth-electron-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -451,11 +469,17 @@
         "wide"
       ],
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/system_management_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/business-attachment-coordinator.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -2206,11 +2230,18 @@
         "wide"
       ],
       "migrationUnit": "U8",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/routing_smoke.rs",
+          "web/e2e/app-shell.spec.mjs"
+        ],
+        "desktopTests": [
+          "desktop/test/renderer-composition.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -2245,11 +2276,17 @@
         "wide"
       ],
       "migrationUnit": "U8",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/routing_smoke.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/renderer-composition.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     }
   ],
@@ -2279,11 +2316,17 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/auth_security_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/device-auth-electron-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -2312,11 +2355,17 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/auth_security_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/desktop-network-api-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -2342,11 +2391,17 @@
       "realtimeEffect": "等待中的 Desktop 收到授权完成事实。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/device_authorization_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/device-auth-electron-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -2372,11 +2427,17 @@
       "realtimeEffect": "等待中的 Desktop 收到授权拒绝事实。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U1",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/device_authorization_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/device-auth-electron-integration.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -6010,11 +6071,17 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U8",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/routing_smoke.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/renderer-composition.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -6039,11 +6106,17 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U8",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/routing_smoke.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/renderer-composition.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -6069,11 +6142,17 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "idempotent",
       "migrationUnit": "U8",
-      "status": "baseline",
+      "status": "shared",
       "evidence": {
-        "browserTests": [],
-        "desktopTests": [],
-        "reviews": []
+        "browserTests": [
+          "api/tests/system_management_flow.rs"
+        ],
+        "desktopTests": [
+          "desktop/test/business-attachment-coordinator.test.mjs"
+        ],
+        "reviews": [
+          "docs/reviews/2026-08-08-048-web-desktop-u8-boundary-pages-review.md"
+        ]
       }
     },
     {
@@ -6177,6 +6256,19 @@
       "tests": [
         "frontend/packages/platform-contract/test/platform.test.mjs",
         "desktop/test/desktop-network-lifecycle-electron-integration.test.mjs"
+      ]
+    },
+    {
+      "code": "boundary.server-rendered",
+      "capability": "服务启动、浏览器认证、设备授权、公开下载与独立文档边界",
+      "browserBehavior": "登录、首次初始化、设备授权确认、桌面端下载和独立文档由服务端边界页承载；页面不加载共享业务状态或旧业务脚本。",
+      "desktopBehavior": "Desktop 通过设备授权、原生下载/预览能力和共享 React renderer 完成对应宿主流程，不远程嵌入这些浏览器边界页。",
+      "sharedOutcome": "边界页与 Desktop 宿主使用相同品牌 token、认证/权限结果和安全 contract，且不产生第二套业务页面或状态模型。",
+      "tests": [
+        "api/tests/auth_security_flow.rs",
+        "api/tests/device_authorization_flow.rs",
+        "desktop/test/device-auth-electron-integration.test.mjs",
+        "desktop/test/renderer-composition.test.mjs"
       ]
     }
   ]

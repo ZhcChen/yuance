@@ -144,7 +144,7 @@
       "additionalProperties": false,
       "required": ["code", "capability", "browserBehavior", "desktopBehavior", "sharedOutcome", "tests"],
       "properties": {
-        "code": { "enum": ["auth.transport", "route.transport", "file.picker", "file.save", "notification.native", "window.lifecycle"] },
+        "code": { "enum": ["auth.transport", "boundary.server-rendered", "route.transport", "file.picker", "file.save", "notification.native", "window.lifecycle"] },
         "capability": { "$ref": "#/$defs/nonEmptyString" },
         "browserBehavior": { "$ref": "#/$defs/nonEmptyString" },
         "desktopBehavior": { "$ref": "#/$defs/nonEmptyString" },

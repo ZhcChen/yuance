@@ -10,6 +10,7 @@ const markerClassificationUrl = new URL('../parity/interaction-marker-classifica
 
 const allowedExceptionCodes = [
   'auth.transport',
+  'boundary.server-rendered',
   'file.picker',
   'file.save',
   'notification.native',
@@ -98,6 +99,12 @@ test('完成态清单不得留下空页面或动作基线', async () => {
   if (manifest.status === 'complete') {
     assert.ok(manifest.pages.length > 0);
     assert.ok(manifest.actions.length > 0);
+    for (const entry of [...manifest.pages, ...manifest.actions]) {
+      assert.ok(['shared', 'retired'].includes(entry.status), `${entry.id} 尚未完成迁移: ${entry.status}`);
+      assert.ok(entry.evidence.browserTests.length > 0, `${entry.id} 缺少 Browser 证据`);
+      assert.ok(entry.evidence.desktopTests.length > 0, `${entry.id} 缺少 Desktop 证据`);
+      assert.ok(entry.evidence.reviews.length > 0, `${entry.id} 缺少 review 证据`);
+    }
   }
 });
 

@@ -887,6 +887,14 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/version.json", get(version_manifest))
         .route("/static/auth.css", get(static_auth_css))
+        .route(
+            "/static/desktop-downloads.css",
+            get(static_desktop_downloads_css),
+        )
+        .route(
+            "/static/document-preview.css",
+            get(static_document_preview_css),
+        )
         .route("/static/document-preview.mjs", get(static_document_preview))
         .route(
             "/static/document-preview-legacy.mjs",
@@ -1606,6 +1614,18 @@ fn web_app_content_type(path: &str) -> &'static str {
 }
 
 async fn static_auth_css() -> impl IntoResponse {
+    static_boundary_css(include_str!("../../static/auth.css"))
+}
+
+async fn static_desktop_downloads_css() -> impl IntoResponse {
+    static_boundary_css(include_str!("../../static/desktop-downloads.css"))
+}
+
+async fn static_document_preview_css() -> impl IntoResponse {
+    static_boundary_css(include_str!("../../static/document-preview.css"))
+}
+
+fn static_boundary_css(content: &'static str) -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/css; charset=utf-8"),
@@ -1614,7 +1634,7 @@ async fn static_auth_css() -> impl IntoResponse {
                 "no-store, max-age=0, must-revalidate",
             ),
         ],
-        include_str!("../../static/auth.css"),
+        content,
     )
 }
 
