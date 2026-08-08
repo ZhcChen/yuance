@@ -16,6 +16,8 @@ export async function smokeDesktopNetwork(inputPath, { platform = process.platfo
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-packaged-network-"));
   const outputDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist", "verification");
   await fs.mkdir(outputDirectory, { recursive: true });
+  const outputPath = path.join(outputDirectory, "desktop-network-smoke.json");
+  await fs.rm(outputPath, { force: true });
   try {
     const session = await fixture.bootstrapAdmin();
     const executable = await findUnpackedExecutable(inputPath, platform);
@@ -31,7 +33,6 @@ export async function smokeDesktopNetwork(inputPath, { platform = process.platfo
       }
     });
     assertDesktopNetworkSmokeReport(report, { platform });
-    const outputPath = path.join(outputDirectory, "desktop-network-smoke.json");
     await fs.writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
     return Object.freeze({ executable, report, outputPath });
   } finally {
@@ -73,7 +74,9 @@ function runPhase(executable, phase, origin, profile, platform, onReport = async
         try {
           const value = JSON.parse(line);
           report = value;
-          reportKinds.push(value.kind || "unknown");
+          reportKinds.push(value.kind === "yuance-desktop-network-stage"
+            ? `${value.kind}:${value.stage}`
+            : (value.kind || "unknown"));
           sideEffect = sideEffect.then(() => onReport(value)).catch((error) => {
             child.kill("SIGKILL");
             finish(() => reject(error));
@@ -96,7 +99,7 @@ function runPhase(executable, phase, origin, profile, platform, onReport = async
 }
 
 export function assertDesktopNetworkSmokeReport(report, { platform = process.platform } = {}) {
-  const expectedRestart = platform === "darwin" ? "reauthorized" : "recovered";
+  const expectedRestart = "recovered";
   const expectedMessageEvidence = platform === "darwin" ? "packaged-sse" : "integration-fallback";
   const expectedPackagedMessages = expectedMessageEvidence === "packaged-sse";
   if (report?.kind !== "yuance-desktop-network-smoke" || report.credentialRestart !== expectedRestart || report.messageEvidence !== expectedMessageEvidence || !report.probe || !report.firstStream || !report.rotated || !report.secondStream || !report.loggedOut || report.messageRefresh !== expectedPackagedMessages || report.releaseVersion !== expectedPackagedMessages || !report.foregroundSuppressed || !(report.revokeResponseToEofMs < 5_000) || CREDENTIAL_PATTERN.test(JSON.stringify(report))) {

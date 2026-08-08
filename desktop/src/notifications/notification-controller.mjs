@@ -109,7 +109,7 @@ export function createNotificationController({
 }
 
 function parseFact(value) {
-  if (!isPlainObject(value) || !Number.isSafeInteger(value.epoch) || value.epoch < 1) return null;
+  if (!isPlainObject(value) || !Number.isSafeInteger(value.epoch) || value.epoch < 0) return null;
   if (value.type === "topbar" && (value.reason === "connected" || value.reason === "refresh") && sameKeys(value, ["epoch", "reason", "type"])) return value;
   if (value.type === "release-version" && typeof value.version === "string" && value.version.length > 0 && value.version.length <= 256 && sameKeys(value, ["epoch", "type", "version"])) return value;
   return null;

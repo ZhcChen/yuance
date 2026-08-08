@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { createNotificationController } from "../src/notifications/notification-controller.mjs";
 
-test("topbar fact always refreshes the renderer and uses one fixed unread query", async () => {
+test("initial epoch topbar fact refreshes the renderer and uses one fixed unread query", async () => {
   const fixture = createFixture({ focused: true, items: [notification(7)] });
 
-  await fixture.controller.handleFact({ type: "topbar", reason: "refresh", epoch: 3 });
+  await fixture.controller.handleFact({ type: "topbar", reason: "refresh", epoch: 0 });
 
   assert.deepEqual(fixture.refreshes, [{ schemaVersion: 1, type: "topbar" }]);
   assert.deepEqual(fixture.operations, [["notification.list", { filter: "unread", limit: 100 }]]);
@@ -94,6 +94,7 @@ test("unknown, malformed and invalidated facts have no side effects", async () =
   await pending;
   await fixture.controller.handleFact({ type: "unknown", epoch: 2 });
   await fixture.controller.handleFact({ type: "release-version", version: "x".repeat(257), epoch: 2 });
+  await fixture.controller.handleFact({ type: "topbar", reason: "refresh", epoch: -1 });
 
   assert.deepEqual(fixture.refreshes, [{ schemaVersion: 1, type: "topbar" }]);
   assert.deepEqual(fixture.shown, []);

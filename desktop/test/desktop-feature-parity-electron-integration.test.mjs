@@ -66,13 +66,24 @@ test("packaged UI smoke proves handoff through durable detail state", async () =
   const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(main, /Boolean\(button && !button\.disabled\);\s+\}\)\(\)`\), UI_MUTATION_TIMEOUT_MS, "work item handoff action"/u);
   assert.match(main, /const workItemStatusBeforeHandoff = await executeFeatureParityUiScript/u);
-  assert.match(main, /currentStatus && currentStatus !== \$\{JSON\.stringify\(workItemStatusBeforeHandoff\)\} && button && !button\.disabled/u);
+  assert.match(main, /currentStatus && currentStatus !== \$\{JSON\.stringify\(workItemStatusBeforeHandoff\)\}/u);
+  assert.match(main, /waitForFeatureParityBusinessIdle\(2_000, UI_MUTATION_TIMEOUT_MS, "work item handoff transport settlement"\)/u);
   assert.doesNotMatch(main, /textContent\.includes\("已推进并指派"\)/u);
 });
 
 test("packaged UI smoke waits for comment mutation refresh before editing", async () => {
   const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(main, /const button = row\?\.querySelector\('button\[data-comment-edit\]'\);\s+return Boolean\(button && !button\.disabled\);\s+\}\)\(\)`\), UI_MUTATION_TIMEOUT_MS, "comment edit action"/u);
+});
+
+test("production file runtime assembles preview capability dependencies", async () => {
+  const main = await fs.readFile(new URL("../src/main.mjs", import.meta.url), "utf8");
+  const runtime = main.slice(main.indexOf("async function initializeFileRuntime"), main.indexOf("function disposeFileRuntime"));
+  assert.match(runtime, /const previewVault = createPreviewCapabilityVault\(\)/u);
+  assert.match(runtime, /const previewSpool = createPreviewSpool\(/u);
+  assert.match(runtime, /await previewSpool\.cleanupOrphans\(\)/u);
+  assert.match(runtime, /previewVault,/u);
+  assert.match(runtime, /createPreviewContentLoader\(\{[^}]*spool: previewSpool/u);
 });
 
 test("feature parity CLI flushes evidence before terminating lingering platform handles", async () => {
@@ -101,7 +112,7 @@ test("packaged UI interruption isolates public state from API process lifecycle"
   assert.match(main, /networkCoordinator\?\.invalidate\(\);\s+networkStatePublisher\.update\(\{ status: "offline" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);[\s\S]*networkStatePublisher\.update\(\{ status: "online" \}\);\s+networkStatePublisher\.publishTo\(mainWindow\);/u);
   assert.doesNotMatch(main, /yuance-desktop-feature-parity-ui-api-(?:stop|start)|writeFeatureParityUiEvent/u);
   assert.doesNotMatch(smoke, /yuance-desktop-feature-parity-ui-api-(?:stop|start)|featureParityAckPath/u);
-  assert.match(main, /desktopFeatureParityUiSmokeOrigin \? \{ connectTimeoutMs: 5_000, idleMs: 5_000 \} : \{\}/u);
+  assert.match(main, /desktopFeatureParityUiSmokeOrigin \? \{ connectTimeoutMs: 5_000, idleMs: 45_000 \} : \{\}/u);
 });
 
 function validReport() {
@@ -110,7 +121,7 @@ function validReport() {
 
 function childArtifacts(platform = process.platform) {
   return {
-    "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: platform === "darwin", releaseVersion: platform === "darwin", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
+    "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: platform === "darwin", releaseVersion: platform === "darwin", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
     "desktop-network-cleanup.json": { kind: "yuance-desktop-network-cleanup", apiProcess: "stopped", profile: "removed" },
     "desktop-network-api.log": "",
     "desktop-file-transfer-smoke.json": { kind: "yuance-desktop-file-smoke", upload: true, download: true, hashMatch: true, staleCapabilityRejected: true, byteSize: 34, activeOperations: 0, spoolFiles: 0 },

@@ -130,6 +130,9 @@ let appProtocolSmokeDataPath;
 let appProtocolSmokeInitialRenderer;
 let appProtocolSmokePhase = "initial";
 let featureParityUiSmokeStarted = false;
+const featureParityUiSmokeOperations = [];
+let featureParityUiSmokeActiveOperations = 0;
+let featureParityUiSmokeLastOperationAt = 0;
 const activeNotifications = new Set();
 let mainWindow = null;
 let credentialRuntime = null;
@@ -294,7 +297,7 @@ function createMainWindow() {
       if (desktopFeatureParityUiSmokeOrigin && !featureParityUiSmokeStarted) {
         featureParityUiSmokeStarted = true;
         runFeatureParityUiSmoke(window).catch((error) => {
-          process.stderr.write(`desktop feature parity UI smoke failed: ${error.message}\n`, () => app.quit());
+          process.stderr.write(`desktop feature parity UI smoke failed: ${error.stack || error.message}\n`, () => app.quit());
         });
       }
     }
@@ -456,15 +459,30 @@ async function runAppProtocolSmoke(window) {
 }
 
 async function runFeatureParityUiSmoke(window) {
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const button = [...document.querySelectorAll("button")].find((value) => value.textContent.trim() === "开始授权");
-    if (!button || button.disabled) return false;
-    button.click();
-    return true;
-  })()`), 10_000, "authorization action");
+  process.stderr.write("desktop feature parity UI smoke stage: authorization\n");
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+      const button = [...document.querySelectorAll("button")].find((value) => value.textContent.trim() === "开始授权");
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    })()`), 10_000, "authorization action");
+  } catch (error) {
+    const diagnostic = await window.webContents.executeJavaScript(`(() => ({
+      url: location.href,
+      hostState: window.yuanceDesktop?.hostState?.getSnapshot?.()?.status ?? "missing",
+      networkState: window.yuanceDesktop?.network?.getSnapshot?.()?.status ?? "missing",
+      bodyText: document.body?.innerText?.slice(0, 256) ?? "",
+    }))()`);
+    throw new Error(`${error.message}: ${JSON.stringify(diagnostic)}`);
+  }
+  process.stderr.write("desktop feature parity UI smoke stage: shared-app\n");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")))()`), 30_000, "shared app load");
+  process.stderr.write("desktop feature parity UI smoke stage: business\n");
   const business = await runFeatureParityBusinessUiSmoke(window);
+  process.stderr.write("desktop feature parity UI smoke stage: resilience\n");
   const resilience = await runFeatureParityResilienceSmoke(window);
+  process.stderr.write("desktop feature parity UI smoke stage: report\n");
   window.focus();
   window.webContents.focus();
   await window.webContents.executeJavaScript("document.body.focus()");
@@ -485,7 +503,7 @@ async function runFeatureParityUiSmoke(window) {
     return {
       kind: "yuance-desktop-feature-parity-ui-smoke",
       sharedApp: !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")),
-      restrictedBridge: Object.keys(bridge).sort().join(",") === "auth,business,events,files,hostState,network,schemaVersion" && bridge.schemaVersion === 7,
+      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,network,schemaVersion" && bridge.schemaVersion === 12,
       semanticMain: document.querySelectorAll("main").length === 1,
       semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
       workItemDetail: ${business.workItemDetail},
@@ -565,6 +583,7 @@ function desktopUiSmokeResourceMetrics() {
 }
 
 async function runFeatureParityBusinessUiSmoke(window) {
+  process.stderr.write("desktop feature parity UI business stage: detail\n");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const link = [...document.querySelectorAll('a[href]')].find((value) => value.textContent.trim() === "任务");
     if (!link) return false;
@@ -580,6 +599,113 @@ async function runFeatureParityBusinessUiSmoke(window) {
   })()`), 30_000, "work item link");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.startsWith("YCE-TASK-2")`), 30_000, "work item detail");
 
+  process.stderr.write("desktop feature parity UI business stage: comments\n");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "work item detail transport settlement");
+  await waitForFeatureParityStableElement(window, ".work-item-comment-form", 1_000, UI_MUTATION_TIMEOUT_MS, "comment form");
+  await replaceFeatureParityEditorText(window, '[contenteditable="true"][aria-label="新增评论"]', "@yuance_admin Desktop packaged UI comment", "comment create input");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const editor = document.querySelector('[contenteditable="true"][aria-label="新增评论"]');
+    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
+    return Boolean(editor?.textContent === "@yuance_admin Desktop packaged UI comment" && button && !button.disabled);
+  })()`), 10_000, "comment create input state");
+  await delay(2_000);
+  const commentSubmit = await executeFeatureParityUiScript(window, `(() => {
+    const form = document.querySelector('.work-item-comment-form');
+    const button = form?.querySelector('button[type="submit"]');
+    if (!form || !button || button.textContent.trim() !== "发布评论") return {
+      ok: false,
+      form: Boolean(form),
+      button: button?.textContent.trim() || "",
+      disabled: button?.disabled ?? null,
+      path: location.pathname,
+      heading: document.querySelector("h1")?.textContent || "",
+      hostState: Boolean(document.querySelector(".host-status-shell")),
+      main: document.querySelector("main")?.textContent?.slice(0, 300) || "",
+    };
+    form.addEventListener("submit", () => { form.dataset.uiSmokeSubmitted = "true"; }, { capture: true, once: true });
+    form.requestSubmit(button);
+    return { ok: true };
+  })()`, "comment create submit");
+  if (!commentSubmit.ok) throw new Error(`UI smoke comment create submit is unavailable: ${JSON.stringify(commentSubmit)}`);
+  try {
+    await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-row .yc-rich-text-content')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), UI_MUTATION_TIMEOUT_MS, "comment create");
+  } catch (error) {
+    const diagnostic = await window.webContents.executeJavaScript(`(() => ({
+      comments: [...document.querySelectorAll('.work-item-comment-row .yc-rich-text-content')].map((value) => value.textContent).slice(-4),
+      alerts: [...document.querySelectorAll('[role="alert"]')].map((value) => value.textContent).slice(-4),
+      statuses: [...document.querySelectorAll('[role="status"]')].map((value) => value.textContent).slice(-4),
+      submit: [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论")?.disabled ?? null,
+      submitEvent: document.querySelector('.work-item-comment-form')?.dataset.uiSmokeSubmitted ?? "missing",
+    }))()`);
+    throw new Error(`${error.message}: ${JSON.stringify({ ...diagnostic, operations: featureParityUiSmokeOperations.slice(-8) })}`);
+  }
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment");
+    const button = row?.querySelector('button[data-comment-edit]');
+    return Boolean(button && !button.disabled);
+  })()`), UI_MUTATION_TIMEOUT_MS, "comment edit action");
+
+  await executeFeatureParityUiScript(window, `(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment");
+    const button = row?.querySelector('button[data-comment-edit]');
+    if (!button) throw new Error("comment edit action is unavailable");
+    button.click();
+  })()`, "comment edit open");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-comment-edit-form [contenteditable="true"][aria-label="编辑评论"]'))`), 10_000, "comment edit form");
+  await replaceFeatureParityEditorText(window, '.work-item-comment-edit-form [contenteditable="true"][aria-label="编辑评论"]', "@yuance_admin Desktop packaged UI comment updated", "comment edit input");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const editor = document.querySelector('.work-item-comment-edit-form [contenteditable="true"][aria-label="编辑评论"]');
+    const button = [...document.querySelectorAll('.work-item-comment-edit-form button')].find((value) => value.textContent.trim() === "保存评论");
+    return Boolean(editor?.textContent === "@yuance_admin Desktop packaged UI comment updated" && button && !button.disabled);
+  })()`), 10_000, "comment edit input state");
+  await executeFeatureParityUiScript(window, `(() => {
+    const form = document.querySelector('.work-item-comment-edit-form');
+    const button = form?.querySelector('button[type="submit"]');
+    if (!form || !button || button.textContent.trim() !== "保存评论") throw new Error("comment edit submit is unavailable");
+    form.requestSubmit(button);
+  })()`, "comment edit submit");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-row .yc-rich-text-content')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), UI_MUTATION_TIMEOUT_MS, "comment edit");
+
+  process.stderr.write("desktop feature parity UI business stage: work-item-attachments\n");
+  let workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt(window);
+  if (!workItemAttachmentUploaded) workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt(window);
+  if (!workItemAttachmentUploaded) throw new Error("UI smoke work item attachment retry failed");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].find((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt");
+    row?.querySelector('button[aria-label^="下载附件"]')?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-attachments-panel .work-item-attachment-row button:not([aria-label])'))`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment download");
+  await window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row button')].find((value) => value.textContent.trim() === "在文件夹中显示")?.click()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-attachments-panel .work-item-attachment-status')?.textContent.includes("已在文件夹中定位")`), 10_000, "work item attachment reveal");
+
+  process.stderr.write("desktop feature parity UI business stage: comment-attachments\n");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "选择评论附件")?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    return [...(row?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
+  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment upload");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    row?.querySelector('button[aria-label^="下载评论附件"]')?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    return [...(row?.querySelectorAll('button') || [])].some((value) => value.textContent.trim() === "在文件夹中显示");
+  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment download");
+  await window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "在文件夹中显示")?.click();
+  })()`);
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.yc-rich-text-content')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
+    return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
+  })()`), 10_000, "comment attachment reveal");
+
+  process.stderr.write("desktop feature parity UI business stage: edit\n");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "comment attachment transport settlement");
   await executeFeatureParityUiScript(window, `(() => {
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
     const input = panel?.querySelector('input[name="title"]');
@@ -591,12 +717,14 @@ async function runFeatureParityBusinessUiSmoke(window) {
     button.click();
   })()`, "work item edit submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit")`), UI_MUTATION_TIMEOUT_MS, "work item edit");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "work item edit transport settlement");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
     const button = panel?.querySelector('button[type="submit"]');
     return Boolean(button && !button.disabled);
   })()`), UI_MUTATION_TIMEOUT_MS, "work item handoff action");
 
+  process.stderr.write("desktop feature parity UI business stage: handoff\n");
   const workItemStatusBeforeHandoff = await executeFeatureParityUiScript(window, `(() => {
     const meta = [...document.querySelectorAll('.work-item-detail-meta div')].find((value) => value.querySelector('dt')?.textContent === "状态");
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
@@ -615,80 +743,12 @@ async function runFeatureParityBusinessUiSmoke(window) {
   })()`, "work item handoff submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const meta = [...document.querySelectorAll('.work-item-detail-meta div')].find((value) => value.querySelector('dt')?.textContent === "状态");
-    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "推进并指派");
-    const button = panel?.querySelector('button[type="submit"]');
     const currentStatus = meta?.querySelector('dd')?.textContent;
-    return Boolean(currentStatus && currentStatus !== ${JSON.stringify(workItemStatusBeforeHandoff)} && button && !button.disabled);
+    return Boolean(currentStatus && currentStatus !== ${JSON.stringify(workItemStatusBeforeHandoff)});
   })()`), UI_MUTATION_TIMEOUT_MS, "work item handoff");
+  await waitForFeatureParityBusinessIdle(2_000, UI_MUTATION_TIMEOUT_MS, "work item handoff transport settlement");
 
-  await window.webContents.executeJavaScript(`(() => {
-    const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
-    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
-    if (!textarea || !button) throw new Error("comment create form is unavailable");
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "@yuance_admin Desktop packaged UI comment");
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    button.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment")`), UI_MUTATION_TIMEOUT_MS, "comment create");
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment");
-    const button = row?.querySelector('button[data-comment-edit]');
-    return Boolean(button && !button.disabled);
-  })()`), UI_MUTATION_TIMEOUT_MS, "comment edit action");
-
-  await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment");
-    const button = row?.querySelector('button[data-comment-edit]');
-    if (!button) throw new Error("comment edit action is unavailable");
-    button.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-comment-edit-form textarea'))`), 10_000, "comment edit form");
-  await window.webContents.executeJavaScript(`(() => {
-    const textarea = document.querySelector('.work-item-comment-edit-form textarea');
-    const button = [...document.querySelectorAll('.work-item-comment-edit-form button')].find((value) => value.textContent.trim() === "保存评论");
-    if (!textarea || !button) throw new Error("comment edit form is unavailable");
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "@yuance_admin Desktop packaged UI comment updated");
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    button.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-comment-body')].some((value) => value.textContent === "@yuance_admin Desktop packaged UI comment updated")`), UI_MUTATION_TIMEOUT_MS, "comment edit");
-
-  let workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt(window);
-  if (!workItemAttachmentUploaded) workItemAttachmentUploaded = await runWorkItemAttachmentUploadAttempt(window);
-  if (!workItemAttachmentUploaded) throw new Error("UI smoke work item attachment retry failed");
-  await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row')].find((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt");
-    row?.querySelector('button[aria-label^="下载附件"]')?.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.work-item-attachments-panel .work-item-attachment-row button:not([aria-label])'))`), UI_ATTACHMENT_TIMEOUT_MS, "work item attachment download");
-  await window.webContents.executeJavaScript(`[...document.querySelectorAll('.work-item-attachments-panel .work-item-attachment-row button')].find((value) => value.textContent.trim() === "在文件夹中显示")?.click()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('.work-item-attachments-panel .work-item-attachment-status')?.textContent.includes("已在文件夹中定位")`), 10_000, "work item attachment reveal");
-
-  await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
-    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "选择评论附件")?.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
-    return [...(row?.querySelectorAll('.work-item-attachment-row') || [])].some((value) => value.querySelector('strong')?.textContent === "fixture-upload.txt" && value.classList.contains("is-uploaded"));
-  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment upload");
-  await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
-    row?.querySelector('button[aria-label^="下载评论附件"]')?.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
-    return [...(row?.querySelectorAll('button') || [])].some((value) => value.textContent.trim() === "在文件夹中显示");
-  })()`), UI_ATTACHMENT_TIMEOUT_MS, "comment attachment download");
-  await window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
-    [...(row?.querySelectorAll('button') || [])].find((value) => value.textContent.trim() === "在文件夹中显示")?.click();
-  })()`);
-  await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const row = [...document.querySelectorAll('.work-item-comment-row')].find((value) => value.querySelector('.work-item-comment-body')?.textContent === "@yuance_admin Desktop packaged UI comment updated");
-    return row?.querySelector('.work-item-attachment-status')?.textContent.includes("已在文件夹中定位");
-  })()`), 10_000, "comment attachment reveal");
-
+  process.stderr.write("desktop feature parity UI business stage: interruptions\n");
   for (let index = 0; index < 3; index += 1) {
     networkCoordinator?.invalidate();
     networkStatePublisher.update({ status: "offline" });
@@ -709,6 +769,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
     return !document.querySelector('.host-status-shell') && Boolean(document.querySelector('main') && logout && !logout.disabled);
   })()`), 30_000, "offline shared app recovery");
 
+  process.stderr.write("desktop feature parity UI business stage: member-authorization\n");
   await executeFeatureParityUiScript(window, `(() => {
     const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "退出登录");
     if (!button) throw new Error("logout button is unavailable");
@@ -717,6 +778,7 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].some((value) => value.textContent.trim() === "开始授权")`), 30_000, "member authorization shell");
   await window.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "开始授权")?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.host-status-shell') && [...document.querySelectorAll('nav[aria-label="应用导航"] a')].some((value) => value.textContent.includes("消息中心"))`), 30_000, "member shared app load");
+  process.stderr.write("desktop feature parity UI business stage: messages\n");
   await executeFeatureParityUiScript(window, `(() => {
     const link = [...document.querySelectorAll('nav[aria-label="应用导航"] a')].find((value) => value.textContent.includes("消息中心"));
     if (!link) throw new Error("message navigation is unavailable");
@@ -725,31 +787,24 @@ async function runFeatureParityBusinessUiSmoke(window) {
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`Boolean(document.querySelector('.message-row button'))`), 30_000, "message list");
   await window.webContents.executeJavaScript(`document.querySelector('.message-row button')?.click()`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`!document.querySelector('.message-list') && document.querySelector('h1') === document.activeElement`), 30_000, "message target focus");
-  await window.webContents.executeJavaScript(`(() => {
-    const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
-    const input = panel?.querySelector('input[name="title"]');
-    const button = panel?.querySelector('button[type="submit"]');
-    if (!input || !button) throw new Error("permission test edit form is unavailable");
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "Desktop permission denied edit");
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    button.click();
-  })()`);
+  process.stderr.write("desktop feature parity UI business stage: permission\n");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const panel = [...document.querySelectorAll('.work-item-detail-panel')].find((value) => value.querySelector('h3')?.textContent === "编辑工作项");
-    return Boolean(document.querySelector('.work-item-action-error[role="alert"]') && panel?.querySelector('input[name="title"]')?.value === "Desktop permission denied edit" && !panel?.querySelector('button[type="submit"]')?.disabled);
-  })()`), 30_000, "permission denied edit");
-  await window.webContents.executeJavaScript(`(() => {
-    const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
-    const button = [...document.querySelectorAll('button')].find((value) => value.textContent.trim() === "发布评论");
-    if (!textarea || !button) throw new Error("validation test comment form is unavailable");
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(textarea, "   ");
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    button.click();
-  })()`);
+    return Boolean(!panel && document.querySelector('#work-item-detail-title')?.textContent.includes("Desktop packaged UI edit") && !document.querySelector('.shell-banner[role="alert"]'));
+  })()`), 30_000, "permission denied edit surface");
+  process.stderr.write("desktop feature parity UI business stage: validation\n");
+  await waitForUiSmoke(() => window.webContents.executeJavaScript(`document.querySelector('[contenteditable="true"][aria-label="新增评论"]')?.textContent === ""`), 10_000, "comment validation input state");
+  await executeFeatureParityUiScript(window, `(() => {
+    const form = document.querySelector('.work-item-comment-form');
+    const button = form?.querySelector('button[type="submit"]');
+    if (!form || !button || button.textContent.trim() !== "发布评论") throw new Error("validation test comment submit is unavailable");
+    form.requestSubmit(button);
+  })()`, "comment validation submit");
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-    const textarea = [...document.querySelectorAll('textarea')].find((value) => value.closest('label')?.textContent.includes("新增评论"));
-    return Boolean(document.querySelector('.work-item-comments-panel [role="alert"]') && textarea?.value === "   " && document.activeElement === textarea);
+    const editor = document.querySelector('[contenteditable="true"][aria-label="新增评论"]');
+    return Boolean(document.querySelector('.work-item-comments-panel [role="alert"]') && editor?.textContent === "" && document.activeElement === editor);
   })()`), 10_000, "comment validation focus");
+  process.stderr.write("desktop feature parity UI business stage: not-found\n");
   await window.webContents.executeJavaScript(`history.pushState({}, "", "/work-items/YCE-TASK-999999"); dispatchEvent(new Event("popstate"))`);
   await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
     const alert = document.querySelector('.shell-banner[role="alert"]');
@@ -806,7 +861,44 @@ async function runWorkItemAttachmentUploadAttempt(window) {
 
 async function executeFeatureParityUiScript(window, source, label) {
   try { return await window.webContents.executeJavaScript(source); }
-  catch { throw new Error(`UI smoke ${label} script failed`); }
+  catch (error) { throw new Error(`UI smoke ${label} script failed: ${error.message}`); }
+}
+
+async function replaceFeatureParityEditorText(window, selector, value, label) {
+  await executeFeatureParityUiScript(window, `(() => {
+    const editor = document.querySelector(${JSON.stringify(selector)});
+    if (!editor) throw new Error(${JSON.stringify(`${label} editor is unavailable`)});
+    editor.focus();
+    document.execCommand("selectAll", false);
+  })()`, `${label} focus`);
+  for (const character of value) window.webContents.sendInputEvent({ type: "char", keyCode: character });
+  await delay(50);
+}
+
+async function waitForFeatureParityStableElement(window, selector, stableMs, timeoutMs, label) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const marker = crypto.randomUUID();
+    const marked = await window.webContents.executeJavaScript(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!element) return false;
+      element.dataset.uiSmokeStabilityMarker = ${JSON.stringify(marker)};
+      return true;
+    })()`);
+    if (!marked) { await delay(50); continue; }
+    await delay(stableMs);
+    const stable = await window.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)})?.dataset.uiSmokeStabilityMarker === ${JSON.stringify(marker)}`);
+    if (stable) return;
+  }
+  throw new Error(`UI smoke ${label} did not stabilize`);
+}
+
+async function waitForFeatureParityBusinessIdle(stableMs, timeoutMs, label) {
+  await waitForUiSmoke(
+    () => featureParityUiSmokeActiveOperations === 0 && Date.now() - featureParityUiSmokeLastOperationAt >= stableMs,
+    timeoutMs,
+    label,
+  );
 }
 
 async function waitForUiSmoke(operation, timeoutMs = 10_000, label = "condition") {
@@ -951,11 +1043,14 @@ async function runDesktopNetworkSmoke() {
   const messageEvidence = process.platform === "darwin" ? "packaged-sse" : "integration-fallback";
   if (messageEvidence === "packaged-sse") {
     await waitForSmokeCondition(() => streamFacts.some((fact) => fact.type === "topbar")
-      && streamFacts.some((fact) => fact.type === "release-version"));
+      && streamFacts.some((fact) => fact.type === "release-version"), "SSE facts");
+    writeDesktopNetworkSmokeStage("sse-facts-received");
     for (const fact of streamFacts) await messages.handleFact(fact);
+    writeDesktopNetworkSmokeStage("message-controller-handled");
     await waitForSmokeCondition(() => messageQueryCompleted
       && messageFacts.some((fact) => fact.type === "topbar")
-      && messageFacts.some((fact) => fact.type === "release-version"));
+      && messageFacts.some((fact) => fact.type === "release-version"), "message controller facts");
+    writeDesktopNetworkSmokeStage("message-facts-published");
   }
   await runtime.refreshAccess(first.epoch);
   await first.completion;
@@ -1133,13 +1228,13 @@ async function openSmokeStream(runtime, sse, setController, onFact = () => {}) {
   return Object.freeze({ epoch, completion });
 }
 
-async function waitForSmokeCondition(predicate) {
+async function waitForSmokeCondition(predicate, label) {
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (predicate()) return;
     await delay(10);
   }
-  throw new Error("packaged message smoke timed out");
+  throw new Error(`packaged ${label} smoke timed out`);
 }
 
 async function waitForSmokeConnected(connected) {
@@ -1214,7 +1309,7 @@ async function initializeDesktopCredentialRuntime() {
     sseClient: createSseClient({
       profile: enrolled.profile,
       fetchImpl: network.fetch,
-      ...(desktopFeatureParityUiSmokeOrigin ? { connectTimeoutMs: 5_000, idleMs: 5_000 } : {}),
+      ...(desktopFeatureParityUiSmokeOrigin ? { connectTimeoutMs: 5_000, idleMs: 45_000 } : {}),
     }),
     probe: () => restTransport.execute("session.probe", {}),
     onState: (state) => {
@@ -1260,6 +1355,14 @@ async function initializeFileRuntime({ generation, runtime, network, profile, re
   const fileVault = createFileCapabilityVault();
   const grantVault = createTransferGrantVault();
   const revealVault = createRevealDownloadVault();
+  const previewVault = createPreviewCapabilityVault();
+  const previewSpool = createPreviewSpool({
+    rootDirectory: path.join(app.getPath("userData"), "Preview Spool"),
+    platform: process.platform,
+    windowsGuard,
+  });
+  await previewSpool.cleanupOrphans();
+  if (generation !== credentialRuntimeGeneration) return;
   let smokeDownloadIndex = 0;
   const runtimeDialog = desktopFeatureParityUiSmokeProfile
     ? {
@@ -1437,9 +1540,30 @@ if (singleInstanceProbe) {
   disposeBusinessCommands = registerBusinessCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
-    execute: (operation, input) => {
+    execute: async (operation, input) => {
       if (!businessTransport) throw Object.assign(new Error("Business transport is unavailable"), { code: "business_unavailable" });
-      return businessTransport.execute(operation, input);
+      if (desktopFeatureParityUiSmokeOrigin) {
+        featureParityUiSmokeActiveOperations += 1;
+        featureParityUiSmokeLastOperationAt = Date.now();
+      }
+      try {
+        const result = await businessTransport.execute(operation, input);
+        if (desktopFeatureParityUiSmokeOrigin) featureParityUiSmokeOperations.push({ operation, result: "resolved" });
+        return result;
+      } catch (error) {
+        if (desktopFeatureParityUiSmokeOrigin) featureParityUiSmokeOperations.push({
+          operation,
+          result: typeof error?.code === "string" ? error.code : "rejected",
+          status: Number.isSafeInteger(error?.status) ? error.status : null,
+          message: typeof error?.message === "string" ? error.message.slice(0, 160) : "",
+        });
+        throw error;
+      } finally {
+        if (desktopFeatureParityUiSmokeOrigin) {
+          featureParityUiSmokeActiveOperations -= 1;
+          featureParityUiSmokeLastOperationAt = Date.now();
+        }
+      }
     },
   });
   disposeAuthCommands = registerAuthCommandHandlers({

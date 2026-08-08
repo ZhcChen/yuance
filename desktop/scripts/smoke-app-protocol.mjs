@@ -17,7 +17,7 @@ export function assertAppProtocolSmokeReport(report) {
     report.reloadedRenderer?.url !== "app://yuance/projects/smoke" ||
     report.initialRenderer?.bridgeState !== "unauthenticated" ||
     report.reloadedRenderer?.bridgeState !== "unauthenticated" ||
-    report.reloadedRenderer?.bridgeSchemaVersion !== 7 ||
+    report.reloadedRenderer?.bridgeSchemaVersion !== 12 ||
     report.reloadedRenderer?.title !== "元策" ||
     !report.reloadedRenderer?.bodyText?.includes("需要登录") ||
     report.reloadedRenderer?.subframeBridgeExposed !== false ||

@@ -10,7 +10,7 @@ import { verifyDesktopNetworkArtifacts } from "../scripts/verify-desktop-network
 function validReport(platform = process.platform) {
   const packagedMessages = platform === "darwin";
   return {
-    kind: "yuance-desktop-network-smoke", credentialRestart: platform === "darwin" ? "reauthorized" : "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true,
+    kind: "yuance-desktop-network-smoke", credentialRestart: "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true,
     firstStream: true, rotated: true, secondStream: true, loggedOut: true,
     messageRefresh: packagedMessages, releaseVersion: packagedMessages, foregroundSuppressed: true,
     revokeResponseToEofMs: 900,

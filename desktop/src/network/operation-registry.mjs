@@ -1362,9 +1362,9 @@ function optionalBodyFields(payload, parsers, wireNames) {
 function commentBody(value) {
   const payload = plainPayload(value, "payload");
   exactKeys(payload, ["body", "bodyFormat", "parentCommentId"]);
-  const bodyFormat = payload.bodyFormat === undefined ? "plain" : requiredEnum(payload.bodyFormat, new Set(["plain"]), "bodyFormat");
+  const bodyFormat = payload.bodyFormat === undefined ? "plain" : requiredEnum(payload.bodyFormat, new Set(["html", "plain"]), "bodyFormat");
   return {
-    body: boundedRequiredText(payload.body, "body", 5_000), body_format: bodyFormat,
+    body: boundedRequiredText(payload.body, "body", 20_000), body_format: bodyFormat,
     ...(payload.parentCommentId === undefined ? {} : { parent_comment_id: nullablePositiveInteger(payload.parentCommentId) }),
   };
 }
