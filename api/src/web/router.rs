@@ -237,10 +237,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/web/messages", get(web::user::messages_page))
         .route("/web/projects", get(web::user::projects_page))
         .route(
-            "/web/current-project",
-            post(web::user::current_project_update),
-        )
-        .route(
             "/web/projects/{project_key}",
             get(web::user::project_detail_page),
         )

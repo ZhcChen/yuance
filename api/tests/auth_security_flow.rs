@@ -3,7 +3,6 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use http_body_util::BodyExt;
-use std::sync::{Mutex, OnceLock};
 use tower::ServiceExt;
 use yuance_api::{
     domains::{auth, bootstrap, users},
@@ -127,9 +126,6 @@ async fn login_submit_rejects_cross_origin_return_to() {
 
 #[tokio::test]
 async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_return_to() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -153,9 +149,6 @@ async fn web_app_message_owner_redirects_unauthenticated_request_with_safe_retur
 
 #[tokio::test]
 async fn web_app_system_owner_redirects_unauthenticated_request_with_safe_return_to() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -179,9 +172,6 @@ async fn web_app_system_owner_redirects_unauthenticated_request_with_safe_return
 
 #[tokio::test]
 async fn web_app_system_users_owner_redirects_unauthenticated_request_with_safe_return_to() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -205,9 +195,6 @@ async fn web_app_system_users_owner_redirects_unauthenticated_request_with_safe_
 
 #[tokio::test]
 async fn web_app_system_roles_owners_preserve_unauthenticated_return_paths() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -240,9 +227,6 @@ async fn web_app_system_roles_owners_preserve_unauthenticated_return_paths() {
 
 #[tokio::test]
 async fn web_app_system_storage_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -266,9 +250,6 @@ async fn web_app_system_storage_owner_preserves_unauthenticated_return_path() {
 
 #[tokio::test]
 async fn web_app_system_releases_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -292,9 +273,6 @@ async fn web_app_system_releases_owner_preserves_unauthenticated_return_path() {
 
 #[tokio::test]
 async fn web_app_system_openapi_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -318,9 +296,6 @@ async fn web_app_system_openapi_owner_preserves_unauthenticated_return_path() {
 
 #[tokio::test]
 async fn web_app_system_openapi_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -360,9 +335,6 @@ async fn web_app_system_openapi_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_permissions_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -386,9 +358,6 @@ async fn web_app_system_permissions_owner_preserves_unauthenticated_return_path(
 
 #[tokio::test]
 async fn web_app_system_permissions_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -428,9 +397,6 @@ async fn web_app_system_permissions_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_database_stats_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -454,9 +420,6 @@ async fn web_app_system_database_stats_owner_preserves_unauthenticated_return_pa
 
 #[tokio::test]
 async fn web_app_system_database_stats_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -496,9 +459,6 @@ async fn web_app_system_database_stats_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_audit_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -522,9 +482,6 @@ async fn web_app_system_audit_owner_preserves_unauthenticated_return_path() {
 
 #[tokio::test]
 async fn web_app_system_audit_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -564,9 +521,6 @@ async fn web_app_system_audit_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_api_docs_owner_preserves_unauthenticated_return_path() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -589,9 +543,6 @@ async fn web_app_system_api_docs_owner_preserves_unauthenticated_return_path() {
 
 #[tokio::test]
 async fn web_app_system_api_docs_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -630,9 +581,6 @@ async fn web_app_system_api_docs_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -672,9 +620,6 @@ async fn web_app_system_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_users_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -714,9 +659,6 @@ async fn web_app_system_users_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_roles_owners_keep_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -759,9 +701,6 @@ async fn web_app_system_roles_owners_keep_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_system_storage_owner_keeps_rust_permission_gate() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let user_id = users::create_user(
@@ -801,9 +740,6 @@ async fn web_app_system_storage_owner_keeps_rust_permission_gate() {
 
 #[tokio::test]
 async fn web_app_project_owner_preserves_deep_link_query_for_unauthenticated_request() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -827,9 +763,6 @@ async fn web_app_project_owner_preserves_deep_link_query_for_unauthenticated_req
 
 #[tokio::test]
 async fn web_app_work_item_list_owner_preserves_filter_query_for_unauthenticated_request() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -853,9 +786,6 @@ async fn web_app_work_item_list_owner_preserves_filter_query_for_unauthenticated
 
 #[tokio::test]
 async fn web_app_work_item_detail_owner_preserves_deep_link_query_for_unauthenticated_request() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("true"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -1407,8 +1337,6 @@ async fn bootstrap_init_with_csrf_creates_admin_session() {
 
 #[tokio::test]
 async fn logout_revokes_session_and_clears_cookies() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", None);
     let pool = test_pool().await;
     let initialized = bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -1689,40 +1617,6 @@ fn test_settings() -> Settings {
         security_master_key: "test-master-key-that-is-long-enough".to_string(),
         device_sessions: Default::default(),
         experimental_legacy_preview_enabled: false,
-    }
-}
-
-fn env_lock() -> &'static Mutex<()> {
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    ENV_LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct EnvOverride {
-    key: &'static str,
-    previous: Option<String>,
-}
-
-impl EnvOverride {
-    fn set(key: &'static str, value: Option<&str>) -> Self {
-        let previous = std::env::var(key).ok();
-        unsafe {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
-        }
-        Self { key, previous }
-    }
-}
-
-impl Drop for EnvOverride {
-    fn drop(&mut self) {
-        unsafe {
-            match self.previous.take() {
-                Some(value) => std::env::set_var(self.key, value),
-                None => std::env::remove_var(self.key),
-            }
-        }
     }
 }
 

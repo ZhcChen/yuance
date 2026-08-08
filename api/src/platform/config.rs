@@ -157,10 +157,6 @@ impl Settings {
         }
     }
 
-    pub fn web_app_shell_v1_enabled(&self) -> bool {
-        env_flag_enabled("YUANCE_WEB_APP_SHELL_V1")
-    }
-
     pub fn experimental_legacy_preview_enabled(&self) -> bool {
         self.experimental_legacy_preview_enabled
     }

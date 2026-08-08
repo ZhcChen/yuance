@@ -34,7 +34,6 @@ export YUANCE_ENV="test"
 export YUANCE_SECURITY_MASTER_KEY="$SECURITY_KEY"
 export YUANCE_LOG_LEVEL="off"
 export YUANCE_WEB_DIST_DIR="$WEB_DIST_DIR"
-export YUANCE_WEB_APP_SHELL_V1="true"
 
 cargo run -p yuance-api -- migrate up
 cargo run -p yuance-api -- seed demo

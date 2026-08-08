@@ -9,7 +9,7 @@
 ## 发布验证
 
 ```bash
-cargo test --manifest-path api/Cargo.toml --test routing_smoke retired_web_business_pages_ignore_shell_flag -- --test-threads=1
+cargo test --manifest-path api/Cargo.toml --test routing_smoke retired_web_business_pages_share_one_app_entry -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test routing_smoke retired_system_web_mutation_routes_are_not_registered -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_system_owner_keeps_rust_permission_gate -- --test-threads=1
 cargo test --manifest-path api/Cargo.toml --test auth_security_flow web_app_work_item_detail_owner_preserves_deep_link_query_for_unauthenticated_request -- --test-threads=1

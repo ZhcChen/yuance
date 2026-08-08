@@ -372,11 +372,6 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
         fs::write(dist_dir.join("assets/index-abc123.js"), "console.log('ok');")
             .expect("asset should write");
 
-        let previous = std::env::var("YUANCE_WEB_APP_SHELL_V1").ok();
-        unsafe {
-            std::env::set_var("YUANCE_WEB_APP_SHELL_V1", "enabled");
-        }
-
         let app = build_router(AppState::for_tests());
         let root_response = app
             .clone()
@@ -432,13 +427,6 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
                     .await
                     .expect("router should respond"),
             );
-        }
-
-        unsafe {
-            match previous {
-                Some(value) => std::env::set_var("YUANCE_WEB_APP_SHELL_V1", value),
-                None => std::env::remove_var("YUANCE_WEB_APP_SHELL_V1"),
-            }
         }
 
         assert_eq!(root_response.status(), StatusCode::OK);
@@ -837,7 +825,7 @@ async fn unknown_route_returns_not_found() {
 }
 
 #[tokio::test]
-async fn retired_web_business_pages_ignore_shell_flag() {
+async fn retired_web_business_pages_share_one_app_entry() {
     with_web_dist_dir(|dist_dir| async move {
         fs::create_dir_all(dist_dir.join("assets")).expect("dist assets dir should create");
         fs::write(
@@ -845,11 +833,6 @@ async fn retired_web_business_pages_ignore_shell_flag() {
             "<!doctype html><html><body><div id=\"root\"></div></body></html>",
         )
         .expect("index should write");
-
-        let previous = std::env::var("YUANCE_WEB_APP_SHELL_V1").ok();
-        unsafe {
-            std::env::set_var("YUANCE_WEB_APP_SHELL_V1", "disabled");
-        }
 
         let app = build_router(AppState::for_tests());
         let mut bodies = Vec::new();
@@ -891,13 +874,6 @@ async fn retired_web_business_pages_ignore_shell_flag() {
                 .expect("router should respond");
             assert_eq!(response.status(), StatusCode::OK, "{uri}");
             bodies.push(response_body(response).await);
-        }
-
-        unsafe {
-            match previous {
-                Some(value) => std::env::set_var("YUANCE_WEB_APP_SHELL_V1", value),
-                None => std::env::remove_var("YUANCE_WEB_APP_SHELL_V1"),
-            }
         }
 
         assert!(bodies.iter().all(|body| body == &bodies[0]));

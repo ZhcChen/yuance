@@ -659,9 +659,7 @@
           "docs/reviews/2026-08-08-016-web-desktop-u6-formal-message-cutover-review.md",
           "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/project_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1109,9 +1107,7 @@
           "docs/reviews/2026-08-07-025-web-desktop-u4-formal-web-cutover-review.md",
           "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/project_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1182,9 +1178,7 @@
           "docs/reviews/2026-08-07-025-web-desktop-u4-formal-web-cutover-review.md",
           "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/project_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1255,9 +1249,7 @@
           "docs/reviews/2026-08-07-025-web-desktop-u4-formal-web-cutover-review.md",
           "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/project_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1345,9 +1337,7 @@
           "docs/reviews/2026-08-08-012-web-desktop-u5-closure-review.md",
           "docs/reviews/2026-08-08-045-web-desktop-u8-work-items-messages-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/project_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1415,9 +1405,7 @@
           "docs/reviews/2026-08-08-019-web-desktop-u7-system-dashboard-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1494,9 +1482,7 @@
           "docs/reviews/2026-08-08-023-web-desktop-u7-system-users-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1569,9 +1555,7 @@
           "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1642,9 +1626,7 @@
           "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1712,9 +1694,7 @@
           "docs/reviews/2026-08-08-037-web-desktop-u7-system-permissions-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1787,9 +1767,7 @@
           "docs/reviews/2026-08-08-029-web-desktop-u7-system-storage-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/storage_config_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1863,9 +1841,7 @@
           "docs/reviews/2026-08-08-035-web-desktop-u7-system-openapi-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -1977,9 +1953,7 @@
           "docs/reviews/2026-08-08-033-web-desktop-u7-system-releases-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -2053,9 +2027,7 @@
           "docs/reviews/2026-08-08-039-web-desktop-u7-system-database-stats-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/system_management_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -2127,9 +2099,7 @@
           "docs/reviews/2026-08-08-041-web-desktop-u7-system-audit-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/audit_flow.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       },
       "sourceHandlers": [
         "web_app_entry_response"
@@ -2200,9 +2170,7 @@
           "docs/reviews/2026-08-08-043-web-desktop-u7-system-api-docs-cutover-review.md",
           "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
-        "fixture": "web/e2e/app-shell.spec.mjs",
-        "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
-        "rollbackTest": "api/tests/routing_smoke.rs"
+        "fixture": "web/e2e/app-shell.spec.mjs"
       }
     },
     {
@@ -2828,42 +2796,6 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-07-003-web-desktop-u2-identity-routing-review.md"
-        ]
-      }
-    },
-    {
-      "id": "action.boundary.legacy-layout-project-switch",
-      "pageId": "page.shell.dashboard",
-      "trigger": "legacy layout submits current project switch",
-      "inputs": [
-        "project-key",
-        "return-to",
-        "csrf-token"
-      ],
-      "validation": "仅供尚未退役的消息、工作项和系统 Askama 页面使用；目标项目存在且当前用户具有 project.view。",
-      "confirmation": "none",
-      "request": {
-        "method": "POST",
-        "path": "/web/current-project"
-      },
-      "successEffect": "更新当前项目并按原页面类型安全重写 return-to。",
-      "errorEffects": [
-        "CSRF 无效",
-        "项目不存在",
-        "无查看权限",
-        "return-to 非站内路径时返回安全默认页"
-      ],
-      "realtimeEffect": "legacy 页面重载后读取新项目上下文。",
-      "repeatSubmitPolicy": "latest-wins",
-      "migrationUnit": "U8",
-      "status": "baseline",
-      "evidence": {
-        "browserTests": [
-          "api/tests/project_management_flow.rs"
-        ],
-        "desktopTests": [],
-        "reviews": [
-          "docs/reviews/2026-08-08-044-web-desktop-u8-shell-personal-project-retirement-review.md"
         ]
       }
     },

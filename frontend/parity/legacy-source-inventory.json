@@ -50,12 +50,6 @@
       ]
     },
     {
-      "route": "/web/current-project",
-      "methods": [
-        "POST"
-      ]
-    },
-    {
       "route": "/web/device-authorization",
       "methods": [
         "GET"

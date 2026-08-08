@@ -1680,7 +1680,7 @@ async fn retired_project_web_mutation_routes_are_not_registered() {
         )
         .await
         .expect("router should respond");
-    assert_eq!(project_switch.status(), StatusCode::FORBIDDEN);
+    assert_eq!(project_switch.status(), StatusCode::NOT_FOUND);
 
     for (uri, expected) in [
         ("/web/projects", StatusCode::METHOD_NOT_ALLOWED),
