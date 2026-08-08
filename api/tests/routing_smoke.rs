@@ -197,34 +197,6 @@ async fn api_docs_page_embeds_scalar_and_skill_setup_summary() {
 }
 
 #[tokio::test]
-async fn system_api_docs_page_embeds_scalar_and_system_token_summary() {
-    let app = build_router(AppState::for_tests());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/web/system/api-docs")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "text/html; charset=utf-8"
-    );
-
-    let body = response_body(response).await;
-    assert!(body.contains("Scalar.createApiReference"));
-    assert!(body.contains("url: '/api/system/openapi.json'"));
-    assert!(body.contains("系统版本管理 API"));
-    assert!(body.contains("进入系统 Token 管理"));
-    assert!(!body.contains("/web/app/assets/"));
-}
-
-#[tokio::test]
 async fn static_logo_is_bundled_as_svg() {
     let app = build_router(AppState::for_tests());
 
@@ -289,15 +261,15 @@ async fn favicon_uses_bundled_logo_svg() {
     assert!(body.contains("<title id=\"title\">元策 Logo</title>"));
     assert!(body.contains("纯色策印"));
 }
-
 #[tokio::test]
-async fn static_app_css_is_bundled() {
+async fn auth_css_is_bundled_without_retired_business_selectors() {
     let app = build_router(AppState::for_tests());
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
-                .uri("/static/app.css")
+                .uri("/static/auth.css")
                 .body(Body::empty())
                 .expect("request should build"),
         )
@@ -309,171 +281,30 @@ async fn static_app_css_is_bundled() {
         response.headers().get(header::CONTENT_TYPE).unwrap(),
         "text/css; charset=utf-8"
     );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        "no-store, max-age=0, must-revalidate"
-    );
-
     let body = response_body(response).await;
-    assert!(body.contains("data-theme"));
-    assert!(body.contains("modal"));
-    assert!(body.contains("project-switcher"));
-    assert!(body.contains(".auth-form input"));
-    assert!(body.contains(".auth-form .device-authorization-actions .btn-primary"));
-    assert!(body.contains("letter-spacing: 0"));
-    assert!(body.contains("word-spacing: normal"));
-    assert!(body.contains(".rich-text-editor:focus-within"));
-    assert!(body.contains(".rich-attachment"));
-    assert!(body.contains(".rich-attachment[data-upload-state=\"queued\"]"));
-    assert!(body.contains(".work-item-rich-create"));
-    assert!(body.contains(".rich-attachment-menu"));
-    assert!(body.contains("cursor: context-menu"));
-    assert!(body.contains(".discussion-reply-form"));
-    assert!(body.contains(".discussion-reply-target"));
-    assert!(!body.contains(".discussion-post[data-reply-depth"));
-    assert!(body.contains(".discussion-flow-event"));
-    assert!(body.contains(".flow-event-body"));
-    assert!(body.contains("grid-column: 1 / -1"));
-    assert!(body.matches(".discussion-reply-form {").count() >= 1);
-    assert!(body.contains(".discussion-assign-status .select-control"));
-    assert!(body.contains("min-width: 168px"));
-    assert!(body.contains(".select-control-option-label"));
-    assert!(body.contains("white-space: nowrap"));
-    assert!(body.contains("text-overflow: ellipsis"));
-    assert!(body.contains(".image-viewer-stage video {"));
-    assert!(body.contains("pointer-events: auto;"));
-    assert!(body.contains(".pager-controls .select-control"));
-    assert!(body.contains("flex: 0 0 76px"));
-    assert!(body.contains(".content-tabs[data-content-tabs-pending]"));
-    assert!(body.contains("0 0 0 3px"));
-    assert!(body.contains(".toast-close"));
-    assert!(body.contains("place-items: center"));
-    assert!(body.contains(".role-status-form"));
-    assert!(!body.contains(".role-status-button"));
-}
+    assert!(body.contains(".auth-panel"));
+    assert!(body.contains(".visual-workspace-grid"));
+    assert!(body.contains(".setup-dashboard"));
+    assert!(body.contains(".device-authorization-actions"));
+    assert!(!body.contains(".work-item"));
+    assert!(!body.contains(".system-"));
+    assert!(!body.contains(".project-"));
+    assert!(!body.contains(".modal"));
+    assert!(!body.contains(".toast"));
 
-#[tokio::test]
-async fn static_app_js_redirects_api_unauthorized_to_login() {
-    let app = build_router(AppState::for_tests());
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/static/app.js")
-                .body(Body::empty())
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/javascript; charset=utf-8"
-    );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        "no-store, max-age=0, must-revalidate"
-    );
-
-    let body = response
-        .into_body()
-        .collect()
-        .await
-        .expect("body should collect")
-        .to_bytes();
-    let body = std::str::from_utf8(&body).expect("body should be utf-8");
-
-    assert!(body.contains("response.status === 401"));
-    assert!(body.contains("payload.error.code === \"unauthorized\""));
-    assert!(body.contains("window.location.href = \"/web/login\""));
-    assert!(body.contains("window.__YUANCE_APP_RELEASE_VERSION__ ="));
-    assert!(body.contains("window.__YUANCE_APP_UPDATE_MANIFEST_URL__ = \"/version.json\""));
-    assert!(body.contains("function toggleTheme()"));
-    assert!(body.contains("function currentReleaseVersion()"));
-    assert!(body.contains("function fetchReleaseVersionManifest()"));
-    assert!(body.contains("function checkForAppUpdate()"));
-    assert!(body.contains("function initAppUpdatePrompt()"));
-    assert!(body.contains("data-app-update-modal"));
-    assert!(body.contains("window.location.reload()"));
-    assert!(body.contains("data-theme-toggle"));
-    assert!(body.contains("function notificationText(value, fallback)"));
-    assert!(body.contains("function notificationMetaText(item)"));
-    assert!(body.contains("notificationText(item.actor, \"系统\")"));
-    assert!(body.contains("notificationText(item.created_at, \"未知时间\")"));
-    assert!(body.contains("notificationText(item.open_url, \"/web/messages\")"));
-    assert!(body.contains("function filterProjectOptions"));
-    assert!(body.contains("data-project-search-input"));
-    assert!(body.contains("function openModal"));
-    assert!(body.contains("function closeModal"));
-    assert!(body.contains("data-modal-open"));
-    assert!(body.contains("select.dataset.selectAutofocus"));
-    assert!(body.contains("select.removeAttribute(\"autofocus\")"));
-    assert!(body.contains("trigger.setAttribute(\"autofocus\", \"\")"));
-    assert!(body.contains("select.dataset.selectPanelMinWidth"));
-    assert!(body.contains("var defaultMinWidth = searchable ? 320 : 168"));
-    assert!(body.contains("function renderSelectOptions(control)"));
-    assert!(body.contains("new MutationObserver(function (mutations)"));
-    assert!(body.contains("optionsChanged"));
-    assert!(body.contains("control.selectObserver.disconnect()"));
-    assert!(body.contains("function webFormResultFromHtml"));
-    assert!(body.contains(r#"querySelector(".inline-result")"#));
-    assert!(body.contains("htmlResult?.message"));
-    assert!(body.contains("avatar.style.color = \"#fff\""));
-    assert!(body.contains("event.key === \"Escape\""));
-    assert!(body.contains("function openConfirmModal"));
-    assert!(body.contains("data-confirm-submit-form"));
-    assert!(body.contains("data-confirm-submit"));
-    assert!(body.contains("function syncTabUrl"));
-    assert!(body.contains("data-tabs-sync-url"));
-    assert!(body.contains("function clearContentTabNavigation"));
-    assert!(body.contains("function clearPageTransitionState"));
-    assert!(body.contains("document.body.classList.remove(\"page-leaving\")"));
-    assert!(body.contains("contentTabNavigationControl"));
-    assert!(body.contains("document.fonts.ready"));
-    assert!(body.contains("candidate.setAttribute(\"aria-current\", \"page\")"));
-    assert!(body.contains("setContentTabsPending(contentTabNavigationControl, true)"));
-    assert!(body.contains("async function submitDirectUpload"));
-    assert!(body.contains("data-direct-upload"));
-    assert!(body.contains("function syncDirectUploadMetadata"));
-    assert!(body.contains("fileInput.multiple && !form.dataset.existingAttachmentId"));
-    assert!(body.contains("var uploadEntries = entries.length"));
-    assert!(body.contains("group.dataset.uploadBusy === \"true\""));
-    assert!(body.contains("item.status !== \"deleted\""));
-    assert!(body.contains("已归档"));
-    assert!(body.contains("data-confirm-title=\"归档项目文件\""));
-    assert!(body.contains("data-confirm-action=\"归档\""));
-    assert!(!body.contains("data-confirm-title=\"删除项目文件\""));
-    assert!(!body.contains("确认删除文件"));
-    assert!(body.contains("async function submitBugReport"));
-    assert!(body.contains("async function publishBugReportRichText"));
-    assert!(body.contains("function syncBugReportRichDescription"));
-    assert!(body.contains("function ensureBugReportItemForRichUpload"));
-    assert!(body.contains("function ensureProjectResourceForRichUpload"));
-    assert!(body.contains("function removeRichAttachmentNode"));
-    assert!(body.contains("data-bug-report-form"));
-    assert!(body.contains("/comments/"));
-    assert!(body.contains("function setDiscussionBusy(form, busy, activeSubmitter)"));
-    assert!(body.contains("function isDiscussionControlLocked(form, control)"));
-    assert!(body.contains("control.disabled = busy || isDiscussionControlLocked(form, control);"));
-    assert!(body.contains("control.matches(\"[data-discussion-assign]\")"));
-    assert!(
-        body.contains("selectControl.selectElement.matches(\"[data-discussion-assign-status]\")")
-    );
-    assert!(body.contains("form.dataset.discussionPendingAssign = \"true\""));
-    assert!(body.contains("内容已发表，未完成的指派或附件可直接重试。"));
-    assert!(body.contains("function reloadDiscussionAtComment(itemKey, commentId)"));
-    assert!(body.contains("function openRichAttachmentMenu"));
-    assert!(body.contains("function handleRichAttachmentMenuAction"));
-    assert!(body.contains("data-rich-attachment-menu-action"));
-    assert!(body.contains(".discussion-rich-body a[data-yuance-attachment-kind='file']"));
-    assert!(body.contains("window.location.hash = targetHash"));
-    assert!(body.contains("reloadDiscussionAtComment(itemKey, commentId)"));
-    assert!(body.contains("button === activeSubmitter"));
-    assert!(body.contains("submitter.matches(\"[data-discussion-submit]\")"));
-    assert!(body.contains("USERNAME_INPUT_SELECTOR"));
-    assert!(body.contains("function normalizeUsernameInput"));
-    assert!(body.contains("compactUsernameValue(original)"));
+    for uri in ["/static/app.css", "/static/app.js"] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{uri}");
+    }
 }
 
 #[tokio::test]
@@ -1036,6 +867,17 @@ async fn retired_web_business_pages_ignore_shell_flag() {
             "/web/tasks?status=in_progress",
             "/web/bugs?priority=P0",
             "/web/work-items/YCE-TASK-2",
+            "/web/system",
+            "/web/system/users?page=2&per_page=20",
+            "/web/system/roles?role=member",
+            "/web/system/roles/member/permissions",
+            "/web/system/permissions",
+            "/web/system/storage?page=2",
+            "/web/system/openapi",
+            "/web/system/releases?page=2",
+            "/web/system/database-stats",
+            "/web/system/audit?actor=admin",
+            "/web/system/api-docs",
         ] {
             let response = app
                 .clone()
@@ -1063,6 +905,45 @@ async fn retired_web_business_pages_ignore_shell_flag() {
         assert!(!bodies[0].contains("data-project-create-form"));
     })
     .await;
+}
+
+#[tokio::test]
+async fn retired_system_web_mutation_routes_are_not_registered() {
+    let app = build_router(AppState::for_tests());
+
+    for (uri, expected) in [
+        ("/web/system/users", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/users/member/status", StatusCode::NOT_FOUND),
+        ("/web/system/users/member/role", StatusCode::NOT_FOUND),
+        ("/web/system/users/member/password", StatusCode::NOT_FOUND),
+        ("/web/system/users/member/projects", StatusCode::NOT_FOUND),
+        ("/web/system/roles", StatusCode::METHOD_NOT_ALLOWED),
+        (
+            "/web/system/roles/member/permissions",
+            StatusCode::METHOD_NOT_ALLOWED,
+        ),
+        ("/web/system/storage", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/storage/probe", StatusCode::NOT_FOUND),
+        ("/web/system/storage/initialize", StatusCode::NOT_FOUND),
+        ("/web/system/openapi", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/openapi/tokens/7/edit", StatusCode::NOT_FOUND),
+        ("/web/system/releases", StatusCode::METHOD_NOT_ALLOWED),
+        ("/web/system/releases/settings", StatusCode::NOT_FOUND),
+        ("/web/system/releases/7/edit", StatusCode::NOT_FOUND),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(response.status(), expected, "POST {uri}");
+    }
 }
 
 #[test]

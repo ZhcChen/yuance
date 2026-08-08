@@ -81,7 +81,7 @@ export async function extractLegacyExperience({ routerPath, templatesPath, appSc
   const templateDirectory = templatesPath instanceof URL ? fileURLToPath(templatesPath) : templatesPath;
   const [routerSource, appScript, templates] = await Promise.all([
     readFile(routerPath, 'utf8'),
-    readFile(appScriptPath, 'utf8'),
+    appScriptPath ? readFile(appScriptPath, 'utf8') : Promise.resolve(''),
     walkHtmlFiles(templateDirectory),
   ]);
   const templateMarkers = new Set();
@@ -104,7 +104,6 @@ export async function writeLegacyExperienceInventory(repositoryDirectory) {
   const inventory = await extractLegacyExperience({
     routerPath: path.join(repositoryDirectory, 'api/src/web/router.rs'),
     templatesPath: path.join(repositoryDirectory, 'api/templates/web'),
-    appScriptPath: path.join(repositoryDirectory, 'api/static/app.js'),
   });
   const outputPath = path.join(repositoryDirectory, 'frontend/parity/legacy-source-inventory.json');
   await writeFile(outputPath, `${JSON.stringify({ version: 1, ...inventory }, null, 2)}\n`);

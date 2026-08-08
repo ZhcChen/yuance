@@ -166,7 +166,7 @@ Device session 配置在进程启动时校验：authorization TTL 必须为 5-15
 curl -fsS https://yuance.quanxinfu.com/api/healthz
 curl -fsS https://yuance.quanxinfu.com/api/readyz
 curl -I https://yuance.quanxinfu.com/web
-curl -I https://yuance.quanxinfu.com/static/app.css
+curl -I https://yuance.quanxinfu.com/static/auth.css
 ```
 
 ## FRP 与 Caddy

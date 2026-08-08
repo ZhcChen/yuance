@@ -1360,9 +1360,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/dashboard.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1397,7 +1395,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1414,12 +1412,16 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-08-018-web-desktop-u7-system-dashboard-review.md",
-          "docs/reviews/2026-08-08-019-web-desktop-u7-system-dashboard-cutover-review.md"
+          "docs/reviews/2026-08-08-019-web-desktop-u7-system-dashboard-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.users",
@@ -1428,11 +1430,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/users.html",
-        "partials/pagination_pages.html",
-        "partials/pagination_size_jump.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1474,7 +1472,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1493,12 +1491,16 @@
           "docs/reviews/2026-08-08-020-web-desktop-u7-system-users-view-review.md",
           "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md",
           "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md",
-          "docs/reviews/2026-08-08-023-web-desktop-u7-system-users-cutover-review.md"
+          "docs/reviews/2026-08-08-023-web-desktop-u7-system-users-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.roles",
@@ -1507,9 +1509,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/roles.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1548,7 +1548,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1566,12 +1566,16 @@
         "reviews": [
           "docs/reviews/2026-08-08-024-web-desktop-u7-system-roles-view-review.md",
           "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md",
-          "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md"
+          "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.role-permissions",
@@ -1580,9 +1584,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/permissions.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1619,7 +1621,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1637,12 +1639,16 @@
         "reviews": [
           "docs/reviews/2026-08-08-024-web-desktop-u7-system-roles-view-review.md",
           "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md",
-          "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md"
+          "docs/reviews/2026-08-08-026-web-desktop-u7-system-roles-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.permissions",
@@ -1651,9 +1657,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/permissions.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1688,7 +1692,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1705,12 +1709,16 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-08-036-web-desktop-u7-system-permissions-review.md",
-          "docs/reviews/2026-08-08-037-web-desktop-u7-system-permissions-cutover-review.md"
+          "docs/reviews/2026-08-08-037-web-desktop-u7-system-permissions-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.storage",
@@ -1719,9 +1727,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/storage.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1760,7 +1766,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1778,12 +1784,16 @@
         "reviews": [
           "docs/reviews/2026-08-08-027-web-desktop-u7-system-storage-view-review.md",
           "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md",
-          "docs/reviews/2026-08-08-029-web-desktop-u7-system-storage-cutover-review.md"
+          "docs/reviews/2026-08-08-029-web-desktop-u7-system-storage-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/storage_config_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.openapi",
@@ -1792,9 +1802,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/openapi.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1834,7 +1842,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1852,12 +1860,16 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md",
-          "docs/reviews/2026-08-08-035-web-desktop-u7-system-openapi-cutover-review.md"
+          "docs/reviews/2026-08-08-035-web-desktop-u7-system-openapi-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.releases",
@@ -1866,11 +1878,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/releases.html",
-        "partials/pagination_pages.html",
-        "partials/pagination_size_jump.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -1943,7 +1951,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -1966,12 +1974,16 @@
           "docs/reviews/2026-08-08-030-web-desktop-u7-system-releases-view-review.md",
           "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md",
           "docs/reviews/2026-08-08-032-web-desktop-u7-system-release-assets-review.md",
-          "docs/reviews/2026-08-08-033-web-desktop-u7-system-releases-cutover-review.md"
+          "docs/reviews/2026-08-08-033-web-desktop-u7-system-releases-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.database-stats",
@@ -1980,9 +1992,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/database_stats.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "refresh",
@@ -2019,7 +2029,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -2040,12 +2050,16 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-08-038-web-desktop-u7-system-database-stats-review.md",
-          "docs/reviews/2026-08-08-039-web-desktop-u7-system-database-stats-cutover-review.md"
+          "docs/reviews/2026-08-08-039-web-desktop-u7-system-database-stats-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/system_management_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.audit",
@@ -2054,11 +2068,7 @@
         "GET"
       ],
       "family": "system",
-      "sourceTemplates": [
-        "system/audit.html",
-        "partials/pagination_pages.html",
-        "partials/pagination_size_jump.html"
-      ],
+      "sourceTemplates": [],
       "apiEffects": [
         {
           "phase": "primary",
@@ -2097,7 +2107,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -2114,12 +2124,16 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-08-040-web-desktop-u7-system-audit-review.md",
-          "docs/reviews/2026-08-08-041-web-desktop-u7-system-audit-cutover-review.md"
+          "docs/reviews/2026-08-08-041-web-desktop-u7-system-audit-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
         "rollbackTest": "api/tests/audit_flow.rs"
-      }
+      },
+      "sourceHandlers": [
+        "web_app_entry_response"
+      ]
     },
     {
       "id": "page.system.api-docs",
@@ -2130,7 +2144,7 @@
       "family": "system",
       "sourceTemplates": [],
       "sourceHandlers": [
-        "api/src/web/router.rs::legacy_system_api_docs_response"
+        "web_app_entry_response"
       ],
       "apiEffects": [
         {
@@ -2166,7 +2180,7 @@
         "wide"
       ],
       "migrationUnit": "U7",
-      "status": "cutover",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -2183,7 +2197,8 @@
         ],
         "reviews": [
           "docs/reviews/2026-08-08-042-web-desktop-u7-system-api-docs-review.md",
-          "docs/reviews/2026-08-08-043-web-desktop-u7-system-api-docs-cutover-review.md"
+          "docs/reviews/2026-08-08-043-web-desktop-u7-system-api-docs-cutover-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ],
         "fixture": "web/e2e/app-shell.spec.mjs",
         "cutoverFlag": "YUANCE_WEB_APP_SHELL_V1",
@@ -4896,7 +4911,7 @@
       "confirmation": "none",
       "request": {
         "method": "POST",
-        "path": "/web/system/users"
+        "path": "/api/v1/system/users"
       },
       "successEffect": "创建用户、分配角色并记录审计，密码不回显。",
       "errorEffects": [
@@ -4908,7 +4923,7 @@
       "realtimeEffect": "用户候选和成员分配列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -4920,7 +4935,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md"
+          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -4936,8 +4952,8 @@
       "validation": "状态受控，不允许停用最后一个有效超级管理员或当前安全边界禁止的账号。",
       "confirmation": "停用时提示 session、Token 和设备访问将失效。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/users/{username}/status"
+        "method": "PATCH",
+        "path": "/api/v1/system/users/{username}/status"
       },
       "successEffect": "更新状态、撤销失效凭证并记录审计。",
       "errorEffects": [
@@ -4949,7 +4965,7 @@
       "realtimeEffect": "目标用户所有宿主 session、菜单和实时连接失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -4961,7 +4977,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md"
+          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -4977,8 +4994,8 @@
       "validation": "角色存在且可分配，不得移除最后一个有效超级管理员。",
       "confirmation": "编辑弹窗明确目标用户，保存后全局权限立即变化。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/users/{username}/role"
+        "method": "PATCH",
+        "path": "/api/v1/system/users/{username}/role"
       },
       "successEffect": "替换全局角色并记录审计。",
       "errorEffects": [
@@ -4990,7 +5007,7 @@
       "realtimeEffect": "目标用户权限、菜单和所有资源缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5002,7 +5019,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md"
+          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5020,7 +5038,7 @@
       "confirmation": "提示旧密码和现有 session 将失效，且新密码不会再次展示。",
       "request": {
         "method": "POST",
-        "path": "/web/system/users/{username}/password"
+        "path": "/api/v1/system/users/{username}/password"
       },
       "successEffect": "重置密码、撤销现有 session 并记录高风险审计。",
       "errorEffects": [
@@ -5032,7 +5050,7 @@
       "realtimeEffect": "目标用户 Browser/Desktop 认证立即失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5044,7 +5062,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md"
+          "docs/reviews/2026-08-08-021-web-desktop-u7-system-user-core-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5064,7 +5083,7 @@
       "confirmation": "none",
       "request": {
         "method": "POST",
-        "path": "/web/system/users/{username}/projects"
+        "path": "/api/v1/system/users/{username}/projects"
       },
       "successEffect": "批量加入项目并刷新当前分页的最终项目关系快照。",
       "errorEffects": [
@@ -5076,7 +5095,7 @@
       "realtimeEffect": "目标用户项目列表、权限和项目切换候选失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5088,7 +5107,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md"
+          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5106,8 +5126,8 @@
       "validation": "项目去重并全量预校验；任一关系为负责人或仍有活跃工作项时不移除任何关系。",
       "confirmation": "展示用户和选中项目数量。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/users/{username}/projects/remove"
+        "method": "DELETE",
+        "path": "/api/v1/system/users/{username}/projects"
       },
       "successEffect": "移除全部已确认项目关系并刷新最终快照。",
       "errorEffects": [
@@ -5119,7 +5139,7 @@
       "realtimeEffect": "目标用户项目访问和对应实时订阅失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5131,7 +5151,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md"
+          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5149,8 +5170,8 @@
       "validation": "关系存在，用户不是项目负责人且无待移交活跃工作项。",
       "confirmation": "展示用户和项目数量，并提示项目访问与实时订阅立即失效。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/users/{username}/projects/{project_key}/remove"
+        "method": "DELETE",
+        "path": "/api/v1/system/users/{username}/projects/{project_key}"
       },
       "successEffect": "移除项目关系、记录审计并刷新最终快照。",
       "errorEffects": [
@@ -5161,7 +5182,7 @@
       "realtimeEffect": "目标用户该项目访问和实时订阅失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5173,7 +5194,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md"
+          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5192,8 +5214,8 @@
       "validation": "关系存在，用户不是项目负责人，角色仅允许 viewer/member/maintainer。",
       "confirmation": "none",
       "request": {
-        "method": "POST",
-        "path": "/web/system/users/{username}/projects/{project_key}/role"
+        "method": "PATCH",
+        "path": "/api/v1/system/users/{username}/projects/{project_key}/role"
       },
       "successEffect": "更新项目角色、记录审计并刷新最终快照。",
       "errorEffects": [
@@ -5205,7 +5227,7 @@
       "realtimeEffect": "目标用户该项目权限和菜单立即失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5217,7 +5239,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md"
+          "docs/reviews/2026-08-08-022-web-desktop-u7-system-user-projects-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5235,7 +5258,7 @@
       "confirmation": "none",
       "request": {
         "method": "POST",
-        "path": "/web/system/roles"
+        "path": "/api/v1/system/roles"
       },
       "apiEffects": [
         {
@@ -5260,7 +5283,7 @@
       "realtimeEffect": "角色候选列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5271,7 +5294,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md"
+          "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5287,8 +5311,8 @@
       "validation": "角色存在、非系统保护角色且状态仅允许 active/disabled。",
       "confirmation": "停用时提示该角色授权将不再生效。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/roles/{role_code}/status"
+        "method": "PATCH",
+        "path": "/api/v1/system/roles/{role_code}/status"
       },
       "apiEffects": [
         {
@@ -5314,7 +5338,7 @@
       "realtimeEffect": "使用该角色的所有用户权限和菜单失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5325,7 +5349,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md"
+          "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5341,8 +5366,8 @@
       "validation": "角色可编辑，权限键存在，action 权限自动补齐同资源 page 权限。",
       "confirmation": "none",
       "request": {
-        "method": "POST",
-        "path": "/web/system/roles/{role_code}/permissions"
+        "method": "PATCH",
+        "path": "/api/v1/system/roles/{role_code}/permissions"
       },
       "apiEffects": [
         {
@@ -5368,7 +5393,7 @@
       "realtimeEffect": "使用该角色的所有用户权限、菜单和请求缓存失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5379,7 +5404,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md"
+          "docs/reviews/2026-08-08-025-web-desktop-u7-system-role-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5400,7 +5426,7 @@
       "confirmation": "切换 Endpoint 或 Bucket 时提示现有对象不会自动迁移。",
       "request": {
         "method": "POST",
-        "path": "/web/system/storage"
+        "path": "/api/v1/storage/config"
       },
       "apiEffects": [
         {
@@ -5427,7 +5453,7 @@
       "realtimeEffect": "文件能力配置和健康状态失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5439,7 +5465,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md"
+          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5454,7 +5481,7 @@
       "confirmation": "none",
       "request": {
         "method": "POST",
-        "path": "/web/system/storage/probe"
+        "path": "/api/v1/storage/config/probe"
       },
       "apiEffects": [
         {
@@ -5481,7 +5508,7 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5493,7 +5520,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md"
+          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5508,7 +5536,7 @@
       "confirmation": "提示将按需创建 Bucket、配置 CORS 并写入初始化标记。",
       "request": {
         "method": "POST",
-        "path": "/web/system/storage/initialize"
+        "path": "/api/v1/storage/config/initialize"
       },
       "apiEffects": [
         {
@@ -5535,7 +5563,7 @@
       "realtimeEffect": "文件上传下载能力和系统健康状态失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5547,7 +5575,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md"
+          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5563,7 +5592,7 @@
       "confirmation": "展示目标版本和 Bucket，并提示将生成新的激活版本。",
       "request": {
         "method": "POST",
-        "path": "/web/system/storage/versions/{version}/rollback"
+        "path": "/api/v1/storage/config/versions/{version}/rollback"
       },
       "apiEffects": [
         {
@@ -5590,7 +5619,7 @@
       "realtimeEffect": "所有文件能力配置和健康状态失效。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5602,7 +5631,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md"
+          "docs/reviews/2026-08-08-028-web-desktop-u7-system-storage-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5619,7 +5649,7 @@
       "confirmation": "none",
       "request": {
         "method": "POST",
-        "path": "/web/system/openapi"
+        "path": "/api/v1/system/api-tokens"
       },
       "apiEffects": [
         {
@@ -5646,7 +5676,7 @@
       "realtimeEffect": "OpenAPI Token 列表失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5659,7 +5689,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md"
+          "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5676,8 +5707,8 @@
       "validation": "Token 存在，名称和受控 scope 有效；编辑不重新生成或展示明文。",
       "confirmation": "none",
       "request": {
-        "method": "POST",
-        "path": "/web/system/openapi/tokens/{token_id}/edit"
+        "method": "PATCH",
+        "path": "/api/v1/system/api-tokens/{token_id}"
       },
       "apiEffects": [
         {
@@ -5704,7 +5735,7 @@
       "realtimeEffect": "目标 Token 后续 API 授权立即使用新范围。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5717,7 +5748,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md"
+          "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5732,8 +5764,8 @@
       "validation": "Token 存在且当前主体具备 system.api_tokens.manage。",
       "confirmation": "提示删除不可恢复且依赖调用立即失败。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/openapi/tokens/{token_id}/delete"
+        "method": "DELETE",
+        "path": "/api/v1/system/api-tokens/{token_id}"
       },
       "apiEffects": [
         {
@@ -5759,7 +5791,7 @@
       "realtimeEffect": "目标 Token 的后续请求立即被拒绝。",
       "repeatSubmitPolicy": "reject",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5772,7 +5804,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md"
+          "docs/reviews/2026-08-08-034-web-desktop-u7-system-openapi-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5795,7 +5828,7 @@
       "confirmation": "none",
       "request": {
         "method": "POST",
-        "path": "/web/system/releases"
+        "path": "/api/v1/system/releases"
       },
       "apiEffects": [
         {
@@ -5821,7 +5854,7 @@
       "realtimeEffect": "none",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5833,7 +5866,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md"
+          "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5848,8 +5882,8 @@
       "validation": "保留版本数量必须为 1 到 50 的整数。",
       "confirmation": "none",
       "request": {
-        "method": "POST",
-        "path": "/web/system/releases/settings"
+        "method": "PATCH",
+        "path": "/api/v1/system/releases/settings"
       },
       "apiEffects": [
         {
@@ -5875,7 +5909,7 @@
       "realtimeEffect": "发布保留清理策略失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5887,7 +5921,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md"
+          "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },
@@ -5907,8 +5942,8 @@
       "validation": "仅草稿可编辑、校验或发布，仅已发布版本可撤回；发布前必须满足通道对应资产完整性。",
       "confirmation": "校验、发布和撤回均展示版本号与状态变更影响；撤回原因必填。",
       "request": {
-        "method": "POST",
-        "path": "/web/system/releases/{release_id}/edit"
+        "method": "PATCH",
+        "path": "/api/v1/system/releases/{release_id}"
       },
       "apiEffects": [
         {
@@ -5948,7 +5983,7 @@
       "realtimeEffect": "发布或撤回后下载页和 Desktop 更新检查失效。",
       "repeatSubmitPolicy": "lock",
       "migrationUnit": "U7",
-      "status": "shared",
+      "status": "retired",
       "evidence": {
         "browserTests": [
           "web/e2e/app-shell.spec.mjs",
@@ -5960,7 +5995,8 @@
           "desktop/test/renderer-api-transport.test.mjs"
         ],
         "reviews": [
-          "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md"
+          "docs/reviews/2026-08-08-031-web-desktop-u7-system-release-actions-review.md",
+          "docs/reviews/2026-08-08-046-web-desktop-u8-system-retirement-review.md"
         ]
       }
     },

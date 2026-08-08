@@ -322,50 +322,11 @@ pub fn build_router(state: AppState) -> Router {
             axum::routing::post(web::user::bootstrap_init),
         )
         .route("/web/system", get(web::user::system_dashboard))
-        .route(
-            "/web/system/users",
-            get(web::user::system_users_page).post(web::user::system_users_create),
-        )
-        .route(
-            "/web/system/users/{username}/status",
-            axum::routing::post(web::user::system_user_status_update),
-        )
-        .route(
-            "/web/system/users/{username}/role",
-            axum::routing::post(web::user::system_user_role_update),
-        )
-        .route(
-            "/web/system/users/{username}/password",
-            axum::routing::post(web::user::system_user_password_reset),
-        )
-        .route(
-            "/web/system/users/{username}/projects",
-            axum::routing::post(web::user::system_user_project_assign),
-        )
-        .route(
-            "/web/system/users/{username}/projects/remove",
-            axum::routing::post(web::user::system_user_project_remove_batch),
-        )
-        .route(
-            "/web/system/users/{username}/projects/{project_key}/remove",
-            axum::routing::post(web::user::system_user_project_remove),
-        )
-        .route(
-            "/web/system/users/{username}/projects/{project_key}/role",
-            axum::routing::post(web::user::system_user_project_role_update),
-        )
-        .route(
-            "/web/system/roles",
-            get(web::user::system_roles_page).post(web::user::system_roles_create),
-        )
-        .route(
-            "/web/system/roles/{role_code}/status",
-            axum::routing::post(web::user::system_role_status_update),
-        )
+        .route("/web/system/users", get(web::user::system_users_page))
+        .route("/web/system/roles", get(web::user::system_roles_page))
         .route(
             "/web/system/roles/{role_code}/permissions",
-            get(web::user::system_role_permissions_page)
-                .post(web::user::system_role_permissions_update),
+            get(web::user::system_role_permissions_page),
         )
         .route(
             "/web/system/permissions",
@@ -373,31 +334,15 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/web/system/storage",
-            get(web::user::storage_settings).post(web::user::storage_settings_save),
+            get(web::user::storage_settings),
         )
         .route(
             "/web/system/openapi",
-            get(web::user::system_openapi_page).post(web::user::system_api_token_create),
-        )
-        .route(
-            "/web/system/openapi/tokens/{token_id}/edit",
-            post(web::user::system_api_token_update),
-        )
-        .route(
-            "/web/system/openapi/tokens/{token_id}/delete",
-            post(web::user::system_api_token_delete),
+            get(web::user::system_openapi_page),
         )
         .route(
             "/web/system/releases",
-            get(web::user::system_releases_page).post(web::user::system_releases_create),
-        )
-        .route(
-            "/web/system/releases/settings",
-            post(web::user::system_releases_settings_update),
-        )
-        .route(
-            "/web/system/releases/{release_id}/edit",
-            post(web::user::system_releases_update),
+            get(web::user::system_releases_page),
         )
         .route(
             "/web/system/releases/{release_id}/assets/{asset_id}/download",
@@ -406,18 +351,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/web/system/database-stats",
             get(web::user::system_database_stats_page),
-        )
-        .route(
-            "/web/system/storage/probe",
-            axum::routing::post(web::user::storage_settings_probe),
-        )
-        .route(
-            "/web/system/storage/initialize",
-            axum::routing::post(web::user::storage_settings_initialize),
-        )
-        .route(
-            "/web/system/storage/versions/{version}/rollback",
-            axum::routing::post(web::user::storage_settings_rollback),
         )
         .route("/web/system/audit", get(web::user::system_audit_page))
         .route("/web/api-docs", get(api_docs))
@@ -957,8 +890,7 @@ pub fn build_router(state: AppState) -> Router {
                 .head(web::api::work_item_attachment_preview_content),
         )
         .route("/version.json", get(version_manifest))
-        .route("/static/app.css", get(static_app_css))
-        .route("/static/app.js", get(static_app_js))
+        .route("/static/auth.css", get(static_auth_css))
         .route("/static/document-preview.mjs", get(static_document_preview))
         .route(
             "/static/document-preview-legacy.mjs",
@@ -1677,7 +1609,7 @@ fn web_app_content_type(path: &str) -> &'static str {
     }
 }
 
-async fn static_app_css() -> impl IntoResponse {
+async fn static_auth_css() -> impl IntoResponse {
     (
         [
             (header::CONTENT_TYPE, "text/css; charset=utf-8"),
@@ -1686,27 +1618,7 @@ async fn static_app_css() -> impl IntoResponse {
                 "no-store, max-age=0, must-revalidate",
             ),
         ],
-        include_str!("../../static/app.css"),
-    )
-}
-
-async fn static_app_js() -> impl IntoResponse {
-    let bootstrap = format!(
-        "window.__YUANCE_APP_RELEASE_VERSION__ = {};\nwindow.__YUANCE_APP_UPDATE_MANIFEST_URL__ = \"/version.json\";\n",
-        serde_json::to_string(&app_release_version()).unwrap_or_else(|_| "\"\"".to_string()),
-    );
-    (
-        [
-            (
-                header::CONTENT_TYPE,
-                "application/javascript; charset=utf-8",
-            ),
-            (
-                header::CACHE_CONTROL,
-                "no-store, max-age=0, must-revalidate",
-            ),
-        ],
-        format!("{bootstrap}{}", include_str!("../../static/app.js")),
+        include_str!("../../static/auth.css"),
     )
 }
 
@@ -2060,183 +1972,6 @@ async fn api_docs() -> impl IntoResponse {
 </body>
 </html>"#,
     )
-}
-
-pub(crate) fn legacy_system_api_docs_response() -> Response {
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        r#"<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>系统 OpenAPI - 元策</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f6f8fc;
-      --card: rgba(255, 255, 255, .94);
-      --text: #172033;
-      --muted: #667085;
-      --border: rgba(102, 112, 133, .18);
-      --primary: #2f6adf;
-      --primary-soft: rgba(47, 106, 223, .10);
-      --shadow: 0 22px 70px rgba(20, 33, 61, .12);
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 15% 10%, rgba(47, 106, 223, .14), transparent 30%),
-        radial-gradient(circle at 90% 0%, rgba(239, 68, 68, .08), transparent 22%),
-        var(--bg);
-    }
-    .hero {
-      max-width: 1160px;
-      margin: 0 auto;
-      padding: 32px 22px 20px;
-    }
-    .hero-card {
-      display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
-      gap: 22px;
-      padding: 28px;
-      border: 1px solid var(--border);
-      border-radius: 28px;
-      background: var(--card);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
-    }
-    .eyebrow {
-      display: inline-flex;
-      align-items: center;
-      margin: 0 0 12px;
-      padding: 7px 12px;
-      border-radius: 999px;
-      color: var(--primary);
-      background: var(--primary-soft);
-      font-size: 13px;
-      font-weight: 800;
-    }
-    h1 {
-      margin: 0 0 12px;
-      font-size: clamp(30px, 5vw, 48px);
-      line-height: 1.08;
-      letter-spacing: -.04em;
-    }
-    p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 15px;
-      line-height: 1.75;
-    }
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      margin-top: 22px;
-    }
-    .btn {
-      min-height: 42px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0 16px;
-      border-radius: 999px;
-      font-weight: 800;
-      text-decoration: none;
-    }
-    .btn-primary {
-      color: #fff;
-      background: var(--primary);
-      box-shadow: 0 12px 30px rgba(47, 106, 223, .22);
-    }
-    .btn-secondary {
-      color: #344054;
-      background: #eef2f8;
-    }
-    .tips {
-      display: grid;
-      gap: 12px;
-      align-content: start;
-    }
-    .tip {
-      padding: 14px 16px;
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      background: rgba(248, 250, 252, .82);
-    }
-    .tip strong {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 14px;
-    }
-    code {
-      padding: 2px 6px;
-      border-radius: 8px;
-      color: #2458c7;
-      background: var(--primary-soft);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: .92em;
-    }
-    #app {
-      min-height: 72vh;
-      margin-top: 10px;
-      background: #fff;
-    }
-    @media (max-width: 860px) {
-      .hero-card { grid-template-columns: 1fr; padding: 22px; }
-    }
-  </style>
-</head>
-<body>
-  <section class="hero">
-    <div class="hero-card">
-      <div>
-        <p class="eyebrow">System OpenAPI</p>
-        <h1>元策系统版本管理 API</h1>
-        <p>这里提供独立于普通业务 OpenAPI 的系统版本管理契约。该文档面向 GitHub Actions、发布脚本和系统级自动化；调用时使用系统管理页创建的 system token，通过 <code>Authorization: Bearer &lt;token&gt;</code> 访问。</p>
-        <div class="actions">
-          <a class="btn btn-primary" href="/api/system/openapi.json">下载 System OpenAPI JSON</a>
-          <a class="btn btn-secondary" href="/web/system/openapi">进入系统 Token 管理</a>
-        </div>
-      </div>
-      <div class="tips" aria-label="system token 使用说明">
-        <div class="tip">
-          <strong>1. 先在系统管理中创建 Token</strong>
-          <p>选择最小 scope。第一阶段仅开放版本读取与版本写入两类权限。</p>
-        </div>
-        <div class="tip">
-          <strong>2. 上传资产使用两段式流程</strong>
-          <p>先创建版本资产占位，再申请 <code>upload-url</code>，最后回调 <code>uploaded</code> 确认。</p>
-        </div>
-        <div class="tip">
-          <strong>3. 保留策略不在 system OpenAPI 中开放</strong>
-          <p>版本保留数仍只允许管理员网页登录后在系统页面调整。</p>
-        </div>
-      </div>
-    </div>
-  </section>
-  <div id="app"></div>
-  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-  <script>
-    Scalar.createApiReference('#app', {
-      url: '/api/system/openapi.json',
-      layout: 'modern',
-      theme: 'default',
-      hideDownloadButton: false,
-      metaData: {
-        title: '元策系统 API',
-        description: 'System OpenAPI for Releases'
-      }
-    });
-  </script>
-</body>
-</html>"#,
-    )
-        .into_response()
 }
 
 async fn admin_not_found() -> impl IntoResponse {

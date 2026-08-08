@@ -42,7 +42,8 @@ async fn login_page_sets_csrf_cookie_and_hidden_field() {
 
     let body = response_body(response).await;
     assert!(body.contains(&format!("name=\"{CSRF_FIELD_NAME}\"")));
-    assert!(body.contains("data-page-transition"));
+    assert!(body.contains("href=\"/static/auth.css\""));
+    assert!(!body.contains("/static/app.js"));
     assert!(body.contains("登录"));
     assert!(body.contains("placeholder=\"请输入用户名\""));
     assert!(!body.contains("placeholder=\"yuance_admin\""));
@@ -954,34 +955,7 @@ async fn login_submit_with_invalid_credentials_renders_login_page_error() {
 }
 
 #[tokio::test]
-async fn htmx_role_permission_update_can_use_csrf_header() {
-    let pool = test_pool().await;
-    let initialized = bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/member/permissions")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, with_csrf_cookie(&initialized.cookie))
-                .header("HX-Request", "true")
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from("permission_keys=project.view"))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
 async fn system_page_redirects_expired_login_to_login_page() {
-    let _guard = env_lock().lock().expect("env lock should acquire");
-    let _web_shell = EnvOverride::set("YUANCE_WEB_APP_SHELL_V1", Some("false"));
-
     let pool = test_pool().await;
     bootstrap_admin_session(&pool).await;
     let app = build_router(AppState::new(test_settings(), Some(pool)));
@@ -999,61 +973,8 @@ async fn system_page_redirects_expired_login_to_login_page() {
     assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(
         response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
+        "/web/login?return_to=%2Fweb%2Fsystem%2Fusers"
     );
-}
-
-#[tokio::test]
-async fn system_post_redirects_expired_login_to_login_page() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/users")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, csrf_cookie())
-                .body(Body::from(with_csrf(
-                    "username=member1&display_name=%E6%88%90%E5%91%98%E4%B8%80&email=member1%40example.test&mobile=13800000001&password=MemberPass2026%21&role_code=member",
-                )))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(
-        response.headers().get(header::LOCATION).unwrap(),
-        "/web/login"
-    );
-}
-
-#[tokio::test]
-async fn htmx_system_post_uses_hx_redirect_when_login_expired() {
-    let pool = test_pool().await;
-    bootstrap_admin_session(&pool).await;
-    let app = build_router(AppState::new(test_settings(), Some(pool)));
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/web/system/roles/member/permissions")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .header(header::COOKIE, csrf_cookie())
-                .header("HX-Request", "true")
-                .header("x-yuance-csrf-token", CSRF_TOKEN)
-                .body(Body::from("permission_keys=project.view"))
-                .expect("request should build"),
-        )
-        .await
-        .expect("router should respond");
-
-    assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert_eq!(response.headers().get("HX-Redirect").unwrap(), "/web/login");
 }
 
 #[tokio::test]

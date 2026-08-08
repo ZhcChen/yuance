@@ -36,16 +36,15 @@ test('正式 Web 来源可被稳定提取且不存在无 method 路由', async (
   const inventory = await extractLegacyExperience({
     routerPath: new URL('api/src/web/router.rs', repositoryUrl),
     templatesPath: new URL('api/templates/web', repositoryUrl),
-    appScriptPath: new URL('api/static/app.js', repositoryUrl),
   });
 
-  assert.ok(inventory.routes.length > 60, '应覆盖正式 Web 页面、边界和剩余动作路由');
-  assert.ok(inventory.templates.length > 15, '应覆盖保留的边界与系统模板');
-  assert.ok(inventory.appInteractionMarkers.length > 50, '应覆盖 app.js 的主要交互标记');
-  assert.ok(inventory.templateInteractionMarkers.length > 50, '应覆盖模板中的主要交互标记');
+  assert.ok(inventory.routes.length > 40, '应覆盖正式 Web 页面和保留边界路由');
+  assert.equal(inventory.templates.length, 6, '只应保留认证、下载和文档预览边界模板');
+  assert.deepEqual(inventory.appInteractionMarkers, [], '旧 app.js 交互标记必须清零');
+  assert.ok(inventory.templateInteractionMarkers.length > 10, '应覆盖文档预览边界交互标记');
   assert.equal(inventory.routes.some(({ methods }) => methods.length === 0), false);
   assert.ok(inventory.routes.some(({ route, methods }) => route === '/web/login' && methods.join(',') === 'GET,POST'));
-  assert.ok(inventory.templates.includes('system/users.html'));
+  assert.equal(inventory.templates.some((template) => template.startsWith('system/')), false);
   assert.ok(inventory.templates.includes('document_preview.html'));
 });
 
@@ -54,7 +53,6 @@ test('版本化来源清单与正式 Web 运行时来源完全一致', async () 
     extractLegacyExperience({
       routerPath: new URL('api/src/web/router.rs', repositoryUrl),
       templatesPath: new URL('api/templates/web', repositoryUrl),
-      appScriptPath: new URL('api/static/app.js', repositoryUrl),
     }),
     readFile(new URL('../parity/legacy-source-inventory.json', import.meta.url), 'utf8').then(JSON.parse),
   ]);
