@@ -1254,7 +1254,10 @@ async function initializeDesktopCredentialRuntime() {
   const mode = isDevRuntime || desktopFeatureParityUiSmokeOrigin ? "development" : "production";
   const origin = desktopFeatureParityUiSmokeOrigin
     ? validatePackagedLoopbackOrigin(desktopFeatureParityUiSmokeOrigin)
-    : resolveDesktopNetworkOrigin({ isDevRuntime });
+    : resolveDesktopNetworkOrigin({
+        isDevRuntime,
+        rawUrl: process.env.YUANCE_DESKTOP_WEB_URL,
+      });
   const network = await createTrustedNetworkSession({
     electronSession: session,
     mode,

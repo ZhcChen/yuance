@@ -108,6 +108,14 @@ test("uses a build-fixed production network origin and explicit development loop
   }
 });
 
+test("passes the explicit development Web URL into the runtime network origin", () => {
+  const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
+  assert.match(
+    mainSource,
+    /resolveDesktopNetworkOrigin\(\{\s*isDevRuntime,\s*rawUrl: process\.env\.YUANCE_DESKTOP_WEB_URL,\s*\}\)/u,
+  );
+});
+
 test("rejects unsupported application URLs", () => {
   assert.throws(() => resolveWebUrl("file:///tmp/yuance"), /http or https/);
 });
