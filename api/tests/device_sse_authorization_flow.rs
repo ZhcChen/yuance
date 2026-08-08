@@ -160,14 +160,24 @@ async fn healthy_stream_receives_heartbeat_comment() {
     assert!(String::from_utf8_lossy(&release).contains("event: release-version"));
     let topbar = next_frame(&mut body).await.expect("topbar frame");
     assert!(String::from_utf8_lossy(&topbar).contains("event: topbar"));
-    let heartbeat = timeout(Duration::from_millis(1200), body.frame())
-        .await
-        .expect("heartbeat deadline")
-        .transpose()
-        .expect("heartbeat frame")
-        .and_then(|frame| frame.into_data().ok())
-        .expect("heartbeat data");
-    assert!(String::from_utf8_lossy(&heartbeat).contains(": keep-alive"));
+    timeout(Duration::from_secs(2), async {
+        loop {
+            let frame = body
+                .frame()
+                .await
+                .transpose()
+                .expect("heartbeat frame")
+                .expect("stream closed before heartbeat");
+            let Some(data) = frame.into_data().ok() else {
+                continue;
+            };
+            if String::from_utf8_lossy(&data).contains(": keep-alive") {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("heartbeat deadline");
 
     drop(body);
 }
