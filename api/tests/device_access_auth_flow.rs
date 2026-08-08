@@ -17,7 +17,11 @@ use tower::ServiceExt;
 use uuid::Uuid;
 use yuance_api::{
     domains::{api_tokens, auth, bootstrap, device_sessions, projects, system_api_tokens, users},
-    platform::{config::Settings, db, security::csrf::CSRF_COOKIE_NAME},
+    platform::{
+        config::Settings,
+        db,
+        security::csrf::{CSRF_COOKIE_NAME, CSRF_HEADER_NAME},
+    },
     web::router::{AppState, build_router},
 };
 
@@ -494,7 +498,7 @@ async fn device_access_probes_reads_identity_and_keeps_unlisted_routes_closed() 
         None,
     )
     .await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 
     let first_logout = device_request(&app, "POST", LOGOUT_PATH, &credentials.access_token, None);
     let second_logout = device_request(&app, "POST", LOGOUT_PATH, &credentials.access_token, None);
@@ -714,25 +718,23 @@ async fn browser_lists_and_revokes_only_its_own_family_with_csrf() {
     settings.device_sessions.trusted_proxy_cidrs = "172.16.0.0/12".to_string();
     let app = build_router(AppState::new(settings, Some(pool.clone())));
 
-    let response = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/web/me")
-                .header(header::COOKIE, &session_cookie)
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
+    let response = browser_api_request(
+        &app,
+        "GET",
+        "/api/v1/me/device-sessions",
+        &session_cookie,
+        "",
+    )
+    .await;
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(
-        text_body(response)
-            .await
-            .contains("Browser Managed Desktop")
+    let sessions = json_body(response).await;
+    assert_eq!(
+        sessions["data"][0]["device_name"],
+        "Browser Managed Desktop"
     );
+    assert_eq!(sessions["data"][0]["family_id"], credentials.family_id);
 
-    let revoke_path = format!("/web/me/device-sessions/{}/revoke", credentials.family_id);
+    let revoke_path = format!("/api/v1/me/device-sessions/{}", credentials.family_id);
     let response = browser_revoke(&app, &revoke_path, &session_cookie, "").await;
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
@@ -744,10 +746,7 @@ async fn browser_lists_and_revokes_only_its_own_family_with_csrf() {
     .unwrap()
     .last_insert_rowid();
     let other_credentials = issue_device_credentials(&pool, other_user_id, "Other Desktop").await;
-    let other_revoke_path = format!(
-        "/web/me/device-sessions/{}/revoke",
-        other_credentials.family_id
-    );
+    let other_revoke_path = format!("/api/v1/me/device-sessions/{}", other_credentials.family_id);
     let cookie = format!("{session_cookie}; {CSRF_COOKIE_NAME}={CSRF_TOKEN}");
     let response = browser_revoke(&app, &other_revoke_path, &cookie, CSRF_TOKEN).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
@@ -768,8 +767,8 @@ async fn browser_lists_and_revokes_only_its_own_family_with_csrf() {
         "192.0.2.99, 198.51.100.20",
     )
     .await;
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(response.headers().get(header::LOCATION).unwrap(), "/web/me");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "revoked");
     let family_status: String =
         sqlx::query_scalar("SELECT family_status FROM device_credential_families WHERE id = ?1")
             .bind(&credentials.family_id)
@@ -787,21 +786,8 @@ async fn browser_lists_and_revokes_only_its_own_family_with_csrf() {
     assert_eq!(audit_ip, "198.51.100.20");
 
     let response = browser_revoke(&app, &revoke_path, &cookie, CSRF_TOKEN).await;
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(&revoke_path)
-                .header(header::AUTHORIZATION, "Bearer yuance_pat_wrong-surface")
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(format!("_csrf={CSRF_TOKEN}")))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(json_body(response).await["data"]["status"], "revoked");
 }
 
 #[tokio::test]
@@ -812,13 +798,13 @@ async fn browser_revoke_rate_limit_is_shared_across_family_ids() {
     let cookie = format!("{session_cookie}; {CSRF_COOKIE_NAME}={CSRF_TOKEN}");
 
     for index in 0..30 {
-        let path = format!("/web/me/device-sessions/missing-{index}/revoke");
+        let path = format!("/api/v1/me/device-sessions/missing-{index}");
         let response = browser_revoke(&app, &path, &cookie, CSRF_TOKEN).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
     let response = browser_revoke(
         &app,
-        "/web/me/device-sessions/another-missing-family/revoke",
+        "/api/v1/me/device-sessions/another-missing-family",
         &cookie,
         CSRF_TOKEN,
     )
@@ -901,14 +887,24 @@ async fn bootstrap_admin_session(pool: &SqlitePool) -> (i64, String) {
 }
 
 async fn browser_revoke(app: &Router, path: &str, cookie: &str, csrf: &str) -> Response {
+    browser_api_request(app, "DELETE", path, cookie, csrf).await
+}
+
+async fn browser_api_request(
+    app: &Router,
+    method: &str,
+    path: &str,
+    cookie: &str,
+    csrf: &str,
+) -> Response {
     app.clone()
         .oneshot(
             Request::builder()
-                .method("POST")
+                .method(method)
                 .uri(path)
                 .header(header::COOKIE, cookie)
-                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
-                .body(Body::from(format!("_csrf={csrf}")))
+                .header(CSRF_HEADER_NAME, csrf)
+                .body(Body::empty())
                 .unwrap(),
         )
         .await
@@ -924,12 +920,12 @@ async fn browser_revoke_from_peer(
     forwarded_ip: &str,
 ) -> Response {
     let mut request = Request::builder()
-        .method("POST")
+        .method("DELETE")
         .uri(path)
         .header(header::COOKIE, cookie)
-        .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header(CSRF_HEADER_NAME, csrf)
         .header("x-forwarded-for", forwarded_ip)
-        .body(Body::from(format!("_csrf={csrf}")))
+        .body(Body::empty())
         .unwrap();
     request
         .extensions_mut()

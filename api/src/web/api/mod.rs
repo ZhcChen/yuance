@@ -1,7 +1,7 @@
 use axum::{
     Json,
     body::Bytes,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     http::{HeaderMap, Method, StatusCode, header},
     response::{
         AppendHeaders, IntoResponse, Response,
@@ -28,7 +28,7 @@ use crate::{
     web::{
         attachment_preview, audit_context,
         response::{ApiEnvelope, json},
-        router::{AppState, app_release_version},
+        router::{AppState, DeviceAuthClientIp, app_release_version},
         test_storage::{
             TestStorageDownloadQuery, TestStorageUploadQuery, bind_test_storage_download_grant,
             bind_test_storage_upload_grant, verify_test_storage_download_grant,
@@ -7371,8 +7371,9 @@ pub async fn list_device_sessions(
     Ok(json(sessions))
 }
 
-pub async fn revoke_device_session(
+pub(crate) async fn revoke_device_session(
     State(state): State<AppState>,
+    Extension(DeviceAuthClientIp(client_ip)): Extension<DeviceAuthClientIp>,
     headers: HeaderMap,
     Path(family_id): Path<String>,
 ) -> AppResult<axum::Json<ApiEnvelope<DeviceSessionPayload>>> {
@@ -7390,15 +7391,17 @@ pub async fn revoke_device_session(
     .into_iter()
     .find(|session| session.family_id == family_id)
     .ok_or_else(|| AppError::NotFound("设备会话不存在".to_string()))?;
-    device_sessions::revoke_family_for_user(
-        pool,
-        principal.user.id,
-        &family_id,
-        chrono::Utc::now(),
-        "user_revoke",
-    )
-    .await
-    .map_err(device_session_api_error)?;
+    if session.family_status != "revoked" {
+        device_sessions::revoke_family_for_user(
+            pool,
+            principal.user.id,
+            &family_id,
+            chrono::Utc::now(),
+            "user_revoke",
+        )
+        .await
+        .map_err(device_session_api_error)?;
+    }
     audit::record_with_context(
         pool,
         Some(principal.user.id),
@@ -7406,7 +7409,7 @@ pub async fn revoke_device_session(
         "device_credential_family",
         &family_id,
         &principal.audit_details(),
-        &audit_context::from_headers(&headers),
+        &audit_context::from_headers_with_client_ip(&headers, client_ip),
     )
     .await?;
     Ok(json(DeviceSessionPayload {

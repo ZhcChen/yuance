@@ -936,8 +936,10 @@ async fn device_auth_boundary_middleware(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    let is_browser_device_revoke =
-        path.starts_with("/web/me/device-sessions/") && path.ends_with("/revoke");
+    let is_account_device_revoke = request.method() == Method::DELETE
+        && path
+            .strip_prefix("/api/v1/me/device-sessions/")
+            .is_some_and(|family_id| !family_id.is_empty() && !family_id.contains('/'));
     let boundary = match path {
         "/api/v1/device-authorizations" => (120, 20, true, true, false),
         "/api/v1/device-authorizations/exchange" => (600, 120, true, true, false),
@@ -952,7 +954,7 @@ async fn device_auth_boundary_middleware(
         "/web/device-authorization"
         | "/web/device-authorization/approve"
         | "/web/device-authorization/deny" => (600, 30, false, false, true),
-        _ if is_browser_device_revoke => (600, 30, false, false, true),
+        _ if is_account_device_revoke => (600, 30, false, false, false),
         _ => return next.run(request).await,
     };
     let (global_limit, peer_limit, reject_cookie, reject_authorization, browser_response) =
@@ -964,8 +966,8 @@ async fn device_auth_boundary_middleware(
     }
     let client_ip = trusted_client_ip(&request, &state.device_auth_limiter.trusted_proxy_networks);
     let peer = client_ip.map_or_else(|| "unknown".to_string(), |ip| ip.to_string());
-    let rate_limit_path = if is_browser_device_revoke {
-        "/web/me/device-sessions/{family_id}/revoke"
+    let rate_limit_path = if is_account_device_revoke {
+        "/api/v1/me/device-sessions/{family_id}"
     } else {
         path
     };
