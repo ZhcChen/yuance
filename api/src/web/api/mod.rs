@@ -201,6 +201,9 @@ pub struct ProjectDetailPayload {
     pub due_date: String,
     pub created_at: String,
     pub updated_at: String,
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -2644,22 +2647,10 @@ pub async fn create_project(
         &principal.audit_details(),
     )
     .await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let project = project_detail_payload(pool, user.id, can_access_all_projects, project).await?;
 
-    Ok((
-        StatusCode::CREATED,
-        json(ProjectDetailPayload {
-            key: project.project_key,
-            name: project.name,
-            description: project.description,
-            status: project.status,
-            owner_username: project.owner_username,
-            owner: project.owner_display_name,
-            start_date: project.start_date,
-            due_date: project.due_date,
-            created_at: project.created_at,
-            updated_at: project.updated_at,
-        }),
-    ))
+    Ok((StatusCode::CREATED, json(project)))
 }
 
 pub async fn get_project(
@@ -2675,19 +2666,11 @@ pub async fn get_project(
         .await?
         .ok_or_else(|| AppError::NotFound("项目不存在".to_string()))?;
     ensure_api_project_access(pool, &headers, user.id, user.is_super_admin, project.id).await?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
 
-    Ok(json(ProjectDetailPayload {
-        key: project.project_key,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-        owner_username: project.owner_username,
-        owner: project.owner_display_name,
-        start_date: project.start_date,
-        due_date: project.due_date,
-        created_at: project.created_at,
-        updated_at: project.updated_at,
-    }))
+    Ok(json(
+        project_detail_payload(pool, user.id, can_access_all_projects, project).await?,
+    ))
 }
 
 pub async fn update_project(
@@ -2739,18 +2722,10 @@ pub async fn update_project(
     )
     .await?;
 
-    Ok(json(ProjectDetailPayload {
-        key: updated.project_key,
-        name: updated.name,
-        description: updated.description,
-        status: updated.status,
-        owner_username: updated.owner_username,
-        owner: updated.owner_display_name,
-        start_date: updated.start_date,
-        due_date: updated.due_date,
-        created_at: updated.created_at,
-        updated_at: updated.updated_at,
-    }))
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    Ok(json(
+        project_detail_payload(pool, user.id, can_access_all_projects, updated).await?,
+    ))
 }
 
 pub async fn add_project_member(
@@ -8490,6 +8465,43 @@ fn project_payload(project: projects::ProjectSummary) -> ProjectPayload {
         active_work_item_count: project.active_work_item_count,
         updated_at: project.updated_at,
     }
+}
+
+async fn project_detail_payload(
+    pool: &sqlx::SqlitePool,
+    user_id: i64,
+    can_access_all_projects: bool,
+    project: projects::ProjectDetail,
+) -> AppResult<ProjectDetailPayload> {
+    let count = |item_type: &str| {
+        projects::work_item_list_stats_filtered_for_user(
+            pool,
+            user_id,
+            can_access_all_projects,
+            projects::WorkItemListFilter {
+                item_type: Some(item_type.to_string()),
+                project_key: project.project_key.clone(),
+                ..Default::default()
+            },
+        )
+    };
+    let (requirements, tasks, bugs) =
+        tokio::try_join!(count("requirement"), count("task"), count("bug"))?;
+    Ok(ProjectDetailPayload {
+        key: project.project_key,
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        owner_username: project.owner_username,
+        owner: project.owner_display_name,
+        start_date: project.start_date,
+        due_date: project.due_date,
+        created_at: project.created_at,
+        updated_at: project.updated_at,
+        requirements: requirements.total_items,
+        tasks: tasks.total_items,
+        bugs: bugs.total_items,
+    })
 }
 
 fn current_project_payload(project: projects::CurrentProject) -> CurrentProjectPayload {

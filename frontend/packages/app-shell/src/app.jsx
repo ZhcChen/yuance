@@ -229,6 +229,9 @@ import { errorMessage } from './errors.js';
  * @property {string} due_date
  * @property {string} created_at
  * @property {string} updated_at
+ * @property {number} requirements
+ * @property {number} tasks
+ * @property {number} bugs
  */
 
 /**
@@ -4703,7 +4706,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5263,44 +5266,39 @@ export function SharedApp({ services }) {
               </section>
             </section>
           ) : route.id === 'project-detail' ? (
-            <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-detail-title">
-              <div className="shell-panel-header project-center-header">
-                <div>
-                  <h2 id="project-detail-title">{activeProjectDetail ? `${activeProjectDetail.key} · ${activeProjectDetail.name}` : route.projectKey}</h2>
-                  <p className="shell-muted">{activeProjectDetail ? `${projectStatusLabel(activeProjectDetail.status)} · 负责人 ${activeProjectDetail.owner || activeProjectDetail.owner_username}` : '正在加载项目详情。'}</p>
-                </div>
-                <div className="shell-actions-inline">
-                  <a className="shell-link" href={buildProjectsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildProjectsPath({ owner: route.owner }), '已返回项目列表。')}>返回项目列表</a>
-                  <a className="shell-link" href={personalAnalysisPath} onClick={(event) => handleNavigate(event, personalAnalysisPath, '已打开个人项目分析。')}>个人分析</a>
-                  {canManageProject ? <Button variant="secondary" onClick={openProjectEdit}>编辑项目</Button> : null}
-                </div>
-              </div>
-
-              <ContentTabs ariaLabel="项目详情导航">
-                {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期'], ['files', '项目文件'], ['resources', '资料库']].map(([tab, label]) => {
+            <section className="page-stack project-detail-page" aria-labelledby="project-detail-title">
+              <section className="page-hero detail-hero"><div><p className="shell-eyebrow">项目 / {activeProjectDetail?.key || route.projectKey}</p><h1 id="project-detail-title" ref={headingRef} tabIndex={-1}>{activeProjectDetail?.name || route.projectKey}</h1><p>{activeProjectDetail?.description || '正在加载项目详情。'}</p>{activeProjectDetail ? <div className="project-detail-meta"><Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge><span>项目负责人：{activeProjectDetail.owner || activeProjectDetail.owner_username}</span><span>创建：{dashboardTimestamp(activeProjectDetail.created_at)}</span><span>更新：{dashboardTimestamp(activeProjectDetail.updated_at)}</span></div> : null}</div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={buildProjectsPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildProjectsPath({ owner: route.owner }), '已返回项目列表。')}>项目列表</a><a className="yc-button yc-button-secondary" href={personalAnalysisPath} onClick={(event) => handleNavigate(event, personalAnalysisPath, '已打开个人项目分析。')}>个人分析</a>{canManageProject ? <Button variant="secondary" onClick={openProjectEdit}>编辑项目</Button> : null}</div></section>
+              <section className="metric-grid project-detail-metrics" aria-label="项目详情概览">{[
+                ['需求', activeProjectDetail?.requirements || 0, 'info', 'doc'],
+                ['任务', activeProjectDetail?.tasks || 0, 'warning', 'tasks'],
+                ['Bug', activeProjectDetail?.bugs || 0, 'danger', 'bug'],
+                ['成员', projectMembers.length, 'success', 'users'],
+              ].map(([label, value, tone, icon]) => <article key={label} className={`metric metric-${tone}`}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section>
+              <section className="project-tabs-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">项目详情</p><h2>项目资料</h2></div><ContentTabs ariaLabel="项目详情导航">
+                {[['info', '详情'], ['cycles', '周期'], ['members', '成员'], ['files', '项目文件'], ['resources', '资料库']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <ContentTab key={tab} active={route.tab === tab} href={path} onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), path, `已切换到${label}。`)}>{label}</ContentTab>;
                 })}
-              </ContentTabs>
-
+              </ContentTabs></div><div className="project-tab-panels">
               {projectMutationError ? <Feedback tone="danger" title="项目操作失败">{projectMutationError}</Feedback> : null}
               {activeProjectDetail && route.tab === 'info' ? (
-                <div className="work-item-detail-grid">
-                  <article className="work-item-detail-panel"><h3>项目描述</h3><p className="work-item-detail-description">{activeProjectDetail.description || '暂无描述。'}</p></article>
-                  <article className="work-item-detail-panel"><h3>关键信息</h3><dl className="work-item-detail-meta">
-                    <div><dt>状态</dt><dd>{projectStatusLabel(activeProjectDetail.status)}</dd></div>
-                    <div><dt>负责人</dt><dd>{activeProjectDetail.owner || activeProjectDetail.owner_username}</dd></div>
+                <div className="project-detail-overview">
+                  <section className="project-tab-section"><div className="project-tab-section-head"><div><h3>基础信息</h3><p>项目身份、项目负责人和生命周期状态。</p></div></div><dl className="project-detail-dl">
+                    <div><dt>项目编号</dt><dd><code>{activeProjectDetail.key}</code></dd></div>
+                    <div><dt>项目状态</dt><dd><Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge></dd></div>
+                    <div><dt>项目负责人</dt><dd>{activeProjectDetail.owner || activeProjectDetail.owner_username}</dd></div>
                     <div><dt>开始日期</dt><dd>{activeProjectDetail.start_date || '未设置'}</dd></div>
                     <div><dt>截止日期</dt><dd>{activeProjectDetail.due_date || '未设置'}</dd></div>
                     <div><dt>创建时间</dt><dd>{formatTimestamp(activeProjectDetail.created_at)}</dd></div>
                     <div><dt>更新时间</dt><dd>{formatTimestamp(activeProjectDetail.updated_at)}</dd></div>
-                  </dl></article>
+                  </dl></section>
+                  <section className="project-tab-section project-description-section"><div className="project-tab-section-head"><div><h3>项目说明</h3><p>目标、范围和协作边界。</p></div></div><p>{activeProjectDetail.description || '暂无描述。'}</p></section>
                 </div>
               ) : null}
 
               {activeProjectDetail && route.tab === 'members' ? (
-                <section aria-labelledby="project-members-title">
-                  <div className="shell-panel-header"><div><h3 id="project-members-title">项目成员</h3><p className="shell-muted">共 {projectMembers.length} 名成员</p></div>{canManageProject ? <Button variant="secondary" onClick={() => { setProjectMutationError(''); setProjectMemberOpen(true); }}>添加成员</Button> : null}</div>
+                <section className="project-tab-section" aria-labelledby="project-members-title">
+                  <div className="project-tab-section-head"><div><h3 id="project-members-title">项目成员</h3><p>共 {projectMembers.length} 名成员</p></div>{canManageProject ? <Button variant="secondary" onClick={() => { setProjectMutationError(''); setProjectMemberOpen(true); }}>添加成员</Button> : null}</div>
                   <DataTable
                     caption="项目成员"
                     rows={projectMembers}
@@ -5317,8 +5315,8 @@ export function SharedApp({ services }) {
               ) : null}
 
               {activeProjectDetail && route.tab === 'cycles' ? (
-                <section aria-labelledby="project-cycles-title">
-                  <div className="shell-panel-header"><div><h3 id="project-cycles-title">项目周期</h3><p className="shell-muted">共 {projectCycles.length} 个周期</p></div>{canManageProject ? <Button variant="secondary" onClick={() => openProjectCycle()}>新建周期</Button> : null}</div>
+                <section className="project-tab-section" aria-labelledby="project-cycles-title">
+                  <div className="project-tab-section-head"><div><h3 id="project-cycles-title">项目周期</h3><p>共 {projectCycles.length} 个周期</p></div>{canManageProject ? <Button variant="secondary" onClick={() => openProjectCycle()}>新建周期</Button> : null}</div>
                   <DataTable caption="项目周期" rows={projectCycles} rowKey={(cycle) => cycle.id} emptyText="当前项目暂无周期。" columns={[
                     { key: 'cycle', label: '周期', render: (cycle) => <><a className="shell-link" href={buildProjectCycleDetailPath({ owner: route.owner, projectKey: route.projectKey, cycleId: cycle.id })} onClick={(event) => handleNavigate(event, buildProjectCycleDetailPath({ owner: route.owner, projectKey: route.projectKey, cycleId: cycle.id }), `已打开周期 ${cycle.name}。`)}>{cycle.name}</a><br /><span className="shell-muted">{cycle.goal || '暂无目标'}</span></> },
                     { key: 'range', label: '日期', render: (cycle) => `${cycle.start_date} - ${cycle.end_date}` },
@@ -5331,8 +5329,8 @@ export function SharedApp({ services }) {
               ) : null}
 
               {activeProjectDetail && route.tab === 'files' ? (
-                <section aria-labelledby="project-files-title">
-                  <div className="shell-panel-header"><div><h3 id="project-files-title">项目文件</h3><p className="shell-muted">共 {projectAttachments.length} 个文件</p></div>{canManageProject ? <Button variant="secondary" disabled={projectAttachmentUploading || projectMutationSubmitting} onClick={() => void uploadSelectedProjectAttachment()}>{projectAttachmentUploading ? '处理中…' : '选择文件上传'}</Button> : null}</div>
+                <section className="project-tab-section project-files-section" aria-labelledby="project-files-title">
+                  <div className="project-tab-section-head"><div><h3 id="project-files-title">项目文件</h3><p>共 {projectAttachments.length} 个文件</p></div>{canManageProject ? <Button variant="secondary" disabled={projectAttachmentUploading || projectMutationSubmitting} onClick={() => void uploadSelectedProjectAttachment()}>{projectAttachmentUploading ? '处理中…' : '选择文件上传'}</Button> : null}</div>
                   <p className="shell-muted">文件将直接上传到对象存储，页面只保留受控附件信息。</p>
                   {projectAttachmentStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectAttachmentStatus}</p> : null}
                   {projectAttachmentError ? <Feedback tone="danger" title="项目文件操作失败">{projectAttachmentError}</Feedback> : null}
@@ -5341,8 +5339,8 @@ export function SharedApp({ services }) {
               ) : null}
 
               {activeProjectDetail && route.tab === 'resources' ? (
-                <section aria-labelledby="project-resources-title">
-                  <div className="shell-panel-header"><div><h3 id="project-resources-title">项目资料库</h3><p className="shell-muted">当前筛选共 {projectResources.length} 条资料</p></div>{canManageProject ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
+                <section className="project-tab-section project-resources-section" aria-labelledby="project-resources-title">
+                  <div className="project-tab-section-head"><div><h3 id="project-resources-title">项目资料库</h3><p>当前筛选共 {projectResources.length} 条资料</p></div>{canManageProject ? <Button variant="secondary" disabled={projectResourceSubmitting} onClick={() => openProjectResourceForm()}>新建资料</Button> : null}</div>
                   <form className="work-item-filter-bar" onSubmit={submitProjectResourceFilters}>
                     <label className="work-item-filter-field work-item-filter-keyword"><span>关键词</span><input value={projectResourceFilters.q} placeholder="标题、摘要或正文" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, q: event.target.value }))} /></label>
                     <label className="work-item-filter-field"><span>分类</span><input value={projectResourceFilters.category} placeholder="例如 integration" onChange={(event) => setProjectResourceFilters((current) => ({ ...current, category: event.target.value }))} /></label>
@@ -5358,6 +5356,7 @@ export function SharedApp({ services }) {
                   })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
                 </section>
               ) : null}
+              </div></section>
 
               <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) navigateProjectAttachmentPreview(projectAttachmentPreview.previousId); }} onNext={() => { if (projectAttachmentPreview?.nextId) navigateProjectAttachmentPreview(projectAttachmentPreview.nextId); }} onDownload={() => { if (projectAttachmentPreview?.attachment) void downloadProjectAttachment(projectAttachmentPreview.attachment); }} onClose={() => void releaseProjectAttachmentPreview()} />
 

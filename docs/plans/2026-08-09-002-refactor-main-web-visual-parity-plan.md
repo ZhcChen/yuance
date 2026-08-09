@@ -113,6 +113,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/primitives.jsx`、项目 route/API client tests 与 Web E2E。
 - 恢复项目列表 hero、3 指标、状态 tabs、项目 card grid 与 pager。
 - 恢复项目详情 detail hero、4 指标、整卡 tabs、概览双栏、成员/周期/文件/资料/动态 panel。
+- **已完成：** 项目列表已恢复 hero、3 指标、状态 tabs、三列 card grid 与 pager；项目详情已恢复 detail hero、服务端聚合的 4 指标、整卡 tabs、基础信息/项目说明双栏及成员、周期、项目文件、资料库 panel。四视口几何合同覆盖无横向溢出、区域顺序、指标列数、tabs 方向和 `1280px` 概览降级。共享实现保留已登记的项目文件能力；因当前无完整动态读取合同，不在视觉迁移中伪造动态数据。
 - **Exit：** 项目列表和详情的各 tab、empty、modal 与窄屏状态达到基线。
 
 ### V5：周期、资源与个人分析
@@ -197,7 +198,7 @@ baseline:
 - [x] V1：全局 token、画布、导航与基础原语。
 - [x] V2：页面骨架与工作台。
 - [x] V3：个人、消息与搜索。
-- [ ] V4：项目列表与项目详情。
+- [x] V4：项目列表与项目详情。
 - [ ] V5：周期、资源与个人分析。
 - [ ] V6：工作项列表。
 - [ ] V7：工作项详情协作。

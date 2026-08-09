@@ -3129,6 +3129,45 @@ test('project list preserves the main responsive card geometry', async ({ page }
   }
 });
 
+test('project detail preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/projects/YCE');
+  for (const viewport of [
+    { width: 390, height: 844, metrics: 1, tabsVertical: true, overview: 1 },
+    { width: 768, height: 1024, metrics: 4, tabsVertical: false, overview: 1 },
+    { width: 1280, height: 800, metrics: 4, tabsVertical: false, overview: 1 },
+    { width: 1440, height: 900, metrics: 4, tabsVertical: false, overview: 2 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/web/app/projects/YCE');
+    await expect(page.locator('.project-detail-page h1')).toHaveText(/\S/u);
+    const geometry = await page.locator('.project-detail-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const hero = element.querySelector('.detail-hero').getBoundingClientRect();
+      const metrics = element.querySelector('.project-detail-metrics');
+      const tabsCard = element.querySelector('.project-tabs-card').getBoundingClientRect();
+      const tabsHead = element.querySelector('.project-tabs-head');
+      const overview = element.querySelector('.project-detail-overview');
+      return {
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        heroBottom: hero.bottom,
+        metricsTop: metrics.getBoundingClientRect().top,
+        metricsBottom: metrics.getBoundingClientRect().bottom,
+        tabsTop: tabsCard.top,
+        metricColumns: getComputedStyle(metrics).gridTemplateColumns.split(' ').length,
+        tabsDirection: getComputedStyle(tabsHead).flexDirection,
+        overviewColumns: getComputedStyle(overview).gridTemplateColumns.split(' ').length,
+      };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.heroBottom).toBeLessThanOrEqual(geometry.metricsTop);
+    expect(geometry.metricsBottom).toBeLessThanOrEqual(geometry.tabsTop);
+    expect(geometry.metricColumns).toBe(viewport.metrics);
+    expect(geometry.tabsDirection).toBe(viewport.tabsVertical ? 'column' : 'row');
+    expect(geometry.overviewColumns).toBe(viewport.overview);
+  }
+});
+
 test('shared project list creates a project with one validated request', async ({ page }) => {
   await login(page, '/web/app/projects');
   const requests = [];
@@ -3191,14 +3230,14 @@ test('shared project detail manages project information and member lifecycle', a
   });
 
   await login(page, '/web/app/projects/YCE');
-  await expect(page.getByRole('heading', { level: 2, name: 'YCE · 元策研发平台' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '元策研发平台' })).toBeVisible();
   await page.getByRole('button', { name: '编辑项目' }).click();
   const editDialog = page.getByRole('dialog', { name: '编辑项目' });
   await editDialog.getByLabel('项目描述').fill('共享详情描述');
   await editDialog.getByRole('button', { name: '保存' }).click();
   await expect(page.getByText('共享详情描述')).toBeVisible();
 
-  await page.getByRole('link', { name: '项目成员' }).click();
+  await page.getByRole('link', { name: '成员', exact: true }).click();
   await page.getByRole('button', { name: '添加成员' }).click();
   const addDialog = page.getByRole('dialog', { name: '添加项目成员' });
   await addDialog.getByLabel('用户名').fill('collaborator');
