@@ -95,6 +95,24 @@ test("system dashboard response is bounded to fixed web navigation fields", () =
   assert.throws(() => parse({ links: [], token: "secret" }), /response|fields/i);
 });
 
+test("topbar response includes bounded project options and permitted system links", () => {
+  const parse = createOperationRegistry().resolve("shell.topbar", {}).parse;
+  const payload = {
+    requirements_count: 1, tasks_count: 2, bugs_count: 3, notifications_count: 4,
+    project_badges: [{ project_key: "YCE", pending_count: 5 }],
+    project_options: [{ key: "YCE", name: "元策研发", pending_count: 5 }],
+    system_links: [{ id: "dashboard", title: "总览", description: "系统管理总览。", path: "/web/system" }],
+    current_project: { key: "YCE", name: "元策研发", pending_count: 5 },
+  };
+  const result = parse(payload);
+
+  assert.deepEqual(result, payload);
+  assert.ok(Object.isFrozen(result.project_options));
+  assert.ok(Object.isFrozen(result.system_links[0]));
+  assert.throws(() => parse({ ...payload, project_options: [{ ...payload.project_options[0], token: "secret" }] }), /fields/i);
+  assert.throws(() => parse({ ...payload, system_links: [{ ...payload.system_links[0], path: "https://evil.example" }] }), /path/i);
+});
+
 test("system roles view response is bounded to the atomic role contract", () => {
   const parse = createOperationRegistry().resolve("system.rolesview", { role: "qa_lead" }).parse;
   const payload = {

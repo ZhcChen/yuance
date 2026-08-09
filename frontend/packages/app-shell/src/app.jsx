@@ -14,7 +14,6 @@ import {
   buildProjectPersonalAnalysisPath,
   buildProjectsPath,
   buildSearchPath,
-  buildSystemPath,
   buildSystemAuditPath,
   buildSystemApiDocsPath,
   buildSystemOpenApiPath,
@@ -100,6 +99,8 @@ import { errorMessage } from './errors.js';
  * @property {number} bugs_count
  * @property {number} notifications_count
  * @property {AppProjectBadge[]} project_badges
+ * @property {Array<{ key: string, name: string, pending_count: number }>} project_options
+ * @property {Array<{ id: string, title: string, description: string, path: string }>} system_links
  * @property {AppCurrentProject | null} current_project
  */
 
@@ -994,7 +995,6 @@ export function SharedApp({ services }) {
   const homePath = buildHomePath(route.owner);
   const messagesPath = buildMessagesPath({ owner: route.owner });
   const profilePath = buildProfilePath(route.owner);
-  const systemPath = buildSystemPath(route.owner);
   const systemDatabaseTables = systemDatabaseStats?.snapshot?.tables || [];
   const systemDatabaseTotalRows = systemDatabaseTables.reduce((sum, table) => sum + Number(table.row_count || 0), 0);
   const projectsPath = route.id === 'projects'
@@ -3137,7 +3137,7 @@ export function SharedApp({ services }) {
     }
   }
 
-  /** @param {AppProject} project */
+  /** @param {{ key: string, name: string, pending_count?: number }} project */
   async function handleSetCurrentProject(project) {
     if (projectSwitchRef.current) return;
     projectSwitchRef.current = true;
@@ -4646,19 +4646,33 @@ export function SharedApp({ services }) {
           { id: 'requirements', label: '需求', href: requirementsPath, active: route.id === 'requirements', badge: topbar?.requirements_count || 0 },
           { id: 'tasks', label: '任务', href: tasksPath, active: route.id === 'tasks', badge: topbar?.tasks_count || 0 },
           { id: 'bugs', label: 'Bug', href: bugsPath, active: route.id === 'bugs', badge: topbar?.bugs_count || 0 },
-          ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
-            ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
-            : []),
         ]}
         currentProject={currentProject}
+        projectOptions={topbar?.project_options || []}
         projectsHref={projectsPath}
+        downloadsHref={route.owner === 'app' ? 'https://yuance.quanxinfu.com/web/downloads' : '/web/downloads'}
+        systemLinks={(topbar?.system_links || []).map((link) => ({
+          id: link.id,
+          label: link.title,
+          href: routePathForOwner(link.path, route.owner),
+          active: link.id === 'dashboard' ? route.id === 'system-dashboard' : route.id === `system-${link.id}`,
+        }))}
         messagesHref={messagesPath}
         unreadCount={unreadCount}
+        notifications={previewItems.map((item) => ({ ...item, createdAt: formatTimestamp(item.created_at) }))}
+        notificationBusy={messageReadAllSubmitting || messageOpeningId !== null}
+        projectSwitchingKey={projectSwitchingKey}
         user={user}
         profileHref={profilePath}
         theme={theme}
         onNavigate={(event, path, label) => handleNavigate(event, path, `已切换到${label}。`)}
         onSearch={(query) => navigate(buildSearchPath({ owner: route.owner, q: query }), query ? `正在搜索 ${query}。` : '请输入搜索内容。')}
+        onProjectChange={(project) => void handleSetCurrentProject(project)}
+        onOpenNotification={(notification) => {
+          const item = previewItems.find((candidate) => candidate.id === notification.id);
+          if (item) void handleOpenNotification(item);
+        }}
+        onMarkAllRead={() => void handleMarkAllRead()}
         onThemeChange={handleThemeChange}
         onLogout={handleLogout}
       />

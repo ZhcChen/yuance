@@ -1213,6 +1213,7 @@ async fn api_v1_topbar_status_returns_current_project_counts_and_project_badges(
     let app = build_router(AppState::new(test_settings(), Some(pool.clone())));
 
     let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri("/api/v1/topbar/status")
@@ -1279,6 +1280,52 @@ async fn api_v1_topbar_status_returns_current_project_counts_and_project_badges(
                 .get("pending_count")
                 .and_then(|value| value.as_i64())
                 == Some(1)
+    }));
+    let project_options = data
+        .get("project_options")
+        .and_then(|value| value.as_array())
+        .expect("project_options should be array");
+    assert!(project_options.iter().any(|project| {
+        project.get("key").and_then(|value| value.as_str()) == Some("YCE")
+            && project.get("name").and_then(|value| value.as_str()) == Some("元策 MVP")
+            && project
+                .get("pending_count")
+                .and_then(|value| value.as_i64())
+                == Some(2)
+    }));
+    assert!(project_options.iter().any(|project| {
+        project.get("key").and_then(|value| value.as_str()) == Some("OPS")
+            && project
+                .get("pending_count")
+                .and_then(|value| value.as_i64())
+                == Some(1)
+    }));
+    let system_links = data
+        .get("system_links")
+        .and_then(|value| value.as_array())
+        .expect("system_links should be array");
+    assert!(system_links.is_empty(), "普通项目成员不应看到系统管理入口");
+
+    let admin_response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/v1/topbar/status")
+                .header(header::COOKIE, admin.cookie)
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert_eq!(admin_response.status(), StatusCode::OK);
+    let admin_body = response_body(admin_response).await;
+    let admin_payload: serde_json::Value =
+        serde_json::from_str(&admin_body).expect("admin topbar status should be json");
+    let admin_links = admin_payload["data"]["system_links"]
+        .as_array()
+        .expect("admin system_links should be array");
+    assert!(admin_links.iter().any(|link| {
+        link.get("id").and_then(|value| value.as_str()) == Some("dashboard")
+            && link.get("path").and_then(|value| value.as_str()) == Some("/web/system")
     }));
 }
 

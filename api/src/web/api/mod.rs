@@ -565,12 +565,21 @@ pub struct TopbarCurrentProjectPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TopbarProjectOptionPayload {
+    pub key: String,
+    pub name: String,
+    pub pending_count: i64,
+}
+
+#[derive(Debug, Serialize)]
 pub struct TopbarStatusPayload {
     pub requirements_count: i64,
     pub tasks_count: i64,
     pub bugs_count: i64,
     pub notifications_count: i64,
     pub project_badges: Vec<TopbarProjectBadgePayload>,
+    pub project_options: Vec<TopbarProjectOptionPayload>,
+    pub system_links: Vec<SystemDashboardLinkPayload>,
     pub current_project: Option<TopbarCurrentProjectPayload>,
 }
 
@@ -830,6 +839,30 @@ pub async fn get_topbar_status(
     } else {
         Vec::new()
     };
+    let project_options = if can_view_projects || can_view_work_items {
+        projects::list_project_summaries_for_user(pool, user.id, can_access_all_projects)
+            .await?
+            .into_iter()
+            .filter(|project| {
+                project_key_in_token_scope(&token_project_scope, &project.project_key)
+            })
+            .map(|project| {
+                let pending_count = project_badges
+                    .iter()
+                    .find(|badge| badge.project_key.eq_ignore_ascii_case(&project.project_key))
+                    .map(|badge| badge.pending_count)
+                    .unwrap_or_default();
+                TopbarProjectOptionPayload {
+                    key: project.project_key,
+                    name: project.name,
+                    pending_count,
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let system_links = topbar_system_links(pool, &headers, user.id).await?;
 
     ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
     let notifications_count = notifications::unread_count(pool, user.id).await?;
@@ -852,8 +885,96 @@ pub async fn get_topbar_status(
         bugs_count: work_item_counts.bugs,
         notifications_count,
         project_badges,
+        project_options,
+        system_links,
         current_project,
     }))
+}
+
+async fn topbar_system_links(
+    pool: &sqlx::SqlitePool,
+    headers: &HeaderMap,
+    user_id: i64,
+) -> AppResult<Vec<SystemDashboardLinkPayload>> {
+    if let Some(raw_token) = api_tokens::bearer_token(headers) {
+        if !device_sessions::is_device_access_token(&raw_token)
+            && !api_tokens::token_has_scope_for_user(pool, &raw_token, user_id, "system:admin")
+                .await?
+        {
+            return Ok(Vec::new());
+        }
+    }
+    if !rbac::user_has_permission(pool, user_id, "system.dashboard.view").await? {
+        return Ok(Vec::new());
+    }
+    let mut links = vec![SystemDashboardLinkPayload {
+        id: "dashboard",
+        title: "总览",
+        description: "系统管理总览。",
+        path: "/web/system",
+    }];
+    let candidates = [
+        (
+            "users",
+            "用户管理",
+            "账号、状态、角色绑定、重置密码。",
+            "/web/system/users",
+            "system.users.view",
+        ),
+        (
+            "roles",
+            "角色权限",
+            "系统角色、权限点、角色授权。",
+            "/web/system/roles",
+            "system.roles.view",
+        ),
+        (
+            "storage",
+            "对象存储",
+            "对象存储配置、探测、初始化和版本回滚。",
+            "/web/system/storage",
+            "system.storage.view",
+        ),
+        (
+            "openapi",
+            "系统 OpenAPI",
+            "系统接口文档与 system token 管理。",
+            "/web/system/openapi",
+            "system.api_tokens.view",
+        ),
+        (
+            "releases",
+            "版本管理",
+            "维护桌面端、移动端版本与多平台安装包。",
+            "/web/system/releases",
+            "system.releases.view",
+        ),
+        (
+            "database-stats",
+            "数据库统计",
+            "按需查看表设计、表备注和数据量。",
+            "/web/system/database-stats",
+            "system.database_stats.view",
+        ),
+        (
+            "audit",
+            "审计日志",
+            "登录、授权、配置变更和高风险操作。",
+            "/web/system/audit",
+            "system.audit.view",
+        ),
+    ];
+    for (id, title, description, path, permission) in candidates {
+        if rbac::user_has_permission(pool, user_id, permission).await? {
+            links.push(SystemDashboardLinkPayload {
+                id,
+                title,
+                description,
+                path,
+            });
+        }
+    }
+    Ok(links)
 }
 
 pub async fn topbar_events(
@@ -5780,69 +5901,8 @@ pub async fn get_system_dashboard(
     let user = require_api_user(&state, &headers).await?;
     let pool = state.pool()?;
     ensure_api_permission(pool, &headers, user.id, "system.dashboard.view").await?;
-
-    let candidates = [
-        (
-            "users",
-            "用户管理",
-            "账号、状态、角色绑定、重置密码。",
-            "/web/system/users",
-            "system.users.view",
-        ),
-        (
-            "roles",
-            "角色权限",
-            "系统角色、权限点、角色授权。",
-            "/web/system/roles",
-            "system.roles.view",
-        ),
-        (
-            "storage",
-            "对象存储",
-            "对象存储配置、探测、初始化和版本回滚。",
-            "/web/system/storage",
-            "system.storage.view",
-        ),
-        (
-            "openapi",
-            "系统 OpenAPI",
-            "系统接口文档与 system token 管理。",
-            "/web/system/openapi",
-            "system.api_tokens.view",
-        ),
-        (
-            "releases",
-            "版本管理",
-            "维护桌面端、移动端版本与多平台安装包。",
-            "/web/system/releases",
-            "system.releases.view",
-        ),
-        (
-            "database-stats",
-            "数据库统计",
-            "按需查看表设计、表备注和数据量。",
-            "/web/system/database-stats",
-            "system.database_stats.view",
-        ),
-        (
-            "audit",
-            "审计日志",
-            "登录、授权、配置变更和高风险操作。",
-            "/web/system/audit",
-            "system.audit.view",
-        ),
-    ];
-    let mut links = Vec::new();
-    for (id, title, description, path, permission) in candidates {
-        if rbac::user_has_permission(pool, user.id, permission).await? {
-            links.push(SystemDashboardLinkPayload {
-                id,
-                title,
-                description,
-                path,
-            });
-        }
-    }
+    let mut links = topbar_system_links(pool, &headers, user.id).await?;
+    links.retain(|link| link.id != "dashboard");
 
     Ok(json(SystemDashboardPayload { links }))
 }

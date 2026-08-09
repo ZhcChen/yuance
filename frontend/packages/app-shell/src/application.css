@@ -843,10 +843,6 @@ html[data-theme="dark"] .shell-code-block {
 }
 
 @media (max-width: 960px) {
-  .app-shell {
-    padding: 16px;
-  }
-
   .app-topbar,
   .shell-header,
   .shell-columns,

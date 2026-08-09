@@ -87,6 +87,7 @@ baseline:
 - **Files：** `frontend/packages/ui/src/styles.css`、`frontend/packages/ui/src/global-navigation.jsx`、`frontend/packages/app-shell/src/application.css` 及测试。
 - 将 `main` 的 token 按原值映射为共享 token；恢复 `58px` 顶栏、品牌区、主导航、项目选择、搜索、账户区和断点行为。
 - 恢复 `.main` 内容宽度、页面标题、按钮、字段、反馈、modal、表格、分页、badge、tab 和 card 的基线外观。
+- **已完成切片：** 根壳改为 58px 顶栏 + `.main` 独立滚动；导航已恢复真实 logo、桌面端下载、RBAC 系统下拉、可搜索项目切换、全局搜索、消息面板、账户菜单，以及 1280/1100/860 响应式行为。剩余工作为基础原语和页面内容画布的 computed style 校准。
 - **Exit：** 所有页面共享相同画布和原语；菜单切换仍不卸载顶栏，Web/Desktop 无业务 CSS 分叉。
 
 ### V2：页面骨架与工作台

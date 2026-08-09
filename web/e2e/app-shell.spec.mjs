@@ -150,7 +150,8 @@ test('browser shell supports root navigation and logout on /web owner route', as
   await expect(page).toHaveTitle('元策浏览器工作台 - 元策');
   await expect(page.getByRole('heading', { level: 1, name: '元策浏览器工作台' })).toBeVisible();
 
-  await page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /消息中心/ }).click();
+  await page.getByRole('button', { name: '打开消息通知' }).click();
+  await page.getByRole('dialog', { name: '最近消息' }).getByRole('link', { name: '进入消息中心' }).click();
   await expect(page).toHaveURL(/\/web\/messages/);
   await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeFocused();
 
@@ -3887,13 +3888,41 @@ test('project switch serializes repeated input and refreshes the current context
 test('shared global shell remains usable at canonical responsive widths', async ({ page }, testInfo) => {
   await login(page, '/web/app');
 
+  await page.getByRole('button', { name: '切换当前项目' }).click();
+  const projectMenu = page.locator('.global-nav-project-menu');
+  await projectMenu.getByPlaceholder('搜索项目名称').fill('交付');
+  await expect(projectMenu.getByRole('button', { name: /交付运维台/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: /系统管理/ }).click();
+  await expect(page.locator('.global-nav-system-menu').getByRole('link', { name: '用户管理' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('button', { name: '打开消息通知' }).click();
+  await expect(page.getByRole('dialog', { name: '最近消息' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '一键已读' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
   for (const width of [390, 768, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await expect(page.locator('.global-nav')).toBeVisible();
     await expect(page.getByRole('navigation', { name: '应用导航' })).toBeVisible();
     await expect(page.getByRole('search')).toBeVisible();
     await expect(page.getByRole('button', { name: '切换当前项目' })).toBeVisible();
+    await expect(page.locator('.global-nav-mark')).toBeVisible();
     await expect(page.getByRole('button', { name: /打开 .* 的账户菜单/ })).toBeVisible();
+    const geometry = await page.evaluate(() => {
+      const nav = document.querySelector('.global-nav')?.getBoundingClientRect();
+      const search = document.querySelector('.global-nav-search')?.getBoundingClientRect();
+      const project = document.querySelector('.global-nav-project')?.getBoundingClientRect();
+      return { navHeight: nav?.height || 0, navWidth: nav?.width || 0, searchWidth: search?.width || 0, projectWidth: project?.width || 0 };
+    });
+    if (width <= 768) {
+      expect(geometry.searchWidth).toBeGreaterThanOrEqual(geometry.navWidth - 24);
+      expect(geometry.projectWidth).toBeGreaterThanOrEqual(geometry.navWidth - 24);
+    } else {
+      expect(geometry.navHeight).toBe(58);
+    }
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`global-shell-${width}.png`), fullPage: true });
   }

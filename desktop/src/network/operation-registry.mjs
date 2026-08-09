@@ -943,7 +943,8 @@ function parseCurrentProject(data) {
 function parseTopbar(data) {
   const value = freezeDto(data, {
     requirements_count: nonNegativeInteger, tasks_count: nonNegativeInteger, bugs_count: nonNegativeInteger,
-    notifications_count: nonNegativeInteger, project_badges: projectBadges, current_project: nullableTopbarProject,
+    notifications_count: nonNegativeInteger, project_badges: projectBadges, project_options: topbarProjectOptions,
+    system_links: systemDashboardLinks, current_project: nullableTopbarProject,
   });
   return value;
 }
@@ -1307,6 +1308,8 @@ function nullableNotificationTarget(value) {
   return freezeDto(value, { kind: workItemKind, project_key: shortString, work_item_key: shortString, comment_id: nullablePositiveInteger });
 }
 function projectBadges(value) { return boundedArray(value, (badge) => freezeDto(badge, { project_key: shortString, pending_count: nonNegativeInteger }), 500, "project badges"); }
+function topbarProjectOptions(value) { return boundedArray(value, (project) => freezeExactDto(project, { key: shortString, name: textString, pending_count: nonNegativeInteger }), 500, "project options"); }
+function systemDashboardLinks(value) { return boundedArray(value, (link) => freezeExactDto(link, { id: shortString, title: textString, description: longString, path: systemWebPath }), 16, "system links"); }
 function nullableTopbarProject(value) { if (value === null) return null; return freezeDto(value, { key: shortString, name: shortString, pending_count: nonNegativeInteger }); }
 function parsePage(data, itemParser) {
   if (!isPlainObject(data) || !isPlainObject(data.pagination)) throw new TypeError("page is invalid");

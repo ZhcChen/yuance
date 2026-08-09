@@ -12,7 +12,9 @@ export { ApiError };
 /** @typedef {{ id: number, username: string, display_name: string, is_super_admin: boolean }} AuthUser */
 /** @typedef {{ project_key: string, pending_count: number }} TopbarProjectBadge */
 /** @typedef {{ key: string, name: string, pending_count: number }} TopbarCurrentProject */
-/** @typedef {{ requirements_count: number, tasks_count: number, bugs_count: number, notifications_count: number, project_badges: TopbarProjectBadge[], current_project: TopbarCurrentProject | null }} TopbarStatus */
+/** @typedef {{ key: string, name: string, pending_count: number }} TopbarProjectOption */
+/** @typedef {{ id: string, title: string, description: string, path: string }} TopbarSystemLink */
+/** @typedef {{ requirements_count: number, tasks_count: number, bugs_count: number, notifications_count: number, project_badges: TopbarProjectBadge[], project_options: TopbarProjectOption[], system_links: TopbarSystemLink[], current_project: TopbarCurrentProject | null }} TopbarStatus */
 /** @typedef {{ kind: 'work_item', project_key: string, work_item_key: string, comment_id: number | null }} NotificationTarget */
 /** @typedef {{ id: number, kind: string, title: string, body: string, actor: string, created_at: string, read: boolean, target: NotificationTarget | null }} NotificationItem */
 /** @typedef {{ items: NotificationItem[], unread_count: number, pending_count: number, filter: string, page: number, per_page: number, total_items: number, total_pages: number }} NotificationFeed */
