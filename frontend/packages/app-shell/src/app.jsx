@@ -1313,7 +1313,7 @@ export function SharedApp({ services }) {
       const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
-        targetRoute.id === 'home' ? api.getDashboard() : Promise.resolve(null),
+        targetRoute.id === 'home' || targetRoute.id === 'profile' ? api.getDashboard() : Promise.resolve(null),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
         targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'project-personal-analysis' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
@@ -1452,6 +1452,7 @@ export function SharedApp({ services }) {
       setTopbar(nextTopbar);
       if (targetRoute.id === 'home') setDashboard(nextDashboard);
       if (targetRoute.id === 'profile' && nextProfile) {
+        setDashboard(nextDashboard);
         setProfile(nextProfile);
         setProfileForm({ displayName: nextProfile.display_name, email: nextProfile.email, mobile: nextProfile.mobile });
         setApiTokens(nextSecurity?.[0] || []);
@@ -4714,7 +4715,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5181,35 +5182,21 @@ export function SharedApp({ services }) {
               </section>
             </section>
           ) : route.id === 'profile' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="profile-title">
-              <div className="shell-panel-header">
-                <div>
-                  <h2 id="profile-title">{profile?.display_name || user?.display_name || user?.username}</h2>
-                  <p className="shell-muted">@{profile?.username || user?.username}</p>
-                </div>
-                <Button variant="secondary" onClick={() => { setProfileError(''); setProfileModalOpen(true); }}>编辑资料</Button>
-              </div>
-              <dl className="work-item-detail-meta">
-                <div><dt>角色</dt><dd>{profile?.roles || (profile?.is_super_admin ? '超级管理员' : '普通成员')}</dd></div>
-                <div><dt>状态</dt><dd>{profile?.status || 'active'}</dd></div>
-                <div><dt>邮箱</dt><dd>{profile?.email || '未填写'}</dd></div>
-                <div><dt>手机号</dt><dd>{profile?.mobile || '未填写'}</dd></div>
-                <div><dt>加入时间</dt><dd>{profile?.created_at ? formatTimestamp(profile.created_at) : '-'}</dd></div>
-                <div><dt>最近更新</dt><dd>{profile?.updated_at ? formatTimestamp(profile.updated_at) : '-'}</dd></div>
-              </dl>
+            <section className="page-stack profile-page" aria-labelledby="profile-title">
+              <section className="page-hero profile-hero">
+                <div className="profile-hero-main"><div className="profile-hero-overview"><div className="profile-hero-avatar" aria-hidden="true">{(profile?.display_name || profile?.username || '我').slice(0, 1)}</div><div className="profile-hero-copy"><p className="shell-eyebrow">个人工作区</p><div className="profile-hero-identity"><h1 id="profile-title" ref={headingRef} tabIndex={-1}>{profile?.display_name || user?.display_name || user?.username}</h1><span>@{profile?.username || user?.username}</span></div><div className="profile-hero-meta"><Badge>{profile?.roles || '普通成员'}</Badge><Badge tone="success">{profile?.status === 'active' ? '正常' : profile?.status}</Badge>{profile?.is_super_admin ? <Badge tone="danger">超级管理员</Badge> : null}<span>加入 {profile?.created_at ? dashboardTimestamp(profile.created_at) : '-'}</span></div></div></div><dl className="profile-hero-details" aria-label="账号资料"><div><dt>邮箱</dt><dd>{profile?.email || '未填写'}</dd></div><div><dt>手机号</dt><dd>{profile?.mobile || '未填写'}</dd></div><div><dt>最近更新</dt><dd>{profile?.updated_at ? dashboardTimestamp(profile.updated_at) : '-'}</dd></div></dl></div>
+                <div className="toolbar-actions profile-hero-actions"><Button variant="secondary" onClick={() => { setProfileError(''); setProfileModalOpen(true); }}>编辑资料</Button><Button variant="secondary" onClick={() => { setAccountSecurityError(''); setPasswordModalOpen(true); }}>修改密码</Button><Button variant="secondary" disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建访问 Token</Button></div>
+              </section>
+              <section className="metric-grid profile-metrics" aria-label="我的概览"><article className="metric metric-info"><span>参与项目</span><strong>{dashboard?.projects?.length || 0}</strong></article><article className="metric metric-warning"><span>指派给我</span><strong>{dashboard?.metrics?.assigned_total || 0}</strong></article><article className="metric metric-danger"><span>高优先级</span><strong>{dashboard?.metrics?.high_priority || 0}</strong></article></section>
               {accountSecurityError ? <Feedback tone="danger" title="账户安全操作失败">{accountSecurityError}</Feedback> : null}
               {createdRawToken ? <Feedback tone="success" title="访问 Token 仅显示一次"><code>{createdRawToken}</code><Button variant="secondary" onClick={() => setCreatedRawToken('')}>我已保存</Button></Feedback> : null}
-              <div className="account-security-section">
-                <div className="shell-panel-header"><div><h2>登录密码</h2><p className="shell-muted">修改后保留当前登录，撤销其他登录会话。</p></div><Button variant="secondary" onClick={() => { setAccountSecurityError(''); setPasswordModalOpen(true); }}>修改密码</Button></div>
-              </div>
-              <div className="account-security-section">
-                <div className="shell-panel-header"><div><h2>Personal Access Token</h2><p className="shell-muted">共 {apiTokens.length} 个访问 Token，最多保留 100 个可用 Token</p></div><Button variant="secondary" disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>新建 Token</Button></div>
-                {apiTokens.length ? <div className="account-security-list">{apiTokens.map((token) => <div className="account-security-row" key={token.id}><div><strong>{token.name}</strong><p className="shell-muted">尾号 {token.token_suffix} · {token.scopes.join('、')}</p></div><div className="shell-actions-inline"><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => { setTokenForm({ id: token.id, name: token.name, scopes: token.scopes, projectScope: token.project_scope, expiresAt: '' }); setTokenModalOpen(true); }}>编辑</Button><Button variant="danger" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation({ kind: 'token', id: token.id, label: token.name })}>删除</Button></div></div>)}</div> : <p className="shell-empty">暂无访问 Token。</p>}
-              </div>
-              <div className="account-security-section">
-                <div className="shell-panel-header"><div><h2>已授权设备</h2><p className="shell-muted">管理 Desktop 登录设备。</p></div></div>
-                {deviceSessions.length ? <div className="account-security-list">{deviceSessions.map((session) => <div className="account-security-row" key={session.family_id}><div><strong>{session.device_name}{session.is_current ? '（当前设备）' : ''}</strong><p className="shell-muted">{session.platform} · {session.client_version} · {session.status}</p></div><Button variant="danger" disabled={accountSecuritySubmitting || session.status !== 'active'} onClick={() => setAccountConfirmation({ kind: 'device', id: session.family_id, label: session.device_name })}>撤销</Button></div>)}</div> : <p className="shell-empty">暂无已授权设备。</p>}
-              </div>
+              <section className="profile-detail-grid"><div className="profile-detail-main"><section className="panel api-token-panel">
+                <div className="panel-head"><div><h2>Personal Access Token</h2><p>用于 OpenAPI、Codex Skill 或外部脚本调用。</p></div><div className="token-panel-actions"><span>可用 Token {apiTokens.filter((token) => !token.revoked_at).length}/100</span><Button disabled={apiTokens.filter((token) => !token.revoked_at).length >= 100} onClick={() => { setAccountSecurityError(''); setTokenForm({ id: 0, name: '', scopes: ['project:read'], projectScope: 'all', expiresAt: '' }); setTokenModalOpen(true); }}>创建 Token</Button></div></div>
+                {apiTokens.length ? <div className="account-security-list">{apiTokens.map((token) => <div className="account-security-row" key={token.id}><div><strong>{token.name}</strong><p className="shell-muted">尾号 {token.token_suffix} · {token.scopes.join('、')}</p></div><div className="shell-actions-inline"><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => { setTokenForm({ id: token.id, name: token.name, scopes: token.scopes, projectScope: token.project_scope, expiresAt: '' }); setTokenModalOpen(true); }}>编辑</Button><Button variant="danger" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation({ kind: 'token', id: token.id, label: token.name })}>删除</Button></div></div>)}</div> : <div className="empty-state"><strong>暂无访问 Token</strong><span>如需让 AI Agent 或脚本访问元策 API，可以创建最小权限 Token。</span></div>}
+              </section></div><aside className="profile-detail-side"><section className="panel"><div className="panel-head compact"><h2>我的项目</h2></div>{dashboard?.projects?.length ? <ol className="activity-list">{dashboard.projects.map((project) => { const path = buildProjectDetailPath({ owner: route.owner, projectKey: project.key }); return <li key={project.key}><span className="activity-dot" aria-hidden="true" /><strong><a href={path} onClick={(event) => handleNavigate(event, path, `已打开 ${project.key}。`)}>{project.name}</a></strong><span>{project.key} · {project.status} · {project.active_work_item_count} 个活跃工作项</span></li>; })}</ol> : <div className="empty-state"><strong>暂无项目</strong><span>加入项目后会出现在这里。</span></div>}</section></aside></section>
+              <section className="panel profile-security-panel"><div className="panel-head"><div><h2>账户安全</h2><p>修改登录密码并管理 Desktop 授权设备。</p></div></div>
+                {deviceSessions.length ? <div className="account-security-list">{deviceSessions.map((session) => <div className="account-security-row" key={session.family_id}><div><strong>{session.device_name}{session.is_current ? '（当前设备）' : ''}</strong><p className="shell-muted">{session.platform} · {session.client_version} · {session.status}</p></div><Button variant="danger" disabled={accountSecuritySubmitting || session.status !== 'active'} onClick={() => setAccountConfirmation({ kind: 'device', id: session.family_id, label: session.device_name })}>撤销</Button></div>)}</div> : <div className="empty-state"><strong>暂无已授权设备</strong><span>通过 Desktop 登录后，设备会显示在这里。</span></div>}
+              </section>
               <Modal open={Boolean(accountConfirmation)} title={accountConfirmation?.kind === 'token' ? '删除访问 Token' : '撤销设备会话'} onClose={() => { if (!accountSecuritySubmitting) setAccountConfirmation(null); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setAccountConfirmation(null)}>取消</Button><Button variant="danger" loading={accountSecuritySubmitting} onClick={() => void confirmAccountAction()}>确认</Button></>}><p>确认处理“{accountConfirmation?.label}”？此操作会立即失效且不可撤销。</p></Modal>
               <Modal open={passwordModalOpen} title="修改密码" onClose={() => { if (!accountSecuritySubmitting) setPasswordModalOpen(false); }} footer={<><Button variant="secondary" disabled={accountSecuritySubmitting} onClick={() => setPasswordModalOpen(false)}>取消</Button><Button loading={accountSecuritySubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('password-form')); form?.requestSubmit(); }}>保存</Button></>}>
                 <form id="password-form" onSubmit={submitPassword}><Field id="current-password" label="当前密码" required><input id="current-password" type="password" value={passwordForm.currentPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, currentPassword: event.target.value }))} /></Field><Field id="new-password" label="新密码" required><input id="new-password" type="password" value={passwordForm.newPassword} onChange={(event) => setPasswordForm((current) => ({ ...current, newPassword: event.target.value }))} /></Field><Field id="new-password-confirm" label="确认新密码" required><input id="new-password-confirm" type="password" value={passwordForm.newPasswordConfirm} onChange={(event) => setPasswordForm((current) => ({ ...current, newPasswordConfirm: event.target.value }))} /></Field></form>

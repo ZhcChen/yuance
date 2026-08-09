@@ -589,6 +589,8 @@ pub struct DashboardMetricsPayload {
     pub requirements: i64,
     pub tasks: i64,
     pub bugs: i64,
+    pub assigned_total: usize,
+    pub high_priority: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -5980,6 +5982,21 @@ pub async fn get_dashboard(
     } else {
         projects::WorkItemAssignmentCounts::default()
     };
+    let assigned_items = if can_view_work_items {
+        projects::list_assigned_work_item_summaries(pool, user.id, None).await?
+    } else {
+        Vec::new()
+    };
+    let high_priority = assigned_items
+        .iter()
+        .filter(|item| {
+            matches!(item.priority.as_str(), "P0" | "P1")
+                && !matches!(
+                    item.status.as_str(),
+                    "done" | "closed" | "resolved" | "verified" | "cancelled"
+                )
+        })
+        .count();
     let active_projects = summaries
         .iter()
         .filter(|project| {
@@ -6049,6 +6066,8 @@ pub async fn get_dashboard(
             requirements: assigned.requirements,
             tasks: assigned.tasks,
             bugs: assigned.bugs,
+            assigned_total: assigned_items.len(),
+            high_priority,
         },
         projects,
         pending_discussions,

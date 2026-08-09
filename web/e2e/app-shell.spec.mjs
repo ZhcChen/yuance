@@ -230,7 +230,7 @@ test('shared profile page updates account identity through the common modal', as
 
   await expect(page).toHaveURL(/\/web\/app\/me$/);
   await expect(page).toHaveTitle('个人中心 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '个人中心' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '元策开发管理员' })).toBeVisible();
 
   const requests = [];
   await page.route('**/api/v1/me/profile', async (route) => {
@@ -260,9 +260,35 @@ test('shared profile page updates account identity through the common modal', as
   expect(requests[0].headers['x-yuance-csrf-token']).toBeTruthy();
   expect(requests[0].payload).toEqual({ display_name: '统一体验管理员', email: 'admin@yuance.test', mobile: '13800000000' });
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByRole('heading', { level: 2, name: '统一体验管理员' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '统一体验管理员' })).toBeVisible();
   await expect(page.getByRole('status')).toHaveText('个人资料已保存。');
   await expect(page.getByRole('button', { name: '打开 统一体验管理员 的账户菜单' })).toBeVisible();
+});
+
+test('profile page preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/me');
+  for (const viewport of [
+    { width: 390, height: 844, compact: true },
+    { width: 768, height: 1024, compact: false },
+    { width: 1280, height: 800, compact: false },
+    { width: 1440, height: 900, compact: false },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/web/app/me');
+    await expect(page.locator('.profile-hero').getByRole('heading', { level: 1 })).toBeVisible();
+    const geometry = await page.locator('.profile-page').evaluate((element) => {
+      const main = element.closest('.main');
+      return {
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        metricColumns: getComputedStyle(element.querySelector('.profile-metrics')).gridTemplateColumns.split(' ').length,
+        detailColumns: getComputedStyle(element.querySelector('.profile-detail-grid')).gridTemplateColumns.split(' ').length,
+      };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.metricColumns).toBe(viewport.compact ? 1 : 3);
+    expect(geometry.detailColumns).toBe(viewport.compact ? 1 : 2);
+  }
 });
 
 test('shared account security manages password tokens and device sessions once', async ({ page }) => {
@@ -298,7 +324,7 @@ test('shared account security manages password tokens and device sessions once',
   await password.getByRole('button', { name: '保存' }).click();
   await expect(password).not.toBeVisible();
 
-  await page.getByRole('button', { name: '新建 Token' }).click();
+  await page.getByRole('button', { name: '创建 Token' }).click();
   const tokenDialog = page.getByRole('dialog', { name: '新建访问 Token' });
   await tokenDialog.getByLabel('名称').fill('E2E Agent');
   await tokenDialog.getByLabel('读取工作项').check();

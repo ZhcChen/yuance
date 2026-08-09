@@ -921,6 +921,28 @@ html[data-theme="dark"] .project-stats div {
 .search-result h3 a:hover { color: var(--yc-brand); }
 .search-result p { margin: 0; color: var(--yc-muted); font-size: 13px; line-height: 20px; }
 .search-result-time { flex: 0 0 auto; color: var(--yc-muted); font-size: 12px; white-space: nowrap; }
+.profile-hero { align-items: stretch; }
+.profile-hero-main { min-width: 0; display: grid; gap: 16px; }
+.profile-hero-overview { min-width: 0; display: flex; align-items: center; gap: 16px; }
+.profile-hero-avatar { width: 72px; height: 72px; flex: 0 0 72px; display: grid; place-items: center; border: 1px solid var(--yc-brand-line); border-radius: 18px; background: var(--yc-brand-soft); color: var(--yc-brand-strong); font-size: 26px; font-weight: 800; }
+.profile-hero-copy { min-width: 0; display: grid; gap: 5px; }
+.profile-hero-identity { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.profile-hero-identity h1 { margin: 0; font-size: 24px; line-height: 30px; }
+.profile-hero-identity > span, .profile-hero-meta > span { color: var(--yc-muted); font-size: 12px; }
+.profile-hero-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.profile-hero-meta .yc-badge { min-height: 22px; padding-inline: 7px; font-size: 11px; }
+.profile-hero-details { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 12px; margin: 0; }
+.profile-hero-details > div { min-width: 0; display: grid; gap: 3px; padding-top: 12px; border-top: 1px solid var(--yc-line); }
+.profile-hero-details dt { color: var(--yc-muted); font-size: 11px; font-weight: 700; }
+.profile-hero-details dd { margin: 0; overflow: hidden; color: var(--yc-muted-strong); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.profile-hero-actions { max-width: 190px; align-content: flex-start; }
+.profile-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.profile-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; align-items: start; }
+.profile-detail-main, .profile-detail-side { min-width: 0; }
+.token-panel-actions { display: flex; align-items: center; gap: 10px; }
+.token-panel-actions > span { color: var(--yc-muted); font-size: 12px; white-space: nowrap; }
+.api-token-panel { overflow: hidden; }
+.profile-security-panel { overflow: hidden; }
 
 @media (max-width: 720px) {
   .page-hero, .messages-heading, .search-result { flex-direction: column; align-items: stretch; }
@@ -930,6 +952,15 @@ html[data-theme="dark"] .project-stats div {
   .messages-page > .yc-content-tabs { width: 100%; }
   .messages-page .message-open { grid-column: 2 / -1; justify-self: end; }
   .search-result-time { white-space: normal; }
+  .profile-hero, .profile-hero-overview { flex-direction: column; align-items: stretch; }
+  .profile-hero-avatar { width: 58px; height: 58px; flex-basis: 58px; border-radius: 14px; }
+  .profile-hero-actions { width: 100%; max-width: none; }
+  .profile-hero-details, .profile-metrics, .profile-detail-grid { grid-template-columns: 1fr; }
+  .token-panel-actions { align-items: stretch; flex-direction: column; }
+}
+
+@media (min-width: 721px) and (max-width: 1024px) {
+  .profile-detail-grid { grid-template-columns: minmax(0, 1fr) 260px; }
 }
 
 html[data-theme="dark"] .badge-row,

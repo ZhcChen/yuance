@@ -105,6 +105,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、profile/message/search API client 的既有读取测试与 `web/e2e/app-shell.spec.mjs`。
 - 恢复 profile hero、个人指标、Token/项目/安全区；恢复消息 compact heading、tabs、消息行和 pager；恢复搜索 hero、搜索 panel、结果分组和 pager。
 - 覆盖正常、空、loading、错误、权限受限、modal 和窄屏状态。
+- **已完成：** 消息中心恢复 compact heading、筛选 tabs、四列消息行、未读状态、pager 与 empty state；全局搜索恢复 page hero、搜索 panel、结果列表与 pager；个人中心恢复 profile hero、三指标、Token/项目双栏、账户安全区及既有 modal。Dashboard 只读指标合同补充全部指派和活跃高优先级计数，Browser/Desktop 继续共用同一读取与呈现路径。三页均增加 390/768/1280/1440 响应式几何断言。
 - **Exit：** `/web/me`、`/web/messages`、`/web/search` 在固定视口通过结构、几何和截图对比。
 
 ### V4：项目列表与项目详情
@@ -195,7 +196,7 @@ baseline:
 - [x] V0：将扫描结果固化为可执行 visual manifest 与 fixture。
 - [x] V1：全局 token、画布、导航与基础原语。
 - [x] V2：页面骨架与工作台。
-- [ ] V3：个人、消息与搜索。
+- [x] V3：个人、消息与搜索。
 - [ ] V4：项目列表与项目详情。
 - [ ] V5：周期、资源与个人分析。
 - [ ] V6：工作项列表。
