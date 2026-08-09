@@ -1120,6 +1120,20 @@ export function SharedApp({ services }) {
     }
     return [...groups.values()];
   }, [systemRolesView?.permissions]);
+  const filteredSystemPermissions = useMemo(() => {
+    const query = (route.q || '').toLocaleLowerCase();
+    return systemPermissions.filter((permission) => !query || [permission.permission_name, permission.permission_key, permission.resource_type, permission.resource_key].some((value) => value.toLocaleLowerCase().includes(query)));
+  }, [route.q, systemPermissions]);
+  const systemPermissionGroups = useMemo(() => {
+    const groups = new Map();
+    for (const permission of filteredSystemPermissions) {
+      const key = permission.resource_key || permission.permission_key;
+      const group = groups.get(key) || { key, permissions: [] };
+      group.permissions.push(permission);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [filteredSystemPermissions]);
   const canManageProject = Boolean(user?.is_super_admin || ['owner', 'maintainer'].includes(currentProjectMember?.member_role || ''));
   const cyclePace = projectCycleDetail ? projectCyclePace(projectCycleDetail) : null;
   const cycleMemberLoad = projectCycleDetail ? projectCycleMemberLoad(projectCycleDetail, projectMembers) : [];
@@ -4696,7 +4710,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -4713,20 +4727,16 @@ export function SharedApp({ services }) {
       ) : (
         <>
           {route.id === 'system-permissions' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="system-permissions-title">
-              <div className="shell-panel-header">
-                <div><h2 id="system-permissions-title">权限目录</h2><p className="shell-muted">权限点由 core seed 维护，共 {systemPermissions.length} 项。</p></div>
-                <a className="shell-link" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>角色权限</a>
-              </div>
+            <section className="page-stack system-permissions-page" aria-labelledby="system-permissions-title">
+              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-permissions-title" ref={headingRef} tabIndex={-1}>权限点</h1><p>权限点由 core seed 管理；角色权限维护推荐在角色权限工作台完成。</p></div><a className="yc-button yc-button-secondary" href={buildSystemRolesPath({ owner: route.owner })} onClick={(event) => handleNavigate(event, buildSystemRolesPath({ owner: route.owner }), '正在打开角色权限。')}>返回角色权限</a></header>
+              <section className="shell-card system-permissions-panel" aria-labelledby="system-permission-tree-title">
+              <div className="shell-panel-header"><div><h2 id="system-permission-tree-title">权限树</h2><p className="shell-muted">权限点由 core seed 维护，共 {systemPermissions.length} 项。</p></div></div>
               <form className="shell-filters" onSubmit={(event) => { event.preventDefault(); const input = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q')); navigate(buildSystemPermissionsPath({ owner: route.owner, q: input?.value || '' }), '正在筛选权限目录。'); }}>
                 <Field id="system-permissions-query" label="搜索权限"><input name="q" defaultValue={route.q} placeholder="名称、权限键或资源" /></Field>
                 <div className="shell-actions-inline"><Button type="submit">搜索</Button>{route.q ? <Button variant="secondary" onClick={() => navigate(buildSystemPermissionsPath({ owner: route.owner }), '已清除权限筛选。')}>清除</Button> : null}</div>
               </form>
-              <DataTable caption="系统权限目录" rows={systemPermissions.filter((permission) => { const query = (route.q || '').toLocaleLowerCase(); return !query || [permission.permission_name, permission.permission_key, permission.resource_type, permission.resource_key].some((value) => value.toLocaleLowerCase().includes(query)); })} rowKey={(permission) => permission.permission_key} emptyText={route.q ? '没有匹配的权限点。' : '暂无权限点。'} columns={[
-                { key: 'permission', label: '权限', render: (permission) => <><strong>{permission.permission_name}</strong><br /><code>{permission.permission_key}</code></> },
-                { key: 'resource', label: '资源', render: (permission) => permission.resource_key },
-                { key: 'type', label: '类型', render: (permission) => permission.resource_type === 'page' ? '页面' : '操作' },
-              ]} />
+              {systemPermissionGroups.length ? <div className="permission-tree" aria-label="系统权限目录">{systemPermissionGroups.map((group) => <section className="permission-group" key={group.key}><header className="permission-group-head"><div className="permission-check permission-check-group"><span><strong>{group.key}</strong><em>{group.permissions.length} 个权限点</em></span></div></header><div className="permission-pages">{group.permissions.map((permission) => <article className="permission-page" key={permission.permission_key}><div className="permission-check permission-check-page"><span><strong>{permission.permission_name}</strong><em>{permission.permission_key} · {permission.resource_type === 'page' ? '页面' : '操作'}</em></span></div></article>)}</div></section>)}</div> : <Feedback tone="info" title={route.q ? '没有匹配的权限点。' : '暂无权限点。'} />}
+              </section>
             </section>
           ) : route.id === 'system-database-stats' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-database-stats-title" aria-busy={systemDatabaseStatsRefreshing}>

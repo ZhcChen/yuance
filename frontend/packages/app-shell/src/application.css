@@ -109,6 +109,21 @@ button:disabled {
 
 @media (max-width: 620px) { .page-hero { align-items: stretch; flex-direction: column; } }
 
+.system-permissions-panel { overflow: hidden; padding: 0; }
+.system-permissions-panel > .shell-panel-header { padding: 16px; margin: 0; }
+.system-permissions-panel > .shell-filters { margin: 0 16px 16px; }
+.permission-tree { display: grid; gap: 12px; padding: 16px; }
+.permission-group { overflow: hidden; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-panel); }
+.permission-group-head { padding: 12px 14px; border-bottom: 1px solid var(--yc-line); background: var(--yc-table-head); }
+.permission-pages { display: grid; }
+.permission-page { padding: 12px 14px; border-bottom: 1px solid var(--yc-line); }
+.permission-page:last-child { border-bottom: 0; }
+.permission-check { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 9px; }
+.permission-check > span { min-width: 0; display: grid; gap: 3px; }
+.permission-check strong { color: var(--yc-text); font-size: 14px; line-height: 20px; }
+.permission-check em { overflow-wrap: anywhere; color: var(--yc-muted); font-size: 12px; font-style: normal; line-height: 17px; }
+.permission-check-group strong { font-size: 15px; }
+
 .shell-live-region {
   position: absolute;
   width: 1px;

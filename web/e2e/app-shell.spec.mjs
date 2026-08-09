@@ -2341,18 +2341,32 @@ test('shared system permissions preserve formal owner search and fixed catalog',
   await login(page, '/web/system/permissions?q=roles');
   await expect(page).toHaveTitle('权限目录 - 元策');
   await expect(page).toHaveURL('/web/system/permissions?q=roles');
-  const table = page.getByRole('table', { name: '系统权限目录' });
-  await expect(table).toContainText('system.roles.view');
-  await expect(table).not.toContainText('system.users.manage');
+  const tree = page.getByLabel('系统权限目录');
+  await expect(tree).toContainText('system.roles.view');
+  await expect(tree).not.toContainText('system.users.manage');
   await expect.poll(() => requests.length).toBeGreaterThan(0);
   expect(requests.every((method) => method === 'GET')).toBe(true);
   const initialRequestCount = requests.length;
 
   await page.getByRole('button', { name: '清除' }).click();
   await expect(page).toHaveURL('/web/system/permissions');
-  await expect(table).toContainText('system.users.manage');
+  await expect(tree).toContainText('system.users.manage');
   await expect.poll(() => requests.length).toBeGreaterThan(initialRequestCount);
   expect(requests.every((method) => method === 'GET')).toBe(true);
+});
+
+test('system permissions preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/system/permissions');
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.system-permissions-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const tree = element.querySelector('.permission-tree');
+      return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, treeRight: tree.getBoundingClientRect().right, mainRight: main.getBoundingClientRect().right };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.treeRight).toBeLessThanOrEqual(geometry.mainRight + 1);
+  }
 });
 
 test('shared database stats load cache first and preserve it across refresh failures', async ({ page }) => {
