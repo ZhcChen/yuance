@@ -4633,7 +4633,7 @@ export function SharedApp({ services }) {
   }
 
   return (
-    <main className="app-shell" aria-busy={loading || refreshing}>
+    <div className="app-shell" aria-busy={loading || refreshing}>
       <p className="shell-live-region" role="status" aria-live="polite">
         {statusMessage || (refreshing ? '正在刷新页面数据。' : '')}
       </p>
@@ -4662,6 +4662,8 @@ export function SharedApp({ services }) {
         onThemeChange={handleThemeChange}
         onLogout={handleLogout}
       />
+
+      <main className="main">
 
       {loading ? (
         <section className="shell-route-loading" role="status" aria-live="polite" aria-label={`正在加载${route.title}`}>
@@ -6086,6 +6088,7 @@ export function SharedApp({ services }) {
       )}
         </>
       )}
-    </main>
+      </main>
+    </div>
   );
 }

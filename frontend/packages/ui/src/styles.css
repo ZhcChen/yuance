@@ -18,6 +18,7 @@
   --yc-control-height: 40px;
   --yc-control-height-sm: 32px;
   --yc-control-radius: 8px;
+  --yc-topbar-height: 58px;
   --yc-radius: 8px;
   --yc-shadow: 0 16px 40px rgb(24 39 58 / 10%);
   --yc-shadow-soft: 0 10px 26px rgb(22 34 50 / 7%), 0 2px 8px rgb(22 34 50 / 4%);
@@ -49,16 +50,16 @@ html[data-theme="dark"] {
 }
 
 .global-nav {
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 50;
-  min-height: 58px;
+  flex: 0 0 var(--yc-topbar-height);
+  min-height: var(--yc-topbar-height);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 32px;
   row-gap: 8px;
-  height: 58px;
+  height: var(--yc-topbar-height);
   padding: 0 18px;
   border-bottom: 1px solid var(--yc-line);
   background: var(--yc-panel);

@@ -33,6 +33,14 @@ button:disabled {
 
 .app-shell {
   height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main {
+  min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
 }
 
