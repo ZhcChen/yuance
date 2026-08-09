@@ -3457,14 +3457,27 @@ test('shared project resources filter read and unlock protected details', async 
 
   await list.getByRole('link', { name: '客户端联调参数' }).click();
   await expect(page).toHaveURL(/\/web\/app\/projects\/YCE\/resources\/901$/);
-  await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  await expect(page.locator('.resource-content-card')).toBeVisible();
   await expect(page.getByText('client_id=yuance-e2e')).toBeVisible();
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, summaryColumns: getComputedStyle(element.querySelector('.resource-summary-grid')).gridTemplateColumns.split(' ').length, heroDirection: getComputedStyle(element.querySelector('.resource-hero')).flexDirection }; });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.summaryColumns).toBe(viewport.width <= 720 ? 1 : 2);
+    expect(geometry.heroDirection).toBe(viewport.width <= 720 ? 'column' : 'row');
+  }
   await page.getByRole('link', { name: '返回资料库' }).click();
   await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
 
-  await expect(page.getByRole('heading', { level: 3, name: '此资料受密码保护' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '这条资料已设置访问密码' })).toBeVisible();
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.resource-detail-page').evaluate((element) => { const main = element.closest('.main'); const lock = element.querySelector('.resource-lock-card'); return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, lockWidth: lock.getBoundingClientRect().width }; });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.lockWidth).toBeLessThanOrEqual(560);
+  }
   await page.locator('#project-resource-password').fill('stale-pass');
-  await page.getByRole('button', { name: '解锁资料' }).click();
+  await page.getByRole('button', { name: '验证并查看' }).click();
   await delayedUnlockStarted;
   await page.getByRole('link', { name: '返回资料库' }).click();
   releaseDelayedUnlock();
@@ -3472,12 +3485,12 @@ test('shared project resources filter read and unlock protected details', async 
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByRole('list', { name: '项目资料列表' }).getByRole('link', { name: '正式环境密钥' }).click();
   await page.locator('#project-resource-password').fill('wrong-pass');
-  await page.getByRole('button', { name: '解锁资料' }).click();
+  await page.getByRole('button', { name: '验证并查看' }).click();
   await expect(page.getByRole('alert')).toContainText('访问密码不正确');
-  await expect(page.getByRole('heading', { level: 3, name: '此资料受密码保护' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '这条资料已设置访问密码' })).toBeVisible();
   await page.locator('#project-resource-password').fill('safe-pass');
-  await page.getByRole('button', { name: '解锁资料' }).click();
-  await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  await page.getByRole('button', { name: '验证并查看' }).click();
+  await expect(page.locator('.resource-content-card')).toBeVisible();
   await expect(page.getByText('secret=desktop-browser-parity')).toBeVisible();
   expect(unlockPasswords).toEqual(['stale-pass', 'wrong-pass', 'safe-pass']);
 });
@@ -3552,19 +3565,19 @@ test('shared project resources create edit password actions and archive', async 
   expect(mutations[0]).toEqual(['create', { title: '部署手册', category: 'implementation', body: '<h2>发布方案</h2><pre><code>release=v1</code></pre>', body_format: 'html', access_password: 'safe-pass', tags: ['发布', '运维'], related_work_item_key: 'YCE-TASK-2', related_cycle_id: 7 }]);
 
   await page.getByRole('link', { name: '部署手册' }).click();
-  await page.getByRole('button', { name: '重置访问密码' }).click();
+  await page.getByRole('button', { name: '重置保险箱密码' }).click();
   let resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.getByLabel('新访问密码').fill('reset-pass');
   await resetDialog.getByRole('button', { name: '确认重置' }).click();
   await expect(resetDialog).not.toBeVisible();
   await expect(page.getByText('资料访问密码已重置。')).toBeVisible();
-  await expect(page.getByRole('button', { name: '解锁资料' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '验证并查看' })).toBeVisible();
   expect(mutations[1]).toEqual(['reset', { access_password_action: 'set', access_password: 'reset-pass' }]);
-  await page.getByRole('button', { name: '重置访问密码' }).click();
+  await page.getByRole('button', { name: '重置保险箱密码' }).click();
   resetDialog = page.getByRole('dialog', { name: '重置资料访问密码' });
   await resetDialog.getByLabel('重置方式').selectOption('clear');
   await resetDialog.getByRole('button', { name: '确认重置' }).click();
-  await expect(page.getByRole('heading', { level: 3, name: '资料正文' })).toBeVisible();
+  await expect(page.locator('.resource-content-card')).toBeVisible();
   expect(mutations[2]).toEqual(['reset', { access_password_action: 'clear', access_password: '' }]);
   await expect(page.getByRole('heading', { level: 2, name: '发布方案' })).toBeVisible();
   await expect(page.locator('.yc-rich-text-content code')).toHaveText('release=v1');
@@ -3750,7 +3763,7 @@ test('shared project resources hide mutations from viewers', async ({ page }) =>
   await page.getByRole('link', { name: '只读资料' }).click();
   await expect(page.getByRole('button', { name: '编辑' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '归档' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '重置访问密码' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '重置保险箱密码' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: '选择附件上传' })).toHaveCount(0);
   const attachmentList = page.getByRole('list', { name: '资料附件列表' });
   await expect(attachmentList.getByRole('button', { name: '下载附件 viewer-readable.txt' })).toBeVisible();
