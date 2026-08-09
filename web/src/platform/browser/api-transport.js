@@ -50,6 +50,24 @@ export function createBrowserApiTransport(dependencies = {}) {
     currentLocation.assign(`/web/login?${new URLSearchParams({ return_to: returnTo }).toString()}`);
   }
 
+  /** @param {Response} response */
+  function isLoginPageResponse(response) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.toLowerCase().includes('text/html')) return true;
+    try {
+      return new URL(response.url).pathname === '/web/login';
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  /** @param {Response} response */
+  function rejectLoginPageResponse(response) {
+    if (!isLoginPageResponse(response)) return;
+    redirectToLogin();
+    throw new ApiError({ code: 'unauthorized', message: '登录已失效。', status: 401 });
+  }
+
   function restorePendingReturnToHash() {
     const currentLocation = location();
     if (currentLocation.hash) return;
@@ -83,6 +101,7 @@ export function createBrowserApiTransport(dependencies = {}) {
         credentials: 'same-origin',
         headers: NO_STORE_HEADERS,
       });
+      rejectLoginPageResponse(response);
       const payload = await response.json().catch(() => ({}));
       syncCsrfToken(response.headers, payload);
       if (response.status === 401) {
@@ -112,6 +131,7 @@ export function createBrowserApiTransport(dependencies = {}) {
       credentials: options.credentials || 'same-origin',
       headers,
     });
+    rejectLoginPageResponse(response);
     const payload = await response.json().catch(() => ({}));
     syncCsrfToken(response.headers, payload);
     if (response.status === 401) {

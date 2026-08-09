@@ -3,6 +3,20 @@ import react from '@vitejs/plugin-react';
 
 const proxyTarget = process.env.YUANCE_WEB_PROXY_TARGET || 'http://127.0.0.1:33033';
 
+function localDevelopmentProxy() {
+  return {
+    target: proxyTarget,
+    changeOrigin: true,
+    configure(proxy) {
+      proxy.on('proxyRes', (response) => {
+        const cookies = response.headers['set-cookie'];
+        if (!cookies) return;
+        response.headers['set-cookie'] = cookies.map((cookie) => cookie.replace(/;\s*Secure(?=;|$)/giu, ''));
+      });
+    },
+  };
+}
+
 export default defineConfig({
   base: '/web/app/',
   plugins: [react()],
@@ -13,12 +27,12 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 4173,
     proxy: {
-      '/api': proxyTarget,
-      '/web/login': proxyTarget,
-      '/web/messages': proxyTarget,
-      '/web/work-items': proxyTarget,
-      '/version.json': proxyTarget,
-      '/static': proxyTarget,
+      '/api': localDevelopmentProxy(),
+      '/web/login': localDevelopmentProxy(),
+      '/web/messages': localDevelopmentProxy(),
+      '/web/work-items': localDevelopmentProxy(),
+      '/version.json': localDevelopmentProxy(),
+      '/static': localDevelopmentProxy(),
     },
   },
   preview: {

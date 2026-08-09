@@ -86,6 +86,30 @@ test('browser API transport does not retry business forbidden writes', async () 
   ]);
 });
 
+test('browser API transport rejects an API redirect resolved as the HTML login page', async () => {
+  const assigned = [];
+  const transport = createBrowserApiTransport({
+    fetchImpl: async () => new Response('<!doctype html><title>登录</title>', {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8' },
+    }),
+    location: {
+      pathname: '/web/projects',
+      search: '?status=active',
+      hash: '',
+      assign(value) { assigned.push(value); },
+    },
+    history: { replaceState() {} },
+    storage: new MapStorage(),
+  });
+
+  await assert.rejects(
+    transport.request('/api/v1/me'),
+    (error) => error instanceof ApiError && error.status === 401 && error.message === '登录已失效。',
+  );
+  assert.deepEqual(assigned, ['/web/login?return_to=%2Fweb%2Fprojects%3Fstatus%3Dactive']);
+});
+
 test('browser API transport preserves and restores an authenticated return hash', () => {
   const assigned = [];
   const replaced = [];
