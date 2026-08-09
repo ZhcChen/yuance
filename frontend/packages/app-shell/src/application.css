@@ -927,13 +927,33 @@ html[data-theme="dark"] .project-stats div {
 .project-description-section > p { margin: 0; padding: 16px 16px 0; color: var(--yc-muted-strong); line-height: 24px; }
 .project-files-section > p, .project-files-section > .attachment-list, .project-files-section > .shell-empty, .project-resources-section > form, .project-resources-section > .project-list, .project-resources-section > .shell-empty { margin-right: 16px; margin-left: 16px; }
 .project-files-section, .project-resources-section { padding-bottom: 16px; }
+.cycle-detail-overview { grid-template-columns: minmax(0, 1fr) 360px; }
+.cycle-detail-description-body { display: grid; gap: 14px; padding: 16px; }
+.cycle-detail-description-body article { display: grid; gap: 6px; }
+.cycle-detail-description-body p { margin: 0; color: var(--yc-muted-strong); line-height: 22px; }
+.cycle-progress-panel { display: grid; gap: 16px; }
+.cycle-progress-summary { display: grid; grid-template-columns: 180px minmax(0, 1fr); align-items: center; gap: 16px; }
+.cycle-progress-figure { min-height: 120px; display: grid; align-content: center; justify-items: center; gap: 4px; padding: 16px; border: 1px solid var(--yc-line); border-radius: var(--yc-card-radius); background: var(--yc-panel-soft); }
+.cycle-progress-figure strong { font-size: 38px; line-height: 1; }
+.cycle-progress-figure span, .cycle-progress-track span { color: var(--yc-muted); font-size: 13px; }
+.cycle-progress-track { display: grid; gap: 12px; }
+.cycle-progress-track progress { width: 100%; }
+.cycle-board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px; }
+.cycle-board-column { min-width: 0; display: grid; align-content: start; gap: 14px; padding: 16px; border: 1px solid var(--yc-line); border-radius: var(--yc-card-radius); background: var(--yc-panel-soft); }
+.cycle-board-column-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cycle-board-column-head > span { min-height: 30px; display: inline-flex; align-items: center; padding: 0 12px; border-radius: 999px; background: var(--yc-panel); font-size: 12px; font-weight: 800; }
+.cycle-board-items { display: grid; gap: 10px; }
+.cycle-board-item { display: grid; gap: 10px; padding: 14px; border-radius: var(--yc-card-radius); background: var(--yc-panel); }
+.cycle-board-item-title { color: var(--yc-text); font-weight: 700; line-height: 22px; text-decoration: none; }
+.cycle-board-item-meta { display: flex; flex-wrap: wrap; gap: 8px 12px; color: var(--yc-muted); font-size: 12px; }
 
 @media (max-width: 1100px) {
   .project-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cycle-board-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 1280px) {
-  .project-detail-overview { grid-template-columns: 1fr; }
+  .project-detail-overview, .cycle-detail-overview { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -957,6 +977,7 @@ html[data-theme="dark"] .project-stats div {
   .project-tabs-head .yc-content-tabs { width: 100%; }
   .project-detail-dl { grid-template-columns: 1fr; }
   .project-tab-section-head { flex-direction: column; }
+  .cycle-progress-summary { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 721px) and (max-width: 1024px) {
