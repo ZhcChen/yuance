@@ -1,6 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useReducer, useState } from "react";
 import { HostStatusShell } from "@yuance/frontend-ui";
 import { SharedApp } from "@yuance/frontend-app-shell";
+
+import {
+  createDesktopPresentationState,
+  reduceDesktopPresentationState,
+} from "./platform/presentation-state.js";
 
 const STATE_LABELS = Object.freeze({
   starting: ["正在启动", "正在恢复设备会话"],
@@ -26,11 +31,18 @@ const STATE_DESCRIPTIONS = Object.freeze({
 });
 
 export default function DesktopApp({ services }) {
-  const [authState, setAuthState] = useState(() => services.auth.getSnapshot());
-  const [networkState, setNetworkState] = useState(() => services.network.getSnapshot());
+  const [presentation, updatePresentation] = useReducer(
+    reduceDesktopPresentationState,
+    undefined,
+    () => createDesktopPresentationState({
+      authState: services.auth.getSnapshot(),
+      networkState: services.network.getSnapshot(),
+    }),
+  );
   const [commandPending, setCommandPending] = useState(false);
-  useEffect(() => services.auth.subscribe(setAuthState), [services]);
-  useEffect(() => services.network.subscribe(setNetworkState), [services]);
+  useEffect(() => services.auth.subscribe((authState) => updatePresentation({ authState })), [services]);
+  useEffect(() => services.network.subscribe((networkState) => updatePresentation({ networkState })), [services]);
+  const { authState, networkState } = presentation;
   const [title, detail] = STATE_LABELS[authState.status] ?? STATE_LABELS.fatal;
   const run = (command) => async () => {
     if (commandPending) return;
@@ -49,7 +61,7 @@ export default function DesktopApp({ services }) {
     ? { label: "退出设备", onClick: run(services.auth.logout) }
     : undefined;
 
-  if (authState.status === "authenticated" && networkState.status === "online") {
+  if (presentation.stage === "workspace") {
     return <SharedApp services={services.app} />;
   }
 

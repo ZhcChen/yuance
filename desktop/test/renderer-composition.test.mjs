@@ -240,7 +240,7 @@ function releaseAsset(status) {
 
 test("renderer composition uses shared components and contracts without Browser transports", async () => {
   const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/renderer");
-  const files = ["main.jsx", "app.jsx", "platform/api-transport.js", "platform/auth-state.js", "platform/events.js", "platform/network-state.js", "platform/router.js", "platform/files.js", "platform/unavailable.js"];
+  const files = ["main.jsx", "app.jsx", "platform/api-transport.js", "platform/auth-state.js", "platform/events.js", "platform/network-state.js", "platform/presentation-state.js", "platform/router.js", "platform/files.js", "platform/unavailable.js"];
   const source = (await Promise.all(files.map((file) => fs.readFile(path.join(sourceRoot, file), "utf8")))).join("\n");
   assert.match(source, /normalizeHostAuthState/);
   assert.match(source, /defineRouterCapabilities/);
@@ -249,5 +249,6 @@ test("renderer composition uses shared components and contracts without Browser 
   assert.match(source, /createApiClient/);
   assert.match(source, /services\.auth\.authorize/);
   assert.match(source, /services\.network\.subscribe/);
+  assert.match(source, /reduceDesktopPresentationState/);
   assert.doesNotMatch(source, /document\.cookie|EventSource|fetch\s*\(|localStorage|sessionStorage/);
 });
