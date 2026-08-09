@@ -27,12 +27,10 @@ async function ensureCurrentProject(page, projectKey) {
   const row = page.locator('.project-row', { hasText: projectKey });
   const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
   if (await currentButton.count()) {
-    await expect(page.getByLabel('顶部状态摘要').getByText(new RegExp(`${projectKey} ·`))).toBeVisible();
     return;
   }
   await row.getByRole('button', { name: '设为当前项目' }).click();
   await expect(row.getByRole('button', { name: '当前项目', exact: true })).toBeVisible();
-  await expect(page.getByLabel('顶部状态摘要').getByText(new RegExp(`${projectKey} ·`))).toBeVisible();
 }
 
 function workItemDetailFixture(overrides = {}) {
@@ -148,7 +146,7 @@ test('browser shell supports root navigation and logout on /web owner route', as
 
   await expect(page).toHaveURL(/\/web$/);
   await expect(page).toHaveTitle('元策浏览器工作台 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '元策浏览器工作台' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '项目推进' })).toBeVisible();
 
   await page.getByRole('button', { name: '打开消息通知' }).click();
   await page.getByRole('dialog', { name: '最近消息' }).getByRole('link', { name: '进入消息中心' }).click();
@@ -584,7 +582,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.locator('.work-item-detail-panel', { hasText: '描述' }).locator('.yc-rich-text-content')).toHaveText('通过 Web app shell 保存的描述。');
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
   await expect(page.getByText('Web 保存后刷新评论')).toBeVisible();
-  await expect(page.locator('.shell-stats')).toContainText(/任务\s*7/);
+  await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('7');
 
   await page.route('**/api/v1/work-items/YCE-TASK-2/handoff', async (route) => {
     refreshedDetail = {
@@ -622,7 +620,7 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已推进并指派。');
   await expect(page.getByText('Web handoff 流转记录')).toBeVisible();
   await expect(page.locator('.work-item-detail-meta')).toContainText('待确认');
-  await expect(page.locator('.shell-stats')).toContainText(/任务\s*8/);
+  await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('8');
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
 });
 
@@ -710,7 +708,7 @@ test('work item edit success survives comments or topbar refresh failures', asyn
   await expect(page.getByRole('heading', { level: 2, name: `YCE-TASK-2 · ${editedDetail.title}` })).toBeVisible();
   await expect(page.locator('.work-item-detail-panel', { hasText: '描述' }).locator('.yc-rich-text-content')).toHaveText(editedDetail.description);
   await expect(page.getByRole('status')).toHaveText('YCE-TASK-2 已保存。');
-  await expect(page.locator('.shell-stats')).toContainText(/任务\s*9/);
+  await expect(page.getByRole('navigation', { name: '应用导航' }).getByRole('link', { name: /任务/ })).toContainText('9');
   await expect(page.getByRole('alert')).toHaveText('工作项已保存，但详情、评论或顶部状态刷新失败，请手动刷新。');
 });
 
@@ -3027,7 +3025,7 @@ test('project list can switch current project inside the app shell', async ({ pa
   await expect(page).toHaveURL(/\/web\/app\/projects/);
   await expect(page.getByRole('heading', { level: 1, name: '项目列表' })).toBeVisible();
   await page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '设为当前项目' }).click();
-  await expect(page.getByLabel('顶部状态摘要').getByText('OPS · 交付运维台')).toBeVisible();
+  await expect(page.getByRole('button', { name: '切换当前项目' })).toContainText('交付运维台');
   await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
 });
 
@@ -3881,7 +3879,7 @@ test('project switch serializes repeated input and refreshes the current context
 
   releaseSwitch();
   await expect(opsRow.getByRole('button', { name: '当前项目' })).toBeVisible();
-  await expect(page.getByLabel('顶部状态摘要').getByText('OPS · 交付运维台')).toBeVisible();
+  await expect(page.getByRole('button', { name: '切换当前项目' })).toContainText('交付运维台');
   expect(patchCount).toBe(1);
 });
 
@@ -3894,7 +3892,7 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await expect(projectMenu.getByRole('button', { name: /交付运维台/ })).toBeVisible();
   await page.keyboard.press('Escape');
 
-  await page.getByRole('button', { name: /系统管理/ }).click();
+  await page.getByRole('button', { name: '系统管理', exact: true }).click();
   await expect(page.locator('.global-nav-system-menu').getByRole('link', { name: '用户管理' })).toBeVisible();
   await page.keyboard.press('Escape');
 
@@ -3902,6 +3900,12 @@ test('shared global shell remains usable at canonical responsive widths', async 
   await expect(page.getByRole('dialog', { name: '最近消息' })).toBeVisible();
   await expect(page.getByRole('button', { name: '一键已读' })).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(page.locator('.shell-header')).toHaveCount(0);
+  await expect(page.getByLabel('顶部状态摘要')).toHaveCount(0);
+  await expect(page.locator('.metric-grid > .metric')).toHaveCount(4);
+  await expect(page.locator('.compact-table')).toBeVisible();
+  await expect(page.locator('.workspace-side')).toContainText('待我处理讨论');
+  await expect(page.locator('.workspace-side')).toContainText('最近动态');
 
   for (const width of [390, 768, 1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -3918,10 +3922,13 @@ test('shared global shell remains usable at canonical responsive widths', async 
       const tools = document.querySelector('.global-nav-tools')?.getBoundingClientRect();
       const search = document.querySelector('.global-nav-search')?.getBoundingClientRect();
       const project = document.querySelector('.global-nav-project')?.getBoundingClientRect();
+      const workspaceColumns = getComputedStyle(document.querySelector('.workspace-grid')).gridTemplateColumns;
+      const metricColumns = getComputedStyle(document.querySelector('.metric-grid')).gridTemplateColumns;
       const toolRects = [...document.querySelectorAll('.global-nav-tools > *')].map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
       return {
         navHeight: nav?.height || 0, navWidth: nav?.width || 0, searchWidth: search?.width || 0, projectWidth: project?.width || 0,
         brandRight: brand?.right || 0, linksLeft: links?.left || 0, linksRight: links?.right || 0, toolsLeft: tools?.left || 0,
+        workspaceColumns, metricColumns,
         toolRects: toolRects.map((rect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
       };
     });
@@ -3936,6 +3943,8 @@ test('shared global shell remains usable at canonical responsive widths', async 
         expect(geometry.toolRects[index - 1].right).toBeLessThanOrEqual(geometry.toolRects[index].left);
       }
     }
+    expect(geometry.workspaceColumns.trim().split(/\s+/u)).toHaveLength(width <= 1280 ? 1 : 2);
+    expect(geometry.metricColumns.trim().split(/\s+/u)).toHaveLength(width <= 960 ? 1 : 4);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`global-shell-${width}.png`), fullPage: true });
   }

@@ -50,6 +50,7 @@ const apiClient = createApiClient({
 export const getCurrentUser = /** @type {() => Promise<AuthUser>} */ (apiClient.getCurrentUser);
 
 export const getTopbarStatus = /** @type {() => Promise<TopbarStatus>} */ (apiClient.getTopbarStatus);
+export const getDashboard = apiClient.getDashboard;
 export const getSystemDashboard = apiClient.getSystemDashboard;
 export const getSystemPermissions = apiClient.getSystemPermissions;
 export const getSystemDatabaseStats = apiClient.getSystemDatabaseStats;
@@ -256,6 +257,7 @@ export const webApi = {
   getProjectResources,
   getProjects,
   getTopbarStatus,
+  getDashboard,
   getSystemDashboard,
   getSystemPermissions,
   getSystemDatabaseStats,

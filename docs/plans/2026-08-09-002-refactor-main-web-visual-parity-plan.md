@@ -97,6 +97,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/primitives.jsx` 及 package/Web E2E tests。
 - 移除所有 route 强制共享的 `shell-header` 与三摘要卡，改由页面模型选择基线 `page-hero`、detail hero、compact heading 或无 hero。
 - 恢复 Dashboard 的 4 指标、项目 compact table、待处理讨论和最近动态双栏。
+- **已完成：** 删除旧 `shell-header` 和三摘要卡；非首页使用无描述区的 compact `page-heading` 保留 route-ready、键盘焦点与图标刷新合同。新增 `/api/v1/dashboard` 聚合只读合同，Dashboard 恢复 4 指标、项目 compact table、待处理讨论与最近动态，并按 1280/960 断点降级。Browser 与 Desktop 均继续渲染同一 `SharedApp`。
 - **Exit：** Dashboard 四视口达到基线，其他页面不再出现未登记的通用摘要区。
 
 ### V3：个人、消息与搜索
@@ -193,7 +194,7 @@ baseline:
 - [x] 完成 30 页静态覆盖扫描及 21 页双侧四视口运行采集。
 - [x] V0：将扫描结果固化为可执行 visual manifest 与 fixture。
 - [x] V1：全局 token、画布、导航与基础原语。
-- [ ] V2：页面骨架与工作台。
+- [x] V2：页面骨架与工作台。
 - [ ] V3：个人、消息与搜索。
 - [ ] V4：项目列表与项目详情。
 - [ ] V5：周期、资源与个人分析。

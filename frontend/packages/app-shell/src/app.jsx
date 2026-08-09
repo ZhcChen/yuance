@@ -393,6 +393,16 @@ function projectStatusLabel(status) {
   }
 }
 
+function dashboardProjectStatus(status) {
+  const labels = { not_started: '待启动', in_progress: '进行中', acceptance: '验收中', completed: '已完成', on_hold: '已暂停', cancelled: '已取消', archived: '已归档' };
+  const tones = { not_started: 'info', in_progress: 'ok', acceptance: 'warning', completed: 'ok', on_hold: 'warning', cancelled: 'danger', archived: 'neutral' };
+  return { label: labels[status] || status, tone: tones[status] || 'neutral' };
+}
+
+function dashboardTimestamp(value) {
+  return String(value || '').replace('T', ' ').replace(/(?:\.\d+)?Z$/u, '');
+}
+
 function projectMemberRoleLabel(role) {
   return { owner: '项目负责人', maintainer: '项目管理员', member: '项目成员', viewer: '只读成员' }[role] || role;
 }
@@ -789,7 +799,6 @@ export function SharedApp({ services }) {
   const [loading, setLoading] = useState(true);
   const [shellReady, setShellReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [releaseVersion, setReleaseVersion] = useState('');
   const [user, setUser] = useState(/** @type {AppUser | null} */ (null));
   const [topbar, setTopbar] = useState(/** @type {AppTopbarStatus | null} */ (null));
   const [homeFeed, setHomeFeed] = useState(/** @type {AppNotificationFeed | null} */ (null));
@@ -869,6 +878,7 @@ export function SharedApp({ services }) {
   const [createdRawToken, setCreatedRawToken] = useState('');
   const [accountConfirmation, setAccountConfirmation] = useState(/** @type {{ kind: 'token' | 'device', id: string | number, label: string } | null} */ (null));
   const [searchPage, setSearchPage] = useState(/** @type {Awaited<ReturnType<AppApiService['search']>> | null} */ (null));
+  const [dashboard, setDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getDashboard']>> | null} */ (null));
   const [systemDashboard, setSystemDashboard] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemDashboard']>> | null} */ (null));
   const [systemPermissions, setSystemPermissions] = useState(/** @type {Awaited<ReturnType<AppApiService['getSystemPermissions']>>} */ ([]));
   const [systemDatabaseStats, setSystemDatabaseStats] = useState(/** @type {{ snapshot: any, source: 'cache' | 'fresh' } | null} */ (null));
@@ -1300,9 +1310,10 @@ export function SharedApp({ services }) {
         }
         if (requestRef.current !== requestId) return;
       }
-      const [nextUser, nextTopbar, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
+      const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
+        targetRoute.id === 'home' ? api.getDashboard() : Promise.resolve(null),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
         targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'project-personal-analysis' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
@@ -1439,6 +1450,7 @@ export function SharedApp({ services }) {
       }
       setUser(nextUser);
       setTopbar(nextTopbar);
+      if (targetRoute.id === 'home') setDashboard(nextDashboard);
       if (targetRoute.id === 'profile' && nextProfile) {
         setProfile(nextProfile);
         setProfileForm({ displayName: nextProfile.display_name, email: nextProfile.email, mobile: nextProfile.mobile });
@@ -3078,7 +3090,6 @@ export function SharedApp({ services }) {
   useEffect(() => {
     const coordinator = createNotificationEventCoordinator({
       refresh: () => loadRouteState(routeRef.current, 'refresh'),
-      onReleaseVersion: (value) => setReleaseVersion(value),
       onNavigate: (path) => router.assign(path),
     });
     const close = events.openTopbarEvents({
@@ -4703,35 +4714,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      <section className="shell-header">
-        <div>
-          <p className="shell-eyebrow">{routeEyebrow(route)}</p>
-          <h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>
-          <p className="shell-subtitle">{routeDescription(route)}</p>
-        </div>
-        <div className="shell-actions">
-          {route.id === 'messages' || route.id === 'search' || route.id === 'profile' || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' ? (
-            <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
-              返回工作台
-            </a>
-          ) : route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' ? (
-            <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
-              返回工作台
-            </a>
-          ) : isWorkItemListRouteId(route.id) || route.id === 'work-item-detail' ? (
-            <a className="shell-link" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回浏览器工作台。')}>
-              返回工作台
-            </a>
-          ) : (
-            <a className="shell-link" href={messagesPath} onClick={(event) => handleNavigate(event, messagesPath, '已打开消息中心。')}>
-              打开消息中心
-            </a>
-          )}
-          {route.id !== 'system-database-stats' ? <Button variant="secondary" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
-            {refreshing ? '刷新中…' : '刷新'}
-          </Button> : null}
-        </div>
-      </section>
+      {route.id !== 'home' && route.id !== 'unsupported' ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -4747,33 +4730,6 @@ export function SharedApp({ services }) {
         </section>
       ) : (
         <>
-          <section className="shell-grid" aria-label="顶部状态摘要">
-            <article className="shell-card">
-              <h2>当前用户</h2>
-              <p className="shell-primary">{user?.display_name || user?.username || '未知用户'}</p>
-              <p className="shell-muted">{user?.is_super_admin ? '超级管理员' : '普通成员'}</p>
-            </article>
-            <article className="shell-card">
-              <h2>当前项目</h2>
-              <p className="shell-primary">{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
-              <p className="shell-muted">待处理 {currentProject?.pending_count || 0}</p>
-              <div className="shell-actions-inline shell-compact-links">
-                <a className="shell-link" href={requirementsPath} onClick={(event) => handleNavigate(event, requirementsPath, '已打开需求列表。')}>需求</a>
-                <a className="shell-link" href={tasksPath} onClick={(event) => handleNavigate(event, tasksPath, '已打开任务列表。')}>任务</a>
-                <a className="shell-link" href={bugsPath} onClick={(event) => handleNavigate(event, bugsPath, '已打开缺陷列表。')}>缺陷</a>
-              </div>
-            </article>
-            <article className="shell-card shell-stats">
-              <h2>我的待处理</h2>
-              <dl>
-                <div><dt>需求</dt><dd>{topbar?.requirements_count || 0}</dd></div>
-                <div><dt>任务</dt><dd>{topbar?.tasks_count || 0}</dd></div>
-                <div><dt>缺陷</dt><dd>{topbar?.bugs_count || 0}</dd></div>
-                <div><dt>消息</dt><dd>{topbar?.notifications_count || 0}</dd></div>
-              </dl>
-            </article>
-          </section>
-
           {route.id === 'system-permissions' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-permissions-title">
               <div className="shell-panel-header">
@@ -5909,61 +5865,46 @@ export function SharedApp({ services }) {
                 <p className="shell-empty">工作项详情暂不可用。</p>
               )}
             </section>
-          ) : (
-            <section className="shell-columns">
-              <article className="shell-card shell-panel-wide" aria-labelledby="project-badges-title">
-                <div className="shell-panel-header">
-                  <h2 id="project-badges-title">项目角标</h2>
-                  <span className="shell-meta">release {releaseVersion || 'unknown'}</span>
-                </div>
-                {topbar?.project_badges?.length ? (
-                  <ul className="badge-list">
-                    {topbar.project_badges.map((badge) => (
-                      <li key={badge.project_key} className="badge-row">
-                        <span>{badge.project_key}</span>
-                        <strong>{badge.pending_count}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="shell-empty">当前没有项目级待处理角标。</p>
-                )}
-              </article>
-
-              <article className="shell-card shell-panel-wide" aria-labelledby="notification-title">
-                <div className="shell-panel-header">
-                  <h2 id="notification-title">最近消息</h2>
-                  <div className="shell-actions-inline">
-                    <span className="shell-meta">未读 {unreadCount}</span>
-                    <Button variant="secondary" disabled={messageReadAllSubmitting || unreadCount === 0} onClick={handleMarkAllRead}>
-                      {messageReadAllSubmitting ? '处理中…' : '全部已读'}
-                    </Button>
+          ) : route.id === 'home' ? (
+            <section className="workspace-grid">
+              <div className="workspace-main">
+                <section className="metric-grid" aria-label="项目统计">
+                  {[
+                    ['进行中项目', dashboard?.metrics.active_projects || 0, 'info', 'projects'],
+                    ['指派需求', dashboard?.metrics.requirements || 0, 'info', 'doc'],
+                    ['指派任务', dashboard?.metrics.tasks || 0, 'warning', 'tasks'],
+                    ['指派 Bug', dashboard?.metrics.bugs || 0, 'danger', 'bug'],
+                  ].map(([label, value, tone, icon]) => <article className={`metric metric-${tone}`} key={label}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}
+                </section>
+                <section className="panel">
+                  <div className="panel-head">
+                    <div><h1 ref={headingRef} tabIndex={-1}>项目推进</h1><p>按最近更新排序，展示你有权限查看的全部项目待处理 / 进行中 / 待确认情况。</p></div>
+                    {dashboard?.can_manage_projects ? <div className="toolbar-actions"><Button onClick={() => setProjectCreateOpen(true)}>新建项目</Button></div> : null}
                   </div>
-                </div>
-                {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
-                {previewItems.length ? (
-                  <ul className="notification-list">
-                    {previewItems.map((item) => (
-                      <li key={item.id} className="notification-row">
-                        <div>
-                          <div className="notification-heading">
-                            <strong>{item.title}</strong>
-                            {!item.read ? <Badge tone="info">未读</Badge> : null}
-                          </div>
-                          <p>{item.body}</p>
-                          <p className="shell-muted">{item.actor} · {formatTimestamp(item.created_at)}</p>
-                        </div>
-                        <Button variant="secondary" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
-                          {messageOpeningId === item.id ? '打开中…' : '打开'}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="shell-empty">暂无最近消息。</p>
-                )}
-              </article>
+                  <div className="table-wrap">
+                    <table className="compact-table"><thead><tr><th>编号</th><th>项目</th><th>项目负责人</th><th>工作项</th><th>我的待处理</th><th>状态</th><th>更新</th><th className="table-actions">操作</th></tr></thead>
+                      <tbody>{dashboard?.projects.length ? dashboard.projects.map((project) => {
+                        const detailPath = buildProjectDetailPath({ owner: route.owner, projectKey: project.key });
+                        const analysisPath = buildProjectPersonalAnalysisPath({ owner: route.owner, projectKey: project.key });
+                        const requirementPath = buildWorkItemListPath({ owner: route.owner, itemType: 'requirement', projectKey: project.key, status: 'pending', assigneeUsername: user?.username || '' });
+                        const taskPath = buildWorkItemListPath({ owner: route.owner, itemType: 'task', projectKey: project.key, status: 'pending', assigneeUsername: user?.username || '' });
+                        const bugPath = buildWorkItemListPath({ owner: route.owner, itemType: 'bug', projectKey: project.key, status: 'pending', assigneeUsername: user?.username || '' });
+                        const status = dashboardProjectStatus(project.status);
+                        return <tr key={project.key}><td><code>{project.key}</code></td><td><a href={detailPath} onClick={(event) => handleNavigate(event, detailPath, `已打开项目 ${project.name}。`)}>{project.name}</a></td><td>{project.owner}</td><td><div className="work-count-cell"><strong>{project.active_work_item_count}</strong><span>待处理 / 进行中 / 待确认 · 共 {project.work_item_count}</span></div></td><td><div className="pending-shortcuts" aria-label={`${project.name}个人待处理`}><a href={requirementPath} onClick={(event) => handleNavigate(event, requirementPath, '已打开个人待处理需求。')}>需求 <strong>{project.pending_requirements}</strong></a><a href={taskPath} onClick={(event) => handleNavigate(event, taskPath, '已打开个人待处理任务。')}>任务 <strong>{project.pending_tasks}</strong></a><a href={bugPath} onClick={(event) => handleNavigate(event, bugPath, '已打开个人待处理 Bug。')}>Bug <strong>{project.pending_bugs}</strong></a></div></td><td><span className={`dashboard-status dashboard-status-${status.tone}`}>{status.label}</span></td><td>{dashboardTimestamp(project.updated_at)}</td><td className="table-actions"><a className="yc-button yc-button-secondary dashboard-view-button" href={analysisPath} onClick={(event) => handleNavigate(event, analysisPath, `已打开 ${project.name} 个人分析。`)}>查看</a></td></tr>;
+                      }) : <tr><td colSpan={8} className="dashboard-table-empty">暂无可查看的项目。</td></tr>}</tbody>
+                    </table>
+                  </div>
+                </section>
+              </div>
+              <aside className="workspace-side" aria-label="最近动态">
+                <section className="panel inspector-panel"><div className="panel-head compact"><div><h2>待我处理讨论</h2><p>优先查看被提及和被回复的最新讨论，当前 {dashboard?.pending_discussion_count || 0} 条。</p></div><a className="yc-button yc-button-secondary dashboard-view-button" href={messagesPath} onClick={(event) => handleNavigate(event, messagesPath, '已打开消息中心。')}>消息中心</a></div>
+                  {dashboard?.pending_discussions.length ? <div className="discussion-reminder-list" aria-label="待我处理讨论">{dashboard.pending_discussions.map((item) => <button className="discussion-reminder-row" type="button" key={item.id} disabled={messageOpeningId !== null} onClick={() => void handleOpenNotification(item)}><span className="discussion-reminder-kind">{notificationKindLabel(item.kind)}</span><strong>{item.title}</strong><span>{item.body}</span><small>{item.actor} · {formatTimestamp(item.created_at)}</small></button>)}</div> : <div className="empty-state message-empty"><strong>暂无待处理讨论</strong><span>新的提及和回复会显示在这里。</span></div>}
+                </section>
+                <section className="panel inspector-panel"><div className="panel-head compact"><h2>最近动态</h2></div><ol className="activity-list">{dashboard?.activities.length ? dashboard.activities.map((activity) => <li key={activity.id}><span className="activity-dot" aria-hidden="true" /><strong>{activity.summary}</strong><span>{activity.project_key} · {activity.actor} · {dashboardTimestamp(activity.created_at)}</span></li>) : <li><strong>暂无最近动态</strong><span>项目活动会显示在这里。</span></li>}</ol></section>
+              </aside>
             </section>
+          ) : (
+            <section className="shell-card shell-panel-wide"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><p className="shell-muted">{routeDescription(route)}</p></section>
           )}
           <Modal open={Boolean(workItemLifecycleAction)} title={workItemLifecycleAction === 'close' ? '关闭工作项' : workItemLifecycleAction === 'reopen' ? '重新打开工作项' : '恢复工作项'} onClose={() => { if (!workItemLifecycleSubmitting) setWorkItemLifecycleAction(null); }} footer={<><Button variant="secondary" disabled={workItemLifecycleSubmitting} onClick={() => setWorkItemLifecycleAction(null)}>取消</Button><Button variant={workItemLifecycleAction === 'close' ? 'danger' : 'primary'} loading={workItemLifecycleSubmitting} onClick={() => void confirmWorkItemLifecycleAction()}>确认</Button></>}><p>确认{workItemLifecycleAction === 'close' ? '关闭' : workItemLifecycleAction === 'reopen' ? '重新打开' : '恢复'}“{activeWorkItemDetail?.key} · {activeWorkItemDetail?.title}”？</p></Modal>
           <Modal open={projectResourceModalOpen} title={projectResourceForm.id ? '编辑项目资料' : '新建项目资料'} onClose={closeProjectResourceForm} footer={<><Button variant="secondary" disabled={projectResourceSubmitting} onClick={closeProjectResourceForm}>{projectResourceCreateCheckpoint ? '转到资料详情' : '取消'}</Button><Button loading={projectResourceSubmitting} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-resource-form'))?.requestSubmit()}>保存</Button></>}>
