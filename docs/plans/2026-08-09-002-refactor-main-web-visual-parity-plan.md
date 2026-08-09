@@ -156,6 +156,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、system API client tests、`api/src/web/router.rs` 的文档边界、Web E2E 与 Rust authorization tests。
 - 恢复 storage、OpenAPI、releases、database、audit；System API docs 恢复为独立文档边界，不套业务摘要壳。
 - 高风险操作的确认、脱敏、一次性密钥和审计逻辑保持不变。
+- **已完成切片：** database stats 与 audit 恢复单 panel、自带页面标题、紧凑工具栏/筛选栏、统计表和底部分页布局；审计每页数量移入 pager，正式 route query、缓存刷新失败保留和只读证据语义不变。四视口业务画布无横向溢出。剩余 storage、OpenAPI、releases 和 System API docs。
 - **Exit：** 系统运维页面全部达到基线；普通用户不可见且直接访问仍被拒绝。
 
 ### V10：边界页、双宿主响应式回归与收口

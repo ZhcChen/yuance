@@ -148,6 +148,18 @@ button:disabled {
 @media (max-width: 1100px) { .role-workbench { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .permission-actions { grid-template-columns: 1fr; padding-left: 0; } }
 
+.system-ops-panel { width: 100%; overflow: hidden; padding: 0; }
+.system-ops-panel-head { padding: 16px; margin: 0; }
+.system-ops-panel-head h1 { margin: 0 0 4px; font-size: 20px; line-height: 28px; }
+.database-stats-toolbar { display: flex; justify-content: space-between; gap: 16px; padding: 14px 16px; border-bottom: 1px solid var(--yc-line); }
+.database-stats-summary { display: grid; gap: 4px; }
+.database-stats-panel > .yc-table-wrap, .audit-panel > .yc-table-wrap { border-right: 0; border-left: 0; border-radius: 0; }
+.audit-filter-bar { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; margin: 0; padding: 14px 16px; border-top: 1px solid var(--yc-line); }
+.system-ops-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; }
+
+@media (max-width: 1100px) { .audit-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .audit-filter-bar { grid-template-columns: 1fr; } }
+
 .shell-live-region {
   position: absolute;
   width: 1px;

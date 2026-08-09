@@ -2447,6 +2447,25 @@ test('shared system audit preserves filters pagination and read-only evidence', 
   expect(requests.some(({ search }) => search === '?actor=Alice&action=auth.login&target_type=user&target_id=7&page=2&per_page=20')).toBe(true);
 });
 
+test('database stats and audit preserve the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/system/database-stats');
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    for (const entry of [
+      { path: '/web/system/database-stats', selector: '.database-stats-panel' },
+      { path: '/web/system/audit', selector: '.audit-panel' },
+    ]) {
+      await page.goto(entry.path);
+      const geometry = await page.locator(entry.selector).evaluate((element) => {
+        const main = element.closest('.main');
+        return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, panelRight: element.getBoundingClientRect().right, mainRight: main.getBoundingClientRect().right };
+      });
+      expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+      expect(geometry.panelRight).toBeLessThanOrEqual(geometry.mainRight + 1);
+    }
+  }
+});
+
 test('shared system API docs render bounded endpoint navigation without remote Scalar', async ({ page }) => {
   const methods = [];
   const document = {

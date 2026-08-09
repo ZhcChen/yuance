@@ -4719,7 +4719,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -4748,21 +4748,21 @@ export function SharedApp({ services }) {
               </section>
             </section>
           ) : route.id === 'system-database-stats' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="system-database-stats-title" aria-busy={systemDatabaseStatsRefreshing}>
-              <div className="shell-panel-header">
+            <section className="shell-card system-ops-panel database-stats-panel" aria-labelledby="system-database-stats-title" aria-busy={systemDatabaseStatsRefreshing}>
+              <div className="shell-panel-header system-ops-panel-head">
                 <div>
-                  <h2 id="system-database-stats-title">数据库统计</h2>
-                  <p className="shell-muted">进入页面只展示当前宿主缓存，手动刷新后才读取最新快照。</p>
+                  <h1 id="system-database-stats-title" ref={headingRef} tabIndex={-1}>数据库统计</h1>
+                  <p className="shell-muted">进入页面时仅展示浏览器缓存；点击刷新后才会重新读取最新表清单、备注与数据量。</p>
                 </div>
                 <Button loading={systemDatabaseStatsRefreshing} onClick={() => void refreshSystemDatabaseStats()}>刷新</Button>
               </div>
               {systemDatabaseStatsError ? <Feedback tone="danger" title="刷新失败">{systemDatabaseStatsError}{systemDatabaseStats ? ' 当前继续展示上一次缓存。' : ''}</Feedback> : null}
               {systemDatabaseStats ? (
                 <>
-                  <div className="shell-summary-line">
+                  <div className="database-stats-toolbar"><div className="database-stats-summary">
                     <strong>共 {systemDatabaseTables.length.toLocaleString('zh-CN')} 张表，合计 {systemDatabaseTotalRows.toLocaleString('zh-CN')} 行数据</strong>
                     <span className="shell-muted">{systemDatabaseStats.source === 'cache' ? '当前展示宿主缓存' : '已读取最新数据库快照'} · 上次刷新 {formatTimestamp(systemDatabaseStats.snapshot.refreshed_at)}</span>
-                  </div>
+                  </div></div>
                   <DataTable caption="数据库统计大表" rows={systemDatabaseTables} rowKey={(table) => table.table_name} emptyText="数据库中暂未发现可展示的业务表。" columns={[
                     { key: 'name', label: '表名', render: (table) => <strong>{table.table_name}</strong> },
                     { key: 'remark', label: '备注', render: (table) => table.remark || '业务表（备注待补充）' },
@@ -4776,20 +4776,19 @@ export function SharedApp({ services }) {
               )}
             </section>
           ) : route.id === 'system-audit' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="system-audit-title">
-              <div className="shell-panel-header">
-                <div><h2 id="system-audit-title">审计日志</h2><p className="shell-muted">记录登录、权限、用户、角色和系统配置等关键操作。</p></div>
+            <section className="shell-card system-ops-panel audit-panel" aria-labelledby="system-audit-title">
+              <div className="shell-panel-header system-ops-panel-head">
+                <div><h1 id="system-audit-title" ref={headingRef} tabIndex={-1}>审计日志</h1><p className="shell-muted">记录登录、首次初始化、用户角色维护、对象存储配置等关键操作，支持按操作人、动作和对象过滤。</p></div>
               </div>
-              <form className="shell-filters" aria-label="审计日志筛选" onSubmit={(event) => {
+              <form className="shell-filters audit-filter-bar" aria-label="审计日志筛选" onSubmit={(event) => {
                 event.preventDefault();
                 const values = new globalThis.FormData(event.currentTarget);
-                navigate(buildSystemAuditPath({ owner: route.owner, actor: String(values.get('actor') || ''), action: String(values.get('action') || ''), targetType: String(values.get('target_type') || ''), targetId: String(values.get('target_id') || ''), perPage: Number(values.get('per_page') || 10) }), '正在筛选审计日志。');
+                navigate(buildSystemAuditPath({ owner: route.owner, actor: String(values.get('actor') || ''), action: String(values.get('action') || ''), targetType: String(values.get('target_type') || ''), targetId: String(values.get('target_id') || ''), perPage: route.perPage }), '正在筛选审计日志。');
               }}>
                 <Field id="system-audit-actor" label="操作人"><input name="actor" defaultValue={route.actor} placeholder="用户名或显示名称" /></Field>
                 <Field id="system-audit-action" label="动作"><input name="action" defaultValue={route.action} placeholder="如 auth.login" /></Field>
                 <Field id="system-audit-target-type" label="对象类型"><input name="target_type" defaultValue={route.targetType} placeholder="如 user / project" /></Field>
                 <Field id="system-audit-target-id" label="对象 ID"><input name="target_id" defaultValue={route.targetId} placeholder="对象编号或主键" /></Field>
-                <Field id="system-audit-per-page" label="每页数量"><select name="per_page" defaultValue={String(route.perPage)}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></Field>
                 <div className="shell-actions-inline"><Button type="submit">筛选</Button><Button variant="secondary" onClick={() => navigate(buildSystemAuditPath({ owner: route.owner }), '已重置审计筛选。')}>重置</Button></div>
               </form>
               <DataTable caption="审计日志列表" rows={systemAuditPage?.items || []} rowKey={(log) => log.id} emptyText="暂无审计记录。" columns={[
@@ -4800,7 +4799,7 @@ export function SharedApp({ services }) {
                 { key: 'source', label: '来源', render: (log) => <>{log.ip || '-'}<br /><span className="shell-muted">{log.user_agent || '-'}</span></> },
                 { key: 'metadata', label: '元数据', render: (log) => <code>{log.metadata || '{}'}</code> },
               ]} />
-              {systemAuditPage ? <Pagination page={systemAuditPage.pagination.page} totalPages={systemAuditPage.pagination.total_pages} totalItems={systemAuditPage.pagination.total_items} onPageChange={(page) => navigate(buildSystemAuditPath({ owner: route.owner, actor: route.actor, action: route.action, targetType: route.targetType, targetId: route.targetId, page, perPage: route.perPage }), `正在打开第 ${page} 页审计日志。`)} /> : null}
+              {systemAuditPage ? <div className="system-ops-pager"><Pagination page={systemAuditPage.pagination.page} totalPages={systemAuditPage.pagination.total_pages} totalItems={systemAuditPage.pagination.total_items} onPageChange={(page) => navigate(buildSystemAuditPath({ owner: route.owner, actor: route.actor, action: route.action, targetType: route.targetType, targetId: route.targetId, page, perPage: route.perPage }), `正在打开第 ${page} 页审计日志。`)} /><label className="shell-page-size">每页<select value={route.perPage} onChange={(event) => navigate(buildSystemAuditPath({ owner: route.owner, actor: route.actor, action: route.action, targetType: route.targetType, targetId: route.targetId, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
             </section>
           ) : route.id === 'system-api-docs' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="system-api-docs-title">
