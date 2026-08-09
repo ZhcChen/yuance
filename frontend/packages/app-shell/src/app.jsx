@@ -1313,7 +1313,7 @@ export function SharedApp({ services }) {
       const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
-        targetRoute.id === 'home' || targetRoute.id === 'profile' ? api.getDashboard() : Promise.resolve(null),
+        ['home', 'profile', 'projects'].includes(targetRoute.id) ? api.getDashboard() : Promise.resolve(null),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
         targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'project-personal-analysis' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
@@ -1464,6 +1464,7 @@ export function SharedApp({ services }) {
         setHomeFeed(nextFeed);
       }
       if (targetRoute.id === 'projects') {
+        setDashboard(nextDashboard);
         setProjectPage(nextProjects);
       }
       if (targetRoute.id === 'project-detail') {
@@ -4298,19 +4299,6 @@ export function SharedApp({ services }) {
     );
   }
 
-  /** @param {React.ChangeEvent<HTMLSelectElement>} event */
-  function changeProjectStatus(event) {
-    navigate(
-      buildProjectsPath({
-        owner: route.id === 'projects' ? route.owner : 'app',
-        status: event.target.value,
-        page: 1,
-        perPage: route.id === 'projects' ? route.perPage : 10,
-      }),
-      '已更新项目状态筛选。',
-    );
-  }
-
   /** @param {number} nextPage */
   function changeProjectPage(nextPage) {
     if (route.id !== 'projects') {
@@ -4715,7 +4703,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5239,29 +5227,9 @@ export function SharedApp({ services }) {
               </Modal>
             </section>
           ) : route.id === 'projects' ? (
-            <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-center-title">
-              <div className="shell-panel-header project-center-header">
-                <div>
-                  <h2 id="project-center-title">项目列表</h2>
-                  <p className="shell-muted">当前项目：{currentProject ? `${currentProject.key} · ${currentProject.name}` : '未选择项目'}</p>
-                </div>
-                <div className="shell-actions-inline">
-                  <Button variant="secondary" onClick={() => { setProjectCreateError(''); setProjectCreateOpen(true); }}>新建项目</Button>
-                  <label className="page-size-control">
-                    <span>状态</span>
-                    <select value={projectRoute?.status || ''} onChange={changeProjectStatus}>
-                      <option value="">全部</option>
-                      <option value="not_started">未开始</option>
-                      <option value="in_progress">进行中</option>
-                      <option value="acceptance">验收中</option>
-                      <option value="completed">已完成</option>
-                      <option value="on_hold">已搁置</option>
-                      <option value="cancelled">已取消</option>
-                      <option value="archived">已归档</option>
-                    </select>
-                  </label>
-                </div>
-              </div>
+            <section className="page-stack projects-page" aria-labelledby="project-center-title">
+              <section className="page-hero"><div><p className="shell-eyebrow">项目中心</p><h1 id="project-center-title" ref={headingRef} tabIndex={-1}>项目</h1><p>以项目组织需求、任务、Bug、成员、动态和文件协作。</p></div><div className="toolbar-actions"><Button onClick={() => { setProjectCreateError(''); setProjectCreateOpen(true); }}>新建项目</Button></div></section>
+              <section className="metric-grid project-list-metrics" aria-label="项目概览"><article className="metric metric-info"><span>全部项目</span><strong>{dashboard?.projects?.length || 0}</strong></article><article className="metric metric-success"><span>进行中</span><strong>{dashboard?.projects?.filter((project) => project.status === 'in_progress').length || 0}</strong></article><article className="metric metric-warning"><span>待处理 / 进行中 / 待确认</span><strong>{dashboard?.projects?.reduce((total, project) => total + project.active_work_item_count, 0) || 0}</strong></article></section>
 
               <Modal open={projectCreateOpen} title="新建项目" onClose={() => { if (!projectCreateSubmitting) setProjectCreateOpen(false); }} footer={<><Button variant="secondary" disabled={projectCreateSubmitting} onClick={() => setProjectCreateOpen(false)}>取消</Button><Button loading={projectCreateSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('project-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
                 <form id="project-create-form" onSubmit={submitProjectCreate}>
@@ -5274,45 +5242,25 @@ export function SharedApp({ services }) {
                 </form>
               </Modal>
 
+              <section className="panel project-list-panel"><div className="panel-head"><div><h2>项目列表</h2><p>按最近更新排序，创建后会自动把当前用户加入为项目负责人。</p></div><ContentTabs ariaLabel="项目状态筛选">{[['', '全部'], ['not_started', '待启动'], ['in_progress', '进行中'], ['acceptance', '验收中'], ['completed', '已完成'], ['on_hold', '已暂停'], ['cancelled', '已取消'], ['archived', '已归档']].map(([status, label]) => { const path = buildProjectsPath({ owner: route.owner, status, perPage: projectRoute?.perPage }); return <ContentTab key={status || 'all'} active={(projectRoute?.status || '') === status} href={path} onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), path, `已筛选${label}项目。`)}>{label}</ContentTab>; })}</ContentTabs></div>
               {projectPage?.items?.length ? (
                 <>
-                  <ul className="project-list" aria-label="项目列表">
+                  <div className="project-card-grid" role="list" aria-label="项目列表">
                     {projectPage.items.map((project) => {
                       const isCurrentProject = currentProject?.key === project.key;
+                      const path = buildProjectDetailPath({ owner: route.owner, projectKey: project.key });
                       return (
-                        <li key={project.key} className={`project-row ${isCurrentProject ? 'current' : ''}`}>
-                          <div className="project-main">
-                            <div className="project-heading">
-                              <strong>{project.key} · {project.name}</strong>
-                              <Badge>{projectStatusLabel(project.status)}</Badge>
-                              {isCurrentProject ? <Badge tone="info">当前项目</Badge> : null}
-                            </div>
-                            <p className="shell-muted">负责人 {project.owner || '未分配'} · 最近更新 {formatTimestamp(project.updated_at)}</p>
-                            <dl className="project-stats">
-                              <div><dt>总工作项</dt><dd>{project.work_item_count}</dd></div>
-                              <div><dt>进行中</dt><dd>{project.active_work_item_count}</dd></div>
-                            </dl>
-                          </div>
-                          <div className="project-actions">
-                            <a className="shell-link" href={buildProjectDetailPath({ owner: route.owner, projectKey: project.key })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: project.key }), `已打开项目 ${project.key}。`)}>打开详情</a>
-                            <Button
-                              variant="secondary"
-                              disabled={isCurrentProject || Boolean(projectSwitchingKey)}
-                              onClick={() => void handleSetCurrentProject(project)}
-                            >
-                              {isCurrentProject ? '当前项目' : projectSwitchingKey === project.key ? '切换中…' : '设为当前项目'}
-                            </Button>
-                          </div>
-                        </li>
+                        <article key={project.key} className={`project-card project-row ${isCurrentProject ? 'current' : ''}`} role="listitem"><div className="project-card-topline"><code>{project.key}</code><Badge tone={isCurrentProject ? 'info' : 'neutral'}>{isCurrentProject ? '当前项目' : projectStatusLabel(project.status)}</Badge></div><a className="project-card-title" href={path} onClick={(event) => handleNavigate(event, path, `已打开项目 ${project.key}。`)}>{project.name}</a><span className="project-card-meta">项目负责人：{project.owner || '未分配'}</span><span className="project-card-stats"><span><strong>{project.active_work_item_count}</strong><em>待处理 / 进行中 / 待确认</em></span><span><strong>{project.work_item_count}</strong><em>全部工作项</em></span></span><span className="project-card-foot">更新于 {dashboardTimestamp(project.updated_at)}</span><Button variant="secondary" disabled={isCurrentProject || Boolean(projectSwitchingKey)} onClick={() => void handleSetCurrentProject(project)}>{isCurrentProject ? '当前项目' : projectSwitchingKey === project.key ? '切换中…' : '设为当前项目'}</Button></article>
                       );
                     })}
-                  </ul>
+                  </div>
 
                   <Pagination ariaLabel="项目分页" page={projectPage.pagination.page} totalPages={projectPage.pagination.total_pages} totalItems={projectPage.pagination.total_items} itemLabel="个项目" rangeLabel={`当前显示 ${projectRangeStart}-${projectRangeEnd}`} pageSize={projectPage.pagination.per_page} onPageSizeChange={changeProjectPageSize} onPageChange={changeProjectPage} />
                 </>
               ) : (
-                <p className="shell-empty">当前筛选下没有项目。</p>
+                <div className="empty-state"><strong>暂无项目</strong><span>创建第一个项目后，需求、任务和 Bug 都会归属到项目下。</span></div>
               )}
+              </section>
             </section>
           ) : route.id === 'project-detail' ? (
             <section className="shell-card shell-panel-wide project-center" aria-labelledby="project-detail-title">

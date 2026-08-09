@@ -23,7 +23,7 @@ async function login(page, entryPath) {
 
 async function ensureCurrentProject(page, projectKey) {
   await page.goto('/web/app/projects');
-  await expect(page.getByRole('heading', { level: 1, name: '项目列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
   const row = page.locator('.project-row', { hasText: projectKey });
   const currentButton = row.getByRole('button', { name: '当前项目', exact: true });
   if (await currentButton.count()) {
@@ -3097,10 +3097,36 @@ test('project list can switch current project inside the app shell', async ({ pa
   await login(page, '/web/app/projects');
 
   await expect(page).toHaveURL(/\/web\/app\/projects/);
-  await expect(page.getByRole('heading', { level: 1, name: '项目列表' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
   await page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '设为当前项目' }).click();
   await expect(page.getByRole('button', { name: '切换当前项目' })).toContainText('交付运维台');
   await expect(page.locator('.project-row', { hasText: 'OPS' }).getByRole('button', { name: '当前项目' })).toBeVisible();
+});
+
+test('project list preserves the main responsive card geometry', async ({ page }) => {
+  await login(page, '/web/app/projects');
+  for (const viewport of [
+    { width: 390, height: 844, columns: 1 },
+    { width: 768, height: 1024, columns: 2 },
+    { width: 1280, height: 800, columns: 3 },
+    { width: 1440, height: 900, columns: 3 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/web/app/projects');
+    await expect(page.getByRole('heading', { level: 1, name: '项目' })).toBeVisible();
+    const geometry = await page.locator('.projects-page').evaluate((element) => {
+      const main = element.closest('.main');
+      return {
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        metricColumns: getComputedStyle(element.querySelector('.project-list-metrics')).gridTemplateColumns.split(' ').length,
+        cardColumns: getComputedStyle(element.querySelector('.project-card-grid')).gridTemplateColumns.split(' ').length,
+      };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.metricColumns).toBe(viewport.width <= 720 ? 1 : 3);
+    expect(geometry.cardColumns).toBe(viewport.columns);
+  }
 });
 
 test('shared project list creates a project with one validated request', async ({ page }) => {
