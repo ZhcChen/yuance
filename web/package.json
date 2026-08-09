@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "check:js": "tsc -p jsconfig.json",
     "check:source": "node ./scripts/assert-js-only.mjs",
+    "capture:main-visual": "node ./scripts/capture-main-visual-baseline.mjs --capture",
+    "capture:main-visual:plan": "node ./scripts/capture-main-visual-baseline.mjs --print-plan",
     "lint": "eslint \"src/**/*.{js,jsx}\" \"test/**/*.mjs\" \"scripts/**/*.mjs\" vite.config.js eslint.config.js",
     "test": "node --test test/**/*.test.mjs",
     "check": "npm run check:source && npm run check:js && npm run lint && npm run test",

@@ -79,7 +79,7 @@ baseline:
 - 为每个页面登记 route、actor、fixture、主题、视口、稳定锚点、动态遮罩和截图名称。
 - 基线截图只写入 `.artifacts/visual-parity/main/`，不纳入 Git；可复现脚本和 manifest 纳入 Git。
 - **已完成：** 固定 SHA、30 页覆盖分类、35 个模板扫描、21 页双侧四视口截图和结构指标；证据与结论写入 `docs/reviews/2026-08-09-002-main-web-visual-baseline-scan.md`。
-- **待实现：** 将扫描台账固化为可执行 visual manifest 和 Playwright fixture，不把本地截图提交到 Git。
+- **已实现：** 扫描台账已固化为封闭 schema 校验的 visual contract；固定 SHA、四视口、30 页矩阵、V2-V10 单元、锚点、几何、computed style、响应式状态、动态遮罩和宿主差异均可执行校验。隔离采集脚本支持审计计划与显式采集，不把本地截图提交到 Git。
 - **Exit：** 页面矩阵完整，基线 SHA 固定，新增/遗漏页面或无理由扩大遮罩会使测试失败。
 
 ### V1：全局 token、画布、导航与基础原语
@@ -188,7 +188,7 @@ baseline:
 - [x] 确认 `main` 旧 Web 与 `dev` 共享 React 的实现边界。
 - [x] 固定视觉基线提交 `6c0e56daa5460a9725ee00b8937124d390e9bd0b`。
 - [x] 完成 30 页静态覆盖扫描及 21 页双侧四视口运行采集。
-- [ ] V0：将扫描结果固化为可执行 visual manifest 与 fixture。
+- [x] V0：将扫描结果固化为可执行 visual manifest 与 fixture。
 - [ ] V1：全局 token、画布、导航与基础原语（当前仅有首轮局部调整）。
 - [ ] V2：页面骨架与工作台。
 - [ ] V3：个人、消息与搜索。
