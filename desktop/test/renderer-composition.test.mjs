@@ -91,8 +91,10 @@ test("desktop router translates shared app paths and rejects absolute or encoded
   router.navigate("/web/app/system/users?page=2&per_page=20");
   router.navigate("/web/app/system/roles?role=qa_lead&page=2&per_page=20");
   router.navigate("/web/app/system/openapi");
-  assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9", "/projects/YCE/my-analysis", "/system", "/system/users?page=2&per_page=20", "/system/roles?role=qa_lead&page=2&per_page=20", "/system/openapi"]);
-  assert.equal(updates, 7);
+  router.assign("/web/app/messages");
+  router.assign("/web/login");
+  assert.deepEqual(calls, ["/messages?filter=unread", "/projects/YCE/resources/9", "/projects/YCE/my-analysis", "/system", "/system/users?page=2&per_page=20", "/system/roles?role=qa_lead&page=2&per_page=20", "/system/openapi", "/messages"]);
+  assert.equal(updates, 8);
   const systemUsersRouter = createDesktopRouter({
     location: { pathname: "/system/users", search: "?page=2&per_page=20", hash: "" },
     history: { pushState() {}, replaceState() {} },
@@ -254,5 +256,6 @@ test("renderer composition uses shared components and contracts without Browser 
   assert.doesNotMatch(source, /appearance\?\.getTheme/);
   assert.match(source, /desktop-root-shell/);
   assert.match(source, /services\.lifecycle\.ready\(\)/);
+  assert.doesNotMatch(source, /location\.(?:assign|reload)|location\.href|window\.location/);
   assert.doesNotMatch(source, /document\.cookie|EventSource|fetch\s*\(|localStorage|sessionStorage/);
 });

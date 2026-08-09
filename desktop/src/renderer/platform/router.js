@@ -6,7 +6,7 @@ import { normalizeAppRoute } from "../../routes/app-route.mjs";
 
 export { normalizeAppRoute as normalizeDesktopRoute } from "../../routes/app-route.mjs";
 
-/** @typedef {{ pathname: string, search?: string, hash?: string, assign?: (path: string) => void }} RouteLocation */
+/** @typedef {{ pathname: string, search?: string, hash?: string }} RouteLocation */
 /** @typedef {{ pushState(state: object, title: string, url: string): void, replaceState(state: object, title: string, url: string): void }} RouteHistory */
 /** @typedef {{ addEventListener(type: string, callback: () => void): void, removeEventListener(type: string, callback: () => void): void, dispatchEvent(event: Event): void }} RouteEventTarget */
 
@@ -30,9 +30,8 @@ export function createDesktopRouter(dependencies = {}) {
       eventTarget?.dispatchEvent(new Event("popstate"));
     },
     assign(pathname) {
-      const target = sharedToDesktopPath(pathname);
-      if (typeof location.assign === "function") location.assign(target);
-      else router.navigate(pathname);
+      if (pathname === "/web/login") return;
+      router.navigate(pathname);
     },
     setTitle(title) {
       if (typeof title === "string") document.title = title;
