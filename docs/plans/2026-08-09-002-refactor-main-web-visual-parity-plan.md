@@ -148,6 +148,7 @@ baseline:
 - **已完成切片：** system dashboard 移除额外标题壳，恢复权限过滤的四列 `system-grid` 与 `system-card`；四视口覆盖单列、双列和四列断点。剩余 users、roles/role-permissions 和 permissions。
 - **已完成切片：** users 恢复 page hero、用户列表 panel、项目摘要标签、状态样式和 pager；四视口、用户核心 mutation 及项目关系批量/阻断语义通过。剩余 roles/role-permissions 和 permissions。
 - **已完成切片：** permissions 恢复 page hero、route query 搜索和按资源分组的只读权限树；四视口层级与业务画布无横向溢出。剩余 roles/role-permissions。
+- **已完成：** roles/role-permissions 恢复 page hero、角色列表侧栏、角色摘要和分组权限树，桌面双栏、移动/平板单列；角色创建、状态确认、父子授权联动与只读权限保持不变。system dashboard、users、roles/role-permissions 和 permissions 全部完成。
 - **Exit：** 权限树、用户项目关系和角色管理达到基线，普通用户拒绝行为不变。
 
 ### V9：系统运维页面
@@ -210,6 +211,6 @@ baseline:
 - [x] V5：周期、资源与个人分析。
 - [x] V6：工作项列表。
 - [x] V7：工作项详情协作。
-- [ ] V8：系统管理核心页面。
+- [x] V8：系统管理核心页面。
 - [ ] V9：系统运维页面。
 - [ ] V10：边界页、双宿主响应式回归与收口。

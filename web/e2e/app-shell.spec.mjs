@@ -2575,8 +2575,8 @@ test('shared system roles view renders atomic selection and permissions in the a
   await login(page, '/web/app/system/roles?role=qa_lead&page=2&per_page=20');
   await expect(page).toHaveTitle('角色权限 - 元策');
   await expect(page.getByRole('heading', { level: 1, name: '角色权限' })).toBeVisible();
-  await expect(page.getByRole('table', { name: '系统角色列表' })).toContainText('质量负责人');
-  const permissions = page.getByRole('table', { name: '角色权限集合' });
+  await expect(page.getByLabel('角色列表')).toContainText('质量负责人');
+  const permissions = page.getByRole('region', { name: '权限树' });
   await expect(permissions).toContainText('查看系统管理');
   await expect(permissions.getByRole('checkbox', { name: '查看系统管理 已授权' })).toBeChecked();
   await expect(permissions.getByRole('checkbox', { name: '管理用户 未授权' })).not.toBeChecked();
@@ -2584,8 +2584,27 @@ test('shared system roles view renders atomic selection and permissions in the a
 
   await page.goto('/web/system/roles/system_viewer/permissions?per_page=20');
   await expect(page).toHaveURL(/\/web\/system\/roles\/system_viewer\/permissions\?per_page=20$/);
-  await expect(page.getByRole('table', { name: '角色权限集合' })).toBeVisible();
+  await expect(page.getByRole('region', { name: '权限树' })).toBeVisible();
   await expect.poll(() => requests).toContain('?role=system_viewer&per_page=20');
+});
+
+test('system roles preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/system/roles');
+  for (const viewport of [
+    { width: 390, height: 844, columns: 1 },
+    { width: 768, height: 1024, columns: 1 },
+    { width: 1280, height: 800, columns: 2 },
+    { width: 1440, height: 900, columns: 2 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.system-roles-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const workbench = element.querySelector('.role-workbench');
+      return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, columns: getComputedStyle(workbench).gridTemplateColumns.trim().split(/\s+/u).length };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.columns).toBe(viewport.columns);
+  }
 });
 
 test('shared system storage view renders one masked paginated snapshot in the app owner', async ({ page }) => {
@@ -3055,9 +3074,9 @@ test('shared system role mutations preserve permission parent and confirmation s
   });
 
   await login(page, '/web/app/system/roles?role=qa_lead');
-  const permissionsTable = page.getByRole('table', { name: '角色权限集合' });
-  await permissionsTable.getByRole('checkbox', { name: '管理用户 未授权' }).check();
-  await expect(permissionsTable.getByRole('checkbox', { name: '查看用户管理 已授权' })).toBeChecked();
+  const permissionsTree = page.getByRole('region', { name: '权限树' });
+  await permissionsTree.getByRole('checkbox', { name: '管理用户 未授权' }).check();
+  await expect(permissionsTree.getByRole('checkbox', { name: '查看用户管理 已授权' })).toBeChecked();
   await page.getByRole('button', { name: '保存权限' }).click();
   await expect.poll(() => mutations.some(([method, path]) => method === 'PATCH' && path.endsWith('/permissions'))).toBe(true);
 
