@@ -4696,7 +4696,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5062,21 +5062,15 @@ export function SharedApp({ services }) {
               <Modal open={systemUserProjectDialog?.kind === 'remove-one' || systemUserProjectDialog?.kind === 'remove-batch'} title="移除项目关系" onClose={() => { if (!systemUserSubmitting && systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={() => { if (systemUserProjectTarget) setSystemUserProjectDialog({ kind: 'manage', username: systemUserProjectTarget.username }); }}>取消</Button><Button variant="danger" loading={systemUserSubmitting} onClick={() => void confirmSystemUserProjectRemove()}>确认移除</Button></>}><p>确认移除 {systemUserProjectTarget?.display_name} 的 {systemUserProjectDialog?.kind === 'remove-one' ? '1' : systemUserProjectRemoveKeys.length} 个项目关系？目标用户将立即失去对应项目访问和实时订阅。</p>{systemUserError ? <Feedback tone="danger" title="移除失败">{systemUserError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-dashboard' ? (
-            <section className="shell-panel-wide" aria-labelledby="system-dashboard-title">
-              <div className="shell-panel-header">
-                <div>
-                  <h2 id="system-dashboard-title">管理入口</h2>
-                  <p className="shell-muted">仅显示当前账户已获授权的系统能力。</p>
-                </div>
-              </div>
+            <section className="system-dashboard-page" aria-label="管理入口">
               {systemDashboard?.links.length ? (
-                <div className="shell-grid system-dashboard-grid">
+                <div className="system-grid">
                   {systemDashboard.links.map((link) => {
                     const path = routePathForOwner(link.path, route.owner);
                     return (
-                      <a key={link.id} className="shell-card system-dashboard-link" href={path} onClick={(event) => handleNavigate(event, path, `正在打开${link.title}。`)}>
-                        <h3>{link.title}</h3>
-                        <p className="shell-muted">{link.description}</p>
+                      <a key={link.id} className="system-card" href={path} onClick={(event) => handleNavigate(event, path, `正在打开${link.title}。`)}>
+                        <strong>{link.title}</strong>
+                        <span>{link.description}</span>
                       </a>
                     );
                   })}

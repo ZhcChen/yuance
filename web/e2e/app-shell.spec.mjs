@@ -2299,12 +2299,33 @@ test('app-owner message center opens semantic target inside app shell', async ({
 test('shared system dashboard renders the permission-filtered management entry set', async ({ page }) => {
   await login(page, '/web/app/system');
 
-  await expect(page.getByRole('heading', { level: 1, name: '系统管理' })).toBeVisible();
   const dashboard = page.getByRole('region', { name: '管理入口' });
   for (const label of ['用户管理', '角色权限', '对象存储', '系统 OpenAPI', '版本管理', '数据库统计', '审计日志']) {
     await expect(dashboard.getByRole('link', { name: new RegExp(label) })).toBeVisible();
   }
   await expect(dashboard.locator('a')).toHaveCount(7);
+});
+
+test('system dashboard preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/system');
+  for (const viewport of [
+    { width: 390, height: 844, columns: 1 },
+    { width: 768, height: 1024, columns: 2 },
+    { width: 1280, height: 800, columns: 4 },
+    { width: 1440, height: 900, columns: 4 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.system-dashboard-page').evaluate((element) => {
+      const main = element.closest('.main');
+      return {
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        columns: getComputedStyle(element.querySelector('.system-grid')).gridTemplateColumns.trim().split(/\s+/u).length,
+      };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.columns).toBe(viewport.columns);
+  }
 });
 
 test('shared system permissions preserve formal owner search and fixed catalog', async ({ page }) => {
