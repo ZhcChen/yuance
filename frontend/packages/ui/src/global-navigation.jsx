@@ -27,6 +27,8 @@ export function closeNavigationMenuOnBlur(event) {
  *   links: Array<{ id: string, label: string, href: string, active?: boolean, badge?: number }>,
  *   currentProject?: { key: string, name: string, pending_count?: number } | null,
  *   projectsHref: string,
+ *   messagesHref: string,
+ *   unreadCount?: number,
  *   user?: { username: string, display_name: string, is_super_admin?: boolean } | null,
  *   profileHref: string,
  *   theme: 'light' | 'dark',
@@ -41,6 +43,8 @@ export function GlobalNavigation({
   links,
   currentProject,
   projectsHref,
+  messagesHref,
+  unreadCount = 0,
   user,
   profileHref,
   theme,
@@ -63,7 +67,7 @@ export function GlobalNavigation({
   return (
     <header className="global-nav">
       <a className="global-nav-brand" href={links[0]?.href || projectsHref} onClick={(event) => onNavigate(event, links[0]?.href || projectsHref, productName)}>
-        <span className="global-nav-mark" aria-hidden="true">策</span>
+        <span className="global-nav-mark" aria-hidden="true">元</span>
         <strong>{productName}</strong>
       </a>
 
@@ -95,9 +99,15 @@ export function GlobalNavigation({
 
         <form className="global-nav-search" role="search" onSubmit={submitSearch}>
           <label className="shell-live-region" htmlFor="global-search">全局搜索</label>
-          <input id="global-search" name="q" type="search" placeholder="搜索项目和工作项" autoComplete="off" />
+          <input id="global-search" name="q" type="search" placeholder="搜索项目、需求、任务、Bug、资料库" autoComplete="off" />
           <button type="submit">搜索</button>
         </form>
+
+        <a className="global-nav-notifications" href={messagesHref} aria-label="打开消息通知"
+          onClick={(event) => onNavigate(event, messagesHref, '消息中心')}>
+          <span aria-hidden="true">消息</span>
+          {formatNavigationBadge(unreadCount) ? <span className="global-nav-badge">{formatNavigationBadge(unreadCount)}</span> : null}
+        </a>
 
         <details className="global-nav-account" onKeyDown={closeNavigationMenuOnEscape} onBlur={closeNavigationMenuOnBlur}>
           <summary role="button" aria-label={`打开 ${displayName} 的账户菜单`}>

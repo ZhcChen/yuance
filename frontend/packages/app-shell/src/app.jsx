@@ -4642,14 +4642,18 @@ export function SharedApp({ services }) {
         productName="元策"
         links={[
           { id: 'home', label: '工作台', href: homePath, active: route.id === 'home' },
-          { id: 'messages', label: '消息中心', href: messagesPath, active: route.id === 'messages', badge: unreadCount },
-          { id: 'projects', label: '项目列表', href: projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
+          { id: 'projects', label: '项目', href: currentProject ? buildProjectDetailPath({ owner: route.owner, projectKey: currentProject.key }) : projectsPath, active: route.id === 'projects' || route.id === 'project-detail' || route.id === 'project-cycle-detail' || route.id === 'project-resource-detail' || route.id === 'project-personal-analysis' },
+          { id: 'requirements', label: '需求', href: requirementsPath, active: route.id === 'requirements', badge: topbar?.requirements_count || 0 },
+          { id: 'tasks', label: '任务', href: tasksPath, active: route.id === 'tasks', badge: topbar?.tasks_count || 0 },
+          { id: 'bugs', label: 'Bug', href: bugsPath, active: route.id === 'bugs', badge: topbar?.bugs_count || 0 },
           ...((user?.is_super_admin || route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases')
             ? [{ id: 'system', label: '系统管理', href: systemPath, active: route.id === 'system-dashboard' || route.id === 'system-users' || route.id === 'system-roles' || route.id === 'system-permissions' || route.id === 'system-database-stats' || route.id === 'system-audit' || route.id === 'system-api-docs' || route.id === 'system-storage' || route.id === 'system-openapi' || route.id === 'system-releases' }]
             : []),
         ]}
         currentProject={currentProject}
         projectsHref={projectsPath}
+        messagesHref={messagesPath}
+        unreadCount={unreadCount}
         user={user}
         profileHref={profilePath}
         theme={theme}

@@ -10,7 +10,8 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--yc-bg);
 }
 
@@ -31,10 +32,10 @@ button:disabled {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: auto;
 }
 
-.app-topbar,
 .shell-header,
 .shell-grid,
 .shell-columns,
@@ -60,60 +61,6 @@ button:disabled {
 }
 
 .shell-header { padding-top: 24px; }
-
-.app-topbar {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-  margin-bottom: 16px;
-  padding: 14px 18px;
-  border: 1px solid var(--yc-line);
-  border-radius: 8px;
-  background: var(--yc-panel);
-}
-
-.app-topbar-group {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.app-topbar-meta {
-  color: var(--yc-muted);
-  font-size: 13px;
-}
-
-.app-nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
-  border-radius: 8px;
-  color: var(--yc-muted-strong);
-  text-decoration: none;
-}
-
-.app-nav-link.active {
-  background: var(--yc-brand-soft);
-  color: var(--yc-brand-strong);
-  font-weight: 600;
-}
-
-.app-nav-badge {
-  display: inline-flex;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
-  align-items: center;
-  justify-content: center;
-  background: var(--yc-danger);
-  color: #ffffff;
-  font-size: 12px;
-}
 
 .shell-live-region {
   position: absolute;
