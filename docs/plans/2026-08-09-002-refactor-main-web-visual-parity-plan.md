@@ -146,6 +146,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、system API client tests、Web E2E 与 Rust permission regression tests。
 - 恢复 system dashboard、users、roles/role-permissions 和 permissions 的 card/list/tree/table/modal 结构。
 - **已完成切片：** system dashboard 移除额外标题壳，恢复权限过滤的四列 `system-grid` 与 `system-card`；四视口覆盖单列、双列和四列断点。剩余 users、roles/role-permissions 和 permissions。
+- **已完成切片：** users 恢复 page hero、用户列表 panel、项目摘要标签、状态样式和 pager；四视口、用户核心 mutation 及项目关系批量/阻断语义通过。剩余 roles/role-permissions 和 permissions。
 - **Exit：** 权限树、用户项目关系和角色管理达到基线，普通用户拒绝行为不变。
 
 ### V9：系统运维页面

@@ -4696,7 +4696,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -4995,11 +4995,13 @@ export function SharedApp({ services }) {
               <Modal open={Boolean(systemRoleStatusTarget)} title={systemRoleStatusTarget?.status === 'active' ? '确认禁用角色' : '确认启用角色'} onClose={() => { if (!systemRoleSubmitting) { setSystemRoleStatusTarget(null); setSystemRoleError(''); } }} footer={<><Button variant="secondary" disabled={systemRoleSubmitting} onClick={() => setSystemRoleStatusTarget(null)}>取消</Button><Button variant={systemRoleStatusTarget?.status === 'active' ? 'danger' : 'primary'} loading={systemRoleSubmitting} onClick={() => void confirmSystemRoleStatus()}>确认{systemRoleStatusTarget?.status === 'active' ? '禁用' : '启用'}</Button></>}><p>{systemRoleStatusTarget?.status === 'active' ? `确认禁用角色“${systemRoleStatusTarget?.role_name}”？禁用后该角色授权不会再生效。` : `确认启用角色“${systemRoleStatusTarget?.role_name}”？启用后该角色授权会重新生效。`}</p>{systemRoleError ? <Feedback tone="danger" title="状态更新失败">{systemRoleError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-users' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="system-users-title">
-              <div className="shell-panel-header">
-                <div><h2 id="system-users-title">用户列表</h2><p className="shell-muted">按创建时间倒序排列。</p></div>
+            <section className="page-stack system-users-page" aria-labelledby="system-users-title">
+              <header className="page-hero">
+                <div><p className="eyebrow">系统管理</p><h1 id="system-users-title" ref={headingRef} tabIndex={-1}>用户管理</h1><p>维护登录账号、基础资料和系统角色绑定。</p></div>
                 {systemUsersView?.can_manage_users ? <Button onClick={() => { setSystemUserError(''); setSystemUserCreateForm((current) => ({ ...current, roleCode: current.roleCode || systemUsersView.roles.find((role) => role.status === 'active')?.role_code || '' })); setSystemUserCreateOpen(true); }}>新建用户</Button> : null}
-              </div>
+              </header>
+              <section className="shell-card system-users-panel" aria-labelledby="system-users-list-title">
+              <div className="shell-panel-header"><div><h2 id="system-users-list-title">用户列表</h2><p className="shell-muted">按创建时间倒序排列。</p></div></div>
               {systemUserError && !systemUserCreateOpen && !systemUserAction ? <Feedback tone="danger" title="用户操作失败">{systemUserError}</Feedback> : null}
               <DataTable
                 caption="系统用户列表"
@@ -5009,9 +5011,9 @@ export function SharedApp({ services }) {
                 columns={[
                   { key: 'user', label: '用户', render: (item) => <><strong>{item.display_name}</strong><br /><span className="shell-muted">@{item.username}{item.is_super_admin ? ' · 超级管理员' : ''}</span></> },
                   { key: 'contact', label: '联系方式', render: (item) => item.email || item.mobile || '未填写' },
-                  { key: 'projects', label: '项目', render: (item) => item.is_super_admin ? '全项目访问' : `${item.assigned_projects.length} 个项目` },
+                  { key: 'projects', label: '项目', render: (item) => item.is_super_admin ? <div className="user-project-stack"><span className="status status-info">全项目访问</span><span className="shell-muted">无需单独加入项目</span></div> : <div className="user-project-stack"><strong>{item.assigned_projects.length} 个项目</strong>{item.assigned_projects.length ? <div className="user-project-chip-list">{item.assigned_projects.slice(0, 2).map((project) => <span className="user-project-chip" title={`${project.key} · ${project.name}`} key={project.key}>{project.key}</span>)}{item.assigned_projects.length > 2 ? <span className="user-project-chip user-project-chip-muted">+{item.assigned_projects.length - 2}</span> : null}</div> : <span className="shell-muted">暂未加入任何项目</span>}</div> },
                   { key: 'roles', label: '角色', render: (item) => item.role_names || '未分配' },
-                  { key: 'status', label: '状态', render: (item) => item.status },
+                  { key: 'status', label: '状态', render: (item) => <span className={`status status-${item.status === 'active' ? 'success' : item.status === 'locked' ? 'warning' : 'muted'}`}>{item.status}</span> },
                   { key: 'updated', label: '更新', render: (item) => formatTimestamp(item.updated_at) },
                   { key: 'actions', label: '操作', render: (item) => systemUsersView?.can_manage_users ? <div className="shell-actions-inline">
                     {systemUsersView.can_manage_user_projects && !item.is_super_admin ? <Button variant="secondary" disabled={systemUserSubmitting} onClick={() => openSystemUserProjects(item)}>项目</Button> : null}
@@ -5024,6 +5026,7 @@ export function SharedApp({ services }) {
                 <Pagination page={systemUsersView.pagination.page} totalPages={systemUsersView.pagination.total_pages} totalItems={systemUsersView.pagination.total_items} onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)} />
                 <label className="shell-page-size">每页<select value={systemUsersView.pagination.per_page} onChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
               </div> : null}
+              </section>
               <Modal open={systemUserCreateOpen} title="新建用户" onClose={closeSystemUserCreate} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserCreate}>取消</Button><Button loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
                 <form id="system-user-create-form" onSubmit={submitSystemUserCreate}>
                   {systemUserError ? <Feedback tone="danger" title="创建失败">{systemUserError}</Feedback> : null}

@@ -2509,6 +2509,32 @@ test('shared system users view renders atomic rows and preserves pagination in t
   await expect.poll(() => requests).toContain('?per_page=20');
 });
 
+test('system users preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/system/users');
+  for (const viewport of [
+    { width: 390, height: 844, compact: true },
+    { width: 768, height: 1024, compact: false },
+    { width: 1280, height: 800, compact: false },
+    { width: 1440, height: 900, compact: false },
+  ]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.system-users-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const hero = element.querySelector('.page-hero');
+      const tableWrap = element.querySelector('.yc-table-wrap');
+      return {
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        heroDirection: getComputedStyle(hero).flexDirection,
+        tableContained: tableWrap.getBoundingClientRect().right <= main.getBoundingClientRect().right + 1,
+      };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.heroDirection).toBe(viewport.compact ? 'column' : 'row');
+    expect(geometry.tableContained).toBe(true);
+  }
+});
+
 test('shared system roles view renders atomic selection and permissions in the app owner', async ({ page }) => {
   const requests = [];
   await page.route('**/api/v1/system/roles-view*', async (route) => {
