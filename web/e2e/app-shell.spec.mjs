@@ -2655,20 +2655,20 @@ test('shared system storage view renders one masked paginated snapshot in the ap
 
   await login(page, '/web/app/system/storage?page=2&per_page=20');
   await expect(page).toHaveTitle('对象存储 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '对象存储' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '阿里云 OSS' })).toBeVisible();
   const workspace = page.getByRole('region', { name: '存储工作台' });
   await expect(workspace).toContainText('yuance-shared-files');
   await expect(workspace).toContainText('AKIA****E2E1');
   await expect(workspace).toContainText('需要初始化');
-  await expect(page.getByRole('table', { name: '存储检查项目' })).toContainText('缺少元策目录结构。');
-  await expect(page.getByRole('table', { name: '存储配置版本' })).toContainText('yuance-version-2');
+  await expect(page.getByLabel('存储检查项目')).toContainText('缺少元策目录结构。');
+  await expect(page.getByLabel('存储配置版本')).toContainText('yuance-version-2');
   await expect(page.locator('body')).not.toContainText('AKIAORIGINALSECRET');
   await expect(page.locator('body')).not.toContainText('StorageSecret2026!');
   await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=2&per_page=20');
 
   await page.getByRole('button', { name: '下一页' }).click();
   await expect(page).toHaveURL('/web/app/system/storage?page=3&per_page=20');
-  await expect(page.getByRole('table', { name: '存储配置版本' })).toContainText('yuance-version-3');
+  await expect(page.getByLabel('存储配置版本')).toContainText('yuance-version-3');
   await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=3&per_page=20');
 });
 
@@ -2694,10 +2694,31 @@ test('formal web system storage owner keeps its route while rendering the shared
 
   await expect(page).toHaveURL(/\/web\/system\/storage\?page=2&per_page=20$/);
   await expect(page).toHaveTitle('对象存储 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '对象存储' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '阿里云 OSS' })).toBeVisible();
   await expect(page.getByRole('region', { name: '存储工作台' })).toContainText('yuance-formal-files');
   await expect.poll(() => requests).toContain('/api/v1/system/storage-view?page=2&per_page=20');
   expect(page.url()).not.toContain('/web/app/system/storage');
+});
+
+test('system storage preserves the main responsive geometry', async ({ page }) => {
+  await page.route('**/api/v1/system/storage-view*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: {
+    config: { id: 12, provider: 'aliyun_oss', endpoint: 'https://oss-cn-hangzhou.aliyuncs.com', region: 'cn-hangzhou', bucket: 'yuance-files', access_key_id_hint: 'AKIA****E2E1', status: 'active', version: 12, updated_at: '2026-08-08T01:00:00Z' },
+    versions: [{ id: 11, provider: 'aliyun_oss', endpoint: 'https://oss-cn-hangzhou.aliyuncs.com', region: 'cn-hangzhou', bucket: 'yuance-files-old', access_key_id_hint: 'AKIA****HIST', current_status: 'inactive', version: 11, created_by: '系统管理员', created_at: '2026-08-08T00:00:00Z' }],
+    pagination: { page: 1, per_page: 10, total_items: 1, total_pages: 1 }, inspection: { ok: false, needs_initialization: true, message: 'Bucket 尚未初始化。', checks: [{ code: 'bucket_layout', status: 'missing', message: '缺少元策目录结构。' }] }, inspection_error: '', can_manage_storage: true,
+  } }) }));
+  await login(page, '/web/system/storage');
+
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.storage-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const layout = element.querySelector('.storage-layout');
+      return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, columns: getComputedStyle(layout).gridTemplateColumns, pageRight: element.getBoundingClientRect().right, mainRight: main.getBoundingClientRect().right };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.pageRight).toBeLessThanOrEqual(geometry.mainRight + 1);
+    expect(geometry.columns.trim().split(/\s+/u).length).toBe(viewport.width > 1280 ? 2 : 1);
+  }
 });
 
 test('shared system OpenAPI tokens preserve one-time plaintext and confirmed lifecycle', async ({ page }) => {
@@ -3028,7 +3049,7 @@ test('shared system storage mutations preserve confirmation lock and final refre
   await page.getByRole('dialog', { name: '初始化对象存储 Bucket' }).getByRole('button', { name: '确认' }).click();
   await expect(page.getByRole('region', { name: '存储工作台' })).toContainText('运行就绪');
 
-  await page.getByRole('table', { name: '存储配置版本' }).getByRole('button', { name: '回滚' }).click();
+  await page.getByLabel('存储配置版本').getByRole('button', { name: '回滚到此版本' }).click();
   await page.getByRole('dialog', { name: '回滚对象存储配置' }).getByRole('button', { name: '确认' }).click();
   await expect.poll(() => mutations.map(([kind]) => kind)).toEqual(['save', 'probe', 'initialize', 'rollback']);
   await expect(page.getByRole('region', { name: '存储工作台' }).locator('dl')).toContainText('yuance-old');

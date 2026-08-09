@@ -160,6 +160,48 @@ button:disabled {
 @media (max-width: 1100px) { .audit-filter-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .audit-filter-bar { grid-template-columns: 1fr; } }
 
+.storage-page { width: 100%; }
+.storage-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.storage-form, .storage-bucket-panel, .storage-versions-panel { overflow: hidden; }
+.storage-panel-head { padding: 16px; margin: 0; }
+.storage-panel-head h1 { margin: 0 0 4px; font-size: 20px; line-height: 28px; }
+.storage-panel-head h2 { margin: 0 0 4px; font-size: 18px; line-height: 26px; }
+.config-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1px; margin: 0; padding: 1px; background: var(--yc-line); }
+.config-summary-item { display: grid; gap: 4px; min-height: 78px; align-content: center; padding: 14px 16px; background: var(--yc-panel); }
+.config-summary-item dt { color: var(--yc-muted); font-size: 12px; font-weight: 700; }
+.config-summary-item dd { margin: 0; color: var(--yc-text); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.storage-side { padding: 16px; }
+.storage-side h2 { margin: 0 0 12px; font-size: 16px; }
+.check-list { display: grid; gap: 10px; margin: 0; padding-left: 20px; color: var(--yc-muted); font-size: 13px; line-height: 20px; }
+.storage-bucket-panel, .storage-versions-panel { margin-top: 16px; }
+.storage-bucket-body { display: grid; gap: 12px; padding: 16px; }
+.storage-bucket-summary { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.storage-bucket-summary > div { min-width: 0; display: grid; gap: 4px; }
+.storage-bucket-summary strong { color: var(--yc-text); font-size: 15px; line-height: 22px; }
+.storage-bucket-summary span:not(.status), .storage-bucket-message { color: var(--yc-muted); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.storage-bucket-message { margin: 0; }
+.storage-check-list { display: grid; overflow: hidden; border: 1px solid var(--yc-line); border-radius: 8px; }
+.storage-check-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px; border-top: 1px solid var(--yc-line); }
+.storage-check-row:first-child, .storage-version-row:first-child { border-top: 0; }
+.storage-check-row:hover, .storage-version-row:hover { background: var(--yc-panel-soft); }
+.storage-check-row div { min-width: 0; display: grid; gap: 3px; }
+.storage-check-row strong { color: var(--yc-text); font-size: 13px; line-height: 18px; }
+.storage-check-row p { margin: 0; color: var(--yc-muted); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.storage-version-list { display: grid; }
+.storage-version-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 15px 16px; border-top: 1px solid var(--yc-line); }
+.storage-version-main { min-width: 0; display: grid; gap: 7px; }
+.storage-version-title, .storage-version-meta, .storage-version-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.storage-version-title strong { color: var(--yc-text); font-size: 15px; line-height: 21px; }
+.storage-version-meta span, .storage-version-foot span { min-width: 0; color: var(--yc-muted); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.storage-version-meta span:first-child { color: var(--yc-text); font-weight: 700; }
+.storage-version-actions { display: flex; justify-content: flex-end; }
+.storage-empty { display: grid; gap: 6px; margin: 0 16px 16px; padding: 16px; border: 1px dashed var(--yc-line); color: var(--yc-muted); font-size: 13px; line-height: 20px; }
+.storage-empty strong { color: var(--yc-text); }
+.storage-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--yc-line); }
+
+@media (max-width: 1280px) { .storage-layout { grid-template-columns: 1fr; } }
+@media (max-width: 620px) { .config-summary-grid, .storage-version-row { grid-template-columns: 1fr; } .storage-version-actions { justify-content: flex-start; } .storage-pager { align-items: flex-start; flex-direction: column; } }
+
 .shell-live-region {
   position: absolute;
   width: 1px;
