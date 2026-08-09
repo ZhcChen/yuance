@@ -66,14 +66,20 @@ baseline:
 - 颜色、边框、圆角、阴影、字号、行高和字重取基线 computed style；不得用“近似色”或新的组件默认值替代。
 - 截图像素差排除字体抗锯齿、光标、时间文本和 OS 原生界面；排除规则必须结构化登记，不能整块忽略业务区域。
 
+### 完整扫描结论
+
+完整扫描见 `docs/reviews/2026-08-09-002-main-web-visual-baseline-scan.md`。已覆盖 manifest 全部 `30` 页；其中 `21` 页完成 `main/dev` 双侧四视口运行采集。扫描确认所有 21 个业务/系统运行页面均存在结构级差异，首要根因是当前应用对所有 route 强制渲染统一 `shell-header` 和三块摘要卡，而 `main` 使用页面自有 hero、panel、table、tabs 和详情 rail。
+
 ## Implementation Units
 
 ### V0：冻结基线与视觉合同
 
-- **Files：** `frontend/parity/`、`frontend/test/`、`web/e2e/`、`docs/reviews/`。
+- **Files：** 新增 `frontend/parity/main-web-visual-contract.json`、对应 schema 与 `frontend/test/main-web-visual-contract.test.mjs`；扩展 `web/e2e/app-shell.spec.mjs`；新增可复现采集脚本到 `web/scripts/`；复核写入 `docs/reviews/`。
 - 从 `main` 提取 token、关键 selector、页面 DOM 顺序、断点和组件几何，建立可校验的 visual parity manifest。
 - 为每个页面登记 route、actor、fixture、主题、视口、稳定锚点、动态遮罩和截图名称。
 - 基线截图只写入 `.artifacts/visual-parity/main/`，不纳入 Git；可复现脚本和 manifest 纳入 Git。
+- **已完成：** 固定 SHA、30 页覆盖分类、35 个模板扫描、21 页双侧四视口截图和结构指标；证据与结论写入 `docs/reviews/2026-08-09-002-main-web-visual-baseline-scan.md`。
+- **待实现：** 将扫描台账固化为可执行 visual manifest 和 Playwright fixture，不把本地截图提交到 Git。
 - **Exit：** 页面矩阵完整，基线 SHA 固定，新增/遗漏页面或无理由扩大遮罩会使测试失败。
 
 ### V1：全局 token、画布、导航与基础原语
@@ -83,32 +89,64 @@ baseline:
 - 恢复 `.main` 内容宽度、页面标题、按钮、字段、反馈、modal、表格、分页、badge、tab 和 card 的基线外观。
 - **Exit：** 所有页面共享相同画布和原语；菜单切换仍不卸载顶栏，Web/Desktop 无业务 CSS 分叉。
 
-### V2：工作台、消息、搜索与个人资料
+### V2：页面骨架与工作台
 
-- 按基线恢复模块顺序、指标栅格、项目区、消息列表、搜索结果分组和个人安全设置布局。
-- 覆盖正常、空、loading、错误、权限受限和窄屏状态。
-- **Exit：** 四个页面族在固定视口通过结构、几何和截图对比。
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/primitives.jsx` 及 package/Web E2E tests。
+- 移除所有 route 强制共享的 `shell-header` 与三摘要卡，改由页面模型选择基线 `page-hero`、detail hero、compact heading 或无 hero。
+- 恢复 Dashboard 的 4 指标、项目 compact table、待处理讨论和最近动态双栏。
+- **Exit：** Dashboard 四视口达到基线，其他页面不再出现未登记的通用摘要区。
 
-### V3：项目、周期、资源与个人分析
+### V3：个人、消息与搜索
 
-- 按项目列表 -> 项目详情 -> 成员/文件 -> 周期 -> 资源详情 -> 个人分析的顺序还原。
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、profile/message/search API client 的既有读取测试与 `web/e2e/app-shell.spec.mjs`。
+- 恢复 profile hero、个人指标、Token/项目/安全区；恢复消息 compact heading、tabs、消息行和 pager；恢复搜索 hero、搜索 panel、结果分组和 pager。
+- 覆盖正常、空、loading、错误、权限受限、modal 和窄屏状态。
+- **Exit：** `/web/me`、`/web/messages`、`/web/search` 在固定视口通过结构、几何和截图对比。
+
+### V4：项目列表与项目详情
+
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/primitives.jsx`、项目 route/API client tests 与 Web E2E。
+- 恢复项目列表 hero、3 指标、状态 tabs、项目 card grid 与 pager。
+- 恢复项目详情 detail hero、4 指标、整卡 tabs、概览双栏、成员/周期/文件/资料/动态 panel。
+- **Exit：** 项目列表和详情的各 tab、empty、modal 与窄屏状态达到基线。
+
+### V5：周期、资源与个人分析
+
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、project API client/route tests、Web fixture 与 E2E、Desktop parity fixture。
+- 先建立周期、资料和角色权限详情的稳定视觉 fixture，再恢复周期 detail grid、资源 hero/锁定态/正文附件和个人分析 8 指标/双栏结构。
 - 保持共享 mutation 和文件 adapter，只调整呈现结构与可见交互位置。
-- **Exit：** 项目域所有 manifest 页面达到基线布局，无功能或权限回归。
+- **Exit：** 三类动态详情均具备 populated/empty/locked/error 运行证据，项目域全部达到基线。
 
-### V4：工作项列表与详情协作
+### V6：工作项列表
 
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/primitives.jsx`、work-item route/API client tests 与 Web E2E。
 - 恢复指标区、保存视图、组合筛选、批量栏、表格、分页以及需求/任务/Bug 状态色。
-- 恢复详情 hero、主内容与 `280px` sticky action rail、描述、流转、评论、富文本和附件布局。
-- **Exit：** 三类列表和详情的正常/空/错误/modal/窄屏状态通过视觉回归，SSE 更新不引发布局跳动。
+- **Exit：** 三类列表的正常/空/筛选/批量/modal/窄屏状态通过视觉回归。
 
-### V5：系统管理页面
+### V7：工作项详情协作
 
-- 按 dashboard -> users -> roles/permissions -> storage -> OpenAPI -> releases -> database -> audit/API docs 还原。
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/work-item-*.jsx`、`frontend/packages/ui/src/rich-text.jsx` 及 package/Web/Desktop tests。
+- 恢复详情 hero、作者正文、主内容与 `280px` sticky action rail、描述、流转、评论、富文本和附件布局。
+- 保留 SPA route、共享 mutation、附件 capability 和 SSE reducer。
+- **Exit：** 详情正常/删除/只读/error/modal/窄屏状态通过视觉回归，SSE 更新不引发布局跳动。
+
+### V8：系统管理核心页面
+
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、system API client tests、Web E2E 与 Rust permission regression tests。
+- 恢复 system dashboard、users、roles/role-permissions 和 permissions 的 card/list/tree/table/modal 结构。
+- **Exit：** 权限树、用户项目关系和角色管理达到基线，普通用户拒绝行为不变。
+
+### V9：系统运维页面
+
+- **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、system API client tests、`api/src/web/router.rs` 的文档边界、Web E2E 与 Rust authorization tests。
+- 恢复 storage、OpenAPI、releases、database、audit；System API docs 恢复为独立文档边界，不套业务摘要壳。
 - 高风险操作的确认、脱敏、一次性密钥和审计逻辑保持不变。
-- **Exit：** 超管页面全部达到基线；普通用户不可见且直接访问仍被拒绝。
+- **Exit：** 系统运维页面全部达到基线；普通用户不可见且直接访问仍被拒绝。
 
-### V6：双宿主响应式回归与收口
+### V10：边界页、双宿主响应式回归与收口
 
+- **Files：** `api/static/auth.css`、保留的 `api/templates/web/*.html` 边界模板、`web/e2e/`、`desktop/scripts/smoke-desktop-feature-parity.mjs`、visual contract 与最终 `docs/reviews/`。
+- 复核 login、bootstrap、downloads 和 public API docs；设备授权作为无 main 基线的宿主边界，只对齐共享 token 和自身状态合同。
 - 使用相同 fixture 对 Browser 和 packaged Desktop 执行页面矩阵；比较 DOM 锚点、computed style、边界框和截图。
 - 验证 route 切换、前进后退、项目切换、modal 和主题切换无整壳闪烁、白屏或布局抖动。
 - 更新 `docs/reviews/`，逐页记录基线、结果、允许差异和复现命令。
@@ -116,7 +154,11 @@ baseline:
 
 ## Execution Order And Commit Boundaries
 
-执行顺序固定为 `V0 -> V1 -> V2 -> V3 -> V4 -> V5 -> V6`。每个单元按可独立解释的页面族拆分提交并立即推送 `dev`；不得等待全部页面完成后一次提交。每次提交只暂存本单元文件，不包含 `.artifacts/` 或 `test-results/`。
+执行顺序固定为 `V0 -> V1 -> V2 -> V3 -> V4 -> V5 -> V6 -> V7 -> V8 -> V9 -> V10`。每个单元按可独立解释的页面族拆分提交并立即推送 `dev`；不得等待全部页面完成后一次提交。每次提交只暂存本单元文件，不包含 `.artifacts/` 或 `test-results/`。
+
+每个页面切片必须依次完成：`fixture -> main baseline -> React DOM -> shared CSS -> structure/geometry test -> Browser screenshot -> packaged Desktop screenshot -> review`。不能只调整 CSS 后人工目测结束。
+
+`main` 截图保留在 `.artifacts/`，不直接作为 Git/CI golden image 提交。可执行合同将基线中的稳定 DOM 锚点、区域顺序、computed style、边界框和断点行为写入 `frontend/parity/main-web-visual-contract.json`；CI 校验该结构化合同，并使用 Playwright 自带 screenshot matcher 固定迁移完成后的共享实现。需要重新人工核对 `main` 时，由采集脚本基于固定 SHA 创建隔离 worktree 和 fixture，禁止依赖长期运行的旧服务或个人浏览器状态。
 
 ## Verification Contract
 
@@ -145,10 +187,15 @@ baseline:
 
 - [x] 确认 `main` 旧 Web 与 `dev` 共享 React 的实现边界。
 - [x] 固定视觉基线提交 `6c0e56daa5460a9725ee00b8937124d390e9bd0b`。
-- [ ] V0：冻结基线与视觉合同。
-- [ ] V1：全局 token、画布、导航与基础原语。
-- [ ] V2：工作台、消息、搜索与个人资料。
-- [ ] V3：项目、周期、资源与个人分析。
-- [ ] V4：工作项列表与详情协作。
-- [ ] V5：系统管理页面。
-- [ ] V6：双宿主响应式回归与收口。
+- [x] 完成 30 页静态覆盖扫描及 21 页双侧四视口运行采集。
+- [ ] V0：将扫描结果固化为可执行 visual manifest 与 fixture。
+- [ ] V1：全局 token、画布、导航与基础原语（当前仅有首轮局部调整）。
+- [ ] V2：页面骨架与工作台。
+- [ ] V3：个人、消息与搜索。
+- [ ] V4：项目列表与项目详情。
+- [ ] V5：周期、资源与个人分析。
+- [ ] V6：工作项列表。
+- [ ] V7：工作项详情协作。
+- [ ] V8：系统管理核心页面。
+- [ ] V9：系统运维页面。
+- [ ] V10：边界页、双宿主响应式回归与收口。
