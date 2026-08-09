@@ -167,6 +167,7 @@ baseline:
 
 - **Files：** `api/static/auth.css`、保留的 `api/templates/web/*.html` 边界模板、`web/e2e/`、`desktop/scripts/smoke-desktop-feature-parity.mjs`、visual contract 与最终 `docs/reviews/`。
 - 复核 login、bootstrap、downloads 和 public API docs；设备授权作为无 main 基线的宿主边界，只对齐共享 token 和自身状态合同。
+- **已完成切片：** downloads 的模板结构与断点 CSS 已确认等价于 `main`；内联样式迁移到版本化静态 CSS，增加内部开发版签名信任说明。公开页只展示已发布且上传完成的资产，空态和不可用资产语义保持。
 - 使用相同 fixture 对 Browser 和 packaged Desktop 执行页面矩阵；比较 DOM 锚点、computed style、边界框和截图。
 - 验证 route 切换、前进后退、项目切换、modal 和主题切换无整壳闪烁、白屏或布局抖动。
 - 更新 `docs/reviews/`，逐页记录基线、结果、允许差异和复现命令。
