@@ -4706,7 +4706,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-personal-analysis'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5384,58 +5384,44 @@ export function SharedApp({ services }) {
               <Modal open={Boolean(projectAttachmentArchiveTarget)} title="归档项目文件" onClose={() => { if (!projectAttachmentArchiving) setProjectAttachmentArchiveTarget(null); }} footer={<><Button variant="secondary" disabled={projectAttachmentArchiving} onClick={() => setProjectAttachmentArchiveTarget(null)}>取消</Button><Button variant="danger" loading={projectAttachmentArchiving} onClick={() => void confirmProjectAttachmentArchive()}>确认归档</Button></>}><p>确认归档文件“{projectAttachmentArchiveTarget?.filename}”？归档后不能继续下载，但文件记录会保留。</p></Modal>
             </section>
           ) : route.id === 'project-personal-analysis' ? (
-            <section className="shell-card shell-panel-wide project-center personal-analysis" aria-labelledby="personal-analysis-title">
-              <div className="shell-panel-header project-center-header">
-                <div>
-                  <p className="shell-eyebrow">{projectScopeKey} / 个人项目分析</p>
-                  <h2 id="personal-analysis-title">{activeProjectDetail?.name || projectScopeKey}</h2>
-                  <p className="shell-muted">仅统计 {projectPersonalAnalysis?.display_name || user?.display_name || '当前用户'} 在该项目中的实际处理与协作记录。</p>
-                </div>
-                <div className="shell-actions-inline">
-                  {activeProjectDetail ? <Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge> : null}
-                  <a className="shell-link" href={buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey }), '已返回项目详情。')}>返回项目详情</a>
-                </div>
-              </div>
+            <section className="page-stack personal-analysis-page" aria-labelledby="personal-analysis-title">
+              <header className="analysis-header"><div><a className="work-item-back" href={buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey }), '已返回项目详情。')}>← 返回项目详情</a><p className="shell-eyebrow">{projectScopeKey} / 个人项目分析</p><h1 id="personal-analysis-title" ref={headingRef} tabIndex={-1}>{activeProjectDetail?.name || projectScopeKey}</h1><p>仅统计 {projectPersonalAnalysis?.display_name || user?.display_name || '当前用户'} 在该项目中的实际处理与协作记录。</p></div>{activeProjectDetail ? <Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge> : null}</header>
               {projectPersonalAnalysis ? <>
-                <section aria-label="个人处理产出">
-                  <div className="personal-analysis-metrics">
+                <section className="metric-grid personal-analysis-output" aria-label="个人处理产出">{[
+                  ['累计处理', projectPersonalAnalysis.completed_total, 'info', 'check'],
+                  ['近 30 日', projectPersonalAnalysis.completed_last_30_days, 'success', 'calendar'],
+                  ['已处理 Bug', projectPersonalAnalysis.completed_bugs, 'danger', 'bug'],
+                  ['当前待处理', personalAnalysisPendingTotal, 'warning', 'tasks'],
+                ].map(([label, value, tone, icon]) => <article className={`metric metric-${tone}`} key={label}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section>
+
+                <section className="analysis-section" aria-labelledby="personal-analysis-efficiency-title">
+                  <div className="section-heading"><div><p className="shell-eyebrow">处理效率</p><h2 id="personal-analysis-efficiency-title">自然周期效率</h2></div><span>统计起点：{projectPersonalAnalysis.joined_at}</span></div>
+                  <div className="metric-grid compact-metrics">
                     {[
-                      ['累计处理', projectPersonalAnalysis.completed_total],
-                      ['近 30 日', projectPersonalAnalysis.completed_last_30_days],
-                      ['已处理 Bug', projectPersonalAnalysis.completed_bugs],
-                      ['当前待处理', personalAnalysisPendingTotal],
-                    ].map(([label, value]) => <article className="work-item-detail-panel personal-analysis-metric" key={label}><span className="shell-muted">{label}</span><strong>{value}</strong></article>)}
+                      ['日平均处理', formatAnalysisAverage(projectPersonalAnalysis.daily_average), 'info'],
+                      ['单日最大处理', projectPersonalAnalysis.daily_peak, 'success'],
+                      ['月平均处理', formatAnalysisAverage(projectPersonalAnalysis.monthly_average), 'warning'],
+                      ['单月最大处理', projectPersonalAnalysis.monthly_peak, 'danger'],
+                    ].map(([label, value, tone]) => <article className={`metric metric-${tone}`} key={label}><div className="metric-head"><span className="metric-label">{label}</span><span className="metric-ornament metric-icon-trend" aria-hidden="true" /></div><strong>{value}</strong></article>)}
                   </div>
                 </section>
 
-                <section className="personal-analysis-section" aria-labelledby="personal-analysis-efficiency-title">
-                  <div className="shell-panel-header"><div><p className="shell-eyebrow">处理效率</p><h3 id="personal-analysis-efficiency-title">自然周期效率</h3></div><span className="shell-muted">统计起点：{projectPersonalAnalysis.joined_at}</span></div>
-                  <div className="personal-analysis-metrics">
-                    {[
-                      ['日平均处理', formatAnalysisAverage(projectPersonalAnalysis.daily_average)],
-                      ['单日最大处理', projectPersonalAnalysis.daily_peak],
-                      ['月平均处理', formatAnalysisAverage(projectPersonalAnalysis.monthly_average)],
-                      ['单月最大处理', projectPersonalAnalysis.monthly_peak],
-                    ].map(([label, value]) => <article className="work-item-detail-panel personal-analysis-metric" key={label}><span className="shell-muted">{label}</span><strong>{value}</strong></article>)}
-                  </div>
-                </section>
-
-                <div className="personal-analysis-columns">
-                  <section className="work-item-detail-panel" aria-labelledby="personal-analysis-pending-title">
-                    <p className="shell-eyebrow">当前负载</p><h3 id="personal-analysis-pending-title">我的待处理</h3>
-                    <div className="personal-analysis-pending-list">{personalAnalysisPendingLinks.map((item) => <a className="shell-link" href={item.path} key={item.itemType} onClick={(event) => handleNavigate(event, item.path, `已打开待处理${item.label}。`)}><span>{item.label}</span><strong>{item.count}</strong></a>)}</div>
+                <div className="analysis-columns">
+                  <section className="analysis-section" aria-labelledby="personal-analysis-pending-title">
+                    <div className="section-heading"><div><p className="shell-eyebrow">当前负载</p><h2 id="personal-analysis-pending-title">我的待处理</h2></div></div>
+                    <div className="analysis-pending-list">{personalAnalysisPendingLinks.map((item) => <a href={item.path} key={item.itemType} onClick={(event) => handleNavigate(event, item.path, `已打开待处理${item.label}。`)}><span>{item.label}</span><strong>{item.count}</strong></a>)}</div>
                   </section>
-                  <section className="work-item-detail-panel" aria-labelledby="personal-analysis-collaboration-title">
-                    <p className="shell-eyebrow">协作参与</p><h3 id="personal-analysis-collaboration-title">沟通与推进</h3>
-                    <dl className="personal-analysis-collaboration"><div><dt>活跃天数</dt><dd>{projectPersonalAnalysis.active_days}</dd></div><div><dt>评论 / 回复</dt><dd>{projectPersonalAnalysis.comment_count}</dd></div><div><dt>指派 / 流转</dt><dd>{projectPersonalAnalysis.handoff_count}</dd></div></dl>
+                  <section className="analysis-section" aria-labelledby="personal-analysis-collaboration-title">
+                    <div className="section-heading"><div><p className="shell-eyebrow">协作参与</p><h2 id="personal-analysis-collaboration-title">沟通与推进</h2></div></div>
+                    <dl className="analysis-collaboration"><div><dt>活跃天数</dt><dd>{projectPersonalAnalysis.active_days}</dd></div><div><dt>评论 / 回复</dt><dd>{projectPersonalAnalysis.comment_count}</dd></div><div><dt>指派 / 流转</dt><dd>{projectPersonalAnalysis.handoff_count}</dd></div></dl>
                   </section>
                 </div>
 
-                <section className="personal-analysis-section" aria-labelledby="personal-analysis-completions-title">
-                  <div className="shell-panel-header"><div><p className="shell-eyebrow">最近产出</p><h3 id="personal-analysis-completions-title">最近完成记录</h3></div><span className="shell-muted">以实际终态操作时间排序</span></div>
-                  {projectPersonalAnalysis.recent_completions.length ? <ul className="project-list personal-analysis-completions">{projectPersonalAnalysis.recent_completions.map((item) => { const itemPath = buildWorkItemDetailPath({ owner: /** @type {'app' | 'web'} */ (route.owner), itemKey: item.key }); return <li key={`${item.key}-${item.completed_at}`}><a className="shell-link" href={itemPath} onClick={(event) => handleNavigate(event, itemPath, `已打开 ${item.key}。`)}><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code><strong>{item.title}</strong><time>{formatTimestamp(item.completed_at)}</time></a></li>; })}</ul> : <div className="shell-empty"><strong>暂无完成记录</strong><span>工作项由你推进到完成、解决、验证或关闭后会记录在这里。</span></div>}
+                <section className="analysis-section" aria-labelledby="personal-analysis-completions-title">
+                  <div className="section-heading"><div><p className="shell-eyebrow">最近产出</p><h2 id="personal-analysis-completions-title">最近完成记录</h2></div><span>以实际终态操作时间排序</span></div>
+                  {projectPersonalAnalysis.recent_completions.length ? <div className="analysis-completion-list">{projectPersonalAnalysis.recent_completions.map((item) => { const itemPath = buildWorkItemDetailPath({ owner: /** @type {'app' | 'web'} */ (route.owner), itemKey: item.key }); return <a href={itemPath} key={`${item.key}-${item.completed_at}`} onClick={(event) => handleNavigate(event, itemPath, `已打开 ${item.key}。`)}><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code><strong>{item.title}</strong><time>{formatTimestamp(item.completed_at)}</time></a>; })}</div> : <div className="empty-state"><strong>暂无完成记录</strong><span>工作项由你推进到完成、解决、验证或关闭后会记录在这里。</span></div>}
                 </section>
-                <p className="personal-analysis-note">处理量按你实际执行的终态流转事件统计；日均和月均从加入项目起按自然周期计算，并包含无处理记录的日期。</p>
+                <p className="analysis-note">处理量按你实际执行的终态流转事件统计；日均和月均从加入项目起按自然周期计算，并包含无处理记录的日期。</p>
               </> : null}
             </section>
           ) : route.id === 'project-resource-detail' ? (

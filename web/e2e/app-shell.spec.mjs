@@ -3874,14 +3874,14 @@ test('shared project personal analysis preserves metrics, filters and completion
 
   await login(page, '/web/app/projects/YCE/my-analysis');
   await expect(page).toHaveTitle('我的项目分析 - 元策研发平台 - 元策');
-  await expect(page.getByRole('heading', { level: 2, name: '元策研发平台' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '元策研发平台' })).toBeVisible();
   await expect(page.getByText('仅统计 元策开发管理员 在该项目中的实际处理与协作记录。')).toBeVisible();
   await expect(page.getByLabel('个人处理产出')).toContainText('累计处理12');
   await expect(page.getByLabel('个人处理产出')).toContainText('当前待处理4');
-  await expect(page.getByText('日平均处理').locator('..')).toContainText('0.50');
-  await expect(page.getByText('月平均处理').locator('..')).toContainText('6.00');
-  await expect(page.getByRole('heading', { level: 3, name: '沟通与推进' }).locator('..')).toContainText('活跃天数8');
-  const pending = page.getByRole('heading', { level: 3, name: '我的待处理' }).locator('..');
+  await expect(page.getByText('日平均处理').locator('../..')).toContainText('0.50');
+  await expect(page.getByText('月平均处理').locator('../..')).toContainText('6.00');
+  await expect(page.getByRole('heading', { level: 2, name: '沟通与推进' }).locator('../../..')).toContainText('活跃天数8');
+  const pending = page.getByRole('heading', { level: 2, name: '我的待处理' }).locator('../../..');
   await expect(pending.getByRole('link', { name: '需求 0' })).toHaveAttribute('href', '/web/app/requirements?status=pending&assignee_username=yuance_admin&project_key=YCE');
   await expect(pending.getByRole('link', { name: '任务 3' })).toHaveAttribute('href', '/web/app/tasks?status=pending&assignee_username=yuance_admin&project_key=YCE');
   await expect(pending.getByRole('link', { name: 'Bug 1' })).toHaveAttribute('href', '/web/app/bugs?status=pending&assignee_username=yuance_admin&project_key=YCE');
@@ -3892,12 +3892,12 @@ test('shared project personal analysis preserves metrics, filters and completion
 
   await page.goto('/web/projects/YCE/my-analysis');
   await expect(page).toHaveURL(/\/web\/projects\/YCE\/my-analysis$/);
-  await expect(page.getByRole('heading', { level: 2, name: '元策研发平台' })).toBeVisible();
-  await expect(page.getByRole('heading', { level: 3, name: '我的待处理' }).locator('..').getByRole('link', { name: '任务 3' })).toHaveAttribute('href', '/web/tasks?status=pending&assignee_username=yuance_admin&project_key=YCE');
+  await expect(page.getByRole('heading', { level: 1, name: '元策研发平台' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: '我的待处理' }).locator('../../..').getByRole('link', { name: '任务 3' })).toHaveAttribute('href', '/web/tasks?status=pending&assignee_username=yuance_admin&project_key=YCE');
   await expect(page.getByRole('link', { name: /YCE-TASK-2.*完成共享体验/ })).toHaveAttribute('href', '/web/work-items/YCE-TASK-2');
 
   recentCompletions = [];
-  await page.getByRole('button', { name: '刷新' }).click();
+  await page.reload();
   await expect(page.getByText('暂无完成记录')).toBeVisible();
   await expect(page.getByText('工作项由你推进到完成、解决、验证或关闭后会记录在这里。')).toBeVisible();
 });
@@ -3931,8 +3931,36 @@ test('project personal analysis serializes current project changes across rapid 
   await page.evaluate(() => { history.pushState({}, '', '/web/app/projects/OPS/my-analysis'); dispatchEvent(new PopStateEvent('popstate')); });
   await expect.poll(() => order).toEqual(['start:YCE']);
   releaseFirstSwitch();
-  await expect(page.getByRole('heading', { level: 2, name: 'OPS 项目' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'OPS 项目' })).toBeVisible();
   await expect.poll(() => order).toEqual(['start:YCE', 'finish:YCE', 'start:OPS', 'finish:OPS']);
+});
+
+test('project personal analysis preserves the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/projects/YCE/my-analysis');
+  for (const viewport of [
+    { width: 390, height: 844, columns: 1 },
+    { width: 768, height: 1024, columns: 1 },
+    { width: 1280, height: 800, columns: 2 },
+    { width: 1440, height: 900, columns: 2 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/web/app/projects/YCE/my-analysis');
+    await expect(page.locator('.personal-analysis-page h1')).toHaveText(/\S/u);
+    const geometry = await page.locator('.personal-analysis-page').evaluate((element) => {
+      const main = element.closest('.main');
+      return {
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        outputColumns: getComputedStyle(element.querySelector('.personal-analysis-output')).gridTemplateColumns.split(' ').length,
+        efficiencyColumns: getComputedStyle(element.querySelector('.compact-metrics')).gridTemplateColumns.split(' ').length,
+        analysisColumns: getComputedStyle(element.querySelector('.analysis-columns')).gridTemplateColumns.split(' ').length,
+      };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.outputColumns).toBe(viewport.width <= 960 ? 1 : 4);
+    expect(geometry.efficiencyColumns).toBe(viewport.width <= 960 ? 1 : 4);
+    expect(geometry.analysisColumns).toBe(viewport.columns);
+  }
 });
 
 test('shared project cycle creates updates closes and opens the status board', async ({ page }) => {

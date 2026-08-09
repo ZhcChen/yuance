@@ -121,6 +121,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、project API client/route tests、Web fixture 与 E2E、Desktop parity fixture。
 - 先建立周期、资料和角色权限详情的稳定视觉 fixture，再恢复周期 detail grid、资源 hero/锁定态/正文附件和个人分析 8 指标/双栏结构。
 - 保持共享 mutation 和文件 adapter，只调整呈现结构与可见交互位置。
+- **已完成切片：** 个人分析恢复 analysis header、两组四指标、负载/协作双栏、最近完成列表和说明区；四视口几何合同覆盖指标、效率和分析区域的列数及业务画布无横向溢出。剩余周期详情与资料详情。
 - **Exit：** 三类动态详情均具备 populated/empty/locked/error 运行证据，项目域全部达到基线。
 
 ### V6：工作项列表
