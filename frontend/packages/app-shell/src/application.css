@@ -202,6 +202,26 @@ button:disabled {
 @media (max-width: 1280px) { .storage-layout { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .config-summary-grid, .storage-version-row { grid-template-columns: 1fr; } .storage-version-actions { justify-content: flex-start; } .storage-pager { align-items: flex-start; flex-direction: column; } }
 
+.system-openapi-page { width: 100%; }
+.system-openapi-access-panel, .api-token-panel { overflow: hidden; }
+.system-openapi-panel-head { padding: 16px; margin: 0; }
+.system-openapi-panel-head h2 { margin: 0 0 4px; font-size: 18px; line-height: 26px; }
+.system-openapi-body { display: grid; gap: 16px; padding: 16px; }
+.system-openapi-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.system-openapi-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 0; }
+.system-openapi-summary-item { min-width: 0; display: grid; align-content: start; gap: 10px; padding: 14px 16px; border: 1px solid var(--yc-line); border-radius: 8px; background: var(--yc-panel-soft); }
+.system-openapi-summary-item dt { color: var(--yc-muted); font-size: 12px; font-weight: 800; line-height: 1.2; }
+.system-openapi-summary-item dd { margin: 0; color: var(--yc-muted-strong); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.system-openapi-summary-item-muted dd { color: var(--yc-muted); }
+.system-openapi-scope-list { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.system-openapi-scope { min-height: 28px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid var(--yc-brand-line); border-radius: 999px; background: var(--yc-brand-soft); color: var(--yc-brand-strong); font-size: 12px; font-weight: 750; white-space: nowrap; }
+.api-token-panel { margin-top: 16px; }
+.api-token-panel > .yc-table-wrap { border-right: 0; border-left: 0; border-radius: 0; }
+.token-panel-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.token-quota { min-height: 30px; display: inline-flex; align-items: center; padding: 0 10px; border: 1px solid var(--yc-line); border-radius: 999px; background: var(--yc-panel-soft); color: var(--yc-muted-strong); font-size: 12px; font-weight: 750; }
+
+@media (max-width: 620px) { .system-openapi-summary { grid-template-columns: 1fr; } .token-panel-actions { justify-content: flex-start; } }
+
 .shell-live-region {
   position: absolute;
   width: 1px;

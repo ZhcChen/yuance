@@ -4719,7 +4719,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -4827,15 +4827,13 @@ export function SharedApp({ services }) {
               </> : null}
             </section>
           ) : route.id === 'system-openapi' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="system-openapi-title">
-              <div className="shell-panel-header">
-                <div><h2 id="system-openapi-title">系统 OpenAPI Token</h2><p className="shell-muted">已创建 {systemOpenApiView?.active_count || 0}/{systemOpenApiView?.token_limit || 100} 个</p></div>
-                <div className="shell-actions-inline">
-                  <a className="shell-link" href="/api/system/openapi.json" target="_blank" rel="noreferrer">OpenAPI JSON</a>
-                  <a className="shell-link" href={buildSystemApiDocsPath(route.owner)} onClick={(event) => handleNavigate(event, buildSystemApiDocsPath(route.owner), '正在打开系统 API 文档。')}>API 文档</a>
-                  {systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建 Token</Button> : null}
-                </div>
-              </div>
+            <section className="page-stack system-openapi-page" aria-labelledby="system-openapi-title">
+              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-openapi-title" ref={headingRef} tabIndex={-1}>系统 OpenAPI</h1><p>独立于普通业务 OpenAPI，当前用于版本管理自动化接入。适合 GitHub Actions、发布脚本和系统级集成。</p></div>{systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建系统 Token</Button> : null}</header>
+              <section className="storage-layout system-openapi-layout">
+                <section className="shell-card system-openapi-access-panel"><div className="shell-panel-header system-openapi-panel-head"><div><h2>文档与接入</h2><p className="shell-muted">system token 使用 Bearer 认证；第一阶段仅开放版本读取与版本写入能力。</p></div></div><div className="system-openapi-body"><div className="system-openapi-actions"><a className="yc-button yc-button-secondary" href="/api/system/openapi.json" target="_blank" rel="noreferrer">下载 OpenAPI JSON</a><a className="yc-button yc-button-secondary" href={buildSystemApiDocsPath(route.owner)} onClick={(event) => handleNavigate(event, buildSystemApiDocsPath(route.owner), '正在打开系统 API 文档。')}>打开在线文档</a></div><dl className="system-openapi-summary"><div className="system-openapi-summary-item"><dt>认证方式</dt><dd><code>Authorization: Bearer &lt;system_token&gt;</code></dd></div><div className="system-openapi-summary-item"><dt>当前开放</dt><dd><div className="system-openapi-scope-list" aria-label="当前开放接口范围">{['版本列表', '版本详情', '创建版本', '编辑版本', '发布版本', '资产上传签名', '上传确认'].map((label) => <span className="system-openapi-scope" key={label}>{label}</span>)}</div></dd></div><div className="system-openapi-summary-item system-openapi-summary-item-muted"><dt>暂未开放</dt><dd>版本保留策略、对象存储设置、用户 / 角色 / 审计等其它系统接口。</dd></div></dl></div></section>
+                <aside className="shell-card storage-side"><h2>接入提示</h2><ul className="check-list"><li>优先为自动化任务创建最小权限 token。</li><li>版本资产上传采用：创建资产 → 获取上传地址 → 上传文件 → 确认已上传。</li><li>{systemOpenApiView?.can_manage_tokens ? 'Token 明文仅在创建成功后展示一次；删除后立即失效。' : '你当前只有查看权限，无法修改 token。'}</li></ul></aside>
+              </section>
+              <section className="shell-card api-token-panel"><div className="shell-panel-header system-openapi-panel-head"><div><h2>System Access Token</h2><p className="shell-muted">用于 system OpenAPI 的独立访问凭证，和普通用户 PAT 分离。</p></div><div className="token-panel-actions"><span className="token-quota">有效 Token {systemOpenApiView?.active_count || 0}/{systemOpenApiView?.token_limit || 100}</span>{systemOpenApiView?.can_manage_tokens ? <Button disabled={systemApiTokenSubmitting || (systemOpenApiView.active_count >= systemOpenApiView.token_limit)} onClick={openSystemApiTokenCreate}>创建 Token</Button> : null}</div></div>
               {createdSystemApiToken ? <Feedback tone="success" title="系统 Token 已创建"><Field id="system-api-token-created" label="Token 明文" hint="关闭或刷新后不再显示。"><input readOnly value={createdSystemApiToken} onFocus={(event) => event.currentTarget.select()} /></Field></Feedback> : null}
               {systemApiTokenError && !systemApiTokenEditor && !systemApiTokenDeleteTarget ? <Feedback tone="danger" title="系统 Token 操作失败">{systemApiTokenError}</Feedback> : null}
               <DataTable caption="系统 OpenAPI Token 列表" rows={systemOpenApiView?.items || []} rowKey={(item) => item.id} emptyText="暂无系统 Token。" columns={[
@@ -4846,6 +4844,7 @@ export function SharedApp({ services }) {
                 { key: 'created', label: '创建时间', render: (item) => formatTimestamp(item.created_at) },
                 { key: 'actions', label: '操作', render: (item) => systemOpenApiView?.can_manage_tokens ? <div className="shell-actions-inline"><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => openSystemApiTokenEdit(item)}>编辑</Button><Button variant="danger" disabled={systemApiTokenSubmitting} onClick={() => { setSystemApiTokenError(''); setCreatedSystemApiToken(''); setSystemApiTokenDeleteTarget(item); }}>删除</Button></div> : '只读' },
               ]} />
+              </section>
               <Modal open={Boolean(systemApiTokenEditor)} title={systemApiTokenEditor?.mode === 'create' ? '创建系统 Token' : '编辑系统 Token'} onClose={() => { if (!systemApiTokenSubmitting) { setSystemApiTokenEditor(null); setSystemApiTokenError(''); } }} footer={<><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => setSystemApiTokenEditor(null)}>取消</Button><Button loading={systemApiTokenSubmitting} disabled={!systemApiTokenForm.name.trim() || systemApiTokenForm.scopes.length === 0} onClick={() => /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-api-token-form'))?.requestSubmit()}>{systemApiTokenEditor?.mode === 'create' ? '创建' : '保存'}</Button></>}>
                 <form id="system-api-token-form" onSubmit={submitSystemApiToken}>
                   <Field id="system-api-token-name" label="名称" required><input maxLength={80} value={systemApiTokenForm.name} onChange={(event) => setSystemApiTokenForm((current) => ({ ...current, name: event.target.value }))} /></Field>

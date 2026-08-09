@@ -2762,6 +2762,18 @@ test('shared system OpenAPI tokens preserve one-time plaintext and confirmed lif
   await expect(page.getByRole('table', { name: '系统 OpenAPI Token 列表' })).toContainText('Release robot');
   await expect(page.locator('body')).not.toContainText('yuance_sys_pat_');
 
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.system-openapi-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const layout = element.querySelector('.system-openapi-layout');
+      return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, columns: getComputedStyle(layout).gridTemplateColumns, pageRight: element.getBoundingClientRect().right, mainRight: main.getBoundingClientRect().right };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.pageRight).toBeLessThanOrEqual(geometry.mainRight + 1);
+    expect(geometry.columns.trim().split(/\s+/u).length).toBe(viewport.width > 1280 ? 2 : 1);
+  }
+
   await page.getByRole('button', { name: '创建 Token' }).click();
   const creator = page.getByRole('dialog', { name: '创建系统 Token' });
   await creator.getByLabel('名称').fill('Desktop release');

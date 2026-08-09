@@ -158,6 +158,7 @@ baseline:
 - 高风险操作的确认、脱敏、一次性密钥和审计逻辑保持不变。
 - **已完成切片：** database stats 与 audit 恢复单 panel、自带页面标题、紧凑工具栏/筛选栏、统计表和底部分页布局；审计每页数量移入 pager，正式 route query、缓存刷新失败保留和只读证据语义不变。四视口业务画布无横向溢出。剩余 storage、OpenAPI、releases 和 System API docs。
 - **已完成切片：** storage 恢复配置主栏与边界说明侧栏、独立桶状态面板、版本行列表和底部分页；宽屏双栏、1280px 及以下单列，移动端版本行降级。脱敏、确认锁、原子刷新和最终刷新失败语义不变。剩余 OpenAPI、releases 和 System API docs。
+- **已完成切片：** OpenAPI 恢复 page hero、文档与接入主栏、接入提示侧栏、scope 摘要和独立 Token 面板；宽屏双栏、1280px 及以下单列。一次性明文、最小 scope、配额、编辑和确认删除语义不变。剩余 releases 和 System API docs。
 - **Exit：** 系统运维页面全部达到基线；普通用户不可见且直接访问仍被拒绝。
 
 ### V10：边界页、双宿主响应式回归与收口
