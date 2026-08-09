@@ -4719,7 +4719,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
+      {!['home', 'unsupported', 'messages', 'search', 'profile', 'projects', 'project-detail', 'project-cycle-detail', 'project-resource-detail', 'project-personal-analysis', 'system-dashboard', 'system-users', 'system-permissions', 'system-roles', 'system-database-stats', 'system-audit', 'system-storage', 'system-openapi', 'system-releases'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1><button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button></header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -4858,24 +4858,17 @@ export function SharedApp({ services }) {
               <Modal open={Boolean(systemApiTokenDeleteTarget)} title="删除系统 Token" onClose={() => { if (!systemApiTokenSubmitting) { setSystemApiTokenDeleteTarget(null); setSystemApiTokenError(''); } }} footer={<><Button variant="secondary" disabled={systemApiTokenSubmitting} onClick={() => setSystemApiTokenDeleteTarget(null)}>取消</Button><Button variant="danger" loading={systemApiTokenSubmitting} onClick={() => void confirmSystemApiTokenDelete()}>确认删除</Button></>}><p>确认删除 {systemApiTokenDeleteTarget?.name || ''}？使用该 Token 的自动化会立即失去访问权限。</p>{systemApiTokenError ? <Feedback tone="danger" title="删除失败">{systemApiTokenError}</Feedback> : null}</Modal>
             </section>
           ) : route.id === 'system-releases' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="system-releases-title">
-              <div className="shell-panel-header">
-                <div><h2 id="system-releases-title">发布工作台</h2><p className="shell-muted">保留策略、版本状态与平台资产</p></div>
-                {systemReleasesView?.can_manage_releases ? <Button disabled={systemReleaseSubmitting} onClick={openSystemReleaseCreate}>新建版本</Button> : null}
-              </div>
+            <section className="page-stack system-release-page" aria-label="发布工作台">
+              <header className="page-hero"><div><p className="eyebrow">系统管理</p><h1 id="system-releases-title" ref={headingRef} tabIndex={-1}>版本管理</h1><p>维护桌面端与移动端发布版本，安装包统一走当前已激活的对象存储。</p></div>{systemReleasesView?.can_manage_releases ? <Button disabled={systemReleaseSubmitting} onClick={openSystemReleaseCreate}>新建版本</Button> : null}</header>
+              <section className="storage-layout system-release-policy-layout"><section className="shell-card system-release-policy-panel"><div className="shell-panel-header system-release-panel-head"><div><h2>保留策略</h2><p className="shell-muted">仅对已发布版本生效。超过保留数的旧版本会自动删除数据库记录和 OSS 对象。</p></div></div>
               {systemReleaseError && !systemReleaseEditor && !systemReleaseConfirmation ? <Feedback tone="danger" title="发布操作需要处理">{systemReleaseError}</Feedback> : null}
-              {systemReleasesView ? <dl className="shell-detail-grid">
-                <div><dt>已发布版本保留数</dt><dd>{systemReleasesView.settings.retention_count}</dd></div>
-                <div><dt>策略更新人</dt><dd>{systemReleasesView.settings.updated_by || '系统'}</dd></div>
-                <div><dt>策略更新时间</dt><dd>{formatTimestamp(systemReleasesView.settings.updated_at)}</dd></div>
-                <div><dt>版本总数</dt><dd>{systemReleasesView.pagination.total_items}</dd></div>
-              </dl> : null}
-              {systemReleasesView?.can_manage_releases ? <form className="shell-actions-inline" onSubmit={submitSystemReleaseSettings}>
+              {systemReleasesView ? <dl className="config-summary-grid storage-meta"><div className="config-summary-item"><dt>当前保留数</dt><dd>{systemReleasesView.settings.retention_count}</dd></div><div className="config-summary-item"><dt>最近更新人</dt><dd>{systemReleasesView.settings.updated_by || '系统'}</dd></div><div className="config-summary-item"><dt>更新时间</dt><dd>{formatTimestamp(systemReleasesView.settings.updated_at)}</dd></div></dl> : null}
+              {systemReleasesView?.can_manage_releases ? <form className="system-release-settings-form" onSubmit={submitSystemReleaseSettings}>
                 <Field id="system-release-retention" label="已发布版本保留数"><input type="number" min="1" max="50" required value={systemReleaseSettingsCount} onChange={(event) => setSystemReleaseSettingsCount(Number(event.target.value))} /></Field>
-                <Button type="submit" variant="secondary" loading={systemReleaseSubmitting}>保存策略</Button>
-              </form> : null}
-              <section aria-labelledby="system-release-list-title">
-                <div className="shell-panel-header"><div><h3 id="system-release-list-title">版本列表</h3><p className="shell-muted">已发布版本优先，其余按更新时间倒序。</p></div></div>
+                <Button type="submit" variant="secondary" loading={systemReleaseSubmitting}>更新保留策略</Button>
+              </form> : null}</section><aside className="shell-card storage-side"><h2>发布约束</h2><ul className="check-list"><li>新建版本默认是草稿，满足通道校验后才能发布。</li><li>一个版本可以包含 Windows、macOS、Linux、Android 和 iOS 等平台产物。</li><li>安装包通过临时签名地址上传，不在页面暴露长期 OSS 凭证。</li></ul></aside></section>
+              <section className="shell-card system-release-list-panel" aria-labelledby="system-release-list-title">
+                <div className="shell-panel-header system-release-panel-head"><div><h2 id="system-release-list-title">版本列表</h2><p className="shell-muted">已发布版本优先，其余按更新时间倒序。</p></div></div>
                 <DataTable caption="系统版本列表" rows={systemReleasesView?.items || []} rowKey={(item) => item.release.id} emptyText="暂无版本记录。" columns={[
                   { key: 'version', label: '版本', render: (item) => <><strong>{item.release.version_name}</strong><br /><span className="shell-muted">{item.release.channel}</span></> },
                   { key: 'title', label: '标题 / 说明', render: (item) => <><strong>{item.release.title || '未填写标题'}</strong><br /><span className="shell-muted">{item.release.notes || '暂无版本说明'}</span></> },
@@ -4889,7 +4882,6 @@ export function SharedApp({ services }) {
                     {item.release.status === 'published' ? <Button variant="danger" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseConfirmation({ kind: 'withdraw', release: item.release, reason: '' })}>撤回</Button> : null}
                   </div> : null },
                 ]} />
-              </section>
               <section aria-labelledby="system-release-assets-title">
                 <div className="shell-panel-header"><div><h3 id="system-release-assets-title">版本资产</h3></div></div>
                 <DataTable caption="系统版本资产" rows={(systemReleasesView?.items || []).flatMap((item) => item.assets.map((asset) => ({ ...asset, version_name: item.release.version_name, release_status: item.release.status })))} rowKey={(item) => item.id} emptyText="当前页版本暂无资产。" columns={[
@@ -4904,6 +4896,7 @@ export function SharedApp({ services }) {
                 ]} />
               </section>
               {systemReleasesView ? <div className="shell-panel-header"><Pagination page={systemReleasesView.pagination.page} totalPages={systemReleasesView.pagination.total_pages} totalItems={systemReleasesView.pagination.total_items} onPageChange={(page) => navigate(buildSystemReleasesPath({ owner: route.owner, page, perPage: systemReleasesView.pagination.per_page }), `正在加载第 ${page} 页版本。`)} /><label className="shell-page-size">每页<select value={systemReleasesView.pagination.per_page} onChange={(event) => navigate(buildSystemReleasesPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label></div> : null}
+              </section>
               <Modal open={Boolean(systemReleaseEditor)} title={systemReleaseEditor?.mode === 'edit' ? '编辑版本草稿' : '新建版本草稿'} onClose={() => { if (!systemReleaseSubmitting) setSystemReleaseEditor(null); }} footer={<><Button variant="secondary" disabled={systemReleaseSubmitting} onClick={() => setSystemReleaseEditor(null)}>取消</Button><Button type="submit" form="system-release-editor-form" loading={systemReleaseSubmitting}>保存草稿</Button></>}>
                 <form id="system-release-editor-form" onSubmit={submitSystemReleaseEditor}>
                   <Field id="system-release-version" label="版本号" required><input required value={systemReleaseForm.versionName} onChange={(event) => setSystemReleaseForm((current) => ({ ...current, versionName: event.target.value }))} /></Field>

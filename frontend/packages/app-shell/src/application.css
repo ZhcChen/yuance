@@ -222,6 +222,15 @@ button:disabled {
 
 @media (max-width: 620px) { .system-openapi-summary { grid-template-columns: 1fr; } .token-panel-actions { justify-content: flex-start; } }
 
+.system-release-page { width: 100%; gap: 16px; }
+.system-release-policy-panel, .system-release-list-panel { overflow: hidden; }
+.system-release-panel-head { padding: 16px; margin: 0; }
+.system-release-panel-head h2 { margin: 0 0 4px; font-size: 18px; line-height: 26px; }
+.system-release-settings-form { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px; padding: 0 16px 16px; }
+.system-release-settings-form .yc-field { min-width: 220px; flex: 1 1 220px; }
+.system-release-list-panel > .yc-table-wrap, .system-release-list-panel > section > .yc-table-wrap { border-right: 0; border-left: 0; border-radius: 0; }
+.system-release-list-panel > .shell-panel-header:last-child { padding: 12px 16px; margin: 0; border-top: 1px solid var(--yc-line); }
+
 .shell-live-region {
   position: absolute;
   width: 1px;

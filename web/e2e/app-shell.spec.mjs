@@ -2836,6 +2836,18 @@ test('shared system releases view renders one atomic policy version and asset sn
   await expect(page.locator('body')).not.toContainText('release/private/object-key');
   await expect.poll(() => requests).toContain('/api/v1/system/releases-view?page=2&per_page=20');
 
+  for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1280, height: 800 }, { width: 1440, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    const geometry = await page.locator('.system-release-page').evaluate((element) => {
+      const main = element.closest('.main');
+      const layout = element.querySelector('.system-release-policy-layout');
+      return { mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, columns: getComputedStyle(layout).gridTemplateColumns, pageRight: element.getBoundingClientRect().right, mainRight: main.getBoundingClientRect().right };
+    });
+    expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+    expect(geometry.pageRight).toBeLessThanOrEqual(geometry.mainRight + 1);
+    expect(geometry.columns.trim().split(/\s+/u).length).toBe(viewport.width > 1280 ? 2 : 1);
+  }
+
   await page.getByRole('button', { name: '下一页' }).click();
   await expect(page).toHaveURL('/web/system/releases?page=3&per_page=20');
   await expect(page.getByRole('table', { name: '系统版本列表' })).toContainText('v2.0.3');
