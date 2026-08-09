@@ -584,6 +584,47 @@ pub struct TopbarStatusPayload {
 }
 
 #[derive(Debug, Serialize)]
+pub struct DashboardMetricsPayload {
+    pub active_projects: usize,
+    pub requirements: i64,
+    pub tasks: i64,
+    pub bugs: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardProjectPayload {
+    pub key: String,
+    pub name: String,
+    pub owner: String,
+    pub status: String,
+    pub work_item_count: i64,
+    pub active_work_item_count: i64,
+    pub pending_requirements: i64,
+    pub pending_tasks: i64,
+    pub pending_bugs: i64,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardActivityPayload {
+    pub id: i64,
+    pub project_key: String,
+    pub summary: String,
+    pub actor: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DashboardPayload {
+    pub metrics: DashboardMetricsPayload,
+    pub projects: Vec<DashboardProjectPayload>,
+    pub pending_discussions: Vec<NotificationPayload>,
+    pub pending_discussion_count: i64,
+    pub activities: Vec<DashboardActivityPayload>,
+    pub can_manage_projects: bool,
+}
+
+#[derive(Debug, Serialize)]
 pub struct ApiTokenPayload {
     pub id: i64,
     pub name: String,
@@ -5905,6 +5946,116 @@ pub async fn get_system_dashboard(
     links.retain(|link| link.id != "dashboard");
 
     Ok(json(SystemDashboardPayload { links }))
+}
+
+pub async fn get_dashboard(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> AppResult<impl IntoResponse> {
+    let principal = require_d2_api_principal(&state, &headers).await?;
+    let user = &principal.user;
+    let pool = state.pool()?;
+    let can_access_all_projects = api_user_can_access_all_projects(pool, user).await?;
+    let can_view_projects = rbac::user_has_permission(pool, user.id, "project.view").await?;
+    let can_view_work_items = rbac::user_has_permission(pool, user.id, "work_item.view").await?;
+    let summaries = if can_view_projects {
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_PROJECT_READ).await?;
+        projects::list_project_summaries_for_user(pool, user.id, can_access_all_projects).await?
+    } else {
+        Vec::new()
+    };
+    let pending_by_project = if can_view_work_items {
+        ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_WORK_ITEM_READ).await?;
+        projects::list_project_pending_counts_for_user(pool, user.id)
+            .await?
+            .into_iter()
+            .map(|counts| (counts.project_id, counts))
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
+    let assigned = if can_view_work_items {
+        projects::count_pending_assigned_work_items(pool, user.id, can_access_all_projects, None)
+            .await?
+    } else {
+        projects::WorkItemAssignmentCounts::default()
+    };
+    let active_projects = summaries
+        .iter()
+        .filter(|project| {
+            matches!(
+                project.status.as_str(),
+                "not_started" | "in_progress" | "acceptance"
+            )
+        })
+        .count();
+    let projects = summaries
+        .into_iter()
+        .map(|project| {
+            let pending = pending_by_project
+                .get(&project.id)
+                .cloned()
+                .unwrap_or_default();
+            DashboardProjectPayload {
+                key: project.project_key,
+                name: project.name,
+                owner: fallback_text(project.owner_display_name, "未分配"),
+                status: project.status,
+                work_item_count: project.work_item_count,
+                active_work_item_count: project.active_work_item_count,
+                pending_requirements: pending.requirements,
+                pending_tasks: pending.tasks,
+                pending_bugs: pending.bugs,
+                updated_at: project.updated_at,
+            }
+        })
+        .collect();
+    ensure_api_token_scope(pool, &headers, user.id, api_tokens::SCOPE_NOTIFICATION_READ).await?;
+    let pending_discussion_count = notifications::count_for_user_filtered(
+        pool,
+        user.id,
+        notifications::NotificationFilter::PendingDiscussion,
+    )
+    .await?;
+    let pending_discussions = notifications::list_for_user_page_filtered(
+        pool,
+        user.id,
+        notifications::NotificationFilter::PendingDiscussion,
+        1,
+        5,
+    )
+    .await?
+    .into_iter()
+    .map(notification_payload)
+    .collect();
+    let activities = if can_view_projects {
+        projects::list_recent_activities_for_user(pool, user.id, can_access_all_projects, 5)
+            .await?
+            .into_iter()
+            .map(|activity| DashboardActivityPayload {
+                id: activity.id,
+                project_key: activity.project_key,
+                summary: activity.summary,
+                actor: fallback_text(activity.actor_display_name, "系统"),
+                created_at: activity.created_at,
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(no_store_json(DashboardPayload {
+        metrics: DashboardMetricsPayload {
+            active_projects,
+            requirements: assigned.requirements,
+            tasks: assigned.tasks,
+            bugs: assigned.bugs,
+        },
+        projects,
+        pending_discussions,
+        pending_discussion_count,
+        activities,
+        can_manage_projects: rbac::user_has_permission(pool, user.id, "project.manage").await?,
+    }))
 }
 
 pub async fn create_system_user(

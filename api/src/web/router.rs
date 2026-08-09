@@ -612,6 +612,7 @@ pub fn build_router(state: AppState) -> Router {
             get(web::api::get_current_project).patch(web::api::update_current_project),
         )
         .route("/api/v1/topbar/status", get(web::api::get_topbar_status))
+        .route("/api/v1/dashboard", get(web::api::get_dashboard))
         .route("/api/v1/topbar/events", get(web::api::topbar_events))
         .route("/api/v1/search", get(web::api::search))
         .route(

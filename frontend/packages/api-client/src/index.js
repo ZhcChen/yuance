@@ -8,6 +8,7 @@
 export const API_CLIENT_PACKAGE_NAME = '@yuance/frontend-api-client';
 export { ApiError, apiErrorFromPayload } from './errors.js';
 export { createApiClient } from './http-client.js';
+export { createDashboardClient } from './dashboard.js';
 export { createAccountSecurityClient } from './account-security.js';
 export { createProfileClient } from './profile.js';
 export { createProjectClient, projectApiPath, projectAttachmentApiPath, projectAttachmentPreviewApiPath, projectAttachmentPreviewFromPayload, projectCycleApiPath, projectCycleBody, projectMemberApiPath, projectPersonalAnalysisApiPath, projectUpdateBody } from './projects.js';

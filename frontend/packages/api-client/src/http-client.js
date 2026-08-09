@@ -9,6 +9,7 @@ import { createTopbarClient } from './topbar.js';
 import { createWorkItemClient } from './work-items.js';
 import { createProjectClient } from './projects.js';
 import { createResourceClient } from './resources.js';
+import { createDashboardClient } from './dashboard.js';
 
 /** @typedef {{ method?: string, headers?: Record<string, string>, body?: string }} ApiRequestOptions */
 /** @typedef {(url: string, options?: ApiRequestOptions) => Promise<any>} ApiRequest */
@@ -39,6 +40,7 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
   const search = createSearchClient({ request });
   const topbar = createTopbarClient({ request });
   const system = createSystemClient({ request, prepareWrite });
+  const dashboard = createDashboardClient({ request });
 
   return {
     /** @returns {Promise<AuthUser>} */
@@ -93,6 +95,7 @@ export function createApiClient({ request, prepareWrite = async () => {} }) {
     },
 
     ...topbar,
+    ...dashboard,
     ...projectClient,
     ...resourceClient,
     ...accountSecurity,
