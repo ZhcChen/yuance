@@ -9,7 +9,7 @@ origin:
   - docs/plans/2026-08-07-001-refactor-web-desktop-exact-experience-parity-plan.md
   - docs/plans/2026-08-09-001-fix-desktop-stable-spa-shell-plan.md
 execution: code
-execution_status: in_progress
+execution_status: completed
 baseline:
   branch: main
   commit: 6c0e56daa5460a9725ee00b8937124d390e9bd0b
@@ -171,6 +171,7 @@ baseline:
 - 使用相同 fixture 对 Browser 和 packaged Desktop 执行页面矩阵；比较 DOM 锚点、computed style、边界框和截图。
 - 验证 route 切换、前进后退、项目切换、modal 和主题切换无整壳闪烁、白屏或布局抖动。
 - 更新 `docs/reviews/`，逐页记录基线、结果、允许差异和复现命令。
+- **已完成：** login、bootstrap、device authorization、downloads、public/System API docs 边界完成复核；Browser 四视口全局壳、History、项目/主题切换和 packaged Desktop 授权、业务 mutation、附件、错误恢复、网络生命周期及 artifact 完整性全部通过。visual contract 无 `pending` 项。
 - **Exit：** 所有页面和状态通过 Gate，manifest 无 pending 项，计划状态改为 `completed`。
 
 ## Execution Order And Commit Boundaries
@@ -196,13 +197,13 @@ baseline:
 
 ## Definition Of Done
 
-- [ ] `main@6c0e56d` 的页面、状态、视口和允许差异已完整登记。
-- [ ] 全局壳、token、原语和所有业务页面按基线完成视觉与排版还原。
-- [ ] Browser 与 Desktop 继续使用同一组件树和样式源。
-- [ ] 固定视口结构、几何、computed style 和截图 Gate 全部通过。
-- [ ] 菜单、路由、项目和主题切换无顶栏卸载、白屏、闪烁或布局抖动。
-- [ ] 功能、权限、认证、文件、SSE 与 Desktop 安全边界无回归。
-- [ ] 最终 review 可逐页映射到基线证据，且无未说明的视觉差异。
+- [x] `main@6c0e56d` 的页面、状态、视口和允许差异已完整登记。
+- [x] 全局壳、token、原语和所有业务页面按基线完成视觉与排版还原。
+- [x] Browser 与 Desktop 继续使用同一组件树和样式源。
+- [x] 固定视口结构、几何、computed style 和截图 Gate 全部通过。
+- [x] 菜单、路由、项目和主题切换无顶栏卸载、白屏、闪烁或布局抖动。
+- [x] 功能、权限、认证、文件、SSE 与 Desktop 安全边界无回归。
+- [x] 最终 review 可逐页映射到基线证据，且无未说明的视觉差异。
 
 ## Current Progress
 
@@ -219,4 +220,4 @@ baseline:
 - [x] V7：工作项详情协作。
 - [x] V8：系统管理核心页面。
 - [x] V9：系统运维页面。
-- [ ] V10：边界页、双宿主响应式回归与收口。
+- [x] V10：边界页、双宿主响应式回归与收口。

@@ -140,6 +140,7 @@ GET   /api/v1/projects
 GET   /api/v1/current-project
 PATCH /api/v1/current-project
 GET   /api/v1/topbar/status
+GET   /api/v1/dashboard
 GET   /api/v1/topbar/events
 GET   /api/v1/notifications
 GET   /api/v1/notifications/{notification_id}/target
