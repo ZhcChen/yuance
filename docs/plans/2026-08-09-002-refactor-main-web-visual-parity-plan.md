@@ -89,6 +89,7 @@ baseline:
 - 恢复 `.main` 内容宽度、页面标题、按钮、字段、反馈、modal、表格、分页、badge、tab 和 card 的基线外观。
 - **已完成切片：** 根壳改为 58px 顶栏 + `.main` 独立滚动；导航已恢复真实 logo、桌面端下载、RBAC 系统下拉、可搜索项目切换、全局搜索、消息面板、账户菜单，以及 1280/1100/860 响应式行为。剩余工作为基础原语和页面内容画布的 computed style 校准。
 - **已完成切片：** button、field、modal 与 table 已按固定基线校准边框、尺寸、padding、hover/focus、backdrop、阴影和结构边界；剩余原语为 feedback、pagination、badge、tab、card 及内容画布。
+- **已完成：** feedback、pagination、badge、tabs、card token 与内容画布完成基线校准；消息、搜索、项目和工作项移除平行的 button/tab/badge/pagination 样式并迁移到共享原语。桌面 18px、移动 12px 内容 padding、无 1200px 人工限宽，1280/1440 顶栏区域与工具子项均有不重叠几何断言。
 - **Exit：** 所有页面共享相同画布和原语；菜单切换仍不卸载顶栏，Web/Desktop 无业务 CSS 分叉。
 
 ### V2：页面骨架与工作台
@@ -191,7 +192,7 @@ baseline:
 - [x] 固定视觉基线提交 `6c0e56daa5460a9725ee00b8937124d390e9bd0b`。
 - [x] 完成 30 页静态覆盖扫描及 21 页双侧四视口运行采集。
 - [x] V0：将扫描结果固化为可执行 visual manifest 与 fixture。
-- [ ] V1：全局 token、画布、导航与基础原语（当前仅有首轮局部调整）。
+- [x] V1：全局 token、画布、导航与基础原语。
 - [ ] V2：页面骨架与工作台。
 - [ ] V3：个人、消息与搜索。
 - [ ] V4：项目列表与项目详情。

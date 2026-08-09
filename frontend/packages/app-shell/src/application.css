@@ -42,6 +42,7 @@ button:disabled {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  padding: 18px;
 }
 
 .shell-header,
@@ -52,7 +53,7 @@ button:disabled {
 .project-center,
 .work-item-center,
 .work-item-detail-center {
-  max-width: 1200px;
+  max-width: none;
   margin: 0 auto;
 }
 
@@ -65,10 +66,10 @@ button:disabled {
 .work-item-center,
 .work-item-detail-center,
 .shell-loading {
-  width: min(1200px, calc(100% - 48px));
+  width: 100%;
 }
 
-.shell-header { padding-top: 24px; }
+.shell-header { padding-top: 0; }
 
 .shell-live-region {
   position: absolute;
@@ -87,7 +88,7 @@ button:disabled {
   justify-content: space-between;
   gap: 24px;
   align-items: flex-start;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .shell-grid {
@@ -106,17 +107,17 @@ button:disabled {
 .shell-card,
 .shell-loading,
 .shell-banner {
-  background: #ffffff;
-  border: 1px solid #d7deea;
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--yc-card-radius);
+  background: var(--yc-panel);
   padding: 20px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--yc-card-shadow);
 }
 
 .shell-route-loading {
-  width: min(1200px, calc(100% - 48px));
+  width: 100%;
   min-height: 420px;
-  margin: 24px auto 0;
+  margin: 0;
   padding: 24px;
   border: 1px solid var(--yc-line);
   border-radius: 8px;
@@ -195,7 +196,6 @@ h2 {
 .shell-actions,
 .shell-actions-inline,
 .shell-panel-header,
-.message-pagination-controls,
 .message-center-header {
   display: flex;
   gap: 12px;
@@ -356,20 +356,6 @@ html[data-theme="dark"] .shell-code-block {
   text-decoration: none;
 }
 
-.shell-button {
-  min-height: 38px;
-  border: 0;
-  border-radius: 8px;
-  background: #111827;
-  color: #ffffff;
-  padding: 0 14px;
-}
-
-.shell-button-secondary {
-  background: #e2e8f0;
-  color: #111827;
-}
-
 .shell-banner {
   margin-bottom: 16px;
   display: flex;
@@ -428,59 +414,21 @@ html[data-theme="dark"] .shell-code-block {
   margin-top: 6px;
 }
 
-.notification-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 44px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #dbeafe;
-  color: #1d4ed8;
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .message-center,
 .project-center,
 .work-item-center,
 .work-item-detail-center {
-  background: #ffffff;
-  border: 1px solid #d7deea;
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--yc-card-radius);
+  background: var(--yc-panel);
   padding: 20px;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+  box-shadow: var(--yc-card-shadow);
 }
 
-.message-tabs {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-
-.message-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid #d7deea;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #334155;
-}
-
-.message-tab.active {
-  border-color: #93c5fd;
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.message-tab strong {
-  min-width: 20px;
-}
+.message-center > .yc-content-tabs,
+.project-center > .yc-content-tabs,
+.work-item-center > .yc-content-tabs,
+.work-item-detail-center > .yc-content-tabs { margin-bottom: 16px; }
 
 .message-row.unread {
   border-left: 3px solid #2563eb;
@@ -522,18 +470,6 @@ html[data-theme="dark"] .shell-code-block {
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
-}
-
-.project-status-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .project-stats {
@@ -604,18 +540,6 @@ html[data-theme="dark"] .shell-code-block {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
-}
-
-.priority-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #fff7ed;
-  color: #c2410c;
-  font-size: 12px;
-  font-weight: 600;
 }
 
 .work-item-filter-bar {
@@ -714,34 +638,6 @@ html[data-theme="dark"] .shell-code-block {
 .message-body {
   min-width: 0;
   flex: 1;
-}
-
-.message-kind {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.message-pagination {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  align-items: center;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid #eef2ff;
-}
-
-.message-pagination-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .page-size-control {
@@ -846,7 +742,6 @@ html[data-theme="dark"] .shell-code-block {
   .app-topbar,
   .shell-header,
   .shell-columns,
-  .message-pagination,
   .project-row,
   .project-actions,
   .work-item-row,
@@ -875,11 +770,16 @@ html[data-theme="dark"] .shell-code-block {
     grid-column: 1 / -1;
   }
 
-  .shell-actions,
-  .message-pagination-controls {
+  .shell-actions {
     justify-content: flex-start;
     flex-wrap: wrap;
   }
+}
+
+@media (max-width: 860px) {
+  body { height: auto; min-height: 100vh; overflow: auto; }
+  .app-shell { height: auto; min-height: 100vh; overflow: visible; }
+  .main { overflow: visible; padding: 12px; }
 }
 
 html[data-theme="dark"] .shell-card,
@@ -906,8 +806,6 @@ html[data-theme="dark"] .page-size-control {
   color: var(--yc-muted);
 }
 
-html[data-theme="dark"] .shell-button-secondary,
-html[data-theme="dark"] .message-tab,
 html[data-theme="dark"] .work-item-filter-field input,
 html[data-theme="dark"] .work-item-filter-field select,
 html[data-theme="dark"] .page-size-control select,
@@ -922,7 +820,6 @@ html[data-theme="dark"] .notification-row,
 html[data-theme="dark"] .message-row,
 html[data-theme="dark"] .project-row,
 html[data-theme="dark"] .work-item-row,
-html[data-theme="dark"] .message-pagination,
 html[data-theme="dark"] .shell-stats div {
   border-color: var(--yc-line);
 }

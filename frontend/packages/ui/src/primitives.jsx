@@ -25,6 +25,25 @@ export function Feedback({ tone = 'info', title, children, action }) {
   return <section className={`yc-feedback yc-feedback-${tone}`} role={tone === 'danger' ? 'alert' : 'status'}><div><strong>{title}</strong>{children ? <div>{children}</div> : null}</div>{action}</section>;
 }
 
+/** @param {{ children?: React.ReactNode, tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' }} props */
+export function Badge({ children, tone = 'neutral' }) {
+  return <span className={`yc-badge yc-badge-${tone}`}>{children}</span>;
+}
+
+/** @param {{ children?: React.ReactNode, ariaLabel: string }} props */
+export function ContentTabs({ children, ariaLabel }) {
+  return <nav className="yc-content-tabs" aria-label={ariaLabel}>{children}</nav>;
+}
+
+/** @param {{ children?: React.ReactNode, href?: string, active?: boolean, badge?: number, onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement> }} props */
+export function ContentTab({ children, href, active = false, badge = 0, onClick }) {
+  const content = <>{children}{badge > 0 ? <span className="yc-content-tab-badge">{badge > 99 ? '99+' : badge}</span> : null}</>;
+  const className = `yc-content-tab ${active ? 'active' : ''}`;
+  return href
+    ? <a className={className} href={href} aria-current={active ? 'page' : undefined} onClick={/** @type {React.MouseEventHandler<HTMLAnchorElement>} */ (onClick)}>{content}</a>
+    : <button className={className} type="button" aria-pressed={active} onClick={/** @type {React.MouseEventHandler<HTMLButtonElement>} */ (onClick)}>{content}</button>;
+}
+
 /** @param {{ open: boolean, title: string, children?: React.ReactNode, footer?: React.ReactNode, onClose(): void }} props */
 export function Modal({ open, title, children, footer, onClose }) {
   const ref = useRef(/** @type {HTMLDialogElement | null} */ (null));
@@ -49,10 +68,10 @@ export function DataTable({ columns, rows, rowKey, caption, emptyText = '暂无�
   return <div className="yc-table-wrap"><table className="yc-table"><caption className="shell-live-region">{caption}</caption><thead><tr>{columns.map((column) => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead><tbody>{rows.length ? rows.map((row) => <tr key={rowKey(row)}>{columns.map((column) => <td key={column.key}>{column.render(row)}</td>)}</tr>) : <tr><td colSpan={columns.length} className="yc-table-empty">{emptyText}</td></tr>}</tbody></table></div>;
 }
 
-/** @param {{ page: number, totalPages: number, totalItems: number, onPageChange(page: number): void }} props */
-export function Pagination({ page, totalPages, totalItems, onPageChange }) {
+/** @param {{ page: number, totalPages: number, totalItems: number, onPageChange(page: number): void, ariaLabel?: string, itemLabel?: string, rangeLabel?: string, pageSize?: number, pageSizes?: number[], onPageSizeChange?: React.ChangeEventHandler<HTMLSelectElement> }} props */
+export function Pagination({ page, totalPages, totalItems, onPageChange, ariaLabel = '分页', itemLabel = '条', rangeLabel = '', pageSize, pageSizes = [10, 20, 50], onPageSizeChange }) {
   const boundedTotal = Math.max(1, totalPages);
-  return <nav className="yc-pagination" aria-label="分页"><span>共 {totalItems} 条</span><div><Button variant="secondary" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>上一页</Button><span aria-current="page">第 {page} / {boundedTotal} 页</span><Button variant="secondary" disabled={page >= boundedTotal} onClick={() => onPageChange(page + 1)}>下一页</Button></div></nav>;
+  return <nav className="yc-pagination" aria-label={ariaLabel}><span className="yc-pagination-meta">共 <strong>{totalItems}</strong> {itemLabel}{rangeLabel ? <small>{rangeLabel}</small> : null}</span><div><button type="button" aria-label="上一页" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>‹</button><span aria-current="page">{page} / {boundedTotal}</span><button type="button" aria-label="下一页" disabled={page >= boundedTotal} onClick={() => onPageChange(page + 1)}>›</button>{pageSize && onPageSizeChange ? <label><span>每页</span><select value={String(pageSize)} onChange={onPageSizeChange}>{pageSizes.map((value) => <option key={value} value={String(value)}>{value}</option>)}</select></label> : null}</div></nav>;
 }
 
 /** @param {{ lines?: number, label?: string }} props */

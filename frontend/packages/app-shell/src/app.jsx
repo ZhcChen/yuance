@@ -43,7 +43,10 @@ import {
 import {
   AttachmentList,
   AttachmentPreview,
+  Badge,
   Button,
+  ContentTab,
+  ContentTabs,
   DataTable,
   Feedback,
   Field,
@@ -4724,9 +4727,9 @@ export function SharedApp({ services }) {
               打开消息中心
             </a>
           )}
-          {route.id !== 'system-database-stats' ? <button className="shell-button shell-button-secondary" type="button" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
+          {route.id !== 'system-database-stats' ? <Button variant="secondary" onClick={() => void loadRouteState(routeRef.current, 'refresh')}>
             {refreshing ? '刷新中…' : '刷新'}
-          </button> : null}
+          </Button> : null}
         </div>
       </section>
 
@@ -5152,15 +5155,15 @@ export function SharedApp({ services }) {
                   <p className="shell-muted">未读 {messageFeed?.unread_count || 0} 条，待处理讨论 {pendingCount} 条。</p>
                 </div>
                 <div className="shell-actions-inline">
-                  <button className="shell-button shell-button-secondary" type="button" disabled={messageReadAllSubmitting || (messageFeed?.unread_count || 0) === 0} onClick={handleMarkAllRead}>
+                  <Button variant="secondary" disabled={messageReadAllSubmitting || (messageFeed?.unread_count || 0) === 0} onClick={handleMarkAllRead}>
                     {messageReadAllSubmitting ? '处理中…' : '全部已读'}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
               {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
 
-              <nav className="message-tabs" aria-label="消息筛选">
+              <ContentTabs ariaLabel="消息筛选">
                 {[
                   { value: 'all', label: '全部消息', count: messageFeed?.total_items || 0 },
                   { value: 'unread', label: '未读消息', count: messageFeed?.unread_count || 0 },
@@ -5171,18 +5174,16 @@ export function SharedApp({ services }) {
                     count: messageRoute ? Math.max((messageFeed?.total_items || 0) - (messageFeed?.unread_count || 0), 0) : 0,
                   },
                 ].map((tab) => (
-                  <button
+                  <ContentTab
                     key={tab.value}
-                    className={`message-tab ${messageFilter === tab.value ? 'active' : ''}`}
-                    type="button"
-                    aria-pressed={messageFilter === tab.value}
+                    active={messageFilter === tab.value}
+                    badge={tab.count}
                     onClick={() => changeMessageFilter(/** @type {'all' | 'unread' | 'pending' | 'read'} */ (tab.value))}
                   >
                     <span>{tab.label}</span>
-                    {tab.count > 0 ? <strong>{tab.count}</strong> : null}
-                  </button>
+                  </ContentTab>
                 ))}
-              </nav>
+              </ContentTabs>
 
               {messageFeed?.items?.length ? (
                 <>
@@ -5191,53 +5192,21 @@ export function SharedApp({ services }) {
                       <li key={item.id} className={`message-row ${item.read ? '' : 'unread'}`}>
                         <div className="message-body">
                           <div className="message-heading">
-                            <span className="message-kind">{notificationKindLabel(item.kind)}</span>
-                            {!item.read ? <span className="notification-pill">未读</span> : null}
+                            <Badge>{notificationKindLabel(item.kind)}</Badge>
+                            {!item.read ? <Badge tone="info">未读</Badge> : null}
                           </div>
                           <strong>{item.title}</strong>
                           <p>{item.body}</p>
                           <p className="shell-muted">{item.actor} · {formatTimestamp(item.created_at)}</p>
                         </div>
-                        <button className="shell-button shell-button-secondary" type="button" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
+                        <Button variant="secondary" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
                           {messageOpeningId === item.id ? '打开中…' : '打开'}
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
 
-                  <div className="message-pagination" aria-label="消息分页">
-                    <div className="message-pagination-meta">
-                      <strong>共 {messageFeed.total_items} 条</strong>
-                      <span>当前显示 {pageRangeStart}-{pageRangeEnd}</span>
-                    </div>
-                    <div className="message-pagination-controls">
-                      <button
-                        className="shell-button shell-button-secondary"
-                        type="button"
-                        disabled={messageFeed.page <= 1}
-                        onClick={() => changeMessagePage(messageFeed.page - 1)}
-                      >
-                        上一页
-                      </button>
-                      <span className="shell-meta">第 {messageFeed.page} / {messageFeed.total_pages} 页</span>
-                      <button
-                        className="shell-button shell-button-secondary"
-                        type="button"
-                        disabled={messageFeed.page >= messageFeed.total_pages}
-                        onClick={() => changeMessagePage(messageFeed.page + 1)}
-                      >
-                        下一页
-                      </button>
-                      <label className="page-size-control">
-                        <span>每页</span>
-                        <select value={String(messageFeed.per_page)} onChange={changeMessagePageSize}>
-                          {[10, 20, 50].map((value) => (
-                            <option key={value} value={String(value)}>{value}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </div>
+                  <Pagination ariaLabel="消息分页" page={messageFeed.page} totalPages={messageFeed.total_pages} totalItems={messageFeed.total_items} rangeLabel={`当前显示 ${pageRangeStart}-${pageRangeEnd}`} pageSize={messageFeed.per_page} onPageSizeChange={changeMessagePageSize} onPageChange={changeMessagePage} />
                 </>
               ) : (
                 <p className="shell-empty">{emptyMessageTitle(route)}</p>
@@ -5261,7 +5230,7 @@ export function SharedApp({ services }) {
                       return (
                         <li key={`${item.kind}:${item.key}`} className="message-row">
                           <div className="message-body">
-                            <div className="message-heading"><span className="message-kind">{item.kind}</span></div>
+                            <div className="message-heading"><Badge>{item.kind}</Badge></div>
                             <strong>{item.title}</strong>
                             <p>{item.context}</p>
                             <p className="shell-muted">{item.key} · {formatTimestamp(item.updated_at)}</p>
@@ -5271,20 +5240,7 @@ export function SharedApp({ services }) {
                       );
                     })}
                   </ul>
-                  <div className="message-pagination" aria-label="搜索结果分页">
-                    <div className="message-pagination-meta"><strong>共 {searchPage.pagination.total_items} 条</strong></div>
-                    <div className="message-pagination-controls">
-                      <button className="shell-button shell-button-secondary" type="button" disabled={searchPage.pagination.page <= 1}
-                        onClick={() => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page: searchPage.pagination.page - 1, perPage: searchPage.pagination.per_page }))}>
-                        上一页
-                      </button>
-                      <span className="shell-meta">第 {searchPage.pagination.page} / {searchPage.pagination.total_pages} 页</span>
-                      <button className="shell-button shell-button-secondary" type="button" disabled={searchPage.pagination.page >= searchPage.pagination.total_pages}
-                        onClick={() => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page: searchPage.pagination.page + 1, perPage: searchPage.pagination.per_page }))}>
-                        下一页
-                      </button>
-                    </div>
-                  </div>
+                  <Pagination ariaLabel="搜索结果分页" page={searchPage.pagination.page} totalPages={searchPage.pagination.total_pages} totalItems={searchPage.pagination.total_items} onPageChange={(page) => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page, perPage: searchPage.pagination.per_page }))} />
                 </>
               ) : (
                 <p className="shell-empty">{searchRoute?.q ? '没有找到匹配结果。' : '请输入搜索关键词。'}</p>
@@ -5407,8 +5363,8 @@ export function SharedApp({ services }) {
                           <div className="project-main">
                             <div className="project-heading">
                               <strong>{project.key} · {project.name}</strong>
-                              <span className="project-status-pill">{projectStatusLabel(project.status)}</span>
-                              {isCurrentProject ? <span className="notification-pill">当前项目</span> : null}
+                              <Badge>{projectStatusLabel(project.status)}</Badge>
+                              {isCurrentProject ? <Badge tone="info">当前项目</Badge> : null}
                             </div>
                             <p className="shell-muted">负责人 {project.owner || '未分配'} · 最近更新 {formatTimestamp(project.updated_at)}</p>
                             <dl className="project-stats">
@@ -5418,53 +5374,20 @@ export function SharedApp({ services }) {
                           </div>
                           <div className="project-actions">
                             <a className="shell-link" href={buildProjectDetailPath({ owner: route.owner, projectKey: project.key })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: project.key }), `已打开项目 ${project.key}。`)}>打开详情</a>
-                            <button
-                              className="shell-button shell-button-secondary"
-                              type="button"
+                            <Button
+                              variant="secondary"
                               disabled={isCurrentProject || Boolean(projectSwitchingKey)}
                               onClick={() => void handleSetCurrentProject(project)}
                             >
                               {isCurrentProject ? '当前项目' : projectSwitchingKey === project.key ? '切换中…' : '设为当前项目'}
-                            </button>
+                            </Button>
                           </div>
                         </li>
                       );
                     })}
                   </ul>
 
-                  <div className="message-pagination" aria-label="项目分页">
-                    <div className="message-pagination-meta">
-                      <strong>共 {projectPage.pagination.total_items} 个项目</strong>
-                      <span>当前显示 {projectRangeStart}-{projectRangeEnd}</span>
-                    </div>
-                    <div className="message-pagination-controls">
-                      <button
-                        className="shell-button shell-button-secondary"
-                        type="button"
-                        disabled={projectPage.pagination.page <= 1}
-                        onClick={() => changeProjectPage(projectPage.pagination.page - 1)}
-                      >
-                        上一页
-                      </button>
-                      <span className="shell-meta">第 {projectPage.pagination.page} / {projectPage.pagination.total_pages} 页</span>
-                      <button
-                        className="shell-button shell-button-secondary"
-                        type="button"
-                        disabled={projectPage.pagination.page >= projectPage.pagination.total_pages}
-                        onClick={() => changeProjectPage(projectPage.pagination.page + 1)}
-                      >
-                        下一页
-                      </button>
-                      <label className="page-size-control">
-                        <span>每页</span>
-                        <select value={String(projectPage.pagination.per_page)} onChange={changeProjectPageSize}>
-                          {[10, 20, 50].map((value) => (
-                            <option key={value} value={String(value)}>{value}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </div>
+                  <Pagination ariaLabel="项目分页" page={projectPage.pagination.page} totalPages={projectPage.pagination.total_pages} totalItems={projectPage.pagination.total_items} itemLabel="个项目" rangeLabel={`当前显示 ${projectRangeStart}-${projectRangeEnd}`} pageSize={projectPage.pagination.per_page} onPageSizeChange={changeProjectPageSize} onPageChange={changeProjectPage} />
                 </>
               ) : (
                 <p className="shell-empty">当前筛选下没有项目。</p>
@@ -5484,12 +5407,12 @@ export function SharedApp({ services }) {
                 </div>
               </div>
 
-              <nav className="message-tabs" aria-label="项目详情导航">
+              <ContentTabs ariaLabel="项目详情导航">
                 {[['info', '项目信息'], ['members', '项目成员'], ['cycles', '项目周期'], ['files', '项目文件'], ['resources', '资料库']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
-                  return <a key={tab} className={`message-tab ${route.tab === tab ? 'active' : ''}`} href={path} aria-current={route.tab === tab ? 'page' : undefined} onClick={(event) => handleNavigate(event, path, `已切换到${label}。`)}><span>{label}</span></a>;
+                  return <ContentTab key={tab} active={route.tab === tab} href={path} onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), path, `已切换到${label}。`)}>{label}</ContentTab>;
                 })}
-              </nav>
+              </ContentTabs>
 
               {projectMutationError ? <Feedback tone="danger" title="项目操作失败">{projectMutationError}</Feedback> : null}
               {activeProjectDetail && route.tab === 'info' ? (
@@ -5562,7 +5485,7 @@ export function SharedApp({ services }) {
                   {projectResourceStatus ? <p className="work-item-attachment-status" aria-live="polite">{projectResourceStatus}</p> : null}
                   {projectResources.length ? <ul className="project-list" aria-label="项目资料列表">{projectResources.map((resource) => {
                     const resourcePath = buildProjectResourceDetailPath({ owner: route.owner, projectKey: route.projectKey, resourceId: resource.id });
-                    return <li className="project-row" key={resource.id}><div className="project-main"><div className="project-heading"><a className="shell-link" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a><span className="project-status-pill">{resource.category || '未分类'}</span>{resource.is_protected ? <span className="project-status-pill">受保护</span> : null}{resource.status === 'archived' ? <span className="project-status-pill">已归档</span> : null}</div><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <p className="shell-muted">标签：{resource.tags.join('、')}</p> : null}<p className="shell-muted">{resource.related_work_item ? `关联 ${resource.related_work_item.key}` : resource.related_cycle ? `关联周期 ${resource.related_cycle.name}` : '未关联工作项或周期'} · {resource.updated_by} 更新于 {formatTimestamp(resource.updated_at)}</p></div></li>;
+                    return <li className="project-row" key={resource.id}><div className="project-main"><div className="project-heading"><a className="shell-link" href={resourcePath} onClick={(event) => handleNavigate(event, resourcePath, `已打开资料 ${resource.title}。`)}>{resource.title}</a><Badge>{resource.category || '未分类'}</Badge>{resource.is_protected ? <Badge tone="warning">受保护</Badge> : null}{resource.status === 'archived' ? <Badge>已归档</Badge> : null}</div><p>{resource.summary || '暂无摘要。'}</p>{resource.tags.length ? <p className="shell-muted">标签：{resource.tags.join('、')}</p> : null}<p className="shell-muted">{resource.related_work_item ? `关联 ${resource.related_work_item.key}` : resource.related_cycle ? `关联周期 ${resource.related_cycle.name}` : '未关联工作项或周期'} · {resource.updated_by} 更新于 {formatTimestamp(resource.updated_at)}</p></div></li>;
                   })}</ul> : <p className="shell-empty">当前筛选下没有项目资料。</p>}
                 </section>
               ) : null}
@@ -5601,7 +5524,7 @@ export function SharedApp({ services }) {
                   <p className="shell-muted">仅统计 {projectPersonalAnalysis?.display_name || user?.display_name || '当前用户'} 在该项目中的实际处理与协作记录。</p>
                 </div>
                 <div className="shell-actions-inline">
-                  {activeProjectDetail ? <span className="project-status-pill">{projectStatusLabel(activeProjectDetail.status)}</span> : null}
+                  {activeProjectDetail ? <Badge>{projectStatusLabel(activeProjectDetail.status)}</Badge> : null}
                   <a className="shell-link" href={buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey })} onClick={(event) => handleNavigate(event, buildProjectDetailPath({ owner: route.owner, projectKey: projectScopeKey }), '已返回项目详情。')}>返回项目详情</a>
                 </div>
               </div>
@@ -5642,7 +5565,7 @@ export function SharedApp({ services }) {
 
                 <section className="personal-analysis-section" aria-labelledby="personal-analysis-completions-title">
                   <div className="shell-panel-header"><div><p className="shell-eyebrow">最近产出</p><h3 id="personal-analysis-completions-title">最近完成记录</h3></div><span className="shell-muted">以实际终态操作时间排序</span></div>
-                  {projectPersonalAnalysis.recent_completions.length ? <ul className="project-list personal-analysis-completions">{projectPersonalAnalysis.recent_completions.map((item) => { const itemPath = buildWorkItemDetailPath({ owner: /** @type {'app' | 'web'} */ (route.owner), itemKey: item.key }); return <li key={`${item.key}-${item.completed_at}`}><a className="shell-link" href={itemPath} onClick={(event) => handleNavigate(event, itemPath, `已打开 ${item.key}。`)}><span className="message-kind">{workItemTypeLabel(item.item_type)}</span><code>{item.key}</code><strong>{item.title}</strong><time>{formatTimestamp(item.completed_at)}</time></a></li>; })}</ul> : <div className="shell-empty"><strong>暂无完成记录</strong><span>工作项由你推进到完成、解决、验证或关闭后会记录在这里。</span></div>}
+                  {projectPersonalAnalysis.recent_completions.length ? <ul className="project-list personal-analysis-completions">{projectPersonalAnalysis.recent_completions.map((item) => { const itemPath = buildWorkItemDetailPath({ owner: /** @type {'app' | 'web'} */ (route.owner), itemKey: item.key }); return <li key={`${item.key}-${item.completed_at}`}><a className="shell-link" href={itemPath} onClick={(event) => handleNavigate(event, itemPath, `已打开 ${item.key}。`)}><Badge>{workItemTypeLabel(item.item_type)}</Badge><code>{item.key}</code><strong>{item.title}</strong><time>{formatTimestamp(item.completed_at)}</time></a></li>; })}</ul> : <div className="shell-empty"><strong>暂无完成记录</strong><span>工作项由你推进到完成、解决、验证或关闭后会记录在这里。</span></div>}
                 </section>
                 <p className="personal-analysis-note">处理量按你实际执行的终态流转事件统计；日均和月均从加入项目起按自然周期计算，并包含无处理记录的日期。</p>
               </> : null}
@@ -5681,23 +5604,22 @@ export function SharedApp({ services }) {
                 </div>
               </div>
 
-              <nav className="message-tabs" aria-label="工作项类型导航">
+              <ContentTabs ariaLabel="工作项类型导航">
                 {[
                   { id: 'requirements', label: '需求', path: requirementsPath },
                   { id: 'tasks', label: '任务', path: tasksPath },
                   { id: 'bugs', label: '缺陷', path: bugsPath },
                 ].map((tab) => (
-                  <a
+                  <ContentTab
                     key={tab.id}
-                    className={`message-tab ${route.id === tab.id ? 'active' : ''}`}
+                    active={route.id === tab.id}
                     href={tab.path}
-                    aria-current={route.id === tab.id ? 'page' : undefined}
-                    onClick={(event) => handleNavigate(event, tab.path, `已切换到${tab.label}列表。`)}
+                    onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), tab.path, `已切换到${tab.label}列表。`)}
                   >
                     <span>{tab.label}</span>
-                  </a>
+                  </ContentTab>
                 ))}
-              </nav>
+              </ContentTabs>
 
               {workItemPage ? <>
                 <div className="work-item-detail-grid" aria-label="工作项指标">
@@ -5708,9 +5630,9 @@ export function SharedApp({ services }) {
                 <div className="shell-panel-header">
                   <div className="shell-actions-inline" aria-label="保存的视图">
                     {workItemPage.saved_views.map((savedView) => <div className="shell-actions-inline" key={savedView.id}>
-                      <button className="shell-button shell-button-secondary" type="button" onClick={() => applyWorkItemSavedView(savedView)}>{savedView.name}{savedView.is_default ? ' · 默认' : ''}</button>
-                      <button className="shell-button shell-button-secondary" type="button" disabled={workItemSavedViewSubmitting} onClick={() => { setWorkItemSavedViewError(''); setWorkItemSavedViewForm({ id: savedView.id, name: savedView.name, isDefault: savedView.is_default }); }}>重命名</button>
-                      {!savedView.is_default ? <button className="shell-button shell-button-secondary" type="button" disabled={workItemSavedViewSubmitting} onClick={() => void makeWorkItemSavedViewDefault(savedView)}>设为默认</button> : null}
+                      <Button variant="secondary" onClick={() => applyWorkItemSavedView(savedView)}>{savedView.name}{savedView.is_default ? ' · 默认' : ''}</Button>
+                      <Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => { setWorkItemSavedViewError(''); setWorkItemSavedViewForm({ id: savedView.id, name: savedView.name, isDefault: savedView.is_default }); }}>重命名</Button>
+                      {!savedView.is_default ? <Button variant="secondary" disabled={workItemSavedViewSubmitting} onClick={() => void makeWorkItemSavedViewDefault(savedView)}>设为默认</Button> : null}
                       <Button variant="danger" disabled={workItemSavedViewSubmitting} onClick={() => setWorkItemSavedViewDeleteTarget(savedView)}>删除</Button>
                     </div>)}
                   </div>
@@ -5773,8 +5695,8 @@ export function SharedApp({ services }) {
                   </select>
                 </label>
                 <div className="work-item-filter-actions">
-                  <button className="shell-button" type="submit">筛选</button>
-                  <button className="shell-button shell-button-secondary" type="button" onClick={resetWorkItemFilters}>重置</button>
+                  <Button type="submit">筛选</Button>
+                  <Button variant="secondary" onClick={resetWorkItemFilters}>重置</Button>
                 </div>
               </form>
 
@@ -5802,10 +5724,10 @@ export function SharedApp({ services }) {
                           {workItemPage.can_manage_work_items ? <input className="work-item-selection-checkbox" type="checkbox" aria-label={`选择 ${item.key}`} checked={workItemSelection.has(item.key)} onChange={(event) => toggleWorkItemSelection(item.key, event.target.checked)} /> : null}
                           <div className="work-item-main">
                             <div className="work-item-heading">
-                              <span className="message-kind">{workItemTypeLabel(item.item_type)}</span>
+                              <Badge>{workItemTypeLabel(item.item_type)}</Badge>
                               <strong>{item.key} · {item.title}</strong>
-                              <span className="project-status-pill">{workItemStatusLabel(item.status)}</span>
-                              <span className="priority-pill">{item.priority || '未设置优先级'}</span>
+                              <Badge>{workItemStatusLabel(item.status)}</Badge>
+                              <Badge tone="warning">{item.priority || '未设置优先级'}</Badge>
                             </div>
                             <p className="shell-muted">{item.project_key} · {item.project_name} · 处理人 {item.assignee || '未分配'} · 最近更新 {formatTimestamp(item.updated_at)}</p>
                           </div>
@@ -5819,39 +5741,7 @@ export function SharedApp({ services }) {
                     })}
                   </ul>
 
-                  <div className="message-pagination" aria-label="工作项分页">
-                    <div className="message-pagination-meta">
-                      <strong>共 {workItemPage.pagination.total_items} 条</strong>
-                      <span>当前显示 {workItemRangeStart}-{workItemRangeEnd}</span>
-                    </div>
-                    <div className="message-pagination-controls">
-                      <button
-                        className="shell-button shell-button-secondary"
-                        type="button"
-                        disabled={workItemPage.pagination.page <= 1}
-                        onClick={() => changeWorkItemPage(workItemPage.pagination.page - 1)}
-                      >
-                        上一页
-                      </button>
-                      <span className="shell-meta">第 {workItemPage.pagination.page} / {workItemPage.pagination.total_pages} 页</span>
-                      <button
-                        className="shell-button shell-button-secondary"
-                        type="button"
-                        disabled={workItemPage.pagination.page >= workItemPage.pagination.total_pages}
-                        onClick={() => changeWorkItemPage(workItemPage.pagination.page + 1)}
-                      >
-                        下一页
-                      </button>
-                      <label className="page-size-control">
-                        <span>每页</span>
-                        <select value={String(workItemPage.pagination.per_page)} onChange={changeWorkItemPageSize}>
-                          {[10, 20, 50].map((value) => (
-                            <option key={value} value={String(value)}>{value}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </div>
+                  <Pagination ariaLabel="工作项分页" page={workItemPage.pagination.page} totalPages={workItemPage.pagination.total_pages} totalItems={workItemPage.pagination.total_items} rangeLabel={`当前显示 ${workItemRangeStart}-${workItemRangeEnd}`} pageSize={workItemPage.pagination.per_page} onPageSizeChange={changeWorkItemPageSize} onPageChange={changeWorkItemPage} />
                 </>
               ) : (
                 <p className="shell-empty">当前筛选下没有{workItemTypeLabel(route.itemType)}。</p>
@@ -5894,22 +5784,22 @@ export function SharedApp({ services }) {
                 </div>
               </div>
 
-              <nav className="message-tabs" aria-label="工作项类型导航">
+              <ContentTabs ariaLabel="工作项类型导航">
                 {[
                   { id: 'requirements', label: '需求', path: requirementsPath },
                   { id: 'tasks', label: '任务', path: tasksPath },
                   { id: 'bugs', label: '缺陷', path: bugsPath },
                 ].map((tab) => (
-                  <a
+                  <ContentTab
                     key={tab.id}
-                    className={`message-tab ${activeWorkItemDetail?.item_type === (tab.id === 'requirements' ? 'requirement' : tab.id === 'bugs' ? 'bug' : 'task') ? 'active' : ''}`}
+                    active={activeWorkItemDetail?.item_type === (tab.id === 'requirements' ? 'requirement' : tab.id === 'bugs' ? 'bug' : 'task')}
                     href={tab.path}
-                    onClick={(event) => handleNavigate(event, tab.path, `已切换到${tab.label}列表。`)}
+                    onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), tab.path, `已切换到${tab.label}列表。`)}
                   >
                     <span>{tab.label}</span>
-                  </a>
+                  </ContentTab>
                 ))}
-              </nav>
+              </ContentTabs>
 
               {activeWorkItemDetail ? (
                 <>
@@ -6045,9 +5935,9 @@ export function SharedApp({ services }) {
                   <h2 id="notification-title">最近消息</h2>
                   <div className="shell-actions-inline">
                     <span className="shell-meta">未读 {unreadCount}</span>
-                    <button className="shell-button shell-button-secondary" type="button" disabled={messageReadAllSubmitting || unreadCount === 0} onClick={handleMarkAllRead}>
+                    <Button variant="secondary" disabled={messageReadAllSubmitting || unreadCount === 0} onClick={handleMarkAllRead}>
                       {messageReadAllSubmitting ? '处理中…' : '全部已读'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
@@ -6058,14 +5948,14 @@ export function SharedApp({ services }) {
                         <div>
                           <div className="notification-heading">
                             <strong>{item.title}</strong>
-                            {!item.read ? <span className="notification-pill">未读</span> : null}
+                            {!item.read ? <Badge tone="info">未读</Badge> : null}
                           </div>
                           <p>{item.body}</p>
                           <p className="shell-muted">{item.actor} · {formatTimestamp(item.created_at)}</p>
                         </div>
-                        <button className="shell-button shell-button-secondary" type="button" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
+                        <Button variant="secondary" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
                           {messageOpeningId === item.id ? '打开中…' : '打开'}
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>

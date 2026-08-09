@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Button, DataTable, Feedback, Field, Modal, Pagination, Skeleton } from '@yuance/frontend-ui';
+import { Badge, Button, ContentTab, ContentTabs, DataTable, Feedback, Field, Modal, Pagination, Skeleton } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
@@ -30,12 +30,23 @@ test('feedback and modal expose bounded semantic states', () => {
   assert.match(modal, new RegExp(`<h2 id="${labelledBy}">确认删除</h2>`, 'u'));
 });
 
+test('badge and tabs expose the main Web primitive structure', () => {
+  assert.match(renderToStaticMarkup(createElement(Badge, { tone: 'warning' }, '高优先级')), /yc-badge-warning/u);
+  const tabs = renderToStaticMarkup(createElement(ContentTabs, { ariaLabel: '类型导航' },
+    createElement(ContentTab, { href: '/tasks', active: true, badge: 108 }, '任务')));
+  assert.match(tabs, /aria-label="类型导航"/u);
+  assert.match(tabs, /aria-current="page"/u);
+  assert.match(tabs, /99\+/u);
+});
+
 test('table, pagination and skeleton cover empty and boundary states', () => {
   const table = renderToStaticMarkup(createElement(DataTable, { caption: '成员列表', columns: [{ key: 'name', label: '成员', render: (row) => /** @type {{ name: string }} */ (row).name }], rows: [], rowKey: (row) => /** @type {{ name: string }} */ (row).name }));
   assert.match(table, /暂无数据/u);
   assert.match(table, /scope="col"/u);
   const pagination = renderToStaticMarkup(createElement(Pagination, { page: 1, totalPages: 1, totalItems: 0, onPageChange() {} }));
   assert.equal((pagination.match(/disabled=""/gu) || []).length, 2);
+  assert.match(pagination, /aria-label="上一页"/u);
+  assert.match(pagination, /aria-label="下一页"/u);
   const skeleton = renderToStaticMarkup(createElement(Skeleton, { lines: 20 }));
   assert.equal((skeleton.match(/<span/gu) || []).length, 12);
   assert.match(skeleton, /role="status"/u);

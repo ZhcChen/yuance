@@ -3913,15 +3913,28 @@ test('shared global shell remains usable at canonical responsive widths', async 
     await expect(page.getByRole('button', { name: /打开 .* 的账户菜单/ })).toBeVisible();
     const geometry = await page.evaluate(() => {
       const nav = document.querySelector('.global-nav')?.getBoundingClientRect();
+      const brand = document.querySelector('.global-nav-brand')?.getBoundingClientRect();
+      const links = document.querySelector('.global-nav-links')?.getBoundingClientRect();
+      const tools = document.querySelector('.global-nav-tools')?.getBoundingClientRect();
       const search = document.querySelector('.global-nav-search')?.getBoundingClientRect();
       const project = document.querySelector('.global-nav-project')?.getBoundingClientRect();
-      return { navHeight: nav?.height || 0, navWidth: nav?.width || 0, searchWidth: search?.width || 0, projectWidth: project?.width || 0 };
+      const toolRects = [...document.querySelectorAll('.global-nav-tools > *')].map((element) => element.getBoundingClientRect()).filter((rect) => rect.width > 0);
+      return {
+        navHeight: nav?.height || 0, navWidth: nav?.width || 0, searchWidth: search?.width || 0, projectWidth: project?.width || 0,
+        brandRight: brand?.right || 0, linksLeft: links?.left || 0, linksRight: links?.right || 0, toolsLeft: tools?.left || 0,
+        toolRects: toolRects.map((rect) => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
+      };
     });
     if (width <= 768) {
       expect(geometry.searchWidth).toBeGreaterThanOrEqual(geometry.navWidth - 24);
       expect(geometry.projectWidth).toBeGreaterThanOrEqual(geometry.navWidth - 24);
     } else {
       expect(geometry.navHeight).toBe(58);
+      expect(geometry.brandRight).toBeLessThanOrEqual(geometry.linksLeft);
+      expect(geometry.linksRight).toBeLessThanOrEqual(geometry.toolsLeft);
+      for (let index = 1; index < geometry.toolRects.length; index += 1) {
+        expect(geometry.toolRects[index - 1].right).toBeLessThanOrEqual(geometry.toolRects[index].left);
+      }
     }
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`global-shell-${width}.png`), fullPage: true });
