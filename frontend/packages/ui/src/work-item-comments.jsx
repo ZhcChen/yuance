@@ -113,7 +113,7 @@ export function WorkItemComments(props) {
   } = props;
 
   return (
-    <section className="work-item-comments-panel" aria-labelledby="work-item-comments-title">
+    <section id="work-item-comments" className="work-item-comments-panel discussion-section" aria-labelledby="work-item-comments-title">
       <div className="yuance-ui-panel-header">
         <h3 id="work-item-comments-title">评论与流转</h3>
         <span className="yuance-ui-meta">共 {comments.length} 条</span>

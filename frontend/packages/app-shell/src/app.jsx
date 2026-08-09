@@ -3344,16 +3344,16 @@ export function SharedApp({ services }) {
   async function submitWorkItemEdit(event) {
     event.preventDefault();
     if (!activeWorkItemDetail) {
-      return;
+      return false;
     }
     if (workItemMutationRef.current || workItemAttachmentMutationRef.current) {
-      return;
+      return false;
     }
 
     const title = workItemEditForm.title.trim();
     if (!title) {
       setWorkItemActionError('标题不能为空。');
-      return;
+      return false;
     }
 
     const itemKey = activeWorkItemDetail.key;
@@ -3387,7 +3387,9 @@ export function SharedApp({ services }) {
         setWorkItemEditForm(workItemEditFormFromDetail(committed, primaryPost));
         setWorkItemComments((comments) => comments.filter((comment) => comment.id !== primaryPost.id));
         await refreshWorkItemCompanionState(committed.key, '工作项已保存', actionId, committed, primaryPost.id);
+        return true;
       }
+      return false;
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         if (updated) {
@@ -3404,6 +3406,7 @@ export function SharedApp({ services }) {
           setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('保存工作项失败。')));
         }
       }
+      return false;
     } finally {
       clearWorkItemMutation(actionId, setWorkItemEditSubmitting);
     }
@@ -3413,10 +3416,10 @@ export function SharedApp({ services }) {
   async function submitWorkItemHandoff(event) {
     event.preventDefault();
     if (!activeWorkItemDetail) {
-      return;
+      return false;
     }
     if (workItemMutationRef.current || workItemAttachmentMutationRef.current) {
-      return;
+      return false;
     }
 
     const itemKey = activeWorkItemDetail.key;
@@ -3450,10 +3453,12 @@ export function SharedApp({ services }) {
           ),
         },
       });
+      return true;
     } catch (caught) {
       if (isCurrentWorkItemDetailRoute(itemKey, actionId)) {
         setWorkItemActionError(errorMessage(caught instanceof Error ? caught : new Error('推进并指派失败。')));
       }
+      return false;
     } finally {
       clearWorkItemMutation(actionId, setWorkItemHandoffSubmitting);
     }
@@ -5572,36 +5577,7 @@ export function SharedApp({ services }) {
               </section>
             </section>
           ) : route.id === 'work-item-detail' ? (
-            <section className="shell-card shell-panel-wide work-item-detail-center" aria-labelledby="work-item-detail-title">
-              <div className="shell-panel-header work-item-center-header">
-                <div>
-                  <h2 id="work-item-detail-title">{activeWorkItemDetail ? `${activeWorkItemDetail.key} · ${activeWorkItemDetail.title}` : route.itemKey}</h2>
-                  <p className="shell-muted">{activeWorkItemDetail ? `${workItemTypeLabel(activeWorkItemDetail.item_type)} · ${activeWorkItemDetail.project_key} · ${activeWorkItemDetail.project_name}` : '正在加载工作项详情。'}</p>
-                </div>
-                <div className="shell-actions-inline">
-                  <a className="shell-link" href={detailBackPath} onClick={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}>
-                    返回列表
-                  </a>
-                </div>
-              </div>
-
-              <ContentTabs ariaLabel="工作项类型导航">
-                {[
-                  { id: 'requirements', label: '需求', path: requirementsPath },
-                  { id: 'tasks', label: '任务', path: tasksPath },
-                  { id: 'bugs', label: '缺陷', path: bugsPath },
-                ].map((tab) => (
-                  <ContentTab
-                    key={tab.id}
-                    active={activeWorkItemDetail?.item_type === (tab.id === 'requirements' ? 'requirement' : tab.id === 'bugs' ? 'bug' : 'task')}
-                    href={tab.path}
-                    onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), tab.path, `已切换到${tab.label}列表。`)}
-                  >
-                    <span>{tab.label}</span>
-                  </ContentTab>
-                ))}
-              </ContentTabs>
-
+            <section className="work-item-detail-center" aria-label="工作项详情">
               {activeWorkItemDetail ? (
                 <>
                   <WorkItemDetail
@@ -5638,24 +5614,9 @@ export function SharedApp({ services }) {
                     onSubmitHandoff={submitWorkItemHandoff}
                     onRequestLifecycleAction={setWorkItemLifecycleAction}
                     onRequestDeletePrimaryPostAttachment={requestWorkItemPrimaryPostAttachmentDelete}
-                  />
-
-                  <WorkItemAttachments
-                    attachments={workItemAttachments}
-                    status={workItemAttachmentStatus}
-                    warning={workItemAttachmentLoadWarning}
-                    error={workItemAttachmentActionError}
-                    uploading={workItemAttachmentUploading}
-                    mutationBusy={workItemMutationSubmitting}
-                    canUpload={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
-                    downloadingId={workItemAttachmentDownloadingId}
-                    revealableId={workItemAttachmentReveal?.attachmentId || null}
-                    onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
-                    onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
-                    onPreview={(attachment) => void openWorkItemAttachmentPreview(attachment)}
-                    onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
-                    onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
-                  />
+                    backHref={detailBackPath}
+                    onOpenBack={(event) => handleNavigate(event, detailBackPath, '已返回工作项列表。')}
+                  >
 
                   <AttachmentPreview open={Boolean(projectAttachmentPreview?.open)} title={projectAttachmentPreview?.attachment?.filename || '附件预览'} source={projectAttachmentPreview?.source || ''} kind={projectAttachmentPreview?.kind || null} fileType={projectAttachmentPreview?.fileType || null} loading={projectAttachmentPreview?.loading} error={projectAttachmentPreview?.error} position={projectAttachmentPreview?.position} total={projectAttachmentPreview?.total} hasPrevious={Boolean(projectAttachmentPreview?.previousId)} hasNext={Boolean(projectAttachmentPreview?.nextId)} onPrevious={() => { if (projectAttachmentPreview?.previousId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.previousId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.previousId); } }} onNext={() => { if (projectAttachmentPreview?.nextId) { if (projectAttachmentPreview.commentId) navigateWorkItemCommentAttachmentPreview(projectAttachmentPreview.nextId); else navigateWorkItemAttachmentPreview(projectAttachmentPreview.nextId); } }} onDownload={() => { if (projectAttachmentPreview?.attachment) { if (projectAttachmentPreview.commentId) void downloadWorkItemCommentAttachment(projectAttachmentPreview.commentId, projectAttachmentPreview.attachment); else void downloadWorkItemAttachment(projectAttachmentPreview.attachment); } }} onClose={() => void releaseProjectAttachmentPreview()} />
 
@@ -5702,6 +5663,23 @@ export function SharedApp({ services }) {
                     onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}
                     onRequestDeleteAttachment={requestWorkItemCommentAttachmentDelete}
                   />
+                  <WorkItemAttachments
+                    attachments={workItemAttachments}
+                    status={workItemAttachmentStatus}
+                    warning={workItemAttachmentLoadWarning}
+                    error={workItemAttachmentActionError}
+                    uploading={workItemAttachmentUploading}
+                    mutationBusy={workItemMutationSubmitting}
+                    canUpload={Boolean(activeWorkItemDetailView?.permissions.can_manage_work_items && !activeWorkItemDetail.deleted_at)}
+                    downloadingId={workItemAttachmentDownloadingId}
+                    revealableId={workItemAttachmentReveal?.attachmentId || null}
+                    onChooseUpload={() => void uploadSelectedWorkItemAttachment()}
+                    onRetryUpload={(attachment) => void uploadSelectedWorkItemAttachment(attachment)}
+                    onPreview={(attachment) => void openWorkItemAttachmentPreview(attachment)}
+                    onDownload={(attachment) => void downloadWorkItemAttachment(attachment)}
+                    onReveal={(attachment) => void revealWorkItemAttachment(attachment)}
+                  />
+                  </WorkItemDetail>
                   <Modal open={Boolean(workItemCommentAttachmentDeleteTarget)} title={workItemCommentAttachmentDeleteTarget?.editorContext === 'primary-post' ? '删除主内容附件' : '删除评论附件'} onClose={() => { if (workItemCommentAttachmentDeletingId === null) setWorkItemCommentAttachmentDeleteTarget(null); }} footer={<><Button variant="secondary" disabled={workItemCommentAttachmentDeletingId !== null} onClick={() => setWorkItemCommentAttachmentDeleteTarget(null)}>取消</Button><Button variant="danger" loading={workItemCommentAttachmentDeletingId !== null} onClick={() => void confirmWorkItemCommentAttachmentDelete()}>确认删除</Button></>}>
                     <p>确认删除“{workItemCommentAttachmentDeleteTarget?.attachment.filename}”？对象存储中的文件和{workItemCommentAttachmentDeleteTarget?.editorContext === 'primary-post' ? '主内容' : '评论正文'}中的附件引用都会立即删除。</p>
                   </Modal>

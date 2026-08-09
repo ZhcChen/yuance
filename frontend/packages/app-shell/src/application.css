@@ -57,6 +57,14 @@ button:disabled {
   margin: 0 auto;
 }
 
+.work-item-detail-center {
+  max-width: 1440px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .shell-header,
 .shell-grid,
 .shell-columns,

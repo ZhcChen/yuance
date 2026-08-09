@@ -60,6 +60,8 @@ function renderDetail(overrides = {}) {
     onSubmitHandoff: () => {},
     onRequestLifecycleAction: () => {},
     onRequestDeletePrimaryPostAttachment: () => {},
+    backHref: '/web/app/work-items/tasks',
+    onOpenBack: () => {},
     ...overrides,
   }));
 }
@@ -74,7 +76,7 @@ test('work item detail renders metadata and both mutation forms', () => {
   assert.match(html, /推进并指派/);
   assert.match(html, /父级需求/);
   assert.match(html, /Sprint 1/);
-  assert.match(html, /上一项 · 前一任务/);
+  assert.match(html, /title="前一任务"/);
   assert.match(html, /状态：待处理 → 进行中/);
   assert.match(html, /关闭工作项/);
   assert.match(html, /yc-rich-text-content/);
@@ -115,7 +117,7 @@ test('work item detail hides mutations until a deleted item is restored', () => 
 
   assert.doesNotMatch(html, /工作项写入操作/);
   assert.doesNotMatch(html, /推进并指派/);
-  assert.match(html, /该工作项已删除，恢复前不可编辑/);
+  assert.match(html, /当前仅供审计查看/);
   assert.match(html, /恢复工作项/);
 });
 
@@ -129,7 +131,7 @@ test('work item detail exposes reopen only when the server permits it', () => {
 test('work item detail renders busy and error states', () => {
   const html = renderDetail({ mutationBusy: true, editSubmitting: true, error: '保存失败。' });
 
-  assert.match(html, /保存中…/);
+  assert.match(html, /处理中/);
   assert.match(html, /role="alert"/);
   assert.match(html, /disabled=""/);
   assert.match(html, /aria-disabled="true"/);

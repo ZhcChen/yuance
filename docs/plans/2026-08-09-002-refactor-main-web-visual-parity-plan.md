@@ -138,6 +138,7 @@ baseline:
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/work-item-*.jsx`、`frontend/packages/ui/src/rich-text.jsx` 及 package/Web/Desktop tests。
 - 恢复详情 hero、作者正文、主内容与 `280px` sticky action rail、描述、流转、评论、富文本和附件布局。
 - 保留 SPA route、共享 mutation、附件 capability 和 SSE reducer。
+- **已完成：** 共享详情恢复 hero、作者正文、描述、讨论、附件和 `280px` sticky action rail；编辑、流转与操作记录按基线进入 Modal，移动端和平板端操作栏进入正文流。四视口几何合同及编辑、流转、生命周期、评论、附件、只读、删除和错误回归通过。
 - **Exit：** 详情正常/删除/只读/error/modal/窄屏状态通过视觉回归，SSE 更新不引发布局跳动。
 
 ### V8：系统管理核心页面
@@ -205,7 +206,7 @@ baseline:
 - [x] V4：项目列表与项目详情。
 - [x] V5：周期、资源与个人分析。
 - [x] V6：工作项列表。
-- [ ] V7：工作项详情协作。
+- [x] V7：工作项详情协作。
 - [ ] V8：系统管理核心页面。
 - [ ] V9：系统运维页面。
 - [ ] V10：边界页、双宿主响应式回归与收口。
