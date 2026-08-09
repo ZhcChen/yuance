@@ -4714,7 +4714,7 @@ export function SharedApp({ services }) {
         </section>
       ) : null}
 
-      {route.id !== 'home' && route.id !== 'unsupported' ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
+      {!['home', 'unsupported', 'messages', 'search'].includes(route.id) ? <header className="page-heading"><h1 ref={headingRef} tabIndex={-1}>{route.title}</h1>{route.id !== 'system-database-stats' ? <button className="page-heading-refresh" type="button" aria-label="刷新" title="刷新" disabled={refreshing} onClick={() => void loadRouteState(routeRef.current, 'refresh')}>↻</button> : null}</header> : null}
 
       {route.id === 'unsupported' ? (
         <section className="shell-card shell-panel-wide" aria-labelledby="unsupported-title">
@@ -5104,18 +5104,15 @@ export function SharedApp({ services }) {
               )}
             </section>
           ) : route.id === 'messages' ? (
-            <section className="shell-card shell-panel-wide message-center" aria-labelledby="message-center-title">
-              <div className="shell-panel-header message-center-header">
+            <section className="page-stack messages-page" aria-labelledby="message-center-title" aria-busy={refreshing || messageOpeningId !== null}>
+              <header className="page-heading messages-heading">
                 <div>
-                  <h2 id="message-center-title">消息中心</h2>
-                  <p className="shell-muted">未读 {messageFeed?.unread_count || 0} 条，待处理讨论 {pendingCount} 条。</p>
+                  <span className="section-kicker">协作通知</span>
+                  <h1 id="message-center-title" ref={headingRef} tabIndex={-1}>消息中心</h1>
+                  <p>查看工作项指派、提及和讨论回复，未读消息 {messageFeed?.unread_count || 0} 条，待处理讨论 {pendingCount} 条。</p>
                 </div>
-                <div className="shell-actions-inline">
-                  <Button variant="secondary" disabled={messageReadAllSubmitting || (messageFeed?.unread_count || 0) === 0} onClick={handleMarkAllRead}>
-                    {messageReadAllSubmitting ? '处理中…' : '全部已读'}
-                  </Button>
-                </div>
-              </div>
+                {(messageFeed?.unread_count || 0) > 0 ? <Button variant="secondary" disabled={messageReadAllSubmitting} onClick={handleMarkAllRead}>{messageReadAllSubmitting ? '处理中…' : '全部标为已读'}</Button> : null}
+              </header>
 
               {messageActionError ? <Feedback tone="danger" title="消息操作失败">{messageActionError}</Feedback> : null}
 
@@ -5146,18 +5143,14 @@ export function SharedApp({ services }) {
                   <ul className="message-list" aria-label={`${filterLabel(messageFilter)}列表`}>
                     {messageFeed.items.map((item) => (
                       <li key={item.id} className={`message-row ${item.read ? '' : 'unread'}`}>
-                        <div className="message-body">
-                          <div className="message-heading">
-                            <Badge>{notificationKindLabel(item.kind)}</Badge>
-                            {!item.read ? <Badge tone="info">未读</Badge> : null}
-                          </div>
+                        <span className="message-unread-dot" aria-hidden="true" />
+                        <span className="message-kind">{notificationKindLabel(item.kind)}</span>
+                        <span className="message-content">
                           <strong>{item.title}</strong>
-                          <p>{item.body}</p>
-                          <p className="shell-muted">{item.actor} · {formatTimestamp(item.created_at)}</p>
-                        </div>
-                        <Button variant="secondary" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>
-                          {messageOpeningId === item.id ? '打开中…' : '打开'}
-                        </Button>
+                          <span>{item.body}</span>
+                          <small>{item.actor} · {dashboardTimestamp(item.created_at)}</small>
+                        </span>
+                        <button className="message-open" type="button" aria-label="打开" disabled={messageOpeningId !== null || messageReadAllSubmitting} onClick={() => void handleOpenNotification(item)}>{messageOpeningId === item.id ? '打开中…' : '查看'}</button>
                       </li>
                     ))}
                   </ul>
@@ -5165,42 +5158,27 @@ export function SharedApp({ services }) {
                   <Pagination ariaLabel="消息分页" page={messageFeed.page} totalPages={messageFeed.total_pages} totalItems={messageFeed.total_items} rangeLabel={`当前显示 ${pageRangeStart}-${pageRangeEnd}`} pageSize={messageFeed.per_page} onPageSizeChange={changeMessagePageSize} onPageChange={changeMessagePage} />
                 </>
               ) : (
-                <p className="shell-empty">{emptyMessageTitle(route)}</p>
+                <div className="empty-state message-empty"><strong>{emptyMessageTitle(route)}</strong><span>新的指派、提及和回复会显示在这里。</span></div>
               )}
             </section>
           ) : route.id === 'search' ? (
-            <section className="shell-card shell-panel-wide" aria-labelledby="search-results-title">
-              <div className="shell-panel-header">
-                <div>
-                  <h2 id="search-results-title">搜索结果</h2>
-                  <p className="shell-muted">
-                    {searchRoute?.q ? `“${searchRoute.q}” 共 ${searchPage?.pagination.total_items || 0} 条结果` : '在顶部搜索框输入关键词。'}
-                  </p>
-                </div>
-              </div>
-              {searchPage?.items.length ? (
-                <>
-                  <ul className="message-list" aria-label="搜索结果列表">
+            <section className="page-stack search-page">
+              <section className="page-hero"><div><p className="shell-eyebrow">全局搜索</p><h1 ref={headingRef} tabIndex={-1}>搜索项目、需求、任务、Bug 和资料库</h1><p>搜索结果遵循项目成员数据范围；系统管理员可查看全部项目协作数据。</p></div><div className="toolbar-actions"><a className="yc-button yc-button-secondary" href={homePath} onClick={(event) => handleNavigate(event, homePath, '已返回工作台。')}>返回工作台</a></div></section>
+              <section className="panel search-panel"><form className="search-form" role="search" onSubmit={(event) => { event.preventDefault(); const input = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q')); navigate(buildSearchPath({ owner: route.owner, q: input?.value || '', perPage: searchPage?.pagination.per_page })); }}><Field id="search-page-input" label="关键词"><input name="q" type="search" defaultValue={searchRoute?.q || ''} placeholder="输入项目编号、工作项编号、资料标题或描述" /></Field><Button type="submit">搜索</Button></form></section>
+              <section className="panel" aria-labelledby="search-results-title">
+                <div className="panel-head"><div><h2 id="search-results-title">搜索结果</h2><p>{searchRoute?.q ? `关键词：${searchRoute.q}` : '输入关键词后开始检索。'}</p></div></div>
+                {searchPage?.items.length ? <>
+                  <div className="search-result-list" role="list" aria-label="搜索结果列表">
                     {searchPage.items.map((item) => {
                       const target = routePathForOwner(item.target, route.owner);
                       return (
-                        <li key={`${item.kind}:${item.key}`} className="message-row">
-                          <div className="message-body">
-                            <div className="message-heading"><Badge>{item.kind}</Badge></div>
-                            <strong>{item.title}</strong>
-                            <p>{item.context}</p>
-                            <p className="shell-muted">{item.key} · {formatTimestamp(item.updated_at)}</p>
-                          </div>
-                          <a className="shell-link" href={target} onClick={(event) => handleNavigate(event, target, `已打开 ${item.key}。`)}>打开</a>
-                        </li>
+                        <article key={`${item.kind}:${item.key}`} className="search-result" role="listitem"><div><Badge>{item.kind}</Badge> <code>{item.key}</code><h3><a href={target} onClick={(event) => handleNavigate(event, target, `已打开 ${item.key}。`)}>{item.title}</a></h3><p>{item.context}</p></div><span className="search-result-time">{dashboardTimestamp(item.updated_at)}</span></article>
                       );
                     })}
-                  </ul>
+                  </div>
                   <Pagination ariaLabel="搜索结果分页" page={searchPage.pagination.page} totalPages={searchPage.pagination.total_pages} totalItems={searchPage.pagination.total_items} onPageChange={(page) => navigate(buildSearchPath({ owner: route.owner, q: searchRoute?.q, page, perPage: searchPage.pagination.per_page }))} />
-                </>
-              ) : (
-                <p className="shell-empty">{searchRoute?.q ? '没有找到匹配结果。' : '请输入搜索关键词。'}</p>
-              )}
+                </> : <div className="empty-state"><strong>{searchRoute?.q ? '没有找到结果' : '等待搜索'}</strong><span>{searchRoute?.q ? '可以换一个项目编号、工作项编号、资料标题或正文关键词。' : '例如搜索 YCE、对象存储、资料库、Bug 或工作项编号。'}</span></div>}
+              </section>
             </section>
           ) : route.id === 'profile' ? (
             <section className="shell-card shell-panel-wide" aria-labelledby="profile-title">

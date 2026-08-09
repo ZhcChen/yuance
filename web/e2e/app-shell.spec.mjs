@@ -124,7 +124,7 @@ test('browser shell preserves the shared deep link when the session expires', as
   await login(page, '/web/app');
   await page.goto('/web/app/search?q=YCE-TASK-2');
   await expect(page).toHaveURL(/\/web\/app\/search\?q=YCE-TASK-2/);
-  await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: '搜索项目、需求、任务、Bug 和资料库' })).toBeVisible();
   await page.route('**/api/v1/auth/me', async (route) => {
     await route.fulfill({
       status: 401,
@@ -166,13 +166,61 @@ test('app-owner global search loads shared results and resolves result targets',
 
   await expect(page).toHaveURL(/\/web\/app\/search\?q=YCE-TASK-2/);
   await expect(page).toHaveTitle('全局搜索 - 元策');
-  await expect(page.getByRole('heading', { level: 1, name: '全局搜索' })).toBeVisible();
-  const result = page.getByRole('list', { name: '搜索结果列表' }).locator('li', { hasText: 'YCE-TASK-2' });
+  await expect(page.getByRole('heading', { level: 1, name: '搜索项目、需求、任务、Bug 和资料库' })).toBeVisible();
+  const result = page.getByRole('list', { name: '搜索结果列表' }).locator('.search-result', { hasText: 'YCE-TASK-2' });
   await expect(result).toContainText('设计项目与工作项数据模型');
-  await result.getByRole('link', { name: '打开' }).click();
+  await result.getByRole('link', { name: '设计项目与工作项数据模型' }).click();
 
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
   await expect(page.getByRole('heading', { level: 2, name: /YCE-TASK-2/ })).toBeVisible();
+});
+
+test('message and search pages preserve the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app');
+
+  for (const viewport of [
+    { width: 390, height: 844, compact: true },
+    { width: 768, height: 1024, compact: false },
+    { width: 1280, height: 800, compact: false },
+    { width: 1440, height: 900, compact: false },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/web/app/messages?filter=all');
+    await expect(page.getByRole('heading', { level: 1, name: '消息中心' })).toBeVisible();
+
+    const messageGeometry = await page.locator('.messages-page').evaluate((element) => {
+      const pageRect = element.getBoundingClientRect();
+      const row = element.querySelector('.message-row');
+      const main = element.closest('.main');
+      return {
+        pageWidth: pageRect.width,
+        mainWidth: main.clientWidth,
+        mainScrollWidth: main.scrollWidth,
+        rowColumns: row ? getComputedStyle(row).gridTemplateColumns.split(' ').length : 0,
+        overflow: [...main.querySelectorAll('*')].flatMap((candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          return rect.right > main.getBoundingClientRect().right + 1
+            ? [{ selector: candidate.className || candidate.tagName, right: rect.right, width: rect.width }]
+            : [];
+        }).slice(0, 8),
+      };
+    });
+    expect(messageGeometry.pageWidth).toBeLessThanOrEqual(1042);
+    expect(messageGeometry.mainScrollWidth, JSON.stringify(messageGeometry.overflow)).toBeLessThanOrEqual(messageGeometry.mainWidth);
+    if (messageGeometry.rowColumns) expect(messageGeometry.rowColumns).toBe(viewport.compact ? 3 : 4);
+
+    await page.goto('/web/app/search?q=YCE-TASK-2');
+    await expect(page.getByRole('heading', { level: 1, name: '搜索项目、需求、任务、Bug 和资料库' })).toBeVisible();
+    const searchGeometry = await page.locator('.search-page').evaluate((element) => ({
+      mainWidth: element.closest('.main').clientWidth,
+      mainScrollWidth: element.closest('.main').scrollWidth,
+      formColumns: getComputedStyle(element.querySelector('.search-form')).gridTemplateColumns.split(' ').length,
+      resultDirection: getComputedStyle(element.querySelector('.search-result')).flexDirection,
+    }));
+    expect(searchGeometry.mainScrollWidth).toBeLessThanOrEqual(searchGeometry.mainWidth);
+    expect(searchGeometry.formColumns).toBe(viewport.compact ? 1 : 2);
+    expect(searchGeometry.resultDirection).toBe(viewport.compact ? 'column' : 'row');
+  }
 });
 
 test('shared profile page updates account identity through the common modal', async ({ page }) => {
