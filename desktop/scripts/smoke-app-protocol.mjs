@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const EXPECTED_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
-const CREDENTIAL_PATTERN = /Authorization|Bearer\s|yuance_(?:dat|drt|dc)_|refresh_token|access_token/iu;
+const CREDENTIAL_PATTERN = /"Authorization"\s*:|Bearer\s|yuance_(?:dat|drt|dc)_|refresh_token|access_token/iu;
 
 export function assertAppProtocolSmokeReport(report) {
   if (
@@ -17,6 +17,11 @@ export function assertAppProtocolSmokeReport(report) {
     report.reloadedRenderer?.url !== "app://yuance/projects/smoke" ||
     report.initialRenderer?.bridgeState !== "unauthenticated" ||
     report.reloadedRenderer?.bridgeState !== "unauthenticated" ||
+    report.initialRenderer?.desktopStage !== "authorization" ||
+    report.reloadedRenderer?.desktopStage !== "authorization" ||
+    report.stageSequence?.join(",") !== "authorization,authorization" ||
+    report.rendererReadinessCount !== 2 ||
+    report.mainDocumentNavigationCount !== 3 ||
     report.reloadedRenderer?.bridgeSchemaVersion !== 14 ||
     report.reloadedRenderer?.title !== "元策" ||
     !report.reloadedRenderer?.bodyText?.includes("需要登录") ||

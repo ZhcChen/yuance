@@ -133,6 +133,8 @@ let appProtocolSmokePermissionChecks = 0;
 let appProtocolSmokeDataPath;
 let appProtocolSmokeInitialRenderer;
 let appProtocolSmokePhase = "initial";
+let appProtocolSmokeRendererReadinessCount = 0;
+let appProtocolSmokeMainDocumentNavigationCount = 0;
 let featureParityUiSmokeStarted = false;
 const featureParityUiSmokeOperations = [];
 let featureParityUiSmokeActiveOperations = 0;
@@ -171,6 +173,7 @@ const rendererPresentationReadiness = createRendererReadyController({
   getMainWindow: () => mainWindow,
   rendererTarget,
   onReady: () => {
+    if (appProtocolSmoke) appProtocolSmokeRendererReadinessCount += 1;
     mainWindowPresentationReady = true;
     showMainWindowIfReady();
   },
@@ -318,7 +321,9 @@ function createMainWindow(initialTheme = "light") {
   });
   window.webContents.on("did-start-navigation", (event) => {
     rendererReadiness.didStart(event);
-    rendererPresentationReadiness.didStart(event);
+    if (rendererPresentationReadiness.didStart(event) && appProtocolSmoke) {
+      appProtocolSmokeMainDocumentNavigationCount += 1;
+    }
   });
   window.webContents.on("dom-ready", () => {
     rendererPresentationReadiness.didCommit(window.webContents.getURL());
@@ -404,6 +409,7 @@ async function rendererSmokeSnapshot(window) {
       url: location.href,
       title: document.title,
       bodyText: document.body.innerText,
+      desktopStage: document.querySelector(".desktop-root-shell")?.dataset.desktopStage ?? "missing",
       bridgeSchemaVersion: bridge.schemaVersion,
       bridgeState: bridge.hostState.getSnapshot().status,
       resourceUrls,
@@ -467,6 +473,9 @@ async function finishAppProtocolSmoke(window) {
     csp: documentResponse?.csp || "",
     initialRenderer: appProtocolSmokeInitialRenderer,
     reloadedRenderer: renderer,
+    stageSequence: [appProtocolSmokeInitialRenderer?.desktopStage, renderer.desktopStage],
+    rendererReadinessCount: appProtocolSmokeRendererReadinessCount,
+    mainDocumentNavigationCount: appProtocolSmokeMainDocumentNavigationCount,
     navigationDenied,
     permissionCheckCount: appProtocolSmokePermissionChecks,
     subframeObserved,

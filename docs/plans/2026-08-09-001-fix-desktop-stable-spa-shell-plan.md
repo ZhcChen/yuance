@@ -141,6 +141,17 @@ flowchart TB
 
 ## Implementation Units
 
+### 执行进度（2026-08-09）
+
+| 单元 | 状态 | 已完成证据 | 剩余工作 |
+|---|---|---|---|
+| U1 呈现状态机 | 已完成 | 纯状态转换与乱序、重复、workspace 保持测试通过；提交 `e139d28` | 无 |
+| U2 同步首屏快照 | 已完成 | 同步主题快照、bridge schema 13、main/renderer 检查与凭证扫描通过；提交 `b07ae3a` | 无 |
+| U3 稳定根壳与窗口握手 | 已完成 | 固定根壳、schema 14、单次 readiness、双就绪窗口门禁；Desktop 469 项测试通过 466 项，3 项仅 Windows 跳过；提交 `65dc442` | 无 |
+| U4 Packaged 回归 | 进行中 | macOS arm64 ad-hoc `pack:dir`、`verify:bundle`、`smoke:app-protocol`、凭证扫描通过；两次可见 stage 均为 `authorization`，readiness 2 次，主文档导航事件 3 次 | 正式 API 实机视觉验收、light/dark 冷启动、已授权 profile、离线恢复、登出与重授权 |
+
+`.artifacts/` 与 `test-results/` 仅保留本地验收证据，不纳入提交。
+
 ### U1. 固化 Desktop 呈现状态机
 
 - **Goal：** 将认证与网络组合状态映射为明确、可测试的可见 stage。
