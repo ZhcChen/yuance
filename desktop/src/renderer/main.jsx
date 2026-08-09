@@ -17,7 +17,7 @@ const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing Desktop renderer root.");
 
 const bridge = globalThis.yuanceDesktop;
-const initialTheme = await bridge?.appearance?.getTheme().catch(() => "light") ?? "light";
+const initialTheme = bridge?.startup?.theme === "dark" ? "dark" : "light";
 document.documentElement.dataset.theme = initialTheme === "dark" ? "dark" : "light";
 const auth = createDesktopAuthState(bridge?.hostState, bridge?.auth);
 const apiTransport = createDesktopApiTransport(bridge?.business);

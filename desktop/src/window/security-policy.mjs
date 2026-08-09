@@ -104,10 +104,11 @@ export function decideNavigation({ url, isMainFrame, rendererTarget }) {
   return Object.freeze({ action: "deny" });
 }
 
-export function browserWindowWebPreferences({ preloadPath, partition }) {
+export function browserWindowWebPreferences({ preloadPath, partition, additionalArguments = [] }) {
   return Object.freeze({
     preload: preloadPath,
     partition,
+    additionalArguments: Object.freeze([...additionalArguments]),
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,

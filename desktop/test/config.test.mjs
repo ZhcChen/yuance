@@ -171,10 +171,13 @@ test("registers the privileged app scheme before the ready lifecycle", () => {
   assert.doesNotMatch(mainSource, /supportFetchAPI|bypassCSP|allowServiceWorkers/);
 });
 
-test("creates the starting Shell before one asynchronous credential runtime", () => {
+test("creates the themed starting Shell before one asynchronous credential runtime", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
-  const normalLifecycle = mainSource.indexOf("mainWindow = createMainWindow();");
+  const themeRead = mainSource.indexOf('const initialTheme = await appearanceStore.getTheme().catch(() => "light");');
+  const normalLifecycle = mainSource.indexOf("mainWindow = createMainWindow(initialTheme);");
   const runtimeStart = mainSource.indexOf("initializeDesktopCredentialRuntime().catch", normalLifecycle);
+  assert.ok(themeRead >= 0);
+  assert.ok(normalLifecycle > themeRead);
   assert.ok(normalLifecycle >= 0);
   assert.ok(runtimeStart > normalLifecycle);
   assert.equal(mainSource.indexOf("initializeDesktopCredentialRuntime().catch", runtimeStart + 1), -1);

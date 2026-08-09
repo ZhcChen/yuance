@@ -240,7 +240,7 @@ function handleNavigation(event) {
   if (decision.action === "external") openExternalIfSafe(event.url);
 }
 
-function createMainWindow() {
+function createMainWindow(initialTheme = "light") {
   rendererReadiness.reset();
   const window = new BrowserWindow({
     width: 1280,
@@ -253,6 +253,7 @@ function createMainWindow() {
     webPreferences: browserWindowWebPreferences({
       preloadPath: path.join(moduleDir, "preload.cjs"),
       partition: rendererTarget.partition,
+      additionalArguments: [`--yuance-startup-theme=${initialTheme === "dark" ? "dark" : "light"}`],
     }),
   });
 
@@ -503,7 +504,7 @@ async function runFeatureParityUiSmoke(window) {
     return {
       kind: "yuance-desktop-feature-parity-ui-smoke",
       sharedApp: !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")),
-      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,network,schemaVersion" && bridge.schemaVersion === 12,
+      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,network,schemaVersion,startup" && bridge.schemaVersion === 13,
       semanticMain: document.querySelectorAll("main").length === 1,
       semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
       workItemDetail: ${business.workItemDetail},
@@ -1522,14 +1523,15 @@ if (singleInstanceProbe) {
     catch (error) { process.stderr.write(`desktop business file smoke failed: ${error.message}\n`); app.exit(1); }
   });
 } else {
+  const appearanceStore = createAppearanceStore({
+    fs,
+    filePath: path.join(app.getPath("userData"), "Preferences", "appearance.json"),
+    platform: process.platform,
+  });
   disposeAppearanceCommands = registerAppearanceCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
-    store: createAppearanceStore({
-      fs,
-      filePath: path.join(app.getPath("userData"), "Preferences", "appearance.json"),
-      platform: process.platform,
-    }),
+    store: appearanceStore,
   });
   disposeDatabaseStatsCacheCommands = registerDatabaseStatsCacheCommandHandlers({
     ipcMain,
@@ -1586,6 +1588,7 @@ if (singleInstanceProbe) {
     app.on("second-instance", () => revealWindow());
     app.whenReady().then(async () => {
       try {
+        const initialTheme = await appearanceStore.getTheme().catch(() => "light");
         if (rendererTarget.kind === "app-protocol") {
           const rendererRoot = path.join(moduleDir, "..", "renderer-dist");
           const rendererSession = session.fromPartition(rendererTarget.partition);
@@ -1624,7 +1627,7 @@ if (singleInstanceProbe) {
           }
         }
         applyRuntimeBrandIcon();
-        mainWindow = createMainWindow();
+        mainWindow = createMainWindow(initialTheme);
         disposeNetworkPowerLifecycle = bindNetworkPowerLifecycle({
           powerEvents: powerMonitor,
           getCoordinator: () => networkCoordinator,
@@ -1647,9 +1650,10 @@ if (singleInstanceProbe) {
         }
         return;
       }
-      app.on("activate", () => {
+      app.on("activate", async () => {
         if (!mainWindow) {
-          mainWindow = createMainWindow();
+          const initialTheme = await appearanceStore.getTheme().catch(() => "light");
+          mainWindow = createMainWindow(initialTheme);
           networkCoordinator?.start();
         }
       });

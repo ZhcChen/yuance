@@ -96,10 +96,18 @@ test("BrowserWindow preferences keep every security invariant explicit", () => {
   assert.deepEqual(browserWindowWebPreferences({ preloadPath: "/app/preload.cjs", partition: PRODUCTION_SESSION_PARTITION }), {
     preload: "/app/preload.cjs",
     partition: PRODUCTION_SESSION_PARTITION,
+    additionalArguments: [],
     contextIsolation: true,
     sandbox: true,
     nodeIntegration: false,
     webSecurity: true,
     webviewTag: false,
   });
+  const preferences = browserWindowWebPreferences({
+    preloadPath: "/app/preload.cjs",
+    partition: PRODUCTION_SESSION_PARTITION,
+    additionalArguments: ["--yuance-startup-theme=dark"],
+  });
+  assert.deepEqual(preferences.additionalArguments, ["--yuance-startup-theme=dark"]);
+  assert.equal(Object.isFrozen(preferences.additionalArguments), true);
 });

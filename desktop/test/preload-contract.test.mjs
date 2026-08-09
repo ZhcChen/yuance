@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
 
-async function executePreload() {
+async function executePreload(argv = []) {
   const source = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
   const listeners = new Map();
   const invocations = [];
@@ -35,6 +35,7 @@ async function executePreload() {
     },
     Object,
     Set,
+    process: { argv },
     crypto: { randomUUID: () => "12345678-1234-4123-8123-123456789abc" },
   });
   return { bridge: exposed, invocations, listeners };
@@ -42,7 +43,7 @@ async function executePreload() {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 12);
+  assert.equal(bridge.schemaVersion, 13);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -52,12 +53,28 @@ test("preload exposes a frozen versioned bridge without generic IPC", async () =
   assert.equal(Object.isFrozen(bridge.business), true);
   assert.equal(Object.isFrozen(bridge.appearance), true);
   assert.equal(Object.isFrozen(bridge.databaseStatsCache), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "databaseStatsCache", "events", "files", "hostState", "network", "schemaVersion"]);
+  assert.equal(Object.isFrozen(bridge.startup), true);
+  assert.equal(Object.isFrozen(bridge.startup.hostState), true);
+  assert.equal(Object.isFrozen(bridge.startup.networkState), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "databaseStatsCache", "events", "files", "hostState", "network", "schemaVersion", "startup"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   assert.equal("notifications" in bridge, false);
   assert.deepEqual(invocations, []);
+});
+
+test("startup snapshot accepts only the bounded main-process theme argument", async () => {
+  const dark = (await executePreload(["--unrelated=secret", "--yuance-startup-theme=dark"])).bridge;
+  assert.deepEqual({ ...dark.startup, hostState: { ...dark.startup.hostState }, networkState: { ...dark.startup.networkState } }, {
+    theme: "dark",
+    hostState: { status: "starting" },
+    networkState: { status: "idle" },
+  });
+  for (const value of ["system", "DARK", "dark?token=secret", "https://example.com"]) {
+    const bridge = (await executePreload([`--yuance-startup-theme=${value}`])).bridge;
+    assert.equal(bridge.startup.theme, "light");
+  }
 });
 
 test("database stats cache bridge exposes only semantic read and write commands", async () => {

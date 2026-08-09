@@ -6,6 +6,12 @@ const NETWORK_STATE_CHANNEL = "yuance:network-state";
 const BUSINESS_EXECUTE_CHANNEL = "yuance:business-execute";
 const ATTACHMENT_PROGRESS_CHANNEL = "yuance:file-attachment-progress";
 const ATTACHMENT_STAGES = new Set(["registering", "signing", "uploading", "confirming"]);
+const startupTheme = readStartupTheme(process.argv);
+const startupSnapshot = Object.freeze({
+  theme: startupTheme,
+  hostState: Object.freeze({ status: "starting" }),
+  networkState: Object.freeze({ status: "idle" }),
+});
 const PUBLIC_HOST_STATES = new Set([
   "starting",
   "unauthenticated",
@@ -15,12 +21,12 @@ const PUBLIC_HOST_STATES = new Set([
   "reauthorization_required",
   "fatal",
 ]);
-let hostStateSnapshot = Object.freeze({ status: "starting" });
+let hostStateSnapshot = startupSnapshot.hostState;
 const hostStateSubscribers = new Set();
 const PUBLIC_NETWORK_STATES = new Set([
   "idle", "connecting", "online", "offline", "suspended", "reauthorization_required", "fatal",
 ]);
-let networkStateSnapshot = Object.freeze({ status: "idle" });
+let networkStateSnapshot = startupSnapshot.networkState;
 const networkStateSubscribers = new Set();
 const businessFactSubscribers = new Set();
 
@@ -57,7 +63,8 @@ ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 12,
+  schemaVersion: 13,
+  startup: startupSnapshot,
   appearance: Object.freeze({
     getTheme() { return ipcRenderer.invoke("yuance:appearance-get-theme"); },
     setTheme(theme) { return ipcRenderer.invoke("yuance:appearance-set-theme", theme); },
@@ -129,6 +136,15 @@ const bridge = Object.freeze({
     },
   }),
 });
+
+function readStartupTheme(argv) {
+  let theme = "light";
+  for (const value of Array.isArray(argv) ? argv : []) {
+    if (value === "--yuance-startup-theme=light") theme = "light";
+    else if (value === "--yuance-startup-theme=dark") theme = "dark";
+  }
+  return theme;
+}
 
 function normalizeBusinessFact(value) {
   if (!value || typeof value !== "object" || value.schemaVersion !== 1) return null;
