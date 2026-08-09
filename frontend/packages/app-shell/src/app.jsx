@@ -783,6 +783,7 @@ export function SharedApp({ services }) {
   const workItemCommentDraftRef = useRef(/** @type {{ itemKey: string, commentId: number } | null} */ (null));
   const workItemBatchMutationRef = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [shellReady, setShellReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [releaseVersion, setReleaseVersion] = useState('');
   const [user, setUser] = useState(/** @type {AppUser | null} */ (null));
@@ -1526,6 +1527,7 @@ export function SharedApp({ services }) {
       setError(caught instanceof Error ? caught : new Error('加载失败。'));
     } finally {
       if (requestRef.current === requestId) {
+        setShellReady(true);
         setLoading(false);
         setRefreshing(false);
       }
@@ -4617,7 +4619,7 @@ export function SharedApp({ services }) {
     }
   }
 
-  if (loading) {
+  if (loading && !shellReady) {
     return (
       <main className="app-shell" aria-busy="true">
         <p className="shell-live-region" role="status" aria-live="polite">正在加载元策浏览器工作台。</p>
@@ -4631,7 +4633,7 @@ export function SharedApp({ services }) {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" aria-busy={loading || refreshing}>
       <p className="shell-live-region" role="status" aria-live="polite">
         {statusMessage || (refreshing ? '正在刷新页面数据。' : '')}
       </p>
@@ -4656,6 +4658,20 @@ export function SharedApp({ services }) {
         onThemeChange={handleThemeChange}
         onLogout={handleLogout}
       />
+
+      {loading ? (
+        <section className="shell-route-loading" role="status" aria-live="polite" aria-label={`正在加载${route.title}`}>
+          <p className="shell-eyebrow">{routeEyebrow(route)}</p>
+          <h1>{route.title}</h1>
+          <p className="shell-subtitle">正在加载页面数据。</p>
+          <div className="shell-route-loading-lines" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        </section>
+      ) : (
+        <>
 
       {error ? (
         <section className="shell-banner" role="alert">
@@ -6062,6 +6078,8 @@ export function SharedApp({ services }) {
               {projectResourcePasswordResetForm.accessPasswordAction === 'set' ? <Field id="project-resource-password-reset-value" label="新访问密码" required><input type="password" autoComplete="new-password" minLength={4} maxLength={128} value={projectResourcePasswordResetForm.accessPassword} onChange={(event) => setProjectResourcePasswordResetForm((current) => ({ ...current, accessPassword: event.target.value }))} /></Field> : null}
             </form>
           </Modal>
+        </>
+      )}
         </>
       )}
     </main>
