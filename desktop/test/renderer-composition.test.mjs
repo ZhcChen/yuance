@@ -252,5 +252,7 @@ test("renderer composition uses shared components and contracts without Browser 
   assert.match(source, /reduceDesktopPresentationState/);
   assert.match(source, /bridge\?\.startup\?\.theme/);
   assert.doesNotMatch(source, /appearance\?\.getTheme/);
+  assert.match(source, /desktop-root-shell/);
+  assert.match(source, /services\.lifecycle\.ready\(\)/);
   assert.doesNotMatch(source, /document\.cookie|EventSource|fetch\s*\(|localStorage|sessionStorage/);
 });

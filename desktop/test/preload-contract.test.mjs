@@ -7,11 +7,15 @@ async function executePreload(argv = []) {
   const source = await readFile(new URL("../src/preload.cjs", import.meta.url), "utf8");
   const listeners = new Map();
   const invocations = [];
+  const sends = [];
   let exposed;
   const ipcRenderer = {
     invoke(channel, payload) {
       invocations.push([channel, payload]);
       return Promise.resolve({ shown: true });
+    },
+    send(channel, ...args) {
+      sends.push([channel, ...args]);
     },
     on(channel, listener) {
       listeners.set(channel, listener);
@@ -38,12 +42,12 @@ async function executePreload(argv = []) {
     process: { argv },
     crypto: { randomUUID: () => "12345678-1234-4123-8123-123456789abc" },
   });
-  return { bridge: exposed, invocations, listeners };
+  return { bridge: exposed, invocations, listeners, sends };
 }
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 13);
+  assert.equal(bridge.schemaVersion, 14);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -56,12 +60,21 @@ test("preload exposes a frozen versioned bridge without generic IPC", async () =
   assert.equal(Object.isFrozen(bridge.startup), true);
   assert.equal(Object.isFrozen(bridge.startup.hostState), true);
   assert.equal(Object.isFrozen(bridge.startup.networkState), true);
-  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "databaseStatsCache", "events", "files", "hostState", "network", "schemaVersion", "startup"]);
+  assert.equal(Object.isFrozen(bridge.lifecycle), true);
+  assert.deepEqual(Object.keys(bridge).sort(), ["appearance", "auth", "business", "databaseStatsCache", "events", "files", "hostState", "lifecycle", "network", "schemaVersion", "startup"]);
   assert.equal("invoke" in bridge, false);
   assert.equal("token" in bridge, false);
 
   assert.equal("notifications" in bridge, false);
   assert.deepEqual(invocations, []);
+});
+
+test("renderer lifecycle bridge emits one payload-free readiness signal", async () => {
+  const { bridge, sends } = await executePreload();
+  assert.deepEqual(Object.keys(bridge.lifecycle), ["ready"]);
+  assert.equal(bridge.lifecycle.ready(), true);
+  assert.equal(bridge.lifecycle.ready(), false);
+  assert.deepEqual(sends, [["yuance:renderer-ready"]]);
 });
 
 test("startup snapshot accepts only the bounded main-process theme argument", async () => {

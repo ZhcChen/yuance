@@ -12,6 +12,7 @@ const startupSnapshot = Object.freeze({
   hostState: Object.freeze({ status: "starting" }),
   networkState: Object.freeze({ status: "idle" }),
 });
+let rendererReadySent = false;
 const PUBLIC_HOST_STATES = new Set([
   "starting",
   "unauthenticated",
@@ -63,8 +64,16 @@ ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 13,
+  schemaVersion: 14,
   startup: startupSnapshot,
+  lifecycle: Object.freeze({
+    ready() {
+      if (rendererReadySent) return false;
+      rendererReadySent = true;
+      ipcRenderer.send("yuance:renderer-ready");
+      return true;
+    },
+  }),
   appearance: Object.freeze({
     getTheme() { return ipcRenderer.invoke("yuance:appearance-get-theme"); },
     setTheme(theme) { return ipcRenderer.invoke("yuance:appearance-set-theme", theme); },

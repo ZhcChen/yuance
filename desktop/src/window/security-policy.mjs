@@ -19,6 +19,7 @@ function parseCanonicalUrl(value) {
   }
 }
 
+/** @param {{ isPackaged?: boolean, rawDevServerUrl?: string }} options */
 export function resolveRendererTarget({ isPackaged, rawDevServerUrl } = {}) {
   if (isPackaged) {
     return Object.freeze({
@@ -70,6 +71,10 @@ export function isTrustedRendererUrl(value, rendererTarget) {
   );
 }
 
+/**
+ * @param {unknown} value
+ * @param {{ isDevelopment?: boolean, devOrigin?: string }} options
+ */
 export function normalizeSafeExternalUrl(value, { isDevelopment = false, devOrigin } = {}) {
   const url = parseCanonicalUrl(value);
   if (!url) return null;
@@ -104,6 +109,7 @@ export function decideNavigation({ url, isMainFrame, rendererTarget }) {
   return Object.freeze({ action: "deny" });
 }
 
+/** @param {{ preloadPath: string, partition: string, additionalArguments?: string[] }} options */
 export function browserWindowWebPreferences({ preloadPath, partition, additionalArguments = [] }) {
   return Object.freeze({
     preload: preloadPath,

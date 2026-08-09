@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useState } from "react";
+import React, { useEffect, useLayoutEffect, useReducer, useRef, useState } from "react";
 import { HostStatusShell } from "@yuance/frontend-ui";
 import { SharedApp } from "@yuance/frontend-app-shell";
 
@@ -31,6 +31,8 @@ const STATE_DESCRIPTIONS = Object.freeze({
 });
 
 export default function DesktopApp({ services }) {
+  /** @type {React.MutableRefObject<HTMLElement | null>} */
+  const stageElement = useRef(null);
   const [presentation, updatePresentation] = useReducer(
     reduceDesktopPresentationState,
     undefined,
@@ -43,6 +45,11 @@ export default function DesktopApp({ services }) {
   useEffect(() => services.auth.subscribe((authState) => updatePresentation({ authState })), [services]);
   useEffect(() => services.network.subscribe((networkState) => updatePresentation({ networkState })), [services]);
   const { authState, networkState } = presentation;
+  useLayoutEffect(() => {
+    if (!presentation.presentable) return;
+    stageElement.current?.focus({ preventScroll: true });
+    services.lifecycle.ready();
+  }, [presentation.presentable, presentation.stage, services]);
   const [title, detail] = STATE_LABELS[authState.status] ?? STATE_LABELS.fatal;
   const run = (command) => async () => {
     if (commandPending) return;
@@ -61,12 +68,23 @@ export default function DesktopApp({ services }) {
     ? { label: "退出设备", onClick: run(services.auth.logout) }
     : undefined;
 
-  if (presentation.stage === "workspace") {
-    return <SharedApp services={services.app} />;
-  }
-
-  return <HostStatusShell productName="元策" hostLabel="Desktop" status={authState.status} title={title} detail={detail}
-    description={STATE_DESCRIPTIONS[authState.status] ?? STATE_DESCRIPTIONS.fatal}
-    context={authState.status === "authenticated" ? NETWORK_LABELS[networkState.status] : undefined}
-    primaryAction={primaryAction} secondaryAction={secondaryAction} actionsDisabled={commandPending} />;
+  return (
+    <div className="desktop-root-shell" data-desktop-stage={presentation.stage}>
+      <section
+        ref={stageElement}
+        className="desktop-stage"
+        aria-label={presentation.stage === "workspace" ? "元策工作台" : detail}
+        tabIndex={-1}
+      >
+        {presentation.stage === "workspace" ? (
+          <SharedApp services={services.app} />
+        ) : (
+          <HostStatusShell productName="元策" hostLabel="Desktop" status={authState.status} title={title} detail={detail}
+            description={STATE_DESCRIPTIONS[authState.status] ?? STATE_DESCRIPTIONS.fatal}
+            context={authState.status === "authenticated" ? NETWORK_LABELS[networkState.status] : undefined}
+            primaryAction={primaryAction} secondaryAction={secondaryAction} actionsDisabled={commandPending} />
+        )}
+      </section>
+    </div>
+  );
 }

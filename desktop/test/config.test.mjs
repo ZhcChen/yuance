@@ -141,11 +141,16 @@ test("removes the renderer-controlled native notification channel", () => {
   assert.match(mainSource, /onFact: \(fact\) => notifications\.handleFact\(fact\)/);
 });
 
-test("configures development storage and maximizes the startup window", () => {
+test("configures development storage and maximizes only after the startup stage is ready", () => {
   const mainSource = readFileSync(new URL("../src/main.mjs", import.meta.url), "utf8");
   assert.match(mainSource, /app\.setPath\("userData", developmentDataPaths\.userData\)/);
   assert.match(mainSource, /app\.setPath\("sessionData", developmentDataPaths\.sessionData\)/);
-  assert.match(mainSource, /window\.maximize\(\);/);
+  assert.match(mainSource, /function showMainWindowIfReady\(\)/);
+  assert.match(
+    mainSource,
+    /!mainWindowChromiumReady \|\| !mainWindowPresentationReady/,
+  );
+  assert.match(mainSource, /if \(!mainWindowShown\) \{[\s\S]*mainWindow\.maximize\(\);/u);
   assert.doesNotMatch(mainSource, /fullscreen: true/);
   assert.match(mainSource, /applyRuntimeBrandIcon\(\);/);
 });

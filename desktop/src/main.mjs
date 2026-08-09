@@ -38,6 +38,10 @@ import { registerBusinessCommandHandlers } from "./ipc/business-commands.mjs";
 import { registerAppearanceCommandHandlers } from "./ipc/appearance-commands.mjs";
 import { createAppearanceStore } from "./preferences/appearance-store.mjs";
 import { registerDatabaseStatsCacheCommandHandlers } from "./ipc/database-stats-cache-commands.mjs";
+import {
+  createRendererReadyController,
+  registerRendererReadyHandler,
+} from "./ipc/renderer-ready.mjs";
 import { createDatabaseStatsCacheStore } from "./preferences/database-stats-cache-store.mjs";
 import { createFileStateController } from "./ipc/file-state.mjs";
 import {
@@ -150,6 +154,7 @@ let disposeFilePowerLifecycle = () => {};
 let disposeBusinessCommands = () => {};
 let disposeAppearanceCommands = () => {};
 let disposeDatabaseStatsCacheCommands = () => {};
+let disposeRendererReadyHandler = () => {};
 let quitCleanupStarted = false;
 let quitCleanupComplete = false;
 const rendererReadiness = createRendererReadinessTracker(rendererTarget);
@@ -157,6 +162,18 @@ const assertTrustedIpcSender = createIpcSenderPolicy({
   getMainWindow: () => mainWindow,
   isNavigationPending: rendererReadiness.isPending,
   rendererTarget,
+});
+let mainWindowChromiumReady = false;
+let mainWindowPresentationReady = false;
+let mainWindowShown = false;
+let mainWindowRevealPending = false;
+const rendererPresentationReadiness = createRendererReadyController({
+  getMainWindow: () => mainWindow,
+  rendererTarget,
+  onReady: () => {
+    mainWindowPresentationReady = true;
+    showMainWindowIfReady();
+  },
 });
 
 function delay(milliseconds) {
@@ -201,11 +218,27 @@ function revealWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
+  if (!mainWindowChromiumReady || !mainWindowPresentationReady) {
+    mainWindowRevealPending = true;
+    return;
+  }
   if (mainWindow.isMinimized()) {
     mainWindow.restore();
   }
   mainWindow.show();
   mainWindow.focus();
+}
+
+function showMainWindowIfReady() {
+  if (appProtocolSmoke || !mainWindow || mainWindow.isDestroyed() || !mainWindowChromiumReady || !mainWindowPresentationReady) return false;
+  if (!mainWindowShown) {
+    mainWindowShown = true;
+    mainWindow.maximize();
+  }
+  mainWindow.show();
+  if (mainWindowRevealPending || !mainWindow.isFocused()) mainWindow.focus();
+  mainWindowRevealPending = false;
+  return true;
 }
 
 function publishBusinessFact(fact) {
@@ -242,6 +275,11 @@ function handleNavigation(event) {
 
 function createMainWindow(initialTheme = "light") {
   rendererReadiness.reset();
+  rendererPresentationReadiness.reset();
+  mainWindowChromiumReady = false;
+  mainWindowPresentationReady = false;
+  mainWindowShown = false;
+  mainWindowRevealPending = true;
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -257,12 +295,10 @@ function createMainWindow(initialTheme = "light") {
     }),
   });
 
-  if (!appProtocolSmoke) {
-    window.once("ready-to-show", () => {
-      window.maximize();
-      window.show();
-    });
-  }
+  window.once("ready-to-show", () => {
+    mainWindowChromiumReady = true;
+    showMainWindowIfReady();
+  });
   window.webContents.on("will-navigate", handleNavigation);
   window.webContents.on("will-redirect", handleNavigation);
   window.webContents.on("will-frame-navigate", (event) => {
@@ -282,6 +318,10 @@ function createMainWindow(initialTheme = "light") {
   });
   window.webContents.on("did-start-navigation", (event) => {
     rendererReadiness.didStart(event);
+    rendererPresentationReadiness.didStart(event);
+  });
+  window.webContents.on("dom-ready", () => {
+    rendererPresentationReadiness.didCommit(window.webContents.getURL());
   });
   window.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
     if (isMainFrame) rendererReadiness.didCommit(url);
@@ -308,12 +348,18 @@ function createMainWindow(initialTheme = "light") {
   });
   window.webContents.on("render-process-gone", () => {
     rendererReadiness.reset();
+    rendererPresentationReadiness.reset();
     fileRuntime?.state.invalidateAll().catch(() => {});
   });
   window.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) fileRuntime?.state.invalidateAll().catch(() => {});
   });
   window.on("closed", () => {
+    rendererPresentationReadiness.reset();
+    mainWindowChromiumReady = false;
+    mainWindowPresentationReady = false;
+    mainWindowShown = false;
+    mainWindowRevealPending = false;
     rendererReadiness.reset();
     if (mainWindow === window) {
       mainWindow = null;
@@ -504,7 +550,7 @@ async function runFeatureParityUiSmoke(window) {
     return {
       kind: "yuance-desktop-feature-parity-ui-smoke",
       sharedApp: !document.querySelector(".host-status-shell") && Boolean(document.querySelector("main")),
-      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,network,schemaVersion,startup" && bridge.schemaVersion === 13,
+      restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,lifecycle,network,schemaVersion,startup" && bridge.schemaVersion === 14,
       semanticMain: document.querySelectorAll("main").length === 1,
       semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
       workItemDetail: ${business.workItemDetail},
@@ -1533,6 +1579,7 @@ if (singleInstanceProbe) {
     assertSender: assertTrustedIpcSender,
     store: appearanceStore,
   });
+  disposeRendererReadyHandler = registerRendererReadyHandler({ ipcMain, controller: rendererPresentationReadiness });
   disposeDatabaseStatsCacheCommands = registerDatabaseStatsCacheCommandHandlers({
     ipcMain,
     assertSender: assertTrustedIpcSender,
@@ -1682,6 +1729,8 @@ app.on("before-quit", (event) => {
   disposeAppearanceCommands = () => {};
   disposeDatabaseStatsCacheCommands();
   disposeDatabaseStatsCacheCommands = () => {};
+  disposeRendererReadyHandler();
+  disposeRendererReadyHandler = () => {};
   disposeNetworkPowerLifecycle();
   disposeNetworkPowerLifecycle = () => {};
   networkCoordinator?.stop();

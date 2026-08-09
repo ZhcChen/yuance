@@ -26,6 +26,9 @@ const router = createDesktopRouter();
 const hostFiles = createDesktopFiles(bridge?.files);
 const services = Object.freeze({
   auth,
+  lifecycle: Object.freeze({
+    ready: () => bridge?.lifecycle?.ready?.() ?? false,
+  }),
   router,
   network: createDesktopNetworkState(bridge?.network),
   files: hostFiles,
