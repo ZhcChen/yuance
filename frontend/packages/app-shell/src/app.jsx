@@ -1292,6 +1292,7 @@ export function SharedApp({ services }) {
       setRefreshing(true);
     }
 
+    let routeLoadWarning = null;
     try {
       if (targetRoute.id === 'project-personal-analysis') {
         const projectKey = String(targetRoute.projectKey);
@@ -1315,7 +1316,15 @@ export function SharedApp({ services }) {
       const [nextUser, nextTopbar, nextDashboard, nextProfile, nextFeed, nextProjects, nextSearch, nextWorkItems, nextWorkItemBundle, nextSecurity, nextProjectBundle, nextCycleDetailBundle, nextResourceDetailBundle, nextPersonalAnalysisBundle, nextSystemDashboard, nextSystemPermissions, nextSystemUsersView, nextSystemRolesView, nextSystemStorageView, nextSystemOpenApiView, nextSystemReleasesView, nextSystemAuditPage, nextSystemApiDocs] = await Promise.all([
         api.getCurrentUser(),
         api.getTopbarStatus(),
-        ['home', 'profile', 'projects'].includes(targetRoute.id) ? api.getDashboard() : Promise.resolve(null),
+        ['home', 'profile', 'projects'].includes(targetRoute.id)
+          ? api.getDashboard().catch((caught) => {
+            const caughtError = caught instanceof Error ? /** @type {Error & { status?: number }} */ (caught) : null;
+            routeLoadWarning = caughtError?.status === 404
+              ? new Error('当前服务端尚未提供工作台聚合接口，请先发布配套 API 版本。')
+              : (caughtError || new Error('工作台数据加载失败。'));
+            return null;
+          })
+          : Promise.resolve(null),
         targetRoute.id === 'profile' ? api.getOwnProfile() : Promise.resolve(null),
         targetRoute.id === 'projects' || targetRoute.id === 'project-detail' || targetRoute.id === 'project-cycle-detail' || targetRoute.id === 'project-resource-detail' || targetRoute.id === 'project-personal-analysis' || targetRoute.id === 'search' || targetRoute.id === 'profile' || isWorkItemListRouteId(targetRoute.id) || targetRoute.id === 'work-item-detail'
           ? Promise.resolve(null)
@@ -1538,7 +1547,7 @@ export function SharedApp({ services }) {
         );
       }
       api.restorePendingReturnToHash();
-      setError(null);
+      setError(routeLoadWarning);
     } catch (caught) {
       if (requestRef.current !== requestId) {
         return;
