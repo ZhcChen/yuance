@@ -148,7 +148,7 @@ flowchart TB
 | U1 呈现状态机 | 已完成 | 纯状态转换与乱序、重复、workspace 保持测试通过；提交 `e139d28` | 无 |
 | U2 同步首屏快照 | 已完成 | 同步主题快照、bridge schema 13、main/renderer 检查与凭证扫描通过；提交 `b07ae3a` | 无 |
 | U3 稳定根壳与窗口握手 | 已完成 | 固定根壳、schema 14、单次 readiness、双就绪窗口门禁；Desktop 469 项测试通过 466 项，3 项仅 Windows 跳过；提交 `65dc442` | 无 |
-| U4 Packaged 回归 | 进行中 | macOS arm64 ad-hoc `pack:dir`、`verify:bundle`、`smoke:app-protocol`、凭证扫描通过；两次可见 stage 均为 `authorization`，readiness 2 次，主文档导航事件 3 次 | 正式 API 实机视觉验收、light/dark 冷启动、已授权 profile、离线恢复、登出与重授权 |
+| U4 Packaged 回归 | 已完成 | macOS arm64 ad-hoc 打包与 bundle 校验；light/dark 冷启动；正式 API health/enrollment；隔离 profile 两次授权、workspace、三轮离线恢复、登出/重授权；完整流程仅 1 次跨文档导航 | 无 |
 
 `.artifacts/` 与 `test-results/` 仅保留本地验收证据，不纳入提交。
 
@@ -236,14 +236,14 @@ flowchart TB
 
 ## Definition of Done
 
-- [ ] U1-U4 均有对应实现、聚焦测试和可重放验证证据。
-- [ ] Desktop 只有一个 React root 和稳定顶层根壳；`SharedApp` 仍是唯一业务组件树。
-- [ ] 空 profile、有效凭证、锁定/失效、离线和 fatal 五类启动路径均进入正确稳定且可访问的 stage。
-- [ ] packaged 冷启动首个可见帧非空，且不会短暂展示错误授权状态或业务状态。
-- [ ] 深色与浅色首帧正确，启动日志不存在 appearance sender readiness 拒绝。
-- [ ] 主窗口 readiness 只接受受信主 frame，异常路径不会永久隐藏窗口。
-- [ ] 未新增固定展示延时、远程 renderer、任意 URL、renderer credential 或安全策略放宽。
-- [ ] macOS ad-hoc packaged 正式环境验收通过；Windows/Linux 现有测试矩阵保持通过。
-- [ ] `git diff --check`、全量相关检查和凭证扫描通过。
-- [ ] 删除实施过程中的实验代码、临时日志和废弃分支，不提交 `.artifacts/` 或 `test-results/`。
-- [ ] 重要启动时序决策和可复用排查方法在完成后写入 `docs/reviews/`；若形成通用模式，再沉淀到 `docs/solutions/`。
+- [x] U1-U4 均有对应实现、聚焦测试和可重放验证证据。
+- [x] Desktop 只有一个 React root 和稳定顶层根壳；`SharedApp` 仍是唯一业务组件树。
+- [x] 空 profile、有效凭证、锁定/失效、离线和 fatal 五类启动路径均进入正确稳定且可访问的 stage。
+- [x] packaged 冷启动首个可见帧非空，且不会短暂展示错误授权状态或业务状态。
+- [x] 深色与浅色首帧正确，启动日志不存在 appearance sender readiness 拒绝。
+- [x] 主窗口 readiness 只接受受信主 frame，异常路径不会永久隐藏窗口。
+- [x] 未新增固定展示延时、远程 renderer、任意 URL、renderer credential 或安全策略放宽。
+- [x] macOS ad-hoc packaged 正式环境验收通过；Windows/Linux 现有测试矩阵保持通过。
+- [x] `git diff --check`、全量相关检查和凭证扫描通过。
+- [x] 删除实施过程中的实验代码、临时日志和废弃分支，不提交 `.artifacts/` 或 `test-results/`。
+- [x] 重要启动时序决策和可复用排查方法在完成后写入 `docs/reviews/`；若形成通用模式，再沉淀到 `docs/solutions/`。
