@@ -120,7 +120,7 @@ function validReport() {
 }
 
 function childArtifacts(platform = process.platform) {
-  return {
+  const artifacts = {
     "desktop-network-smoke.json": { kind: "yuance-desktop-network-smoke", credentialRestart: "recovered", messageEvidence: platform === "darwin" ? "packaged-sse" : "integration-fallback", probe: true, firstStream: true, rotated: true, secondStream: true, loggedOut: true, messageRefresh: platform === "darwin", releaseVersion: platform === "darwin", foregroundSuppressed: true, revokeResponseToEofMs: 10, publicAuthStates: [] },
     "desktop-network-cleanup.json": { kind: "yuance-desktop-network-cleanup", apiProcess: "stopped", profile: "removed" },
     "desktop-network-api.log": "",
@@ -128,7 +128,9 @@ function childArtifacts(platform = process.platform) {
     "desktop-file-transfer-cleanup.json": { kind: "yuance-desktop-file-cleanup", apiProcess: "stopped", profile: "removed" },
     "desktop-business-file-smoke.json": { kind: "yuance-desktop-business-file-smoke", itemUploaded: true, commentUploaded: true, downloadsMatch: true, revealCount: 2, cancelled: true, stageCount: 8, activeOperations: 0, spoolFiles: 0 },
     "desktop-business-file-cleanup.json": { kind: "yuance-desktop-business-file-cleanup", apiProcess: "stopped", profile: "removed" },
-    "desktop-feature-parity-ui-smoke.json": { kind: "yuance-desktop-feature-parity-ui-smoke", sharedApp: true, restrictedBridge: true, semanticMain: true, semanticNavigation: true, workItemDetail: true, workItemEdited: true, workItemHandedOff: true, commentCreated: true, commentEdited: true, workItemAttachmentUploaded: true, workItemAttachmentDownloaded: true, workItemAttachmentRevealed: true, commentAttachmentUploaded: true, commentAttachmentDownloaded: true, commentAttachmentRevealed: true, messageTargetOpened: true, messageTargetFocused: true, permissionDenied: true, permissionInputPreserved: true, validationError: true, validationFocused: true, notFoundVisible: true, offlineStateVisible: true, offlineRecoveryVisible: true, interruptionRecovered: true, interruptionCycles: 3, hiddenWindow: true, lifecycleCycles: 3, networkRecovered: true, postResumeRefresh: true, processCount: 4, workingSetKb: 200_000, cpuPercent: 100, profileBytes: 2_000_000, liveRegions: 1, accessibilityViolations: 0, keyboardFocus: true, genericBridgeMethods: 0 },
+    "desktop-feature-parity-ui-smoke.json": { kind: "yuance-desktop-feature-parity-ui-smoke", sharedApp: true, restrictedBridge: true, semanticMain: true, semanticNavigation: true, workItemDetail: true, workItemEdited: true, workItemHandedOff: true, commentCreated: true, commentEdited: true, workItemAttachmentUploaded: true, workItemAttachmentDownloaded: true, workItemAttachmentRevealed: true, commentAttachmentUploaded: true, commentAttachmentDownloaded: true, commentAttachmentRevealed: true, messageTargetOpened: true, messageTargetFocused: true, permissionDenied: true, permissionInputPreserved: true, validationError: true, validationFocused: true, notFoundVisible: true, offlineWorkspaceRetained: true, offlineWorkspaceRecovered: true, interruptionRecovered: true, interruptionCycles: 3, hiddenWindow: true, lifecycleCycles: 3, networkRecovered: true, postResumeRefresh: true, processCount: 4, workingSetKb: 200_000, cpuPercent: 100, profileBytes: 2_000_000, liveRegions: 1, accessibilityViolations: 0, keyboardFocus: true, genericBridgeMethods: 0 },
     "desktop-feature-parity-ui-cleanup.json": { kind: "yuance-desktop-feature-parity-ui-cleanup", apiProcess: "stopped", profile: "removed" },
   };
+  artifacts["desktop-feature-parity-ui-smoke.json"].mainDocumentNavigationCount = 1;
+  return artifacts;
 }

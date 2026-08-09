@@ -7,6 +7,7 @@ const EXPECTED_CSP = "default-src 'self'; script-src 'self'; style-src 'self'; i
 const CREDENTIAL_PATTERN = /"Authorization"\s*:|Bearer\s|yuance_(?:dat|drt|dc)_|refresh_token|access_token/iu;
 
 export function assertAppProtocolSmokeReport(report) {
+  const expectedBackground = report?.requestedTheme === "dark" ? "rgb(15, 23, 35)" : "rgb(237, 241, 245)";
   if (
     report?.kind !== "yuance-app-protocol-smoke" ||
     report.url !== "app://yuance/projects/smoke" ||
@@ -21,7 +22,12 @@ export function assertAppProtocolSmokeReport(report) {
     report.reloadedRenderer?.desktopStage !== "authorization" ||
     report.stageSequence?.join(",") !== "authorization,authorization" ||
     report.rendererReadinessCount !== 2 ||
-    report.mainDocumentNavigationCount !== 3 ||
+    report.mainDocumentNavigationCount !== 2 ||
+    !["light", "dark"].includes(report.requestedTheme) ||
+    report.initialRenderer?.theme !== report.requestedTheme ||
+    report.reloadedRenderer?.theme !== report.requestedTheme ||
+    report.initialRenderer?.rootBackgroundColor !== expectedBackground ||
+    report.reloadedRenderer?.rootBackgroundColor !== expectedBackground ||
     report.reloadedRenderer?.bridgeSchemaVersion !== 14 ||
     report.reloadedRenderer?.title !== "元策" ||
     !report.reloadedRenderer?.bodyText?.includes("需要登录") ||
@@ -82,9 +88,10 @@ export async function findUnpackedExecutable(root, platform = process.platform) 
   return candidates[0];
 }
 
-export async function smokeAppProtocol(inputPath, { platform = process.platform, timeoutMs = 30_000 } = {}) {
+export async function smokeAppProtocol(inputPath, { platform = process.platform, timeoutMs = 30_000, theme = "light" } = {}) {
+  if (theme !== "light" && theme !== "dark") throw new TypeError("app protocol smoke theme is invalid");
   const executable = await findUnpackedExecutable(inputPath, platform);
-  const args = ["--app-protocol-smoke", ...(platform === "linux" ? ["--no-sandbox"] : [])];
+  const args = ["--app-protocol-smoke", `--app-protocol-smoke-theme=${theme}`, ...(platform === "linux" ? ["--no-sandbox"] : [])];
   const child = spawn(executable, args, {
     cwd: path.dirname(executable),
     env: {
@@ -109,6 +116,9 @@ export async function smokeAppProtocol(inputPath, { platform = process.platform,
   if (result.code !== 0 || result.signal) {
     throw new Error(`Unpacked app smoke failed (${result.signal || result.code}): ${stderr || stdout}`);
   }
+  if (/Untrusted renderer IPC sender|yuance:appearance-get-theme/iu.test(stderr)) {
+    throw new Error(`Unpacked app smoke emitted a startup IPC rejection: ${stderr}`);
+  }
   const reportLine = stdout.split(/\r?\n/u).find((line) => line.includes('"kind":"yuance-app-protocol-smoke"'));
   if (!reportLine) throw new Error(`Unpacked app smoke report is missing: ${stderr || stdout}`);
   const report = JSON.parse(reportLine);
@@ -118,8 +128,8 @@ export async function smokeAppProtocol(inputPath, { platform = process.platform,
 
 if (path.resolve(process.argv[1] || "") === fileURLToPath(import.meta.url)) {
   const inputPath = path.resolve(process.argv[2] || path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "dist"));
-  smokeAppProtocol(inputPath)
-    .then(({ executable }) => console.log(`Verified app:// smoke with ${executable}.`))
+  Promise.all(["light", "dark"].map((theme) => smokeAppProtocol(inputPath, { theme })))
+    .then((results) => console.log(`Verified light/dark app:// smoke with ${results[0].executable}.`))
     .catch((error) => {
       console.error(`App protocol smoke failed: ${error instanceof Error ? error.message : String(error)}`);
       process.exitCode = 1;

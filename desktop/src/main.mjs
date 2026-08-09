@@ -103,6 +103,9 @@ const rendererTarget = resolveRendererTarget({
   rawDevServerUrl: process.env.YUANCE_DESKTOP_RENDERER_URL,
 });
 const appProtocolSmoke = app.isPackaged && process.argv.includes("--app-protocol-smoke");
+const appProtocolSmokeTheme = appProtocolSmoke
+  ? process.argv.find((value) => value.startsWith("--app-protocol-smoke-theme="))?.split("=", 2)[1] ?? "light"
+  : undefined;
 const desktopNetworkSmokePhase = app.isPackaged
   ? process.argv.find((value) => value.startsWith("--desktop-network-smoke-phase="))?.split("=", 2)[1]
   : undefined;
@@ -136,6 +139,7 @@ let appProtocolSmokePhase = "initial";
 let appProtocolSmokeRendererReadinessCount = 0;
 let appProtocolSmokeMainDocumentNavigationCount = 0;
 let featureParityUiSmokeStarted = false;
+let featureParityUiSmokeMainDocumentNavigationCount = 0;
 const featureParityUiSmokeOperations = [];
 let featureParityUiSmokeActiveOperations = 0;
 let featureParityUiSmokeLastOperationAt = 0;
@@ -319,10 +323,12 @@ function createMainWindow(initialTheme = "light") {
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => {
     callback(false);
   });
-  window.webContents.on("did-start-navigation", (event) => {
-    rendererReadiness.didStart(event);
-    if (rendererPresentationReadiness.didStart(event) && appProtocolSmoke) {
-      appProtocolSmokeMainDocumentNavigationCount += 1;
+  window.webContents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
+    const navigation = { url, isInPlace, isMainFrame };
+    rendererReadiness.didStart(navigation);
+    if (rendererPresentationReadiness.didStart(navigation)) {
+      if (appProtocolSmoke) appProtocolSmokeMainDocumentNavigationCount += 1;
+      if (desktopFeatureParityUiSmokeOrigin) featureParityUiSmokeMainDocumentNavigationCount += 1;
     }
   });
   window.webContents.on("dom-ready", () => {
@@ -410,6 +416,8 @@ async function rendererSmokeSnapshot(window) {
       title: document.title,
       bodyText: document.body.innerText,
       desktopStage: document.querySelector(".desktop-root-shell")?.dataset.desktopStage ?? "missing",
+      theme: document.documentElement.dataset.theme ?? "missing",
+      rootBackgroundColor: getComputedStyle(document.querySelector('.desktop-root-shell')).backgroundColor,
       bridgeSchemaVersion: bridge.schemaVersion,
       bridgeState: bridge.hostState.getSnapshot().status,
       resourceUrls,
@@ -476,6 +484,7 @@ async function finishAppProtocolSmoke(window) {
     stageSequence: [appProtocolSmokeInitialRenderer?.desktopStage, renderer.desktopStage],
     rendererReadinessCount: appProtocolSmokeRendererReadinessCount,
     mainDocumentNavigationCount: appProtocolSmokeMainDocumentNavigationCount,
+    requestedTheme: appProtocolSmokeTheme,
     navigationDenied,
     permissionCheckCount: appProtocolSmokePermissionChecks,
     subframeObserved,
@@ -562,6 +571,7 @@ async function runFeatureParityUiSmoke(window) {
       restrictedBridge: Object.keys(bridge).sort().join(",") === "appearance,auth,business,databaseStatsCache,events,files,hostState,lifecycle,network,schemaVersion,startup" && bridge.schemaVersion === 14,
       semanticMain: document.querySelectorAll("main").length === 1,
       semanticNavigation: document.querySelectorAll("nav a[href]").length > 0,
+      mainDocumentNavigationCount: ${featureParityUiSmokeMainDocumentNavigationCount},
       workItemDetail: ${business.workItemDetail},
       workItemEdited: ${business.workItemEdited},
       workItemHandedOff: ${business.workItemHandedOff},
@@ -580,8 +590,8 @@ async function runFeatureParityUiSmoke(window) {
       validationError: ${business.validationError},
       validationFocused: ${business.validationFocused},
       notFoundVisible: ${business.notFoundVisible},
-      offlineStateVisible: ${business.offlineStateVisible},
-      offlineRecoveryVisible: ${business.offlineRecoveryVisible},
+      offlineWorkspaceRetained: ${business.offlineWorkspaceRetained},
+      offlineWorkspaceRecovered: ${business.offlineWorkspaceRecovered},
       interruptionRecovered: ${business.interruptionRecovered},
       interruptionCycles: ${business.interruptionCycles},
       processCount: ${resources.processCount},
@@ -812,9 +822,9 @@ async function runFeatureParityBusinessUiSmoke(window) {
     await waitForUiSmoke(() => networkStatePublisher.snapshot().status === "offline", 30_000, `network interruption ${index + 1}`);
     if (index === 0) {
       await waitForUiSmoke(() => window.webContents.executeJavaScript(`(() => {
-        const shell = document.querySelector('.host-status-shell');
-        return Boolean(shell && !document.querySelector('.work-item-action-form') && [...shell.querySelectorAll('button')].some((value) => !value.disabled));
-      })()`), 10_000, "offline state shell");
+        const root = document.querySelector('.desktop-root-shell[data-desktop-stage="workspace"]');
+        return Boolean(root && !document.querySelector('.host-status-shell') && root.querySelector('main') && root.querySelector('.work-item-action-form'));
+      })()`), 10_000, "offline workspace retention");
     }
     networkStatePublisher.update({ status: "online" });
     networkStatePublisher.publishTo(mainWindow);
@@ -887,8 +897,8 @@ async function runFeatureParityBusinessUiSmoke(window) {
     validationError: true,
     validationFocused: true,
     notFoundVisible: true,
-    offlineStateVisible: true,
-    offlineRecoveryVisible: true,
+    offlineWorkspaceRetained: true,
+    offlineWorkspaceRecovered: true,
     interruptionRecovered: true,
     interruptionCycles: 3,
   });
@@ -1489,9 +1499,13 @@ if (isDevRuntime) {
   app.setPath("sessionData", developmentDataPaths.sessionData);
 }
 if (appProtocolSmoke) {
+  if (appProtocolSmokeTheme !== "light" && appProtocolSmokeTheme !== "dark") throw new Error("app protocol smoke theme is invalid");
   appProtocolSmokeDataPath = await fs.mkdtemp(path.join(os.tmpdir(), "yuance-app-protocol-smoke-"));
   app.setPath("userData", appProtocolSmokeDataPath);
   app.setPath("sessionData", path.join(appProtocolSmokeDataPath, "Session Data"));
+  const appearanceDirectory = path.join(appProtocolSmokeDataPath, "Preferences");
+  await fs.mkdir(appearanceDirectory, { recursive: true, mode: 0o700 });
+  await fs.writeFile(path.join(appearanceDirectory, "appearance.json"), `${JSON.stringify({ theme: appProtocolSmokeTheme })}\n`, { mode: 0o600 });
 }
 if (desktopFeatureParityUiSmokeOrigin || desktopFeatureParityUiSmokeProfile) {
   if (!desktopFeatureParityUiSmokeOrigin || !desktopFeatureParityUiSmokeProfile || !path.isAbsolute(desktopFeatureParityUiSmokeProfile)) throw new Error("desktop feature parity UI smoke arguments are invalid");

@@ -65,15 +65,15 @@ test("late failures and unrelated external cancellation cannot reopen a newer na
   assert.equal(tracker.didCommit("app://yuance/work-items"), true);
 });
 
-test("trusted same-document route commits reopen IPC after pushState navigation", () => {
+test("trusted same-document routes preserve IPC while document navigations require a new commit", () => {
   const tracker = createRendererReadinessTracker(resolveRendererTarget({ isPackaged: true }));
   tracker.didCommit("app://yuance/");
-  tracker.didStart({ url: "app://yuance/tasks", isMainFrame: true });
-  assert.equal(tracker.isPending(), true);
+  tracker.didStart({ url: "app://yuance/tasks", isMainFrame: true, isInPlace: true });
+  assert.equal(tracker.isPending(), false);
   assert.equal(tracker.didCommit("app://yuance/tasks"), true);
   assert.equal(tracker.isPending(), false);
 
-  tracker.didStart({ url: "app://yuance/unknown", isMainFrame: true });
+  tracker.didStart({ url: "app://yuance/unknown", isMainFrame: true, isInPlace: false });
   assert.equal(tracker.didCommit("app://yuance/unknown"), false);
   assert.equal(tracker.isPending(), true);
 });

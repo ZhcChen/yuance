@@ -4,8 +4,8 @@ export function createRendererReadinessTracker(rendererTarget) {
   let ready = false;
 
   return Object.freeze({
-    didStart({ url, isMainFrame }) {
-      if (isMainFrame && isTrustedRendererUrl(url, rendererTarget)) ready = false;
+    didStart({ url, isMainFrame, isInPlace = false }) {
+      if (!isInPlace && isMainFrame && isTrustedRendererUrl(url, rendererTarget)) ready = false;
     },
     didCommit(url) {
       ready = isTrustedRendererUrl(url, rendererTarget);

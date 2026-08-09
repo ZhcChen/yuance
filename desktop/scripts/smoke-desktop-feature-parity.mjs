@@ -175,6 +175,7 @@ function assertUiReport(report) {
     restrictedBridge: report?.restrictedBridge === true,
     semanticMain: report?.semanticMain === true,
     semanticNavigation: report?.semanticNavigation === true,
+    mainDocumentNavigationCount: report?.mainDocumentNavigationCount === 1,
     workItemDetail: report?.workItemDetail === true,
     workItemEdited: report?.workItemEdited === true,
     workItemHandedOff: report?.workItemHandedOff === true,
@@ -201,18 +202,21 @@ function assertUiReport(report) {
     validationError: report?.validationError === true,
     validationFocused: report?.validationFocused === true,
     notFoundVisible: report?.notFoundVisible === true,
-    offlineStateVisible: report?.offlineStateVisible === true,
-    offlineRecoveryVisible: report?.offlineRecoveryVisible === true,
+    offlineWorkspaceRetained: report?.offlineWorkspaceRetained === true,
+    offlineWorkspaceRecovered: report?.offlineWorkspaceRecovered === true,
     interruptionRecovered: report?.interruptionRecovered === true,
     interruptionCycles: report?.interruptionCycles === 3,
     keyboardFocus: report?.keyboardFocus === true,
     liveRegions: Number.isSafeInteger(report?.liveRegions) && report.liveRegions >= 1,
     accessibilityViolations: report?.accessibilityViolations === 0,
     genericBridgeMethods: report?.genericBridgeMethods === 0,
-    shape: report && Object.keys(report).sort().join(",") === "accessibilityViolations,commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,interruptionCycles,interruptionRecovered,keyboardFocus,kind,lifecycleCycles,liveRegions,messageTargetFocused,messageTargetOpened,networkRecovered,notFoundVisible,offlineRecoveryVisible,offlineStateVisible,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
+    shape: report && Object.keys(report).sort().join(",") === "accessibilityViolations,commentAttachmentDownloaded,commentAttachmentRevealed,commentAttachmentUploaded,commentCreated,commentEdited,cpuPercent,genericBridgeMethods,hiddenWindow,interruptionCycles,interruptionRecovered,keyboardFocus,kind,lifecycleCycles,liveRegions,mainDocumentNavigationCount,messageTargetFocused,messageTargetOpened,networkRecovered,notFoundVisible,offlineWorkspaceRecovered,offlineWorkspaceRetained,permissionDenied,permissionInputPreserved,postResumeRefresh,processCount,profileBytes,restrictedBridge,semanticMain,semanticNavigation,sharedApp,validationError,validationFocused,workItemAttachmentDownloaded,workItemAttachmentRevealed,workItemAttachmentUploaded,workItemDetail,workItemEdited,workItemHandedOff,workingSetKb",
   };
   const failed = Object.entries(checks).filter(([, valid]) => !valid).map(([name]) => name);
-  if (failed.length > 0) throw new Error(`desktop feature parity UI report failed public checks: ${failed.join(", ")}`);
+  if (failed.length > 0) {
+    const observed = Object.fromEntries(failed.map((name) => [name, report?.[name]]));
+    throw new Error(`desktop feature parity UI report failed public checks: ${JSON.stringify(observed)}`);
+  }
   return report;
 }
 
