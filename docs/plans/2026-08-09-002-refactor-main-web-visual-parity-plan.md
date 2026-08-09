@@ -160,6 +160,7 @@ baseline:
 - **已完成切片：** storage 恢复配置主栏与边界说明侧栏、独立桶状态面板、版本行列表和底部分页；宽屏双栏、1280px 及以下单列，移动端版本行降级。脱敏、确认锁、原子刷新和最终刷新失败语义不变。剩余 OpenAPI、releases 和 System API docs。
 - **已完成切片：** OpenAPI 恢复 page hero、文档与接入主栏、接入提示侧栏、scope 摘要和独立 Token 面板；宽屏双栏、1280px 及以下单列。一次性明文、最小 scope、配额、编辑和确认删除语义不变。剩余 releases 和 System API docs。
 - **已完成切片：** releases 恢复 page hero、保留策略主栏与发布约束侧栏、独立版本/资产面板和底部分页；宽屏双栏、1280px 及以下单列。内部通道校验、发布/撤回、上传下载删除和最终刷新失败语义不变。剩余 System API docs。
+- **已完成：** Browser 正式 System API docs 恢复为经过 Rust 登录/权限门的独立 Scalar 文档应用，不加载共享业务壳；Desktop 与 `/web/app/system/api-docs` 保留无远程脚本的共享契约查看器。storage、OpenAPI、releases、database、audit 和 System API docs 全部完成。
 - **Exit：** 系统运维页面全部达到基线；普通用户不可见且直接访问仍被拒绝。
 
 ### V10：边界页、双宿主响应式回归与收口
@@ -216,5 +217,5 @@ baseline:
 - [x] V6：工作项列表。
 - [x] V7：工作项详情协作。
 - [x] V8：系统管理核心页面。
-- [ ] V9：系统运维页面。
+- [x] V9：系统运维页面。
 - [ ] V10：边界页、双宿主响应式回归与收口。

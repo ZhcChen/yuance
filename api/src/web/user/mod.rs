@@ -1297,7 +1297,16 @@ pub async fn system_api_docs_page(
     headers: HeaderMap,
     OriginalUri(original_uri): OriginalUri,
 ) -> AppResult<Response> {
-    shared_system_web_app_response(&state, &headers, &original_uri, "system.api_tokens.view").await
+    if state.pool.is_none() {
+        return Ok(crate::web::router::system_api_docs_response());
+    }
+    let gate =
+        shared_system_web_app_response(&state, &headers, &original_uri, "system.api_tokens.view")
+            .await?;
+    if gate.status() != StatusCode::OK {
+        return Ok(gate);
+    }
+    Ok(crate::web::router::system_api_docs_response())
 }
 
 struct WebContext<'a> {

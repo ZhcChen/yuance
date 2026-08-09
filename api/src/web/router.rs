@@ -1993,6 +1993,38 @@ async fn api_docs() -> impl IntoResponse {
     )
 }
 
+pub fn system_api_docs_response() -> Response {
+    Html(r#"<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系统 API 文档 - 元策</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body, #app { min-height: 100%; margin: 0; }
+    body { color: #172033; background: #f6f8fc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .docs-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 24px; border-bottom: 1px solid #dce3ee; background: #fff; }
+    .docs-head h1 { margin: 0 0 6px; font-size: 22px; line-height: 30px; }
+    .docs-head p { margin: 0; color: #667085; font-size: 13px; line-height: 20px; }
+    .docs-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .docs-actions a { min-height: 34px; display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid #cfd8e6; border-radius: 6px; color: #344054; background: #fff; font-size: 13px; font-weight: 700; text-decoration: none; }
+    #app { min-height: calc(100vh - 91px); }
+    @media (max-width: 720px) { .docs-head { flex-direction: column; padding: 16px; } #app { min-height: calc(100vh - 137px); } }
+  </style>
+</head>
+<body>
+  <header class="docs-head">
+    <div><h1>元策系统 API</h1><p>面向版本发布自动化的独立 System OpenAPI 契约。</p></div>
+    <nav class="docs-actions" aria-label="文档操作"><a href="/api/system/openapi.json">下载 OpenAPI JSON</a><a href="/web/system/openapi">系统 Token 管理</a></nav>
+  </header>
+  <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+  <script>Scalar.createApiReference('#app',{url:'/api/system/openapi.json',layout:'modern',theme:'default',hideDownloadButton:false});</script>
+</body>
+</html>"#).into_response()
+}
+
 async fn admin_not_found() -> impl IntoResponse {
     (
         StatusCode::NOT_FOUND,

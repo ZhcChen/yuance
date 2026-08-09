@@ -446,7 +446,6 @@ async fn web_shell_owner_serves_migrated_routes_from_same_app_entry() {
             "/web/system/permissions?q=roles",
             "/web/system/database-stats",
             "/web/system/audit?actor=admin&action=auth.login&target_type=user&target_id=7&page=2&per_page=20",
-            "/web/system/api-docs",
             "/web/system/storage?page=2&per_page=20",
             "/web/system/openapi",
             "/web/system/releases?page=2&per_page=20",
@@ -895,7 +894,6 @@ async fn retired_web_business_pages_share_one_app_entry() {
             "/web/system/releases?page=2",
             "/web/system/database-stats",
             "/web/system/audit?actor=admin",
-            "/web/system/api-docs",
         ] {
             let response = app
                 .clone()
@@ -916,6 +914,27 @@ async fn retired_web_business_pages_share_one_app_entry() {
         assert!(!bodies[0].contains("data-project-create-form"));
     })
     .await;
+}
+
+#[tokio::test]
+async fn system_api_docs_keep_an_independent_document_boundary() {
+    let app = build_router(AppState::for_tests());
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/web/system/api-docs")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response_body(response).await;
+    assert!(body.contains("元策系统 API"));
+    assert!(body.contains("/api/system/openapi.json"));
+    assert!(body.contains("Scalar.createApiReference"));
+    assert!(!body.contains(r#"<div id="root"></div>"#));
 }
 
 #[tokio::test]
