@@ -614,9 +614,10 @@ html[data-theme="dark"] .shell-code-block {
 
 .work-item-filter-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr)) auto;
+  grid-template-columns: minmax(240px, 1.5fr) repeat(5, minmax(130px, 1fr)) auto;
+  align-items: end;
   gap: 12px;
-  margin-bottom: 16px;
+  padding: 14px 16px 16px;
 }
 
 .work-item-filter-field {
@@ -641,6 +642,28 @@ html[data-theme="dark"] .shell-code-block {
   align-items: flex-end;
   flex-wrap: wrap;
 }
+
+.work-item-list-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.work-list-panel { overflow: hidden; }
+.filter-shell { border-bottom: 1px solid var(--yc-line); background: var(--yc-panel-soft); }
+.filter-shell-head { display: flex; align-items: baseline; gap: 10px; padding: 13px 16px 0; }
+.filter-shell-head strong { color: var(--yc-text); font-size: 13px; }
+.filter-shell-head span, .saved-view-section-head span { color: var(--yc-muted); font-size: 12px; }
+.saved-view-section { display: grid; gap: 12px; padding: 14px 16px 0; }
+.saved-view-section-head, .saved-view-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.saved-view-toolbar { align-items: flex-start; }
+.saved-view-toolbar > .shell-actions-inline { flex-wrap: wrap; }
+.work-table-wrap { overflow-x: auto; border-top: 1px solid var(--yc-line); }
+.work-item-table { min-width: 980px; }
+.work-item-table .work-item-row { display: table-row; }
+.work-item-table .work-table-select { width: 54px; min-width: 54px; padding-right: 10px; padding-left: 10px; }
+.work-item-table .work-table-title { width: 38%; white-space: normal; }
+.work-table-key { display: inline-flex; align-items: center; gap: 8px; }
+.work-table-key code { color: var(--yc-muted-strong); font-size: 12px; }
+.work-table-title-link { display: -webkit-box; overflow: hidden; color: var(--yc-text); font-size: 14px; font-weight: 750; line-height: 20px; text-decoration: none; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.work-table-title-link:hover { color: var(--yc-brand); }
+.work-table-muted { color: var(--yc-muted-strong); }
+.work-item-table .work-table-actions { width: 100px; text-align: right; }
 
 .work-item-list {
   list-style: none;
@@ -764,6 +787,9 @@ html[data-theme="dark"] .shell-code-block {
   .work-item-filter-bar {
     grid-template-columns: 1fr;
   }
+
+  .work-item-list-metrics { grid-template-columns: 1fr; }
+  .saved-view-section-head, .saved-view-toolbar, .filter-shell-head { align-items: flex-start; flex-direction: column; }
 
   .shell-grid,
   .shell-columns,

@@ -130,6 +130,7 @@ baseline:
 
 - **Files：** `frontend/packages/app-shell/src/app.jsx`、`frontend/packages/app-shell/src/application.css`、`frontend/packages/ui/src/primitives.jsx`、work-item route/API client tests 与 Web E2E。
 - 恢复指标区、保存视图、组合筛选、批量栏、表格、分页以及需求/任务/Bug 状态色。
+- **已完成：** 需求、任务和 Bug 共用列表恢复三指标、列表 panel、常用视图、六条件筛选、批量操作、`980px` 紧凑表格和分页；三页四视口几何合同验证移动/平板单列、桌面完整筛选及表格内部滚动，未恢复旧 Web 入口。
 - **Exit：** 三类列表的正常/空/筛选/批量/modal/窄屏状态通过视觉回归。
 
 ### V7：工作项详情协作
@@ -203,7 +204,7 @@ baseline:
 - [x] V3：个人、消息与搜索。
 - [x] V4：项目列表与项目详情。
 - [x] V5：周期、资源与个人分析。
-- [ ] V6：工作项列表。
+- [x] V6：工作项列表。
 - [ ] V7：工作项详情协作。
 - [ ] V8：系统管理核心页面。
 - [ ] V9：系统运维页面。

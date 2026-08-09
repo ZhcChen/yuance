@@ -393,6 +393,37 @@ test('formal web task list keeps web route ownership while filtering', async ({ 
   await expect(page).toHaveURL('/web/tasks?clear_default=true');
 });
 
+test('work item lists preserve the main responsive geometry', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  for (const viewport of [
+    { width: 390, height: 844, compact: true },
+    { width: 768, height: 1024, compact: true },
+    { width: 1280, height: 800, compact: false },
+    { width: 1440, height: 900, compact: false },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const route of ['requirements', 'tasks', 'bugs']) {
+      await page.goto(`/web/app/${route}`);
+      await expect(page.locator('.work-item-list-page')).toBeVisible();
+      const geometry = await page.locator('.work-item-list-page').evaluate((element) => {
+        const main = element.closest('.main');
+        const tableWrap = element.querySelector('.work-table-wrap');
+        return {
+          mainWidth: main.clientWidth,
+          mainScrollWidth: main.scrollWidth,
+          metricColumns: getComputedStyle(element.querySelector('.work-item-list-metrics')).gridTemplateColumns.split(' ').length,
+          filterColumns: getComputedStyle(element.querySelector('.work-item-filter-bar')).gridTemplateColumns.split(' ').length,
+          tableContained: tableWrap.scrollWidth >= tableWrap.clientWidth && tableWrap.getBoundingClientRect().right <= main.getBoundingClientRect().right + 1,
+        };
+      });
+      expect(geometry.mainScrollWidth).toBeLessThanOrEqual(geometry.mainWidth);
+      expect(geometry.metricColumns).toBe(viewport.compact ? 1 : 3);
+      expect(geometry.filterColumns).toBe(viewport.compact ? 1 : 7);
+      expect(geometry.tableContained).toBe(true);
+    }
+  }
+});
+
 test('shared work item saved views create restore rename and delete', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');
