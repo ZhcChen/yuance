@@ -833,14 +833,14 @@ html[data-theme="dark"] .shell-code-block {
   color: #475569;
 }
 
-.work-item-filter-field input,
-.work-item-filter-field select {
+.work-item-filter-field input {
   min-height: 38px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #ffffff;
   padding: 0 10px;
 }
+.work-item-filter-field .yc-select { height: 38px; }
 
 .work-item-filter-actions {
   display: flex;
@@ -890,7 +890,7 @@ html[data-theme="dark"] .shell-code-block {
   background: var(--yc-panel-soft);
 }
 
-.work-item-batch-bar select {
+.work-item-batch-bar .yc-select {
   min-height: 2.25rem;
   max-width: 14rem;
 }
@@ -1055,7 +1055,7 @@ html[data-theme="dark"] .page-size-control {
 }
 
 html[data-theme="dark"] .work-item-filter-field input,
-html[data-theme="dark"] .work-item-filter-field select,
+html[data-theme="dark"] .work-item-filter-field .yc-select,
 html[data-theme="dark"] .page-size-control select,
 html[data-theme="dark"] .project-stats div {
   border-color: var(--yc-line);

@@ -8,6 +8,11 @@ export function Button({ children, variant = 'primary', loading = false, disable
   return <button className={`yc-button yc-button-${variant}`} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
 }
 
+/** @param {React.SelectHTMLAttributes<HTMLSelectElement> & { children?: React.ReactNode }} props */
+export function Select({ children, className = '', ...selectProps }) {
+  return <span className={`yc-select${className ? ` ${className}` : ''}`}><select {...selectProps}>{children}</select><span className="yc-select-caret" aria-hidden="true" /></span>;
+}
+
 /** @param {{ id: string, label: string, hint?: string, error?: string, required?: boolean, children?: React.ReactElement }} props */
 export function Field({ id, label, hint, error, required = false, children }) {
   if (!React.isValidElement(children)) throw new TypeError('Field requires one form control');
