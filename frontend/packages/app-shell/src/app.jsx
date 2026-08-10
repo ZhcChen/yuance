@@ -72,6 +72,7 @@ import {
   richTextHasContent,
 } from '@yuance/frontend-ui';
 import { errorMessage, globalApiErrorMessage } from './errors.js';
+import { createApiErrorWrappingProxy } from './api-proxy.js';
 
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 /** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
@@ -782,23 +783,12 @@ export function SharedApp({ services }) {
   const { api: baseApi, events, files, router, runtime } = services;
   const [route, setRoute] = useState(() => router.currentRoute());
   const [apiErrorToast, setApiErrorToast] = useState(/** @type {{ id: number, message: string } | null} */ (null));
-  const api = useMemo(() => new Proxy(baseApi, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver);
-      if (typeof value !== 'function') return value;
-      return (...args) => {
-        try {
-          return Promise.resolve(Reflect.apply(value, target, args)).catch((caught) => {
-            setApiErrorToast({ id: Date.now(), message: globalApiErrorMessage(caught) });
-            throw caught;
-          });
-        } catch (caught) {
-          setApiErrorToast({ id: Date.now(), message: globalApiErrorMessage(caught) });
-          throw caught;
-        }
-      };
-    },
-  }), [baseApi]);
+  const api = useMemo(
+    () => createApiErrorWrappingProxy(baseApi, (caught) => {
+      setApiErrorToast({ id: Date.now(), message: globalApiErrorMessage(caught) });
+    }),
+    [baseApi],
+  );
   const routeRef = useRef(route);
   const topbarRef = useRef(/** @type {AppTopbarStatus | null} */ (null));
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
