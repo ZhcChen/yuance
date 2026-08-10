@@ -1135,6 +1135,18 @@ html[data-theme="dark"] .project-stats div {
 .project-description-section > p { margin: 0; padding: 16px 16px 0; color: var(--yc-muted-strong); line-height: 24px; }
 .project-files-section > p, .project-files-section > .attachment-list, .project-files-section > .shell-empty, .project-resources-section > form, .project-resources-section > .project-list, .project-resources-section > .shell-empty { margin-right: 16px; margin-left: 16px; }
 .project-files-section, .project-resources-section { padding-bottom: 16px; }
+.project-resources-section > .resource-list { margin: 0; padding: 16px; }
+.resource-list { display: grid; gap: 12px; list-style: none; }
+.resource-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--yc-line); border-radius: var(--yc-card-radius); background: var(--yc-panel); box-shadow: 0 10px 26px rgb(22 34 50 / 5%); transition: border-color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease, transform var(--yc-motion-fast) ease; }
+.resource-card:hover { border-color: var(--yc-brand-line); box-shadow: var(--yc-card-shadow); transform: translateY(-1px); }
+.resource-card-main { min-width: 0; }
+.resource-card-title-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.resource-card h4 { margin: 0; font-size: 16px; line-height: 24px; }
+.resource-card h4 a { color: var(--yc-text); text-decoration: none; }
+.resource-card h4 a:hover { color: var(--yc-brand-strong); }
+.resource-card p { margin: 6px 0 0; color: var(--yc-muted-strong); font-size: 13px; line-height: 20px; }
+.resource-card-meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; color: var(--yc-muted); font-size: 12px; line-height: 18px; }
+.resource-card-actions { display: flex; align-items: center; }
 .cycle-detail-overview { grid-template-columns: minmax(0, 1fr) 360px; }
 .cycle-detail-description-body { display: grid; gap: 14px; padding: 16px; }
 .cycle-detail-description-body article { display: grid; gap: 6px; }
@@ -1202,6 +1214,8 @@ html[data-theme="dark"] .project-stats div {
   .project-tabs-head .yc-content-tabs { width: 100%; }
   .project-detail-dl { grid-template-columns: 1fr; }
   .project-tab-section-head { flex-direction: column; }
+  .resource-card { grid-template-columns: 1fr; align-items: stretch; }
+  .resource-card-actions { justify-content: flex-end; }
   .cycle-progress-summary { grid-template-columns: 1fr; }
   .resource-summary-grid { grid-template-columns: 1fr; }
   .resource-detail-side { justify-items: start; }
