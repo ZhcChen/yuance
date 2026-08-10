@@ -15,6 +15,21 @@ body {
   background: var(--yc-bg);
 }
 
+html,
+body,
+.main {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+.main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 button,
 a,
 input,

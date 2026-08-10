@@ -4123,6 +4123,20 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   const tabs = tabsCard.locator('.yc-content-tabs');
   const indicator = tabs.locator('.yc-content-tabs-indicator');
   await expect(tabs.locator('.yc-content-tab')).toHaveText(['详情', '周期', '成员', '资料库', '项目文件']);
+  const initialGeometry = await page.locator('.project-detail-page').evaluate((element) => {
+    const main = element.closest('.main');
+    const button = element.querySelector('.detail-hero .yc-button');
+    const buttonStyle = getComputedStyle(button);
+    return {
+      mainWidth: main.clientWidth,
+      scrollbarWidth: getComputedStyle(main).scrollbarWidth,
+      webkitScrollbarWidth: getComputedStyle(main, '::-webkit-scrollbar').width,
+      buttonHeight: buttonStyle.height,
+      buttonRadius: buttonStyle.borderRadius,
+      buttonFontSize: buttonStyle.fontSize,
+    };
+  });
+  expect(initialGeometry).toMatchObject({ scrollbarWidth: 'none', webkitScrollbarWidth: '0px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 
@@ -4132,6 +4146,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   await expect(tabs.getByRole('link', { name: '资料库' })).toHaveAttribute('aria-current', 'page');
   await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
   await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+  await expect.poll(() => page.locator('.main').evaluate((element) => element.clientWidth)).toBe(initialGeometry.mainWidth);
 });
 
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {

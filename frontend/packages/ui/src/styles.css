@@ -23,6 +23,7 @@
   --yc-control-height: 40px;
   --yc-control-height-sm: 32px;
   --yc-control-radius: 8px;
+  --yc-control-font-size: 14px;
   --yc-topbar-height: 58px;
   --yc-radius: 8px;
   --yc-card-radius: 16px;
@@ -257,6 +258,7 @@ html[data-theme="dark"] {
 }
 
 .yc-button {
+  height: var(--yc-control-height);
   min-height: var(--yc-control-height);
   display: inline-flex;
   align-items: center;
@@ -268,12 +270,18 @@ html[data-theme="dark"] {
   background: var(--yc-brand);
   color: #fff;
   cursor: pointer;
-  font: inherit;
+  font-family: inherit;
+  font-size: var(--yc-control-font-size);
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color var(--yc-motion-fast) ease, background-color var(--yc-motion-fast) ease, color var(--yc-motion-fast) ease, transform var(--yc-motion-fast) ease;
 }
-.yc-button:hover { background: var(--yc-brand-strong); }
+.yc-button:hover { background: var(--yc-brand-strong); transform: translateY(-1px); }
+.yc-button:active { transform: translateY(0); }
 .yc-button:disabled { cursor: not-allowed; opacity: .55; }
 .yc-button-secondary { background: var(--yc-panel); color: var(--yc-muted-strong); }
+.yc-button-secondary:hover { background: var(--yc-panel-soft); color: var(--yc-text); }
 .yc-button-danger { border-color: color-mix(in srgb, var(--yc-danger) 35%, var(--yc-line)); background: color-mix(in srgb, var(--yc-danger) 10%, var(--yc-panel)); color: var(--yc-danger); }
 .yc-button-ghost { background: transparent; color: var(--yc-muted-strong); }
 .yc-button-loading::before { content: ""; width: 14px; height: 14px; display: inline-block; margin-right: 7px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: yc-spin .7s linear infinite; vertical-align: -2px; }
