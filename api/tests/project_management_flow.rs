@@ -2446,9 +2446,7 @@ async fn api_v1_work_item_saved_view_json_lifecycle_is_user_scoped() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(
-                    "/api/v1/work-item-list-view?item_type=task&project_key=YCE&per_page=10",
-                )
+                .uri("/api/v1/work-item-list-view?item_type=task&project_key=YCE&per_page=10")
                 .header(header::COOKIE, initialized.cookie.clone())
                 .body(Body::empty())
                 .expect("request should build"),

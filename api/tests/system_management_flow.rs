@@ -610,6 +610,21 @@ async fn api_system_docs_requires_permission_and_returns_embedded_contract() {
     .expect("embedded document should be valid JSON");
     assert_eq!(document["openapi"], "3.1.0");
     assert!(document["paths"]["/api/v1/system/releases"].is_object());
+    for path in [
+        "/api/v1/system/releases/{release_id}",
+        "/api/v1/system/releases/{release_id}/verify",
+        "/api/v1/system/releases/{release_id}/withdraw",
+        "/api/v1/system/releases/{release_id}/withdrawal",
+        "/api/v1/system/releases/{release_id}/assets",
+        "/api/v1/system/releases/{release_id}/assets/{asset_id}/upload-url",
+        "/api/v1/system/releases/{release_id}/assets/{asset_id}/uploaded",
+        "/api/v1/system/releases/{release_id}/assets/{asset_id}/download-url",
+    ] {
+        assert!(
+            document["paths"][path].is_object(),
+            "system OpenAPI should document {path}"
+        );
+    }
 
     let forbidden_response = app
         .oneshot(
@@ -2133,6 +2148,20 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
         serde_json::json!({"version_name":"v3.0.0","title":"内部桌面版","notes":"仅供内部验证","publish":true}),
     ).await;
     assert_eq!(published.0, StatusCode::OK);
+    let downloads_after_publish = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/downloads")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    let downloads_after_publish_body = response_body(downloads_after_publish).await;
+    assert!(downloads_after_publish_body.contains("Internal development release."));
+    assert!(downloads_after_publish_body.contains("macOS 使用 ad-hoc 签名"));
+    assert!(downloads_after_publish_body.contains("Minisign Key ID：ABCDEF0123456789"));
 
     let rewrite_published = system_release_json_request(
         &app,
@@ -2219,6 +2248,22 @@ async fn internal_system_release_requires_verification_and_supports_withdrawal()
         .await
         .expect("router should respond");
     assert_eq!(download.status(), StatusCode::NOT_FOUND);
+
+    let downloads_after_withdraw = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/web/downloads")
+                .body(Body::empty())
+                .expect("request should build"),
+        )
+        .await
+        .expect("router should respond");
+    assert!(
+        !response_body(downloads_after_withdraw)
+            .await
+            .contains("内部桌面版")
+    );
 }
 
 async fn bootstrap_admin_session(pool: &sqlx::SqlitePool) -> InitializedAdmin {

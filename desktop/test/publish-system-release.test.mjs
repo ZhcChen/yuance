@@ -137,6 +137,15 @@ test("preflight rejects a signature verification failure", async (t) => {
   );
 });
 
+test("preflight rejects a missing evidence file before publication", async (t) => {
+  const fixture = await evidenceFixture(t);
+  await rm(path.join(fixture.directory, fixture.manifest.assets[0].integrity_signature));
+  await assert.rejects(
+    () => preflightReleaseEvidence(preflightInput(fixture)),
+    /file set mismatch|missing/u,
+  );
+});
+
 test("refuses a remote asset that conflicts with verified evidence", () => {
   const asset = {
     canonicalName: "Yuance-0.1.0-mac-arm64.dmg",
@@ -153,6 +162,21 @@ test("refuses a remote asset that conflicts with verified evidence", () => {
       checksum_sha256: "b".repeat(64),
     }] }),
     /does not match/,
+  );
+});
+
+test("refuses an existing release with unexpected assets", () => {
+  const asset = {
+    canonicalName: "Yuance-0.1.0-mac-arm64.dmg",
+    platform: "macos",
+    architecture: "arm64",
+    artifactKind: "installer",
+    byteSize: 10,
+    sha256: "a".repeat(64),
+  };
+  assert.throws(
+    () => planReleaseAssetUploads([asset], { assets: [{ filename: "extra.bin" }] }),
+    /unexpected asset/u,
   );
 });
 
@@ -286,4 +310,83 @@ test("rerunning an identical published evidence set is idempotent and never uplo
   assert.equal(second.release.status, "published");
   assert.equal(harness.calls.filter((call) => call.startsWith("create:")).length, uploadCount);
   assert.equal(harness.calls.filter((call) => call === "publish").length, 1);
+});
+
+test("refuses a withdrawn version even when evidence matches", async (t) => {
+  const fixture = await evidenceFixture(t);
+  const preflight = await preflightReleaseEvidence(preflightInput(fixture));
+  const api = {
+    async findRelease() {
+      return { release: { status: "withdrawn" }, assets: [] };
+    },
+  };
+  await assert.rejects(
+    () => publishRelease(api, "0.1.0", preflight, "内部版本", "测试发布"),
+    /withdrawn/u,
+  );
+});
+
+test("refuses an existing release with conflicting source identity before uploads", async (t) => {
+  const fixture = await evidenceFixture(t);
+  const preflight = await preflightReleaseEvidence(preflightInput(fixture));
+  const api = {
+    async findRelease() {
+      return {
+        release: {
+          id: 1,
+          status: "draft",
+          version_name: "0.1.0",
+          channel: "internal",
+          manifest_sha256: preflight.manifestDigest,
+          signing_key_id: "0000000000000000",
+          source_commit: preflight.manifest.source.commit,
+          source_tag: preflight.manifest.tag,
+        },
+        assets: [],
+      };
+    },
+  };
+  await assert.rejects(
+    () => publishRelease(api, "0.1.0", preflight, "内部版本", "测试发布"),
+    /signing_key_id conflicts/u,
+  );
+});
+
+test("refuses a published release missing an asset without uploading", async (t) => {
+  const fixture = await evidenceFixture(t);
+  const preflight = await preflightReleaseEvidence(preflightInput(fixture));
+  const assets = preflight.artifacts.slice(0, 21).map((asset) => ({
+    filename: asset.canonicalName,
+    platform: asset.platform,
+    architecture: asset.architecture,
+    artifact_kind: asset.artifactKind,
+    status: "uploaded",
+    byte_size: asset.byteSize,
+    checksum_sha256: asset.sha256,
+  }));
+  const api = {
+    async findRelease() {
+      return {
+        release: {
+          id: 1,
+          status: "published",
+          channel: "internal",
+          verification_status: "verified",
+          version_name: "0.1.0",
+          manifest_sha256: preflight.manifestDigest,
+          signing_key_id: preflight.manifest.signing.key_id,
+          source_commit: preflight.manifest.source.commit,
+          source_tag: preflight.manifest.tag,
+        },
+        assets,
+      };
+    },
+    async createAsset() {
+      throw new Error("unexpected upload for a published release");
+    },
+  };
+  await assert.rejects(
+    () => publishRelease(api, "0.1.0", preflight, "内部版本", "测试发布"),
+    /complete verified evidence set/u,
+  );
 });

@@ -5,11 +5,31 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const desktopRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const workflowPath = path.resolve(desktopRoot, "..", ".github", "workflows", "release-desktop.yml");
+const workflowPath = path.resolve(
+  desktopRoot,
+  "..",
+  ".github",
+  "workflows",
+  "release-desktop.yml.disabled",
+);
+const activeWorkflowPath = path.resolve(
+  desktopRoot,
+  "..",
+  ".github",
+  "workflows",
+  "release-desktop.yml",
+);
 
 async function workflow() {
   return readFile(workflowPath, "utf8");
 }
+
+test("release workflow is disabled and only permits desktop tag pushes", async () => {
+  await assert.rejects(readFile(activeWorkflowPath), /ENOENT/u);
+  const source = await workflow();
+  assert.match(source, /^on:\s*\n\s*push:\s*\n\s*tags:\s*\n\s*-\s*"desktop-v\*\.\*\.\*"\s*$/mu);
+  assert.doesNotMatch(source, /pull_request:|workflow_dispatch:|^\s*branches:\s*$/mu);
+});
 
 test("desktop release actions are pinned to full commit SHAs", async () => {
   const source = await workflow();
