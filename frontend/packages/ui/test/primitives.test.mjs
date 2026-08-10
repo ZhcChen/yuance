@@ -54,6 +54,10 @@ test('table, pagination and skeleton cover empty and boundary states', () => {
   assert.equal((pagination.match(/disabled=""/gu) || []).length, 2);
   assert.match(pagination, /aria-label="上一页"/u);
   assert.match(pagination, /aria-label="下一页"/u);
+  const sizedPagination = renderToStaticMarkup(createElement(Pagination, { page: 1, totalPages: 1, totalItems: 6, itemLabel: '个用户', rangeLabel: '当前显示 1-6', pageSize: 10, pageSizes: [10, 20, 50, 100], onPageChange() {}, onPageSizeChange() {} }));
+  assert.match(sizedPagination, /共 <strong>6<\/strong> 个用户/u);
+  assert.match(sizedPagination, /当前显示 1-6/u);
+  assert.match(sizedPagination, /<option value="100">100<\/option>/u);
   const skeleton = renderToStaticMarkup(createElement(Skeleton, { lines: 20 }));
   assert.equal((skeleton.match(/<span/gu) || []).length, 12);
   assert.match(skeleton, /role="status"/u);

@@ -5066,10 +5066,18 @@ export function SharedApp({ services }) {
                   </div> : '无权限' },
                 ]}
               />
-              {systemUsersView ? <div className="shell-panel-header">
-                <Pagination page={systemUsersView.pagination.page} totalPages={systemUsersView.pagination.total_pages} totalItems={systemUsersView.pagination.total_items} onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)} />
-                <label className="shell-page-size">每页<select value={systemUsersView.pagination.per_page} onChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}><option value="10">10</option><option value="20">20</option><option value="50">50</option><option value="100">100</option></select></label>
-              </div> : null}
+              {systemUsersView ? <Pagination
+                ariaLabel="用户列表分页"
+                page={systemUsersView.pagination.page}
+                totalPages={systemUsersView.pagination.total_pages}
+                totalItems={systemUsersView.pagination.total_items}
+                itemLabel="个用户"
+                rangeLabel={systemUsersView.pagination.total_items ? `当前显示 ${(systemUsersView.pagination.page - 1) * systemUsersView.pagination.per_page + 1}-${Math.min(systemUsersView.pagination.page * systemUsersView.pagination.per_page, systemUsersView.pagination.total_items)}` : '当前没有用户'}
+                pageSize={systemUsersView.pagination.per_page}
+                pageSizes={[10, 20, 50, 100]}
+                onPageSizeChange={(event) => navigate(buildSystemUsersPath({ owner: route.owner, perPage: Number(event.target.value) }), '正在更新每页数量。')}
+                onPageChange={(page) => navigate(buildSystemUsersPath({ owner: route.owner, page, perPage: systemUsersView.pagination.per_page }), `正在加载第 ${page} 页用户。`)}
+              /> : null}
               </section>
               <Modal open={systemUserCreateOpen} title="新建用户" onClose={closeSystemUserCreate} footer={<><Button variant="secondary" disabled={systemUserSubmitting} onClick={closeSystemUserCreate}>取消</Button><Button loading={systemUserSubmitting} onClick={() => { const form = /** @type {HTMLFormElement | null} */ (runtime.getElementById('system-user-create-form')); form?.requestSubmit(); }}>创建</Button></>}>
                 <form id="system-user-create-form" onSubmit={submitSystemUserCreate}>
