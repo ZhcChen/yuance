@@ -21,6 +21,11 @@ const services = {
   router: createBrowserRouter(),
   runtime: {
     scheduleFrame: (callback) => window.requestAnimationFrame(callback),
+    observeResize: (elements, callback) => {
+      const observer = new ResizeObserver(callback);
+      elements.forEach((element) => observer.observe(element));
+      return () => observer.disconnect();
+    },
     getElementById: (id) => document.getElementById(id),
     readFormValue: (form, name) => String(new FormData(form).get(name) || ''),
     readTheme: () => localStorage.getItem('yuance-theme') === 'dark' ? 'dark' : 'light',

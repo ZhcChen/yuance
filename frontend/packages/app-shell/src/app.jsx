@@ -763,6 +763,7 @@ function normalizeSystemApiDocs(payload) {
  *   router: AppRouterService,
  *   runtime: {
  *     scheduleFrame(callback: () => void): void,
+ *     observeResize(elements: HTMLElement[], callback: () => void): () => void,
  *     getElementById(id: string): HTMLElement | null,
  *     readFormValue(form: HTMLFormElement, name: string): string,
  *     readTheme?(): 'light' | 'dark',
@@ -797,6 +798,10 @@ export function SharedApp({ services }) {
   const routeRef = useRef(route);
   const topbarRef = useRef(/** @type {AppTopbarStatus | null} */ (null));
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
+  const mainRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const mainContentRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbarTrackRef = useRef(/** @type {HTMLDivElement | null} */ (null));
+  const scrollbarDragRef = useRef(/** @type {{ pointerId: number, startY: number, startScrollTop: number } | null} */ (null));
   const requestRef = useRef(0);
   const profileActionRef = useRef(0);
   const accountSecurityActionRef = useRef(false);
@@ -1027,6 +1032,68 @@ export function SharedApp({ services }) {
   const [error, setError] = useState(/** @type {ApiError | Error | null} */ (null));
   const [statusMessage, setStatusMessage] = useState('');
   const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
+  const [scrollbar, setScrollbar] = useState({ visible: false, top: 0, height: 44 });
+
+  function syncScrollbar() {
+    const main = mainRef.current;
+    const track = scrollbarTrackRef.current;
+    if (!main || !track) return;
+    const maxScrollTop = main.scrollHeight - main.clientHeight;
+    const trackHeight = track.clientHeight;
+    if (maxScrollTop <= 1 || trackHeight <= 0) {
+      setScrollbar((current) => current.visible ? { ...current, visible: false } : current);
+      return;
+    }
+    const height = Math.max(44, Math.min(trackHeight, (main.clientHeight / main.scrollHeight) * trackHeight));
+    const top = (main.scrollTop / maxScrollTop) * (trackHeight - height);
+    setScrollbar({ visible: true, top, height });
+  }
+
+  useEffect(() => {
+    if (!shellReady) return undefined;
+    const main = mainRef.current;
+    const content = mainContentRef.current;
+    const track = scrollbarTrackRef.current;
+    if (!main || !content || !track) return undefined;
+    const sync = () => runtime.scheduleFrame(syncScrollbar);
+    const stopObserving = runtime.observeResize([main, content, track], sync);
+    main.addEventListener('scroll', syncScrollbar, { passive: true });
+    sync();
+    return () => {
+      stopObserving();
+      main.removeEventListener('scroll', syncScrollbar);
+    };
+  }, [shellReady]);
+
+  function handleScrollbarPointerDown(event) {
+    const main = mainRef.current;
+    if (!main) return;
+    scrollbarDragRef.current = { pointerId: event.pointerId, startY: event.clientY, startScrollTop: main.scrollTop };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleScrollbarPointerMove(event) {
+    const drag = scrollbarDragRef.current;
+    const main = mainRef.current;
+    const track = scrollbarTrackRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !main || !track) return;
+    const thumbTravel = track.clientHeight - scrollbar.height;
+    const maxScrollTop = main.scrollHeight - main.clientHeight;
+    if (thumbTravel > 0) main.scrollTop = drag.startScrollTop + ((event.clientY - drag.startY) / thumbTravel) * maxScrollTop;
+  }
+
+  function handleScrollbarPointerUp(event) {
+    if (scrollbarDragRef.current?.pointerId !== event.pointerId) return;
+    scrollbarDragRef.current = null;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function handleScrollbarTrackPointerDown(event) {
+    if (event.target !== event.currentTarget || !mainRef.current) return;
+    const trackBounds = event.currentTarget.getBoundingClientRect();
+    const ratio = (event.clientY - trackBounds.top) / trackBounds.height;
+    mainRef.current.scrollTop = ratio * (mainRef.current.scrollHeight - mainRef.current.clientHeight);
+  }
 
   const currentProject = topbar?.current_project || null;
   topbarRef.current = topbar;
@@ -4743,7 +4810,8 @@ export function SharedApp({ services }) {
         onLogout={handleLogout}
       />
 
-      <main className="main">
+      <main ref={mainRef} className="main">
+      <div ref={mainContentRef} className="main-content">
 
       {loading ? (
         <section className="shell-route-loading" role="status" aria-live="polite" aria-label={`正在加载${route.title}`}>
@@ -5805,7 +5873,18 @@ export function SharedApp({ services }) {
       )}
         </>
       )}
+      </div>
       </main>
+      <div ref={scrollbarTrackRef} className={`app-scrollbar${scrollbar.visible ? ' is-visible' : ''}`} aria-hidden="true" onPointerDown={handleScrollbarTrackPointerDown}>
+        <div
+          className="app-scrollbar-thumb"
+          style={{ height: `${scrollbar.height}px`, transform: `translateY(${scrollbar.top}px)` }}
+          onPointerDown={handleScrollbarPointerDown}
+          onPointerMove={handleScrollbarPointerMove}
+          onPointerUp={handleScrollbarPointerUp}
+          onPointerCancel={handleScrollbarPointerUp}
+        />
+      </div>
     </div>
   );
 }

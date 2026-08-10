@@ -23,7 +23,7 @@ test('shared shell keeps the 58px navigation outside the only business scroll co
   const applicationStyles = await readFile(new URL('../src/application.css', import.meta.url), 'utf8');
   const uiStyles = await readFile(new URL('../../ui/src/styles.css', import.meta.url), 'utf8');
   const navigationIndex = source.indexOf('<GlobalNavigation');
-  const mainIndex = source.indexOf('<main className="main">', navigationIndex);
+  const mainIndex = source.indexOf('<main ref={mainRef} className="main">', navigationIndex);
   const routeLoadingIndex = source.indexOf('{loading ? (', navigationIndex);
 
   assert.match(source, /return \(\s*<div className="app-shell"/u);
@@ -31,6 +31,9 @@ test('shared shell keeps the 58px navigation outside the only business scroll co
   assert.ok(routeLoadingIndex > mainIndex, 'route loading 必须留在业务滚动容器内');
   assert.match(applicationStyles, /\.app-shell \{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*flex-direction: column;[\s\S]*overflow: hidden;/u);
   assert.match(applicationStyles, /\.main \{[\s\S]*min-height: 0;[\s\S]*overflow: auto;/u);
+  assert.match(applicationStyles, /\.main \{[\s\S]*scrollbar-width: none;/u);
+  assert.match(applicationStyles, /\.app-scrollbar \{[\s\S]*position: absolute;[\s\S]*right: 2px;/u);
+  assert.ok(source.includes("className={`app-scrollbar${scrollbar.visible ? ' is-visible' : ''}`}"));
   assert.match(uiStyles, /--yc-topbar-height: 58px;/u);
   assert.match(uiStyles, /\.global-nav \{[\s\S]*flex: 0 0 var\(--yc-topbar-height\);[\s\S]*height: var\(--yc-topbar-height\);/u);
   assert.doesNotMatch(uiStyles, /\.global-nav \{[^}]*position: sticky;/u);
