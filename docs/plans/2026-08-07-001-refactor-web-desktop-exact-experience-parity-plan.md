@@ -10,7 +10,7 @@ origin:
   - docs/plans/2026-07-31-001-refactor-w4-shared-javascript-layer-plan.md
   - docs/plans/2026-08-03-001-feat-d2-desktop-feature-parity-plan.md
 execution: code
-execution_status: planned
+execution_status: completed
 ---
 
 # Web 与 Desktop 视觉和逻辑交互完全一致
@@ -276,14 +276,14 @@ U0 的登记按以下顺序串行推进。当前来源基线以 `frontend/parity
 
 ### Definition Of Done
 
-- [ ] 正式 Web 页面、交互、权限和异常状态已全部进入 parity manifest。
-- [ ] Browser 与 Desktop 的共享页面只有一个组件树、状态模型和样式源。
-- [ ] 全局壳、项目、工作项、消息、搜索和系统管理在两宿主功能与交互一致。
-- [ ] 所有允许宿主差异均有明确 contract 和双端测试，不存在页面级分叉。
-- [ ] 正式 `/web/*` 已切换到共享实现并通过回滚演练。
-- [ ] 已替代 Askama 业务模板、重复 JS handler 和 CSS selector 已删除。
-- [ ] 双宿主权限、异常、实时、文件和截图 Gate 全部通过。
-- [ ] 最终 review 逐项证明 R1-R23、F1-F7、AE1-AE7，无“基本一致”或人工目测替代证据。
+- [x] 正式 Web 页面、交互、权限和异常状态已全部进入 parity manifest。
+- [x] Browser 与 Desktop 的共享页面只有一个组件树、状态模型和样式源。
+- [x] 全局壳、项目、工作项、消息、搜索和系统管理在两宿主功能与交互一致。
+- [x] 所有允许宿主差异均有明确 contract 和双端测试，不存在页面级分叉。
+- [x] 正式 `/web/*` 已切换到共享实现并通过回滚演练。
+- [x] 已替代 Askama 业务模板、重复 JS handler 和 CSS selector 已删除。
+- [x] 双宿主权限、异常、实时、文件和截图 Gate 全部通过。
+- [x] 最终 review 逐项证明 R1-R23、F1-F7、AE1-AE7，无“基本一致”或人工目测替代证据。
 
 ### 每个纵向切片的固定 Gate
 

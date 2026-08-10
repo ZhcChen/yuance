@@ -205,7 +205,7 @@ flowchart LR
 
 ## Implementation Units
 
-- [ ] **Unit 1: 冻结 device auth 契约、配置与持久化模型**
+- [x] **Unit 1: 冻结 device auth 契约、配置与持久化模型**
 
 **Goal:** 建立不影响现有 Cookie/PAT 的设备认证 schema、状态机、TTL 配置、token namespace 和 OpenAPI 基线。
 
@@ -245,7 +245,7 @@ flowchart LR
 - `cargo test --manifest-path api/Cargo.toml --test device_session_contract_flow`
 - `cargo test --manifest-path api/Cargo.toml auth`
 
-- [ ] **Unit 2: 实现 device authorization 发起、Browser 批准与交换**
+- [x] **Unit 2: 实现 device authorization 发起、Browser 批准与交换**
 
 **Goal:** 完成 Desktop 发起、用户在已登录 Browser 批准/拒绝、Desktop 有界轮询并以同 transaction 可恢复方式交换唯一初始 credential 的闭环。
 
@@ -281,7 +281,7 @@ flowchart LR
 - `cargo test --manifest-path api/Cargo.toml --test device_authorization_flow`
 - `cargo test --manifest-path api/Cargo.toml --test auth_security_flow`
 
-- [ ] **Unit 3: 实现 device access 认证、probe、logout 与撤销**
+- [x] **Unit 3: 实现 device access 认证、probe、logout 与撤销**
 
 **Goal:** 让 device access token 作为独立交互会话主体访问本切片明确开放的 probe/logout/当前用户设备接口，并保证未登记业务 API 默认拒绝。
 
@@ -315,7 +315,7 @@ flowchart LR
 - `cargo test --manifest-path api/Cargo.toml --test auth_csrf_refresh_flow`
 - `cargo test --manifest-path api/Cargo.toml --test routing_smoke openapi_json_is_served_for_api_reference`
 
-- [ ] **Unit 4: 实现可恢复、幂等且防重放的 refresh rotation**
+- [x] **Unit 4: 实现可恢复、幂等且防重放的 refresh rotation**
 
 **Goal:** 完成同 transaction ID 可恢复、不同 ID 重放撤销、并发单飞的服务端 rotation。
 
@@ -349,7 +349,7 @@ flowchart LR
 - `cargo test --manifest-path api/Cargo.toml --test device_refresh_rotation_flow`
 - `cargo test --manifest-path api/Cargo.toml --test device_access_auth_flow`
 
-- [ ] **Unit 5: 实现 Desktop profile 与安全 credential store**
+- [x] **Unit 5: 实现 Desktop profile 与安全 credential store**
 
 **Goal:** 在 Electron 主进程建立 fail-closed 的 profile/credential 持久化层，证明 token 不进入 renderer、Cookie jar、明文文件或日志。
 
@@ -390,7 +390,7 @@ flowchart LR
 - `npm --prefix desktop run check`
 - 三平台 workflow 中执行 `desktop/scripts/smoke-safe-storage.mjs`
 
-- [ ] **Unit 6: 实现 Desktop device auth client 与 rotation coordinator**
+- [x] **Unit 6: 实现 Desktop device auth client 与 rotation coordinator**
 
 **Goal:** 在主进程完成 device authorization、credential exchange、access 单飞刷新和强杀恢复状态机，不向 renderer 暴露秘密。
 
@@ -427,7 +427,7 @@ flowchart LR
 - `npm --prefix desktop test`
 - `npm --prefix desktop run check`
 
-- [ ] **Unit 7: 端到端收口、主线回填与后续 RFC 输入**
+- [x] **Unit 7: 端到端收口、主线回填与后续 RFC 输入**
 
 **Goal:** 以 API integration + Desktop 主进程 headless integration 证明本切片的协议和凭证基础闭环，并为 `app://` 和 Desktop SSE 子计划提供冻结输入；本单元不宣称已有最终用户界面。
 

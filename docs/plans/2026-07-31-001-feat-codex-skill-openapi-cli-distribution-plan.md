@@ -6,6 +6,7 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: implementation-ready
 product_contract_source: ce-plan-bootstrap
 execution: code
+execution_status: completed
 ---
 
 # feat: Codex Skill 与 Rust OpenAPI CLI 分发
@@ -549,15 +550,15 @@ rg -n "mcp/yuance-mcp|MCP 初始化|yuance_list_" --glob '!docs/plans/**' .
 
 ## Definition of Done
 
-- [ ] R1-R12 均由至少一个完成的 Implementation Unit 和验证证据覆盖。
-- [ ] `yuance-agent` CLI 在 workspace 中通过格式、Clippy、单元测试和 OpenAPI 契约测试。
-- [ ] Skill 包含精简 `SKILL.md`、准确 metadata、按需 references 和平台二进制位置约定。
-- [ ] Bash 与 PowerShell 安装器通过首次安装、升级、固定版本、校验失败和回滚测试。
-- [ ] GitHub Actions 可以构建并发布六个平台完整 Skill 包、`SHA256SUMS` 和 attestation。
-- [ ] `mcp/yuance-mcp/` 和 `docs/mcp/` 已移除，现行页面和文档不再推荐 MCP。
-- [ ] 旧 MCP 用户可按 runbook 清理 `mcp_servers.yuance` 和 `~/.yuance-mcp`，且其他 Codex 配置保持不变。
-- [ ] 历史计划未被追溯改写。
-- [ ] 使用受限测试 PAT 完成至少一次项目查询和一次工作项写入闭环。
-- [ ] 全新 Codex 会话完成 Skill 激活和行为边界验证。
-- [ ] `docs/reviews/2026-07-31-codex-skill-openapi-cli-review.md` 记录跨平台证据、残余风险和首个 Release 结果。
-- [ ] 所有失败尝试、临时 fixture、下载资产和构建目录已清理，未把编译产物提交到 Git。
+- [x] R1-R12 均由至少一个完成的 Implementation Unit 和验证证据覆盖。
+- [x] `yuance-agent` CLI 在 workspace 中通过格式、Clippy、单元测试和 OpenAPI 契约测试。
+- [x] Skill 包含精简 `SKILL.md`、准确 metadata、按需 references 和平台二进制位置约定。
+- [x] Bash 与 PowerShell 安装器通过首次安装、升级、固定版本、校验失败和回滚测试。
+- [x] GitHub Actions 可以构建并发布六个平台完整 Skill 包、`SHA256SUMS` 和 attestation。
+- [x] `mcp/yuance-mcp/` 和 `docs/mcp/` 已移除，现行页面和文档不再推荐 MCP。
+- [x] 旧 MCP 用户可按 runbook 清理 `mcp_servers.yuance` 和 `~/.yuance-mcp`，且其他 Codex 配置保持不变。
+- [x] 历史计划未被追溯改写。
+- [x] 使用受限测试 PAT 完成至少一次项目查询和一次工作项写入闭环。
+- [x] 全新 Codex 会话完成 Skill 激活和行为边界验证。
+- [x] `docs/reviews/2026-07-31-codex-skill-openapi-cli-review.md` 记录跨平台证据、残余风险和首个 Release 结果。
+- [x] 所有失败尝试、临时 fixture、下载资产和构建目录已清理，未把编译产物提交到 Git。
