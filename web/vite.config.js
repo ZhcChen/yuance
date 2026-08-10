@@ -32,6 +32,7 @@ export default defineConfig({
       '/web/messages': localDevelopmentProxy(),
       '/web/work-items': localDevelopmentProxy(),
       '/version.json': localDevelopmentProxy(),
+      '/favicon.ico': localDevelopmentProxy(),
       '/static': localDevelopmentProxy(),
     },
   },
