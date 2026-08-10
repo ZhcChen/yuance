@@ -1,4 +1,4 @@
-.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 deploy-production deploy-validate
+.PHONY: help frontend-check web-build api-run api-test api-js-test api-full-test api-build api-fmt api-clippy api-browser-smoke api-image-smoke api-migrate-status api-migrate-up api-migrate-create api-seed-core api-seed-demo api-seed-local-admin api-files-cleanup-pending api-files-audit-objects api-image-amd64 validation-prepare validation-api validation-web validation-desktop validation-status deploy-production deploy-validate
 
 help:
 	@echo "元策开发命令"
@@ -17,6 +17,11 @@ help:
 	@echo "  make api-files-cleanup-pending"
 	@echo "  make api-files-audit-objects"
 	@echo "  make api-image-amd64"
+	@echo "  make validation-prepare"
+	@echo "  make validation-api"
+	@echo "  make validation-web"
+	@echo "  make validation-desktop"
+	@echo "  make validation-status"
 	@echo "  make deploy-production"
 	@echo "  make deploy-validate"
 
@@ -78,6 +83,21 @@ api-files-audit-objects:
 
 api-image-amd64:
 	./scripts/build-api-image-amd64.sh
+
+validation-prepare:
+	./scripts/local-validation.sh prepare
+
+validation-api:
+	./scripts/local-validation.sh api
+
+validation-web:
+	./scripts/local-validation.sh web
+
+validation-desktop:
+	./scripts/local-validation.sh desktop
+
+validation-status:
+	./scripts/local-validation.sh status
 
 deploy-production:
 	./scripts/deploy-production.sh

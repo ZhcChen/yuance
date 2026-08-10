@@ -9,6 +9,7 @@
 !/desktop/release/release-manifest.schema.json
 !/desktop/release/minisign.pub
 /.context/
+/.local/
 node_modules/
 /.env
 /api/.env
