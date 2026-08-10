@@ -49,6 +49,7 @@ test('browser events maps bounded work item discussion and typing signals', () =
   }
   const values = [];
   const events = createBrowserEvents({ EventSourceImpl: FakeEventSource });
+  assert.equal(events.supportsWorkItemTyping, true);
   const close = events.openWorkItemEvents('YCE-TASK-2', { onEvent: (event) => values.push(event) });
 
   assert.equal(sources[0].url, '/api/v1/work-items/YCE-TASK-2/events');

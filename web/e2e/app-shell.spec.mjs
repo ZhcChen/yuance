@@ -835,6 +835,56 @@ test('work item realtime discussion refresh preserves the mounted page and local
   expect(commentRequests).toBeGreaterThan(1);
 });
 
+test('work item realtime typing reports bounded activity and isolates late events', async ({ page }) => {
+  await page.addInitScript(() => {
+    const sources = [];
+    class ControlledEventSource {
+      listeners = new Map();
+      constructor(url, options) { this.url = url; this.options = options; sources.push(this); }
+      addEventListener(type, callback) { this.listeners.set(type, callback); }
+      close() { this.closed = true; }
+    }
+    globalThis.EventSource = ControlledEventSource;
+    globalThis.__yuanceSseSources = sources;
+    globalThis.__emitYuanceSseAt = (index, type, data) => sources[index]?.listeners.get(type)?.({ data });
+  });
+
+  const typingRequests = [];
+  await page.route('**/api/v1/work-items/*/typing', async (route) => {
+    typingRequests.push({ url: route.request().url(), body: route.request().postDataJSON() });
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  const activeSourceIndex = await page.evaluate(() => globalThis.__yuanceSseSources.findIndex((source) => source.url === '/api/v1/work-items/YCE-TASK-2/events' && !source.closed));
+  expect(activeSourceIndex).toBeGreaterThanOrEqual(0);
+  const editor = page.getByRole('textbox', { name: '新增评论' });
+  await editor.fill('正在撰写评论');
+  await expect.poll(() => typingRequests.filter((request) => request.body.active).length).toBe(1);
+  expect(typingRequests[0].url).toContain('/api/v1/work-items/YCE-TASK-2/typing');
+  expect(typingRequests[0].body.client_id).toMatch(/^web:[0-9a-f-]+$/u);
+
+  await page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' }).click();
+  await expect.poll(() => typingRequests.at(-1)?.body.active).toBe(false);
+
+  await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [{ user_id: 7, display_name: 'Alice' }, { user_id: 8, display_name: 'Bob' }, { user_id: 9, display_name: 'Carol' }] })), activeSourceIndex);
+  await expect(page.locator('.work-item-typing-status')).toHaveText('Alice、Bob 等 3 人正在输入…');
+  await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [] })), activeSourceIndex);
+  await expect(page.locator('.work-item-typing-status')).toHaveText('');
+
+  await page.evaluate(() => {
+    globalThis.history.pushState({}, '', '/web/app/work-items/YCE-TASK-1');
+    globalThis.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-1$/u);
+  await expect.poll(() => page.evaluate(() => globalThis.__yuanceSseSources.some((source) => source.url === '/api/v1/work-items/YCE-TASK-1/events'))).toBe(true);
+  const oldClosed = await page.evaluate((index) => globalThis.__yuanceSseSources[index].closed, activeSourceIndex);
+  expect(oldClosed).toBe(true);
+  await page.evaluate((index) => globalThis.__emitYuanceSseAt(index, 'typing', JSON.stringify({ users: [{ user_id: 10, display_name: 'Late User' }] })), activeSourceIndex);
+  await expect(page.locator('.work-item-typing-status')).toHaveText('');
+  await expect(page.getByText('Late User')).toHaveCount(0);
+});
+
 test('work item edit success survives comments or topbar refresh failures', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();

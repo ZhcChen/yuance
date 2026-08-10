@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createWorkItemEventCoordinator } from '@yuance/frontend-app-core';
+import { createWorkItemEventCoordinator, createWorkItemTypingController } from '@yuance/frontend-app-core';
 
 const event = (type, sequence, extra = {}) => ({ type, itemKey: 'YCE-TASK-2', connectionId: 'work-item:YCE-TASK-2', sequence, ...extra });
 
@@ -40,4 +40,45 @@ test('work item events merge concurrent invalidations into one trailing refresh'
   const resolveSecond = refreshResolvers.shift();
   assert.ok(resolveSecond);
   resolveSecond();
+});
+
+test('work item typing throttles renewals and stops after idle', () => {
+  let timestamp = 1_000;
+  let timerId = 0;
+  const timers = new Map();
+  const calls = [];
+  const controller = createWorkItemTypingController({
+    itemKey: 'YCE-TASK-2', clientId: 'web:session-1', send: (itemKey, payload) => { calls.push([itemKey, payload]); }, now: () => timestamp,
+    schedule: (callback, delay) => { const id = ++timerId; timers.set(id, { callback, at: timestamp + delay }); return id; },
+    cancel: (id) => timers.delete(id),
+  });
+
+  controller.start();
+  controller.activity();
+  timestamp += 4_999;
+  controller.activity();
+  timestamp += 1;
+  controller.activity();
+  assert.deepEqual(calls, [
+    ['YCE-TASK-2', { clientId: 'web:session-1', active: true }],
+    ['YCE-TASK-2', { clientId: 'web:session-1', active: true }],
+  ]);
+
+  timestamp += 10_000;
+  const idle = [...timers.values()].find((timer) => timer.at <= timestamp);
+  assert.ok(idle);
+  idle.callback();
+  assert.deepEqual(calls.at(-1), ['YCE-TASK-2', { clientId: 'web:session-1', active: false }]);
+});
+
+test('work item typing sends one best-effort stop on blur or dispose', () => {
+  const calls = [];
+  const controller = createWorkItemTypingController({ itemKey: 'YCE-TASK-2', clientId: 'web:session-1', send: (_itemKey, payload) => { calls.push(payload); } });
+  controller.start();
+  controller.stop();
+  controller.stop();
+  controller.start();
+  controller.dispose();
+  controller.start();
+  assert.deepEqual(calls.map((call) => call.active), [true, false, true, false]);
 });

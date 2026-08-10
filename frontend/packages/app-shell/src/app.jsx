@@ -6,6 +6,7 @@ import {
   createNotificationActionCoordinator,
   createNotificationEventCoordinator,
   createWorkItemEventCoordinator,
+  createWorkItemTypingController,
   createProjectResourceWithAttachments,
   buildHomePath,
   buildMessagesPath,
@@ -759,7 +760,7 @@ function normalizeSystemApiDocs(payload) {
 /**
  * @param {{ services: {
  *   api: AppApiService,
- *   events: { openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
+ *   events: { supportsWorkItemTyping?: boolean, openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
  *   files: AppFileService,
  *   router: AppRouterService,
  *   runtime: {
@@ -767,6 +768,7 @@ function normalizeSystemApiDocs(payload) {
  *     observeResize(elements: HTMLElement[], callback: () => void): () => void,
  *     getElementById(id: string): HTMLElement | null,
  *     readFormValue(form: HTMLFormElement, name: string): string,
+ *     createSessionId?(): string,
  *     readTheme?(): 'light' | 'dark',
  *     writeTheme?(theme: 'light' | 'dark'): void,
  *     readDatabaseStatsCache?(username: string): Promise<any | null>,
@@ -825,6 +827,8 @@ export function SharedApp({ services }) {
   const workItemAttachmentActionRef = useRef(0);
   const workItemAttachmentMutationRef = useRef(false);
   const workItemCommentDraftRef = useRef(/** @type {{ itemKey: string, commentId: number } | null} */ (null));
+  const workItemTypingControllerRef = useRef(/** @type {ReturnType<typeof createWorkItemTypingController> | null} */ (null));
+  const workItemTypingClientIdRef = useRef('');
   const workItemBatchMutationRef = useRef(false);
   const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
@@ -985,6 +989,7 @@ export function SharedApp({ services }) {
   const [workItemDetail, setWorkItemDetail] = useState(/** @type {AppWorkItemDetail | null} */ (null));
   const [workItemDetailView, setWorkItemDetailView] = useState(/** @type {Awaited<ReturnType<AppApiService['getWorkItemDetailView']>> | null} */ (null));
   const [workItemComments, setWorkItemComments] = useState(/** @type {AppWorkItemComment[]} */ ([]));
+  const [workItemTypingUsers, setWorkItemTypingUsers] = useState(/** @type {Array<{ userId: number, displayName: string }>} */ ([]));
   const [workItemAttachments, setWorkItemAttachments] = useState(/** @type {AppAttachment[]} */ ([]));
   const [workItemCommentAttachments, setWorkItemCommentAttachments] = useState(/** @type {Record<string, AppAttachment[]>} */ ({}));
   const [workItemFormKey, setWorkItemFormKey] = useState('');
@@ -1034,6 +1039,7 @@ export function SharedApp({ services }) {
   const [statusMessage, setStatusMessage] = useState('');
   const [theme, setTheme] = useState(() => runtime.readTheme?.() || 'light');
   const [scrollbar, setScrollbar] = useState({ visible: false, top: 0, height: 44 });
+  if (!workItemTypingClientIdRef.current && events.supportsWorkItemTyping) workItemTypingClientIdRef.current = runtime.createSessionId?.() || '';
 
   function syncScrollbar() {
     const main = mainRef.current;
@@ -3229,17 +3235,33 @@ export function SharedApp({ services }) {
 
   useEffect(() => {
     const itemKey = route.id === 'work-item-detail' ? route.itemKey : '';
+    setWorkItemTypingUsers([]);
     if (!itemKey || typeof events.openWorkItemEvents !== 'function') return undefined;
     const coordinator = createWorkItemEventCoordinator({
       itemKey,
       refresh: () => refreshWorkItemRealtimeState(itemKey),
+      onTyping: (users) => {
+        const current = routeRef.current;
+        if (current.id === 'work-item-detail' && current.itemKey === itemKey) setWorkItemTypingUsers([...users]);
+      },
     });
+    const clientId = workItemTypingClientIdRef.current;
+    const typingController = events.supportsWorkItemTyping && clientId && typeof baseApi.updateWorkItemTyping === 'function'
+      ? createWorkItemTypingController({ itemKey, clientId, send: (key, payload) => baseApi.updateWorkItemTyping(key, payload) })
+      : null;
+    workItemTypingControllerRef.current = typingController;
     const close = events.openWorkItemEvents(itemKey, { onEvent: (event) => coordinator.handle(event) });
     return () => {
+      if (workItemTypingControllerRef.current === typingController) workItemTypingControllerRef.current = null;
+      typingController?.dispose();
       coordinator.dispose();
       close();
     };
-  }, [events, route.id, route.itemKey]);
+  }, [baseApi, events, route.id, route.itemKey]);
+
+  function startWorkItemTyping() { workItemTypingControllerRef.current?.start(); }
+  function recordWorkItemTypingActivity() { workItemTypingControllerRef.current?.activity(); }
+  function stopWorkItemTyping() { workItemTypingControllerRef.current?.stop(); }
 
   useEffect(() => {
     if (!loading) {
@@ -5806,6 +5828,10 @@ export function SharedApp({ services }) {
                     deletingAttachmentId={workItemCommentAttachmentDeletingId}
                     replySubmitting={workItemReplySubmitting}
                     error={workItemCommentActionError}
+                    typingUsers={workItemTypingUsers}
+                    onTypingStart={startWorkItemTyping}
+                    onTypingActivity={recordWorkItemTypingActivity}
+                    onTypingStop={stopWorkItemTyping}
                     onSubmitNew={submitWorkItemComment}
                     onChangeNew={changeWorkItemNewComment}
                     onUploadNewAttachment={() => void uploadSelectedWorkItemCommentAttachment(null)}

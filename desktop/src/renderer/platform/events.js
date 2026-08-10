@@ -2,6 +2,7 @@
 
 export function createDesktopEvents(bridge) {
   return Object.freeze({
+    supportsWorkItemTyping: false,
     openTopbarEvents(callbacks) {
       if (typeof bridge?.subscribe !== "function") return () => {};
       const connectionId = "topbar";

@@ -1,4 +1,5 @@
 // @ts-check
+/* global clearTimeout, setTimeout */
 
 /**
  * @param {{
@@ -61,6 +62,82 @@ export function createWorkItemEventCoordinator({ itemKey, refresh, onTyping = ()
   }
 
   return Object.freeze({ handle, dispose, snapshot });
+}
+
+/**
+ * @param {{
+ *   itemKey: string,
+ *   clientId: string,
+ *   send: (itemKey: string, payload: { clientId: string, active: boolean }) => Promise<void> | void,
+ *   now?: () => number,
+ *   schedule?: (callback: () => void, delay: number) => unknown,
+ *   cancel?: (timer: unknown) => void,
+ *   renewalMs?: number,
+ *   idleMs?: number,
+ * }} dependencies
+ */
+export function createWorkItemTypingController({
+  itemKey,
+  clientId,
+  send,
+  now = Date.now,
+  schedule = (callback, delay) => setTimeout(callback, delay),
+  cancel = (timer) => clearTimeout(/** @type {ReturnType<typeof setTimeout>} */ (timer)),
+  renewalMs = 5_000,
+  idleMs = 10_000,
+}) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(itemKey) || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(clientId) || typeof send !== 'function') throw new TypeError('work item typing dependencies are invalid');
+  if (!Number.isFinite(renewalMs) || renewalMs < 1 || !Number.isFinite(idleMs) || idleMs <= renewalMs) throw new TypeError('work item typing intervals are invalid');
+  let active = false;
+  let disposed = false;
+  let lastSentAt = 0;
+  let idleTimer = /** @type {unknown} */ (null);
+
+  function start() {
+    if (disposed) return;
+    publishActive(false);
+    scheduleIdleStop();
+  }
+
+  function activity() {
+    if (disposed) return;
+    publishActive(true);
+    scheduleIdleStop();
+  }
+
+  function stop() {
+    clearIdleTimer();
+    if (!active) return;
+    active = false;
+    void Promise.resolve(send(itemKey, { clientId, active: false })).catch(() => {});
+  }
+
+  function dispose() {
+    if (disposed) return;
+    stop();
+    disposed = true;
+  }
+
+  /** @param {boolean} allowRenewal */
+  function publishActive(allowRenewal) {
+    const timestamp = now();
+    if (active && (!allowRenewal || timestamp - lastSentAt < renewalMs)) return;
+    active = true;
+    lastSentAt = timestamp;
+    void Promise.resolve(send(itemKey, { clientId, active: true })).catch(() => {});
+  }
+
+  function scheduleIdleStop() {
+    clearIdleTimer();
+    idleTimer = schedule(stop, idleMs);
+  }
+
+  function clearIdleTimer() {
+    if (idleTimer !== null) cancel(idleTimer);
+    idleTimer = null;
+  }
+
+  return Object.freeze({ start, activity, stop, dispose });
 }
 
 function parseEvent(value, itemKey) {

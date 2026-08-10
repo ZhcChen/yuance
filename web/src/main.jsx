@@ -28,6 +28,7 @@ const services = {
     },
     getElementById: (id) => document.getElementById(id),
     readFormValue: (form, name) => String(new FormData(form).get(name) || ''),
+    createSessionId: () => `web:${crypto.randomUUID()}`,
     readTheme: () => localStorage.getItem('yuance-theme') === 'dark' ? 'dark' : 'light',
     writeTheme: (theme) => {
       document.documentElement.dataset.theme = theme;

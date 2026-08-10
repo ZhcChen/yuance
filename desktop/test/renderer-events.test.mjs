@@ -14,6 +14,7 @@ test("desktop events map fixed host facts to shared callbacks and internal navig
       return () => { unsubscribed = true; };
     },
   });
+  assert.equal(events.supportsWorkItemTyping, false);
 
   const unsubscribe = events.openTopbarEvents({
     onEvent: (event) => calls.push(["event", event]),
