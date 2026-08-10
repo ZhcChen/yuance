@@ -275,7 +275,11 @@ html[data-theme="dark"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .global-nav-links-indicator { transition: none; }
+  .global-nav-links-indicator,
+  .yc-select-caret,
+  .yc-select-menu,
+  .yc-select-option,
+  .yc-select-check { transition: none; }
 }
 
 .yc-button {
@@ -308,14 +312,25 @@ html[data-theme="dark"] {
 .yc-button-ghost { background: transparent; color: var(--yc-muted-strong); }
 .yc-button-loading::before { content: ""; width: 14px; height: 14px; display: inline-block; margin-right: 7px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: yc-spin .7s linear infinite; vertical-align: -2px; }
 
-.yc-select { position: relative; width: 100%; min-width: 0; height: var(--yc-control-height); display: inline-flex; align-items: center; border: 1px solid var(--yc-line-strong); border-radius: var(--yc-control-radius); background: var(--yc-panel); color: var(--yc-text); transition: border-color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease, background-color var(--yc-motion-fast) ease; }
-.yc-select:hover { border-color: color-mix(in srgb, var(--yc-brand) 42%, var(--yc-line-strong)); background: color-mix(in srgb, var(--yc-brand-soft) 24%, var(--yc-panel)); }
-.yc-select:focus-within { border-color: var(--yc-brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--yc-brand) 14%, transparent); }
-.yc-select select { position: relative; z-index: 1; width: 100%; height: 100%; min-width: 0; padding: 0 36px 0 12px; appearance: none; border: 0; outline: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; line-height: 1; }
-.yc-select-caret { position: absolute; z-index: 0; top: 50%; right: 13px; width: 7px; height: 7px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; color: var(--yc-muted-strong); pointer-events: none; transform: translateY(-70%) rotate(45deg); transition: color var(--yc-motion-fast) ease, transform var(--yc-motion-fast) ease; }
-.yc-select:focus-within .yc-select-caret { color: var(--yc-brand); transform: translateY(-55%) rotate(45deg); }
-.yc-select:has(select:disabled) { cursor: not-allowed; opacity: .55; }
-.yc-select select:disabled { cursor: not-allowed; }
+.yc-select { position: relative; width: 100%; min-width: 0; height: var(--yc-control-height); display: inline-flex; color: var(--yc-text); }
+.yc-select-native { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.yc-select-trigger { width: 100%; height: 100%; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; border: 1px solid var(--yc-line-strong); border-radius: var(--yc-control-radius); outline: 0; background: var(--yc-panel); color: var(--yc-text); cursor: pointer; font: inherit; text-align: left; transition: border-color var(--yc-motion-fast) ease, box-shadow var(--yc-motion-fast) ease, background-color var(--yc-motion-fast) ease; }
+.yc-select-trigger:hover { border-color: color-mix(in srgb, var(--yc-brand) 42%, var(--yc-line-strong)); background: color-mix(in srgb, var(--yc-brand-soft) 24%, var(--yc-panel)); }
+.yc-select-trigger:focus-visible,
+.yc-select.is-open .yc-select-trigger { border-color: var(--yc-brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--yc-brand) 14%, transparent); }
+.yc-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yc-select-caret { flex: 0 0 auto; width: 7px; height: 7px; margin: -4px 2px 0 0; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; color: var(--yc-muted-strong); pointer-events: none; transform: rotate(45deg); transition: color var(--yc-motion-fast) ease, transform 180ms cubic-bezier(.22, .8, .24, 1); }
+.yc-select.is-open .yc-select-caret { margin-top: 4px; color: var(--yc-brand); transform: rotate(225deg); }
+.yc-select-menu { position: absolute; z-index: 90; top: calc(100% + 7px); right: 0; left: 0; max-height: 248px; display: grid; gap: 3px; padding: 6px; overflow-x: hidden; overflow-y: auto; border: 1px solid var(--yc-line); border-radius: 10px; background: var(--yc-panel); box-shadow: 0 16px 36px rgb(24 39 58 / 16%); opacity: 0; pointer-events: none; transform: translateY(-7px) scale(.985); transform-origin: top center; transition: opacity 150ms ease, transform 180ms cubic-bezier(.22, .8, .24, 1); scrollbar-color: color-mix(in srgb, var(--yc-muted) 48%, transparent) transparent; scrollbar-width: thin; }
+.yc-select.is-open .yc-select-menu { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+.yc-select-option { min-height: 36px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 10px; border-radius: 7px; color: var(--yc-muted-strong); cursor: pointer; font-size: 13px; line-height: 18px; transition: background-color 120ms ease, color 120ms ease; }
+.yc-select-option.is-active { background: var(--yc-panel-soft); color: var(--yc-text); }
+.yc-select-option.is-selected { background: var(--yc-brand-soft); color: var(--yc-brand-strong); font-weight: 750; }
+.yc-select-option.is-disabled { cursor: not-allowed; opacity: .45; }
+.yc-select-check { flex: 0 0 auto; color: var(--yc-brand); font-size: 12px; opacity: 0; transform: scale(.75); transition: opacity 120ms ease, transform 120ms ease; }
+.yc-select-option.is-selected .yc-select-check { opacity: 1; transform: scale(1); }
+.yc-select.is-disabled { opacity: .55; }
+.yc-select.is-disabled .yc-select-trigger { cursor: not-allowed; }
 
 .yc-field { display: grid; gap: 6px; color: var(--yc-muted-strong); }
 .yc-field > label { font-size: 13px; font-weight: 700; }
@@ -334,7 +349,7 @@ html[data-theme="dark"] {
 .yc-field-error > input,
 .yc-field-error > select,
 .yc-field-error > textarea,
-.yc-field-error > .yc-select { border-color: var(--yc-danger); }
+.yc-field-error > .yc-select .yc-select-trigger { border-color: var(--yc-danger); }
 
 .yc-feedback { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 14px; border: 1px solid var(--yc-brand-line); border-radius: var(--yc-radius); background: var(--yc-brand-soft); color: var(--yc-text); }
 .yc-feedback-success { border-color: color-mix(in srgb, var(--yc-success) 35%, var(--yc-line)); background: color-mix(in srgb, var(--yc-success) 10%, var(--yc-panel)); }

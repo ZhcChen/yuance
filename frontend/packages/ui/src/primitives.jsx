@@ -1,16 +1,111 @@
 // @ts-check
-/* global ResizeObserver, requestAnimationFrame */
+/* global Event, ResizeObserver, document, requestAnimationFrame */
 
-import React, { useEffect, useId, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 /** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
 export function Button({ children, variant = 'primary', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
   return <button className={`yc-button yc-button-${variant}`} type={type} form={form} disabled={disabled || loading} aria-busy={loading || undefined} aria-label={ariaLabel} onClick={onClick}>{loading ? <span className="yc-button-loading">处理中</span> : children}</button>;
 }
 
+/** @param {React.ReactNode} children @returns {React.ReactElement[]} */
+function flattenSelectOptions(children) {
+  return React.Children.toArray(children).flatMap((child) => {
+    if (!React.isValidElement(child)) return [];
+    if (child.type === React.Fragment) return flattenSelectOptions(/** @type {{ children?: React.ReactNode }} */ (child.props).children);
+    return child.type === 'option' ? [child] : [];
+  });
+}
+
 /** @param {React.SelectHTMLAttributes<HTMLSelectElement> & { children?: React.ReactNode }} props */
-export function Select({ children, className = '', ...selectProps }) {
-  return <span className={`yc-select${className ? ` ${className}` : ''}`}><select {...selectProps}>{children}</select><span className="yc-select-caret" aria-hidden="true" /></span>;
+export function Select({ children, className = '', id, value, defaultValue = '', disabled = false, onChange, ...selectProps }) {
+  const generatedId = useId();
+  const controlId = id || `yc-select-${generatedId}`;
+  const rootRef = useRef(/** @type {HTMLSpanElement | null} */ (null));
+  const nativeRef = useRef(/** @type {HTMLSelectElement | null} */ (null));
+  const [open, setOpen] = useState(false);
+  const [internalValue, setInternalValue] = useState(String(defaultValue ?? ''));
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const options = flattenSelectOptions(children);
+  const selectedValue = value === undefined ? internalValue : String(value ?? '');
+  const selectedIndex = options.findIndex((option) => String(option.props.value ?? '') === selectedValue);
+  const selectedOption = options[selectedIndex] || options[0];
+  const listboxId = `${controlId}-listbox`;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsidePointer = (event) => {
+      if (!rootRef.current?.contains(/** @type {Node} */ (event.target))) setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [open]);
+
+  function chooseOption(index) {
+    const option = options[index];
+    if (!option || option.props.disabled) return;
+    const nextValue = String(option.props.value ?? '');
+    if (value === undefined) setInternalValue(nextValue);
+    const native = nativeRef.current;
+    if (native) {
+      native.value = nextValue;
+      native.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setOpen(false);
+  }
+
+  function handleNativeChange(event) {
+    if (value === undefined) setInternalValue(event.currentTarget.value);
+    onChange?.(event);
+  }
+
+  function openAt(index) {
+    if (disabled) return;
+    setActiveIndex(Math.max(0, index));
+    setOpen(true);
+  }
+
+  function handleKeyDown(event) {
+    if (disabled) return;
+    if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (open) chooseOption(activeIndex);
+      else openAt(selectedIndex);
+      return;
+    }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    if (!open) {
+      openAt(selectedIndex >= 0 ? selectedIndex : direction > 0 ? 0 : options.length - 1);
+      return;
+    }
+    let nextIndex = activeIndex;
+    do nextIndex = (nextIndex + direction + options.length) % options.length;
+    while (options[nextIndex]?.props.disabled && nextIndex !== activeIndex);
+    setActiveIndex(nextIndex);
+  }
+
+  return (
+    <span ref={rootRef} className={`yc-select${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}${className ? ` ${className}` : ''}`} onKeyDown={handleKeyDown}>
+      <select ref={nativeRef} className="yc-select-native" id={`${controlId}-native`} value={value} defaultValue={value === undefined ? defaultValue : undefined} disabled={disabled} onChange={handleNativeChange} tabIndex={-1} aria-hidden="true" {...selectProps}>{children}</select>
+      <button id={controlId} className="yc-select-trigger" type="button" disabled={disabled} aria-haspopup="listbox" aria-expanded={open} aria-controls={listboxId} aria-describedby={selectProps['aria-describedby']} aria-invalid={selectProps['aria-invalid']} onClick={() => open ? setOpen(false) : openAt(selectedIndex)}>
+        <span className="yc-select-value">{selectedOption?.props.children || '请选择'}</span><span className="yc-select-caret" aria-hidden="true" />
+      </button>
+      <span id={listboxId} className="yc-select-menu" role="listbox" aria-hidden={!open}>
+        {options.map((option, index) => {
+          const optionValue = String(option.props.value ?? '');
+          const selected = optionValue === selectedValue;
+          return <span key={`${optionValue}:${index}`} className={`yc-select-option${selected ? ' is-selected' : ''}${activeIndex === index ? ' is-active' : ''}${option.props.disabled ? ' is-disabled' : ''}`} role="option" aria-selected={selected} aria-disabled={option.props.disabled || undefined} onPointerMove={() => { if (!option.props.disabled) setActiveIndex(index); }} onClick={() => chooseOption(index)}><span>{option.props.children}</span><span className="yc-select-check" aria-hidden="true">✓</span></span>;
+        })}
+      </span>
+    </span>
+  );
 }
 
 /** @param {{ id: string, label: string, hint?: string, error?: string, required?: boolean, children?: React.ReactElement }} props */

@@ -525,6 +525,28 @@ test('work item lists preserve the main responsive geometry', async ({ page }) =
   }
 });
 
+test('work item filter select opens with motion and preserves native selection semantics', async ({ page }) => {
+  await login(page, '/web/app/tasks');
+  const statusField = page.locator('.work-item-filter-field').filter({ hasText: /^状态/u });
+  const trigger = statusField.locator('.yc-select-trigger');
+  const menu = statusField.locator('.yc-select-menu');
+
+  await trigger.click();
+  await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  await expect(menu).toHaveCSS('opacity', '1');
+  expect(await menu.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
+  await menu.getByRole('option', { name: '进行中' }).click();
+  await expect(trigger).toContainText('进行中');
+  await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+  await statusField.locator('select[name="status"]').selectOption('closed');
+  await expect(trigger).toContainText('已关闭');
+  await trigger.press('ArrowUp');
+  await trigger.press('ArrowUp');
+  await trigger.press('Enter');
+  await expect(trigger).toContainText('已验证');
+});
+
 test('shared work item saved views create restore rename and delete', async ({ page }) => {
   await login(page, '/web/app/tasks');
   await ensureCurrentProject(page, 'YCE');

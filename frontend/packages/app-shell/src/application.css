@@ -1055,7 +1055,7 @@ html[data-theme="dark"] .page-size-control {
 }
 
 html[data-theme="dark"] .work-item-filter-field input,
-html[data-theme="dark"] .work-item-filter-field .yc-select,
+html[data-theme="dark"] .work-item-filter-field .yc-select-trigger,
 html[data-theme="dark"] .page-size-control select,
 html[data-theme="dark"] .project-stats div {
   border-color: var(--yc-line);
