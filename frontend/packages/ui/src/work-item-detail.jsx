@@ -64,6 +64,8 @@ import { Button, Modal } from './primitives.jsx';
  *   onSubmitHandoff: (event: import('react').FormEvent<HTMLFormElement>) => boolean | void | Promise<boolean | void>,
  *   onRequestLifecycleAction: (action: 'close' | 'reopen' | 'restore') => void,
  *   onRequestDeletePrimaryPostAttachment: (attachment: { id: number, filename: string, contentType: string, url: string }) => void,
+ *   resolveAttachmentSource?: (attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
+ *   onAttachmentActivate?: (attachmentId: number) => void,
  *   backHref: string,
  *   onOpenBack: (event: import('react').MouseEvent<HTMLAnchorElement>) => void,
  *   children?: React.ReactNode,
@@ -103,6 +105,8 @@ export function WorkItemDetail({
   onSubmitHandoff,
   onRequestLifecycleAction,
   onRequestDeletePrimaryPostAttachment,
+  resolveAttachmentSource,
+  onAttachmentActivate,
   backHref,
   onOpenBack,
   children,
@@ -128,7 +132,7 @@ export function WorkItemDetail({
           <div className="content-section-head work-item-description-head"><div className="work-item-publisher"><span className="work-item-publisher-avatar" aria-hidden="true">{(item.reporter || '?').slice(0, 1)}</span><div className="work-item-publisher-meta"><strong className="work-item-publisher-name">{item.reporter || '未知'}</strong><span className="section-kicker work-item-publisher-role">发布人</span></div></div><span className="content-updated">更新于 {item.updated_at || '未知'}</span></div>
           <h2 id="work-item-description-title" className="visually-hidden">详情说明</h2>
           <div className="work-item-description-body">
-          <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" />
+          <RichTextContent html={primaryPost?.body || item.description} format={primaryPost?.body_format || 'plain'} emptyText="暂无描述。" resolveAttachmentSource={resolveAttachmentSource} onAttachmentActivate={onAttachmentActivate} />
           </div>
         </section>
         {children}

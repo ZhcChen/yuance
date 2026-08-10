@@ -69,6 +69,8 @@ import { RichTextContent, RichTextEditor } from './rich-text.jsx';
  *   onDownloadAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRevealAttachment: (commentId: number, attachment: Attachment) => void,
  *   onRequestDeleteAttachment: (commentId: number, attachment: Attachment) => void,
+ *   resolveAttachmentSource?: (commentId: number, attachmentId: number) => Promise<{ source: string, release?: () => void | Promise<void> }>,
+ *   onAttachmentActivate?: (commentId: number, attachmentId: number) => void,
  * }} props
  */
 export function WorkItemComments(props) {
@@ -118,6 +120,8 @@ export function WorkItemComments(props) {
     onDownloadAttachment,
     onRevealAttachment,
     onRequestDeleteAttachment,
+    resolveAttachmentSource,
+    onAttachmentActivate,
   } = props;
   const typingText = workItemTypingText(typingUsers);
   const typingCallbacks = { onFocus: onTypingStart, onInputActivity: onTypingActivity, onBlur: onTypingStop };
@@ -170,7 +174,7 @@ export function WorkItemComments(props) {
                 </div>
                 {editingCommentId === comment.id ? (
                   <>
-                    <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" />
+                    <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />
                     <form className="work-item-comment-edit-form" onSubmit={onSubmitEdit}>
                       <RichTextEditor id={`work-item-comment-edit-${comment.id}`} value={editCommentBody} onChange={onChangeEdit} label="编辑评论" mentionOptions={mentionOptions} {...typingCallbacks} />
                       <div className="work-item-form-actions work-item-comment-actions">
@@ -179,7 +183,7 @@ export function WorkItemComments(props) {
                       </div>
                     </form>
                   </>
-                ) : <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" />}
+                ) : <RichTextContent html={comment.body} format={comment.body_format} emptyText="暂无内容。" resolveAttachmentSource={resolveAttachmentSource ? (attachmentId) => resolveAttachmentSource(comment.id, attachmentId) : undefined} onAttachmentActivate={onAttachmentActivate ? (attachmentId) => onAttachmentActivate(comment.id, attachmentId) : undefined} />}
                 {attachments.length ? (
                   <AttachmentList
                     attachments={attachments}

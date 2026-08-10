@@ -2086,6 +2086,38 @@ export function SharedApp({ services }) {
     return { source: result.source, release: async () => { await attachmentPlatform.releaseProjectAttachmentPreview(result.capability); } };
   }
 
+  /** @param {number} commentId @param {number} attachmentId */
+  async function resolveWorkItemCommentInlineAttachmentSource(commentId, attachmentId) {
+    const itemKey = activeWorkItemDetail?.key;
+    const attachmentPlatform = files.attachments;
+    if (!itemKey) throw new Error('inline preview unavailable');
+    if (typeof attachmentPlatform?.openWorkItemCommentAttachmentPreview === 'function' && typeof attachmentPlatform.releaseProjectAttachmentPreview === 'function') {
+      const result = await attachmentPlatform.openWorkItemCommentAttachmentPreview({ itemKey, commentId, attachmentId });
+      return { source: result.source, release: async () => { await attachmentPlatform.releaseProjectAttachmentPreview(result.capability); } };
+    }
+    const browserResult = await api.getWorkItemCommentAttachmentPreview(itemKey, commentId, attachmentId);
+    return { source: browserResult.preview.content_enabled ? browserResult.content_url : '' };
+  }
+
+  /** @param {number} attachmentId */
+  async function resolveWorkItemPrimaryPostInlineAttachmentSource(attachmentId) {
+    const commentId = activeWorkItemDetailView?.primary_post?.id;
+    if (!commentId) throw new Error('inline preview unavailable');
+    return resolveWorkItemCommentInlineAttachmentSource(commentId, attachmentId);
+  }
+
+  /** @param {number} commentId @param {number} attachmentId */
+  function activateWorkItemCommentInlineAttachment(commentId, attachmentId) {
+    const attachment = (workItemCommentAttachments[String(commentId)] || []).find((entry) => entry.id === attachmentId);
+    if (attachment && attachmentIsUploaded(attachment)) void openWorkItemCommentAttachmentPreview(commentId, attachment);
+  }
+
+  /** @param {number} attachmentId */
+  function activateWorkItemPrimaryPostInlineAttachment(attachmentId) {
+    const commentId = activeWorkItemDetailView?.primary_post?.id;
+    if (commentId) activateWorkItemCommentInlineAttachment(commentId, attachmentId);
+  }
+
   async function confirmProjectAttachmentArchive() {
     if (!activeProjectDetail || !projectAttachmentArchiveTarget || projectAttachmentMutationRef.current) return;
     const projectKey = activeProjectDetail.key; const target = projectAttachmentArchiveTarget;
@@ -5655,6 +5687,8 @@ export function SharedApp({ services }) {
                     item={activeWorkItemDetail}
                     primaryPost={activeWorkItemDetailView?.primary_post || null}
                     primaryPostAttachments={(workItemCommentAttachments[String(activeWorkItemDetailView?.primary_post?.id || '')] || []).filter((attachment) => attachment.status !== 'deleted').map((attachment) => ({ id: attachment.id, filename: attachment.filename, contentType: attachment.content_type, url: `/api/v1/work-items/${encodeURIComponent(activeWorkItemDetail.key)}/comments/${activeWorkItemDetailView?.primary_post?.id}/attachments/${attachment.id}/preview/content` }))}
+                    resolveAttachmentSource={activeWorkItemDetailView?.primary_post ? resolveWorkItemPrimaryPostInlineAttachmentSource : undefined}
+                    onAttachmentActivate={activeWorkItemDetailView?.primary_post ? activateWorkItemPrimaryPostInlineAttachment : undefined}
                     editForm={workItemEditForm}
                     handoffForm={workItemHandoffForm}
                     statusOptions={activeWorkItemDetailView?.status_options || []}
@@ -5737,6 +5771,8 @@ export function SharedApp({ services }) {
                     onDownloadAttachment={(commentId, attachment) => void downloadWorkItemCommentAttachment(commentId, attachment)}
                     onRevealAttachment={(commentId, attachment) => void revealWorkItemCommentAttachment(commentId, attachment)}
                     onRequestDeleteAttachment={requestWorkItemCommentAttachmentDelete}
+                    resolveAttachmentSource={resolveWorkItemCommentInlineAttachmentSource}
+                    onAttachmentActivate={activateWorkItemCommentInlineAttachment}
                   />
                   <WorkItemAttachments
                     attachments={workItemAttachments}
