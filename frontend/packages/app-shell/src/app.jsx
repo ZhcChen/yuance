@@ -5668,9 +5668,9 @@ export function SharedApp({ services }) {
                   <span>关键词</span>
                   <input name="q" defaultValue={workItemPage?.filters.q ?? route.q} placeholder="标题或编号" />
                 </label>
-                <label className="work-item-filter-field">
-                  <span>状态</span>
-                  <Select name="status" defaultValue={workItemPage?.filters.status ?? route.status}>
+                <div className="work-item-filter-field">
+                  <label htmlFor="work-item-filter-status">状态</label>
+                  <Select id="work-item-filter-status" name="status" defaultValue={workItemPage?.filters.status ?? route.status}>
                     <option value="">全部状态</option>
                     <option value="open">待处理</option>
                     <option value="in_progress">进行中</option>
@@ -5681,41 +5681,41 @@ export function SharedApp({ services }) {
                     <option value="closed">已关闭</option>
                     <option value="cancelled">已取消</option>
                   </Select>
-                </label>
-                <label className="work-item-filter-field">
-                  <span>优先级</span>
-                  <Select name="priority" defaultValue={workItemPage?.filters.priority ?? route.priority}>
+                </div>
+                <div className="work-item-filter-field">
+                  <label htmlFor="work-item-filter-priority">优先级</label>
+                  <Select id="work-item-filter-priority" name="priority" defaultValue={workItemPage?.filters.priority ?? route.priority}>
                     <option value="">全部优先级</option>
                     <option value="P0">P0</option>
                     <option value="P1">P1</option>
                     <option value="P2">P2</option>
                     <option value="P3">P3</option>
                   </Select>
-                </label>
-                <label className="work-item-filter-field">
-                  <span>处理人</span>
-                  <Select name="assignee_username" defaultValue={workItemPage?.filters.assignee_username ?? route.assigneeUsername}>
+                </div>
+                <div className="work-item-filter-field">
+                  <label htmlFor="work-item-filter-assignee">处理人</label>
+                  <Select id="work-item-filter-assignee" name="assignee_username" defaultValue={workItemPage?.filters.assignee_username ?? route.assigneeUsername}>
                     <option value="">全部处理人</option>
                     {(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}
                   </Select>
-                </label>
-                <label className="work-item-filter-field">
-                  <span>周期</span>
-                  <Select name="cycle_id" defaultValue={workItemPage?.filters.cycle_id || route.cycleId || ''}>
+                </div>
+                <div className="work-item-filter-field">
+                  <label htmlFor="work-item-filter-cycle">周期</label>
+                  <Select id="work-item-filter-cycle" name="cycle_id" defaultValue={workItemPage?.filters.cycle_id || route.cycleId || ''}>
                     <option value="">全部周期</option>
                     {(workItemPage?.cycles || []).map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}
                   </Select>
-                </label>
-                <label className="work-item-filter-field">
-                  <span>排序</span>
-                  <Select name="sort" defaultValue={workItemPage?.filters.sort ?? route.sort}>
+                </div>
+                <div className="work-item-filter-field">
+                  <label htmlFor="work-item-filter-sort">排序</label>
+                  <Select id="work-item-filter-sort" name="sort" defaultValue={workItemPage?.filters.sort ?? route.sort}>
                     <option value="">最近更新</option>
                     <option value="updated_desc">最近更新</option>
                     <option value="created_desc">最近创建</option>
                     <option value="priority_desc">优先级从高到低</option>
                     <option value="due_date_asc">截止日期最近</option>
                   </Select>
-                </label>
+                </div>
                 <div className="work-item-filter-actions">
                   <Button type="submit">筛选</Button>
                   <Button variant="secondary" onClick={resetWorkItemFilters}>重置</Button>

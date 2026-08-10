@@ -33,13 +33,17 @@ test('select preserves native form semantics inside the shared control', () => {
     createElement('option', { value: 'open' }, '待处理'),
     createElement('option', { value: 'done' }, '已完成')));
   assert.match(html, /class="yc-select"/u);
-  assert.match(html, /<select name="status" required=""/u);
+  assert.match(html, /class="yc-select-native"[^>]*name="status" required=""/u);
+  assert.match(html, /aria-haspopup="listbox"/u);
+  assert.match(html, /aria-expanded="false"/u);
+  assert.match(html, /class="yc-select-menu" role="listbox"/u);
   assert.match(html, /class="yc-select-caret" aria-hidden="true"/u);
   assert.match(html, /value="open" selected=""/u);
 
   const fieldHtml = renderToStaticMarkup(createElement(Field, { id: 'priority', label: '优先级', error: '请选择优先级', required: true },
     createElement(Select, null, createElement('option', { value: '' }, '请选择'))));
-  assert.match(fieldHtml, /<select id="priority" aria-describedby="priority-description" aria-invalid="true" required=""/u);
+  assert.match(fieldHtml, /<select[^>]*id="priority-native"[^>]*required=""/u);
+  assert.match(fieldHtml, /<button id="priority"[^>]*aria-describedby="priority-description" aria-invalid="true"/u);
 });
 
 test('feedback and modal expose bounded semantic states', () => {
