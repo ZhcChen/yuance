@@ -39,21 +39,18 @@ const NODE_BUILTINS = new Set(
   builtinModules.flatMap((name) => [name, name.replace(/^node:/, '')]),
 );
 const IMPORT_PATTERN = /(?:import|export)\s+(?:[^'"]*\s+from\s+)?['"]([^'"]+)['"]|import\(\s*['"]([^'"]+)['"]\s*\)/g;
-const FORBIDDEN_GLOBALS = [
-  { pattern: /\bwindow\b/, label: 'window' },
-  { pattern: /\bdocument\b/, label: 'document' },
-  { pattern: /\bEventSource\b/, label: 'EventSource' },
-  { pattern: /\bfetch\s*\(/, label: 'fetch()' },
-  { pattern: /\blocalStorage\b/, label: 'localStorage' },
-  { pattern: /\bsessionStorage\b/, label: 'sessionStorage' },
-  { pattern: /\bprocess\b/, label: 'process' },
-  { pattern: /\bBuffer\b/, label: 'Buffer' },
-  { pattern: /\bglobal\b/, label: 'global' },
-  { pattern: /\bglobalThis\b/, label: 'globalThis' },
-  { pattern: /\brequire\s*\(/, label: 'require()' },
-  { pattern: /\bnavigator\b/, label: 'navigator' },
-  { pattern: /\byuanceDesktop\b/, label: 'window.yuanceDesktop' },
-];
+const FORBIDDEN_IDENTIFIERS = new Map([
+  ['window', 'window'],
+  ['document', 'document'],
+  ['EventSource', 'EventSource'],
+  ['localStorage', 'localStorage'],
+  ['sessionStorage', 'sessionStorage'],
+  ['process', 'process'],
+  ['Buffer', 'Buffer'],
+  ['global', 'global'],
+  ['globalThis', 'globalThis'],
+  ['navigator', 'navigator'],
+]);
 
 /**
  * @param {string} dir
@@ -127,28 +124,37 @@ function importSources(content) {
 }
 
 /**
- * Remove comments and literal contents before scanning executable global references.
+ * Parse executable identifiers so comments, literals and JSX attributes cannot cause false positives.
  * @param {string} content
  */
-function executableSource(content) {
-  const result = Array.from(content, (character) => character === '\n' || character === '\r' ? character : ' ');
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.JSX, content);
-  const hiddenTokens = new Set([
-    ts.SyntaxKind.StringLiteral,
-    ts.SyntaxKind.RegularExpressionLiteral,
-    ts.SyntaxKind.NoSubstitutionTemplateLiteral,
-    ts.SyntaxKind.TemplateHead,
-    ts.SyntaxKind.TemplateMiddle,
-    ts.SyntaxKind.TemplateTail,
-    ts.SyntaxKind.JsxText,
-  ]);
-  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
-    if (hiddenTokens.has(token)) continue;
-    const start = scanner.getTokenPos();
-    const end = scanner.getTextPos();
-    for (let index = start; index < end; index += 1) result[index] = content[index];
+function forbiddenGlobalLabels(content) {
+  const sourceFile = ts.createSourceFile('source.jsx', content, ts.ScriptTarget.Latest, true, ts.ScriptKind.JSX);
+  const labels = new Set();
+
+  /** @param {import('typescript').Node} node */
+  function visit(node) {
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      if (node.expression.text === 'fetch') labels.add('fetch()');
+      if (node.expression.text === 'require') labels.add('require()');
+    }
+    if (ts.isPropertyAccessExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === 'window'
+      && node.name.text === 'yuanceDesktop') {
+      labels.add('window.yuanceDesktop');
+    }
+    if (ts.isIdentifier(node)) {
+      const isPropertyName = ts.isPropertyAccessExpression(node.parent) && node.parent.name === node;
+      if (!isPropertyName) {
+        const label = FORBIDDEN_IDENTIFIERS.get(node.text);
+        if (label) labels.add(label);
+      }
+    }
+    ts.forEachChild(node, visit);
   }
-  return result.join('');
+
+  visit(sourceFile);
+  return labels;
 }
 
 /**
@@ -294,11 +300,8 @@ export async function analyzePackageBoundaries(workspaceRoot = process.cwd()) {
       for (const source of importSources(content)) {
         failures.push(...validateImport(packageKey, source, relativeFile, graph, file, workspaceRoot));
       }
-      const source = executableSource(content);
-      for (const forbidden of FORBIDDEN_GLOBALS) {
-        if (forbidden.pattern.test(source)) {
-          failures.push(`${relativeFile}: 共享包源码禁止直接使用 ${forbidden.label}`);
-        }
+      for (const label of forbiddenGlobalLabels(content)) {
+        failures.push(`${relativeFile}: 共享包源码禁止直接使用 ${label}`);
       }
     }
   }
