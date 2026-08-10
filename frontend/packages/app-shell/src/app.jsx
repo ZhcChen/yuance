@@ -5305,7 +5305,7 @@ export function SharedApp({ services }) {
                 ['成员', projectMembers.length, 'success', 'users'],
               ].map(([label, value, tone, icon]) => <article key={label} className={`metric metric-${tone}`}><div className="metric-head"><span className="metric-label">{label}</span><span className={`metric-ornament metric-icon-${icon}`} aria-hidden="true" /></div><strong>{value}</strong></article>)}</section>
               <section className="project-tabs-card"><div className="project-tabs-head"><div><p className="shell-eyebrow">项目详情</p><h2>项目资料</h2></div><ContentTabs ariaLabel="项目详情导航">
-                {[['info', '详情'], ['cycles', '周期'], ['members', '成员'], ['files', '项目文件'], ['resources', '资料库']].map(([tab, label]) => {
+                {[['info', '详情'], ['cycles', '周期'], ['members', '成员'], ['resources', '资料库'], ['files', '项目文件']].map(([tab, label]) => {
                   const path = buildProjectDetailPath({ owner: route.owner, projectKey: route.projectKey, tab });
                   return <ContentTab key={tab} active={route.tab === tab} href={path} onClick={(event) => handleNavigate(/** @type {import('react').MouseEvent<HTMLAnchorElement>} */ (event), path, `已切换到${label}。`)}>{label}</ContentTab>;
                 })}

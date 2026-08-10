@@ -4122,6 +4122,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   const tabsCard = page.locator('.project-tabs-card');
   const tabs = tabsCard.locator('.yc-content-tabs');
   const indicator = tabs.locator('.yc-content-tabs-indicator');
+  await expect(tabs.locator('.yc-content-tab')).toHaveText(['详情', '周期', '成员', '资料库', '项目文件']);
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 
