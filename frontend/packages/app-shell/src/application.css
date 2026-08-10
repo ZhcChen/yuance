@@ -851,6 +851,9 @@ html[data-theme="dark"] .shell-code-block {
 
 .work-item-list-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .work-list-panel { overflow: hidden; }
+.work-item-list-empty { min-height: 176px; align-content: center; border-top: 1px solid var(--yc-line); background: var(--yc-panel); }
+.work-item-list-empty strong { font-size: 15px; }
+.work-item-list-empty span { max-width: 420px; font-size: 13px; line-height: 20px; }
 .filter-shell { border-bottom: 1px solid var(--yc-line); background: var(--yc-panel-soft); }
 .filter-shell-head { display: flex; align-items: baseline; gap: 10px; padding: 13px 16px 0; }
 .filter-shell-head strong { color: var(--yc-text); font-size: 13px; }
