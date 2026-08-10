@@ -17,6 +17,15 @@ test('ui owns the shared light and dark design tokens', async () => {
   assert.match(source, /\.yc-button\s*\{[^}]*text-decoration:\s*none;/su);
 });
 
+test('project menu scrollbar remains visible without reducing option width', async () => {
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(styles, /\.global-nav-project-options\s*\{[^}]*width:\s*calc\(100% \+ 8px\)/su);
+  assert.match(styles, /\.global-nav-project-options\s*\{[^}]*margin-right:\s*-8px/su);
+  assert.match(styles, /\.global-nav-project-options::-webkit-scrollbar\s*\{\s*width:\s*8px/su);
+  assert.match(styles, /\.global-nav-project-options::-webkit-scrollbar-thumb\s*\{/u);
+});
+
 test('host styles do not define shared business tokens', async () => {
   const hostStyles = await Promise.all([
     readFile(new URL('../../../../web/src/app.css', import.meta.url), 'utf8'),
