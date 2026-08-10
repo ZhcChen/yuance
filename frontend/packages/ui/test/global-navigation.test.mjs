@@ -73,6 +73,7 @@ test('global navigation renders the complete shared shell semantics', () => {
   assert.match(html, /请处理任务/u);
   assert.match(html, /提及 · Alice · 刚刚/u);
   assert.match(html, /global-nav-notification-dot/u);
+  assert.match(html, /global-nav-links-indicator/u);
   assert.match(html, />8 条未读</u);
   assert.match(html, /一键已读/u);
   assert.match(html, /打开 Alice 的账户菜单/u);

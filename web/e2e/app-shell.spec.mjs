@@ -4150,6 +4150,20 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   await expect.poll(() => page.locator('.main').evaluate((element) => element.clientWidth)).toBe(initialGeometry.mainWidth);
 });
 
+test('global navigation indicator slides between application sections', async ({ page }) => {
+  await login(page, '/web/app');
+
+  const navigation = page.getByRole('navigation', { name: '应用导航' });
+  const indicator = navigation.locator('.global-nav-links-indicator');
+  const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
+
+  await navigation.getByRole('link', { name: '项目', exact: true }).click();
+  await expect(page).toHaveURL(/\/web\/app\/projects/u);
+  await expect(navigation.getByRole('link', { name: '项目', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => indicator.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
+  await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
+});
+
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   let recentCompletions = [{ key: 'YCE-TASK-2', item_type: 'task', title: '完成共享体验', completed_at: '2026-08-07T08:00:00Z' }];
