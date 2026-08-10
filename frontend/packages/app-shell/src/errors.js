@@ -15,3 +15,11 @@ export function errorMessage(error) {
   }
   return error.message || '加载失败。';
 }
+
+/** @param {unknown} error */
+export function globalApiErrorMessage(error) {
+  if (error instanceof ApiError && error.status >= 500) {
+    return '服务暂时无法完成请求，请稍后重试。';
+  }
+  return errorMessage(error instanceof Error ? error : new Error('请求失败。'));
+}

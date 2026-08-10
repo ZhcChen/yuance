@@ -48,6 +48,7 @@ import {
   ContentTab,
   ContentTabs,
   DataTable,
+  ErrorToast,
   Feedback,
   Field,
   GlobalNavigation,
@@ -65,7 +66,7 @@ import {
   richTextAttachmentIds,
   richTextHasContent,
 } from '@yuance/frontend-ui';
-import { errorMessage } from './errors.js';
+import { errorMessage, globalApiErrorMessage } from './errors.js';
 
 /** @typedef {import('@yuance/frontend-api-client').ApiError} ApiError */
 /** @typedef {Awaited<ReturnType<AppApiService['getProjectAttachmentPreview']>>['preview']['kind']} AppPreviewKind */
@@ -771,8 +772,26 @@ function normalizeSystemApiDocs(payload) {
  * @returns {React.ReactElement}
  */
 export function SharedApp({ services }) {
-  const { api, events, files, router, runtime } = services;
+  const { api: baseApi, events, files, router, runtime } = services;
   const [route, setRoute] = useState(() => router.currentRoute());
+  const [apiErrorToast, setApiErrorToast] = useState(/** @type {{ id: number, message: string } | null} */ (null));
+  const api = useMemo(() => new Proxy(baseApi, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      return (...args) => {
+        try {
+          return Promise.resolve(Reflect.apply(value, target, args)).catch((caught) => {
+            setApiErrorToast({ id: Date.now(), message: globalApiErrorMessage(caught) });
+            throw caught;
+          });
+        } catch (caught) {
+          setApiErrorToast({ id: Date.now(), message: globalApiErrorMessage(caught) });
+          throw caught;
+        }
+      };
+    },
+  }), [baseApi]);
   const routeRef = useRef(route);
   const topbarRef = useRef(/** @type {AppTopbarStatus | null} */ (null));
   const headingRef = useRef(/** @type {HTMLHeadingElement | null} */ (null));
@@ -1553,7 +1572,7 @@ export function SharedApp({ services }) {
       if (requestRef.current !== requestId) {
         return;
       }
-      setError(caught instanceof Error ? caught : new Error('加载失败。'));
+      setError(new Error(globalApiErrorMessage(caught)));
     } finally {
       if (requestRef.current === requestId) {
         setShellReady(true);
@@ -3072,6 +3091,12 @@ export function SharedApp({ services }) {
     routeLoadModeRef.current = 'load';
     void loadRouteState(route, mode);
   }, [route]);
+
+  useEffect(() => {
+    if (!apiErrorToast) return undefined;
+    const timer = globalThis.setTimeout(() => setApiErrorToast(null), 5000);
+    return () => globalThis.clearTimeout(timer);
+  }, [apiErrorToast]);
 
   useEffect(() => {
     setWorkItemSelection(new Set());
@@ -4667,6 +4692,7 @@ export function SharedApp({ services }) {
 
   return (
     <div className="app-shell" aria-busy={loading || refreshing}>
+      <ErrorToast open={Boolean(apiErrorToast)} message={apiErrorToast?.message || ''} onClose={() => setApiErrorToast(null)} />
       <p className="shell-live-region" role="status" aria-live="polite">
         {statusMessage || (refreshing ? '正在刷新页面数据。' : '')}
       </p>

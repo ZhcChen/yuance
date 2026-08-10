@@ -25,6 +25,12 @@ export function Feedback({ tone = 'info', title, children, action }) {
   return <section className={`yc-feedback yc-feedback-${tone}`} role={tone === 'danger' ? 'alert' : 'status'}><div><strong>{title}</strong>{children ? <div>{children}</div> : null}</div>{action}</section>;
 }
 
+/** @param {{ open: boolean, message: string, onClose(): void }} props */
+export function ErrorToast({ open, message, onClose }) {
+  if (!open) return null;
+  return <aside className="yc-error-toast" role="alert" aria-live="assertive"><span className="yc-error-toast-mark" aria-hidden="true">!</span><div><strong>操作未完成</strong><p>{message}</p></div><button type="button" aria-label="关闭提示" title="关闭提示" onClick={onClose}>×</button></aside>;
+}
+
 /** @param {{ children?: React.ReactNode, tone?: 'neutral' | 'info' | 'success' | 'warning' | 'danger' }} props */
 export function Badge({ children, tone = 'neutral' }) {
   return <span className={`yc-badge yc-badge-${tone}`}>{children}</span>;

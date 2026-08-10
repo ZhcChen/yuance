@@ -3180,10 +3180,10 @@ pub async fn personal_project_analysis(
     .await?;
     let months = sqlx::query_scalar::<_, f64>(
         r#"
-        SELECT MAX(1.0,
+        SELECT CAST(MAX(1.0,
             (CAST(strftime('%Y', 'now') AS INTEGER) - CAST(strftime('%Y', ?1) AS INTEGER)) * 12
             + CAST(strftime('%m', 'now') AS INTEGER) - CAST(strftime('%m', ?1) AS INTEGER) + 1
-        )
+        ) AS REAL)
         "#,
     )
     .bind(&joined_at)

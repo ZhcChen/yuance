@@ -1,4 +1,4 @@
 // @ts-check
 
 export { SharedApp } from './app.jsx';
-export { errorMessage } from './errors.js';
+export { errorMessage, globalApiErrorMessage } from './errors.js';

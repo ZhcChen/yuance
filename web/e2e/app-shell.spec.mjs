@@ -4171,6 +4171,24 @@ test('shared project personal analysis preserves metrics, filters and completion
   await expect(page.getByText('工作项由你推进到完成、解决、验证或关闭后会记录在这里。')).toBeVisible();
 });
 
+test('shared shell reports API failures through a bounded global toast', async ({ page }) => {
+  await page.route('**/api/v1/projects/YCE/my-analysis', (route) => route.fulfill({
+    status: 500,
+    contentType: 'application/json',
+    body: JSON.stringify({ error: { code: 'database_error', message: 'internal database decoder detail' } }),
+  }));
+
+  await login(page, '/web/app/projects/YCE/my-analysis');
+
+  const toast = page.locator('.yc-error-toast');
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText('操作未完成');
+  await expect(toast).toContainText('服务暂时无法完成请求，请稍后重试。');
+  await expect(page.getByRole('main')).not.toContainText('internal database decoder detail');
+  await toast.getByRole('button', { name: '关闭提示' }).click();
+  await expect(toast).toBeHidden();
+});
+
 test('project personal analysis serializes current project changes across rapid navigation', async ({ page }) => {
   let releaseFirstSwitch = () => {};
   let markFirstSwitchStarted = () => {};
