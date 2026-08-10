@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -44,6 +45,14 @@ test('badge and tabs expose the main Web primitive structure', () => {
   assert.match(tabs, /aria-label="类型导航"/u);
   assert.match(tabs, /aria-current="page"/u);
   assert.match(tabs, /99\+/u);
+});
+
+test('content tabs retain the sliding indicator transition after resize observation', async () => {
+  const source = await readFile(new URL('../src/primitives.jsx', import.meta.url), 'utf8');
+  const styles = await readFile(new URL('../src/styles.css', import.meta.url), 'utf8');
+
+  assert.match(source, /new ResizeObserver\(\(\) => syncIndicator\(true\)\)/u);
+  assert.match(styles, /\.yc-content-tabs-indicator \{[^}]*transition: width 360ms[^;]*, transform 360ms/u);
 });
 
 test('table, pagination and skeleton cover empty and boundary states', () => {

@@ -57,7 +57,7 @@ export function ContentTabs({ children, ariaLabel }) {
 
     syncIndicator(hasSyncedRef.current);
     hasSyncedRef.current = true;
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => syncIndicator(false));
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => syncIndicator(true));
     observer?.observe(tabs);
     Array.from(tabs.querySelectorAll('.yc-content-tab')).forEach((tab) => observer?.observe(tab));
     return () => observer?.disconnect();

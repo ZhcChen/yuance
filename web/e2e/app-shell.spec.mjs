@@ -4136,7 +4136,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
       buttonFontSize: buttonStyle.fontSize,
     };
   });
-  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '10px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
+  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '0px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 
@@ -4144,6 +4144,7 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
   await expect(page).toHaveURL(/tab=resources/);
   await expect(tabsCard).toHaveAttribute('data-tab-transition-marker', 'preserved');
   await expect(tabs.getByRole('link', { name: '资料库' })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => indicator.evaluate((element) => getComputedStyle(element).transitionDuration)).not.toBe('0s');
   await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
   await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
   await expect.poll(() => page.locator('.main').evaluate((element) => element.clientWidth)).toBe(initialGeometry.mainWidth);
