@@ -1,5 +1,5 @@
 // @ts-check
-/* global Event, ResizeObserver, document, requestAnimationFrame */
+/* global Event, ResizeObserver, requestAnimationFrame */
 
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
@@ -34,11 +34,14 @@ export function Select({ children, className = '', id, value, defaultValue = '',
 
   useEffect(() => {
     if (!open) return undefined;
+    const root = rootRef.current;
+    const ownerDocument = root?.ownerDocument;
+    if (!root || !ownerDocument) return undefined;
     const closeOnOutsidePointer = (event) => {
-      if (!rootRef.current?.contains(/** @type {Node} */ (event.target))) setOpen(false);
+      if (!root.contains(/** @type {Node} */ (event.target))) setOpen(false);
     };
-    document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+    ownerDocument.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => ownerDocument.removeEventListener('pointerdown', closeOnOutsidePointer);
   }, [open]);
 
   function chooseOption(index) {
