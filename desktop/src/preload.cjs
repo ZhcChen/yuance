@@ -22,6 +22,7 @@ const PUBLIC_HOST_STATES = new Set([
   "reauthorization_required",
   "fatal",
 ]);
+const PUBLIC_HOST_LOCKED_REASONS = new Set(["profile_mismatch"]);
 let hostStateSnapshot = startupSnapshot.hostState;
 const hostStateSubscribers = new Set();
 const PUBLIC_NETWORK_STATES = new Set([
@@ -33,7 +34,11 @@ const businessFactSubscribers = new Set();
 
 function normalizeHostState(value) {
   const status = value && typeof value === "object" ? value.status : undefined;
-  return Object.freeze({ status: PUBLIC_HOST_STATES.has(status) ? status : "fatal" });
+  if (!PUBLIC_HOST_STATES.has(status)) return Object.freeze({ status: "fatal" });
+  const reason = value && typeof value === "object" ? value.reason : undefined;
+  return Object.freeze(
+    status === "locked" && PUBLIC_HOST_LOCKED_REASONS.has(reason) ? { status, reason } : { status },
+  );
 }
 
 ipcRenderer.on(HOST_STATE_CHANNEL, (_event, value) => {
@@ -64,7 +69,7 @@ ipcRenderer.on(BUSINESS_FACT_CHANNEL, (_event, value) => {
 });
 
 const bridge = Object.freeze({
-  schemaVersion: 14,
+  schemaVersion: 15,
   startup: startupSnapshot,
   lifecycle: Object.freeze({
     ready() {
@@ -86,6 +91,7 @@ const bridge = Object.freeze({
     authorize() { return ipcRenderer.invoke("yuance:auth-authorize"); },
     retry() { return ipcRenderer.invoke("yuance:auth-retry"); },
     logout() { return ipcRenderer.invoke("yuance:auth-logout"); },
+    discardMismatchedProfile() { return ipcRenderer.invoke("yuance:auth-discard-mismatched-profile"); },
   }),
   hostState: Object.freeze({
     getSnapshot() {

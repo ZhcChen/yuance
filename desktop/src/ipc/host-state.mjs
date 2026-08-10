@@ -11,9 +11,15 @@ const PUBLIC_STATES = new Set([
   "fatal",
 ]);
 
+const PUBLIC_LOCKED_REASONS = new Set(["profile_mismatch"]);
+
 export function normalizePublicHostState(value) {
   const status = value && typeof value === "object" ? value.status : undefined;
-  return Object.freeze({ status: PUBLIC_STATES.has(status) ? status : "fatal" });
+  if (!PUBLIC_STATES.has(status)) return Object.freeze({ status: "fatal" });
+  const reason = value && typeof value === "object" ? value.reason : undefined;
+  return Object.freeze(
+    status === "locked" && PUBLIC_LOCKED_REASONS.has(reason) ? { status, reason } : { status },
+  );
 }
 
 export function createHostStatePublisher({ getSnapshot = () => ({ status: "starting" }) } = {}) {

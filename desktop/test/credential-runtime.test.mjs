@@ -109,13 +109,13 @@ test("profile evidence mismatch locks until an explicit local discard", async ()
   const states = [];
   const runtime = runtimeFixture({ coordinator, fs, onPublicState: (state) => states.push(state) });
 
-  assert.deepEqual(await runtime.initialize(), { status: "locked" });
+  assert.deepEqual(await runtime.initialize(), { status: "locked", reason: "profile_mismatch" });
   assert.equal(coordinator.initializeCalls, 0);
   assert.deepEqual(fs.removed, []);
   assert.deepEqual(await runtime.discardMismatchedProfile(), { status: "unauthenticated" });
   assert.equal(coordinator.initializeCalls, 1);
   assert.deepEqual(fs.removed, [path.join("/tmp/yuance-runtime-test", "Device Credentials", `${"b".repeat(64)}.enc.json`)]);
-  assert.deepEqual(states, [{ status: "locked" }, { status: "unauthenticated" }]);
+  assert.deepEqual(states, [{ status: "locked", reason: "profile_mismatch" }, { status: "unauthenticated" }]);
 });
 
 test("does not publish the coordinator placeholder before initialization completes", async () => {

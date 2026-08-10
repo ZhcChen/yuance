@@ -102,7 +102,7 @@ export function createCredentialRuntime({
     if (mismatchedEvidence.length > 0) {
       blockedReason = "profile_mismatch";
       invalidateNetwork("locked", blockedReason);
-      const state = Object.freeze({ status: "locked" });
+      const state = Object.freeze({ status: "locked", reason: blockedReason });
       onPublicState(state);
       return state;
     }
@@ -198,7 +198,9 @@ export function createCredentialRuntime({
   }
 
   function snapshot() {
-    return blockedReason ? Object.freeze({ status: "locked" }) : toPublicAuthState(coordinator.snapshot());
+    return blockedReason
+      ? Object.freeze({ status: "locked", reason: blockedReason })
+      : toPublicAuthState(coordinator.snapshot());
   }
 
   function dispose() {

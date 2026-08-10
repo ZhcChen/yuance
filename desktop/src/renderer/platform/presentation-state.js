@@ -4,7 +4,7 @@ const WORKSPACE_NETWORK_STATES = new Set(["idle", "connecting", "online", "offli
 
 /**
  * @typedef {'bootstrap' | 'authorization' | 'workspace' | 'recovery'} PresentationStage
- * @typedef {{ status: string }} PublicState
+ * @typedef {{ status: string, reason?: string }} PublicState
  * @typedef {{ stage: PresentationStage, presentable: boolean, authState: PublicState, networkState: PublicState }} DesktopPresentationState
  */
 

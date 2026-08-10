@@ -2,6 +2,7 @@ export const AUTH_CHANNELS = Object.freeze({
   authorize: "yuance:auth-authorize",
   retry: "yuance:auth-retry",
   logout: "yuance:auth-logout",
+  discardMismatchedProfile: "yuance:auth-discard-mismatched-profile",
 });
 
 export function registerAuthCommandHandlers({ ipcMain, assertSender, getRuntime, getNetworkCoordinator, openExternal, onUserCode } = {}) {
@@ -17,6 +18,7 @@ export function registerAuthCommandHandlers({ ipcMain, assertSender, getRuntime,
       return runtime.authorize({ openExternal, onUserCode });
     }),
     [AUTH_CHANNELS.logout]: command((runtime) => runtime.logout()),
+    [AUTH_CHANNELS.discardMismatchedProfile]: command((runtime) => runtime.discardMismatchedProfile()),
   };
   function command(operation) {
     let flight;

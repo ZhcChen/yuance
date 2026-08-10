@@ -47,7 +47,7 @@ async function executePreload(argv = []) {
 
 test("preload exposes a frozen versioned bridge without generic IPC", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.equal(bridge.schemaVersion, 14);
+  assert.equal(bridge.schemaVersion, 15);
   assert.equal(Object.isFrozen(bridge), true);
   assert.equal(Object.isFrozen(bridge.hostState), true);
   assert.equal(Object.isFrozen(bridge.events), true);
@@ -174,12 +174,13 @@ test("attachment upload correlates fixed progress stages and removes its listene
 
 test("auth bridge exposes only parameter-free semantic commands", async () => {
   const { bridge, invocations } = await executePreload();
-  assert.deepEqual(Object.keys(bridge.auth).sort(), ["authorize", "logout", "retry"]);
-  await bridge.auth.authorize(); await bridge.auth.retry(); await bridge.auth.logout();
+  assert.deepEqual(Object.keys(bridge.auth).sort(), ["authorize", "discardMismatchedProfile", "logout", "retry"]);
+  await bridge.auth.authorize(); await bridge.auth.retry(); await bridge.auth.logout(); await bridge.auth.discardMismatchedProfile();
   assert.deepEqual(invocations, [
     ["yuance:auth-authorize", undefined],
     ["yuance:auth-retry", undefined],
     ["yuance:auth-logout", undefined],
+    ["yuance:auth-discard-mismatched-profile", undefined],
   ]);
 });
 
@@ -204,6 +205,22 @@ test("host state subscriptions receive sanitized snapshots and unsubscribe clean
   unsubscribe();
   listeners.get("yuance:host-state")({}, { status: "locked" });
   assert.equal(values.length, 2);
+});
+
+test("host state forwards only allowlisted locked reasons", async () => {
+  const { bridge, listeners } = await executePreload();
+  const values = [];
+  const unsubscribe = bridge.hostState.subscribe((value) => values.push(value));
+  listeners.get("yuance:host-state")({}, { status: "locked", reason: "profile_mismatch" });
+  listeners.get("yuance:host-state")({}, { status: "locked", reason: "pending_revocation" });
+  listeners.get("yuance:host-state")({}, { status: "locked", reason: "secret" });
+  assert.deepEqual(values.map((value) => ({ status: value.status, ...(value.reason ? { reason: value.reason } : {}) })), [
+    { status: "starting" },
+    { status: "locked", reason: "profile_mismatch" },
+    { status: "locked" },
+    { status: "locked" },
+  ]);
+  unsubscribe();
 });
 
 test("business event bridge accepts only versioned allowlisted facts", async () => {

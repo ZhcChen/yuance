@@ -26,6 +26,7 @@ const STATE_DESCRIPTIONS = Object.freeze({
   authorizing: "授权请求已发出，请在浏览器中确认当前设备。",
   authenticated: "设备身份已经确认，正在建立业务数据连接。",
   locked: "本机设备凭证暂时不可用，请重试恢复连接。",
+  profile_mismatch: "检测到本机保存了其他服务环境的设备凭证。清除后需要重新确认设备身份。",
   reauthorization_required: "当前设备会话已经失效，需要重新确认设备身份。",
   fatal: "安全运行环境未能完成初始化，请重新启动应用。",
 });
@@ -59,11 +60,20 @@ export default function DesktopApp({ services }) {
       // Public auth and network subscriptions render the resulting safe state.
     } finally { setCommandPending(false); }
   };
-  const primaryAction = ["unauthenticated", "reauthorization_required"].includes(authState.status)
-    ? { label: "开始授权", onClick: run(services.auth.authorize) }
-    : ["locked"].includes(authState.status) || authState.status === "authenticated" && networkState.status === "offline"
-      ? { label: "重试", onClick: run(services.auth.retry) }
-      : undefined;
+  const isProfileMismatch = authState.status === "locked" && authState.reason === "profile_mismatch";
+  const primaryAction = isProfileMismatch
+    ? {
+        label: "清除不匹配的凭证并重新授权",
+        onClick: run(async () => {
+          await services.auth.discardMismatchedProfile();
+          await services.auth.authorize();
+        }),
+      }
+    : ["unauthenticated", "reauthorization_required"].includes(authState.status)
+      ? { label: "开始授权", onClick: run(services.auth.authorize) }
+      : ["locked"].includes(authState.status) || authState.status === "authenticated" && networkState.status === "offline"
+        ? { label: "重试", onClick: run(services.auth.retry) }
+        : undefined;
   const secondaryAction = authState.status === "authenticated"
     ? { label: "退出设备", onClick: run(services.auth.logout) }
     : undefined;
@@ -80,7 +90,7 @@ export default function DesktopApp({ services }) {
           <SharedApp services={services.app} />
         ) : (
           <HostStatusShell productName="元策" hostLabel="Desktop" status={authState.status} title={title} detail={detail}
-            description={STATE_DESCRIPTIONS[authState.status] ?? STATE_DESCRIPTIONS.fatal}
+            description={STATE_DESCRIPTIONS[isProfileMismatch ? "profile_mismatch" : authState.status] ?? STATE_DESCRIPTIONS.fatal}
             context={authState.status === "authenticated" ? NETWORK_LABELS[networkState.status] : undefined}
             primaryAction={primaryAction} secondaryAction={secondaryAction} actionsDisabled={commandPending} />
         )}

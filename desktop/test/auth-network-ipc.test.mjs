@@ -12,7 +12,16 @@ test("auth commands use fixed channels, reject payloads, and validate every send
   await assert.rejects(handlers.get(AUTH_CHANNELS.authorize)({ trusted: true }, {}), /do not accept payloads/);
   assert.deepEqual(await handlers.get(AUTH_CHANNELS.authorize)({ trusted: true }), { status: "authenticated" });
   assert.deepEqual(await handlers.get(AUTH_CHANNELS.logout)({ trusted: true }), { status: "unauthenticated" });
-  assert.equal(senders.length, 4); dispose(); assert.deepEqual(removed.sort(), Object.values(AUTH_CHANNELS).sort());
+  assert.deepEqual(await handlers.get(AUTH_CHANNELS.discardMismatchedProfile)({ trusted: true }), { status: "unauthenticated" });
+  assert.equal(senders.length, 5); dispose(); assert.deepEqual(removed.sort(), Object.values(AUTH_CHANNELS).sort());
+});
+
+test("discard mismatch clears only the blocked profile evidence", async () => {
+  const handlers = new Map(); const calls = [];
+  const runtime = runtimeFixture(calls);
+  registerAuthCommandHandlers({ ipcMain: { handle: (channel, handler) => handlers.set(channel, handler), removeHandler() {} }, assertSender() {}, getRuntime: () => runtime, getNetworkCoordinator: () => undefined, openExternal: async () => {} });
+  assert.deepEqual(await handlers.get(AUTH_CHANNELS.discardMismatchedProfile)({}), { status: "unauthenticated" });
+  assert.deepEqual(calls, ["discardMismatchedProfile"]);
 });
 
 test("retry selects network restart, locked recovery, or authorization", async () => {
@@ -61,5 +70,5 @@ test("network publisher strips private fields and ignores destroyed windows", ()
 });
 
 function runtimeFixture(calls) {
-  return { status: "unauthenticated", snapshot() { return { status: this.status }; }, async authorize() { calls.push("authorize"); this.status = "authenticated"; return this.snapshot(); }, async logout() { calls.push("logout"); this.status = "unauthenticated"; return this.snapshot(); }, async retryPendingRevocation() { calls.push("retry"); return this.snapshot(); } };
+  return { status: "unauthenticated", snapshot() { return { status: this.status }; }, async authorize() { calls.push("authorize"); this.status = "authenticated"; return this.snapshot(); }, async logout() { calls.push("logout"); this.status = "unauthenticated"; return this.snapshot(); }, async retryPendingRevocation() { calls.push("retry"); return this.snapshot(); }, async discardMismatchedProfile() { calls.push("discardMismatchedProfile"); this.status = "unauthenticated"; return this.snapshot(); } };
 }

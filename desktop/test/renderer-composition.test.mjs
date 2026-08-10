@@ -32,7 +32,8 @@ test("auth adapter normalizes snapshots and subscriptions", () => {
   const unsubscribe = auth.subscribe((state) => values.push(state));
   assert.ok(listener);
   listener?.({ status: "locked", reason: "secret" });
-  assert.deepEqual(values, [{ status: "locked" }]);
+  listener?.({ status: "locked", reason: "profile_mismatch" });
+  assert.deepEqual(values, [{ status: "locked" }, { status: "locked", reason: "profile_mismatch" }]);
   unsubscribe();
   assert.equal(listener, undefined);
 });
@@ -40,10 +41,10 @@ test("auth adapter normalizes snapshots and subscriptions", () => {
 test("auth commands and network state adapters remain semantic and fail closed", async () => {
   const calls = [];
   const auth = createDesktopAuthState({}, {
-    authorize: async () => calls.push("authorize"), retry: async () => calls.push("retry"), logout: async () => calls.push("logout"),
+    authorize: async () => calls.push("authorize"), retry: async () => calls.push("retry"), logout: async () => calls.push("logout"), discardMismatchedProfile: async () => calls.push("discardMismatchedProfile"),
   });
-  await auth.authorize(); await auth.retry(); await auth.logout();
-  assert.deepEqual(calls, ["authorize", "retry", "logout"]);
+  await auth.authorize(); await auth.retry(); await auth.logout(); await auth.discardMismatchedProfile();
+  assert.deepEqual(calls, ["authorize", "retry", "logout", "discardMismatchedProfile"]);
   await assert.rejects(createDesktopAuthState().authorize(), /unavailable/);
   assert.deepEqual(normalizePublicNetworkState({ status: "online", token: "secret" }), { status: "online" });
   assert.deepEqual(createDesktopNetworkState().getSnapshot(), { status: "fatal" });
