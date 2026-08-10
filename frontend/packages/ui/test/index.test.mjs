@@ -14,6 +14,7 @@ test('ui owns the shared light and dark design tokens', async () => {
     assert.match(source, new RegExp(`${token}:`, 'u'));
   }
   assert.match(source, /html\[data-theme="dark"\]/u);
+  assert.match(source, /\.yc-button\s*\{[^}]*text-decoration:\s*none;/su);
 });
 
 test('host styles do not define shared business tokens', async () => {
