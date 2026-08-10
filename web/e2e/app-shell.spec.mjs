@@ -4129,14 +4129,14 @@ test('project detail tabs slide without replacing the page surface', async ({ pa
     const buttonStyle = getComputedStyle(button);
     return {
       mainWidth: main.clientWidth,
-      scrollbarWidth: getComputedStyle(main).scrollbarWidth,
+      scrollbarReservation: main.offsetWidth - main.clientWidth,
       webkitScrollbarWidth: getComputedStyle(main, '::-webkit-scrollbar').width,
       buttonHeight: buttonStyle.height,
       buttonRadius: buttonStyle.borderRadius,
       buttonFontSize: buttonStyle.fontSize,
     };
   });
-  expect(initialGeometry).toMatchObject({ scrollbarWidth: 'none', webkitScrollbarWidth: '0px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
+  expect(initialGeometry).toMatchObject({ scrollbarReservation: 0, webkitScrollbarWidth: '10px', buttonHeight: '40px', buttonRadius: '8px', buttonFontSize: '14px' });
   await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
   const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
 

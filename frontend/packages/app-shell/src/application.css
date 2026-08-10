@@ -15,21 +15,6 @@ body {
   background: var(--yc-bg);
 }
 
-html,
-body,
-.main {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-html::-webkit-scrollbar,
-body::-webkit-scrollbar,
-.main::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;
-}
-
 button,
 a,
 input,
@@ -57,7 +42,34 @@ button:disabled {
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
+  overflow: overlay;
   padding: 18px;
+}
+
+.main::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.main::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--yc-muted) 48%, transparent);
+  background-clip: padding-box;
+}
+
+.main::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--yc-muted-strong) 68%, transparent);
+  background-clip: padding-box;
 }
 
 .shell-header,
@@ -988,7 +1000,7 @@ html[data-theme="dark"] .shell-code-block {
 }
 
 @media (max-width: 860px) {
-  body { height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: auto; }
+  body { height: auto; min-height: 100vh; overflow-x: hidden; overflow-y: auto; overflow-y: overlay; }
   .app-shell { height: auto; min-height: 100vh; overflow: visible; }
   .main { overflow: visible; padding: 12px; }
 }
