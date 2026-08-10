@@ -799,6 +799,7 @@ export function SharedApp({ services }) {
   const workItemAttachmentMutationRef = useRef(false);
   const workItemCommentDraftRef = useRef(/** @type {{ itemKey: string, commentId: number } | null} */ (null));
   const workItemBatchMutationRef = useRef(false);
+  const routeLoadModeRef = useRef(/** @type {'load' | 'refresh'} */ ('load'));
   const [loading, setLoading] = useState(true);
   const [shellReady, setShellReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -3067,7 +3068,9 @@ export function SharedApp({ services }) {
   }, [route, activeProjectDetail, activeWorkItemDetail, projectCycleDetail, router]);
 
   useEffect(() => {
-    void loadRouteState(route, 'load');
+    const mode = routeLoadModeRef.current;
+    routeLoadModeRef.current = 'load';
+    void loadRouteState(route, mode);
   }, [route]);
 
   useEffect(() => {
@@ -4280,6 +4283,8 @@ export function SharedApp({ services }) {
 
   /** @param {'all' | 'unread' | 'pending' | 'read'} filter */
   function changeMessageFilter(filter) {
+    if (filter === messageFilter) return;
+    routeLoadModeRef.current = 'refresh';
     navigate(
       buildMessagesPath({
         owner: route.owner,

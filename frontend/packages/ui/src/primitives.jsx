@@ -1,6 +1,6 @@
 // @ts-check
 
-import React, { useEffect, useId, useRef } from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef } from 'react';
 
 /** @param {{ children?: React.ReactNode, variant?: 'primary' | 'secondary' | 'danger' | 'ghost', loading?: boolean, disabled?: boolean, type?: 'button' | 'submit' | 'reset', form?: string, onClick?: React.MouseEventHandler<HTMLButtonElement>, ariaLabel?: string }} props */
 export function Button({ children, variant = 'primary', loading = false, disabled = false, type = 'button', form, onClick, ariaLabel }) {
@@ -32,7 +32,31 @@ export function Badge({ children, tone = 'neutral' }) {
 
 /** @param {{ children?: React.ReactNode, ariaLabel: string }} props */
 export function ContentTabs({ children, ariaLabel }) {
-  return <nav className="yc-content-tabs" aria-label={ariaLabel}>{children}</nav>;
+  const tabsRef = useRef(/** @type {HTMLElement | null} */ (null));
+  const hasSyncedRef = useRef(false);
+
+  useLayoutEffect(() => {
+    const tabs = tabsRef.current;
+    const active = /** @type {HTMLElement | null} */ (tabs?.querySelector('.yc-content-tab.active') || null);
+    const indicator = /** @type {HTMLElement | null} */ (tabs?.querySelector('.yc-content-tabs-indicator') || null);
+    if (!tabs || !active || !indicator) return undefined;
+
+    const syncIndicator = (animate) => {
+      indicator.style.transition = animate ? '' : 'none';
+      tabs.style.setProperty('--yc-content-tab-indicator-width', `${active.offsetWidth}px`);
+      tabs.style.setProperty('--yc-content-tab-indicator-x', `${Math.max(0, active.offsetLeft - 4)}px`);
+      if (!animate) globalThis.requestAnimationFrame(() => { indicator.style.transition = ''; });
+    };
+
+    syncIndicator(hasSyncedRef.current);
+    hasSyncedRef.current = true;
+    const observer = typeof globalThis.ResizeObserver === 'undefined' ? null : new globalThis.ResizeObserver(() => syncIndicator(false));
+    observer?.observe(tabs);
+    Array.from(tabs.querySelectorAll('.yc-content-tab')).forEach((tab) => observer?.observe(tab));
+    return () => observer?.disconnect();
+  }, [children]);
+
+  return <nav ref={tabsRef} className="yc-content-tabs" aria-label={ariaLabel}><span className="yc-content-tabs-indicator" aria-hidden="true" />{children}</nav>;
 }
 
 /** @param {{ children?: React.ReactNode, href?: string, active?: boolean, badge?: number, onClick?: React.MouseEventHandler<HTMLAnchorElement | HTMLButtonElement> }} props */

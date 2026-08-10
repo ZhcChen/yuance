@@ -120,6 +120,31 @@ test('browser shell restores login return_to for direct /web/app/messages entry'
   await expect(page.getByRole('button', { name: '打开', exact: true })).toBeVisible();
 });
 
+test('message filters slide without replacing the page or clipping badges', async ({ page }) => {
+  await login(page, '/web/app/messages?filter=all');
+
+  const messagePage = page.locator('.messages-page');
+  const tabs = messagePage.locator('.yc-content-tabs');
+  const indicator = tabs.locator('.yc-content-tabs-indicator');
+  await messagePage.evaluate((element) => { element.dataset.filterTransitionMarker = 'preserved'; });
+  const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
+
+  await tabs.getByRole('button', { name: /未读消息/ }).click();
+  await expect(page).toHaveURL(/filter=unread/);
+  await expect(messagePage).toHaveAttribute('data-filter-transition-marker', 'preserved');
+  await expect(tabs.getByRole('button', { name: /未读消息/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
+
+  const badgeBounds = await tabs.evaluate((element) => {
+    const tabsRect = element.getBoundingClientRect();
+    return [...element.querySelectorAll('.yc-content-tab-badge')].map((badge) => {
+      const rect = badge.getBoundingClientRect();
+      return { top: rect.top - tabsRect.top, right: rect.right - tabsRect.right };
+    });
+  });
+  expect(badgeBounds.every((badge) => badge.top >= -1 && badge.right <= 1)).toBe(true);
+});
+
 test('browser shell preserves the shared deep link when the session expires', async ({ page }) => {
   await login(page, '/web/app');
   await page.goto('/web/app/search?q=YCE-TASK-2');
