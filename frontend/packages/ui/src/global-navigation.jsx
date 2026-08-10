@@ -40,7 +40,7 @@ export function closeContainingNavigationMenu(event) {
  *   systemLinks?: Array<{ id: string, label: string, href: string, active?: boolean }>,
  *   messagesHref: string,
  *   unreadCount?: number,
- *   notifications?: Array<{ id: number, title: string, body: string, actor: string, createdAt: string, read: boolean }>,
+ *   notifications?: Array<{ id: number, kind?: string, title: string, body: string, actor: string, createdAt: string, read: boolean }>,
  *   notificationBusy?: boolean,
  *   projectSwitchingKey?: string,
  *   user?: { username: string, display_name: string, is_super_admin?: boolean } | null,
@@ -49,7 +49,7 @@ export function closeContainingNavigationMenu(event) {
  *   onNavigate(event: React.MouseEvent<HTMLAnchorElement>, href: string, label: string): void,
  *   onSearch(query: string): void,
  *   onProjectChange(project: { key: string, name: string, pending_count?: number }): void,
- *   onOpenNotification(notification: { id: number, title: string, body: string, actor: string, createdAt: string, read: boolean }): void,
+ *   onOpenNotification(notification: { id: number, kind?: string, title: string, body: string, actor: string, createdAt: string, read: boolean }): void,
  *   onMarkAllRead(): void,
  *   onThemeChange(theme: 'light' | 'dark'): void,
  *   onLogout(): void,
@@ -95,6 +95,13 @@ export function GlobalNavigation({
     event.preventDefault();
     const query = /** @type {HTMLInputElement | null} */ (event.currentTarget.elements.namedItem('q'));
     onSearch(query?.value.trim() || '');
+  }
+
+  /** @param {string | undefined} kind */
+  function notificationKindLabel(kind) {
+    if (kind === 'comment_replied') return '回复';
+    if (kind === 'comment_mentioned') return '提及';
+    return '指派';
   }
 
   return (
@@ -166,9 +173,14 @@ export function GlobalNavigation({
             {formatNavigationBadge(unreadCount) ? <span className="global-nav-badge">{formatNavigationBadge(unreadCount)}</span> : null}
           </summary>
           <div className="global-nav-menu global-nav-notification-panel" role="dialog" aria-label="最近消息">
-            <div className="global-nav-notification-head"><div><strong>消息</strong><span>未读 {unreadCount}</span></div><button type="button" disabled={notificationBusy || unreadCount === 0} onClick={onMarkAllRead}>一键已读</button></div>
+            <div className="global-nav-notification-head"><div><strong>消息</strong><span>{unreadCount ? `${unreadCount} 条未读` : '暂无未读'}</span></div><button type="button" disabled={notificationBusy || unreadCount === 0} onClick={onMarkAllRead}>一键已读</button></div>
             <div className="global-nav-notification-list">
-              {notifications.length ? notifications.map((item) => <button key={item.id} type="button" className={item.read ? '' : 'unread'} disabled={notificationBusy} onClick={() => onOpenNotification(item)}><span><strong>{item.title}</strong><small>{item.actor} · {item.createdAt}</small></span><em>{item.body}</em></button>) : <p>暂无最近消息</p>}
+              {notifications.length ? notifications.map((item) => (
+                <button key={item.id} type="button" className={`global-nav-notification-item${item.read ? '' : ' unread'}`} disabled={notificationBusy} onClick={() => onOpenNotification(item)}>
+                  <span className="global-nav-notification-dot" aria-hidden="true" />
+                  <span className="global-nav-notification-content"><strong>{item.title}</strong><span>{item.body}</span><small>{notificationKindLabel(item.kind)} · {item.actor} · {item.createdAt}</small></span>
+                </button>
+              )) : <p>暂无消息</p>}
             </div>
             <a href={messagesHref} onClick={(event) => { closeContainingNavigationMenu(event); onNavigate(event, messagesHref, '消息中心'); }}>进入消息中心</a>
           </div>

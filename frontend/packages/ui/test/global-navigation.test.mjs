@@ -48,7 +48,7 @@ test('global navigation renders the complete shared shell semantics', () => {
     systemLinks: [{ id: 'dashboard', label: '总览', href: '/web/app/system', active: true }, { id: 'users', label: '用户管理', href: '/web/app/system/users' }],
     messagesHref: '/web/app/messages',
     unreadCount: 8,
-    notifications: [{ id: 7, title: '新的指派', body: '请处理任务', actor: 'Alice', createdAt: '刚刚', read: false }],
+    notifications: [{ id: 7, kind: 'comment_mentioned', title: '新的指派', body: '请处理任务', actor: 'Alice', createdAt: '刚刚', read: false }],
     user: { username: 'alice', display_name: 'Alice', is_super_admin: false },
     profileHref: '/web/me',
     theme: 'dark',
@@ -70,6 +70,10 @@ test('global navigation renders the complete shared shell semantics', () => {
   assert.match(html, /打开消息通知/u);
   assert.match(html, /最近消息/u);
   assert.match(html, /新的指派/u);
+  assert.match(html, /请处理任务/u);
+  assert.match(html, /提及 · Alice · 刚刚/u);
+  assert.match(html, /global-nav-notification-dot/u);
+  assert.match(html, />8 条未读</u);
   assert.match(html, /一键已读/u);
   assert.match(html, /打开 Alice 的账户菜单/u);
 });
