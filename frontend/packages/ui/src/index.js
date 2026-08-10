@@ -7,6 +7,6 @@ export { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback
 export { AttachmentList, WorkItemAttachments } from './work-item-attachments.jsx';
 export { AttachmentPreview } from './attachment-preview.jsx';
 export { RichTextContent, RichTextEditor, plainTextToRichHtml, richTextAttachmentHtml, richTextAttachmentIds, richTextHasContent } from './rich-text.jsx';
-export { WorkItemComments } from './work-item-comments.jsx';
+export { WorkItemComments, workItemTypingText } from './work-item-comments.jsx';
 export { WorkItemDetail } from './work-item-detail.jsx';
 export { attachmentIsUploaded, attachmentStatusLabel, formatByteSize } from './formatters.js';

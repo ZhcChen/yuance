@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { WorkItemComments } from '@yuance/frontend-ui';
+import { WorkItemComments, workItemTypingText } from '@yuance/frontend-ui';
 
 const comment = {
   id: 9,
@@ -140,4 +140,14 @@ test('work item comments keep browsing available without exposing write controls
 test('work item comments render an explicit empty state', () => {
   const html = renderComments({ comments: [], attachmentsByComment: {}, attachmentStatusByComment: {} });
   assert.match(html, /当前没有评论或流转记录/);
+});
+
+test('work item comments summarize typing users in a polite live region', () => {
+  assert.equal(workItemTypingText([]), '');
+  assert.equal(workItemTypingText([{ userId: 1, displayName: 'Alice' }]), 'Alice 正在输入…');
+  assert.equal(workItemTypingText([{ userId: 1, displayName: 'Alice' }, { userId: 2, displayName: 'Bob' }]), 'Alice、Bob 正在输入…');
+  assert.equal(workItemTypingText([{ userId: 1, displayName: 'Alice' }, { userId: 2, displayName: 'Bob' }, { userId: 3, displayName: 'Carol' }]), 'Alice、Bob 等 3 人正在输入…');
+
+  const html = renderComments({ typingUsers: [{ userId: 1, displayName: 'Alice' }] });
+  assert.match(html, /class="work-item-typing-status" aria-live="polite" aria-atomic="true">Alice 正在输入…/u);
 });

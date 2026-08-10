@@ -1243,6 +1243,19 @@ html[data-theme="dark"] {
 .work-item-comments-panel > .yuance-ui-panel-header h3::before { content: "协作记录"; }
 .work-item-attachments-panel > .yuance-ui-panel-header h3::before { content: "历史资料"; }
 
+.work-item-comments-heading { min-width: 0; }
+.work-item-typing-status {
+  display: block;
+  min-height: 18px;
+  max-width: min(52vw, 520px);
+  overflow: hidden;
+  color: var(--yc-brand-strong);
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .work-item-content .work-item-comment-form {
   margin: 0 0 24px;
   padding: 16px;
