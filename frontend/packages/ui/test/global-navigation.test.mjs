@@ -61,6 +61,7 @@ test('global navigation renders the complete shared shell semantics', () => {
   assert.match(html, /role="search"/u);
   assert.match(html, /aria-pressed="true"/u);
   assert.match(html, /切换当前项目/u);
+  assert.match(html, /global-nav-project-caret/u);
   assert.match(html, /搜索项目名称/u);
   assert.match(html, /交付运维台/u);
   assert.match(html, /桌面端下载/u);

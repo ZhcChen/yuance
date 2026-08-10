@@ -168,6 +168,7 @@ export function GlobalNavigation({
             <span className="global-nav-project-label">当前项目</span>
             <strong title={currentProject?.name || '未选择项目'}>{currentProject?.name || '未选择项目'}</strong>
             {projectBadge ? <span className="global-nav-badge">{projectBadge}</span> : null}
+            <span className="global-nav-caret global-nav-project-caret" aria-hidden="true" />
           </summary>
           <div className="global-nav-menu global-nav-project-menu">
             <label className="global-nav-project-search">

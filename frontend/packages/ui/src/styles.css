@@ -164,6 +164,8 @@ html[data-theme="dark"] {
 .global-nav-system > summary { list-style: none; cursor: pointer; }
 .global-nav-system > summary::-webkit-details-marker { display: none; }
 .global-nav-caret { width: 0; height: 0; border-right: 4px solid transparent; border-left: 4px solid transparent; border-top: 5px solid currentColor; opacity: .7; }
+.global-nav-project-caret { flex: 0 0 auto; color: var(--yc-muted); transition: transform var(--yc-motion-fast) ease; }
+.global-nav-project[open] .global-nav-project-caret { transform: rotate(180deg); }
 .global-nav-system-menu { top: 44px; right: auto; left: 0; min-width: 150px; padding: 6px; }
 .global-nav-system-menu a.active { background: var(--yc-brand-soft); color: var(--yc-brand-strong); }
 .global-nav-tools { flex: 0 0 auto; gap: 14px; }
