@@ -4116,6 +4116,23 @@ test('shared project file upload failure keeps registered file context', async (
   expect(uploadCount).toBe(2);
 });
 
+test('project detail tabs slide without replacing the page surface', async ({ page }) => {
+  await login(page, '/web/app/projects/YCE?tab=info');
+
+  const tabsCard = page.locator('.project-tabs-card');
+  const tabs = tabsCard.locator('.yc-content-tabs');
+  const indicator = tabs.locator('.yc-content-tabs-indicator');
+  await tabsCard.evaluate((element) => { element.dataset.tabTransitionMarker = 'preserved'; });
+  const initialX = await indicator.evaluate((element) => element.getBoundingClientRect().x);
+
+  await tabs.getByRole('link', { name: '资料库' }).click();
+  await expect(page).toHaveURL(/tab=resources/);
+  await expect(tabsCard).toHaveAttribute('data-tab-transition-marker', 'preserved');
+  await expect(tabs.getByRole('link', { name: '资料库' })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => indicator.evaluate((element) => element.getBoundingClientRect().x)).toBeGreaterThan(initialX);
+  await expect(page.getByRole('heading', { level: 3, name: '项目资料库' })).toBeVisible();
+});
+
 test('shared project personal analysis preserves metrics, filters and completion semantics', async ({ page }) => {
   const project = { key: 'YCE', name: '元策研发平台', description: '', status: 'in_progress', owner_username: 'yuance_admin', owner: '元策开发管理员', start_date: '', due_date: '', created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-07T00:00:00Z' };
   let recentCompletions = [{ key: 'YCE-TASK-2', item_type: 'task', title: '完成共享体验', completed_at: '2026-08-07T08:00:00Z' }];

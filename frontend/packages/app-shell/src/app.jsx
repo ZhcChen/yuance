@@ -32,6 +32,7 @@ import {
   downloadSystemReleaseAsset as downloadSystemReleaseAssetUseCase,
   handoffWorkItem as handoffWorkItemUseCase,
   notificationTargetPath,
+  parseAppRoute,
   routePathForOwner,
   updateWorkItemComment as updateWorkItemCommentUseCase,
   uploadWorkItemAttachment,
@@ -1592,6 +1593,12 @@ export function SharedApp({ services }) {
    * @param {boolean} [replace]
    */
   function navigate(path, nextStatusMessage = '', replace = false) {
+    const currentRoute = routeRef.current;
+    const targetUrl = new globalThis.URL(path, 'http://yuance.local');
+    const targetRoute = parseAppRoute(targetUrl.pathname, targetUrl.search, targetUrl.hash);
+    if (targetRoute.id === currentRoute.id && targetRoute.pathname === currentRoute.pathname) {
+      routeLoadModeRef.current = 'refresh';
+    }
     if (!replace && path !== router.currentPath()) setPreviousPath(router.currentPath());
     router.navigate(path, { replace });
     setStatusMessage(nextStatusMessage);
@@ -4309,7 +4316,6 @@ export function SharedApp({ services }) {
   /** @param {'all' | 'unread' | 'pending' | 'read'} filter */
   function changeMessageFilter(filter) {
     if (filter === messageFilter) return;
-    routeLoadModeRef.current = 'refresh';
     navigate(
       buildMessagesPath({
         owner: route.owner,
