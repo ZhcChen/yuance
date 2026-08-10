@@ -60,6 +60,7 @@ import {
   Pagination,
   RichTextContent,
   RichTextEditor,
+  Select,
   WorkItemAttachments,
   WorkItemComments,
   WorkItemDetail,
@@ -5669,7 +5670,7 @@ export function SharedApp({ services }) {
                 </label>
                 <label className="work-item-filter-field">
                   <span>状态</span>
-                  <select name="status" defaultValue={workItemPage?.filters.status ?? route.status}>
+                  <Select name="status" defaultValue={workItemPage?.filters.status ?? route.status}>
                     <option value="">全部状态</option>
                     <option value="open">待处理</option>
                     <option value="in_progress">进行中</option>
@@ -5679,41 +5680,41 @@ export function SharedApp({ services }) {
                     <option value="verified">已验证</option>
                     <option value="closed">已关闭</option>
                     <option value="cancelled">已取消</option>
-                  </select>
+                  </Select>
                 </label>
                 <label className="work-item-filter-field">
                   <span>优先级</span>
-                  <select name="priority" defaultValue={workItemPage?.filters.priority ?? route.priority}>
+                  <Select name="priority" defaultValue={workItemPage?.filters.priority ?? route.priority}>
                     <option value="">全部优先级</option>
                     <option value="P0">P0</option>
                     <option value="P1">P1</option>
                     <option value="P2">P2</option>
                     <option value="P3">P3</option>
-                  </select>
+                  </Select>
                 </label>
                 <label className="work-item-filter-field">
                   <span>处理人</span>
-                  <select name="assignee_username" defaultValue={workItemPage?.filters.assignee_username ?? route.assigneeUsername}>
+                  <Select name="assignee_username" defaultValue={workItemPage?.filters.assignee_username ?? route.assigneeUsername}>
                     <option value="">全部处理人</option>
                     {(workItemPage?.assignees || []).map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}
-                  </select>
+                  </Select>
                 </label>
                 <label className="work-item-filter-field">
                   <span>周期</span>
-                  <select name="cycle_id" defaultValue={workItemPage?.filters.cycle_id || route.cycleId || ''}>
+                  <Select name="cycle_id" defaultValue={workItemPage?.filters.cycle_id || route.cycleId || ''}>
                     <option value="">全部周期</option>
                     {(workItemPage?.cycles || []).map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}
-                  </select>
+                  </Select>
                 </label>
                 <label className="work-item-filter-field">
                   <span>排序</span>
-                  <select name="sort" defaultValue={workItemPage?.filters.sort ?? route.sort}>
+                  <Select name="sort" defaultValue={workItemPage?.filters.sort ?? route.sort}>
                     <option value="">最近更新</option>
                     <option value="updated_desc">最近更新</option>
                     <option value="created_desc">最近创建</option>
                     <option value="priority_desc">优先级从高到低</option>
                     <option value="due_date_asc">截止日期最近</option>
-                  </select>
+                  </Select>
                 </label>
                 <div className="work-item-filter-actions">
                   <Button type="submit">筛选</Button>
@@ -5727,13 +5728,13 @@ export function SharedApp({ services }) {
                   {workItemPage.can_manage_work_items ? <div className="work-item-batch-bar" aria-label="批量操作">
                     <label className="work-item-batch-select-all"><input type="checkbox" checked={currentWorkItemPageSelected} onChange={(event) => toggleCurrentWorkItemPage(event.target.checked)} /> 选择当前页</label>
                     <strong>已选择 {workItemSelection.size} 项</strong>
-                    <select aria-label="批量操作类型" value={workItemBatchForm.action} disabled={workItemBatchSubmitting} onChange={changeWorkItemBatchAction}>
+                    <Select aria-label="批量操作类型" value={workItemBatchForm.action} disabled={workItemBatchSubmitting} onChange={changeWorkItemBatchAction}>
                       <option value="priority">修改优先级</option><option value="status">修改状态</option><option value="assignee">修改处理人</option><option value="cycle">修改周期</option>
-                    </select>
-                    {workItemBatchForm.action === 'priority' ? <select aria-label="目标优先级" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></select> : null}
-                    {workItemBatchForm.action === 'status' ? <select aria-label="目标状态" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="open">待处理</option><option value="in_progress">进行中</option><option value="pending_confirmation">待确认</option>{route.itemType === 'bug' ? <><option value="resolved">已解决</option><option value="verified">已验证</option></> : <option value="done">已完成</option>}<option value="closed">已关闭</option></select> : null}
-                    {workItemBatchForm.action === 'assignee' ? <select aria-label="目标处理人" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">请选择处理人</option>{workItemPage.assignees.map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</select> : null}
-                    {workItemBatchForm.action === 'cycle' ? <select aria-label="目标周期" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">取消周期关联</option>{workItemPage.cycles.map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}</select> : null}
+                    </Select>
+                    {workItemBatchForm.action === 'priority' ? <Select aria-label="目标优先级" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="P0">P0</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option></Select> : null}
+                    {workItemBatchForm.action === 'status' ? <Select aria-label="目标状态" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="open">待处理</option><option value="in_progress">进行中</option><option value="pending_confirmation">待确认</option>{route.itemType === 'bug' ? <><option value="resolved">已解决</option><option value="verified">已验证</option></> : <option value="done">已完成</option>}<option value="closed">已关闭</option></Select> : null}
+                    {workItemBatchForm.action === 'assignee' ? <Select aria-label="目标处理人" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">请选择处理人</option>{workItemPage.assignees.map((assignee) => <option key={assignee.username} value={assignee.username}>{assignee.display_name} · {assignee.username}</option>)}</Select> : null}
+                    {workItemBatchForm.action === 'cycle' ? <Select aria-label="目标周期" value={workItemBatchForm.value} disabled={workItemBatchSubmitting} onChange={(event) => setWorkItemBatchForm((current) => ({ ...current, value: event.target.value }))}><option value="">取消周期关联</option>{workItemPage.cycles.map((cycle) => <option key={cycle.id} value={String(cycle.id)}>{cycle.name}{cycle.is_closed ? ' · 已关闭' : ''}</option>)}</Select> : null}
                     <Button disabled={workItemSelection.size === 0 || workItemBatchSubmitting || (workItemBatchForm.action === 'assignee' && !workItemBatchForm.value)} onClick={() => setWorkItemBatchConfirmOpen(true)}>应用</Button>
                     {workItemSelection.size ? <Button variant="secondary" disabled={workItemBatchSubmitting} onClick={() => setWorkItemSelection(new Set())}>清空选择</Button> : null}
                   </div> : null}

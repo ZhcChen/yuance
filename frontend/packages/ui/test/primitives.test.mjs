@@ -4,7 +4,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, Modal, Pagination, Skeleton } from '@yuance/frontend-ui';
+import { Badge, Button, ContentTab, ContentTabs, DataTable, ErrorToast, Feedback, Field, Modal, Pagination, Select, Skeleton } from '@yuance/frontend-ui';
 
 test('button exposes loading and disabled semantics', () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true, form: 'editor' }, '保存'));
@@ -26,6 +26,20 @@ test('field binds labels, hints and validation errors', () => {
   assert.match(html, /for="title"/u);
   assert.match(html, /aria-invalid="true"/u);
   assert.match(html, /role="alert"/u);
+});
+
+test('select preserves native form semantics inside the shared control', () => {
+  const html = renderToStaticMarkup(createElement(Select, { name: 'status', defaultValue: 'open', required: true },
+    createElement('option', { value: 'open' }, '待处理'),
+    createElement('option', { value: 'done' }, '已完成')));
+  assert.match(html, /class="yc-select"/u);
+  assert.match(html, /<select name="status" required=""/u);
+  assert.match(html, /class="yc-select-caret" aria-hidden="true"/u);
+  assert.match(html, /value="open" selected=""/u);
+
+  const fieldHtml = renderToStaticMarkup(createElement(Field, { id: 'priority', label: '优先级', error: '请选择优先级', required: true },
+    createElement(Select, null, createElement('option', { value: '' }, '请选择'))));
+  assert.match(fieldHtml, /<select id="priority" aria-describedby="priority-description" aria-invalid="true" required=""/u);
 });
 
 test('feedback and modal expose bounded semantic states', () => {
