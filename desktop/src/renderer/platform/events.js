@@ -22,5 +22,8 @@ export function createDesktopEvents(bridge) {
         }
       });
     },
+    openWorkItemEvents(_itemKey, _callbacks) {
+      return () => {};
+    },
   });
 }

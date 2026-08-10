@@ -30,6 +30,7 @@ test("desktop events map fixed host facts to shared callbacks and internal navig
     ["event", { type: "notification-target", path: "/web/app/work-items/YCE-TASK-2#comment-3" }],
   ]);
   assert.equal(unsubscribed, true);
+  assert.doesNotThrow(() => events.openWorkItemEvents('YCE-TASK-2', { onEvent() {} })());
 });
 
 test("desktop events degrade to a no-op without the restricted bridge", () => {

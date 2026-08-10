@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   createNotificationActionCoordinator,
   createNotificationEventCoordinator,
+  createWorkItemEventCoordinator,
   createProjectResourceWithAttachments,
   buildHomePath,
   buildMessagesPath,
@@ -758,7 +759,7 @@ function normalizeSystemApiDocs(payload) {
 /**
  * @param {{ services: {
  *   api: AppApiService,
- *   events: { openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void },
+ *   events: { openTopbarEvents(callbacks: { onEvent: (event: object) => void }): () => void, openWorkItemEvents?(itemKey: string, callbacks: { onEvent: (event: object) => void }): () => void },
  *   files: AppFileService,
  *   router: AppRouterService,
  *   runtime: {
@@ -3227,6 +3228,20 @@ export function SharedApp({ services }) {
   }, [events, router]);
 
   useEffect(() => {
+    const itemKey = route.id === 'work-item-detail' ? route.itemKey : '';
+    if (!itemKey || typeof events.openWorkItemEvents !== 'function') return undefined;
+    const coordinator = createWorkItemEventCoordinator({
+      itemKey,
+      refresh: () => refreshWorkItemRealtimeState(itemKey),
+    });
+    const close = events.openWorkItemEvents(itemKey, { onEvent: (event) => coordinator.handle(event) });
+    return () => {
+      coordinator.dispose();
+      close();
+    };
+  }, [events, route.id, route.itemKey]);
+
+  useEffect(() => {
     if (!loading) {
       runtime.scheduleFrame(() => {
         const commentId = route.id === 'work-item-detail' ? route.commentId : null;
@@ -3472,6 +3487,35 @@ export function SharedApp({ services }) {
     }
     if (failed) {
       setWorkItemActionError(`${actionLabel}，但详情、评论或顶部状态刷新失败，请手动刷新。`);
+    }
+  }
+
+  /** @param {string} itemKey */
+  async function refreshWorkItemRealtimeState(itemKey) {
+    const commentsPromise = api.getWorkItemComments(itemKey);
+    const attachmentsPromise = api.getWorkItemAttachments(itemKey);
+    void attachmentsPromise.catch(() => {});
+    const [detailViewResult, commentsResult, attachmentBundleResult] = await Promise.allSettled([
+      api.getWorkItemDetailView(itemKey),
+      commentsPromise,
+      commentsPromise.then((comments) => loadWorkItemAttachmentBundle(api, itemKey, comments, attachmentsPromise)),
+    ]);
+    const current = routeRef.current;
+    if (current.id !== 'work-item-detail' || current.itemKey !== itemKey) return;
+    const primaryPostId = detailViewResult.status === 'fulfilled'
+      ? detailViewResult.value.primary_post?.id
+      : workItemDetailView?.primary_post?.id || null;
+    if (detailViewResult.status === 'fulfilled') {
+      setWorkItemDetailView(detailViewResult.value);
+      setWorkItemDetail(detailViewResult.value.item);
+    }
+    if (commentsResult.status === 'fulfilled') {
+      setWorkItemComments(commentsResult.value.filter((comment) => comment.id !== primaryPostId));
+    }
+    if (attachmentBundleResult.status === 'fulfilled') {
+      setWorkItemAttachments(attachmentBundleResult.value.attachments);
+      setWorkItemCommentAttachments(attachmentBundleResult.value.commentAttachments);
+      setWorkItemAttachmentLoadWarning(attachmentBundleResult.value.loadFailed ? '部分附件列表加载失败，请刷新重试。' : '');
     }
   }
 

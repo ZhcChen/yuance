@@ -793,6 +793,48 @@ test('work item detail can edit and handoff through app shell forms', async ({ p
   await expect(page).toHaveURL(/\/web\/app\/work-items\/YCE-TASK-2$/);
 });
 
+test('work item realtime discussion refresh preserves the mounted page and local draft', async ({ page }) => {
+  await page.addInitScript(() => {
+    const sources = [];
+    class ControlledEventSource {
+      listeners = new Map();
+      constructor(url, options) { this.url = url; this.options = options; sources.push(this); }
+      addEventListener(type, callback) { this.listeners.set(type, callback); }
+      close() { this.closed = true; }
+    }
+    globalThis.EventSource = ControlledEventSource;
+    globalThis.__yuanceSseSources = sources;
+    globalThis.__emitYuanceSse = (url, type, data) => {
+      const source = sources.find((candidate) => candidate.url === url && !candidate.closed);
+      source?.listeners.get(type)?.({ data });
+    };
+  });
+
+  let commentRequests = 0;
+  await page.route('**/api/v1/work-items/YCE-TASK-2/comments', async (route) => {
+    commentRequests += 1;
+    const response = await route.fetch();
+    const payload = await response.json();
+    if (commentRequests > 1) payload.data.push(workItemCommentFixture({ id: 977, body: '来自另一会话的实时评论', author: '协作成员', author_username: 'collaborator' }));
+    await route.fulfill({ response, json: payload });
+  });
+
+  await login(page, '/web/app/work-items/YCE-TASK-2');
+  const detail = page.locator('.work-item-detail-center');
+  await detail.evaluate((element) => { element.dataset.realtimeMarker = 'preserved'; });
+  const draft = page.getByRole('textbox', { name: '新增评论' });
+  await draft.fill('尚未发布的本地草稿');
+
+  const subscriptionUrls = await page.evaluate(() => globalThis.__yuanceSseSources.map((source) => source.url));
+  expect(subscriptionUrls).toContain('/api/v1/work-items/YCE-TASK-2/events');
+  await page.evaluate(() => globalThis.__emitYuanceSse('/api/v1/work-items/YCE-TASK-2/events', 'discussion-refresh', 'refresh'));
+
+  await expect(page.getByText('来自另一会话的实时评论')).toBeVisible();
+  await expect(draft).toContainText('尚未发布的本地草稿');
+  await expect(detail).toHaveAttribute('data-realtime-marker', 'preserved');
+  expect(commentRequests).toBeGreaterThan(1);
+});
+
 test('work item edit success survives comments or topbar refresh failures', async ({ page }) => {
   await login(page, '/web/app/work-items/YCE-TASK-2');
   await expect(page.getByRole('heading', { level: 1, name: 'YCE-TASK-2 · 设计项目与工作项数据模型' })).toBeVisible();
