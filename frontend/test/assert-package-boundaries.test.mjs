@@ -213,6 +213,24 @@ test('analyzePackageBoundaries ignores forbidden words in comments and literals'
   }
 });
 
+test('analyzePackageBoundaries ignores forbidden words in JSX attributes around templates', async () => {
+  const root = await createWorkspace();
+  try {
+    await writeFile(
+      path.join(root, 'packages', 'ui', 'src', 'index.jsx'),
+      [
+        'export function Navigation({ active }) {',
+        '  return <div className={`global-navigation${active ? " active" : ""}`}>内容</div>;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    assert.deepEqual(await analyzePackageBoundaries(root), []);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('analyzePackageBoundaries scans executable template interpolations', async (t) => {
   const cases = [
     { source: 'export const leaked = `${globalThis.location}`;', expected: 'globalThis' },

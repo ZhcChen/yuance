@@ -1,4 +1,5 @@
 // @ts-check
+/* global FormData, URL, clearTimeout, setTimeout */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -1594,7 +1595,7 @@ export function SharedApp({ services }) {
    */
   function navigate(path, nextStatusMessage = '', replace = false) {
     const currentRoute = routeRef.current;
-    const targetUrl = new globalThis.URL(path, 'http://yuance.local');
+    const targetUrl = new URL(path, 'http://yuance.local');
     const targetRoute = parseAppRoute(targetUrl.pathname, targetUrl.search, targetUrl.hash);
     if (targetRoute.id === currentRoute.id && targetRoute.pathname === currentRoute.pathname) {
       routeLoadModeRef.current = 'refresh';
@@ -3101,8 +3102,8 @@ export function SharedApp({ services }) {
 
   useEffect(() => {
     if (!apiErrorToast) return undefined;
-    const timer = globalThis.setTimeout(() => setApiErrorToast(null), 5000);
-    return () => globalThis.clearTimeout(timer);
+    const timer = setTimeout(() => setApiErrorToast(null), 5000);
+    return () => clearTimeout(timer);
   }, [apiErrorToast]);
 
   useEffect(() => {
@@ -4828,7 +4829,7 @@ export function SharedApp({ services }) {
               </div>
               <form className="shell-filters audit-filter-bar" aria-label="审计日志筛选" onSubmit={(event) => {
                 event.preventDefault();
-                const values = new globalThis.FormData(event.currentTarget);
+                const values = new FormData(event.currentTarget);
                 navigate(buildSystemAuditPath({ owner: route.owner, actor: String(values.get('actor') || ''), action: String(values.get('action') || ''), targetType: String(values.get('target_type') || ''), targetId: String(values.get('target_id') || ''), perPage: route.perPage }), '正在筛选审计日志。');
               }}>
                 <Field id="system-audit-actor" label="操作人"><input name="actor" defaultValue={route.actor} placeholder="用户名或显示名称" /></Field>

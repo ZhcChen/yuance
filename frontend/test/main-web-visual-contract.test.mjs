@@ -13,7 +13,6 @@ const noBaselinePages = ['page.boundary.device-authorization', 'page.boundary.sh
 const fixtureGaps = [
   'page.project.cycle-detail',
   'page.project.resource-detail',
-  'page.system.role-permissions',
 ];
 
 async function readJson(url) {

@@ -1,4 +1,5 @@
 // @ts-check
+/* global ResizeObserver, requestAnimationFrame */
 
 import React, { useEffect, useId, useLayoutEffect, useRef } from 'react';
 
@@ -51,12 +52,12 @@ export function ContentTabs({ children, ariaLabel }) {
       indicator.style.transition = animate ? '' : 'none';
       tabs.style.setProperty('--yc-content-tab-indicator-width', `${active.offsetWidth}px`);
       tabs.style.setProperty('--yc-content-tab-indicator-x', `${Math.max(0, active.offsetLeft - 4)}px`);
-      if (!animate) globalThis.requestAnimationFrame(() => { indicator.style.transition = ''; });
+      if (!animate) requestAnimationFrame(() => { indicator.style.transition = ''; });
     };
 
     syncIndicator(hasSyncedRef.current);
     hasSyncedRef.current = true;
-    const observer = typeof globalThis.ResizeObserver === 'undefined' ? null : new globalThis.ResizeObserver(() => syncIndicator(false));
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => syncIndicator(false));
     observer?.observe(tabs);
     Array.from(tabs.querySelectorAll('.yc-content-tab')).forEach((tab) => observer?.observe(tab));
     return () => observer?.disconnect();
